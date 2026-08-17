@@ -4,17 +4,14 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
 
 # Cancel in-progress runs if a new commit is pushed to the PR
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-# Explicitly grant the ephemeral token permissions to post PR statuses
-permissions:
-  contents: read
-  statuses: write
-  pull-requests: write
 
 jobs:
   # -----------------------------------------------------------------
@@ -23,11 +20,15 @@ jobs:
   secrets:
     name: "Secrets Scan (TruffleHog)"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Run TruffleHog
         uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318 # v3.97.0
         with:
@@ -41,11 +42,16 @@ jobs:
   lint:
     name: "Code Quality (Super-Linter)"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Run Super-Linter
         uses: super-linter/super-linter/slim@4ce20838b8ab83717e78138c5b3a1407148e0918 # v8.7.0
         env:
@@ -58,11 +64,17 @@ jobs:
   semgrep:
     name: "Logic Scan (Semgrep)"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     container:
       image: semgrep/semgrep:1.172.0
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: Run Semgrep CI
         run: semgrep ci
         env:
@@ -74,11 +86,17 @@ jobs:
   trivy:
     name: "IaC Scan (Trivy)"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: "config"
           hide-progress: false
