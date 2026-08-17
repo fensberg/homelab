@@ -8,6 +8,8 @@ on:
     branches:
       - main
 
+permissions: read-all
+
 # Cancel in-progress runs if a new commit is pushed to the PR
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
