@@ -1,0 +1,87 @@
+name: "PR Validation"
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+# Cancel in-progress runs if a new commit is pushed to the PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -----------------------------------------------------------------
+  # LANE 1: Secrets Scanning
+  # -----------------------------------------------------------------
+  gitleaks:
+    name: "Secrets Scan (Gitleaks)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # -----------------------------------------------------------------
+  # LANE 2: Code Quality & Linting
+  # -----------------------------------------------------------------
+  lint:
+    name: "Code Quality (Super-Linter)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run Super-Linter
+        uses: super-linter/super-linter/slim@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: false
+
+  # -----------------------------------------------------------------
+  # LANE 3: Static Application Security Testing (SAST)
+  # -----------------------------------------------------------------
+  semgrep:
+    name: "Logic Scan (Semgrep)"
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Run Semgrep CI
+        run: semgrep ci
+        env:
+          SEMGREP_RULES: "p/default" 
+
+  # -----------------------------------------------------------------
+  # LANE 4: Infrastructure Misconfigurations (IaC)
+  # -----------------------------------------------------------------
+  trivy:
+    name: "IaC Scan (Trivy)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          hide-progress: false
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+
+  # -----------------------------------------------------------------
+  # LANE 5: Custom Business Logic (Policy as Code)
+  # -----------------------------------------------------------------
+  #conftest:
