@@ -1,0 +1,38 @@
+name: Deploy Infrastructure
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+    paths:
+      - 'environments/**/infrastructure/**'
+      - 'modules/infrastructure/**'
+
+jobs:
+  apply:
+    name: Apply OpenTofu
+    runs-on: self-hosted
+
+    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Determine Target Directory
+        id: set-env
+        run: |
+          if [ "${{ github.ref_type }}" == "tag" ]; then
+            echo "DIR=environments/production/infrastructure/" >> $GITHUB_ENV
+            echo "🚀 Deploying to Production (Tag: ${{ github.ref_name }})"
+          else
+            echo "DIR=environments/staging/infrastructure/" >> $GITHUB_ENV
+            echo "🛠️ Deploying to Staging (Branch: main)"
+          fi
+
+      - name: Tofu Init
+        run: tofu init
+        working-directory: ${{ env.DIR }}
+
+      - name: Tofu Apply
+        run: tofu apply -auto-approve
+        working-directory: ${{ env.DIR }}

@@ -1,0 +1,41 @@
+version: '3'
+
+tasks:
+  start:
+    desc: "Start"
+    cmds:
+      - defer: task clean-secrets
+
+      - task: render-secrets
+      - task: configure-hypervisor
+      - task: deploy-cluster
+      - echo "🔥 Ignition complete. The cluster is now self-sustaining."
+    silent: true
+
+  render-secrets:
+    desc: "Hydrate all infrastructure templates via 1Password"
+    cmds:
+      - echo "🔐 Injecting secrets from 1Password..."
+      - op inject -i config/management.tpl.json -o config/management.rendered.json
+      - op inject -i management/hypervisor/inventory.tpl.yml -o management/hypervisor/inventory.yml
+      - op inject -i management/cluster/backend_s3.tf.tpl -o management/cluster/backend_s3.tf
+
+  clean-secrets:
+    desc: "Wipe rendered secret files from the local disk"
+    cmds:
+      - echo "🧹 Wiping temporary secret files..."
+      - rm -f config/management.rendered.json management/hypervisor/inventory.yml
+
+  configure-hypervisor:
+    desc: "Install mesh networking, configure software-defined routing, and generate scoped API access tokens"
+    dir: management/hypervisor
+    cmds:
+      - echo "⚙️ Applying baseline configuration to bare-metal hypervisor..."
+      - ansible-playbook -i inventory.yml hypervisor-prep.yml --ask-become-pass
+
+  deploy-cluster:
+    desc: "Deploy immutable OS virtual machines, bootstrap control plane, and migrate state"
+    dir: management/cluster
+    cmds:
+      - echo "🚀 Provisioning compute nodes and migrating infrastructure state..."
+      - ./deploy-local.sh
