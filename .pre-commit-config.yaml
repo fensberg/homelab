@@ -33,3 +33,16 @@ repos:
         entry: tofu fmt
         language: system
         files: \.tf$
+
+  # - repo: https://github.com/open-policy-agent/conftest
+  #   rev: v0.54.0
+  #   hooks:
+  #     - id: conftest
+  #       args: ["test", "--all-namespaces", "--policy", "policy/"]
+  #       files: ^\.github/workflows/.*\.yml$
+
+  - repo: https://github.com/bridgecrewio/checkov
+    rev: 3.2.228
+    hooks:
+      - id: checkov
+        args: ["-d", ".", "--framework", "terraform,github_actions"]
