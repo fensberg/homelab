@@ -2,20 +2,20 @@
 set -e
 
 cleanup() {
-    echo "🚨 Execution halted or finished. Triggering cleanup..."
+	echo "🚨 Execution halted or finished. Triggering cleanup..."
 
-    # Wipe the local state files from the disk
-    rm -f terraform.tfstate terraform.tfstate.backup
-    rm -f /tmp/kubeconfig
+	# Wipe the local state files from the disk
+	rm -f terraform.tfstate terraform.tfstate.backup
+	rm -f /tmp/kubeconfig
 
-    # Disable the PG backend file again so the repo returns to a clean state
-    if [ -f "backend_pg.tf" ]; then
-        mv backend_pg.tf backend_pg.tf.disabled
-    fi
+	# Disable the PG backend file again so the repo returns to a clean state
+	if [ -f "backend_pg.tf" ]; then
+		mv backend_pg.tf backend_pg.tf.disabled
+	fi
 
-    # Unset memory variables
-    unset PG_CONN_STR
-    unset KUBECONFIG
+	# Unset memory variables
+	unset PG_CONN_STR
+	unset KUBECONFIG
 }
 trap cleanup EXIT INT TERM HUP
 # ==============================================================================
@@ -26,7 +26,7 @@ tofu init
 tofu apply -auto-approve
 
 echo "🔐 Extracting temporary Kubeconfig to RAM..."
-tofu output -raw kubeconfig > /tmp/kubeconfig
+tofu output -raw kubeconfig >/tmp/kubeconfig
 chmod 600 /tmp/kubeconfig
 export KUBECONFIG="/tmp/kubeconfig"
 

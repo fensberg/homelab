@@ -20,7 +20,7 @@ resource "proxmox_virtual_environment_vm" "talos_node" {
   memory { dedicated = 4096 }
 
   network_device {
-    bridge  = "vnetint"
+    bridge = "vnetint"
   }
 
   disk {
