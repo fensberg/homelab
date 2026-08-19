@@ -1,0 +1,18 @@
+{
+  "cluster_name": "management-cluster",
+  "network": {
+    "vlan_id": 20,
+    "base_cidr": "10.10.10.0/24"
+  },
+  "nodes": {
+    "control_plane": 3
+  },
+  "infrastructure": {
+    "target_hypervisor": "op://{{env \"REPO\"}}/server0/hostname",
+    "base_domain": "op://{{env \"REPO\"}}/Network/base_domain"
+  },
+  "secrets": {
+    "proxmox_api_token": "op://{{env \"REPO\"}}/Proxmox API Token/credential",
+    "cloudflare_api_token": "op://{{env \"REPO\"}}/Cloudflare API/credential"
+  }
+}

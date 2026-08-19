@@ -1,3 +1,4 @@
+---
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
@@ -8,8 +9,40 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
 
-  - repo: https://github.com/adrienverge/yamllint.git
-    rev: v1.35.1
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
     hooks:
-      - id: yamllint
-        args: [-d, "{extends: relaxed, rules: {line-length: disable}}"]
+      - id: prettier
+        types_or: [json, yaml, markdown]
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.1
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.8.0-1
+    hooks:
+      - id: shfmt
+        args: ["-w", "-s", "-i", "0"]
+
+  - repo: local
+    hooks:
+      - id: tofu-fmt
+        name: tofu fmt
+        entry: tofu fmt
+        language: system
+        files: \.tf$
+
+  # - repo: https://github.com/open-policy-agent/conftest
+  #   rev: v0.54.0
+  #   hooks:
+  #     - id: conftest
+  #       args: ["test", "--all-namespaces", "--policy", "policy/"]
+  #       files: ^\.github/workflows/.*\.yml$
+
+  - repo: https://github.com/bridgecrewio/checkov
+    rev: 3.2.228
+    hooks:
+      - id: checkov
+        args: ["-d", ".", "--framework", "terraform,github_actions"]
