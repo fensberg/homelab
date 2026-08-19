@@ -29,7 +29,7 @@ homelab/
 │ │ ├── main.tf
 │ │ └── variables.tf
 │ └── applications/
-│ └── foo-app/
+│ └── fo0-app/
 │ ├── deployment.yaml # Kubernetes: App pods
 │ └── kustomization.yaml # Base Kustomize configuration
 │
