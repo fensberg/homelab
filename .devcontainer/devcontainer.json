@@ -1,0 +1,19 @@
+{
+  "name": "Homelab GitOps",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {},
+    "ghcr.io/custom-script/opentofu:1": {},
+    "ghcr.io/tailscale/devcontainer/tailscale:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "hashicorp.terraform",
+        "redhat.ansible",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  },
+  "postCreateCommand": "pip install pre-commit && sh -c \"$(curl --location https://taskfile.dev/install.sh)\" -- -d"
+}
