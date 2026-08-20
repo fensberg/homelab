@@ -1,18 +1,19 @@
 {
-  "cluster_name": "management-cluster",
-  "network": {
-    "vlan_id": 20,
-    "base_cidr": "10.10.10.0/24"
+  "nodes": [
+    {
+      "hostname": "op://{{env \"REPO\"}}/node0/hostname"
+    }
+  ],
+  "organization": {
+    "name": "op://{{env \"REPO\"}}/organization/name"
   },
-  "nodes": {
-    "control_plane": 3
+  "git": {
+    "url": "op://{{env \"REPO\"}}/git/url",
+    "token": "op://{{env \"REPO\"}}/git/token"
   },
-  "infrastructure": {
-    "target_hypervisor": "op://{{env \"REPO\"}}/server0/hostname",
-    "base_domain": "op://{{env \"REPO\"}}/Network/base_domain"
-  },
-  "secrets": {
-    "proxmox_api_token": "op://{{env \"REPO\"}}/Proxmox API Token/credential",
-    "cloudflare_api_token": "op://{{env \"REPO\"}}/Cloudflare API/credential"
+  "hypervisor": {
+    "url": "op://{{env \"REPO\"}}/hypervisor/url",
+    "token_id": "op://{{env \"REPO\"}}/hypervisor/token_id",
+    "token_secret": "op://{{env \"REPO\"}}/hypervisor/token_secret"
   }
 }
