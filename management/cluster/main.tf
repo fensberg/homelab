@@ -1,11 +1,25 @@
+data "talos_image_factory_urls" "this" {
+  talos_version = local.talos_version
+  platform      = "nocloud"
+  endpoint      = "https://factory.talos.dev"
+}
+
+resource "proxmox_virtual_environment_download_file" "talos_iso" {
+  content_type        = "iso"
+  datastore_id        = "local-iso"
+  node_name           = local.config.nodes[0].hostname
+  url                 = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/nocloud-amd64.iso"
+  file_name           = "talos-nocloud-amd64.iso"
+  overwrite           = true
+  overwrite_unmanaged = true
+}
+
 resource "proxmox_virtual_environment_vm" "talos_cp" {
-  count = local.node_count
-  name  = "talos-cp-0${count.index + 1}"
-
-  # Modulo Math: Distributes VMs based on the active length of the array
-  node_name = local.config.nodes[count.index % length(local.config.nodes)].hostname
-
-  vm_id = 100 + count.index
+  count      = local.node_count
+  depends_on = [proxmox_virtual_environment_download_file.talos_iso]
+  name       = "talos-cp-0${count.index + 1}"
+  node_name  = local.config.nodes[0].hostname
+  vm_id      = 100 + count.index 
 
   cpu {
     cores = 4
@@ -30,15 +44,24 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
 
   cdrom {
     enabled   = true
-    file_id   = "local-iso:iso/talos-${local.talos_version}-metal-amd64.iso"
+    file_id   = proxmox_virtual_environment_download_file.talos_iso.id
     interface = "ide0"
   }
 
   operating_system { type = "l26" }
 
-  # SMBIOS Network Injection calculating via Array Modulo Math & Hardcoded CIDR
-  args = [
-    "-smbios",
-    "type=11,value=ip=${cidrhost(local.base_cidr, 100 + count.index)}/24,gw=${cidrhost(local.base_cidr, 1)},dns=${cidrhost(local.base_cidr, 1)}"
-  ]
+  smbios {
+    serial       = "talos-cp-0${count.index + 1}"
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
+  }
+
+  initialization {
+    ip_config {
+      ipv4 {
+        address = "${cidrhost(local.base_cidr, 100 + count.index)}/24"
+        gateway = cidrhost(local.base_cidr, 1)
+      }
+    }
+  }
 }
