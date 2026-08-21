@@ -44,6 +44,10 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
 
   operating_system { type = "l26" }
 
+  agent {
+    enabled = false
+  }
+
   smbios {
     serial       = "talos-cp-0${count.index + 1}"
     manufacturer = "Sidero Labs"

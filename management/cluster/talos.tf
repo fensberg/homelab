@@ -8,6 +8,8 @@ data "talos_machine_configuration" "controlplane" {
   cluster_endpoint = "https://${cidrhost(local.base_cidr, 100)}:6443"
   machine_secrets  = talos_machine_secrets.this.machine_secrets
 
+  kubernetes_version = "1.31.1"
+
   config_patches = [
     yamlencode({
       machine = {
@@ -47,5 +49,4 @@ data "talos_client_configuration" "this" {
   cluster_name         = local.config.organization.name
   client_configuration = talos_machine_secrets.this.client_configuration
   endpoints            = [cidrhost(local.base_cidr, 100)]
-  kubernetes_version   = "1.31.1"
 }
