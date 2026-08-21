@@ -10,7 +10,14 @@ data "talos_machine_configuration" "controlplane" {
 
   config_patches = [
     yamlencode({
-      cluster = { allowSchedulingOnControlPlanes = true }
+      machine = {
+        install = {
+          disk = "/dev/vda"
+        }
+      },
+      cluster = {
+        allowSchedulingOnControlPlanes = true
+      }
     })
   ]
 }
