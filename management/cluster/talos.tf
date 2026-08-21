@@ -47,4 +47,5 @@ data "talos_client_configuration" "this" {
   cluster_name         = local.config.organization.name
   client_configuration = talos_machine_secrets.this.client_configuration
   endpoints            = [cidrhost(local.base_cidr, 100)]
+  kubernetes_version   = "1.31.1"
 }
