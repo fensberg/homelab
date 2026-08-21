@@ -54,6 +54,10 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
     product      = "Talos Linux"
   }
 
+  dns {
+    servers = ["1.1.1.1", "1.0.0.1"]
+  }
+
   initialization {
     datastore_id = "local-zfs"
     ip_config {
