@@ -1,5 +1,4 @@
 {
-  "//": "checkov:skip=CKV_SECRET_6: This is an intentional 1Password CLI reference, not a plaintext secret",
   "nodes": [
     {
       "hostname": "op://homelab/node0/hostname"
@@ -10,7 +9,7 @@
   },
   "git": {
     "url": "op://homelab/git/url",
-    "token": "op://homelab/git/token"
+    "github_pat_reference": "op://homelab/git/token"
   },
   "hypervisor": {
     "url": "op://homelab/hypervisor/url",

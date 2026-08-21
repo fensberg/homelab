@@ -27,7 +27,7 @@ provider "flux" {
     url = local.config.git.url
     http = {
       username = "git"
-      password = local.config.git.token
+      password = local.config.git.github_pat_reference
     }
   }
 }

@@ -4,7 +4,7 @@ resource "proxmox_virtual_environment_file" "talos_iso" {
   node_name    = local.config.nodes[0].hostname
 
   source_file {
-    path      = "https://factory.talos.dev/image/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba/${local.talos_version}/nocloud-amd64.iso"
+    path      = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/nocloud-amd64.iso"
     file_name = "talos-${local.talos_version}-nocloud-amd64.iso"
   }
 }
@@ -15,6 +15,8 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   name       = "talos-cp-0${count.index + 1}"
   node_name  = local.config.nodes[0].hostname
   vm_id      = 100 + count.index
+
+  boot_order = ["virtio0", "ide0"]
 
   cpu {
     cores = 4
@@ -27,6 +29,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
 
   network_device {
     bridge  = "vnetint"
+    model   = "virtio"
     vlan_id = local.vlan_id
   }
 
@@ -54,12 +57,13 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
     product      = "Talos Linux"
   }
 
-  dns {
-    servers = ["1.1.1.1", "1.0.0.1"]
-  }
-
   initialization {
     datastore_id = "local-zfs"
+
+    dns {
+      servers = ["1.1.1.1", "1.0.0.1"]
+    }
+
     ip_config {
       ipv4 {
         address = "${cidrhost(local.base_cidr, 100 + count.index)}/24"
