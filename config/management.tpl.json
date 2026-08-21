@@ -1,19 +1,19 @@
 {
   "nodes": [
     {
-      "hostname": "op://{{env \"REPO\"}}/node0/hostname"
+      "hostname": "op://homelab/node0/hostname"
     }
   ],
   "organization": {
-    "name": "op://{{env \"REPO\"}}/organization/name"
+    "name": "op://homelab/organization/name"
   },
   "git": {
-    "url": "op://{{env \"REPO\"}}/git/url",
-    "token": "op://{{env \"REPO\"}}/git/token"
+    "url": "op://homelab/git/url",
+    "github_pat_reference": "op://homelab/git/token"
   },
   "hypervisor": {
-    "url": "op://{{env \"REPO\"}}/hypervisor/url",
-    "token_id": "op://{{env \"REPO\"}}/hypervisor/token_id",
-    "token_secret": "op://{{env \"REPO\"}}/hypervisor/token_secret"
+    "url": "op://homelab/hypervisor/url",
+    "token_id": "op://homelab/hypervisor/token_id",
+    "token_secret": "op://homelab/hypervisor/token_secret"
   }
 }

@@ -4,6 +4,6 @@ output "kubeconfig" {
 }
 
 output "talosconfig" {
-  value     = talos_cluster_kubeconfig.this.talos_config
+  value     = data.talos_client_configuration.this.talos_config
   sensitive = true
 }
