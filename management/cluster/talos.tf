@@ -20,7 +20,7 @@ resource "talos_machine_configuration_apply" "control_plane" {
   depends_on                  = [proxmox_virtual_environment_vm.talos_cp]
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.controlplane.machine_configuration
-  
+
   node = cidrhost(local.base_cidr, 100 + count.index)
 }
 
@@ -30,7 +30,7 @@ resource "talos_machine_bootstrap" "this" {
   node                 = cidrhost(local.base_cidr, 100)
 }
 
-data "talos_cluster_kubeconfig" "this" {
+resource "talos_cluster_kubeconfig" "this" {
   depends_on           = [talos_machine_bootstrap.this]
   client_configuration = talos_machine_secrets.this.client_configuration
   node                 = cidrhost(local.base_cidr, 100)
