@@ -61,9 +61,9 @@
     # ZFS or the network wanting a reboot. Opt in deliberately.
     do_dist_upgrade: false
 
-    # Supplied by the Tailnet phase via tailscale.auto.yml, which OpenTofu
+    # Supplied by the Overlay phase via overlay-network.auto.yml, which OpenTofu
     # generates and the Sterilize phase deletes. Empty means "log in by hand".
-    tailscale_auth_key: ""
+    overlay_auth_key: ""
 
   pre_tasks:
     - name: Confirm this host is actually Proxmox VE
@@ -210,16 +210,16 @@
     # pass can briefly drop the tunnel you are connected through.
     #
     # The key carries tag:homelab-router, and the tailnet policy managed in
-    # tailscale.tf auto-approves this subnet for that tag. No console clicking.
+    # overlay-network.tf auto-approves this subnet for that tag. No console clicking.
     - name: Log in to Tailscale and advertise the SDN subnet
       ansible.builtin.command: >-
         tailscale up
-        --authkey={{ tailscale_auth_key }}
+        --authkey={{ overlay_auth_key }}
         --advertise-routes={{ sdn_subnet }}
         --accept-dns=false
       when:
         - not (ts_running | bool)
-        - (tailscale_auth_key | length) > 0
+        - (overlay_auth_key | length) > 0
       no_log: true
       tags: [tailscale]
 
@@ -227,11 +227,11 @@
       ansible.builtin.debug:
         msg: >-
           Tailscale is installed but not logged in, and no auth key was
-          supplied. Run the Tailnet phase first, or log in by hand with:
+          supplied. Run the Overlay phase first, or log in by hand with:
           tailscale up --advertise-routes={{ sdn_subnet }}
       when:
         - not (ts_running | bool)
-        - (tailscale_auth_key | length) == 0
+        - (overlay_auth_key | length) == 0
       tags: [tailscale]
 
     # ========================================================================
@@ -429,7 +429,7 @@
       ansible.builtin.debug:
         msg: >-
           {{ sdn_subnet }} is advertised. The tailnet policy managed in
-          management/cluster/tailscale.tf auto-approves this subnet for
+          management/cluster/overlay-network.tf auto-approves this subnet for
           tag:homelab-router, so no console approval is needed. If the route
           still shows as pending, confirm the host logged in with the tagged
           auth key rather than an untagged one.

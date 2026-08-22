@@ -3,6 +3,6 @@ all:
   children:
     hypervisors:
       hosts:
-        "{{ op://homelab/node0/hostname }}":
-          ansible_host: "{{ op://homelab/node0/ip }}"
+        "{{ op://homelab/hypervisor/node0_hostname }}":
+          ansible_host: "{{ op://homelab/hypervisor/node0_ip }}"
           ansible_user: root

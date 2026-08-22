@@ -1,4 +1,4 @@
-﻿version: "3"
+version: "3"
 
 # The single entrypoint is scripts/Start-Homelab.ps1. These tasks are thin
 # wrappers so the same verbs work from any shell.

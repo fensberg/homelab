@@ -11,10 +11,10 @@ earlier epoch whose decisions you are about to touch.
 
 - **Current epoch:** 01 — Ignition
 - **Built:** the phased ignition button (`scripts/Start-Homelab.ps1`), an
-  idempotent Proxmox playbook, Talos + Flux provisioning, codified Tailscale
-  route auto-approval, and an age-encrypted R2 state backup.
-- **Open decision:** which Postgres to run on the cluster. Phase 7 (Migrate)
-  cannot complete until that exists. See [01-ignition.md](01-ignition.md).
+  idempotent Proxmox playbook, Talos + Flux provisioning, codified overlay-network
+  route auto-approval, and a two-layer state backup story.
+- **Database:** CloudNativePG, reconciled by Flux, streaming backups to object
+  storage. Declared in `clusters/management/`.
 - **Not yet built:** `modules/` and `environments/` — both referenced by
   `README.md` and by the path filters in `deploy-infrastructure.yml`.
 

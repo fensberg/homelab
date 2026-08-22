@@ -1,0 +1,92 @@
+---
+# The database that holds OpenTofu state.
+#
+# ${VAR} placeholders are substituted by Flux at reconcile time from the
+# cluster-vars secret that OpenTofu writes (see management/cluster/database.tf).
+# Nothing account-specific is committed here.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ${STATE_DB_CLUSTER}
+  namespace: ${STATE_DB_NAMESPACE}
+spec:
+  instances: 3
+
+  # Talos mounts no local-path provisioner by default. If this pends forever,
+  # the cluster has no default StorageClass yet - that is the thing to fix.
+  storage:
+    size: 10Gi
+
+  bootstrap:
+    initdb:
+      database: ${STATE_DB_NAME}
+      owner: ${STATE_DB_OWNER}
+      secret:
+        name: ${STATE_DB_CLUSTER}-app
+
+  # Continuous WAL archiving plus base backups to object storage. This is what
+  # point-in-time recovery restores from.
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: s3://${OBJECT_STORAGE_BUCKET}/postgres
+      endpointURL: ${OBJECT_STORAGE_ENDPOINT}
+      s3Credentials:
+        accessKeyId:
+          name: object-storage-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: object-storage-credentials
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+
+  postgresql:
+    parameters:
+      # Modest defaults. The state database sees a handful of connections and
+      # a few megabytes of data; it does not need tuning for throughput.
+      max_connections: "50"
+      shared_buffers: "128MB"
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      memory: "512Mi"
+---
+# A base backup every night. WAL archiving above is continuous, so this only
+# bounds how much WAL has to be replayed on restore.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: ${STATE_DB_CLUSTER}-nightly
+  namespace: ${STATE_DB_NAMESPACE}
+spec:
+  # Seconds field first: 02:17 every night, off the hour on purpose.
+  schedule: "0 17 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: ${STATE_DB_CLUSTER}
+---
+# The workstation runs OpenTofu from outside the cluster, so the primary needs
+# to be reachable over the overlay network. CloudNativePG labels whichever pod
+# is currently primary, so this Service follows a failover automatically.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${STATE_DB_CLUSTER}-external
+  namespace: ${STATE_DB_NAMESPACE}
+spec:
+  type: NodePort
+  selector:
+    cnpg.io/cluster: ${STATE_DB_CLUSTER}
+    cnpg.io/instanceRole: primary
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      nodePort: ${STATE_DB_NODEPORT}

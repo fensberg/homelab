@@ -7,8 +7,8 @@
     Runs the whole ignition sequence in order:
 
       1 Render     - pull secrets out of 1Password into gitignored files
-      2 Tailnet    - apply the tailnet policy (route auto-approval), mint an
-                     auth key for the hypervisor
+      2 Overlay    - apply the overlay network policy (route auto-approval), mint
+                     an auth key for the hypervisor
       3 Hypervisor - run the Ansible playbook against Proxmox (via WSL)
       4 Verify     - prove the network works BEFORE spending 20 minutes on tofu
       5 Compute    - create the VMs and wait for Talos to answer
@@ -57,10 +57,10 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('Render', 'Tailnet', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')]
+    [ValidateSet('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')]
     [string]$Phase,
 
-    [ValidateSet('Render', 'Tailnet', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')]
+    [ValidateSet('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')]
     [string]$From,
 
     [switch]$KeepOnFailure,
@@ -80,13 +80,13 @@ $ConfigRendered = Join-Path $RepoRoot 'config\management.rendered.json'
 $HypervisorDir  = Join-Path $RepoRoot 'management\hypervisor'
 $InventoryTpl   = Join-Path $HypervisorDir 'inventory.tpl.yml'
 $InventoryOut   = Join-Path $HypervisorDir 'inventory.yml'
-$TailscaleVars  = Join-Path $HypervisorDir 'tailscale.auto.yml'
+$OverlayVars    = Join-Path $HypervisorDir 'overlay-network.auto.yml'
 $ClusterDir     = Join-Path $RepoRoot 'management\cluster'
 $BackendPgOff   = Join-Path $ClusterDir 'backend_pg.tf.disabled'
 $BackendPgOn    = Join-Path $ClusterDir 'backend_pg.tf'
 $LocalState     = Join-Path $ClusterDir 'terraform.tfstate'
 
-$AllPhases = @('Render', 'Tailnet', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')
+$AllPhases = @('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')
 
 $TalosNodes  = @('10.10.10.100', '10.10.10.101', '10.10.10.102')
 $SdnGateway  = '10.10.10.1'
@@ -179,13 +179,13 @@ function Invoke-PhaseRender {
 }
 
 # ===========================================================================
-# PHASE 2 - Tailnet
+# PHASE 2 - Overlay
 # ===========================================================================
-function Invoke-PhaseTailnet {
-    Write-Phase 'Tailnet' 'Apply tailnet policy with route auto-approval, mint the hypervisor auth key.'
+function Invoke-PhaseOverlay {
+    Write-Phase 'Overlay' 'Apply tailnet policy with route auto-approval, mint the hypervisor auth key.'
 
     Write-Warn "tailscale_acl REPLACES your entire tailnet policy file."
-    Write-Warn "If you have hand-written rules, port them into management\cluster\tailscale.tf first."
+    Write-Warn "If you have hand-written rules, port them into management\cluster\overlay-network.tf first."
 
     Push-Location $ClusterDir
     try {
@@ -202,16 +202,16 @@ function Invoke-PhaseTailnet {
                 -target=tailscale_tailnet_key.hypervisor
         } 'tofu apply (tailnet)'
 
-        $key = & tofu output -raw tailscale_auth_key
+        $key = & tofu output -raw overlay_network_auth_key
         if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($key)) {
-            throw "Could not read the tailscale_auth_key output."
+            throw "Could not read the overlay_network_auth_key output."
         }
 
         # Handed to Ansible as a vars file rather than on the command line,
         # where it would be visible in the process list. Sterilize deletes it.
         Write-Info "writing the auth key for Ansible"
-        "---`ntailscale_auth_key: `"$key`"`n" |
-            Out-File -FilePath $TailscaleVars -Encoding ascii -NoNewline
+        "---`noverlay_auth_key: `"$key`"`n" |
+            Out-File -FilePath $OverlayVars -Encoding ascii -NoNewline
 
         Write-Ok "tailnet policy applied; routes for 10.10.10.0/24 will auto-approve"
     }
@@ -228,10 +228,10 @@ function Invoke-PhaseHypervisor {
 
     $wslRepo = Convert-ToWslPath $HypervisorDir
     $extraVars = if ($SkipUpgrade) { "-e do_dist_upgrade=false" } else { "" }
-    $keyVars = if (Test-Path $TailscaleVars) { "-e @tailscale.auto.yml" } else { "" }
+    $keyVars = if (Test-Path $OverlayVars) { "-e @overlay-network.auto.yml" } else { "" }
 
-    if (-not (Test-Path $TailscaleVars)) {
-        Write-Warn "No tailscale.auto.yml - run the Tailnet phase first, or log the host in by hand."
+    if (-not (Test-Path $OverlayVars)) {
+        Write-Warn "No overlay-network.auto.yml - run the Overlay phase first, or log the host in by hand."
     }
 
     # Ansible cannot run natively on Windows, so this phase hops into WSL.
@@ -257,7 +257,7 @@ function Invoke-PhaseVerify {
     Write-Phase 'Verify' 'Prove the network works before spending time on OpenTofu.'
 
     $cfg = Read-RenderedConfig
-    $pveHost = $cfg.hypervisor.url
+    $pveHost = $cfg.hypervisor.endpoint
 
     Write-Info "checking the Proxmox API on $pveHost ..."
     if (-not (Test-Port -ComputerName $pveHost -Port 8006)) {
@@ -277,7 +277,7 @@ function Invoke-PhaseVerify {
        You want to see it UP with 10.10.10.1/24.
 
     b) The Tailscale subnet route is not active.
-       The Tailnet phase should have auto-approved it. Check with:
+       The Overlay phase should have auto-approved it. Check with:
          tailscale status --json
        and confirm the hypervisor logged in with the tagged auth key.
 
@@ -426,23 +426,23 @@ function Invoke-PhaseBackup {
     Write-Phase 'Backup' 'Encrypt the state and push it off-site to Cloudflare R2.'
 
     $cfg = Read-RenderedConfig
-    $r2 = $cfg.state.r2
+    $store = $cfg.object_storage
 
     foreach ($field in 'account_id', 'access_key_id', 'secret_access_key', 'bucket') {
-        if ([string]::IsNullOrWhiteSpace($r2.$field)) {
-            throw "state.r2.$field is missing from the rendered config."
+        if ([string]::IsNullOrWhiteSpace($store.$field)) {
+            throw "object_storage.$field is missing from the rendered config."
         }
     }
-    if ([string]::IsNullOrWhiteSpace($cfg.state.age_recipient)) {
+    if ([string]::IsNullOrWhiteSpace($cfg.state.backup_recipient)) {
         throw @"
-No 'state.age_recipient' in the rendered config.
+No 'state.backup_recipient' in the rendered config.
 
 State is never uploaded in plaintext. Generate a key pair once:
 
     age-keygen -o state-backup.key
 
 Put the PUBLIC recipient (the 'age1...' line) in 1Password at
-op://homelab/state-backup/age_recipient, and store the private key file
+op://homelab/state-database/backup_recipient, and store the private key file
 somewhere offline. The automation only ever needs the public half - it can
 write backups but cannot read them back.
 "@
@@ -470,21 +470,21 @@ write backups but cannot read them back.
         $size = (Get-Item $tmpPlain).Length
         if ($size -lt 100) { throw "State pull returned only $size bytes - refusing to upload it." }
 
-        Write-Info "encrypting to $($cfg.state.age_recipient.Substring(0, [Math]::Min(20, $cfg.state.age_recipient.Length)))..."
-        Invoke-Native { age --recipient $cfg.state.age_recipient --output $tmpCipher $tmpPlain } 'age encrypt'
+        Write-Info "encrypting to $($cfg.state.backup_recipient.Substring(0, [Math]::Min(20, $cfg.state.backup_recipient.Length)))..."
+        Invoke-Native { age --recipient $cfg.state.backup_recipient --output $tmpCipher $tmpPlain } 'age encrypt'
 
         # rclone is configured entirely through environment variables so no
         # credentials are ever written to a config file on disk.
         $env:RCLONE_CONFIG_R2_TYPE = 's3'
         $env:RCLONE_CONFIG_R2_PROVIDER = 'Cloudflare'
-        $env:RCLONE_CONFIG_R2_ACCESS_KEY_ID = $r2.access_key_id
-        $env:RCLONE_CONFIG_R2_SECRET_ACCESS_KEY = $r2.secret_access_key
-        $env:RCLONE_CONFIG_R2_ENDPOINT = "https://$($r2.account_id).r2.cloudflarestorage.com"
+        $env:RCLONE_CONFIG_R2_ACCESS_KEY_ID = $store.access_key_id
+        $env:RCLONE_CONFIG_R2_SECRET_ACCESS_KEY = $store.secret_access_key
+        $env:RCLONE_CONFIG_R2_ENDPOINT = "https://$($store.account_id).r2.cloudflarestorage.com"
         $env:RCLONE_CONFIG_R2_NO_CHECK_BUCKET = 'true'
 
         try {
             # A timestamped copy for history, plus a stable 'latest' pointer.
-            $dest = "R2:$($r2.bucket)/management-cluster"
+            $dest = "R2:$($store.bucket)/management-cluster"
             Write-Info "uploading to $dest/$stamp.tfstate.age"
             Invoke-Native { rclone copyto $tmpCipher "$dest/$stamp.tfstate.age" } 'rclone upload (timestamped)'
 
@@ -496,7 +496,7 @@ write backups but cannot read them back.
         }
 
         Write-Ok "encrypted state backed up to Cloudflare R2"
-        Write-Info "restore with: rclone cat R2:$($r2.bucket)/management-cluster/latest.tfstate.age | age -d -i state-backup.key"
+        Write-Info "restore with: rclone cat R2:$($store.bucket)/management-cluster/latest.tfstate.age | age -d -i state-backup.key"
     }
     finally {
         Pop-Location
@@ -518,7 +518,7 @@ function Invoke-PhaseSterilize {
     $targets = @(
         $ConfigRendered,
         $InventoryOut,
-        $TailscaleVars,
+        $OverlayVars,
         $BackendPgOn,
         $LocalState,
         "$LocalState.backup"
@@ -581,7 +581,7 @@ try {
     foreach ($p in $toRun) {
         switch ($p) {
             'Render' { Invoke-PhaseRender }
-            'Tailnet' { Invoke-PhaseTailnet }
+            'Overlay' { Invoke-PhaseOverlay }
             'Hypervisor' { Invoke-PhaseHypervisor }
             'Verify' { Invoke-PhaseVerify }
             'Compute' { Invoke-PhaseCompute }

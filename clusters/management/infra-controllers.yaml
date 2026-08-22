@@ -1,0 +1,18 @@
+---
+# Layer 1: operators and controllers. Nothing here depends on a CRD that does
+# not already exist, so this reconciles first.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-controllers
+  namespace: flux-system
+spec:
+  interval: 30m
+  retryInterval: 1m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./clusters/management/infrastructure/controllers
+  prune: true
+  wait: true

@@ -33,10 +33,20 @@ belongs in an epoch record.
 - **Ignition is deliberately local-only.** `management/` bootstraps the
   cluster that later runs CI-driven deploys, so it cannot depend on that
   cluster. Do not move it into GitHub Actions.
-- **State migrates local -> Postgres, and is backed up to R2.** The first
+- **Name things by function, never by vendor.** Config keys, 1Password paths,
+  and file names describe what a thing does; the vendor lives in the value or
+  in a file header. `source_control.token`, not `git.github_pat_reference`.
+  The one place this cannot reach is Terraform resource names — `tailscale_acl`
+  is irreducibly vendor-specific — so the abstraction lives at the config and
+  secrets layer, which is what keeps a vendor swap to a single `.tf` file.
+- **State migrates local -> Postgres, and is backed up twice.** The first
   apply runs on local state; once the cluster hosts Postgres, state moves
-  there and the local copy is destroyed. An age-encrypted copy goes off-site
-  to Cloudflare R2 for disaster recovery.
+  there and the local copy is destroyed. CloudNativePG streams WAL and base
+  backups to object storage for point-in-time recovery, and the Backup phase
+  writes a standalone age-encrypted state dump alongside them. Both are
+  needed: the database backups restore into a running cluster, but rebuilding
+  that cluster needs the state held in the database. The standalone dump is
+  what breaks that circle after a total loss.
 - **The workspace is sterilized on every exit.** Success or failure, no
   secrets and no state are left on the workstation. On failure the run
   destroys infrastructure *before* wiping state, so nothing is orphaned.
@@ -55,20 +65,36 @@ One entrypoint, run from Windows PowerShell:
 Phases run in order and can be run individually with `-Phase`, or resumed
 with `-From`:
 
-| # | Phase      | What it does                                        |
-|---|------------|-----------------------------------------------------|
-| 1 | Render     | `op inject` secrets into gitignored files           |
-| 2 | Tailnet    | Apply tailnet policy (auto-approvers), mint auth key |
-| 3 | Hypervisor | Ansible: Proxmox repos, Tailscale, RBAC, SDN         |
-| 4 | Verify     | Prove the network path works before spending time    |
-| 5 | Compute    | Create VMs, poll each node's Talos API               |
-| 6 | Cluster    | Talos config, etcd bootstrap, Flux install           |
-| 7 | Migrate    | Move state local -> cluster Postgres                 |
-| 8 | Backup     | age-encrypt state, upload to Cloudflare R2           |
-| 9 | Sterilize  | Wipe every secret and the local state file           |
+| # | Phase      | What it does                                          |
+|---|------------|-------------------------------------------------------|
+| 1 | Render     | `op inject` secrets into gitignored files             |
+| 2 | Overlay    | Apply network policy (auto-approvers), mint auth key  |
+| 3 | Hypervisor | Ansible: Proxmox repos, overlay network, RBAC, SDN    |
+| 4 | Verify     | Prove the network path works before spending time     |
+| 5 | Compute    | Create VMs, poll each node's Talos API                |
+| 6 | Cluster    | Talos config, etcd bootstrap, Flux install            |
+| 7 | Migrate    | Move state local -> cluster Postgres                  |
+| 8 | Backup     | age-encrypt state, upload to object storage           |
+| 9 | Sterilize  | Wipe every secret and the local state file            |
 
 Ansible has no supported Windows control node, so phase 3 runs inside WSL2.
-The script handles the hop; you do not type anything different.
+The script handles the hop; you do not type anything different. PowerShell is
+a stopgap — the intended end state is to fold these phases into Ansible so the
+entrypoint is cross-platform and there is no shell-specific orchestration.
+
+## What lives where
+
+| Path | Holds |
+|------|-------|
+| `management/hypervisor/` | Ansible: bare-metal Proxmox preparation |
+| `management/cluster/` | OpenTofu: VMs, Talos, overlay network, storage, Flux |
+| `clusters/management/` | Flux-reconciled manifests for this cluster |
+| `config/management.tpl.json` | The config contract, rendered by `op inject` |
+
+OpenTofu creates only what Flux cannot — namespaces and secrets. The operator
+and the database itself are declared in `clusters/management/` and reconciled
+by Flux, in two layers: `infra-controllers` installs CRDs, `infra-configs`
+depends on it and uses them.
 
 ## CI
 

@@ -1,0 +1,79 @@
+# =============================================================================
+# State database plumbing. Vendor: CloudNativePG (deployed by Flux, not here).
+#
+# OpenTofu creates only the things Flux cannot: the namespace and the secrets.
+# The operator and the Cluster resource itself are declared in git under
+# clusters/management/ and reconciled by Flux.
+#
+# WHY SECRETS COME FROM HERE
+# --------------------------
+# Flux reconciles from git, so a password cannot live in a manifest. The usual
+# answers are SOPS or External Secrets, both of which are their own epoch of
+# work. Until then OpenTofu writes the secrets directly - it already holds the
+# 1Password-rendered values, and ignition is a local, human-run operation.
+# =============================================================================
+
+resource "kubernetes_namespace" "database" {
+  depends_on = [talos_cluster_kubeconfig.this]
+
+  metadata {
+    name = local.state_db_namespace
+  }
+}
+
+# Credentials CloudNativePG seeds the database with. The connection string in
+# 1Password must use this same password - they are two views of one secret.
+resource "kubernetes_secret" "state_db_credentials" {
+  metadata {
+    name      = "${local.state_db_cluster}-app"
+    namespace = kubernetes_namespace.database.metadata[0].name
+  }
+
+  type = "kubernetes.io/basic-auth"
+
+  data = {
+    username = local.state_db_owner
+    password = local.config.state.db_password
+  }
+}
+
+# Credentials the database uses to write its own WAL archive and base backups
+# to object storage. These never leave the cluster.
+resource "kubernetes_secret" "object_storage_credentials" {
+  metadata {
+    name      = "object-storage-credentials"
+    namespace = kubernetes_namespace.database.metadata[0].name
+  }
+
+  data = {
+    ACCESS_KEY_ID     = local.config.object_storage.access_key_id
+    SECRET_ACCESS_KEY = local.config.object_storage.secret_access_key
+  }
+}
+
+# Non-secret-but-not-in-git values that the Flux Kustomizations substitute into
+# the manifests at reconcile time (postBuild.substituteFrom). This is how the
+# bucket name and account-specific endpoint stay out of the repository.
+resource "kubernetes_secret" "cluster_vars" {
+  depends_on = [flux_bootstrap_git.this]
+
+  metadata {
+    name      = "cluster-vars"
+    namespace = "flux-system"
+  }
+
+  data = {
+    OBJECT_STORAGE_BUCKET   = local.config.object_storage.bucket
+    OBJECT_STORAGE_ENDPOINT = "https://${local.config.object_storage.account_id}.r2.cloudflarestorage.com"
+    STATE_DB_NAMESPACE      = local.state_db_namespace
+    STATE_DB_CLUSTER        = local.state_db_cluster
+    STATE_DB_NAME           = local.state_db_name
+    STATE_DB_OWNER          = local.state_db_owner
+    STATE_DB_NODEPORT       = tostring(local.state_db_nodeport)
+  }
+}
+
+output "state_db_endpoint" {
+  description = "Where to point the OpenTofu pg backend once Flux has reconciled the database."
+  value       = "${cidrhost(local.base_cidr, 100)}:${local.state_db_nodeport}"
+}

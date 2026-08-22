@@ -3,25 +3,43 @@
 homelab/
 ├── .env # Global variables for local task execution
 ├── .gitignore # Prevents rendered secrets/state from leaking
-├── Taskfile.yml # The "Start Button" automation wrapper
+├── CLAUDE.md # Project invariants and conventions
+├── taskfile.yml # Thin wrappers over the start button
 │
 ├── .github/
 │ └── workflows/
-│ ├── deploy-staging.yml # Actions: Applies staging infrastructure (branch-tracked)
-│ └── deploy-production.yml # Actions: Applies production infrastructure (tag-tracked)
+│ ├── pr-validation.yml # Actions: secret, lint, SAST, IaC and posture scans
+│ └── deploy-infrastructure.yml # Actions: applies staging (branch) / production (tag)
+│
+├── docs/epochs/ # Why things are the way they are, per phase
+│
+├── scripts/ # THE START BUTTON
+│ ├── Install-Dependencies.ps1 # One-time workstation setup
+│ └── Start-Homelab.ps1 # Nine-phase ignition sequence
 │
 ├── config/
-│ └── management.tpl.json # 1Password template for the Management Cluster
+│ └── management.tpl.json # 1Password template; keys named by function
 │
 ├── management/ # THE IGNITION TIER (Local Execution)
 │ ├── hypervisor/
 │ │ ├── inventory.tpl.yml # 1Password template for Ansible hosts
-│ │ └── hypervisor-prep.yml # Ansible: Proxmox SDN, Tailscale, RBAC
+│ │ └── hypervisor-prep.yml # Ansible: Proxmox repos, overlay net, RBAC, SDN
 │ └── cluster/
-│ ├── backend_pg.tf.disabled # Renamed so Tofu ignores it initially
-│ ├── main.tf # OpenTofu compute definitions
-│ ├── versions.tf # Provider definitions
-│ └── deploy-local.sh # Local -> Postgres migration script
+│ ├── backend_pg.tf.disabled # Renamed in at state-migration time
+│ ├── compute.tf # Talos control-plane VMs
+│ ├── talos.tf # Machine config, bootstrap, kubeconfig
+│ ├── database.tf # Namespace and secrets for the state database
+│ ├── overlay-network.tf # Network policy and route auto-approval
+│ ├── object-storage.tf # Backup bucket
+│ ├── gitops.tf # Flux bootstrap
+│ └── versions.tf # Provider definitions
+│
+├── clusters/management/ # Reconciled by Flux, not applied locally
+│ ├── infra-controllers.yaml # Layer 1: operators (installs CRDs)
+│ ├── infra-configs.yaml # Layer 2: resources using those CRDs
+│ └── infrastructure/
+│ ├── controllers/ # CloudNativePG operator
+│ └── configs/ # The state database itself
 │
 ├── modules/ # THE ABSTRACTION TIER (Write Code Once)
 │ ├── infrastructure/

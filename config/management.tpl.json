@@ -1,35 +1,36 @@
 {
-  "nodes": [
-    {
-      "hostname": "op://homelab/node0/hostname"
-    }
-  ],
   "organization": {
     "name": "op://homelab/organization/name"
   },
-  "git": {
-    "url": "op://homelab/git/url",
-    "github_pat_reference": "op://homelab/git/token"
-  },
   "hypervisor": {
-    "url": "op://homelab/hypervisor/url",
+    "nodes": [
+      {
+        "hostname": "op://homelab/hypervisor/node0_hostname"
+      }
+    ],
+    "endpoint": "op://homelab/hypervisor/endpoint",
     "token_id": "op://homelab/hypervisor/token_id",
     "token_secret": "op://homelab/hypervisor/token_secret"
   },
-  "tailscale": {
-    "tailnet": "op://homelab/tailscale/tailnet",
-    "oauth_client_id": "op://homelab/tailscale/oauth_client_id",
-    "oauth_client_secret": "op://homelab/tailscale/oauth_client_secret"
+  "source_control": {
+    "repo_url": "op://homelab/source-control/repo_url",
+    "token": "op://homelab/source-control/token"
+  },
+  "overlay_network": {
+    "domain": "op://homelab/overlay-network/domain",
+    "client_id": "op://homelab/overlay-network/client_id",
+    "client_secret": "op://homelab/overlay-network/client_secret"
+  },
+  "object_storage": {
+    "account_id": "op://homelab/object-storage/account_id",
+    "api_token": "op://homelab/object-storage/api_token",
+    "access_key_id": "op://homelab/object-storage/access_key_id",
+    "secret_access_key": "op://homelab/object-storage/secret_access_key",
+    "bucket": "op://homelab/object-storage/bucket"
   },
   "state": {
-    "conn_str": "op://homelab/state-postgres/conn_str",
-    "age_recipient": "op://homelab/state-backup/age_recipient",
-    "r2": {
-      "api_token": "op://homelab/cloudflare-r2/api_token",
-      "account_id": "op://homelab/cloudflare-r2/account_id",
-      "access_key_id": "op://homelab/cloudflare-r2/access_key_id",
-      "secret_access_key": "op://homelab/cloudflare-r2/secret_access_key",
-      "bucket": "op://homelab/cloudflare-r2/bucket"
-    }
+    "conn_str": "op://homelab/state-database/conn_str",
+    "db_password": "op://homelab/state-database/db_password",
+    "backup_recipient": "op://homelab/state-database/backup_recipient"
   }
 }

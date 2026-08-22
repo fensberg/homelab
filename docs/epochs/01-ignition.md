@@ -91,7 +91,43 @@ but cannot decrypt them.
 ISO and the `installer` image must agree, or the node reboots into a
 different image than it booted.
 
-### Local state first, Postgres second, R2 third
+### Config is named by function, not by vendor
+
+**Chose:** `source_control`, `overlay_network`, `object_storage`, `state` as
+config keys and 1Password paths, with no `provider` field.
+**Rejected:** `git`/`github_pat_reference`, `tailscale`/`tailnet`, `r2`.
+**Rejected:** carrying a sibling `provider` value for readability — nothing
+branches on it, and a field only humans read is a field that drifts out of
+sync with reality without anyone noticing. The vendor is named in each `.tf`
+file's header, where the resource names make it unambiguous anyway.
+**Because:** swapping a vendor should change a value, not a schema. The limit
+is honest: Terraform resource names are irreducibly vendor-specific, so this
+keeps the blast radius of a swap to one `.tf` file rather than eliminating it.
+
+### CloudNativePG for the state database
+
+**Chose:** CloudNativePG, deployed by Flux, backing up to object storage via
+`barmanObjectStore`.
+**Rejected:** a plain StatefulSet or a Bitnami chart, which would have been
+less work.
+**Because:** the operator pattern is the transferable skill — CRDs and
+reconciliation loops are how organizations actually run stateful workloads on
+Kubernetes. CloudNativePG is CNCF-governed and has the broadest adoption of
+the Postgres operators, so the knowledge carries outside this homelab. It also
+brings replication, failover, and point-in-time recovery without hand-rolling
+any of them.
+
+### Secrets are written by OpenTofu, not committed to git
+
+**Chose:** OpenTofu creates the namespace and secrets; Flux reconciles
+everything else. Non-secret-but-not-in-git values (bucket name, account
+endpoint) reach the manifests through Flux `postBuild.substituteFrom`.
+**Because:** Flux reconciles from git, so a password cannot live in a
+manifest. SOPS and External Secrets are each their own epoch of work. Until
+then OpenTofu already holds the 1Password-rendered values and ignition is a
+local, human-run operation, so it is the natural place for this.
+
+### Local state first, Postgres second, object storage third
 
 **Chose:** apply on local state; migrate into cluster Postgres; back up an
 encrypted copy off-site.
@@ -105,10 +141,9 @@ To be completed when the epoch closes.
 
 ## Deferred
 
-- **Postgres itself is not yet deployed.** Phase 7 fails with instructions
-  until a Postgres exists on the cluster and `state.conn_str` is in
-  1Password. The open decision is CloudNativePG (operator, backups, more
-  moving parts) versus a plain StatefulSet (simple, you own backups).
+- **A default StorageClass may not exist on Talos yet.** CloudNativePG will
+  request 10Gi per instance and the pods will pend forever if nothing can
+  satisfy the claim. Trigger: the first reconcile of the state database.
 - **OpenTofu native state encryption** (`terraform { encryption { … } }`)
   would encrypt state at rest inside Postgres, complementing the R2
   encryption. Trigger: once Postgres is real.
@@ -119,7 +154,7 @@ To be completed when the epoch closes.
 ## Gotchas
 
 - **`tailscale_acl` replaces the entire tailnet policy file.** The resource
-  in `tailscale.tf` carries a permissive default ACL so applying it cannot
+  in `overlay-network.tf` carries a permissive default ACL so applying it cannot
   lock you out, but if you have hand-written tailnet rules, port them into
   that resource *before* the first apply or they will be overwritten.
 - **`kubernetes_version` in `talos.tf` is hardcoded** with no Renovate

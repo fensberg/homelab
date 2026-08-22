@@ -1,0 +1,27 @@
+---
+# Layer 2: resources that use the CRDs layer 1 installs. dependsOn plus the
+# wait:true on infra-controllers is what stops Flux applying a Cluster resource
+# before the CloudNativePG operator has registered its CRDs.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-configs
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infra-controllers
+  interval: 30m
+  retryInterval: 1m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./clusters/management/infrastructure/configs
+  prune: true
+  wait: true
+  # Bucket name, account endpoint and database identifiers are injected here
+  # rather than committed. OpenTofu writes this secret; see database.tf.
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: cluster-vars
