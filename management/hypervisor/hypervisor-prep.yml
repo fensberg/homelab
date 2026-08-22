@@ -49,13 +49,20 @@
 
     sdn_zone: "internal"
     sdn_vnet: "vnetint"
-    sdn_subnet: "10.10.10.0/24"
-    sdn_gateway: "10.10.10.1"
 
-    # DHCP hands out .50-.99 only. The Talos control plane sits at .100-.102
-    # with static addresses, so the two must never overlap.
-    sdn_dhcp_start: "10.10.10.50"
-    sdn_dhcp_end: "10.10.10.99"
+    # Every value below is supplied per site by the start button, via
+    # site.auto.yml generated from config/sites.json. The defaults are only
+    # here so a bare ansible-playbook run fails loudly rather than silently
+    # configuring the wrong network.
+    sdn_subnet: "UNSET"
+    sdn_gateway: "UNSET"
+    sdn_dhcp_start: "UNSET"
+    sdn_dhcp_end: "UNSET"
+
+    # The route advertised over the overlay network is the site's whole /16,
+    # not just the node subnet. Advertising the /16 means new subnets at this
+    # site need no further route approval.
+    advertise_routes: "UNSET"
 
     # A full dist-upgrade on a live hypervisor can pull a new kernel and leave
     # ZFS or the network wanting a reboot. Opt in deliberately.
@@ -80,6 +87,20 @@
           node. Check your inventory before running again.
         success_msg: "Proxmox VE detected."
 
+    - name: Require per-site network values
+      ansible.builtin.assert:
+        that:
+          - sdn_subnet != "UNSET"
+          - sdn_gateway != "UNSET"
+          - sdn_dhcp_start != "UNSET"
+          - sdn_dhcp_end != "UNSET"
+          - advertise_routes != "UNSET"
+        fail_msg: >-
+          Per-site network values are missing. Run this through the start
+          button, which generates site.auto.yml from config/sites.json, or
+          pass them yourself with -e.
+        success_msg: "Per-site network values supplied."
+
     - name: Read the Proxmox version
       ansible.builtin.command: pveversion
       register: pve_version
@@ -94,6 +115,7 @@
           - "Dist-upgrade: {{ 'YES' if do_dist_upgrade else 'no' }}"
           - "SDN subnet:   {{ sdn_subnet }} (gateway {{ sdn_gateway }})"
           - "DHCP pool:    {{ sdn_dhcp_start }} - {{ sdn_dhcp_end }}"
+          - "Advertising:  {{ advertise_routes }}"
 
   tasks:
     # ========================================================================
@@ -215,7 +237,7 @@
       ansible.builtin.command: >-
         tailscale up
         --authkey={{ overlay_auth_key }}
-        --advertise-routes={{ sdn_subnet }}
+        --advertise-routes={{ advertise_routes }}
         --accept-dns=false
       when:
         - not (ts_running | bool)
@@ -228,7 +250,7 @@
         msg: >-
           Tailscale is installed but not logged in, and no auth key was
           supplied. Run the Overlay phase first, or log in by hand with:
-          tailscale up --advertise-routes={{ sdn_subnet }}
+          tailscale up --advertise-routes={{ advertise_routes }}
       when:
         - not (ts_running | bool)
         - (overlay_auth_key | length) == 0
@@ -420,7 +442,7 @@
       tags: [routing]
 
     - name: Advertise the SDN subnet over Tailscale
-      ansible.builtin.command: tailscale set --advertise-routes={{ sdn_subnet }}
+      ansible.builtin.command: tailscale set --advertise-routes={{ advertise_routes }}
       when: ts_running | bool
       changed_when: false
       tags: [routing]
@@ -428,7 +450,7 @@
     - name: Confirm the route was auto-approved
       ansible.builtin.debug:
         msg: >-
-          {{ sdn_subnet }} is advertised. The tailnet policy managed in
+          {{ advertise_routes }} is advertised. The tailnet policy managed in
           management/cluster/overlay-network.tf auto-approves this subnet for
           tag:homelab-router, so no console approval is needed. If the route
           still shows as pending, confirm the host logged in with the tagged

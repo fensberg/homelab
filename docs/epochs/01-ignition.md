@@ -134,6 +134,22 @@ manifest. SOPS and External Secrets are each their own epoch of work. Until
 then OpenTofu already holds the 1Password-rendered values and ignition is a
 local, human-run operation, so it is the natural place for this.
 
+### One site registry, not one config file per site
+
+**Chose:** `config/sites.json` maps a site name to an octet and a node count.
+Everything else - the advertised /16, the node subnet, gateway, DHCP pool,
+node addresses and cluster name - is derived from it, in both OpenTofu and the
+start button.
+**Rejected:** a separate config file per site, and hardcoded literals.
+**Because:** the values are not independent. A literal invites two sites onto
+the same subnet, which collides on the tailnet and presents as a broken
+network rather than a configuration mistake. Deriving them from one number
+makes that impossible to get wrong, and the registry is not secret so it lives
+in git next to the code that reads it.
+
+Per-site *secrets* remain separate, because those genuinely do vary
+independently and belong in a vault rather than a repository.
+
 ### The connection string is derived, not stored
 
 **Chose:** build `state_conn_str` in OpenTofu from the owner, database name,
@@ -180,9 +196,10 @@ To be completed when the epoch closes.
   cannot reach each other. That is correct for one hypervisor and breaks the
   moment a second joins the Proxmox cluster. Multi-node needs a `vxlan` or
   `evpn` zone instead - see epoch 02.
-- **Two sites on one tailnet must not share a subnet.** `base_cidr` is a local
-  in `variables.tf`, so every deployment currently advertises 10.10.10.0/24.
-  That is fine for a single site and collides for a fleet - see epoch 02.
+- **Addressing comes from `config/sites.json`, never from a literal.** The
+  site octet is that site's identity on the overlay network. Retire an octet
+  when a site goes away; do not recycle it, because lingering routes for the
+  old site would start pointing at the new one.
 - **`kubernetes_version` in `talos.tf` is hardcoded** with no Renovate
   annotation, unlike `talos_version`. Confirm the pairing is inside the
   Talos release's supported range; it will otherwise drift silently.

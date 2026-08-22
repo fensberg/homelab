@@ -78,8 +78,8 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
     # adding a node is a node_count bump and nothing else.
     ip_config {
       ipv4 {
-        address = "${cidrhost(local.base_cidr, 100 + count.index)}/24"
-        gateway = cidrhost(local.base_cidr, 1)
+        address = "${local.node_ips[count.index]}/24"
+        gateway = local.node_gateway
       }
     }
   }

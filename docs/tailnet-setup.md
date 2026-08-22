@@ -30,20 +30,26 @@ existing rules do.
   // human in the loop. This is what stops ignition silently hanging on an
   // unapproved subnet route.
   //
-  // The range must cover every site you will deploy into. A single /24 is
-  // fine for one site; widen it deliberately rather than by accident.
+  // Each site advertises its whole /16 (see config/sites.json), so covering
+  // 10.0.0.0/8 here means adding a site never requires editing this policy
+  // again. The tag is what constrains this, not the range: only nodes you
+  // have tagged as routers can advertise anything at all.
   "autoApprovers": {
     "routes": {
-      "10.10.10.0/24": ["tag:homelab-router"],
+      "10.0.0.0/8": ["tag:homelab-router"],
     },
   },
 }
 ```
 
-> **Subnet collisions.** Two sites on the same tailnet advertising the same
-> CIDR will collide, and traffic goes to whichever route the tailnet resolves
-> first. Give every site on a shared tailnet its own subnet, and widen the
-> auto-approver range to match.
+If you would rather be precise than convenient, list each site's /16
+individually (`10.10.0.0/16`, `10.20.0.0/16`, ...) instead. That costs a policy
+edit per new site and buys a smaller blast radius if a router is compromised.
+
+> **Subnet collisions.** Two sites on one tailnet advertising overlapping
+> ranges collide, and traffic goes to whichever route the tailnet resolves
+> first. `config/sites.json` is what prevents that - each site owns a distinct
+> octet, and octets are never recycled.
 
 ## 2. OAuth client
 

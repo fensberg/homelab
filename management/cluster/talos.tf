@@ -4,9 +4,9 @@ resource "talos_machine_secrets" "this" {
 
 data "talos_machine_configuration" "controlplane" {
   count              = local.node_count
-  cluster_name       = local.config.organization.name
+  cluster_name       = local.cluster_name
   machine_type       = "controlplane"
-  cluster_endpoint   = "https://${cidrhost(local.base_cidr, 100)}:6443"
+  cluster_endpoint   = "https://${local.node_ips[0]}:6443"
   machine_secrets    = talos_machine_secrets.this.machine_secrets
   kubernetes_version = "1.31.1"
 
@@ -31,23 +31,23 @@ resource "talos_machine_configuration_apply" "control_plane" {
   client_configuration = talos_machine_secrets.this.client_configuration
 
   machine_configuration_input = data.talos_machine_configuration.controlplane[count.index].machine_configuration
-  node                        = cidrhost(local.base_cidr, 100 + count.index)
+  node                        = local.node_ips[count.index]
 }
 
 resource "talos_machine_bootstrap" "this" {
   depends_on           = [talos_machine_configuration_apply.control_plane]
   client_configuration = talos_machine_secrets.this.client_configuration
-  node                 = cidrhost(local.base_cidr, 100)
+  node                 = local.node_ips[0]
 }
 
 resource "talos_cluster_kubeconfig" "this" {
   depends_on           = [talos_machine_bootstrap.this]
   client_configuration = talos_machine_secrets.this.client_configuration
-  node                 = cidrhost(local.base_cidr, 100)
+  node                 = local.node_ips[0]
 }
 
 data "talos_client_configuration" "this" {
-  cluster_name         = local.config.organization.name
+  cluster_name         = local.cluster_name
   client_configuration = talos_machine_secrets.this.client_configuration
-  endpoints            = [cidrhost(local.base_cidr, 100)]
+  endpoints            = [local.node_ips[0]]
 }

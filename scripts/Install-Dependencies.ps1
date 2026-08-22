@@ -345,7 +345,7 @@ else {
 
     # Mirrored networking lets WSL share the Windows network stack, so it can
     # use the overlay-network routes the Windows host already has. Without it,
-    # WSL sits behind its own NAT and cannot reach 10.10.10.0/24.
+    # WSL sits behind its own NAT and cannot reach the site subnets.
     $wslConfig = Join-Path $env:USERPROFILE '.wslconfig'
     if (-not (Test-Path $wslConfig) -or -not (Select-String -Path $wslConfig -Pattern 'networkingMode' -Quiet)) {
         "`n[wsl2]`nnetworkingMode=mirrored`n" | Out-File -FilePath $wslConfig -Encoding ascii -Append

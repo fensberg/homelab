@@ -63,6 +63,10 @@ param(
     [ValidateSet('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')]
     [string]$From,
 
+    # Which site in config/sites.json to deploy. Everything about the network
+    # and the cluster name follows from this.
+    [string]$Site = 'chicago',
+
     [switch]$KeepOnFailure,
     [switch]$SkipUpgrade,
     [switch]$WhatIfPhase,
@@ -81,6 +85,8 @@ $HypervisorDir  = Join-Path $RepoRoot 'management\hypervisor'
 $InventoryTpl   = Join-Path $HypervisorDir 'inventory.tpl.yml'
 $InventoryOut   = Join-Path $HypervisorDir 'inventory.yml'
 $OverlayVars    = Join-Path $HypervisorDir 'overlay-network.auto.yml'
+$SiteVars       = Join-Path $HypervisorDir 'site.auto.yml'
+$SitesRegistry  = Join-Path $RepoRoot 'config\sites.json'
 $ClusterDir     = Join-Path $RepoRoot 'management\cluster'
 $BackendPgOff   = Join-Path $ClusterDir 'backend_pg.tf.disabled'
 $BackendPgOn    = Join-Path $ClusterDir 'backend_pg.tf'
@@ -88,8 +94,39 @@ $LocalState     = Join-Path $ClusterDir 'terraform.tfstate'
 
 $AllPhases = @('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')
 
-$TalosNodes  = @('10.10.10.100', '10.10.10.101', '10.10.10.102')
-$SdnGateway  = '10.10.10.1'
+# Addressing is derived from config/sites.json, never hardcoded - two sites
+# advertising the same subnet onto one tailnet collide, and the symptom looks
+# like a broken network rather than a config mistake.
+function Get-SiteNetwork {
+    param([Parameter(Mandatory)][string]$Name)
+
+    if (-not (Test-Path $SitesRegistry)) { throw "Site registry not found at $SitesRegistry." }
+
+    $registry = (Get-Content $SitesRegistry -Raw | ConvertFrom-Json).sites
+    $site = $registry.$Name
+    if (-not $site) {
+        $known = ($registry.PSObject.Properties.Name | Sort-Object) -join ', '
+        throw "Unknown site '$Name'. config/sites.json defines: $known"
+    }
+
+    $o = $site.octet
+    [pscustomobject]@{
+        Name        = $Name
+        SiteCidr    = "10.$o.0.0/16"          # advertised as one route
+        NodeCidr    = "10.$o.10.0/24"         # Talos control plane
+        Gateway     = "10.$o.10.1"
+        DhcpStart   = "10.$o.10.50"
+        DhcpEnd     = "10.$o.10.99"
+        NodeIps     = @(0..($site.node_count - 1) | ForEach-Object { "10.$o.10.$(100 + $_)" })
+    }
+}
+
+$Net = Get-SiteNetwork -Name $Site
+$TalosNodes = $Net.NodeIps
+$SdnGateway = $Net.Gateway
+
+# OpenTofu reads the same registry; this tells it which entry to use.
+$env:TF_VAR_site = $Site
 
 # --- output helpers --------------------------------------------------------
 $script:PhaseNum = 0
@@ -175,6 +212,18 @@ function Invoke-PhaseRender {
     Write-Info "rendering management\hypervisor\inventory.yml"
     Invoke-Native { op inject -i $InventoryTpl -o $InventoryOut -f } '1Password inject (inventory)'
 
+    # Not a secret, but it lives beside the rendered files and is wiped with
+    # them, so the playbook only ever sees one site's values.
+    Write-Info "writing per-site network values for Ansible"
+    @(
+        "---",
+        "sdn_subnet: `"$($Net.NodeCidr)`"",
+        "sdn_gateway: `"$($Net.Gateway)`"",
+        "sdn_dhcp_start: `"$($Net.DhcpStart)`"",
+        "sdn_dhcp_end: `"$($Net.DhcpEnd)`"",
+        "advertise_routes: `"$($Net.SiteCidr)`""
+    ) -join "`n" | Out-File -FilePath $SiteVars -Encoding ascii
+
     Write-Ok "secrets rendered"
 }
 
@@ -224,6 +273,10 @@ function Invoke-PhaseHypervisor {
     $wslRepo = Convert-ToWslPath $HypervisorDir
     $extraVars = if ($SkipUpgrade) { "-e do_dist_upgrade=false" } else { "" }
     $keyVars = if (Test-Path $OverlayVars) { "-e @overlay-network.auto.yml" } else { "" }
+    if (-not (Test-Path $SiteVars)) {
+        throw "No site.auto.yml - run the Render phase first so the playbook knows this site's network."
+    }
+    $siteVars = "-e @site.auto.yml"
 
     if (-not (Test-Path $OverlayVars)) {
         Write-Warn "No overlay-network.auto.yml - run the Overlay phase first, or log the host in by hand."
@@ -232,7 +285,7 @@ function Invoke-PhaseHypervisor {
     # Ansible cannot run natively on Windows, so this phase hops into WSL.
     # The repo is read from /mnt/c/... - slower than a native FS, fine here.
     $cmd = "export PATH=`$HOME/.local/bin:`$PATH; cd '$wslRepo' && " +
-           "ansible-playbook -i inventory.yml hypervisor-prep.yml $keyVars $extraVars"
+           "ansible-playbook -i inventory.yml hypervisor-prep.yml $siteVars $keyVars $extraVars"
 
     # With no -d, WSL uses the default distro, whatever it happens to be.
     $wslArgs = if ($WslDistro) { @('-d', $WslDistro, '--', 'bash', '-lc', $cmd) }
@@ -269,7 +322,7 @@ function Invoke-PhaseVerify {
 
     a) The Proxmox SDN was never applied to the kernel.
        On the Proxmox host, run:  ip -br addr show vnetint
-       You want to see it UP with 10.10.10.1/24.
+       You want to see it UP with $($Net.Gateway)/24.
 
     b) The Tailscale subnet route is not active.
        The Overlay phase should have auto-approved it. Check with:
@@ -507,6 +560,7 @@ function Invoke-PhaseSterilize {
         $ConfigRendered,
         $InventoryOut,
         $OverlayVars,
+        $SiteVars,
         $BackendPgOn,
         $LocalState,
         "$LocalState.backup"

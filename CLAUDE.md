@@ -61,9 +61,14 @@ belongs in an epoch record.
 One entrypoint, run from Windows PowerShell:
 
 ```powershell
-.\scripts\Install-Dependencies.ps1     # once, elevated
-.\scripts\Start-Homelab.ps1            # every time after
+.\scripts\Install-Dependencies.ps1              # once, elevated
+.\scripts\Start-Homelab.ps1 -Site chicago       # every time after
 ```
+
+`-Site` selects an entry in `config/sites.json`, and every address plus the
+cluster name follows from it. Nothing about the network is hardcoded, because
+two sites advertising the same subnet onto one tailnet collide in a way that
+looks like a broken network rather than a config mistake.
 
 Phases run in order and can be run individually with `-Phase`, or resumed
 with `-From`:
@@ -92,7 +97,8 @@ entrypoint is cross-platform and there is no shell-specific orchestration.
 | `management/hypervisor/` | Ansible: bare-metal Proxmox preparation |
 | `management/cluster/` | OpenTofu: VMs, Talos, overlay network, storage, Flux |
 | `clusters/management/` | Flux-reconciled manifests for this cluster |
-| `config/management.tpl.json` | The config contract, rendered by `op inject` |
+| `config/management.tpl.json` | The secret contract, rendered by `op inject` |
+| `config/sites.json` | The site registry: which network each site owns |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator
 and the database itself are declared in `clusters/management/` and reconciled

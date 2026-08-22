@@ -85,12 +85,12 @@ resource "kubernetes_secret" "cluster_vars" {
 
 output "state_db_endpoint" {
   description = "Host and port the state database is reachable on from outside the cluster."
-  value       = "${cidrhost(local.base_cidr, 100)}:${local.state_db_nodeport}"
+  value       = "${local.node_ips[0]}:${local.state_db_nodeport}"
 }
 
 # The connection string is derived, not stored. Every component is already
 # known before the database exists: the owner, database name and NodePort are
-# declared in variables.tf, the address falls out of base_cidr, and the
+# declared in variables.tf, the address falls out of the site registry, and the
 # password comes from 1Password. Keeping it as a separate vault item would
 # invent a chicken-and-egg problem - you cannot record a connection string for
 # a database that has not been created yet - for no benefit.
@@ -101,7 +101,7 @@ output "state_conn_str" {
     "postgres://%s:%s@%s:%d/%s?sslmode=require",
     local.state_db_owner,
     urlencode(local.config.state.db_password),
-    cidrhost(local.base_cidr, 100),
+    local.node_ips[0],
     local.state_db_nodeport,
     local.state_db_name,
   )

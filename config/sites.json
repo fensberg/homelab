@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "Site registry. Not secret - this belongs in git, unlike config/management.tpl.json.",
+    "",
+    "Each site owns one /16 out of 10.0.0.0/8, identified by its octet. Within that:",
+    "  10.<octet>.0.0/24   hypervisor and infrastructure",
+    "  10.<octet>.10.0/24  Talos cluster nodes",
+    "  10.<octet>.20.0/24  load-balancer pool (epoch 02)",
+    "",
+    "The octet is the site's identity on the overlay network. It must be unique and",
+    "must never be reused - a retired site's routes can linger, and reissuing its",
+    "octet points them somewhere new. Retire an octet, do not recycle it.",
+    "",
+    "Stay below 96: Kubernetes defaults put services at 10.96.0.0/12 and pods at",
+    "10.244.0.0/16. Those are cluster-internal and never routed over the overlay,",
+    "but overlapping them makes debugging needlessly confusing."
+  ],
+
+  "sites": {
+    "chicago": {
+      "octet": 10,
+      "node_count": 3
+    },
+    "atlanta": {
+      "octet": 20,
+      "node_count": 3
+    }
+  }
+}
