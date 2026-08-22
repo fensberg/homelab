@@ -250,14 +250,10 @@
       when: pve_role not in (existing_roles.stdout | from_json | map(attribute='roleid') | list)
       tags: [rbac]
 
-    # Roles drift as the provider gains features. Re-sync privileges every run
-    # so a role created by an older version of this playbook gets updated.
-    - name: Keep role privileges in sync
-      ansible.builtin.command: >-
-        pveum role modify {{ pve_role }} --privs "{{ pve_role_privs | join(' ') }}"
-      when: pve_role in (existing_roles.stdout | from_json | map(attribute='roleid') | list)
-      changed_when: false
-      tags: [rbac]
+    # Deliberately no "modify existing role" task. This playbook initialises a
+    # host from zero; it does not reconcile one that has drifted. If the role
+    # already exists, it was created by a previous run of this same code.
+    # Privilege changes ship as a new version and are picked up by a rebuild.
 
     - name: List existing Proxmox users
       ansible.builtin.command: pveum user list --output-format json
