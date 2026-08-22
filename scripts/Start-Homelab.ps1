@@ -63,7 +63,7 @@ param(
     [ValidateSet('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')]
     [string]$From,
 
-    # Which site in the fleet document to deploy. Everything about the network
+    # Which site in config/sites.json to deploy. Everything about the network
     # and the cluster name follows from this.
     [string]$Site = 'chicago',
 
@@ -85,6 +85,7 @@ $HypervisorDir  = Join-Path $RepoRoot 'management\hypervisor'
 $InventoryOut   = Join-Path $HypervisorDir 'inventory.yml'
 $OverlayVars    = Join-Path $HypervisorDir 'overlay-network.auto.yml'
 $SiteVars       = Join-Path $HypervisorDir 'site.auto.yml'
+$SitesRegistry  = Join-Path $RepoRoot 'config\sites.json'
 $ClusterDir     = Join-Path $RepoRoot 'management\cluster'
 $BackendPgOff   = Join-Path $ClusterDir 'backend_pg.tf.disabled'
 $BackendPgOn    = Join-Path $ClusterDir 'backend_pg.tf'
@@ -95,11 +96,35 @@ $AllPhases = @('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster'
 # Addressing is derived from the fleet, never hardcoded - two sites advertising
 # the same subnet onto one tailnet collide, and the symptom looks like a broken
 # network rather than a config mistake.
+function Get-SiteRegistry {
+    <#
+      Structure lives in git so octet collisions are reviewable and testable.
+      OpenTofu asserts the same invariants at plan time (registry.tf); this is
+      the fast-feedback copy, so a typo fails in a second rather than after a
+      provider round trip.
+    #>
+    if (-not (Test-Path $SitesRegistry)) { throw "Site registry not found at $SitesRegistry." }
+    $reg = (Get-Content $SitesRegistry -Raw | ConvertFrom-Json).sites
+
+    $octets = @($reg.PSObject.Properties | ForEach-Object { $_.Value.octet })
+    $dupes = @($octets | Group-Object | Where-Object Count -gt 1 | ForEach-Object { $_.Name })
+    if ($dupes.Count -gt 0) {
+        throw "Duplicate octet(s) in config/sites.json: $($dupes -join ', '). Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network."
+    }
+
+    $bad = @($reg.PSObject.Properties | Where-Object { $_.Value.octet -lt 1 -or $_.Value.octet -gt 95 })
+    if ($bad.Count -gt 0) {
+        throw "Octet out of range for: $($bad.Name -join ', '). Use 1-95; Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16."
+    }
+
+    return $reg
+}
+
 function Get-Fleet {
     <#
-      The fleet arrives as a JSON string inside the rendered config, because a
-      1Password field is a string. Topology lives there rather than in git: for
-      an MSP, client names and network layouts are reconnaissance material.
+      The sensitive half of the topology, held in the vault: which hypervisors
+      exist, how to reach them, and their credentials. Arrives as a JSON string
+      because a 1Password field is a string.
     #>
     $cfg = Read-RenderedConfig
     if ([string]::IsNullOrWhiteSpace($cfg.fleet)) {
@@ -109,20 +134,29 @@ function Get-Fleet {
     catch { throw "The 'fleet' field is not valid JSON. Compare it against config/fleet.example.json. ($($_.Exception.Message))" }
 }
 
+# Addressing is derived, never hardcoded - two sites advertising the same subnet
+# onto one tailnet collide, and the symptom looks like a broken network rather
+# than a config mistake.
 function Get-SiteNetwork {
     param([Parameter(Mandatory)][string]$Name)
 
-    $fleet = Get-Fleet
-    $site = $fleet.$Name
+    $registry = Get-SiteRegistry
+    $site = $registry.$Name
     if (-not $site) {
-        $known = ($fleet.PSObject.Properties.Name | Where-Object { $_ -notlike '_*' } | Sort-Object) -join ', '
-        throw "Unknown site '$Name'. The fleet defines: $known"
+        $known = ($registry.PSObject.Properties.Name | Sort-Object) -join ', '
+        throw "Unknown site '$Name'. config/sites.json defines: $known"
     }
 
-    $o = $site.octet
-    $nodes = @($site.hypervisor.nodes)
-    if ($nodes.Count -eq 0) { throw "Site '$Name' has no hypervisor nodes." }
+    $fleet = Get-Fleet
+    $entry = $fleet.$Name
+    if (-not $entry) {
+        throw "Site '$Name' is in config/sites.json but not in the fleet document. The two must agree - see config/fleet.example.json."
+    }
 
+    $nodes = @($entry.hypervisor.nodes)
+    if ($nodes.Count -eq 0) { throw "Site '$Name' has no hypervisor nodes in the fleet document." }
+
+    $o = $site.octet
     [pscustomobject]@{
         Name        = $Name
         SiteCidr    = "10.$o.0.0/16"      # advertised as one route

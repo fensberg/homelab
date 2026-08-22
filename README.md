@@ -19,6 +19,7 @@ homelab/
 │
 ├── config/
 │ ├── management.tpl.json # Secret contract, rendered by op inject
+│ ├── sites.json # Site registry: octet + control-plane count (asserted, in git)
 │ └── fleet.example.json # Shape of the fleet document (real one is in the vault)
 │
 ├── management/ # THE IGNITION TIER (Local Execution)
@@ -26,6 +27,7 @@ homelab/
 │ │ └── hypervisor-prep.yml # Ansible: repos, overlay net, RBAC, SDN (inventory is generated)
 │ └── cluster/
 │ ├── backend_pg.tf.disabled # Renamed in at state-migration time
+│ ├── registry.tf # Plan-time invariants: octets, vendor lock
 │ ├── compute.tf # Talos control-plane VMs
 │ ├── talos.tf # Machine config, bootstrap, kubeconfig
 │ ├── database.tf # Namespace and secrets for the state database

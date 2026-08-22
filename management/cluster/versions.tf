@@ -16,7 +16,7 @@ provider "proxmox" {
   # Any node in a Proxmox cluster serves the API, so the first one is fine.
   # Credentials are per-site because two sites are two separate clusters.
   endpoint  = "https://${local.hypervisors[0].ip}:8006/"
-  api_token = "${local.this.hypervisor.token_id}=${local.this.hypervisor.token_secret}"
+  api_token = "${local.fleet[var.site].hypervisor.token_id}=${local.fleet[var.site].hypervisor.token_secret}"
   insecure  = true
 
   ssh { agent = false }

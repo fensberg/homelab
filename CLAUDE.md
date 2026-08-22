@@ -36,6 +36,11 @@ belongs in an epoch record.
 - **Ignition is deliberately local-only.** `management/` bootstraps the
   cluster that later runs CI-driven deploys, so it cannot depend on that
   cluster. Do not move it into GitHub Actions.
+- **Declare the vendor, and assert it.** Each vendor-locked concern carries a
+  `provider` field that `registry.tf` checks against what the code implements,
+  so pointing the vault at another vendor's credentials fails the plan instead
+  of failing opaquely at an API. Concerns that are genuinely portable, like
+  source control over plain git, carry none.
 - **Name things by function, never by vendor.** Config keys, 1Password paths,
   and file names describe what a thing does; the vendor lives in the value or
   in a file header. `source_control.token`, not `git.github_pat_reference`.
@@ -65,14 +70,21 @@ One entrypoint, run from Windows PowerShell:
 .\scripts\Start-Homelab.ps1 -Site chicago       # every time after
 ```
 
-`-Site` selects an entry in the fleet document at `op://homelab/topology/fleet`.
+`-Site` selects an entry in `config/sites.json`.
 Addressing, hypervisor placement and the cluster name all follow from it, so
 adding a hypervisor is appending to that site's `nodes` array and adding a site
 is adding a key. Nothing about the network is hardcoded, because two sites
 advertising the same subnet onto one tailnet collide in a way that looks like a
-broken network rather than a config mistake. `config/fleet.example.json` shows
-the shape; the real document stays in the vault because client names and
-network layouts are reconnaissance material.
+broken network rather than a config mistake.
+
+Topology is split on purpose. Structure - each site's octet and control-plane
+count - is committed, because the octet is the most collision-prone value in
+the system and needs review and automated checking. The hypervisors, their
+addresses and their credentials live in the fleet document in the vault,
+because for an MSP that is reconnaissance material.
+`management/cluster/registry.tf` asserts the invariants at plan time: octets
+unique, octets in range, registry and fleet agreeing, and each vendor-locked
+concern declaring the vendor the code actually implements.
 
 Phases run in order and can be run individually with `-Phase`, or resumed
 with `-From`:
@@ -102,6 +114,7 @@ entrypoint is cross-platform and there is no shell-specific orchestration.
 | `management/cluster/` | OpenTofu: VMs, Talos, overlay network, storage, Flux |
 | `clusters/management/` | Flux-reconciled manifests for this cluster |
 | `config/management.tpl.json` | The secret contract, rendered by `op inject` |
+| `config/sites.json` | Site registry: octet and control-plane count, in git so it can be reviewed and asserted |
 | `config/fleet.example.json` | Shape of the fleet document; the real one is in the vault |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator

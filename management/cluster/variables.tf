@@ -1,39 +1,41 @@
 variable "site" {
   type        = string
   description = <<-EOT
-    Which site in the fleet this deployment is for, e.g. "chicago". Set by the
-    start button via TF_VAR_site; running tofu by hand needs it too.
+    Which site to deploy, e.g. "chicago". Must exist in both config/sites.json
+    and the fleet document. Set by the start button via TF_VAR_site; running
+    tofu by hand needs it too.
   EOT
 }
 
 locals {
   config = jsondecode(file("../../config/management.rendered.json"))
 
-  # The fleet arrives as a JSON string because a 1Password field is a string.
-  # Topology lives there rather than in git: for an MSP, client names, network
-  # ranges and hypervisor addresses are reconnaissance material.
+  # --- topology ------------------------------------------------------------
+  # Split deliberately. Structure lives in git (config/sites.json) so octet
+  # collisions are reviewable and can be asserted - see registry.tf. The
+  # sensitive half lives in the vault, because for an MSP the hypervisor
+  # inventory is reconnaissance material.
   #
-  # Indexing directly means an unknown site fails at plan time rather than
-  # producing a half-configured cluster. The start button checks first and
-  # gives a friendlier message.
-  fleet = jsondecode(local.config.fleet)
-  this  = local.fleet[var.site]
+  # local.registry comes from registry.tf.
+  site = local.registry[var.site]
 
-  hypervisors = local.this.hypervisor.nodes
-  node_count  = local.this.control_plane_count
+  fleet       = jsondecode(local.config.fleet)
+  hypervisors = local.fleet[var.site].hypervisor.nodes
+
+  node_count = local.site.control_plane_count
 
   # --- addressing ----------------------------------------------------------
-  # One /16 per site, advertised as a single route over the overlay network, so
-  # a site can grow new subnets without anyone touching the tailnet policy.
-  site_cidr = "10.${local.this.octet}.0.0/16"
+  # One /16 per site, advertised as a single route, so a site can grow new
+  # subnets without anyone touching the tailnet policy.
+  site_cidr = "10.${local.site.octet}.0.0/16"
 
-  # Talos control-plane nodes. Hypervisor infrastructure sits in .0.0/24 and a
-  # load-balancer pool is reserved at .20.0/24 for epoch 02.
-  node_cidr    = "10.${local.this.octet}.10.0/24"
+  # Talos control plane. Infrastructure sits in .0.0/24 and a load-balancer
+  # pool is reserved at .20.0/24 for epoch 02.
+  node_cidr    = "10.${local.site.octet}.10.0/24"
   node_gateway = cidrhost(local.node_cidr, 1)
   node_ips     = [for i in range(local.node_count) : cidrhost(local.node_cidr, 100 + i)]
 
-  # DHCP pool for the SDN subnet, disjoint from the static nodes above.
+  # DHCP pool, disjoint from the static nodes above.
   dhcp_start = cidrhost(local.node_cidr, 50)
   dhcp_end   = cidrhost(local.node_cidr, 99)
 
@@ -41,8 +43,8 @@ locals {
   # Control-plane VMs are dealt round-robin across whatever hypervisors the
   # site has. One hypervisor puts all three on it; three put one on each, which
   # is what makes the cluster survive losing a box. Appending a node to the
-  # fleet is all it takes - but see the SDN note in docs/epochs/01-ignition.md,
-  # because a multi-node Proxmox cluster also needs a vxlan or evpn zone.
+  # fleet is all it takes here - but a multi-node Proxmox cluster also needs a
+  # vxlan or evpn SDN zone, see docs/epochs/01-ignition.md.
   vm_placement = [
     for i in range(local.node_count) :
     local.hypervisors[i % length(local.hypervisors)].hostname
@@ -67,7 +69,7 @@ locals {
 }
 
 output "site_network" {
-  description = "Addressing and placement for this deployment, derived from the fleet."
+  description = "Addressing and placement for this deployment."
   value = {
     site         = var.site
     site_cidr    = local.site_cidr

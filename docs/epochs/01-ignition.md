@@ -103,10 +103,21 @@ different image than it booted.
 **Chose:** `source_control`, `overlay_network`, `object_storage`, `state` as
 config keys and 1Password paths, with no `provider` field.
 **Rejected:** `git`/`github_pat_reference`, `tailscale`/`tailnet`, `r2`.
-**Rejected:** carrying a sibling `provider` value for readability — nothing
-branches on it, and a field only humans read is a field that drifts out of
-sync with reality without anyone noticing. The vendor is named in each `.tf`
-file's header, where the resource names make it unambiguous anyway.
+**Chose:** a sibling `provider` field on each vendor-locked concern, asserted
+at plan time in `registry.tf`.
+**Rejected, then reinstated:** it was first dropped as documentation that
+nothing reads and that drifts out of sync. That was wrong. As an *assertion*
+it earns its place: the code in this root speaks to exactly one vendor per
+concern, and without the check, pointing the vault at S3 credentials while the
+code still calls Cloudflare produces an opaque authentication failure instead
+of "this config declares cloudflare". A declaration the code verifies cannot
+drift, because drifting fails the plan.
+
+It is added only where the code is genuinely vendor-locked - hypervisor,
+overlay network, object storage. `source_control` has none, because
+`flux_bootstrap_git` speaks plain git over HTTPS and works against GitHub,
+GitLab or Gitea alike; asserting a vendor the code does not depend on would be
+noise rather than a guard.
 **Because:** swapping a vendor should change a value, not a schema. The limit
 is honest: Terraform resource names are irreducibly vendor-specific, so this
 keeps the blast radius of a swap to one `.tf` file rather than eliminating it.
@@ -134,29 +145,36 @@ manifest. SOPS and External Secrets are each their own epoch of work. Until
 then OpenTofu already holds the 1Password-rendered values and ignition is a
 local, human-run operation, so it is the natural place for this.
 
-### One fleet document, held in the vault
+### Topology splits: structure in git, secrets in the vault
 
-**Chose:** the whole topology lives in a single 1Password field at
-`op://homelab/topology/fleet`. It maps a site name to an octet, a control-plane
-count, and the hypervisors that site owns. Everything else - the advertised
-/16, node subnet, gateway, DHCP pool, node addresses, VM placement and cluster
-name - derives from that entry, in both OpenTofu and the start button.
-**Rejected:** literals in the code, and a registry committed to git.
-**Because:** two reasons, and the second changed the answer.
+**Chose:** `config/sites.json` holds each site's octet and control-plane count
+and is committed. The fleet document at `op://homelab/topology/fleet` holds the
+hypervisors, their addresses and their credentials. Keys must agree; a mismatch
+fails the plan.
+**Rejected:** putting the whole topology in the vault, which was the first
+attempt.
+**Because:** the two halves have opposite requirements, and collapsing them
+served neither.
 
-First, the values are not independent. A literal invites two sites onto the
-same subnet, which collides on the tailnet and presents as a broken network
-rather than a configuration mistake. Deriving them from one octet makes that
-impossible to express.
+The octet is the single most collision-prone value in the system - two sites
+sharing one collide on the overlay network and present as a broken network
+rather than a configuration mistake. That is exactly the kind of value that
+needs review, diffing and automated checking, none of which a vault field can
+offer. It belongs in git.
 
-Second, for an MSP the topology *is* sensitive: client names, network ranges
-and hypervisor addresses are reconnaissance material. A registry in git leaks
-the shape of every client estate to anyone who reads the repository. The vault
-is the right home, and `config/fleet.example.json` documents the shape without
-carrying any of it.
+The hypervisor inventory is the opposite: for an MSP, which boxes exist at
+which addresses is reconnaissance material, and committing it publishes the
+shape of every client estate to anyone who can read the repository.
 
-The cost is that topology changes lose version history and code review. That is
-a real loss, accepted because the alternative publishes client infrastructure.
+Site keys in git are codes rather than client names, so the committed half
+identifies nothing on its own.
+
+**Consequence:** invariants are asserted rather than tested. `registry.tf`
+carries preconditions for octet uniqueness, octet range, registry/fleet
+agreement, and the provider declarations. A test has to be remembered and run;
+a precondition fails `tofu plan` and cannot be skipped, which is the guarantee
+actually wanted. The start button repeats the cheap ones so a typo fails in a
+second rather than after a provider round trip.
 
 **Consequence:** the Ansible inventory is generated rather than templated.
 `op inject` substitutes into a fixed file and cannot loop, so a template could

@@ -2,35 +2,28 @@
   "_comment": [
     "Shape of the 'fleet' field at op://homelab/topology/fleet.",
     "",
-    "This file is an EXAMPLE. The real one lives in 1Password as a single",
-    "multiline field holding this JSON, because site topology for an MSP is",
-    "reconnaissance material - client names, network ranges and hypervisor",
-    "addresses - and does not belong in a repository.",
+    "This file is an EXAMPLE. The real one lives in 1Password because it holds",
+    "the sensitive half of the topology: which hypervisors exist, how to reach",
+    "them, and the credentials for them. For an MSP that is reconnaissance",
+    "material and does not belong in a repository.",
     "",
-    "Adding a hypervisor is appending to a site's nodes array.",
-    "Adding a site is adding a key. Nothing else changes.",
+    "The structural half - octet and control plane count - lives in git at",
+    "config/sites.json, where it can be reviewed and tested. Keys here must",
+    "match keys there; a mismatch fails at plan time.",
     "",
-    "The octet is the site's identity on the overlay network: it owns",
-    "10.<octet>.0.0/16. It must be unique, and must never be recycled - routes",
-    "for a retired site can linger and would start pointing somewhere new.",
-    "Stay below 96, since Kubernetes defaults use 10.96.0.0/12 and 10.244.0.0/16."
+    "Adding a hypervisor is appending to a site's nodes array. Nothing else",
+    "changes, on this side."
   ],
 
   "chicago": {
-    "octet": 10,
-    "control_plane_count": 3,
     "hypervisor": {
       "token_id": "terraform@pve!pipeline",
       "token_secret": "REDACTED",
-      "nodes": [
-        { "hostname": "pve-chi-01", "ip": "192.168.1.10" }
-      ]
+      "nodes": [{ "hostname": "pve-chi-01", "ip": "192.168.1.10" }]
     }
   },
 
   "atlanta": {
-    "octet": 20,
-    "control_plane_count": 3,
     "hypervisor": {
       "token_id": "terraform@pve!pipeline",
       "token_secret": "REDACTED",
