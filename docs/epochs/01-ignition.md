@@ -175,6 +175,11 @@ To be completed when the epoch closes.
   unreachable node, confirm `docs/tailnet-setup.md` has actually been applied
   to the tailnet you are deploying into. A missing `autoApprovers` entry looks
   identical to a broken network.
+- **The SDN zone is `simple`, which is node-local.** Each Proxmox node gets
+  its own isolated bridge carrying the same subnet, so VMs on different nodes
+  cannot reach each other. That is correct for one hypervisor and breaks the
+  moment a second joins the Proxmox cluster. Multi-node needs a `vxlan` or
+  `evpn` zone instead - see epoch 02.
 - **Two sites on one tailnet must not share a subnet.** `base_cidr` is a local
   in `variables.tf`, so every deployment currently advertises 10.10.10.0/24.
   That is fine for a single site and collides for a fleet - see epoch 02.

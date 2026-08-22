@@ -36,6 +36,39 @@ Turning those into module inputs is the concrete reason this epoch exists.
 The likely shape is one config file per site rather than one shared template,
 so the subnet, cluster name and overlay-network credentials all vary together.
 
+### The unit of addressing is the site, not the hypervisor
+
+A subnet per hypervisor node is the wrong split. Nodes in one Proxmox cluster
+must share a subnet, because a single Talos cluster spanning them needs its
+members on one network. Give each *site* a /16 and subnet within it:
+
+| Range | Holds |
+| --- | --- |
+| `10.<site>.0.0/24` | hypervisor and infrastructure |
+| `10.<site>.10.0/24` | Talos cluster nodes |
+| `10.<site>.20.0/24` | load-balancer pool for workloads |
+| `10.<site>.30.0/24`+ | per-tenant, if tenants get their own ranges |
+
+Site 1 is `10.10.0.0/16`, site 2 `10.20.0.0/16`, and so on. Each site's subnet
+router advertises its own /16, so there is one route per site and room to grow
+inside it without touching the tailnet policy again.
+
+Stay below `10.96.0.0`. Kubernetes defaults put services at `10.96.0.0/12` and
+pods at `10.244.0.0/16`; those are cluster-internal and not routed over the
+overlay network, but sharing the range invites confusion when debugging.
+
+### One cluster per site, not one cluster across sites
+
+A single Talos cluster with three nodes at each of two sites is a stretched
+cluster, and it should be avoided. etcd raft is latency-sensitive - members
+want single-digit millisecond round trips, and an overlay-network link between
+sites will not deliver that. A partition between sites also leaves six members
+with no tiebreaker.
+
+The management-tier and workload-tier split this repo already describes is the
+right shape: one cluster per site, all reconciled from one git repository by
+Flux. Scale by adding clusters, not by stretching one.
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying
