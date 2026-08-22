@@ -27,17 +27,20 @@ belongs in an epoch record.
 - **No secret ever lands in git.** Secrets live in the 1Password `homelab`
   vault and are materialized at runtime by `op inject` into gitignored files.
   Everything rendered is wiped by the Sterilize phase.
-- **No ClickOps.** Anything a human would otherwise click — Proxmox SDN,
-  Tailscale route approval, R2 buckets — is codified. If you find yourself
-  reaching for a web console, that is a bug to be fixed in code.
+- **No ClickOps, with one honest floor.** Anything a human would otherwise
+  click — Proxmox SDN, overlay route approval, storage buckets — is codified.
+  The floor is that credentials issued by third-party consoles (source control
+  token, overlay OAuth client, object storage tokens) cannot themselves be
+  automated, and the tailnet policy is set up once per tailnet rather than per
+  deployment. See `docs/tailnet-setup.md`. Everything past that floor is code.
 - **Ignition is deliberately local-only.** `management/` bootstraps the
   cluster that later runs CI-driven deploys, so it cannot depend on that
   cluster. Do not move it into GitHub Actions.
 - **Name things by function, never by vendor.** Config keys, 1Password paths,
   and file names describe what a thing does; the vendor lives in the value or
   in a file header. `source_control.token`, not `git.github_pat_reference`.
-  The one place this cannot reach is Terraform resource names — `tailscale_acl`
-  is irreducibly vendor-specific — so the abstraction lives at the config and
+  The one place this cannot reach is Terraform resource names —
+  `tailscale_tailnet_key` is irreducibly vendor-specific — so the abstraction lives at the config and
   secrets layer, which is what keeps a vendor swap to a single `.tf` file.
 - **State migrates local -> Postgres, and is backed up twice.** The first
   apply runs on local state; once the cluster hosts Postgres, state moves
@@ -68,7 +71,7 @@ with `-From`:
 | # | Phase      | What it does                                          |
 |---|------------|-------------------------------------------------------|
 | 1 | Render     | `op inject` secrets into gitignored files             |
-| 2 | Overlay    | Apply network policy (auto-approvers), mint auth key  |
+| 2 | Overlay    | Mint a tagged auth key to join the overlay network    |
 | 3 | Hypervisor | Ansible: Proxmox repos, overlay network, RBAC, SDN    |
 | 4 | Verify     | Prove the network path works before spending time     |
 | 5 | Compute    | Create VMs, poll each node's Talos API                |

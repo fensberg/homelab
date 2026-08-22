@@ -66,15 +66,22 @@ ordering makes an aggressive cleanup policy safe. `-KeepOnFailure` opts out.
 `Install-Dependencies.ps1` with mirrored networking, so it inherits the
 Windows host's Tailscale routes rather than sitting behind its own NAT.
 
-### Tailscale route approval is codified, not clicked
+### Route approval is codified, but the policy is not managed per site
 
-**Chose:** manage the tailnet policy file with the Tailscale provider, using
-`autoApprovers` keyed on `tag:homelab-router`, and mint the hypervisor's
-auth key with `tailscale_tailnet_key`.
-**Rejected:** approving the advertised subnet route in the admin console.
-**Because:** the project's standing rule is no ClickOps. An advertised route
-that needs a human to approve it is a manual step that silently blocks
-ignition, and it is invisible in git.
+**Chose:** the tailnet policy (`tagOwners`, `autoApprovers`) is set up once per
+tailnet, out of band, and documented in `docs/tailnet-setup.md`. Each
+deployment only mints a tagged auth key with `tailscale_tailnet_key`.
+**Rejected:** managing the policy with `tailscale_acl` from this root, which is
+what the first implementation did.
+**Because:** `tailscale_acl` replaces the policy file wholesale, so every site
+deployment would clobber the policy every other site depends on. The policy is
+a property of the tailnet, not of any one deployment. Route approval is still
+codified - it just lives at the layer that owns it.
+
+**Chose:** an OAuth client rather than a stored auth key.
+**Because:** auth keys expire after 90 days at most, so a pre-baked one turns
+into an expired-credential failure at a client site. An OAuth client does not
+expire and mints a fresh key on every run.
 
 ### State is encrypted with an age *recipient*, not a passphrase
 
@@ -164,10 +171,13 @@ To be completed when the epoch closes.
 
 ## Gotchas
 
-- **`tailscale_acl` replaces the entire tailnet policy file.** The resource
-  in `overlay-network.tf` carries a permissive default ACL so applying it cannot
-  lock you out, but if you have hand-written tailnet rules, port them into
-  that resource *before* the first apply or they will be overwritten.
+- **The tailnet policy is not managed by this code.** If ignition hangs on an
+  unreachable node, confirm `docs/tailnet-setup.md` has actually been applied
+  to the tailnet you are deploying into. A missing `autoApprovers` entry looks
+  identical to a broken network.
+- **Two sites on one tailnet must not share a subnet.** `base_cidr` is a local
+  in `variables.tf`, so every deployment currently advertises 10.10.10.0/24.
+  That is fine for a single site and collides for a fleet - see epoch 02.
 - **`kubernetes_version` in `talos.tf` is hardcoded** with no Renovate
   annotation, unlike `talos_version`. Confirm the pairing is inside the
   Talos release's supported range; it will otherwise drift silently.

@@ -182,10 +182,7 @@ function Invoke-PhaseRender {
 # PHASE 2 - Overlay
 # ===========================================================================
 function Invoke-PhaseOverlay {
-    Write-Phase 'Overlay' 'Apply tailnet policy with route auto-approval, mint the hypervisor auth key.'
-
-    Write-Warn "tailscale_acl REPLACES your entire tailnet policy file."
-    Write-Warn "If you have hand-written rules, port them into management\cluster\overlay-network.tf first."
+    Write-Phase 'Overlay' 'Mint a tagged auth key for the hypervisor to join the overlay network.'
 
     Push-Location $ClusterDir
     try {
@@ -195,12 +192,10 @@ function Invoke-PhaseOverlay {
         # Applied ahead of the playbook so the hypervisor can log in with a
         # tagged key. The tag is what makes autoApprovers approve the subnet
         # route without anyone touching the admin console.
-        Write-Info "applying tailnet policy and minting an auth key"
+        Write-Info "minting a tagged auth key"
         Invoke-Native {
-            tofu apply -input=false -auto-approve `
-                -target=tailscale_acl.this `
-                -target=tailscale_tailnet_key.hypervisor
-        } 'tofu apply (tailnet)'
+            tofu apply -input=false -auto-approve -target=tailscale_tailnet_key.hypervisor
+        } 'tofu apply (overlay network)'
 
         $key = & tofu output -raw overlay_network_auth_key
         if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($key)) {
@@ -213,7 +208,7 @@ function Invoke-PhaseOverlay {
         "---`noverlay_auth_key: `"$key`"`n" |
             Out-File -FilePath $OverlayVars -Encoding ascii -NoNewline
 
-        Write-Ok "tailnet policy applied; routes for 10.10.10.0/24 will auto-approve"
+        Write-Ok "auth key minted; the tailnet policy auto-approves this subnet"
     }
     finally {
         Pop-Location

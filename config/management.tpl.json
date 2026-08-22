@@ -23,13 +23,13 @@
   },
   "object_storage": {
     "account_id": "op://homelab/object-storage/account_id",
-    "admin_token": "op://homelab/object-storage/admin_token",
-    "access_key_id": "op://homelab/object-storage/access_key_id",
-    "secret_access_key": "op://homelab/object-storage/secret_access_key",
+    "admin_token": "op://homelab/object-storage/admin_token/value",
+    "access_key_id": "op://homelab/object-storage/token/access_key_id",
+    "secret_access_key": "op://homelab/object-storage/token/secret_access_key",
     "bucket": "op://homelab/object-storage/bucket"
   },
   "state": {
-    "db_password": "op://homelab/state-database/db_password",
+    "db_password": "op://homelab/state-database/password",
     "backup_recipient": "op://homelab/state-database/backup_recipient"
   }
 }
