@@ -15,5 +15,21 @@
     "url": "op://homelab/hypervisor/url",
     "token_id": "op://homelab/hypervisor/token_id",
     "token_secret": "op://homelab/hypervisor/token_secret"
+  },
+  "tailscale": {
+    "tailnet": "op://homelab/tailscale/tailnet",
+    "oauth_client_id": "op://homelab/tailscale/oauth_client_id",
+    "oauth_client_secret": "op://homelab/tailscale/oauth_client_secret"
+  },
+  "state": {
+    "conn_str": "op://homelab/state-postgres/conn_str",
+    "age_recipient": "op://homelab/state-backup/age_recipient",
+    "r2": {
+      "api_token": "op://homelab/cloudflare-r2/api_token",
+      "account_id": "op://homelab/cloudflare-r2/account_id",
+      "access_key_id": "op://homelab/cloudflare-r2/access_key_id",
+      "secret_access_key": "op://homelab/cloudflare-r2/secret_access_key",
+      "bucket": "op://homelab/cloudflare-r2/bucket"
+    }
   }
 }

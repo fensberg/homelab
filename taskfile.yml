@@ -1,41 +1,46 @@
-version: "3"
+﻿version: "3"
+
+# The single entrypoint is scripts/Start-Homelab.ps1. These tasks are thin
+# wrappers so the same verbs work from any shell.
 
 tasks:
   start:
-    desc: "Start"
+    desc: "The start button: render -> tailnet -> hypervisor -> verify -> compute -> cluster -> migrate -> backup -> sterilize"
     cmds:
-      - defer: task clean-secrets
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1
 
-      - task: render-secrets
-      - task: configure-hypervisor
-      - task: deploy-cluster
-      - echo "🔥 Ignition complete. The cluster is now self-sustaining."
-    silent: true
+  plan:
+    desc: "Show which phases would run, without running them"
+    cmds:
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -WhatIfPhase
 
   render-secrets:
-    desc: "Hydrate all infrastructure templates via 1Password"
+    desc: "Hydrate templates from 1Password"
     cmds:
-      - echo "🔐 Injecting secrets from 1Password..."
-      - op inject -i config/management.tpl.json -o config/management.rendered.json
-      - op inject -i management/hypervisor/inventory.tpl.yml -o management/hypervisor/inventory.yml
-      - op inject -i management/cluster/backend_s3.tf.tpl -o management/cluster/backend_s3.tf
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Phase Render
 
-  clean-secrets:
-    desc: "Wipe rendered secret files from the local disk"
+  verify:
+    desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:
-      - echo "🧹 Wiping temporary secret files..."
-      - rm -f config/management.rendered.json management/hypervisor/inventory.yml
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Phase Verify
 
   configure-hypervisor:
-    desc: "Install mesh networking, configure software-defined routing, and generate scoped API access tokens"
+    desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
+    cmds:
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Phase Hypervisor
+
+  check-hypervisor:
+    desc: "Dry-run the playbook: show what would change, change nothing"
     dir: management/hypervisor
     cmds:
-      - echo "⚙️ Applying baseline configuration to bare-metal hypervisor..."
-      - ansible-playbook -i inventory.yml hypervisor-prep.yml --ask-become-pass
+      - ansible-playbook -i inventory.yml hypervisor-prep.yml --check --diff
 
-  deploy-cluster:
-    desc: "Deploy immutable OS virtual machines, bootstrap control plane, and migrate state"
-    dir: management/cluster
+  backup-state:
+    desc: "Encrypt the current state and push it to Cloudflare R2"
     cmds:
-      - echo "🚀 Provisioning compute nodes and migrating infrastructure state..."
-      - ./deploy-local.sh
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Phase Backup
+
+  clean-secrets:
+    desc: "Wipe every rendered secret and the local state file"
+    cmds:
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Phase Sterilize

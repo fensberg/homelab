@@ -48,3 +48,9 @@ terraform.rc
 *.rendered.json
 inventory.yml
 /tmp/kubeconfig
+
+# Rendered at migration time, never committed
+management/cluster/backend_pg.tf
+
+# Tailscale auth key handed to Ansible by the Tailnet phase
+management/hypervisor/tailscale.auto.yml
