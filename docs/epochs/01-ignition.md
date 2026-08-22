@@ -127,6 +127,17 @@ manifest. SOPS and External Secrets are each their own epoch of work. Until
 then OpenTofu already holds the 1Password-rendered values and ignition is a
 local, human-run operation, so it is the natural place for this.
 
+### The connection string is derived, not stored
+
+**Chose:** build `state_conn_str` in OpenTofu from the owner, database name,
+NodePort and address already declared in `variables.tf`, plus the password
+from 1Password.
+**Rejected:** a `state-database/conn_str` item in the vault.
+**Because:** storing it invents a chicken-and-egg problem - you cannot record
+a connection string for a database that has not been created yet - and buys
+nothing, since every component is known in advance. The password is the only
+part that is genuinely secret, so it is the only part stored.
+
 ### Local state first, Postgres second, object storage third
 
 **Chose:** apply on local state; migrate into cluster Postgres; back up an

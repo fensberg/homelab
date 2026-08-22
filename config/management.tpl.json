@@ -5,15 +5,15 @@
   "hypervisor": {
     "nodes": [
       {
-        "hostname": "op://homelab/hypervisor/node0_hostname"
+        "hostname": "op://homelab/node0/hostname"
       }
     ],
-    "endpoint": "op://homelab/hypervisor/endpoint",
+    "endpoint": "op://homelab/hypervisor/url",
     "token_id": "op://homelab/hypervisor/token_id",
     "token_secret": "op://homelab/hypervisor/token_secret"
   },
   "source_control": {
-    "repo_url": "op://homelab/source-control/repo_url",
+    "repo_url": "op://homelab/source-control/url",
     "token": "op://homelab/source-control/token"
   },
   "overlay_network": {
@@ -29,7 +29,6 @@
     "bucket": "op://homelab/object-storage/bucket"
   },
   "state": {
-    "conn_str": "op://homelab/state-database/conn_str",
     "db_password": "op://homelab/state-database/db_password",
     "backup_recipient": "op://homelab/state-database/backup_recipient"
   }

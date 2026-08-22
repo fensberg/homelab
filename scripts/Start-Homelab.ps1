@@ -371,28 +371,22 @@ function Invoke-PhaseCluster {
 function Invoke-PhaseMigrate {
     Write-Phase 'Migrate' 'Move OpenTofu state off this disk and into cluster Postgres.'
 
-    $cfg = Read-RenderedConfig
-
-    if (-not $cfg.state -or [string]::IsNullOrWhiteSpace($cfg.state.conn_str)) {
-        throw @"
-No 'state.conn_str' in the rendered config.
-
-The Postgres backend needs a connection string, and a Postgres must be running
-on the cluster for Flux to have reconciled. Neither exists yet - see the
-'Deferred' section of docs\epochs\01-ignition.md.
-
-Once it does, add the item to 1Password at op://homelab/state-postgres/conn_str.
-"@
-    }
-
     Push-Location $ClusterDir
     try {
-        # Parse host:port out of postgres://user:pass@host:port/db
-        if ($cfg.state.conn_str -match '@([^:/@]+):(\d+)') {
+        # Derived from variables.tf plus the 1Password password, not stored as
+        # a secret of its own - see the state_conn_str output in database.tf.
+        # Storing it would invent a chicken-and-egg problem: you cannot record
+        # a connection string for a database that does not exist yet.
+        $connStr = & tofu output -raw state_conn_str
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($connStr)) {
+            throw "Could not read the state_conn_str output. Has the Cluster phase run?"
+        }
+
+        if ($connStr -match '@([^:/@]+):(\d+)') {
             $pgHost = $Matches[1]; $pgPort = [int]$Matches[2]
         }
         else {
-            throw "Could not parse a host and port out of state.conn_str."
+            throw "Could not parse a host and port out of the derived connection string."
         }
 
         Write-Info "waiting for Postgres at ${pgHost}:${pgPort} ..."
@@ -407,7 +401,6 @@ Once it does, add the item to 1Password at op://homelab/state-postgres/conn_str.
         Copy-Item $BackendPgOff $BackendPgOn -Force
 
         Write-Info "migrating state (local -> Postgres)"
-        $connStr = $cfg.state.conn_str
         Invoke-Native {
             tofu init -input=false -migrate-state -force-copy -backend-config="conn_str=$connStr"
         } 'tofu init -migrate-state'
