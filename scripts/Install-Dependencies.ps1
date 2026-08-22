@@ -161,19 +161,29 @@ Install-WingetPackage -Id 'tailscale.tailscale' -Command 'tailscale' -ExtraPaths
 New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
 
 function Install-GitHubBinary {
+    <#
+      Downloads release assets into $ToolsDir. -ExeName takes an array, because
+      a single archive often ships several binaries that belong together - the
+      age release contains both age.exe and age-keygen.exe, and extracting only
+      the first leaves you with a broken half-install.
+    #>
     param(
         [Parameter(Mandatory)][string]$Repo,
         [Parameter(Mandatory)][string]$AssetPattern,
-        [Parameter(Mandatory)][string]$ExeName,
+        [Parameter(Mandatory)][string[]]$ExeName,
         [switch]$FromZip,
         [switch]$Required
     )
 
-    $target = Join-Path $ToolsDir $ExeName
-    $stem = [IO.Path]::GetFileNameWithoutExtension($ExeName)
+    $wanted = @($ExeName | Where-Object {
+            -not (Test-Path (Join-Path $ToolsDir $_)) -and
+            -not (Get-Command ([IO.Path]::GetFileNameWithoutExtension($_)) -ErrorAction SilentlyContinue)
+        })
 
-    if (Test-Path $target) { Write-Skip "$stem already in $ToolsDir"; return }
-    if (Get-Command $stem -ErrorAction SilentlyContinue) { Write-Skip "$stem already on PATH"; return }
+    if ($wanted.Count -eq 0) {
+        Write-Skip "$($ExeName -join ', ') already present"
+        return
+    }
 
     try {
         $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" `
@@ -181,43 +191,51 @@ function Install-GitHubBinary {
 
         $asset = $release.assets | Where-Object { $_.name -like $AssetPattern } | Select-Object -First 1
         if (-not $asset) {
-            Write-Warn "No asset matching '$AssetPattern' in $Repo $($release.tag_name). Install $stem manually."
-            if ($Required) { $script:Missing += $stem }
+            Write-Warn "No asset matching '$AssetPattern' in $Repo $($release.tag_name)."
+            if ($Required) { $script:Missing += $wanted }
             return
         }
 
-        Write-Host "    downloading $stem $($release.tag_name) ..."
+        Write-Host "    downloading $($wanted -join ', ') from $Repo $($release.tag_name) ..."
 
         if ($FromZip) {
-            $tmpZip = Join-Path $env:TEMP "$stem.zip"
-            $tmpDir = Join-Path $env:TEMP "$stem-extract"
+            $tmpZip = Join-Path $env:TEMP "gh-$($release.id).zip"
+            $tmpDir = Join-Path $env:TEMP "gh-$($release.id)-extract"
             Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -UseBasicParsing
             if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
             Expand-Archive -Path $tmpZip -DestinationPath $tmpDir
-            $found = Get-ChildItem -Path $tmpDir -Filter $ExeName -Recurse | Select-Object -First 1
-            if (-not $found) {
-                Write-Warn "$ExeName not found inside the archive."
-                if ($Required) { $script:Missing += $stem }
-                return
+
+            foreach ($exe in $wanted) {
+                $found = Get-ChildItem -Path $tmpDir -Filter $exe -Recurse | Select-Object -First 1
+                if (-not $found) {
+                    Write-Warn "$exe not found inside the archive."
+                    if ($Required) { $script:Missing += $exe }
+                    continue
+                }
+                Copy-Item $found.FullName (Join-Path $ToolsDir $exe) -Force
+                Write-Ok "$exe -> $ToolsDir"
             }
-            Copy-Item $found.FullName $target -Force
-            Remove-Item -Recurse -Force $tmpDir, $tmpZip -ErrorAction SilentlyContinue
+
+            Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
+            Remove-Item -Force $tmpZip -ErrorAction SilentlyContinue
         }
         else {
-            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $target -UseBasicParsing
+            $exe = $wanted[0]
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile (Join-Path $ToolsDir $exe) -UseBasicParsing
+            Write-Ok "$exe -> $ToolsDir"
         }
-
-        Write-Ok "$stem -> $target"
     }
     catch {
-        Write-Warn "Could not install $stem from $Repo`: $($_.Exception.Message)"
-        if ($Required) { $script:Missing += $stem }
+        Write-Warn "Could not install from $Repo`: $($_.Exception.Message)"
+        if ($Required) { $script:Missing += $wanted }
     }
 }
 
 Write-Step "Installing tools from GitHub releases"
 # age encrypts the state backup before it leaves the machine. Required.
-Install-GitHubBinary -Repo 'FiloSottile/age'  -AssetPattern 'age-*-windows-amd64.zip' -ExeName 'age.exe' -FromZip -Required
+# The age release ships the encryptor and the key generator together; the
+# Backup phase needs age.exe and you need age-keygen.exe to create the key pair.
+Install-GitHubBinary -Repo 'FiloSottile/age'  -AssetPattern 'age-*-windows-amd64.zip' -ExeName 'age.exe', 'age-keygen.exe' -FromZip -Required
 Install-GitHubBinary -Repo 'siderolabs/talos' -AssetPattern 'talosctl-windows-amd64.exe' -ExeName 'talosctl.exe'
 Install-GitHubBinary -Repo 'fluxcd/flux2'     -AssetPattern 'flux_*_windows_amd64.zip'   -ExeName 'flux.exe' -FromZip
 
