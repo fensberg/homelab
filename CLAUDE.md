@@ -65,10 +65,14 @@ One entrypoint, run from Windows PowerShell:
 .\scripts\Start-Homelab.ps1 -Site chicago       # every time after
 ```
 
-`-Site` selects an entry in `config/sites.json`, and every address plus the
-cluster name follows from it. Nothing about the network is hardcoded, because
-two sites advertising the same subnet onto one tailnet collide in a way that
-looks like a broken network rather than a config mistake.
+`-Site` selects an entry in the fleet document at `op://homelab/topology/fleet`.
+Addressing, hypervisor placement and the cluster name all follow from it, so
+adding a hypervisor is appending to that site's `nodes` array and adding a site
+is adding a key. Nothing about the network is hardcoded, because two sites
+advertising the same subnet onto one tailnet collide in a way that looks like a
+broken network rather than a config mistake. `config/fleet.example.json` shows
+the shape; the real document stays in the vault because client names and
+network layouts are reconnaissance material.
 
 Phases run in order and can be run individually with `-Phase`, or resumed
 with `-From`:
@@ -98,7 +102,7 @@ entrypoint is cross-platform and there is no shell-specific orchestration.
 | `management/cluster/` | OpenTofu: VMs, Talos, overlay network, storage, Flux |
 | `clusters/management/` | Flux-reconciled manifests for this cluster |
 | `config/management.tpl.json` | The secret contract, rendered by `op inject` |
-| `config/sites.json` | The site registry: which network each site owns |
+| `config/fleet.example.json` | Shape of the fleet document; the real one is in the vault |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator
 and the database itself are declared in `clusters/management/` and reconciled

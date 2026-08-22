@@ -13,8 +13,10 @@ terraform {
 
 # --- hypervisor: Proxmox VE ---------------------------------------------------
 provider "proxmox" {
-  endpoint  = "https://${local.config.hypervisor.endpoint}:8006/"
-  api_token = "${local.config.hypervisor.token_id}=${local.config.hypervisor.token_secret}"
+  # Any node in a Proxmox cluster serves the API, so the first one is fine.
+  # Credentials are per-site because two sites are two separate clusters.
+  endpoint  = "https://${local.hypervisors[0].ip}:8006/"
+  api_token = "${local.this.hypervisor.token_id}=${local.this.hypervisor.token_secret}"
   insecure  = true
 
   ssh { agent = false }

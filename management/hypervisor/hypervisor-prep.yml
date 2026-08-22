@@ -51,7 +51,7 @@
     sdn_vnet: "vnetint"
 
     # Every value below is supplied per site by the start button, via
-    # site.auto.yml generated from config/sites.json. The defaults are only
+    # site.auto.yml generated from the fleet document. The defaults are only
     # here so a bare ansible-playbook run fails loudly rather than silently
     # configuring the wrong network.
     sdn_subnet: "UNSET"
@@ -97,7 +97,7 @@
           - advertise_routes != "UNSET"
         fail_msg: >-
           Per-site network values are missing. Run this through the start
-          button, which generates site.auto.yml from config/sites.json, or
+          button, which generates site.auto.yml from the fleet document, or
           pass them yourself with -e.
         success_msg: "Per-site network values supplied."
 

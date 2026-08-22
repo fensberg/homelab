@@ -32,9 +32,11 @@ The management root is currently hardcoded to one site. `base_cidr`,
 from the same code would advertise a colliding subnet onto the tailnet and
 name its cluster identically.
 
-Turning those into module inputs is the concrete reason this epoch exists.
-The likely shape is one config file per site rather than one shared template,
-so the subnet, cluster name and overlay-network credentials all vary together.
+Epoch 01 has since parameterised this: the fleet lives at
+`op://homelab/topology/fleet`, and site, addressing, hypervisor placement and
+cluster name all derive from one entry. What remains for this epoch is turning
+the management root into a reusable module rather than a root that reads a
+fleet, so a site is an instantiation rather than a `TF_VAR_site` switch.
 
 ### The unit of addressing is the site, not the hypervisor
 
@@ -56,6 +58,39 @@ inside it without touching the tailnet policy again.
 Stay below `10.96.0.0`. Kubernetes defaults put services at `10.96.0.0/12` and
 pods at `10.244.0.0/16`; those are cluster-internal and not routed over the
 overlay network, but sharing the range invites confusion when debugging.
+
+### Why an org has two sites at all
+
+Worth writing down, because "why not one cluster" gets asked every time and the
+technical answer alone does not settle it.
+
+**The cluster is not the unit of redundancy. The data is.**
+
+Most multi-site is not duplication. A site is where work physically happens,
+and each site's cluster serves that building - local line-of-business systems,
+file services, cameras, sensors. Those clusters are not copies of each other.
+Two consequences follow, and both favour independent clusters:
+
+- **Site survivability.** If a site loses its uplink, its local services keep
+  running. A stretched cluster loses quorum and goes down at *both* ends.
+  Independent clusters are more available for local work, not less.
+- **Blast radius.** A bad upgrade or a corrupted etcd stops at one building.
+
+When a second site genuinely is a standby, the replication happens below
+Kubernetes: Postgres streaming replication, object storage replication, DNS or
+a global load balancer to move traffic. The clusters stay independent and
+disposable; the data layer is what tolerates WAN latency, and etcd is not.
+
+The operational cost does not multiply, which is the other half of the answer.
+A workload is defined once in git and Flux reconciles it to every cluster, so
+ten clusters cost roughly what one costs to run. The duplication is hardware,
+not effort - and that is precisely what the fleet registry and this tier exist
+to make true.
+
+Finally, the honest case against: if a second site has no local workload and no
+disaster-recovery requirement, do not build one. One site plus the object
+storage backups is a complete answer, and cheaper. Multi-site because it sounds
+robust is how people end up operating two of something they needed one of.
 
 ### One cluster per site, not one cluster across sites
 

@@ -3,10 +3,15 @@
 # Vendor: Proxmox VE (bpg/proxmox provider).
 # =============================================================================
 
+# One copy per hypervisor that will host a VM. A Proxmox node can only boot a
+# VM from an ISO in its own datastore, so this scales with the fleet rather
+# than assuming a single box.
 resource "proxmox_virtual_environment_file" "talos_iso" {
+  for_each = toset(local.vm_placement)
+
   content_type = "iso"
   datastore_id = "local-iso"
-  node_name    = local.config.hypervisor.nodes[0].hostname
+  node_name    = each.value
 
   source_file {
     path      = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/nocloud-amd64.iso"
@@ -18,7 +23,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   count      = local.node_count
   depends_on = [proxmox_virtual_environment_file.talos_iso]
   name       = "talos-cp-0${count.index + 1}"
-  node_name  = local.config.hypervisor.nodes[0].hostname
+  node_name  = local.vm_placement[count.index]
   vm_id      = 100 + count.index
 
   # Disk first, ISO second. On first boot the disk is empty so it falls through
@@ -49,7 +54,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   }
 
   cdrom {
-    file_id   = proxmox_virtual_environment_file.talos_iso.id
+    file_id   = proxmox_virtual_environment_file.talos_iso[local.vm_placement[count.index]].id
     interface = "ide0"
   }
 

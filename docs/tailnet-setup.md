@@ -30,7 +30,7 @@ existing rules do.
   // human in the loop. This is what stops ignition silently hanging on an
   // unapproved subnet route.
   //
-  // Each site advertises its whole /16 (see config/sites.json), so covering
+  // Each site advertises its whole /16 (see the fleet document), so covering
   // 10.0.0.0/8 here means adding a site never requires editing this policy
   // again. The tag is what constrains this, not the range: only nodes you
   // have tagged as routers can advertise anything at all.
@@ -48,7 +48,7 @@ edit per new site and buys a smaller blast radius if a router is compromised.
 
 > **Subnet collisions.** Two sites on one tailnet advertising overlapping
 > ranges collide, and traffic goes to whichever route the tailnet resolves
-> first. `config/sites.json` is what prevents that - each site owns a distinct
+> first. The fleet document is what prevents that - each site owns a distinct
 > octet, and octets are never recycled.
 
 ## 2. OAuth client

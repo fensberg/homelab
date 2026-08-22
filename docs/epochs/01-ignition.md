@@ -134,21 +134,34 @@ manifest. SOPS and External Secrets are each their own epoch of work. Until
 then OpenTofu already holds the 1Password-rendered values and ignition is a
 local, human-run operation, so it is the natural place for this.
 
-### One site registry, not one config file per site
+### One fleet document, held in the vault
 
-**Chose:** `config/sites.json` maps a site name to an octet and a node count.
-Everything else - the advertised /16, the node subnet, gateway, DHCP pool,
-node addresses and cluster name - is derived from it, in both OpenTofu and the
-start button.
-**Rejected:** a separate config file per site, and hardcoded literals.
-**Because:** the values are not independent. A literal invites two sites onto
-the same subnet, which collides on the tailnet and presents as a broken
-network rather than a configuration mistake. Deriving them from one number
-makes that impossible to get wrong, and the registry is not secret so it lives
-in git next to the code that reads it.
+**Chose:** the whole topology lives in a single 1Password field at
+`op://homelab/topology/fleet`. It maps a site name to an octet, a control-plane
+count, and the hypervisors that site owns. Everything else - the advertised
+/16, node subnet, gateway, DHCP pool, node addresses, VM placement and cluster
+name - derives from that entry, in both OpenTofu and the start button.
+**Rejected:** literals in the code, and a registry committed to git.
+**Because:** two reasons, and the second changed the answer.
 
-Per-site *secrets* remain separate, because those genuinely do vary
-independently and belong in a vault rather than a repository.
+First, the values are not independent. A literal invites two sites onto the
+same subnet, which collides on the tailnet and presents as a broken network
+rather than a configuration mistake. Deriving them from one octet makes that
+impossible to express.
+
+Second, for an MSP the topology *is* sensitive: client names, network ranges
+and hypervisor addresses are reconnaissance material. A registry in git leaks
+the shape of every client estate to anyone who reads the repository. The vault
+is the right home, and `config/fleet.example.json` documents the shape without
+carrying any of it.
+
+The cost is that topology changes lose version history and code review. That is
+a real loss, accepted because the alternative publishes client infrastructure.
+
+**Consequence:** the Ansible inventory is generated rather than templated.
+`op inject` substitutes into a fixed file and cannot loop, so a template could
+never grow with the fleet. Generating it is what makes appending a hypervisor
+genuinely sufficient.
 
 ### The connection string is derived, not stored
 
@@ -196,7 +209,7 @@ To be completed when the epoch closes.
   cannot reach each other. That is correct for one hypervisor and breaks the
   moment a second joins the Proxmox cluster. Multi-node needs a `vxlan` or
   `evpn` zone instead - see epoch 02.
-- **Addressing comes from `config/sites.json`, never from a literal.** The
+- **Addressing comes from `the fleet document`, never from a literal.** The
   site octet is that site's identity on the overlay network. Retire an octet
   when a site goes away; do not recycle it, because lingering routes for the
   old site would start pointing at the new one.

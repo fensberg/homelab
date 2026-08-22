@@ -63,7 +63,7 @@ param(
     [ValidateSet('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')]
     [string]$From,
 
-    # Which site in config/sites.json to deploy. Everything about the network
+    # Which site in the fleet document to deploy. Everything about the network
     # and the cluster name follows from this.
     [string]$Site = 'chicago',
 
@@ -82,11 +82,9 @@ $RepoRoot       = Split-Path -Parent $PSScriptRoot
 $ConfigTpl      = Join-Path $RepoRoot 'config\management.tpl.json'
 $ConfigRendered = Join-Path $RepoRoot 'config\management.rendered.json'
 $HypervisorDir  = Join-Path $RepoRoot 'management\hypervisor'
-$InventoryTpl   = Join-Path $HypervisorDir 'inventory.tpl.yml'
 $InventoryOut   = Join-Path $HypervisorDir 'inventory.yml'
 $OverlayVars    = Join-Path $HypervisorDir 'overlay-network.auto.yml'
 $SiteVars       = Join-Path $HypervisorDir 'site.auto.yml'
-$SitesRegistry  = Join-Path $RepoRoot 'config\sites.json'
 $ClusterDir     = Join-Path $RepoRoot 'management\cluster'
 $BackendPgOff   = Join-Path $ClusterDir 'backend_pg.tf.disabled'
 $BackendPgOn    = Join-Path $ClusterDir 'backend_pg.tf'
@@ -94,38 +92,50 @@ $LocalState     = Join-Path $ClusterDir 'terraform.tfstate'
 
 $AllPhases = @('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')
 
-# Addressing is derived from config/sites.json, never hardcoded - two sites
-# advertising the same subnet onto one tailnet collide, and the symptom looks
-# like a broken network rather than a config mistake.
+# Addressing is derived from the fleet, never hardcoded - two sites advertising
+# the same subnet onto one tailnet collide, and the symptom looks like a broken
+# network rather than a config mistake.
+function Get-Fleet {
+    <#
+      The fleet arrives as a JSON string inside the rendered config, because a
+      1Password field is a string. Topology lives there rather than in git: for
+      an MSP, client names and network layouts are reconnaissance material.
+    #>
+    $cfg = Read-RenderedConfig
+    if ([string]::IsNullOrWhiteSpace($cfg.fleet)) {
+        throw "No 'fleet' in the rendered config. Expected JSON at op://homelab/topology/fleet - see config/fleet.example.json."
+    }
+    try { return $cfg.fleet | ConvertFrom-Json }
+    catch { throw "The 'fleet' field is not valid JSON. Compare it against config/fleet.example.json. ($($_.Exception.Message))" }
+}
+
 function Get-SiteNetwork {
     param([Parameter(Mandatory)][string]$Name)
 
-    if (-not (Test-Path $SitesRegistry)) { throw "Site registry not found at $SitesRegistry." }
-
-    $registry = (Get-Content $SitesRegistry -Raw | ConvertFrom-Json).sites
-    $site = $registry.$Name
+    $fleet = Get-Fleet
+    $site = $fleet.$Name
     if (-not $site) {
-        $known = ($registry.PSObject.Properties.Name | Sort-Object) -join ', '
-        throw "Unknown site '$Name'. config/sites.json defines: $known"
+        $known = ($fleet.PSObject.Properties.Name | Where-Object { $_ -notlike '_*' } | Sort-Object) -join ', '
+        throw "Unknown site '$Name'. The fleet defines: $known"
     }
 
     $o = $site.octet
+    $nodes = @($site.hypervisor.nodes)
+    if ($nodes.Count -eq 0) { throw "Site '$Name' has no hypervisor nodes." }
+
     [pscustomobject]@{
         Name        = $Name
-        SiteCidr    = "10.$o.0.0/16"          # advertised as one route
-        NodeCidr    = "10.$o.10.0/24"         # Talos control plane
+        SiteCidr    = "10.$o.0.0/16"      # advertised as one route
+        NodeCidr    = "10.$o.10.0/24"     # Talos control plane
         Gateway     = "10.$o.10.1"
         DhcpStart   = "10.$o.10.50"
         DhcpEnd     = "10.$o.10.99"
-        NodeIps     = @(0..($site.node_count - 1) | ForEach-Object { "10.$o.10.$(100 + $_)" })
+        NodeIps     = @(0..($site.control_plane_count - 1) | ForEach-Object { "10.$o.10.$(100 + $_)" })
+        Hypervisors = $nodes
     }
 }
 
-$Net = Get-SiteNetwork -Name $Site
-$TalosNodes = $Net.NodeIps
-$SdnGateway = $Net.Gateway
-
-# OpenTofu reads the same registry; this tells it which entry to use.
+# OpenTofu reads the same fleet; this tells it which entry to use.
 $env:TF_VAR_site = $Site
 
 # --- output helpers --------------------------------------------------------
@@ -209,8 +219,19 @@ function Invoke-PhaseRender {
     Write-Info "rendering config\management.rendered.json"
     Invoke-Native { op inject -i $ConfigTpl -o $ConfigRendered -f } '1Password inject (config)'
 
-    Write-Info "rendering management\hypervisor\inventory.yml"
-    Invoke-Native { op inject -i $InventoryTpl -o $InventoryOut -f } '1Password inject (inventory)'
+    # The inventory is generated, not templated: op inject substitutes into a
+    # fixed file and cannot loop, so a template could never grow with the fleet.
+    # Generating it means appending a node to the fleet is genuinely all it takes.
+    $Net = Get-SiteNetwork -Name $Site
+
+    Write-Info "generating inventory for $Site ($($Net.Hypervisors.Count) hypervisor(s))"
+    $inv = @("---", "all:", "  children:", "    hypervisors:", "      hosts:")
+    foreach ($h in $Net.Hypervisors) {
+        $inv += "        `"$($h.hostname)`":"
+        $inv += "          ansible_host: `"$($h.ip)`""
+        $inv += "          ansible_user: root"
+    }
+    ($inv -join "`n") + "`n" | Out-File -FilePath $InventoryOut -Encoding ascii -NoNewline
 
     # Not a secret, but it lives beside the rendered files and is wiped with
     # them, so the playbook only ever sees one site's values.
@@ -304,8 +325,9 @@ function Invoke-PhaseHypervisor {
 function Invoke-PhaseVerify {
     Write-Phase 'Verify' 'Prove the network works before spending time on OpenTofu.'
 
-    $cfg = Read-RenderedConfig
-    $pveHost = $cfg.hypervisor.endpoint
+    $Net = Get-SiteNetwork -Name $Site
+    $SdnGateway = $Net.Gateway
+    $pveHost = $Net.Hypervisors[0].ip
 
     Write-Info "checking the Proxmox API on $pveHost ..."
     if (-not (Test-Port -ComputerName $pveHost -Port 8006)) {
@@ -359,7 +381,7 @@ function Invoke-PhaseCompute {
 
         # The provider returns as soon as Proxmox defines the VM. Talos still
         # has to boot. Poll its API port rather than guessing at a sleep.
-        foreach ($node in $TalosNodes) {
+        foreach ($node in (Get-SiteNetwork -Name $Site).NodeIps) {
             Write-Info "waiting for the Talos API on ${node}:50000 ..."
             if (-not (Wait-ForPort -ComputerName $node -Port 50000 -TimeoutMinutes 5)) {
                 throw @"

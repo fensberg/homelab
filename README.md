@@ -18,18 +18,18 @@ homelab/
 │ └── Start-Homelab.ps1 # Nine-phase ignition sequence
 │
 ├── config/
-│ └── management.tpl.json # 1Password template; keys named by function
+│ ├── management.tpl.json # Secret contract, rendered by op inject
+│ └── fleet.example.json # Shape of the fleet document (real one is in the vault)
 │
 ├── management/ # THE IGNITION TIER (Local Execution)
 │ ├── hypervisor/
-│ │ ├── inventory.tpl.yml # 1Password template for Ansible hosts
-│ │ └── hypervisor-prep.yml # Ansible: Proxmox repos, overlay net, RBAC, SDN
+│ │ └── hypervisor-prep.yml # Ansible: repos, overlay net, RBAC, SDN (inventory is generated)
 │ └── cluster/
 │ ├── backend_pg.tf.disabled # Renamed in at state-migration time
 │ ├── compute.tf # Talos control-plane VMs
 │ ├── talos.tf # Machine config, bootstrap, kubeconfig
 │ ├── database.tf # Namespace and secrets for the state database
-│ ├── overlay-network.tf # Network policy and route auto-approval
+│ ├── overlay-network.tf # Tagged auth key for this site
 │ ├── object-storage.tf # Backup bucket
 │ ├── gitops.tf # Flux bootstrap
 │ └── versions.tf # Provider definitions

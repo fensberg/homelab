@@ -1,7 +1,7 @@
 version: "3"
 
 vars:
-  # Which entry in config/sites.json to deploy. Override: task start SITE=atlanta
+  # Which entry in the fleet document to deploy. Override: task start SITE=atlanta
   SITE: '{{.SITE | default "chicago"}}'
 
 # The single entrypoint is scripts/Start-Homelab.ps1. These tasks are thin
