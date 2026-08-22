@@ -54,3 +54,6 @@ management/cluster/backend_pg.tf
 
 # Tailscale auth key handed to Ansible by the Tailnet phase
 management/hypervisor/tailscale.auto.yml
+
+# Provider lock: regenerate with 'tofu init' rather than committing a stale one
+management/cluster/.terraform.lock.hcl
