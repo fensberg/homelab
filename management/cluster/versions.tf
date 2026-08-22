@@ -32,7 +32,9 @@ provider "tailscale" {
 
 # --- object storage: Cloudflare R2 -------------------------------------------
 provider "cloudflare" {
-  api_token = local.config.object_storage.api_token
+  # Bucket lifecycle only. This is the one credential that needs admin scope,
+  # it never leaves the workstation, and the Sterilize phase wipes it.
+  api_token = local.config.object_storage.admin_token
 }
 
 # --- cluster access -----------------------------------------------------------

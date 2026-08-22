@@ -5,7 +5,7 @@
   "hypervisor": {
     "nodes": [
       {
-        "hostname": "op://homelab/node0/hostname"
+        "hostname": "op://homelab/hypervisor/node0/hostname"
       }
     ],
     "endpoint": "op://homelab/hypervisor/url",
@@ -23,7 +23,7 @@
   },
   "object_storage": {
     "account_id": "op://homelab/object-storage/account_id",
-    "api_token": "op://homelab/object-storage/api_token",
+    "admin_token": "op://homelab/object-storage/admin_token",
     "access_key_id": "op://homelab/object-storage/access_key_id",
     "secret_access_key": "op://homelab/object-storage/secret_access_key",
     "bucket": "op://homelab/object-storage/bucket"

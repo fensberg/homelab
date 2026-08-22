@@ -39,6 +39,16 @@ resource "kubernetes_secret" "state_db_credentials" {
 
 # Credentials the database uses to write its own WAL archive and base backups
 # to object storage. These never leave the cluster.
+#
+# LEAST PRIVILEGE: these need Object Read & Write, scoped to this bucket only.
+# The Postgres pod writes the backups itself, so it needs write - read alone
+# would break WAL archiving. It never creates or deletes buckets, so it must
+# not carry admin scope. Retention pruning is a DELETE on objects, which
+# object-level write already covers.
+#
+# This is the credential that lives in the cluster indefinitely, so it is the
+# one worth tightening hardest. The separate admin token in versions.tf exists
+# only to create the bucket and is wiped after ignition.
 resource "kubernetes_secret" "object_storage_credentials" {
   metadata {
     name      = "object-storage-credentials"
