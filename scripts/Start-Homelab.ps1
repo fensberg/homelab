@@ -565,7 +565,7 @@ function Invoke-EmergencyDestroy {
 # Driver
 # ===========================================================================
 if ($Phase) { $toRun = @($Phase) }
-elseif ($From) { $toRun = $AllPhases[$AllPhases.IndexOf($From)..($AllPhases.Count - 1)] }
+elseif ($From) { $toRun = @($AllPhases[$AllPhases.IndexOf($From)..($AllPhases.Count - 1)]) }
 else { $toRun = $AllPhases }
 
 if ($WhatIfPhase) {
