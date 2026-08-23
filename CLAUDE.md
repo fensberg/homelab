@@ -36,11 +36,16 @@ belongs in an epoch record.
 - **Ignition is deliberately local-only.** `management/` bootstraps the
   cluster that later runs CI-driven deploys, so it cannot depend on that
   cluster. Do not move it into GitHub Actions.
-- **Declare the vendor, and assert it.** Each vendor-locked concern carries a
-  `provider` field that `registry.tf` checks against what the code implements,
-  so pointing the vault at another vendor's credentials fails the plan instead
-  of failing opaquely at an API. Concerns that are genuinely portable, like
-  source control over plain git, carry none.
+- **Declare the vendor three times, and make them agree.** The code implements
+  one vendor per concern; the config declares one in `provider`, where it is
+  reviewable in git; and the 1Password item attests one in `vault_provider`,
+  travelling with the credentials themselves. `registry.tf` asserts all three
+  match. Checking only the first two compares files that always change in the
+  same commit, and cannot see the failure that matters - a vault item whose
+  contents were swapped for another vendor's credentials. A shape check on the
+  access key catches the careless version of that, where nobody updated any
+  declaration at all. Portable concerns, like source control over plain git,
+  carry none of this.
 - **Name things by function, never by vendor.** Config keys, 1Password paths,
   and file names describe what a thing does; the vendor lives in the value or
   in a file header. `source_control.token`, not `git.github_pat_reference`.
@@ -67,14 +72,13 @@ One entrypoint, run from Windows PowerShell:
 
 ```powershell
 .\scripts\Install-Dependencies.ps1              # once, elevated
-.\scripts\Start-Homelab.ps1 -SiteIndex 0        # every time after
+.\scripts\Start-Homelab.ps1 -Site site0        # every time after
 ```
 
-`-SiteIndex` selects an entry in the config's `sites[]` array. Each site
-declares its own `octet`, which picks its `/16`, names the site and its VMs,
-and bands its VM IDs - so `site10-cp-01` lives at `10.10.10.100`. Octets are
-asserted unique and within 1-95 across every site, at plan time and again in
-the start button.
+`-Site` selects a key in the config's `sites` map. Each site declares its own
+`octet`, which picks its `/16`, names the site and its VMs, and bands its VM
+IDs - so `site10-cp-01` lives at `10.10.10.100`. Octets are asserted unique and
+within 1-95 across every site, at plan time and again in the start button.
 
 Scaling is three edits, each in one place:
 

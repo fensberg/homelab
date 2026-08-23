@@ -63,9 +63,9 @@ param(
     [ValidateSet('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')]
     [string]$From,
 
-    # Which entry in the config's sites[] array to deploy. The index IS the
-    # site's identity: it names the site, picks its network, numbers its VMs.
-    [int]$SiteIndex = 0,
+    # Which key in the config's sites map to deploy. Selection only - the
+    # site's identity comes from the octet it declares.
+    [string]$Site = 'site0',
 
     [switch]$KeepOnFailure,
     [switch]$SkipUpgrade,
@@ -98,57 +98,79 @@ $AllPhases = @('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster'
 # plan time - this copy just fails in a second rather than after a provider
 # round trip.
 function Get-SiteNetwork {
-    param([Parameter(Mandatory)][int]$Index)
+    param([Parameter(Mandatory)][string]$Name)
 
     $cfg = Read-RenderedConfig
-    $sites = @($cfg.sites)
+    if (-not $cfg.sites) { throw "The config defines no sites." }
 
-    if ($sites.Count -eq 0) { throw "The config defines no sites. Add one to sites[] in config/management.tpl.json." }
-    if ($Index -lt 0 -or $Index -ge $sites.Count) {
-        throw "site index $Index is out of range: the config defines $($sites.Count) site(s), so valid indices are 0-$($sites.Count - 1)."
+    $known = @($cfg.sites.PSObject.Properties.Name)
+    if ($known -notcontains $Name) {
+        throw "Unknown site '$Name'. The config defines: $(($known | Sort-Object) -join ', ')"
     }
+    $site = $cfg.sites.$Name
+
     # Octets are declared, so uniqueness has to be checked rather than assumed.
     # Checked across every site, not just the selected one - a collision the
     # other way round is just as broken.
-    $octets = @($sites | ForEach-Object { $_.octet })
+    $octets = @($known | ForEach-Object { $cfg.sites.$_.octet })
     $dupes = @($octets | Group-Object | Where-Object Count -gt 1 | ForEach-Object { $_.Name })
     if ($dupes.Count -gt 0) {
-        throw "Duplicate octet(s) in sites[]: $($dupes -join ', '). Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network."
+        throw "Duplicate octet(s) in sites: $($dupes -join ', '). Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network."
     }
     $outOfRange = @($octets | Where-Object { $_ -lt 1 -or $_ -gt 95 })
     if ($outOfRange.Count -gt 0) {
-        throw "Octet(s) out of range in sites[]: $($outOfRange -join ', '). Use 1-95; Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16."
+        throw "Octet(s) out of range: $($outOfRange -join ', '). Use 1-95; Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16."
     }
 
-    $site = $sites[$Index]
-    $nodes = @($site.hypervisor.nodes)
-    if ($nodes.Count -eq 0) { throw "Site $Index has no hypervisor nodes. Add at least one to sites[$Index].hypervisor.nodes." }
-    if ($site.control_plane_count -lt 1) { throw "Site $Index has control_plane_count $($site.control_plane_count); it must be at least 1." }
+    # Vendor lock, checked the way that actually matters: the vault attests
+    # what its credentials are, and it must agree with what the config
+    # declares. Comparing the config against the code alone would compare two
+    # files that always change together.
+    foreach ($concern in 'hypervisor', 'overlay_network', 'object_storage') {
+        $declared = $site.$concern.provider
+        $attested = $site.$concern.vault_provider
+        if ([string]::IsNullOrWhiteSpace($attested)) {
+            throw "sites.$Name.$concern has no vault_provider. The 1Password item must attest which vendor its credentials belong to."
+        }
+        if ($declared -ne $attested) {
+            throw "Vendor mismatch in sites.$Name.$concern - the config declares '$declared' but the vault item attests '$attested'. Either the wrong item is referenced, or its credentials were replaced without updating its provider field."
+        }
+    }
+
+    # A declaration only catches someone who updates the declaration. AKIA and
+    # ASIA prefixes are AWS long-term and temporary credentials; R2 issues 32
+    # hex characters, so this is positive identification, not a heuristic.
+    if ($site.object_storage.access_key_id -match '^(AKIA|ASIA)') {
+        throw "sites.$Name.object_storage.access_key_id is an AWS credential (AKIA/ASIA prefix) but this site declares $($site.object_storage.provider)."
+    }
+
+    # nodes is a map; sort by key so placement matches OpenTofu's ordering.
+    $nodes = @($site.hypervisor.nodes.PSObject.Properties | Sort-Object Name | ForEach-Object { $_.Value })
+    if ($nodes.Count -eq 0) { throw "Site '$Name' has no hypervisor nodes." }
+    if ($site.control_plane_count -lt 1) { throw "Site '$Name' has control_plane_count $($site.control_plane_count); it must be at least 1." }
 
     $o = $site.octet
-    # Named for the octet, so a VM name lines up with its address and stays
-    # stable if sites[] is reordered.
-    $name = "site$o"
-    # A human label from the vault, so it never reaches git. Falls back to the
-    # positional name when the field is absent.
-    $label = if ([string]::IsNullOrWhiteSpace($site.name)) { $name } else { $site.name }
+    # Named for the octet, so a VM name lines up with its address.
+    $slug = "site$o"
+    $label = if ([string]::IsNullOrWhiteSpace($site.name)) { $slug } else { $site.name }
 
     [pscustomobject]@{
-        Name        = $name
+        Name        = $slug
+        Key         = $Name
         Label       = $label
-        SiteCidr    = "10.$o.0.0/16"      # advertised as one route
-        NodeCidr    = "10.$o.10.0/24"     # Talos control plane
+        SiteCidr    = "10.$o.0.0/16"
+        NodeCidr    = "10.$o.10.0/24"
         Gateway     = "10.$o.10.1"
         DhcpStart   = "10.$o.10.50"
         DhcpEnd     = "10.$o.10.99"
         NodeIps     = @(0..($site.control_plane_count - 1) | ForEach-Object { "10.$o.10.$(100 + $_)" })
-        VmNames     = @(0..($site.control_plane_count - 1) | ForEach-Object { "$name-cp-{0:d2}" -f ($_ + 1) })
+        VmNames     = @(0..($site.control_plane_count - 1) | ForEach-Object { "$slug-cp-{0:d2}" -f ($_ + 1) })
         Hypervisors = $nodes
     }
 }
 
 # OpenTofu reads the same config; this tells it which site to use.
-$env:TF_VAR_site_index = $SiteIndex
+$env:TF_VAR_site = $Site
 
 # --- output helpers --------------------------------------------------------
 $script:PhaseNum = 0
@@ -234,7 +256,7 @@ function Invoke-PhaseRender {
     # The inventory is generated, not templated: op inject substitutes into a
     # fixed file and cannot loop over sites[].hypervisor.nodes. Generating it is
     # what makes appending a node genuinely sufficient.
-    $Net = Get-SiteNetwork -Index $SiteIndex
+    $Net = Get-SiteNetwork -Name $Site
 
     Write-Info "generating inventory for $($Net.Name) ($($Net.Hypervisors.Count) hypervisor(s))"
     $inv = @("---", "all:", "  children:", "    hypervisors:", "      hosts:")
@@ -337,7 +359,7 @@ function Invoke-PhaseHypervisor {
 function Invoke-PhaseVerify {
     Write-Phase 'Verify' 'Prove the network works before spending time on OpenTofu.'
 
-    $Net = Get-SiteNetwork -Index $SiteIndex
+    $Net = Get-SiteNetwork -Name $Site
     $SdnGateway = $Net.Gateway
     $pveHost = $Net.Hypervisors[0].ip
 
@@ -393,7 +415,7 @@ function Invoke-PhaseCompute {
 
         # The provider returns as soon as Proxmox defines the VM. Talos still
         # has to boot. Poll its API port rather than guessing at a sleep.
-        foreach ($node in (Get-SiteNetwork -Index $SiteIndex).NodeIps) {
+        foreach ($node in (Get-SiteNetwork -Name $Site).NodeIps) {
             Write-Info "waiting for the Talos API on ${node}:50000 ..."
             if (-not (Wait-ForPort -ComputerName $node -Port 50000 -TimeoutMinutes 5)) {
                 throw @"
@@ -501,17 +523,17 @@ function Invoke-PhaseBackup {
     Write-Phase 'Backup' 'Encrypt the state and push it off-site to Cloudflare R2.'
 
     $cfg = Read-RenderedConfig
-    $site = $cfg.sites[$SiteIndex]
+    $site = $cfg.sites.$Site
     $store = $site.object_storage
 
     foreach ($field in 'account_id', 'access_key_id', 'secret_access_key', 'bucket') {
         if ([string]::IsNullOrWhiteSpace($store.$field)) {
-            throw "sites[$SiteIndex].object_storage.$field is missing from the rendered config."
+            throw "sites.$Site.object_storage.$field is missing from the rendered config."
         }
     }
     if ([string]::IsNullOrWhiteSpace($site.state.backup_recipient)) {
         throw @"
-No 'state.backup_recipient' for site $SiteIndex in the rendered config.
+No 'state.backup_recipient' for site $Site in the rendered config.
 
 State is never uploaded in plaintext. Generate a key pair once:
 

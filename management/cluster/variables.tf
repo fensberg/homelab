@@ -1,23 +1,26 @@
-variable "site_index" {
-  type        = number
-  default     = 0
+variable "site" {
+  type        = string
+  default     = "site0"
   description = <<-EOT
-    Which entry in the config's sites[] array to deploy. Selection only -
-    the site's identity comes from the octet it declares, not from its
-    position. Set by the start button via TF_VAR_site_index.
+    Which key in the config's sites map to deploy, e.g. "site0". Selection
+    only - the site's identity comes from the octet it declares. Set by the
+    start button via TF_VAR_site.
   EOT
 }
 
 locals {
   config = jsondecode(file("../../config/management.rendered.json"))
 
-  site      = local.config.sites[var.site_index]
+  site = local.config.sites[var.site]
   # Named for the octet rather than the array position, so a VM name lines
   # up with its address (site10-cp-01 lives at 10.10.10.100) and stays stable
   # if sites[] is ever reordered.
   site_name = "site${local.site.octet}"
 
-  hypervisors = local.site.hypervisor.nodes
+  # nodes is a map, so iterate it in sorted key order: node0, node1, node2.
+  # HCL orders map iteration lexicographically, which keeps VM placement
+  # deterministic between runs and matches what the start button does.
+  hypervisors = [for k in sort(keys(local.site.hypervisor.nodes)) : local.site.hypervisor.nodes[k]]
 
   # Per-site because two sites are two estates: separate hypervisors, separate
   # tailnets when the engagement calls for it, separate buckets, and separate

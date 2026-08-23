@@ -35,7 +35,7 @@ name its cluster identically.
 Epoch 01 has since parameterised this: `sites[]` in the config is an array,
 and the index drives addressing, naming, placement and VM IDs. What remains
 for this epoch is turning the management root into a reusable module, so a
-site is an instantiation rather than a `TF_VAR_site_index` switch.
+site is an instantiation rather than a `TF_VAR_site` switch.
 
 ### The unit of addressing is the site, not the hypervisor
 

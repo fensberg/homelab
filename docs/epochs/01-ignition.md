@@ -145,6 +145,26 @@ manifest. SOPS and External Secrets are each their own epoch of work. Until
 then OpenTofu already holds the 1Password-rendered values and ignition is a
 local, human-run operation, so it is the natural place for this.
 
+### The vendor is attested by the vault, not just declared in git
+
+**Chose:** each vendor-locked concern carries two provider values - `provider`
+declared in git, and `vault_provider` read from the 1Password item - plus a
+shape check on the object-storage access key. `registry.tf` asserts the code's
+requirement, the config's declaration and the vault's attestation all agree.
+**Rejected:** the first version, which compared only the config's declaration
+against what the code implements.
+**Because:** those are both in git and both change in the same commit, so the
+check could never fail in a way that mattered. It could not see the failure it
+was written for: someone replacing a 1Password item's contents with another
+vendor's credentials while every file in the repository stays untouched. The
+plan would pass and the credentials would be thrown at the wrong API.
+
+Putting the attestation in the vault makes the declaration travel with the
+thing it describes. Swapping the item's contents without updating its provider
+field is then the only way through - so a shape check covers that too: an
+access key beginning `AKIA` or `ASIA` is an AWS credential, while R2 issues 32
+hex characters, which is positive identification rather than a heuristic.
+
 ### The octet is declared, not computed
 
 **Chose:** each site carries an explicit `octet`. It picks the site's network
