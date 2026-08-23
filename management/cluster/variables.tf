@@ -15,6 +15,14 @@ locals {
   site_name = "site${var.site_index}"
 
   hypervisors = local.site.hypervisor.nodes
+
+  # Per-site because two sites are two estates: separate hypervisors, separate
+  # tailnets when the engagement calls for it, separate buckets, and separate
+  # state databases. Sharing any of them means compromising one site reaches
+  # the others.
+  overlay_network = local.site.overlay_network
+  object_storage  = local.site.object_storage
+  site_state      = local.site.state
   node_count  = local.site.control_plane_count
 
   # --- addressing ----------------------------------------------------------
@@ -51,7 +59,9 @@ locals {
   # --- identity ------------------------------------------------------------
   # Everything nameable carries the site, so two sites are distinguishable at
   # a glance in Proxmox, in Talos and in kubeconfig.
-  cluster_name = "${local.config.organization.name}-${local.site_name}"
+  # site.name is a vault reference, so the human label for a site never
+  # reaches git while still appearing in the cluster name.
+  cluster_name = "${local.config.organization.name}-${local.site.name}"
   vm_names     = [for i in range(local.node_count) : format("%s-cp-%02d", local.site_name, i + 1)]
 
   # VM IDs are banded by site so two sites could share a Proxmox cluster

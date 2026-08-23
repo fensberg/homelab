@@ -91,6 +91,47 @@ disaster-recovery requirement, do not build one. One site plus the object
 storage backups is a complete answer, and cheaper. Multi-site because it sounds
 robust is how people end up operating two of something they needed one of.
 
+### Scaling: what autoscales, and what cannot
+
+`control_plane_count` is a provisioning input, not an autoscaler, and it must
+not become one. etcd quorum is fixed at cluster creation: adding a member
+changes the arithmetic mid-flight, and an even count adds a member without
+adding a tiebreaker. Pick 3, or 5 for a large site, and leave it.
+
+Real autoscaling is four separate mechanisms, and they do not all apply here:
+
+| Mechanism | Scales | Works on this platform? |
+| --- | --- | --- |
+| HPA | Pod replicas, on CPU/memory | Yes, once metrics-server is installed |
+| KEDA | Pod replicas, on external events | Yes - queue depth, cron, custom metrics |
+| VPA | A pod's requests and limits | Yes, but it fights HPA on the same metric |
+| Cluster Autoscaler | Node count | **Not on bare metal without more machinery** |
+
+Cluster Autoscaler asks an infrastructure API for another machine. On a cloud
+provider that API exists. On a NUC it does not, so CA has nothing to call.
+
+The path that does work is **Cluster API with the Proxmox infrastructure
+provider**: CAPI turns "I need another worker" into a Proxmox VM creation, and
+CA drives CAPI. That is the genuine answer and it is worth doing for the
+learning alone, since CAPI is how large fleets are actually managed.
+
+Two constraints to be honest about before building any of it.
+
+**There is a hard ceiling.** CA can create VMs until the hypervisors are full
+and then it stops. It cannot buy a NUC. What autoscaling buys on bare metal is
+better packing and faster response to load, not elasticity. Capacity planning
+does not go away; it moves from "how many pods" to "how many boxes".
+
+**There is a prerequisite that does not exist yet.** The cluster currently sets
+`allowSchedulingOnControlPlanes = true`, so every workload runs on the control
+plane and there is no worker pool to scale. A separate worker machine set is
+the first step, and it belongs in this epoch. Autoscaling anything before that
+would be scaling the etcd members, which is the one thing that must not scale.
+
+Order of work: worker pool, then metrics-server, then HPA and KEDA for
+workloads in epoch 03, then CAPI and CA only if node-level elasticity is
+genuinely needed within the rack.
+
 ### One cluster per site, not one cluster across sites
 
 A single Talos cluster with three nodes at each of two sites is a stretched

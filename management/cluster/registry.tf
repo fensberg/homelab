@@ -16,15 +16,15 @@ locals {
   # routed over the overlay, but overlapping them makes debugging confusing.
   max_site_index = 85
 
-  # The code in this root speaks to exactly one vendor per concern. Each entry
-  # is what the resources here actually require, so a swapped vault item fails
-  # with a readable message instead of throwing one vendor's credentials at
-  # another vendor's API.
+  # The code in this root speaks to exactly one vendor per concern. These now
+  # sit inside the site, because which vendor a site uses is a property of that
+  # estate: site 0 might join your tailnet while site 1 joins a client's.
   #
   # source_control is deliberately absent: flux_bootstrap_git speaks plain git
-  # over HTTPS and works against GitHub, GitLab or Gitea alike. Asserting a
-  # vendor the code does not depend on would be noise, not a guard.
+  # over HTTPS and works against GitHub, GitLab or Gitea alike, and it is
+  # fleet-wide anyway - one repository drives every cluster.
   required_providers_by_concern = {
+    hypervisor      = "proxmox"
     overlay_network = "tailscale"
     object_storage  = "cloudflare"
   }
@@ -53,16 +53,11 @@ resource "terraform_data" "invariants" {
     }
 
     precondition {
-      condition     = local.site.hypervisor.provider == "proxmox"
-      error_message = "sites[${var.site_index}].hypervisor.provider is '${local.site.hypervisor.provider}', but this root implements proxmox. Change the code before changing the declaration."
-    }
-
-    precondition {
       condition = alltrue([
         for concern, want in local.required_providers_by_concern :
-        try(local.config[concern].provider, null) == want
+        try(local.site[concern].provider, null) == want
       ])
-      error_message = "Provider mismatch. This root implements ${join(", ", [for c, p in local.required_providers_by_concern : "${c}=${p}"])}. The point of the check is to stop one vendor's credentials reaching another vendor's API."
+      error_message = "Provider mismatch in sites[${var.site_index}]. This root implements ${join(", ", [for c, p in local.required_providers_by_concern : "${c}=${p}"])}. Change the code before changing the declaration - the check exists to stop one vendor's credentials reaching another vendor's API."
     }
   }
 }

@@ -27,16 +27,16 @@ provider "tailscale" {
   # An OAuth client is preferred over a raw API key: it can be scoped to just
   # the ACL and auth-key permissions this project needs, and it does not expire
   # every 90 days the way a personal API key does.
-  oauth_client_id     = local.config.overlay_network.client_id
-  oauth_client_secret = local.config.overlay_network.client_secret
-  tailnet             = local.config.overlay_network.domain
+  oauth_client_id     = local.overlay_network.client_id
+  oauth_client_secret = local.overlay_network.client_secret
+  tailnet             = local.overlay_network.domain
 }
 
 # --- object storage: Cloudflare R2 -------------------------------------------
 provider "cloudflare" {
   # Bucket lifecycle only. This is the one credential that needs admin scope,
   # it never leaves the workstation, and the Sterilize phase wipes it.
-  api_token = local.config.object_storage.admin_token
+  api_token = local.object_storage.admin_token
 }
 
 # --- cluster access -----------------------------------------------------------

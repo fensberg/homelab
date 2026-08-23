@@ -80,12 +80,28 @@ Scaling is three edits, each in one place:
 
 | To add | Do |
 |---|---|
-| A control-plane node | Raise `control_plane_count` |
+| A control-plane node | Raise that site's `control_plane_count` |
 | A hypervisor | Append to that site's `hypervisor.nodes[]` |
 | A site | Append to `sites[]` |
 
-Hostnames and credentials are `op://` references, so the file shows the shape
-of the estate without revealing what or where anything is.
+`control_plane_count` is a provisioning input, not an autoscaler. etcd quorum
+is fixed at creation; see `docs/epochs/02-abstraction.md` for what actually
+autoscales here and what cannot.
+
+**What sits where.** Anything describing one estate lives inside the site -
+`hypervisor`, `overlay_network`, `object_storage` and `state`, each with its
+own asserted `provider`. Anything describing the whole fleet stays at the top:
+`organization`, and `source_control`, because one repository drives every
+cluster through Flux. Each site runs its own cluster with its own database, so
+sharing state credentials across sites would mean compromising one reaches all.
+
+Hostnames, credentials and even the site's human name are `op://` references,
+so the file shows the shape of the estate without revealing what or where
+anything is.
+
+**Every `op://` reference in the template must resolve.** There is no way to
+leave a placeholder site or node, so add the vault items first, then the
+config entry.
 
 ## What lives where
 

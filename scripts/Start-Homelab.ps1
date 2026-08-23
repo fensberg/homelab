@@ -123,9 +123,13 @@ function Get-SiteNetwork {
 
     $name = "site$Index"
     $o = 10 + $Index
+    # A human label from the vault, so it never reaches git. Falls back to the
+    # positional name when the field is absent.
+    $label = if ([string]::IsNullOrWhiteSpace($site.name)) { $name } else { $site.name }
 
     [pscustomobject]@{
         Name        = $name
+        Label       = $label
         SiteCidr    = "10.$o.0.0/16"      # advertised as one route
         NodeCidr    = "10.$o.10.0/24"     # Talos control plane
         Gateway     = "10.$o.10.1"
@@ -491,23 +495,24 @@ function Invoke-PhaseBackup {
     Write-Phase 'Backup' 'Encrypt the state and push it off-site to Cloudflare R2.'
 
     $cfg = Read-RenderedConfig
-    $store = $cfg.object_storage
+    $site = $cfg.sites[$SiteIndex]
+    $store = $site.object_storage
 
     foreach ($field in 'account_id', 'access_key_id', 'secret_access_key', 'bucket') {
         if ([string]::IsNullOrWhiteSpace($store.$field)) {
-            throw "object_storage.$field is missing from the rendered config."
+            throw "sites[$SiteIndex].object_storage.$field is missing from the rendered config."
         }
     }
-    if ([string]::IsNullOrWhiteSpace($cfg.state.backup_recipient)) {
+    if ([string]::IsNullOrWhiteSpace($site.state.backup_recipient)) {
         throw @"
-No 'state.backup_recipient' in the rendered config.
+No 'state.backup_recipient' for site $SiteIndex in the rendered config.
 
 State is never uploaded in plaintext. Generate a key pair once:
 
     age-keygen -o state-backup.key
 
 Put the PUBLIC recipient (the 'age1...' line) in 1Password at
-op://homelab/state-database/backup_recipient, and store the private key file
+op://homelab/site<N>-state-database/backup_recipient, and store the private key file
 somewhere offline. The automation only ever needs the public half - it can
 write backups but cannot read them back.
 "@
@@ -535,8 +540,8 @@ write backups but cannot read them back.
         $size = (Get-Item $tmpPlain).Length
         if ($size -lt 100) { throw "State pull returned only $size bytes - refusing to upload it." }
 
-        Write-Info "encrypting to $($cfg.state.backup_recipient.Substring(0, [Math]::Min(20, $cfg.state.backup_recipient.Length)))..."
-        Invoke-Native { age --recipient $cfg.state.backup_recipient --output $tmpCipher $tmpPlain } 'age encrypt'
+        Write-Info "encrypting to $($site.state.backup_recipient.Substring(0, [Math]::Min(20, $site.state.backup_recipient.Length)))..."
+        Invoke-Native { age --recipient $site.state.backup_recipient --output $tmpCipher $tmpPlain } 'age encrypt'
 
         # rclone is configured entirely through environment variables so no
         # credentials are ever written to a config file on disk.

@@ -174,6 +174,25 @@ appending to `sites[]`.
 cannot express on its own - index in range, at least one hypervisor, at least
 one control plane, and the vendor declarations.
 
+### Vendor and credentials live inside the site
+
+**Chose:** `hypervisor`, `overlay_network`, `object_storage` and `state` all
+sit inside each `sites[]` entry, each carrying its own asserted `provider`.
+Only `organization` and `source_control` stay fleet-wide.
+**Because:** the test is whether the thing describes one estate or the whole
+fleet. A hypervisor obviously belongs to a site. So does the overlay network,
+once sites can join different tailnets depending on the engagement. So does
+object storage, when a client's backups belong in a client's bucket. And so
+does state: each site runs its own cluster with its own Postgres, so a shared
+database password would mean compromising one site reaches every other.
+
+One repository drives every cluster through Flux, so `source_control` is
+genuinely fleet-wide and stays at the top.
+
+**Note:** `sites[].name` is a vault reference. The human label for a site -
+which may be a client's name - never reaches git, while the positional
+identity (`site0`) that drives addressing stays visible and reviewable.
+
 ### The connection string is derived, not stored
 
 **Chose:** build `state_conn_str` in OpenTofu from the owner, database name,
