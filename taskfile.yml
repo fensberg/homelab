@@ -1,8 +1,8 @@
 version: "3"
 
 vars:
-  # Which entry in the fleet document to deploy. Override: task start SITE=atlanta
-  SITE: '{{.SITE | default "chicago"}}'
+  # Which entry in sites[] to deploy. Override: task start SITE=1
+  SITE: '{{.SITE | default "0"}}'
 
 # The single entrypoint is scripts/Start-Homelab.ps1. These tasks are thin
 # wrappers so the same verbs work from any shell.
@@ -11,27 +11,27 @@ tasks:
   start:
     desc: "The start button: render -> tailnet -> hypervisor -> verify -> compute -> cluster -> migrate -> backup -> sterilize"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}}
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -SiteIndex {{.SITE}}
 
   plan:
     desc: "Show which phases would run, without running them"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -WhatIfPhase
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -SiteIndex {{.SITE}} -WhatIfPhase
 
   render-secrets:
     desc: "Hydrate templates from 1Password"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Render
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -SiteIndex {{.SITE}} -Phase Render
 
   verify:
     desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Verify
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -SiteIndex {{.SITE}} -Phase Verify
 
   configure-hypervisor:
     desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Hypervisor
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -SiteIndex {{.SITE}} -Phase Hypervisor
 
   check-hypervisor:
     desc: "Dry-run the playbook: show what would change, change nothing"
@@ -42,9 +42,9 @@ tasks:
   backup-state:
     desc: "Encrypt the current state and push it to Cloudflare R2"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Backup
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -SiteIndex {{.SITE}} -Phase Backup
 
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Sterilize
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -SiteIndex {{.SITE}} -Phase Sterilize

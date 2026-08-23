@@ -145,41 +145,34 @@ manifest. SOPS and External Secrets are each their own epoch of work. Until
 then OpenTofu already holds the 1Password-rendered values and ignition is a
 local, human-run operation, so it is the natural place for this.
 
-### Topology splits: structure in git, secrets in the vault
+### The site index is the site's identity
 
-**Chose:** `config/sites.json` holds each site's octet and control-plane count
-and is committed. The fleet document at `op://homelab/topology/fleet` holds the
-hypervisors, their addresses and their credentials. Keys must agree; a mismatch
-fails the plan.
-**Rejected:** putting the whole topology in the vault, which was the first
-attempt.
-**Because:** the two halves have opposite requirements, and collapsing them
-served neither.
+**Chose:** one config file. `sites[]` is an array; the array index names the
+site (`site0`), picks its network (`10.${10 + index}.0.0/16`), numbers its VMs
+(`site0-cp-01`) and bands its VM IDs (100-199, 200-299). Hostnames and
+credentials inside each entry are `op://` references, so structure is visible
+in git while identity stays in the vault.
+**Rejected:** a committed registry of octets alongside a topology document in
+the vault, which is what the previous two attempts built.
+**Because:** those attempts kept treating octet uniqueness as something to
+enforce - first by review, then by an assertion. Deriving the octet from the
+array index removes the problem instead of guarding it. Two array entries
+cannot share an index, so two sites cannot share an octet. The collision is
+not expressible rather than merely tested for, which is the stronger property
+and needs no test at all.
 
-The octet is the single most collision-prone value in the system - two sites
-sharing one collide on the overlay network and present as a broken network
-rather than a configuration mistake. That is exactly the kind of value that
-needs review, diffing and automated checking, none of which a vault field can
-offer. It belongs in git.
+It also collapsed three files into one. The earlier split existed to keep
+hypervisor addresses out of git, but `op://` references already do that: the
+template shows that site 0 has one node without saying what or where it is.
 
-The hypervisor inventory is the opposite: for an MSP, which boxes exist at
-which addresses is reconnaissance material, and committing it publishes the
-shape of every client estate to anyone who can read the repository.
+**Consequence:** `control_plane_count` is the scaling dial. Five control
+planes produces five addresses, five VM names and five machine configs with no
+other edit. Adding a hypervisor is appending to `nodes[]`; adding a site is
+appending to `sites[]`.
 
-Site keys in git are codes rather than client names, so the committed half
-identifies nothing on its own.
-
-**Consequence:** invariants are asserted rather than tested. `registry.tf`
-carries preconditions for octet uniqueness, octet range, registry/fleet
-agreement, and the provider declarations. A test has to be remembered and run;
-a precondition fails `tofu plan` and cannot be skipped, which is the guarantee
-actually wanted. The start button repeats the cheap ones so a typo fails in a
-second rather than after a provider round trip.
-
-**Consequence:** the Ansible inventory is generated rather than templated.
-`op inject` substitutes into a fixed file and cannot loop, so a template could
-never grow with the fleet. Generating it is what makes appending a hypervisor
-genuinely sufficient.
+**Consequence:** the assertions in `registry.tf` shrank to what the schema
+cannot express on its own - index in range, at least one hypervisor, at least
+one control plane, and the vendor declarations.
 
 ### The connection string is derived, not stored
 
@@ -227,10 +220,9 @@ To be completed when the epoch closes.
   cannot reach each other. That is correct for one hypervisor and breaks the
   moment a second joins the Proxmox cluster. Multi-node needs a `vxlan` or
   `evpn` zone instead - see epoch 02.
-- **Addressing comes from `the fleet document`, never from a literal.** The
-  site octet is that site's identity on the overlay network. Retire an octet
-  when a site goes away; do not recycle it, because lingering routes for the
-  old site would start pointing at the new one.
+- **Never renumber or reorder `sites[]`.** The index is the site's identity:
+  reordering repoints its network at a different estate. Retiring a site means
+  leaving a hole, not compacting the array.
 - **`kubernetes_version` in `talos.tf` is hardcoded** with no Renovate
   annotation, unlike `talos_version`. Confirm the pairing is inside the
   Talos release's supported range; it will otherwise drift silently.

@@ -4,7 +4,7 @@
 # =============================================================================
 
 # One copy per hypervisor that will host a VM. A Proxmox node can only boot a
-# VM from an ISO in its own datastore, so this scales with the fleet rather
+# VM from an ISO in its own datastore, so this scales with the node list rather
 # than assuming a single box.
 resource "proxmox_virtual_environment_file" "talos_iso" {
   for_each = toset(local.vm_placement)
@@ -22,9 +22,9 @@ resource "proxmox_virtual_environment_file" "talos_iso" {
 resource "proxmox_virtual_environment_vm" "talos_cp" {
   count      = local.node_count
   depends_on = [proxmox_virtual_environment_file.talos_iso]
-  name       = "talos-cp-0${count.index + 1}"
+  name       = local.vm_names[count.index]
   node_name  = local.vm_placement[count.index]
-  vm_id      = 100 + count.index
+  vm_id      = local.vm_ids[count.index]
 
   # Disk first, ISO second. On first boot the disk is empty so it falls through
   # to the ISO; once Talos has installed itself it boots from disk.
@@ -67,7 +67,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   }
 
   smbios {
-    serial       = "talos-cp-0${count.index + 1}"
+    serial       = local.vm_names[count.index]
     manufacturer = "Sidero Labs"
     product      = "Talos Linux"
   }

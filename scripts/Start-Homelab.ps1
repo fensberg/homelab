@@ -63,9 +63,9 @@ param(
     [ValidateSet('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')]
     [string]$From,
 
-    # Which site in config/sites.json to deploy. Everything about the network
-    # and the cluster name follows from this.
-    [string]$Site = 'chicago',
+    # Which entry in the config's sites[] array to deploy. The index IS the
+    # site's identity: it names the site, picks its network, numbers its VMs.
+    [int]$SiteIndex = 0,
 
     [switch]$KeepOnFailure,
     [switch]$SkipUpgrade,
@@ -85,7 +85,6 @@ $HypervisorDir  = Join-Path $RepoRoot 'management\hypervisor'
 $InventoryOut   = Join-Path $HypervisorDir 'inventory.yml'
 $OverlayVars    = Join-Path $HypervisorDir 'overlay-network.auto.yml'
 $SiteVars       = Join-Path $HypervisorDir 'site.auto.yml'
-$SitesRegistry  = Join-Path $RepoRoot 'config\sites.json'
 $ClusterDir     = Join-Path $RepoRoot 'management\cluster'
 $BackendPgOff   = Join-Path $ClusterDir 'backend_pg.tf.disabled'
 $BackendPgOn    = Join-Path $ClusterDir 'backend_pg.tf'
@@ -93,84 +92,53 @@ $LocalState     = Join-Path $ClusterDir 'terraform.tfstate'
 
 $AllPhases = @('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')
 
-# Addressing is derived from the fleet, never hardcoded - two sites advertising
+# Addressing is derived from the site index, never hardcoded - two sites advertising
 # the same subnet onto one tailnet collide, and the symptom looks like a broken
 # network rather than a config mistake.
-function Get-SiteRegistry {
-    <#
-      Structure lives in git so octet collisions are reviewable and testable.
-      OpenTofu asserts the same invariants at plan time (registry.tf); this is
-      the fast-feedback copy, so a typo fails in a second rather than after a
-      provider round trip.
-    #>
-    if (-not (Test-Path $SitesRegistry)) { throw "Site registry not found at $SitesRegistry." }
-    $reg = (Get-Content $SitesRegistry -Raw | ConvertFrom-Json).sites
-
-    $octets = @($reg.PSObject.Properties | ForEach-Object { $_.Value.octet })
-    $dupes = @($octets | Group-Object | Where-Object Count -gt 1 | ForEach-Object { $_.Name })
-    if ($dupes.Count -gt 0) {
-        throw "Duplicate octet(s) in config/sites.json: $($dupes -join ', '). Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network."
-    }
-
-    $bad = @($reg.PSObject.Properties | Where-Object { $_.Value.octet -lt 1 -or $_.Value.octet -gt 95 })
-    if ($bad.Count -gt 0) {
-        throw "Octet out of range for: $($bad.Name -join ', '). Use 1-95; Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16."
-    }
-
-    return $reg
-}
-
-function Get-Fleet {
-    <#
-      The sensitive half of the topology, held in the vault: which hypervisors
-      exist, how to reach them, and their credentials. Arrives as a JSON string
-      because a 1Password field is a string.
-    #>
-    $cfg = Read-RenderedConfig
-    if ([string]::IsNullOrWhiteSpace($cfg.fleet)) {
-        throw "No 'fleet' in the rendered config. Expected JSON at op://homelab/topology/fleet - see config/fleet.example.json."
-    }
-    try { return $cfg.fleet | ConvertFrom-Json }
-    catch { throw "The 'fleet' field is not valid JSON. Compare it against config/fleet.example.json. ($($_.Exception.Message))" }
-}
-
-# Addressing is derived, never hardcoded - two sites advertising the same subnet
-# onto one tailnet collide, and the symptom looks like a broken network rather
-# than a config mistake.
+# Addressing is derived from the site index, never configured. Two sites cannot
+# share an octet because two array entries cannot share an index, so the
+# collision that would present as a broken overlay network is not expressible.
+#
+# OpenTofu asserts the same invariants at plan time (registry.tf); this is the
+# fast-feedback copy, so a mistake fails in a second rather than after a
+# provider round trip.
 function Get-SiteNetwork {
-    param([Parameter(Mandatory)][string]$Name)
+    param([Parameter(Mandatory)][int]$Index)
 
-    $registry = Get-SiteRegistry
-    $site = $registry.$Name
-    if (-not $site) {
-        $known = ($registry.PSObject.Properties.Name | Sort-Object) -join ', '
-        throw "Unknown site '$Name'. config/sites.json defines: $known"
+    $cfg = Read-RenderedConfig
+    $sites = @($cfg.sites)
+
+    if ($sites.Count -eq 0) { throw "The config defines no sites. Add one to sites[] in config/management.tpl.json." }
+    if ($Index -lt 0 -or $Index -ge $sites.Count) {
+        throw "site index $Index is out of range: the config defines $($sites.Count) site(s), so valid indices are 0-$($sites.Count - 1)."
+    }
+    if ($Index -gt 85) {
+        throw "site index $Index is too high. The octet is 10 + index and must stay below 96, where the Kubernetes defaults begin."
     }
 
-    $fleet = Get-Fleet
-    $entry = $fleet.$Name
-    if (-not $entry) {
-        throw "Site '$Name' is in config/sites.json but not in the fleet document. The two must agree - see config/fleet.example.json."
-    }
+    $site = $sites[$Index]
+    $nodes = @($site.hypervisor.nodes)
+    if ($nodes.Count -eq 0) { throw "Site $Index has no hypervisor nodes. Add at least one to sites[$Index].hypervisor.nodes." }
+    if ($site.control_plane_count -lt 1) { throw "Site $Index has control_plane_count $($site.control_plane_count); it must be at least 1." }
 
-    $nodes = @($entry.hypervisor.nodes)
-    if ($nodes.Count -eq 0) { throw "Site '$Name' has no hypervisor nodes in the fleet document." }
+    $name = "site$Index"
+    $o = 10 + $Index
 
-    $o = $site.octet
     [pscustomobject]@{
-        Name        = $Name
+        Name        = $name
         SiteCidr    = "10.$o.0.0/16"      # advertised as one route
         NodeCidr    = "10.$o.10.0/24"     # Talos control plane
         Gateway     = "10.$o.10.1"
         DhcpStart   = "10.$o.10.50"
         DhcpEnd     = "10.$o.10.99"
         NodeIps     = @(0..($site.control_plane_count - 1) | ForEach-Object { "10.$o.10.$(100 + $_)" })
+        VmNames     = @(0..($site.control_plane_count - 1) | ForEach-Object { "$name-cp-{0:d2}" -f ($_ + 1) })
         Hypervisors = $nodes
     }
 }
 
-# OpenTofu reads the same fleet; this tells it which entry to use.
-$env:TF_VAR_site = $Site
+# OpenTofu reads the same config; this tells it which site to use.
+$env:TF_VAR_site_index = $SiteIndex
 
 # --- output helpers --------------------------------------------------------
 $script:PhaseNum = 0
@@ -254,11 +222,11 @@ function Invoke-PhaseRender {
     Invoke-Native { op inject -i $ConfigTpl -o $ConfigRendered -f } '1Password inject (config)'
 
     # The inventory is generated, not templated: op inject substitutes into a
-    # fixed file and cannot loop, so a template could never grow with the fleet.
-    # Generating it means appending a node to the fleet is genuinely all it takes.
-    $Net = Get-SiteNetwork -Name $Site
+    # fixed file and cannot loop over sites[].hypervisor.nodes. Generating it is
+    # what makes appending a node genuinely sufficient.
+    $Net = Get-SiteNetwork -Index $SiteIndex
 
-    Write-Info "generating inventory for $Site ($($Net.Hypervisors.Count) hypervisor(s))"
+    Write-Info "generating inventory for $($Net.Name) ($($Net.Hypervisors.Count) hypervisor(s))"
     $inv = @("---", "all:", "  children:", "    hypervisors:", "      hosts:")
     foreach ($h in $Net.Hypervisors) {
         $inv += "        `"$($h.hostname)`":"
@@ -359,7 +327,7 @@ function Invoke-PhaseHypervisor {
 function Invoke-PhaseVerify {
     Write-Phase 'Verify' 'Prove the network works before spending time on OpenTofu.'
 
-    $Net = Get-SiteNetwork -Name $Site
+    $Net = Get-SiteNetwork -Index $SiteIndex
     $SdnGateway = $Net.Gateway
     $pveHost = $Net.Hypervisors[0].ip
 
@@ -415,7 +383,7 @@ function Invoke-PhaseCompute {
 
         # The provider returns as soon as Proxmox defines the VM. Talos still
         # has to boot. Poll its API port rather than guessing at a sleep.
-        foreach ($node in (Get-SiteNetwork -Name $Site).NodeIps) {
+        foreach ($node in (Get-SiteNetwork -Index $SiteIndex).NodeIps) {
             Write-Info "waiting for the Talos API on ${node}:50000 ..."
             if (-not (Wait-ForPort -ComputerName $node -Port 50000 -TimeoutMinutes 5)) {
                 throw @"

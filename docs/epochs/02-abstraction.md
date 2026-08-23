@@ -32,11 +32,10 @@ The management root is currently hardcoded to one site. `base_cidr`,
 from the same code would advertise a colliding subnet onto the tailnet and
 name its cluster identically.
 
-Epoch 01 has since parameterised this: the fleet lives at
-`op://homelab/topology/fleet`, and site, addressing, hypervisor placement and
-cluster name all derive from one entry. What remains for this epoch is turning
-the management root into a reusable module rather than a root that reads a
-fleet, so a site is an instantiation rather than a `TF_VAR_site` switch.
+Epoch 01 has since parameterised this: `sites[]` in the config is an array,
+and the index drives addressing, naming, placement and VM IDs. What remains
+for this epoch is turning the management root into a reusable module, so a
+site is an instantiation rather than a `TF_VAR_site_index` switch.
 
 ### The unit of addressing is the site, not the hypervisor
 
@@ -84,8 +83,8 @@ disposable; the data layer is what tolerates WAN latency, and etcd is not.
 The operational cost does not multiply, which is the other half of the answer.
 A workload is defined once in git and Flux reconciles it to every cluster, so
 ten clusters cost roughly what one costs to run. The duplication is hardware,
-not effort - and that is precisely what the fleet registry and this tier exist
-to make true.
+not effort - and that is precisely what the site array and this tier exist to
+make true.
 
 Finally, the honest case against: if a second site has no local workload and no
 disaster-recovery requirement, do not build one. One site plus the object

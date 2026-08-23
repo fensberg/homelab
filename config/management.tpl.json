@@ -2,20 +2,36 @@
   "organization": {
     "name": "{{ op://homelab/organization/name }}"
   },
-  "hypervisor": {
-    "provider": "proxmox"
-  },
-  "fleet": "{{ op://homelab/topology/fleet }}",
+
+  "sites": [
+    {
+      "control_plane_count": 3,
+      "hypervisor": {
+        "provider": "proxmox",
+        "token_id": "{{ op://homelab/site0-hypervisor/token_id }}",
+        "token_secret": "{{ op://homelab/site0-hypervisor/token_secret }}",
+        "nodes": [
+          {
+            "hostname": "{{ op://homelab/site0-node0/hostname }}",
+            "ip": "{{ op://homelab/site0-node0/ip }}"
+          }
+        ]
+      }
+    }
+  ],
+
   "source_control": {
     "repo_url": "{{ op://homelab/source-control/url }}",
     "token": "{{ op://homelab/source-control/token }}"
   },
+
   "overlay_network": {
     "provider": "tailscale",
     "domain": "{{ op://homelab/overlay-network/domain }}",
     "client_id": "{{ op://homelab/overlay-network/client_id }}",
     "client_secret": "{{ op://homelab/overlay-network/client_secret }}"
   },
+
   "object_storage": {
     "provider": "cloudflare",
     "account_id": "{{ op://homelab/object-storage/account_id }}",
@@ -24,6 +40,7 @@
     "secret_access_key": "{{ op://homelab/object-storage/token/secret_access_key }}",
     "bucket": "{{ op://homelab/object-storage/bucket }}"
   },
+
   "state": {
     "db_password": "{{ op://homelab/state-database/db_password }}",
     "backup_recipient": "{{ op://homelab/state-database/backup_recipient }}"
