@@ -48,8 +48,9 @@ edit per new site and buys a smaller blast radius if a router is compromised.
 
 > **Subnet collisions.** Two sites on one tailnet advertising overlapping
 > ranges collide, and traffic goes to whichever route the tailnet resolves
-> first. The site index prevents that: the octet is 10 + index, and two
-> entries in sites[] cannot share an index.
+> first. Each site declares its own octet and owns 10.<octet>.0.0/16;
+> uniqueness is asserted at plan time, so a collision fails before it can
+> reach the tailnet.
 
 ## 2. OAuth client
 

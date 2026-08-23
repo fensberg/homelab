@@ -2,9 +2,9 @@ variable "site_index" {
   type        = number
   default     = 0
   description = <<-EOT
-    Which entry in the config's sites[] array to deploy. The index IS the
-    site's identity: it names the site, picks its network, and numbers its
-    VMs. Set by the start button via TF_VAR_site_index.
+    Which entry in the config's sites[] array to deploy. Selection only -
+    the site's identity comes from the octet it declares, not from its
+    position. Set by the start button via TF_VAR_site_index.
   EOT
 }
 
@@ -12,7 +12,10 @@ locals {
   config = jsondecode(file("../../config/management.rendered.json"))
 
   site      = local.config.sites[var.site_index]
-  site_name = "site${var.site_index}"
+  # Named for the octet rather than the array position, so a VM name lines
+  # up with its address (site10-cp-01 lives at 10.10.10.100) and stays stable
+  # if sites[] is ever reordered.
+  site_name = "site${local.site.octet}"
 
   hypervisors = local.site.hypervisor.nodes
 
@@ -26,13 +29,14 @@ locals {
   node_count  = local.site.control_plane_count
 
   # --- addressing ----------------------------------------------------------
-  # The octet is derived from the array index, not configured. Two sites
-  # cannot share one, because two array entries cannot share an index - so
-  # the collision that would present as a broken overlay network is not
-  # expressible rather than merely tested for.
+  # The octet is declared, not computed. Reading the config tells you the
+  # site's network without doing arithmetic, retiring a site means leaving a
+  # gap rather than renumbering, and reordering sites[] no longer silently
+  # repoints an estate at someone else's network.
   #
-  # Site 0 is 10.10.0.0/16, site 1 is 10.11.0.0/16, and so on.
-  octet     = 10 + var.site_index
+  # The cost is that collisions become expressible, so registry.tf asserts
+  # uniqueness across every site rather than relying on the schema.
+  octet     = local.site.octet
   site_cidr = "10.${local.octet}.0.0/16"
 
   # Talos control plane. Infrastructure sits in .0.0/24 and a load-balancer
@@ -64,9 +68,9 @@ locals {
   cluster_name = "${local.config.organization.name}-${local.site.name}"
   vm_names     = [for i in range(local.node_count) : format("%s-cp-%02d", local.site_name, i + 1)]
 
-  # VM IDs are banded by site so two sites could share a Proxmox cluster
-  # without colliding: site 0 uses 100-199, site 1 uses 200-299.
-  vm_ids = [for i in range(local.node_count) : (var.site_index + 1) * 100 + i]
+  # Banded by octet so two sites could share a Proxmox cluster without
+  # colliding: octet 10 uses 1000-1099, octet 11 uses 1100-1199.
+  vm_ids = [for i in range(local.node_count) : local.octet * 100 + i]
 
   # --- platform ------------------------------------------------------------
   # renovate: datasource=github-releases depName=siderolabs/talos

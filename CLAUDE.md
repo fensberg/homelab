@@ -70,11 +70,11 @@ One entrypoint, run from Windows PowerShell:
 .\scripts\Start-Homelab.ps1 -SiteIndex 0        # every time after
 ```
 
-`-SiteIndex` selects an entry in the config's `sites[]` array. The index is the
-site's identity: it names the site, picks its `/16`, numbers its VMs and bands
-its VM IDs. Two sites cannot share an octet because two array entries cannot
-share an index, so that collision is not expressible rather than merely
-checked for.
+`-SiteIndex` selects an entry in the config's `sites[]` array. Each site
+declares its own `octet`, which picks its `/16`, names the site and its VMs,
+and bands its VM IDs - so `site10-cp-01` lives at `10.10.10.100`. Octets are
+asserted unique and within 1-95 across every site, at plan time and again in
+the start button.
 
 Scaling is three edits, each in one place:
 

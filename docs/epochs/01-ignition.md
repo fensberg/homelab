@@ -145,34 +145,28 @@ manifest. SOPS and External Secrets are each their own epoch of work. Until
 then OpenTofu already holds the 1Password-rendered values and ignition is a
 local, human-run operation, so it is the natural place for this.
 
-### The site index is the site's identity
+### The octet is declared, not computed
 
-**Chose:** one config file. `sites[]` is an array; the array index names the
-site (`site0`), picks its network (`10.${10 + index}.0.0/16`), numbers its VMs
-(`site0-cp-01`) and bands its VM IDs (100-199, 200-299). Hostnames and
-credentials inside each entry are `op://` references, so structure is visible
-in git while identity stays in the vault.
-**Rejected:** a committed registry of octets alongside a topology document in
-the vault, which is what the previous two attempts built.
-**Because:** those attempts kept treating octet uniqueness as something to
-enforce - first by review, then by an assertion. Deriving the octet from the
-array index removes the problem instead of guarding it. Two array entries
-cannot share an index, so two sites cannot share an octet. The collision is
-not expressible rather than merely tested for, which is the stronger property
-and needs no test at all.
+**Chose:** each site carries an explicit `octet`. It picks the site's network
+(`10.<octet>.0.0/16`), names the site (`site10`), names its VMs
+(`site10-cp-01`) and bands its VM IDs (1000-1099).
+**Rejected:** deriving the octet from the array index, which the previous
+attempt did.
 
-It also collapsed three files into one. The earlier split existed to keep
-hypervisor addresses out of git, but `op://` references already do that: the
-template shows that site 0 has one node without saying what or where it is.
+Deriving it made collisions inexpressible, which sounds strictly better and is
+not. It bought that guarantee by making array position load-bearing: reordering
+`sites[]` silently repointed an estate at a different network, retiring a site
+meant renumbering every site after it, and reading the config told you nothing
+about the network without doing arithmetic first.
 
-**Consequence:** `control_plane_count` is the scaling dial. Five control
-planes produces five addresses, five VM names and five machine configs with no
-other edit. Adding a hypervisor is appending to `nodes[]`; adding a site is
-appending to `sites[]`.
+Declaring it costs one assertion - `registry.tf` checks uniqueness and range
+across every site, not just the selected one - and buys a config you can read,
+gaps you can leave, and an array you can safely reorder. For a structure meant
+to be obvious at a glance, that is the better trade.
 
-**Consequence:** the assertions in `registry.tf` shrank to what the schema
-cannot express on its own - index in range, at least one hypervisor, at least
-one control plane, and the vendor declarations.
+Names follow the octet rather than the array position for the same reason:
+`site10-cp-01` lives at `10.10.10.100`, which lines up when reading Proxmox or
+debugging a route, and stays stable however the array is ordered.
 
 ### Vendor and credentials live inside the site
 
@@ -239,9 +233,9 @@ To be completed when the epoch closes.
   cannot reach each other. That is correct for one hypervisor and breaks the
   moment a second joins the Proxmox cluster. Multi-node needs a `vxlan` or
   `evpn` zone instead - see epoch 02.
-- **Never renumber or reorder `sites[]`.** The index is the site's identity:
-  reordering repoints its network at a different estate. Retiring a site means
-  leaving a hole, not compacting the array.
+- **Retire an octet, never recycle it.** Routes for a decommissioned site can
+  linger on the tailnet, and reissuing its octet points them at the new estate.
+  Leave gaps; the range is 1-95 and you will not run out.
 - **`kubernetes_version` in `talos.tf` is hardcoded** with no Renovate
   annotation, unlike `talos_version`. Confirm the pairing is inside the
   Talos release's supported range; it will otherwise drift silently.

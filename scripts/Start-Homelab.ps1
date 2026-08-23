@@ -92,16 +92,11 @@ $LocalState     = Join-Path $ClusterDir 'terraform.tfstate'
 
 $AllPhases = @('Render', 'Overlay', 'Hypervisor', 'Verify', 'Compute', 'Cluster', 'Migrate', 'Backup', 'Sterilize')
 
-# Addressing is derived from the site index, never hardcoded - two sites advertising
-# the same subnet onto one tailnet collide, and the symptom looks like a broken
-# network rather than a config mistake.
-# Addressing is derived from the site index, never configured. Two sites cannot
-# share an octet because two array entries cannot share an index, so the
-# collision that would present as a broken overlay network is not expressible.
-#
-# OpenTofu asserts the same invariants at plan time (registry.tf); this is the
-# fast-feedback copy, so a mistake fails in a second rather than after a
-# provider round trip.
+# Addressing follows the octet declared on each site. Two sites sharing one
+# collide on the overlay network and present as a broken network rather than a
+# config mistake, so uniqueness is checked here and again by registry.tf at
+# plan time - this copy just fails in a second rather than after a provider
+# round trip.
 function Get-SiteNetwork {
     param([Parameter(Mandatory)][int]$Index)
 
@@ -112,8 +107,17 @@ function Get-SiteNetwork {
     if ($Index -lt 0 -or $Index -ge $sites.Count) {
         throw "site index $Index is out of range: the config defines $($sites.Count) site(s), so valid indices are 0-$($sites.Count - 1)."
     }
-    if ($Index -gt 85) {
-        throw "site index $Index is too high. The octet is 10 + index and must stay below 96, where the Kubernetes defaults begin."
+    # Octets are declared, so uniqueness has to be checked rather than assumed.
+    # Checked across every site, not just the selected one - a collision the
+    # other way round is just as broken.
+    $octets = @($sites | ForEach-Object { $_.octet })
+    $dupes = @($octets | Group-Object | Where-Object Count -gt 1 | ForEach-Object { $_.Name })
+    if ($dupes.Count -gt 0) {
+        throw "Duplicate octet(s) in sites[]: $($dupes -join ', '). Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network."
+    }
+    $outOfRange = @($octets | Where-Object { $_ -lt 1 -or $_ -gt 95 })
+    if ($outOfRange.Count -gt 0) {
+        throw "Octet(s) out of range in sites[]: $($outOfRange -join ', '). Use 1-95; Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16."
     }
 
     $site = $sites[$Index]
@@ -121,8 +125,10 @@ function Get-SiteNetwork {
     if ($nodes.Count -eq 0) { throw "Site $Index has no hypervisor nodes. Add at least one to sites[$Index].hypervisor.nodes." }
     if ($site.control_plane_count -lt 1) { throw "Site $Index has control_plane_count $($site.control_plane_count); it must be at least 1." }
 
-    $name = "site$Index"
-    $o = 10 + $Index
+    $o = $site.octet
+    # Named for the octet, so a VM name lines up with its address and stays
+    # stable if sites[] is reordered.
+    $name = "site$o"
     # A human label from the vault, so it never reaches git. Falls back to the
     # positional name when the field is absent.
     $label = if ([string]::IsNullOrWhiteSpace($site.name)) { $name } else { $site.name }

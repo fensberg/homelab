@@ -4,17 +4,21 @@
 # Preconditions rather than tests, deliberately: a test has to be remembered
 # and run, while a precondition fails `tofu plan` and cannot be skipped.
 #
-# Note what is NOT checked here. Octet uniqueness needs no assertion, because
-# the octet derives from the array index and two entries cannot share an index.
-# The schema makes the collision inexpressible, which is a stronger guarantee
-# than any test.
+# Octets are declared rather than computed, so uniqueness is asserted here.
+# That is the trade: an explicit octet is readable, survives reordering and
+# lets a retired site leave a gap, at the cost of being possible to get wrong -
+# so it is checked, and checked across every site rather than just the selected
+# one.
 # =============================================================================
 
 locals {
-  # 10 + index must stay clear of the Kubernetes defaults at 10.96.0.0/12
+  all_octets = [for s in local.config.sites : s.octet]
+
+  # Octets must stay clear of the Kubernetes defaults at 10.96.0.0/12
   # (services) and 10.244.0.0/16 (pods). Those are cluster-internal and never
   # routed over the overlay, but overlapping them makes debugging confusing.
-  max_site_index = 85
+  octet_min = 1
+  octet_max = 95
 
   # The code in this root speaks to exactly one vendor per concern. These now
   # sit inside the site, because which vendor a site uses is a property of that
@@ -38,8 +42,13 @@ resource "terraform_data" "invariants" {
     }
 
     precondition {
-      condition     = var.site_index <= local.max_site_index
-      error_message = "site_index ${var.site_index} is too high. The octet is 10 + index and must stay below 96, where the Kubernetes defaults begin."
+      condition     = length(local.all_octets) == length(distinct(local.all_octets))
+      error_message = "Duplicate octet in sites[]. Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network and present as a broken network rather than a config mistake."
+    }
+
+    precondition {
+      condition     = alltrue([for o in local.all_octets : o >= local.octet_min && o <= local.octet_max])
+      error_message = "Octet out of range in sites[]. Use ${local.octet_min}-${local.octet_max}: Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16."
     }
 
     precondition {
