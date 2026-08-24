@@ -747,12 +747,19 @@
       ansible.builtin.debug:
         msg:
           - "The overlay network is disabled, so nothing advertises {{ sdn_subnet }} off this host."
-          - "That is fine for provisioning - the SDN is local to the hypervisor and does not need it."
+          - "That is fine for building the cluster - the SDN is local to this hypervisor."
           - ""
-          - "To reach it from a workstation on this LAN, add one static route pointing here:"
+          - "To reach it from a workstation, that workstation must be ON THIS HOST'S"
+          - "SUBNET. A static route's next hop has to be on-link; naming a gateway on"
+          - "another subnet makes the kernel treat it as directly attached, so it ARPs"
+          - "for an address nobody answers and loses the route it already had."
           - ""
+          - "Same subnet as {{ ansible_host | default(inventory_hostname) }}:"
           - "    Windows : route -p add {{ sdn_subnet.split('/')[0] }} mask 255.255.0.0 {{ ansible_host | default(inventory_hostname) }}"
           - "    Linux   : ip route add {{ sdn_subnet }} via {{ ansible_host | default(inventory_hostname) }}"
+          - ""
+          - "A different subnet: use the overlay network instead, or add the route on the"
+          - "router that joins them. Do NOT point a workstation route at this host."
       when: not (configure_overlay | bool)
       tags: [routing]
 

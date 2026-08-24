@@ -143,6 +143,13 @@ directly and depends on nothing but the LAN.
 
     route -p add 10.10.0.0 mask 255.255.0.0 <hypervisor LAN address>
 
+**Only on the same subnet.** A static route's next hop must be on-link. Name a
+gateway that is not, and Linux creates an implicit on-link entry for it - so
+the workstation starts ARPing for an address nobody answers and loses the
+routed path it already had to that host. It breaks reachability rather than
+adding it. From another subnet, use the overlay network, or add the route on
+the router that joins them.
+
 This is also the shape client work wants. Provision on site over the LAN; the
 overlay is how you get back in afterwards. If it is down you have lost remote
 access, not the ability to build anything.
