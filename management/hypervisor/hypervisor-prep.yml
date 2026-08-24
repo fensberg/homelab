@@ -107,6 +107,11 @@
     # is by construction the tag the key carries.
     overlay_router_tag: "tag:homelab-router"
 
+    # Bounded so a login cannot hang forever, but generous: a tailscaled that
+    # has just restarted may take well over a minute to sync, and a timeout
+    # firing mid-login leaves the host logged out.
+    tailscale_login_timeout: "180s"
+
   pre_tasks:
     - name: Confirm this host is actually Proxmox VE
       ansible.builtin.stat:
@@ -287,13 +292,19 @@
     # plane confirms the login, so a host that cannot reach the coordination
     # server hangs forever with no output rather than failing. Bounding it
     # turns an unrecoverable wait into a diagnosable error.
+    #
+    # But it must be generous. --force-reauth logs the node OUT first and then
+    # logs it back in; a timeout that fires mid-login leaves the host logged
+    # out and worse off than before it ran. A freshly restarted tailscaled
+    # syncing from scratch can take well over a minute, so 60s was too short
+    # and cost exactly that.
     - name: Log in to Tailscale and advertise the SDN subnet
       ansible.builtin.command: >-
         tailscale up
         --authkey={{ overlay_auth_key }}
         --advertise-routes={{ advertise_routes }}
         --accept-dns=false
-        --timeout=60s
+        --timeout={{ tailscale_login_timeout }}
         {{ '--force-reauth' if (ts_running | bool) else '' }}
       register: ts_up
       failed_when: false
@@ -307,12 +318,18 @@
       ansible.builtin.assert:
         that: ts_up.rc == 0
         fail_msg: >-
-          'tailscale up' did not complete within 60 seconds
-          (exit {{ ts_up.rc | default('n/a') }}). Almost always this host
-          cannot reach the Tailscale coordination server, in which case
-          'tailscale status' reports it offline and the journal shows DERP
-          connection failures. Check with
-          'journalctl -u tailscaled -n 30 --no-pager', and try
+          'tailscale up' did not complete within {{ tailscale_login_timeout }}
+          (exit {{ ts_up.rc | default('n/a') }}).
+
+          IF --force-reauth WAS USED, THIS HOST IS NOW LOGGED OUT. That is
+          recoverable: it de-authenticates before re-authenticating, so a run
+          interrupted in between leaves it logged out rather than broken.
+          Re-running the start button mints a fresh key and completes the
+          login, since a logged-out host takes the plain path with no
+          --force-reauth.
+
+          If it fails again, the host cannot reach the coordination server.
+          Check 'journalctl -u tailscaled -n 30 --no-pager' and try
           'systemctl restart tailscaled' - a wedged daemon shows exactly these
           symptoms while the network underneath it tests fine.
         success_msg: "Tailscale authenticated with the tagged key."

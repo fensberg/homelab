@@ -291,6 +291,17 @@ To be completed when the epoch closes.
   waits for the coordination server to confirm the login and prints nothing
   while it does, so a wedged or disconnected `tailscaled` presents as a hung
   playbook rather than an error. Every invocation carries `--timeout`.
+- **`--force-reauth` logs the node out before logging it back in.** A timeout
+  firing in between leaves the host logged out and worse off than before the
+  run - which is why the timeout is 180s rather than something tight. The
+  state is recoverable: a logged-out host takes the plain login path on the
+  next run, with no `--force-reauth`.
+- **The overlay network is load-bearing for ignition only because the
+  workstation is remote.** The Verify phase reaches the SDN gateway across the
+  tailnet, so a Tailscale outage blocks provisioning entirely. Running the
+  button from a machine on the hypervisor's own LAN removes that dependency
+  and leaves the overlay network for remote access, which is what it is
+  actually for.
 - **A wedged `tailscaled` looks exactly like a network fault, and is not one.**
   When it happens the host still reaches `controlplane.tailscale.com` and the
   DERP relays on 443, path MTU is intact, and the firewall is clear - while
