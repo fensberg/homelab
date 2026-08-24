@@ -496,10 +496,36 @@ function Invoke-PhaseHypervisor {
     # Windows PATH, which contains "Program Files (x86)", and an unquoted
     # assignment of it is a bash syntax error at the parenthesis. A script file
     # sidesteps every layer of quoting between PowerShell, wsl.exe and bash.
+    # inventory.yml already carries the addresses; this list is just for the
+    # reachability preflight below.
+    $hostList = ($Net.Hypervisors | ForEach-Object { $_.ip }) -join ' '
+
     $script = @"
 set -e
 export PATH="`$HOME/.local/bin:`$PATH"
 cd '$wslRepo'
+
+# Prove we can log in before handing over to Ansible. Ansible reports an SSH
+# failure as an UNREACHABLE task, which buries the actual cause - a missing
+# host key, or no usable credential - under a play recap.
+for h in $hostList; do
+  if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "root@`$h" true 2>/tmp/homelab-ssh.err; then
+    echo "ERROR: cannot log in to root@`$h from WSL without a password." >&2
+    echo >&2
+    sed 's/^/  ssh: /' /tmp/homelab-ssh.err >&2
+    echo >&2
+    echo "  Install this machine's key on the hypervisor, once:" >&2
+    echo >&2
+    echo "      wsl ssh-copy-id root@`$h" >&2
+    echo >&2
+    echo "  It asks for the Proxmox root password that one time. Every run" >&2
+    echo "  after it is key-based and needs no password at all." >&2
+    rm -f /tmp/homelab-ssh.err
+    exit 1
+  fi
+done
+rm -f /tmp/homelab-ssh.err
+
 exec ansible-playbook -i inventory.yml hypervisor-prep.yml $siteVars $keyVars $extraVars
 "@
 
@@ -515,7 +541,6 @@ exec ansible-playbook -i inventory.yml hypervisor-prep.yml $siteVars $keyVars $e
                else { @('--', 'bash', $wslScript) }
 
     Write-Info ("running the playbook inside WSL" + $(if ($WslDistro) { " ($WslDistro)" } else { " (default distro)" }))
-    Write-Info "you will be prompted for the Proxmox host's sudo password"
     try {
         Invoke-Native { wsl @wslArgs } 'ansible-playbook'
     }

@@ -242,7 +242,26 @@ To be completed when the epoch closes.
 - **QEMU guest agent** is off deliberately; Talos will not report ready
   without the extension in the Factory schematic.
 
+## Deferred (Ansible)
+
+- **`apt_repository` is deprecated** in favour of `deb822_repository` and is
+  removed in ansible-core 2.25. Migrating means supplying `signed_by` keyrings
+  explicitly for both the Proxmox and Tailscale repositories, which is not a
+  change worth making untested against a live hypervisor. The warning is muted
+  in `ansible.cfg` so it does not bury real output. Trigger: an ansible-core
+  upgrade approaching 2.25, or the next time that playbook is exercised
+  against a disposable host.
+
 ## Gotchas
+
+- **Ansible reaches the hypervisor over SSH from inside WSL**, not from
+  Windows, so it is WSL's key and WSL's `known_hosts` that matter. A key
+  installed for the Windows user does nothing here.
+- **Host keys are accepted on first use, not blindly.**
+  `StrictHostKeyChecking=accept-new` trusts a host the first time and pins it,
+  but still refuses one whose key has changed. `no` would silently accept a
+  substituted host forever, and the default fails outright because Ansible
+  runs ssh without a TTY to answer the prompt.
 
 - **Renaming a site renames its VMs.** Everything nameable derives from
   `sites.<key>.name`, so changing it in the vault makes OpenTofu see different

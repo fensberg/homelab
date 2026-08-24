@@ -457,6 +457,17 @@ fi
 
 ansible-playbook --version | head -1
 ansible-galaxy collection install ansible.posix community.general --upgrade
+
+# Ansible reaches the hypervisor over SSH from inside WSL, so WSL needs its own
+# key. Generated without a passphrase because the playbook runs unattended;
+# installing it on a host is a separate, deliberate 'ssh-copy-id'.
+if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
+  echo "--- generating an SSH key for this WSL user"
+  mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+  ssh-keygen -t ed25519 -N "" -C "homelab-$(whoami)@wsl" -f "$HOME/.ssh/id_ed25519"
+else
+  echo "--- SSH key already present"
+fi
 '@
 
         $tmpScript = Join-Path $env:TEMP 'homelab-wsl-bootstrap.sh'
