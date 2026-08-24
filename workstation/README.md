@@ -42,6 +42,14 @@ ansible-playbook -i inventory.yml provision.yml -e state=absent
 ansible-playbook -i inventory.yml provision.yml
 ```
 
+## Cloud-init note
+
+Extra directives go in **vendor-data**, never `--cicustom user=`. A custom
+`user=` snippet _replaces_ the user-data Proxmox generates from `--ciuser` and
+`--sshkeys`, so supplying one that only lists packages silently discards the
+login account and its keys. The VM boots perfectly and refuses every
+connection with `Permission denied (publickey)`.
+
 ## What it does not do
 
 It installs a build toolchain and nothing else. Project tooling - OpenTofu,

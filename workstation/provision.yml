@@ -109,11 +109,18 @@
             dest: /var/lib/vz/snippets/{{ name }}-keys.pub
             mode: "0600"
 
+        # VENDOR data, not user data. --cicustom user= REPLACES the user-data
+        # Proxmox generates from --ciuser and --sshkeys, so a snippet supplying
+        # only packages silently discards the login account and its keys - the
+        # VM boots fine and refuses every connection with "Permission denied
+        # (publickey)". Vendor-data is processed alongside the generated
+        # user-data instead, so both apply.
+        #
         # qemu-guest-agent is what lets the hypervisor report the address DHCP
         # handed out, so there is no guessing about where to connect.
-        - name: Write a cloud-init user-data snippet
+        - name: Write a cloud-init vendor-data snippet
           ansible.builtin.copy:
-            dest: /var/lib/vz/snippets/{{ name }}-user.yml
+            dest: /var/lib/vz/snippets/{{ name }}-vendor.yml
             mode: "0644"
             content: |
               #cloud-config
@@ -161,7 +168,7 @@
             --ipconfig0 {{ 'ip=dhcp' if address == 'dhcp' else 'ip=' ~ address }}
             --ciuser {{ username }}
             --sshkeys /var/lib/vz/snippets/{{ name }}-keys.pub
-            --cicustom "user=local:snippets/{{ name }}-user.yml"
+            --cicustom "vendor=local:snippets/{{ name }}-vendor.yml"
 
         - name: Grow the disk
           ansible.builtin.command: qm resize {{ vmid }} scsi0 {{ disk }}
