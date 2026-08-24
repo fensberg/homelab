@@ -287,6 +287,13 @@ To be completed when the epoch closes.
 
 ## Gotchas
 
+- **A targeted apply only writes outputs that depend on the targeted
+  resource.** The phased design applies with `-target`, so an output built from
+  a bare local depends on nothing, is never written to state, and
+  `tofu output` reports it as not found - even though `tofu validate` and the
+  plan are perfectly happy. Any output the start button reads between phases
+  must derive from a resource that phase actually creates.
+
 - **"tailscaled is running" does not mean "logged in the way this needs".** A
   host logged in manually is user-owned and carries no tags, so `autoApprovers`
 

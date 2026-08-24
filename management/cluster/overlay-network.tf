@@ -52,8 +52,14 @@ output "overlay_network_auth_key" {
 }
 
 # The playbook has to know which tag to check the host against, and it must be
-# the same tag the key carries. Exported rather than repeated so the two cannot
-# drift apart.
+# the same tag the key carries.
+#
+# Read off the created key rather than from local.overlay_router_tag, for two
+# reasons. It is the tag that actually exists rather than one that merely ought
+# to match. And the Overlay phase applies with -target, which only refreshes
+# outputs depending on the targeted resource - an output built from a bare
+# local depends on nothing and is never written to state, so `tofu output`
+# cannot find it.
 output "overlay_router_tag" {
-  value = local.overlay_router_tag
+  value = one(tailscale_tailnet_key.hypervisor.tags)
 }
