@@ -244,6 +244,18 @@ To be completed when the epoch closes.
 
 ## Gotchas
 
+- **The age private key is never referenced by the automation, and must not
+  be.** The config contract carries only `backup_recipient`, the public half,
+  so the start button can write backups and cannot read them. Putting the
+  identity in `management.tpl.json` would render it to disk on every run and
+  hand every historical backup to anyone who compromised the workstation. It
+  lives in 1Password as `backup_identity` and is fetched by a human, by hand,
+  only when restoring.
+- **Rotating the age key orphans every existing backup.** Backups are
+  encrypted to a recipient, so a new key pair cannot read anything written
+  under the old one. Rotate before real backups exist, or decrypt and
+  re-encrypt the archive deliberately.
+
 - **The tailnet policy is not managed by this code.** If ignition hangs on an
   unreachable node, confirm `docs/tailnet-setup.md` has actually been applied
   to the tailnet you are deploying into. A missing `autoApprovers` entry looks

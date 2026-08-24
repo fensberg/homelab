@@ -594,7 +594,20 @@ write backups but cannot read them back.
         }
 
         Write-Ok "encrypted state backed up to Cloudflare R2"
-        Write-Info "restore with: rclone cat R2:$($store.bucket)/management-cluster/latest.tfstate.age | age -d -i state-backup.key"
+
+        # The private identity is deliberately absent from the config contract:
+        # this script can write backups and must not be able to read them. It
+        # is fetched by a human, by hand, only when restoring.
+        Write-Host @"
+
+  To restore, on a machine with op signed in:
+
+    op read "op://homelab/$Site/state-database/backup_identity" > `$env:TEMP/restore.key
+    rclone cat R2:$($store.bucket)/management-cluster/latest.tfstate.age |
+        age -d -i `$env:TEMP/restore.key > terraform.tfstate
+    Remove-Item `$env:TEMP/restore.key
+
+"@ -ForegroundColor DarkGray
     }
     finally {
         Pop-Location
