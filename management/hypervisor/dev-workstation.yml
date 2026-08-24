@@ -1,0 +1,197 @@
+---
+# =============================================================================
+# A Linux development workstation, running on the hypervisor itself.
+#
+# WHY THIS IS NOT IN THE OPENTOFU ROOT
+# ------------------------------------
+# The ignition root destroys everything it owns when a run fails - that is
+# deliberate, and it is what keeps a sterilized workspace from orphaning VMs.
+# A workstation that vanishes because a cluster build failed would be useless,
+# so it is created here instead and the hypervisor itself is its only state.
+#
+# WHY IT HAS ONE NIC, ON THE CLUSTER NETWORK
+# ------------------------------------------
+# It sits directly on the SDN, so the Talos nodes, the Kubernetes API and the
+# state database are all local to it. No overlay network, no static routes on
+# anyone's workstation, and nothing that depends on the client's router.
+#
+# Reached with the hypervisor as a jump host, which needs no address of its
+# own on the client LAN:
+#
+#     ssh -J root@<hypervisor> dev@10.<octet>.10.10
+#
+# Outbound internet works through the SDN's SNAT, so it can clone, apt and
+# download without any further plumbing.
+#
+#   ansible-playbook -i inventory.yml dev-workstation.yml
+#   ansible-playbook -i inventory.yml dev-workstation.yml -e dev_state=absent
+# =============================================================================
+- name: Provision a development workstation on the hypervisor
+  hosts: hypervisors
+  become: true
+  gather_facts: false
+
+  vars:
+    # Supplied by the start button; the defaults exist so a bare run fails
+    # loudly rather than building on the wrong network.
+    sdn_subnet: "UNSET"
+    sdn_gateway: "UNSET"
+    dev_octet: 0
+    dev_site_name: "UNSET"
+
+    dev_vnet: "vnetint"
+    dev_storage: "local-zfs"
+    dev_state: present
+
+    # .10 sits below the control plane at .100+ and leaves room either side.
+    dev_ip: "10.{{ dev_octet }}.10.10"
+    dev_name: "{{ dev_site_name }}-dev"
+
+    # Banded with the control plane VMs, which take <octet>00 upward, so the
+    # workstation cannot collide with a cluster node however large it grows.
+    dev_vmid: "{{ (dev_octet | int) * 100 + 90 }}"
+
+    dev_cores: 6
+    dev_memory: 16384
+    dev_disk: "120G"
+
+    # Debian rather than Ubuntu: it matches what Proxmox itself runs, so the
+    # package set and release names line up with the hypervisor playbook.
+    dev_image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
+    dev_image_path: "/var/lib/vz/template/iso/debian-13-genericcloud-amd64.qcow2"
+
+    dev_user: "dev"
+
+  tasks:
+    - name: Require the values the start button supplies
+      ansible.builtin.assert:
+        that:
+          - sdn_subnet != "UNSET"
+          - sdn_gateway != "UNSET"
+          - dev_site_name != "UNSET"
+          - (dev_octet | int) > 0
+        fail_msg: >-
+          Per-site values are missing. Run this through the start button, which
+          generates them from the config, or pass them with -e.
+        success_msg: "Building {{ dev_name }} at {{ dev_ip }} (VM {{ dev_vmid }})."
+
+    - name: Look for an existing workstation
+      ansible.builtin.command: qm status {{ dev_vmid }}
+      register: dev_existing
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    # --- teardown -----------------------------------------------------------
+    - name: Remove the workstation
+      when:
+        - dev_state == "absent"
+        - dev_existing.rc == 0
+      block:
+        - name: Stop it
+          ansible.builtin.command: qm stop {{ dev_vmid }}
+          failed_when: false
+
+        - name: Destroy it
+          ansible.builtin.command: qm destroy {{ dev_vmid }} --purge
+
+        - name: Report
+          ansible.builtin.debug:
+            msg: "{{ dev_name }} (VM {{ dev_vmid }}) removed."
+
+    - name: Stop here when tearing down
+      ansible.builtin.meta: end_play
+      when: dev_state == "absent"
+
+    # --- already built ------------------------------------------------------
+    - name: Report an existing workstation
+      ansible.builtin.debug:
+        msg:
+          - "{{ dev_name }} (VM {{ dev_vmid }}) already exists - leaving it alone."
+          - ""
+          - "  ssh -J root@{{ ansible_host | default(inventory_hostname) }} {{ dev_user }}@{{ dev_ip }}"
+          - ""
+          - "Rebuild it with:  -e dev_state=absent  then run this again."
+      when: dev_existing.rc == 0
+
+    # --- build --------------------------------------------------------------
+    - name: Build the workstation
+      when: dev_existing.rc != 0
+      block:
+        - name: Fetch the Debian cloud image
+          ansible.builtin.get_url:
+            url: "{{ dev_image_url }}"
+            dest: "{{ dev_image_path }}"
+            mode: "0644"
+            timeout: 120
+
+        - name: Collect the keys already trusted on this hypervisor
+          ansible.builtin.slurp:
+            src: /root/.ssh/authorized_keys
+          register: dev_authorized_keys
+
+        # Reusing the hypervisor's own authorized keys means whoever can reach
+        # the hypervisor can reach the workstation behind it, and no new key
+        # has to be issued or stored anywhere.
+        - name: Stage the keys for cloud-init
+          ansible.builtin.copy:
+            content: "{{ dev_authorized_keys.content | b64decode }}"
+            dest: /var/lib/vz/snippets/dev-workstation-keys.pub
+            mode: "0600"
+
+        - name: Create the virtual machine
+          ansible.builtin.command: >-
+            qm create {{ dev_vmid }}
+            --name {{ dev_name }}
+            --cores {{ dev_cores }}
+            --memory {{ dev_memory }}
+            --cpu host
+            --net0 virtio,bridge={{ dev_vnet }}
+            --scsihw virtio-scsi-single
+            --ostype l26
+            --agent enabled=1
+
+        - name: Import the cloud image as its disk
+          ansible.builtin.command: >-
+            qm importdisk {{ dev_vmid }} {{ dev_image_path }} {{ dev_storage }}
+
+        - name: Attach the disk and a cloud-init drive
+          ansible.builtin.command: >-
+            qm set {{ dev_vmid }}
+            --scsi0 {{ dev_storage }}:vm-{{ dev_vmid }}-disk-0
+            --ide2 {{ dev_storage }}:cloudinit
+            --boot order=scsi0
+            --serial0 socket
+            --vga serial0
+
+        - name: Give it an address on the cluster network
+          ansible.builtin.command: >-
+            qm set {{ dev_vmid }}
+            --ipconfig0 ip={{ dev_ip }}/24,gw={{ sdn_gateway }}
+            --nameserver "1.1.1.1 1.0.0.1"
+            --ciuser {{ dev_user }}
+            --sshkeys /var/lib/vz/snippets/dev-workstation-keys.pub
+
+        - name: Grow the disk
+          ansible.builtin.command: qm resize {{ dev_vmid }} scsi0 {{ dev_disk }}
+
+        - name: Start it
+          ansible.builtin.command: qm start {{ dev_vmid }}
+
+        - name: Wait for SSH to answer on the cluster network
+          ansible.builtin.wait_for:
+            host: "{{ dev_ip }}"
+            port: 22
+            timeout: 180
+            delay: 10
+
+        - name: Report
+          ansible.builtin.debug:
+            msg:
+              - "{{ dev_name }} is up at {{ dev_ip }} (VM {{ dev_vmid }})."
+              - ""
+              - "  ssh -J root@{{ ansible_host | default(inventory_hostname) }} {{ dev_user }}@{{ dev_ip }}"
+              - ""
+              - "It sits on the cluster network, so the Talos nodes, the Kubernetes"
+              - "API and the state database are all directly reachable from it - no"
+              - "overlay network and no static routes required."
