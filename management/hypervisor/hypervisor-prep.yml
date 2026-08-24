@@ -612,71 +612,24 @@
       changed_when: false
       tags: [routing]
 
-    # Advertising a route and having it approved are different things. An
-    # unapproved route is simply not carried, which downstream looks like an
-    # unreachable gateway rather than a policy problem - so name it here.
+    # No approval check here, deliberately.
     #
-    # PrimaryRoutes lists the routes this node actually serves, which is the
-    # approved set. Advertised-but-pending routes never appear in it.
-    - name: Read which routes this node actually serves
-      ansible.builtin.command: tailscale status --json
-      register: ts_routes_raw
-      when: ts_running | bool
-      changed_when: false
-      failed_when: false
-      check_mode: false
-      tags: [routing]
-
-    - name: Record whether the advertised route is approved
-      ansible.builtin.set_fact:
-        # default(x, true) rather than default(x): Tailscale emits
-        # "PrimaryRoutes": null when nothing is approved, and plain default()
-        # only substitutes for an UNDEFINED value, not a null one. Without the
-        # boolean form this raises a TypeError in exactly the case it exists to
-        # detect.
-        route_approved: >-
-          {{ advertise_routes in
-             (((ts_routes_raw.stdout | default('{}', true) | from_json).Self
-               | default({}, true)).PrimaryRoutes | default([], true)) }}
-      when: ts_running | bool
-      tags: [routing]
-
-    - name: Report that the route is carried
+    # A previous version asserted on Self.PrimaryRoutes from
+    # 'tailscale status --json'. That field describes routes a node is primary
+    # for as seen from ANOTHER node; the local node's own Self entry leaves it
+    # empty whether or not the route is approved, so the check failed closed and
+    # blocked a correctly configured tailnet.
+    #
+    # There is no reliable local signal for control-plane approval, and inventing
+    # one that fails closed is worse than not checking. The Verify phase pings
+    # the gateway across the overlay network, which tests the thing that actually
+    # matters, and its failure message names autoApprovers as the likely cause.
+    - name: Report the advertised route
       ansible.builtin.debug:
         msg: >-
-          {{ advertise_routes }} is advertised and approved - the subnet is
-          reachable over the overlay network.
-      when:
-        - ts_running | bool
-        - route_approved | bool
-      tags: [routing]
-
-    - name: Explain an unapproved route
-      ansible.builtin.debug:
-        msg:
-          - "{{ advertise_routes }} is advertised but NOT approved, so no traffic will reach it."
-          - ""
-          - "The tailnet policy auto-approves routes for tag:homelab-router, but only"
-          - "within the range it names. A policy scoped to a narrower CIDR - 10.10.10.0/24,"
-          - "say - approves that and leaves this /16 pending."
-          - ""
-          - "Widen autoApprovers in the tailnet policy so it covers {{ advertise_routes }}:"
-          - ""
-          - '    "autoApprovers": { "routes": { "10.0.0.0/8": ["tag:homelab-router"] } }'
-          - ""
-          - "See docs/tailnet-setup.md. Approving by hand in the console works too, but"
-          - "has to be repeated for every site."
-      when:
-        - ts_running | bool
-        - not (route_approved | bool)
-      tags: [routing]
-
-    - name: Fail on an unapproved route
-      ansible.builtin.assert:
-        that: route_approved | bool
-        fail_msg: >-
-          {{ advertise_routes }} is advertised but not approved. Fix the
-          tailnet policy as described above, then re-run.
-        success_msg: "Route {{ advertise_routes }} is approved."
+          {{ advertise_routes }} is advertised over the overlay network. If the
+          Verify phase cannot reach {{ sdn_gateway }}, check the Subnets panel
+          in the Tailscale admin console - an unapproved route is carried
+          nowhere. See docs/tailnet-setup.md.
       when: ts_running | bool
       tags: [routing]
