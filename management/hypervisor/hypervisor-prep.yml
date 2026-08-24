@@ -612,13 +612,71 @@
       changed_when: false
       tags: [routing]
 
-    - name: Confirm the route was auto-approved
+    # Advertising a route and having it approved are different things. An
+    # unapproved route is simply not carried, which downstream looks like an
+    # unreachable gateway rather than a policy problem - so name it here.
+    #
+    # PrimaryRoutes lists the routes this node actually serves, which is the
+    # approved set. Advertised-but-pending routes never appear in it.
+    - name: Read which routes this node actually serves
+      ansible.builtin.command: tailscale status --json
+      register: ts_routes_raw
+      when: ts_running | bool
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: [routing]
+
+    - name: Record whether the advertised route is approved
+      ansible.builtin.set_fact:
+        # default(x, true) rather than default(x): Tailscale emits
+        # "PrimaryRoutes": null when nothing is approved, and plain default()
+        # only substitutes for an UNDEFINED value, not a null one. Without the
+        # boolean form this raises a TypeError in exactly the case it exists to
+        # detect.
+        route_approved: >-
+          {{ advertise_routes in
+             (((ts_routes_raw.stdout | default('{}', true) | from_json).Self
+               | default({}, true)).PrimaryRoutes | default([], true)) }}
+      when: ts_running | bool
+      tags: [routing]
+
+    - name: Report that the route is carried
       ansible.builtin.debug:
         msg: >-
-          {{ advertise_routes }} is advertised. The tailnet policy managed in
-          management/cluster/overlay-network.tf auto-approves this subnet for
-          tag:homelab-router, so no console approval is needed. If the route
-          still shows as pending, confirm the host logged in with the tagged
-          auth key rather than an untagged one.
+          {{ advertise_routes }} is advertised and approved - the subnet is
+          reachable over the overlay network.
+      when:
+        - ts_running | bool
+        - route_approved | bool
+      tags: [routing]
+
+    - name: Explain an unapproved route
+      ansible.builtin.debug:
+        msg:
+          - "{{ advertise_routes }} is advertised but NOT approved, so no traffic will reach it."
+          - ""
+          - "The tailnet policy auto-approves routes for tag:homelab-router, but only"
+          - "within the range it names. A policy scoped to a narrower CIDR - 10.10.10.0/24,"
+          - "say - approves that and leaves this /16 pending."
+          - ""
+          - "Widen autoApprovers in the tailnet policy so it covers {{ advertise_routes }}:"
+          - ""
+          - '    "autoApprovers": { "routes": { "10.0.0.0/8": ["tag:homelab-router"] } }'
+          - ""
+          - "See docs/tailnet-setup.md. Approving by hand in the console works too, but"
+          - "has to be repeated for every site."
+      when:
+        - ts_running | bool
+        - not (route_approved | bool)
+      tags: [routing]
+
+    - name: Fail on an unapproved route
+      ansible.builtin.assert:
+        that: route_approved | bool
+        fail_msg: >-
+          {{ advertise_routes }} is advertised but not approved. Fix the
+          tailnet policy as described above, then re-run.
+        success_msg: "Route {{ advertise_routes }} is approved."
       when: ts_running | bool
       tags: [routing]

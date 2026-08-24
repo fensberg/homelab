@@ -597,10 +597,15 @@ function Invoke-PhaseVerify {
        On the Proxmox host, run:  ip -br addr show vnetint
        You want to see it UP with $($Net.Gateway)/24.
 
-    b) The Tailscale subnet route is not active.
-       The Overlay phase should have auto-approved it. Check with:
-         tailscale status --json
-       and confirm the hypervisor logged in with the tagged auth key.
+    b) The subnet route is advertised but not approved.
+       Check the Subnets panel in the Tailscale admin console. If the route
+       shows under "Awaiting Approval", the tailnet policy's autoApprovers
+       does not cover it - a policy scoped to a narrower CIDR approves that
+       one and leaves this range pending. Widen it:
+
+         "autoApprovers": { "routes": { "10.0.0.0/8": ["tag:homelab-router"] } }
+
+       See docs/tailnet-setup.md.
 
 "@ -ForegroundColor Yellow
         throw "SDN gateway $SdnGateway is unreachable - stopping before OpenTofu."
