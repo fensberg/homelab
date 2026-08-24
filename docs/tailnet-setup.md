@@ -23,7 +23,7 @@ existing rules do.
   // Who may apply the router tag. Narrow this from autogroup:admin if the
   // tailnet has operators who should not be able to route subnets.
   "tagOwners": {
-    "tag:homelab-router": ["autogroup:admin"],
+    "tag:homelab-router": ["autogroup:admin"]
   },
 
   // Routes advertised by a node carrying the router tag are approved with no
@@ -36,9 +36,9 @@ existing rules do.
   // have tagged as routers can advertise anything at all.
   "autoApprovers": {
     "routes": {
-      "10.0.0.0/8": ["tag:homelab-router"],
-    },
-  },
+      "10.0.0.0/8": ["tag:homelab-router"]
+    }
+  }
 }
 ```
 
@@ -56,10 +56,10 @@ edit per new site and buys a smaller blast radius if a router is compromised.
 
 **Settings → OAuth clients → Generate.**
 
-| Setting | Value |
-| --- | --- |
-| Scope | write access to auth keys |
-| Tags | `tag:homelab-router` |
+| Setting | Value                     |
+| ------- | ------------------------- |
+| Scope   | write access to auth keys |
+| Tags    | `tag:homelab-router`      |
 
 The tag must already exist in `tagOwners` from step 1, or it cannot be
 selected here. That ordering is why the policy comes first.

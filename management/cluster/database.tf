@@ -21,8 +21,6 @@ resource "kubernetes_namespace" "database" {
   }
 }
 
-# Credentials CloudNativePG seeds the database with. The connection string in
-# 1Password must use this same password - they are two views of one secret.
 resource "kubernetes_secret" "state_db_credentials" {
   metadata {
     name      = "${local.state_db_cluster}-app"

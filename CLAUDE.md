@@ -13,11 +13,11 @@ world and links to every prior epoch's decisions.
 
 The three tiers below are also the epoch boundaries:
 
-| Tier        | Path            | Executed by                         |
-| ----------- | --------------- | ----------------------------------- |
-| Ignition    | `management/`   | Locally, by a human (the button)    |
-| Abstraction | `modules/`      | Consumed by the tiers below         |
-| Workload    | `environments/` | GitHub Actions + Flux               |
+| Tier        | Path            | Executed by                      |
+| ----------- | --------------- | -------------------------------- |
+| Ignition    | `management/`   | Locally, by a human (the button) |
+| Abstraction | `modules/`      | Consumed by the tiers below      |
+| Workload    | `environments/` | GitHub Actions + Flux            |
 
 ## Invariants
 
@@ -62,7 +62,7 @@ belongs in an epoch record.
   what breaks that circle after a total loss.
 - **The workspace is sterilized on every exit.** Success or failure, no
   secrets and no state are left on the workstation. On failure the run
-  destroys infrastructure *before* wiping state, so nothing is orphaned.
+  destroys infrastructure _before_ wiping state, so nothing is orphaned.
 - **Pin everything.** Actions to commit SHAs, providers to `~>` ranges, Talos
   to an exact version plus Factory schematic ID.
 
@@ -82,11 +82,11 @@ within 1-95 across every site, at plan time and again in the start button.
 
 Scaling is three edits, each in one place:
 
-| To add | Do |
-|---|---|
-| A control-plane node | Raise that site's `control_plane_count` |
-| A hypervisor | Append to that site's `hypervisor.nodes[]` |
-| A site | Append to `sites[]` |
+| To add               | Do                                         |
+| -------------------- | ------------------------------------------ |
+| A control-plane node | Raise that site's `control_plane_count`    |
+| A hypervisor         | Append to that site's `hypervisor.nodes[]` |
+| A site               | Append to `sites[]`                        |
 
 `control_plane_count` is a provisioning input, not an autoscaler. etcd quorum
 is fixed at creation; see `docs/epochs/02-abstraction.md` for what actually
@@ -109,11 +109,11 @@ config entry.
 
 ## What lives where
 
-| Path | Holds |
-|------|-------|
-| `management/hypervisor/` | Ansible: bare-metal Proxmox preparation |
-| `management/cluster/` | OpenTofu: VMs, Talos, overlay network, storage, Flux |
-| `clusters/management/` | Flux-reconciled manifests for this cluster |
+| Path                         | Holds                                                      |
+| ---------------------------- | ---------------------------------------------------------- |
+| `management/hypervisor/`     | Ansible: bare-metal Proxmox preparation                    |
+| `management/cluster/`        | OpenTofu: VMs, Talos, overlay network, storage, Flux       |
+| `clusters/management/`       | Flux-reconciled manifests for this cluster                 |
 | `config/management.tpl.json` | The one config: sites, topology and every secret reference |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator

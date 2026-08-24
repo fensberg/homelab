@@ -83,7 +83,7 @@ codified - it just lives at the layer that owns it.
 into an expired-credential failure at a client site. An OAuth client does not
 expire and mints a fresh key on every run.
 
-### State is encrypted with an age *recipient*, not a passphrase
+### State is encrypted with an age _recipient_, not a passphrase
 
 **Chose:** encrypt the R2 backup to an age public key; keep the private
 identity in 1Password, offline.
@@ -92,7 +92,7 @@ passphrase would let anything that can run the backup also read every
 backup. With a recipient key, a compromised workstation can write backups
 but cannot decrypt them.
 
-### Talos pinned to an exact version *and* schematic ID
+### Talos pinned to an exact version _and_ schematic ID
 
 **Because:** the Factory schematic encodes the system extensions. The boot
 ISO and the `installer` image must agree, or the node reboots into a
@@ -106,7 +106,7 @@ config keys and 1Password paths, with no `provider` field.
 **Chose:** a sibling `provider` field on each vendor-locked concern, asserted
 at plan time in `registry.tf`.
 **Rejected, then reinstated:** it was first dropped as documentation that
-nothing reads and that drifts out of sync. That was wrong. As an *assertion*
+nothing reads and that drifts out of sync. That was wrong. As an _assertion_
 it earns its place: the code in this root speaks to exactly one vendor per
 concern, and without the check, pointing the vault at S3 credentials while the
 code still calls Cloudflare produces an opaque authentication failure instead
@@ -222,7 +222,7 @@ part that is genuinely secret, so it is the only part stored.
 
 **Chose:** apply on local state; migrate into cluster Postgres; back up an
 encrypted copy off-site.
-**Because:** the Postgres backend runs *on* the cluster this code creates, so
+**Because:** the Postgres backend runs _on_ the cluster this code creates, so
 it cannot exist at first apply. R2 covers the circular dependency that
 creates — losing the cluster would otherwise lose the state describing it.
 

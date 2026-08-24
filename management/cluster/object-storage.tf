@@ -24,8 +24,6 @@ resource "cloudflare_r2_bucket" "homelab" {
   account_id = local.object_storage.account_id
   name       = local.object_storage.bucket
 
-  # Western North America. Change to match where you actually are; R2 egress
-  # is free, so this is about latency, not cost.
   location = "WNAM"
 }
 

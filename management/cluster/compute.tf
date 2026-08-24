@@ -42,8 +42,6 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   network_device {
     bridge = "vnetint"
     model  = "virtio"
-    # No vlan_id: the SDN zone is 'simple' and untagged. Setting it to 0
-    # explicitly is not the same as leaving the port untagged.
   }
 
   disk {
@@ -60,8 +58,6 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
 
   operating_system { type = "l26" }
 
-  # Talos will not report ready to Proxmox without the guest-agent extension
-  # baked into the Factory schematic. Leaving this off is deliberate.
   agent {
     enabled = false
   }
@@ -79,8 +75,6 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
       servers = ["1.1.1.1", "1.0.0.1"]
     }
 
-    # Static addressing derived from the index rather than listed per node, so
-    # adding a node is a node_count bump and nothing else.
     ip_config {
       ipv4 {
         address = "${local.node_ips[count.index]}/24"

@@ -29,7 +29,7 @@ locals {
   overlay_network = local.site.overlay_network
   object_storage  = local.site.object_storage
   site_state      = local.site.state
-  node_count  = local.site.control_plane_count
+  node_count      = local.site.control_plane_count
 
   # --- addressing ----------------------------------------------------------
   # The octet is declared, not computed. Reading the config tells you the

@@ -43,6 +43,7 @@ function Write-Warn { param($Message) Write-Host "    [warn] $Message" -Foregrou
 function Write-Fail { param($Message) Write-Host "    [FAIL] $Message" -ForegroundColor Red }
 
 $script:Missing = @()
+$RepoRoot = Split-Path -Parent $PSScriptRoot
 
 function Test-IsAdmin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -144,6 +145,12 @@ Install-WingetPackage -Id 'Git.Git'                 -Command 'git'    -Required
 Install-WingetPackage -Id 'OpenTofu.Tofu'           -Command 'tofu'   -Required
 Install-WingetPackage -Id 'AgileBits.1Password.CLI' -Command 'op'     -Required
 Install-WingetPackage -Id 'Rclone.Rclone'           -Command 'rclone' -Required
+
+# Python is not a project dependency in itself; it is here because pre-commit
+# needs it, and the repository's git hook calls pre-commit by name. Without it
+# every commit either fails or gets made with the hooks bypassed, which is how
+# lint errors reach a pull request unnoticed.
+Install-WingetPackage -Id 'Python.Python.3.12' -Command 'python' -Required
 
 Write-Step "Installing recommended tools"
 # Useful for diagnosing the cluster by hand. Nothing in the script calls them,
@@ -249,6 +256,54 @@ else {
     Write-Skip "$ToolsDir already on PATH"
 }
 Update-SessionPath
+
+# ---------------------------------------------------------------------------
+# pre-commit
+# ---------------------------------------------------------------------------
+Write-Step "Setting up pre-commit"
+
+$python = (Get-Command python -ErrorAction SilentlyContinue).Source
+if (-not $python) {
+    Write-Warn "python not on PATH yet - open a new shell and re-run to finish pre-commit setup."
+    $script:Missing += 'pre-commit'
+}
+else {
+    # The Microsoft Store ships a python.exe stub that only offers to install
+    # Python. It answers Get-Command but not --version, so check for real.
+    & $python --version 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "python on PATH is the Microsoft Store stub, not a real interpreter."
+        Write-Warn "Disable it under Settings > Apps > Advanced app settings > App execution aliases, then re-run."
+        $script:Missing += 'pre-commit'
+    }
+    elseif (Get-Command pre-commit -ErrorAction SilentlyContinue) {
+        Write-Skip "pre-commit already present"
+    }
+    else {
+        Write-Host "    installing pre-commit ..."
+        & $python -m pip install --quiet --upgrade pip pre-commit
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "pip could not install pre-commit."
+            $script:Missing += 'pre-commit'
+        }
+        else {
+            Update-SessionPath
+            Write-Ok "pre-commit installed"
+        }
+    }
+}
+
+# Install the hook into .git/hooks so it actually runs on commit. Harmless to
+# repeat, and cheap insurance against a clone that never had it.
+if ((Get-Command pre-commit -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $RepoRoot '.git'))) {
+    Push-Location $RepoRoot
+    try {
+        pre-commit install | Out-Null
+        if ($LASTEXITCODE -eq 0) { Write-Ok "git pre-commit hook installed" }
+        else { Write-Warn "'pre-commit install' failed - commits will not be linted." }
+    }
+    finally { Pop-Location }
+}
 
 # ---------------------------------------------------------------------------
 # WSL2 + Ansible

@@ -41,13 +41,13 @@ site is an instantiation rather than a `TF_VAR_site` switch.
 
 A subnet per hypervisor node is the wrong split. Nodes in one Proxmox cluster
 must share a subnet, because a single Talos cluster spanning them needs its
-members on one network. Give each *site* a /16 and subnet within it:
+members on one network. Give each _site_ a /16 and subnet within it:
 
-| Range | Holds |
-| --- | --- |
-| `10.<site>.0.0/24` | hypervisor and infrastructure |
-| `10.<site>.10.0/24` | Talos cluster nodes |
-| `10.<site>.20.0/24` | load-balancer pool for workloads |
+| Range                | Holds                                       |
+| -------------------- | ------------------------------------------- |
+| `10.<site>.0.0/24`   | hypervisor and infrastructure               |
+| `10.<site>.10.0/24`  | Talos cluster nodes                         |
+| `10.<site>.20.0/24`  | load-balancer pool for workloads            |
 | `10.<site>.30.0/24`+ | per-tenant, if tenants get their own ranges |
 
 Site 1 is `10.10.0.0/16`, site 2 `10.20.0.0/16`, and so on. Each site's subnet
@@ -71,7 +71,7 @@ file services, cameras, sensors. Those clusters are not copies of each other.
 Two consequences follow, and both favour independent clusters:
 
 - **Site survivability.** If a site loses its uplink, its local services keep
-  running. A stretched cluster loses quorum and goes down at *both* ends.
+  running. A stretched cluster loses quorum and goes down at _both_ ends.
   Independent clusters are more available for local work, not less.
 - **Blast radius.** A bad upgrade or a corrupted etcd stops at one building.
 
@@ -100,12 +100,12 @@ adding a tiebreaker. Pick 3, or 5 for a large site, and leave it.
 
 Real autoscaling is four separate mechanisms, and they do not all apply here:
 
-| Mechanism | Scales | Works on this platform? |
-| --- | --- | --- |
-| HPA | Pod replicas, on CPU/memory | Yes, once metrics-server is installed |
-| KEDA | Pod replicas, on external events | Yes - queue depth, cron, custom metrics |
-| VPA | A pod's requests and limits | Yes, but it fights HPA on the same metric |
-| Cluster Autoscaler | Node count | **Not on bare metal without more machinery** |
+| Mechanism          | Scales                           | Works on this platform?                      |
+| ------------------ | -------------------------------- | -------------------------------------------- |
+| HPA                | Pod replicas, on CPU/memory      | Yes, once metrics-server is installed        |
+| KEDA               | Pod replicas, on external events | Yes - queue depth, cron, custom metrics      |
+| VPA                | A pod's requests and limits      | Yes, but it fights HPA on the same metric    |
+| Cluster Autoscaler | Node count                       | **Not on bare metal without more machinery** |
 
 Cluster Autoscaler asks an infrastructure API for another machine. On a cloud
 provider that API exists. On a NUC it does not, so CA has nothing to call.

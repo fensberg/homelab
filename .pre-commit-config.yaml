@@ -5,6 +5,9 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        # Kubernetes manifests legitimately hold several documents in one file,
+        # separated by ---. Without this the hook rejects every Flux manifest.
+        args: ["--allow-multiple-documents"]
       - id: check-merge-conflict
       - id: detect-private-key
 
