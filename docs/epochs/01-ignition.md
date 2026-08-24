@@ -287,6 +287,14 @@ To be completed when the epoch closes.
 
 ## Gotchas
 
+- **"tailscaled is running" does not mean "logged in the way this needs".** A
+  host logged in manually is user-owned and carries no tags, so `autoApprovers`
+
+  - which is keyed on the router tag - never applies to it and every route it
+    advertises waits for a human. The playbook checks for the tag, not for the
+    service, and re-authenticates with `--force-reauth` when it is absent;
+    converting a user-owned node to a tagged one cannot be done any other way.
+
 - **Applying the SDN config does not bring the bridge up.**
   `pvesh set /cluster/sdn` writes the interface definition and stops, leaving
   the vnet DOWN with its gateway address assigned - existing, addressed, and

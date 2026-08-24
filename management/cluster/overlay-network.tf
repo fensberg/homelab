@@ -50,3 +50,10 @@ output "overlay_network_auth_key" {
   value     = tailscale_tailnet_key.hypervisor.key
   sensitive = true
 }
+
+# The playbook has to know which tag to check the host against, and it must be
+# the same tag the key carries. Exported rather than repeated so the two cannot
+# drift apart.
+output "overlay_router_tag" {
+  value = local.overlay_router_tag
+}

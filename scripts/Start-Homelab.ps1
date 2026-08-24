@@ -464,11 +464,19 @@ function Invoke-PhaseOverlay {
             throw "Could not read the overlay_network_auth_key output."
         }
 
+        $tag = & tofu output -raw overlay_router_tag
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tag)) {
+            throw "Could not read the overlay_router_tag output."
+        }
+
         # Handed to Ansible as a vars file rather than on the command line,
         # where it would be visible in the process list. Sterilize deletes it.
         Write-Info "writing the auth key for Ansible"
-        "---`noverlay_auth_key: `"$key`"`n" |
-            Out-File -FilePath $OverlayVars -Encoding ascii -NoNewline
+        @(
+            "---",
+            "overlay_auth_key: `"$key`"",
+            "overlay_router_tag: `"$tag`""
+        ) -join "`n" | Out-File -FilePath $OverlayVars -Encoding ascii
 
         Write-Ok "auth key minted; the tailnet policy auto-approves this subnet"
     }

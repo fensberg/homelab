@@ -103,6 +103,10 @@
     # generates and the Sterilize phase deletes. Empty means "log in by hand".
     overlay_auth_key: ""
 
+    # Exported by overlay-network.tf alongside the key, so the tag checked here
+    # is by construction the tag the key carries.
+    overlay_router_tag: "tag:homelab-router"
+
   pre_tasks:
     - name: Confirm this host is actually Proxmox VE
       ansible.builtin.stat:
@@ -252,22 +256,43 @@
           {{ ts_status_raw.rc == 0
              and (ts_status_raw.stdout | length) > 0
              and (ts_status_raw.stdout | from_json).BackendState | default('') == 'Running' }}
+        # "Running" is not the same as "logged in the way this project needs".
+        # A host logged in manually is user-owned and carries no tags, so
+        # autoApprovers - which is keyed on the router tag - never applies to
+        # it, and every route it advertises waits for a human. Checking the tag
+        # is what distinguishes the two.
+        ts_tagged: >-
+          {{ overlay_router_tag in
+             (((ts_status_raw.stdout | default('{}', true) | from_json).Self
+               | default({}, true)).Tags | default([], true)) }}
       tags: [tailscale, routing]
 
-    # Only run 'tailscale up' when not already connected. Running it on every
-    # pass can briefly drop the tunnel you are connected through.
-    #
-    # The key carries tag:homelab-router, and the tailnet policy managed in
-    # overlay-network.tf auto-approves this subnet for that tag. No console clicking.
+    - name: Report why Tailscale is being re-authenticated
+      ansible.builtin.debug:
+        msg: >-
+          This host is on the tailnet but is not tagged {{ overlay_router_tag }},
+          so it is user-owned and autoApprovers cannot apply to it. Re-running
+          'tailscale up --force-reauth' with the tagged key to convert it.
+      when:
+        - ts_running | bool
+        - not (ts_tagged | bool)
+        - (overlay_auth_key | length) > 0
+      tags: [tailscale]
+
+    # Run when not connected at all, OR when connected without the tag.
+    # Changing a node from user-owned to tagged requires re-authentication;
+    # a plain 'tailscale up' on an already-running node will not do it, which
+    # is why --force-reauth is used in that case.
     - name: Log in to Tailscale and advertise the SDN subnet
       ansible.builtin.command: >-
         tailscale up
         --authkey={{ overlay_auth_key }}
         --advertise-routes={{ advertise_routes }}
         --accept-dns=false
+        {{ '--force-reauth' if (ts_running | bool) else '' }}
       when:
-        - not (ts_running | bool)
         - (overlay_auth_key | length) > 0
+        - not (ts_running | bool) or not (ts_tagged | bool)
       no_log: true
       tags: [tailscale]
 
