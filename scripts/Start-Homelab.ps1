@@ -252,6 +252,87 @@ function Read-RenderedConfig {
     Get-Content $ConfigRendered -Raw | ConvertFrom-Json
 }
 
+function Get-JsonLeaf {
+    <# Flattens a parsed JSON tree to dotted paths and their scalar values. #>
+    param($Node, [string]$Path = '')
+
+    if ($null -eq $Node) {
+        return [pscustomobject]@{ Path = $Path; Value = $null }
+    }
+    if ($Node -is [System.Management.Automation.PSCustomObject]) {
+        foreach ($prop in $Node.PSObject.Properties) {
+            $child = if ($Path) { "$Path.$($prop.Name)" } else { $prop.Name }
+            Get-JsonLeaf -Node $prop.Value -Path $child
+        }
+        return
+    }
+    if ($Node -is [System.Collections.IEnumerable] -and $Node -isnot [string]) {
+        $i = 0
+        foreach ($item in $Node) { Get-JsonLeaf -Node $item -Path "$Path[$i]"; $i++ }
+        return
+    }
+    [pscustomobject]@{ Path = $Path; Value = $Node }
+}
+
+function Assert-RenderedConfigComplete {
+    <#
+      Every op:// reference in the template must resolve to a real value.
+
+      A blank 1Password field resolves to an empty string, which op inject
+      reports as success. The empty value then travels all the way into a
+      provider, where it surfaces as something like "credentials are empty"
+      with no indication of which vault field is at fault. Comparing the
+      template against the rendered output names the exact reference.
+    #>
+    $template = Get-Content $ConfigTpl -Raw | ConvertFrom-Json
+    $rendered = Read-RenderedConfig
+
+    $renderedByPath = @{}
+    foreach ($leaf in (Get-JsonLeaf -Node $rendered)) { $renderedByPath[$leaf.Path] = $leaf.Value }
+
+    $empty = @()
+    $unresolved = @()
+
+    foreach ($leaf in (Get-JsonLeaf -Node $template)) {
+        if ($leaf.Value -isnot [string]) { continue }
+        if ($leaf.Value -notmatch 'op://') { continue }
+
+        $reference = ([regex]::Match($leaf.Value, 'op://[^\s}]+')).Value
+        $actual = $renderedByPath[$leaf.Path]
+
+        if ($actual -is [string] -and $actual -match 'op://') {
+            $unresolved += "  $($leaf.Path)  <-  $reference"
+        }
+        elseif ([string]::IsNullOrWhiteSpace($actual)) {
+            $empty += "  $($leaf.Path)  <-  $reference"
+        }
+    }
+
+    if ($unresolved.Count -gt 0) {
+        throw @"
+op inject did not substitute $($unresolved.Count) reference(s):
+
+$($unresolved -join "`n")
+
+The item or field does not exist, or the path is misspelled. Check with:
+    op read "<the reference above>"
+"@
+    }
+
+    if ($empty.Count -gt 0) {
+        throw @"
+$($empty.Count) vault field(s) resolved to an empty value:
+
+$($empty -join "`n")
+
+The field exists but has no content. Fill it in, or remove the entry from
+config/management.tpl.json if this deployment does not need it. Empty values
+would otherwise reach a provider and fail as "credentials are empty", which
+does not say which field is missing.
+"@
+    }
+}
+
 function Convert-ToWslPath {
     param([Parameter(Mandatory)][string]$WindowsPath)
     $full = (Resolve-Path $WindowsPath).Path
@@ -344,6 +425,7 @@ If the desktop app is installed, enable Settings > Developer > Integrate with
         "advertise_routes: `"$($Net.SiteCidr)`""
     ) -join "`n" | Out-File -FilePath $SiteVars -Encoding ascii
 
+    Assert-RenderedConfigComplete
     Write-Ok "secrets rendered"
 }
 
