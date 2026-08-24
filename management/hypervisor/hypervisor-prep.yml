@@ -283,17 +283,42 @@
     # Changing a node from user-owned to tagged requires re-authentication;
     # a plain 'tailscale up' on an already-running node will not do it, which
     # is why --force-reauth is used in that case.
+    # --timeout is not optional here. 'tailscale up' blocks until the control
+    # plane confirms the login, so a host that cannot reach the coordination
+    # server hangs forever with no output rather than failing. Bounding it
+    # turns an unrecoverable wait into a diagnosable error.
     - name: Log in to Tailscale and advertise the SDN subnet
       ansible.builtin.command: >-
         tailscale up
         --authkey={{ overlay_auth_key }}
         --advertise-routes={{ advertise_routes }}
         --accept-dns=false
+        --timeout=60s
         {{ '--force-reauth' if (ts_running | bool) else '' }}
+      register: ts_up
+      failed_when: false
       when:
         - (overlay_auth_key | length) > 0
         - not (ts_running | bool) or not (ts_tagged | bool)
       no_log: true
+      tags: [tailscale]
+
+    - name: Fail with the reason Tailscale could not authenticate
+      ansible.builtin.assert:
+        that: ts_up.rc == 0
+        fail_msg: >-
+          'tailscale up' did not complete within 60 seconds
+          (exit {{ ts_up.rc | default('n/a') }}). Almost always this host
+          cannot reach the Tailscale coordination server, in which case
+          'tailscale status' reports it offline and the journal shows DERP
+          connection failures. Check with
+          'journalctl -u tailscaled -n 30 --no-pager', and try
+          'systemctl restart tailscaled' - a wedged daemon shows exactly these
+          symptoms while the network underneath it tests fine.
+        success_msg: "Tailscale authenticated with the tagged key."
+      when:
+        - ts_up is defined
+        - not (ts_up.skipped | default(false))
       tags: [tailscale]
 
     - name: Explain how to log in when no key was supplied

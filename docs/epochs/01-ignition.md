@@ -287,6 +287,16 @@ To be completed when the epoch closes.
 
 ## Gotchas
 
+- **`tailscale up` blocks forever if the control plane is unreachable.** It
+  waits for the coordination server to confirm the login and prints nothing
+  while it does, so a wedged or disconnected `tailscaled` presents as a hung
+  playbook rather than an error. Every invocation carries `--timeout`.
+- **A wedged `tailscaled` looks exactly like a network fault, and is not one.**
+  When it happens the host still reaches `controlplane.tailscale.com` and the
+  DERP relays on 443, path MTU is intact, and the firewall is clear - while
+  `tailscaled` reports the coordination server unreachable. `systemctl restart
+tailscaled` is the fix; hunting the network is not.
+
 - **A targeted apply only writes outputs that depend on the targeted
   resource.** The phased design applies with `-target`, so an output built from
   a bare local depends on nothing, is never written to state, and
