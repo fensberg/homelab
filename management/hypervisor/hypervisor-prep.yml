@@ -664,13 +664,39 @@
         reload: true
       tags: [routing]
 
-    - name: Enable IPv6 forwarding
+    # IPv6 forwarding is deliberately OFF, and this task exists to undo it on
+    # hosts an earlier version of this playbook turned it on.
+    #
+    # Enabling it has a side effect that is easy to miss: the kernel stops
+    # honouring router advertisements unless accept_ra is also set to 2. A host
+    # that gets its IPv6 configuration by SLAAC therefore loses its global
+    # address and its default route the moment forwarding is switched on. The
+    # symptom is not obviously IPv6 at all - tailscaled keeps selecting IPv6
+    # DERP relays and failing with "network is unreachable" while every IPv4
+    # test passes, which reads as a wedged daemon.
+    #
+    # Nothing here needs it. The subnets advertised over the overlay network
+    # are IPv4 only. If IPv6 subnet routing is ever added, this must become
+    # forwarding=1 AND accept_ra=2, not forwarding alone.
+    - name: Ensure IPv6 forwarding is off
       ansible.posix.sysctl:
         name: net.ipv6.conf.all.forwarding
-        value: "1"
+        value: "0"
         sysctl_set: true
         state: present
         reload: true
+      register: ipv6_fwd
+      tags: [routing]
+
+    - name: Report that IPv6 routing was repaired
+      ansible.builtin.debug:
+        msg: >-
+          IPv6 forwarding was on and has been turned off. The kernel will
+          accept router advertisements again, but the existing default route
+          is not restored retroactively - restart tailscaled, or wait for the
+          next router advertisement, before expecting the overlay network to
+          recover.
+      when: ipv6_fwd.changed
       tags: [routing]
 
     - name: Advertise the SDN subnet over Tailscale
