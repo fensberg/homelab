@@ -496,13 +496,26 @@ function Invoke-PhaseHypervisor {
     # Windows PATH, which contains "Program Files (x86)", and an unquoted
     # assignment of it is a bash syntax error at the parenthesis. A script file
     # sidesteps every layer of quoting between PowerShell, wsl.exe and bash.
-    # inventory.yml already carries the addresses; this list is just for the
-    # reachability preflight below.
+    # Resolved here rather than inherited: PowerShell scopes variables to the
+    # function that set them, so $Net from the Render phase is not visible in
+    # this one. Reading it as if it were left $hostList empty, which made the
+    # preflight loop below iterate zero times and silently do nothing.
+    $Net = Get-SiteNetwork -Name $Site
     $hostList = ($Net.Hypervisors | ForEach-Object { $_.ip }) -join ' '
+    if ([string]::IsNullOrWhiteSpace($hostList)) {
+        throw "No hypervisor addresses resolved for site '$Site'. The preflight cannot run, so refusing to continue."
+    }
+
+    # ansible.cfg is NOT picked up from this directory: /mnt/c is world-writable
+    # under WSL, and Ansible refuses to load a config file from a world-writable
+    # directory. Naming the file explicitly through ANSIBLE_CONFIG is honoured,
+    # because that is a deliberate choice rather than ambient discovery.
+    $wslAnsibleCfg = Convert-ToWslPath (Join-Path $HypervisorDir 'ansible.cfg')
 
     $script = @"
 set -e
 export PATH="`$HOME/.local/bin:`$PATH"
+export ANSIBLE_CONFIG='$wslAnsibleCfg'
 cd '$wslRepo'
 
 # Prove we can log in before handing over to Ansible. Ansible reports an SSH
