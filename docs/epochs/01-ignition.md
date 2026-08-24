@@ -244,6 +244,15 @@ To be completed when the epoch closes.
 
 ## Gotchas
 
+- **Renaming a site renames its VMs.** Everything nameable derives from
+  `sites.<key>.name`, so changing it in the vault makes OpenTofu see different
+  VMs and destroy and recreate them. Rename deliberately, not casually.
+- **The WSL command is written to a file, not passed as `bash -lc`.** WSL
+  inherits the Windows PATH, which contains `Program Files (x86)`, and an
+  unquoted assignment of it is a bash syntax error at the parenthesis. A
+  script file sidesteps every layer of quoting between PowerShell, wsl.exe
+  and bash.
+
 - **Tailscale auth key descriptions reject punctuation.** The API returns
   "description had invalid characters (400)" for parentheses; the field is
   also capped at 50 characters. Letters, digits and spaces only.

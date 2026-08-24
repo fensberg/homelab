@@ -12,10 +12,19 @@ locals {
   config = jsondecode(file("../../config/management.rendered.json"))
 
   site = local.config.sites[var.site]
-  # Named for the octet rather than the array position, so a VM name lines
-  # up with its address (site10-cp-01 lives at 10.10.10.100) and stays stable
-  # if sites[] is ever reordered.
-  site_name = "site${local.site.octet}"
+
+  # Everything nameable uses the site's own name, so Proxmox, Talos, kubeconfig
+  # and the Tailscale console all say "sheridan" rather than a positional key
+  # nobody recognises. The name is a vault reference, so it never reaches git.
+  #
+  # Sanitised because these become Proxmox VM names and a Talos cluster name,
+  # which are DNS-shaped: a label like "Sheridan Road Office" has to collapse
+  # to "sheridan-road-office". Falls back to the map key if the name is blank.
+  site_name = (
+    trim(lower(replace(try(local.site.name, ""), "/[^A-Za-z0-9]+/", "-")), "-") != ""
+    ? trim(lower(replace(local.site.name, "/[^A-Za-z0-9]+/", "-")), "-")
+    : var.site
+  )
 
   # nodes is a map, so iterate it in sorted key order: node0, node1, node2.
   # HCL orders map iteration lexicographically, which keeps VM placement
@@ -68,8 +77,10 @@ locals {
   # a glance in Proxmox, in Talos and in kubeconfig.
   # site.name is a vault reference, so the human label for a site never
   # reaches git while still appearing in the cluster name.
-  cluster_name = "${local.config.organization.name}-${local.site.name}"
-  vm_names     = [for i in range(local.node_count) : format("%s-cp-%02d", local.site_name, i + 1)]
+  cluster_name = trim(lower(replace(
+    "${local.config.organization.name}-${local.site_name}",
+  "/[^A-Za-z0-9]+/", "-")), "-")
+  vm_names = [for i in range(local.node_count) : format("%s-cp-%02d", local.site_name, i + 1)]
 
   # Banded by octet so two sites could share a Proxmox cluster without
   # colliding: octet 10 uses 1000-1099, octet 11 uses 1100-1199.

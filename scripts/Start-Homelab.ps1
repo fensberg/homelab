@@ -155,8 +155,12 @@ function Get-SiteNetwork {
     if ($site.control_plane_count -lt 1) { throw "Site '$Name' has control_plane_count $($site.control_plane_count); it must be at least 1." }
 
     $o = $site.octet
-    # Named for the octet, so a VM name lines up with its address.
-    $slug = "site$o"
+
+    # Must match the site_name expression in variables.tf: lowercase, every run
+    # of non-alphanumerics collapsed to a hyphen, trimmed. These become Proxmox
+    # VM names, so "Sheridan Road Office" has to become "sheridan-road-office".
+    $slug = ($site.name -replace '[^A-Za-z0-9]+', '-').Trim('-').ToLower()
+    if ([string]::IsNullOrWhiteSpace($slug)) { $slug = $Name }
     $label = if ([string]::IsNullOrWhiteSpace($site.name)) { $slug } else { $site.name }
 
     [pscustomobject]@{
@@ -487,16 +491,37 @@ function Invoke-PhaseHypervisor {
 
     # Ansible cannot run natively on Windows, so this phase hops into WSL.
     # The repo is read from /mnt/c/... - slower than a native FS, fine here.
-    $cmd = "export PATH=`$HOME/.local/bin:`$PATH; cd '$wslRepo' && " +
-           "ansible-playbook -i inventory.yml hypervisor-prep.yml $siteVars $keyVars $extraVars"
+    #
+    # Written to a file rather than passed as bash -lc "...". WSL inherits the
+    # Windows PATH, which contains "Program Files (x86)", and an unquoted
+    # assignment of it is a bash syntax error at the parenthesis. A script file
+    # sidesteps every layer of quoting between PowerShell, wsl.exe and bash.
+    $script = @"
+set -e
+export PATH="`$HOME/.local/bin:`$PATH"
+cd '$wslRepo'
+exec ansible-playbook -i inventory.yml hypervisor-prep.yml $siteVars $keyVars $extraVars
+"@
+
+    $tmpScript = Join-Path $env:TEMP 'homelab-hypervisor.sh'
+    [IO.File]::WriteAllText(
+        $tmpScript,
+        ($script -replace "`r`n", "`n"),
+        (New-Object Text.UTF8Encoding $false))
+    $wslScript = Convert-ToWslPath $tmpScript
 
     # With no -d, WSL uses the default distro, whatever it happens to be.
-    $wslArgs = if ($WslDistro) { @('-d', $WslDistro, '--', 'bash', '-lc', $cmd) }
-               else { @('--', 'bash', '-lc', $cmd) }
+    $wslArgs = if ($WslDistro) { @('-d', $WslDistro, '--', 'bash', $wslScript) }
+               else { @('--', 'bash', $wslScript) }
 
     Write-Info ("running the playbook inside WSL" + $(if ($WslDistro) { " ($WslDistro)" } else { " (default distro)" }))
     Write-Info "you will be prompted for the Proxmox host's sudo password"
-    Invoke-Native { wsl @wslArgs } 'ansible-playbook'
+    try {
+        Invoke-Native { wsl @wslArgs } 'ansible-playbook'
+    }
+    finally {
+        Remove-Item -Force $tmpScript -ErrorAction SilentlyContinue
+    }
 
     Write-Ok "hypervisor configured"
 }
