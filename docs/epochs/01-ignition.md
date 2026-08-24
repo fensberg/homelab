@@ -122,6 +122,31 @@ noise rather than a guard.
 is honest: Terraform resource names are irreducibly vendor-specific, so this
 keeps the blast radius of a swap to one `.tf` file rather than eliminating it.
 
+### The overlay network is remote access, not cluster plumbing
+
+**Chose:** the overlay network is optional. `-SkipOverlay` drops the Overlay
+phase and tells the playbook to leave Tailscale alone; the SDN, its gateway
+and its SNAT are configured either way.
+**Rejected:** the original arrangement, where the playbook always configured
+Tailscale and the Verify phase always reached the SDN across it.
+
+**Because:** the two are unrelated and welding them together made a remote
+access problem block cluster provisioning outright. The SDN is entirely local
+to the hypervisor - the cluster does not care whether anyone can reach it from
+elsewhere. The overlay exists so an operator who is _not_ on that LAN can.
+Tying them meant a wedged tailnet stopped VMs being created, which is
+backwards.
+
+On the hypervisor's own LAN the overlay buys nothing for provisioning: one
+static route on the workstation, pointing at the hypervisor, reaches the SDN
+directly and depends on nothing but the LAN.
+
+    route -p add 10.10.0.0 mask 255.255.0.0 <hypervisor LAN address>
+
+This is also the shape client work wants. Provision on site over the LAN; the
+overlay is how you get back in afterwards. If it is down you have lost remote
+access, not the ability to build anything.
+
 ### The SDN zone is EVPN from the start, not simple
 
 **Chose:** an EVPN zone with a BGP controller, from the first deployment,

@@ -72,6 +72,12 @@ param(
     # lock must then be committed.
     [switch]$Upgrade,
 
+    # The overlay network is remote access, not cluster plumbing. Skip it when
+    # running from the hypervisor's own LAN: the SDN is local to the
+    # hypervisor and needs no overlay, and reaching it then takes one static
+    # route on this workstation rather than a working tailnet.
+    [switch]$SkipOverlay,
+
     [switch]$KeepOnFailure,
     [switch]$SkipUpgrade,
     [switch]$WhatIfPhase,
@@ -493,13 +499,17 @@ function Invoke-PhaseHypervisor {
 
     $wslRepo = Convert-ToWslPath $HypervisorDir
     $extraVars = if ($SkipUpgrade) { "-e do_dist_upgrade=false" } else { "" }
-    $keyVars = if (Test-Path $OverlayVars) { "-e @overlay-network.auto.yml" } else { "" }
+    $keyVars = if ((-not $SkipOverlay) -and (Test-Path $OverlayVars)) { "-e @overlay-network.auto.yml" } else { "" }
+    $overlayVar = if ($SkipOverlay) { "-e configure_overlay=false" } else { "" }
     if (-not (Test-Path $SiteVars)) {
         throw "No site.auto.yml - run the Render phase first so the playbook knows this site's network."
     }
     $siteVars = "-e @site.auto.yml"
 
-    if (-not (Test-Path $OverlayVars)) {
+    if ($SkipOverlay) {
+        Write-Info "overlay network skipped - the hypervisor will not join the tailnet"
+    }
+    elseif (-not (Test-Path $OverlayVars)) {
         Write-Warn "No overlay-network.auto.yml - run the Overlay phase first, or log the host in by hand."
     }
 
@@ -553,7 +563,7 @@ for h in $hostList; do
 done
 rm -f /tmp/homelab-ssh.err
 
-exec ansible-playbook -i inventory.yml hypervisor-prep.yml $siteVars $keyVars $extraVars
+exec ansible-playbook -i inventory.yml hypervisor-prep.yml $siteVars $keyVars $overlayVar $extraVars
 "@
 
     $tmpScript = Join-Path $env:TEMP 'homelab-hypervisor.sh'
@@ -911,6 +921,8 @@ function Invoke-EmergencyDestroy {
 if ($Phase) { $toRun = @($Phase) }
 elseif ($From) { $toRun = @($AllPhases[$AllPhases.IndexOf($From)..($AllPhases.Count - 1)]) }
 else { $toRun = $AllPhases }
+
+if ($SkipOverlay) { $toRun = @($toRun | Where-Object { $_ -ne 'Overlay' }) }
 
 if ($WhatIfPhase) {
     Write-Host "`nPhases that would run:`n" -ForegroundColor Cyan
