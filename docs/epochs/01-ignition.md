@@ -122,6 +122,33 @@ noise rather than a guard.
 is honest: Terraform resource names are irreducibly vendor-specific, so this
 keeps the blast radius of a swap to one `.tf` file rather than eliminating it.
 
+### The SDN zone is EVPN from the start, not simple
+
+**Chose:** an EVPN zone with a BGP controller, from the first deployment,
+with peers and exit nodes derived from the inventory.
+**Rejected:** a `simple` zone, which is what the first implementation used and
+what shipped for several iterations.
+**Because:** a simple zone is node-local. Every hypervisor gets its own
+isolated bridge carrying the same subnet, so VMs on different nodes cannot
+reach each other. It works for exactly one box and breaks silently when a
+second joins - the Proxmox cluster forms and then fails to talk to itself.
+
+That was known and written down as a gotcha rather than fixed, which was the
+wrong call. Recording a landmine is not the same as not laying one, and the
+migration only ever gets more expensive: a zone's type cannot be changed in
+place, so converting after VMs exist means deleting the vnet and zone,
+detaching every VM attached to them. Doing it while the fleet is empty costs
+nothing.
+
+`vxlan` was rejected as the replacement because it provides L2 across nodes
+but no gateway and no SNAT, both of which this design depends on. EVPN is the
+like-for-like substitute.
+
+The identifiers - ASN, VRF VNI and vnet VNI - are derived from the site's
+octet, so two sites cannot collide on BGP or VXLAN any more than they can on
+addressing. EVPN also needs FRR, which a simple zone does not, so the playbook
+installs and starts it.
+
 ### CloudNativePG for the state database
 
 **Chose:** CloudNativePG, deployed by Flux, backing up to object storage via
@@ -306,11 +333,6 @@ To be completed when the epoch closes.
   unreachable node, confirm `docs/tailnet-setup.md` has actually been applied
   to the tailnet you are deploying into. A missing `autoApprovers` entry looks
   identical to a broken network.
-- **The SDN zone is `simple`, which is node-local.** Each Proxmox node gets
-  its own isolated bridge carrying the same subnet, so VMs on different nodes
-  cannot reach each other. That is correct for one hypervisor and breaks the
-  moment a second joins the Proxmox cluster. Multi-node needs a `vxlan` or
-  `evpn` zone instead - see epoch 02.
 - **Retire an octet, never recycle it.** Routes for a decommissioned site can
   linger on the tailnet, and reissuing its octet points them at the new estate.
   Leave gaps; the range is 1-95 and you will not run out.

@@ -57,6 +57,25 @@
 
     sdn_zone: "internal"
     sdn_vnet: "vnetint"
+    sdn_controller: "evpnctl"
+
+    # EVPN, not simple.
+    #
+    # A 'simple' zone is node-local: every node gets its own isolated bridge
+    # carrying the same subnet, so VMs on different nodes cannot reach each
+    # other. It works for exactly one hypervisor and breaks silently the moment
+    # a second joins the Proxmox cluster - the cluster forms and then fails to
+    # talk to itself.
+    #
+    # EVPN spans nodes and still provides the gateway and SNAT that this design
+    # depends on. A plain 'vxlan' zone would give L2 across nodes but no gateway
+    # and no SNAT, so it is not a like-for-like replacement.
+    #
+    # Peers and exit nodes are derived from the inventory rather than
+    # configured, so adding a hypervisor to the fleet is genuinely sufficient
+    # on this side too.
+    sdn_peers: "{{ groups['hypervisors'] | map('extract', hostvars, 'ansible_host') | list }}"
+    sdn_exit_nodes: "{{ groups['hypervisors'] | list }}"
 
     # Every value below is supplied per site by the start button, via
     # site.auto.yml generated from the site index. The defaults are only
@@ -66,6 +85,12 @@
     sdn_gateway: "UNSET"
     sdn_dhcp_start: "UNSET"
     sdn_dhcp_end: "UNSET"
+
+    # Derived from the site's octet so two sites on one tailnet cannot collide
+    # on BGP or VXLAN identifiers either. 0 means "not supplied".
+    sdn_asn: 0
+    sdn_vrf_vni: 0
+    sdn_vnet_vni: 0
 
     # The route advertised over the overlay network is the site's whole /16,
     # not just the node subnet. Advertising the /16 means new subnets at this
@@ -103,6 +128,9 @@
           - sdn_dhcp_start != "UNSET"
           - sdn_dhcp_end != "UNSET"
           - advertise_routes != "UNSET"
+          - (sdn_asn | int) > 0
+          - (sdn_vrf_vni | int) > 0
+          - (sdn_vnet_vni | int) > 0
         fail_msg: >-
           Per-site network values are missing. Run this through the start
           button, which generates site.auto.yml from the site index, or
@@ -166,6 +194,11 @@
           - sudo
           - ca-certificates
           - dnsmasq
+          # EVPN's control plane is BGP, which Proxmox drives through FRR. A
+          # 'simple' zone needs none of this; an EVPN zone will not come up
+          # without it.
+          - frr
+          - frr-pythontools
         state: present
         update_cache: true
         cache_valid_time: 3600
@@ -370,18 +403,86 @@
     # ========================================================================
     # 5. SDN
     # ========================================================================
+    # SDN objects are cluster-wide, so they are created once rather than once
+    # per hypervisor. Only the per-node checks further down run everywhere.
+    - name: List SDN controllers
+      ansible.builtin.command: pvesh get /cluster/sdn/controllers --output-format json
+      register: sdn_controllers
+      changed_when: false
+      check_mode: false
+      run_once: true
+      tags: [sdn]
+
+    - name: Create the EVPN controller
+      ansible.builtin.command: >-
+        pvesh create /cluster/sdn/controllers
+        --controller {{ sdn_controller }} --type evpn
+        --asn {{ sdn_asn }} --peers {{ sdn_peers | join(',') }}
+      when: sdn_controller not in (sdn_controllers.stdout | from_json | map(attribute='controller') | list)
+      run_once: true
+      tags: [sdn]
+
+    # Peers is the list of hypervisors that speak BGP to each other. With one
+    # node it contains only itself, which is valid and becomes correct
+    # automatically when the fleet grows.
+    - name: Keep the controller's peer list in step with the fleet
+      ansible.builtin.command: >-
+        pvesh set /cluster/sdn/controllers/{{ sdn_controller }}
+        --peers {{ sdn_peers | join(',') }}
+      when: sdn_controller in (sdn_controllers.stdout | from_json | map(attribute='controller') | list)
+      changed_when: false
+      run_once: true
+      tags: [sdn]
+
     - name: List SDN zones
       ansible.builtin.command: pvesh get /cluster/sdn/zones --output-format json
       register: sdn_zones
       changed_when: false
       check_mode: false
+      run_once: true
       tags: [sdn]
 
-    - name: Create the SDN zone
+    # A zone's type cannot be changed in place. Refusing loudly is better than
+    # half-migrating: switching from simple means deleting the vnet and zone,
+    # which detaches every VM already on them.
+    - name: Refuse to run against a zone of the wrong type
+      ansible.builtin.assert:
+        that: >-
+          (sdn_zones.stdout | from_json
+           | selectattr('zone', 'equalto', sdn_zone)
+           | map(attribute='type') | first | default('evpn')) == 'evpn'
+        fail_msg: >-
+          Zone '{{ sdn_zone }}' already exists and is not an EVPN zone. Its
+          type cannot be changed in place. Delete the vnet and the zone - which
+          detaches any VM using them - and re-run:
+          'pvesh delete /cluster/sdn/vnets/{{ sdn_vnet }}' then
+          'pvesh delete /cluster/sdn/zones/{{ sdn_zone }}' then
+          'pvesh set /cluster/sdn'.
+        success_msg: "Zone '{{ sdn_zone }}' is absent or already EVPN."
+      run_once: true
+      tags: [sdn]
+
+    - name: Create the EVPN zone
       ansible.builtin.command: >-
         pvesh create /cluster/sdn/zones
-        --zone {{ sdn_zone }} --type simple --ipam pve --dhcp dnsmasq
+        --zone {{ sdn_zone }} --type evpn
+        --controller {{ sdn_controller }}
+        --vrf-vxlan {{ sdn_vrf_vni }}
+        --exitnodes {{ sdn_exit_nodes | join(',') }}
+        --ipam pve --dhcp dnsmasq
       when: sdn_zone not in (sdn_zones.stdout | from_json | map(attribute='zone') | list)
+      run_once: true
+      tags: [sdn]
+
+    # Exit nodes are the hypervisors that route this subnet to the outside
+    # world. Every node is one, so losing a box does not cut off the others.
+    - name: Keep the zone's exit nodes in step with the fleet
+      ansible.builtin.command: >-
+        pvesh set /cluster/sdn/zones/{{ sdn_zone }}
+        --exitnodes {{ sdn_exit_nodes | join(',') }}
+      when: sdn_zone in (sdn_zones.stdout | from_json | map(attribute='zone') | list)
+      changed_when: false
+      run_once: true
       tags: [sdn]
 
     - name: Read the SDN zone configuration
@@ -389,11 +490,13 @@
       register: sdn_zone_cfg
       changed_when: false
       check_mode: false
+      run_once: true
       tags: [sdn]
 
     - name: Ensure DHCP is enabled on the zone
       ansible.builtin.command: pvesh set /cluster/sdn/zones/{{ sdn_zone }} --dhcp dnsmasq
       when: (sdn_zone_cfg.stdout | from_json).dhcp | default('') != 'dnsmasq'
+      run_once: true
       tags: [sdn]
 
     - name: List SDN vnets
@@ -401,12 +504,17 @@
       register: sdn_vnets
       changed_when: false
       check_mode: false
+      run_once: true
       tags: [sdn]
 
+    # An EVPN vnet needs a VXLAN VNI, which a simple vnet does not. It is
+    # derived from the octet so two sites cannot pick the same one.
     - name: Create the vnet
       ansible.builtin.command: >-
-        pvesh create /cluster/sdn/vnets --vnet {{ sdn_vnet }} --zone {{ sdn_zone }}
+        pvesh create /cluster/sdn/vnets
+        --vnet {{ sdn_vnet }} --zone {{ sdn_zone }} --tag {{ sdn_vnet_vni }}
       when: sdn_vnet not in (sdn_vnets.stdout | from_json | map(attribute='vnet') | list)
+      run_once: true
       tags: [sdn]
 
     - name: List subnets on the vnet
@@ -416,6 +524,7 @@
       changed_when: false
       failed_when: false
       check_mode: false
+      run_once: true
       tags: [sdn]
 
     - name: Create the subnet with SNAT and a DHCP pool
@@ -426,6 +535,7 @@
       when: >-
         sdn_subnets.rc != 0 or
         (sdn_subnets.stdout | default('[]') | from_json | length) == 0
+      run_once: true
       tags: [sdn]
 
     # Always commit. 'pvesh set /cluster/sdn' is the API equivalent of the
@@ -436,6 +546,17 @@
     - name: Apply the pending SDN configuration
       ansible.builtin.command: pvesh set /cluster/sdn
       changed_when: false
+      run_once: true
+      tags: [sdn]
+
+    # FRR carries the BGP session that EVPN's control plane runs over. It is
+    # not needed by a simple zone, so a host converted from one may never have
+    # had it started.
+    - name: Enable and start FRR
+      ansible.builtin.systemd:
+        name: frr
+        enabled: true
+        state: started
       tags: [sdn]
 
     - name: Verify the vnet bridge exists on the host

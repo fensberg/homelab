@@ -172,6 +172,13 @@ function Get-SiteNetwork {
         Gateway     = "10.$o.10.1"
         DhcpStart   = "10.$o.10.50"
         DhcpEnd     = "10.$o.10.99"
+
+        # EVPN identifiers, derived from the octet so two sites cannot collide
+        # on BGP or VXLAN either. 64512-65534 is the private ASN range, and an
+        # octet is capped at 95, so these stay well inside it.
+        Asn         = 65000 + $o
+        VrfVni      = 10000 + $o
+        VnetVni     = 11000 + $o
         NodeIps     = @(0..($site.control_plane_count - 1) | ForEach-Object { "10.$o.10.$(100 + $_)" })
         VmNames     = @(0..($site.control_plane_count - 1) | ForEach-Object { "$slug-cp-{0:d2}" -f ($_ + 1) })
         Hypervisors = $nodes
@@ -426,7 +433,10 @@ If the desktop app is installed, enable Settings > Developer > Integrate with
         "sdn_gateway: `"$($Net.Gateway)`"",
         "sdn_dhcp_start: `"$($Net.DhcpStart)`"",
         "sdn_dhcp_end: `"$($Net.DhcpEnd)`"",
-        "advertise_routes: `"$($Net.SiteCidr)`""
+        "advertise_routes: `"$($Net.SiteCidr)`"",
+        "sdn_asn: $($Net.Asn)",
+        "sdn_vrf_vni: $($Net.VrfVni)",
+        "sdn_vnet_vni: $($Net.VnetVni)"
     ) -join "`n" | Out-File -FilePath $SiteVars -Encoding ascii
 
     Assert-RenderedConfigComplete
