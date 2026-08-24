@@ -302,11 +302,20 @@ To be completed when the epoch closes.
   button from a machine on the hypervisor's own LAN removes that dependency
   and leaves the overlay network for remote access, which is what it is
   actually for.
-- **A wedged `tailscaled` looks exactly like a network fault, and is not one.**
-  When it happens the host still reaches `controlplane.tailscale.com` and the
-  DERP relays on 443, path MTU is intact, and the firewall is clear - while
-  `tailscaled` reports the coordination server unreachable. `systemctl restart
-tailscaled` is the fix; hunting the network is not.
+- **Enabling IPv6 forwarding silently destroys IPv6 connectivity on a SLAAC
+  host.** The kernel stops honouring router advertisements unless `accept_ra`
+  is also set to 2, so the host loses its global address and default route the
+  moment forwarding is switched on. This playbook enabled it for a while and
+  broke exactly that.
+
+  The symptom does not look like IPv6. `tailscaled` keeps selecting IPv6 DERP
+  relays and failing with `network is unreachable`, while every IPv4 test
+  passes - control plane reachable, relays reachable, MTU intact, firewall
+  clear. It reads as a wedged daemon, and restarting it appears to help for a
+  moment because a fresh netcheck retries IPv4 first.
+
+  When `tailscaled` cannot reach the coordination server, check
+  `ip -6 route show default` before anything else.
 
 - **A targeted apply only writes outputs that depend on the targeted
   resource.** The phased design applies with `-target`, so an output built from
