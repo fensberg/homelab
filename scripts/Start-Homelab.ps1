@@ -78,14 +78,6 @@ param(
     # route on this workstation rather than a working tailnet.
     [switch]$SkipOverlay,
 
-    # Build (or rebuild) the Linux development workstation on the hypervisor
-    # and stop. It is deliberately not part of the phase sequence: it must
-    # outlive a failed ignition, so nothing in the cluster lifecycle owns it.
-    [switch]$DevWorkstation,
-
-    # Tear the workstation down instead of building it.
-    [switch]$Remove,
-
     [switch]$KeepOnFailure,
     [switch]$SkipUpgrade,
     [switch]$WhatIfPhase,
@@ -598,52 +590,6 @@ exec ansible-playbook -i inventory.yml hypervisor-prep.yml $siteVars $keyVars $o
 }
 
 # ===========================================================================
-# Development workstation (outside the phase sequence)
-# ===========================================================================
-function Invoke-PhaseDevWorkstation {
-    Write-Phase 'Workstation' 'Build a Linux development workstation on the hypervisor.'
-
-    if (-not (Test-Path $ConfigRendered)) {
-        Write-Info "rendering secrets first"
-        Invoke-PhaseRender
-    }
-
-    $Net = Get-SiteNetwork -Name $Site
-    $wslRepo = Convert-ToWslPath $HypervisorDir
-    $wslAnsibleCfg = Convert-ToWslPath (Join-Path $HypervisorDir 'ansible.cfg')
-    $stateArg = if ($Remove) { '-e dev_state=absent' } else { '' }
-
-    if ($Remove) { Write-Warn "removing the workstation and its disk" }
-
-    $script = @"
-set -e
-export PATH="`$HOME/.local/bin:`$PATH"
-export ANSIBLE_CONFIG='$wslAnsibleCfg'
-cd '$wslRepo'
-exec ansible-playbook -i inventory.yml dev-workstation.yml   -e sdn_subnet=$($Net.NodeCidr)   -e sdn_gateway=$($Net.Gateway)   -e dev_octet=$($Net.Octet)   -e dev_site_name=$($Net.Name) $stateArg
-"@
-
-    $tmpScript = Join-Path $env:TEMP 'homelab-devbox.sh'
-    [IO.File]::WriteAllText(
-        $tmpScript,
-        ($script -replace "`r`n", "`n"),
-        (New-Object Text.UTF8Encoding $false))
-    $wslScript = Convert-ToWslPath $tmpScript
-
-    $wslArgs = if ($WslDistro) { @('-d', $WslDistro, '--', 'bash', $wslScript) }
-               else { @('--', 'bash', $wslScript) }
-
-    try {
-        Invoke-Native { wsl @wslArgs } 'ansible-playbook (dev workstation)'
-    }
-    finally {
-        Remove-Item -Force $tmpScript -ErrorAction SilentlyContinue
-        # The rendered secrets were only needed to resolve the site.
-        Invoke-PhaseSterilize -Quiet
-    }
-}
-
-# ===========================================================================
 # PHASE 4 - Verify
 # ===========================================================================
 function Invoke-PhaseVerify {
@@ -984,11 +930,6 @@ if ($WhatIfPhase) {
     $i = 0
     foreach ($p in $toRun) { $i++; Write-Host ("  {0}. {1}" -f $i, $p) }
     Write-Host ""
-    return
-}
-
-if ($DevWorkstation) {
-    Invoke-PhaseDevWorkstation
     return
 }
 

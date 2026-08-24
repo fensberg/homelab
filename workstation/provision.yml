@@ -1,0 +1,212 @@
+---
+# =============================================================================
+# A long-lived Linux development workstation on a Proxmox host.
+#
+# THIS IS NOT PART OF THE HOMELAB WORKFLOW.
+#
+# It shares no configuration with management/, reads nothing from 1Password,
+# and is never touched by scripts/Start-Homelab.ps1. Nothing in the cluster
+# lifecycle can create, modify or destroy it - which is the point. The ignition
+# run destroys everything it owns when it fails, and a machine you code on for
+# the next several years must not be inside that blast radius.
+#
+# It lives on the hypervisor's own LAN bridge rather than the cluster network,
+# so it is reachable directly - ssh, VS Code Remote-SSH, port forwards - with
+# no jump host and no dependency on the SDN being healthy.
+#
+#   cp inventory.example.yml inventory.yml   # point it at your hypervisor
+#   ansible-playbook -i inventory.yml provision.yml
+#   ansible-playbook -i inventory.yml provision.yml -e state=absent
+# =============================================================================
+- name: Provision a development workstation
+  hosts: hypervisor
+  become: true
+  gather_facts: false
+
+  vars:
+    # 9000 sits far away from anything the homelab assigns. Sites band their
+    # VMs at <octet>00 upward - 1000-1099 for octet 10 - so this cannot
+    # collide however many sites are added.
+    vmid: 9000
+    name: devbox
+
+    cores: 6
+    memory: 16384
+    disk: 200G
+
+    # The hypervisor's LAN bridge. Not the SDN: a development machine should
+    # not stop being reachable because the cluster network is being rebuilt.
+    bridge: vmbr0
+    storage: local-zfs
+
+    # DHCP by default. Set an address to pin it - worth doing for a machine
+    # you will connect to daily for years.
+    address: dhcp
+
+    username: dev
+    state: present
+
+    image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
+    image_path: "/var/lib/vz/template/iso/debian-13-genericcloud-amd64.qcow2"
+
+  tasks:
+    - name: Look for an existing workstation
+      ansible.builtin.command: qm status {{ vmid }}
+      register: existing
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    # --- teardown -----------------------------------------------------------
+    - name: Remove the workstation
+      when:
+        - state == "absent"
+        - existing.rc == 0
+      block:
+        - name: Stop it
+          ansible.builtin.command: qm stop {{ vmid }}
+          failed_when: false
+
+        - name: Destroy it
+          ansible.builtin.command: qm destroy {{ vmid }} --purge
+
+        - name: Report
+          ansible.builtin.debug:
+            msg: "{{ name }} (VM {{ vmid }}) removed."
+
+    - name: Stop here when tearing down
+      ansible.builtin.meta: end_play
+      when: state == "absent"
+
+    - name: Report an existing workstation
+      ansible.builtin.debug:
+        msg:
+          - "{{ name }} (VM {{ vmid }}) already exists - leaving it alone."
+          - "Rebuild with: -e state=absent, then run this again."
+      when: existing.rc == 0
+
+    # --- build --------------------------------------------------------------
+    - name: Build the workstation
+      when: existing.rc != 0
+      block:
+        - name: Fetch the Debian cloud image
+          ansible.builtin.get_url:
+            url: "{{ image_url }}"
+            dest: "{{ image_path }}"
+            mode: "0644"
+            timeout: 120
+
+        # Reusing the keys the hypervisor already trusts means no new key is
+        # issued or stored, and whoever can log in there can log in here.
+        - name: Collect the keys this hypervisor already trusts
+          ansible.builtin.slurp:
+            src: /root/.ssh/authorized_keys
+          register: host_keys
+
+        - name: Stage them for cloud-init
+          ansible.builtin.copy:
+            content: "{{ host_keys.content | b64decode }}"
+            dest: /var/lib/vz/snippets/{{ name }}-keys.pub
+            mode: "0600"
+
+        # qemu-guest-agent is what lets the hypervisor report the address DHCP
+        # handed out, so there is no guessing about where to connect.
+        - name: Write a cloud-init user-data snippet
+          ansible.builtin.copy:
+            dest: /var/lib/vz/snippets/{{ name }}-user.yml
+            mode: "0644"
+            content: |
+              #cloud-config
+              package_update: true
+              packages:
+                - qemu-guest-agent
+                - git
+                - curl
+                - unzip
+                - build-essential
+                - python3
+                - python3-pip
+                - python3-venv
+              runcmd:
+                - [systemctl, enable, --now, qemu-guest-agent]
+
+        - name: Create the virtual machine
+          ansible.builtin.command: >-
+            qm create {{ vmid }}
+            --name {{ name }}
+            --cores {{ cores }}
+            --memory {{ memory }}
+            --cpu host
+            --net0 virtio,bridge={{ bridge }}
+            --scsihw virtio-scsi-single
+            --ostype l26
+            --agent enabled=1
+
+        - name: Import the cloud image as its disk
+          ansible.builtin.command: >-
+            qm importdisk {{ vmid }} {{ image_path }} {{ storage }}
+
+        - name: Attach the disk and a cloud-init drive
+          ansible.builtin.command: >-
+            qm set {{ vmid }}
+            --scsi0 {{ storage }}:vm-{{ vmid }}-disk-0
+            --ide2 {{ storage }}:cloudinit
+            --boot order=scsi0
+            --serial0 socket
+            --vga serial0
+
+        - name: Configure cloud-init
+          ansible.builtin.command: >-
+            qm set {{ vmid }}
+            --ipconfig0 {{ 'ip=dhcp' if address == 'dhcp' else 'ip=' ~ address }}
+            --ciuser {{ username }}
+            --sshkeys /var/lib/vz/snippets/{{ name }}-keys.pub
+            --cicustom "user=local:snippets/{{ name }}-user.yml"
+
+        - name: Grow the disk
+          ansible.builtin.command: qm resize {{ vmid }} scsi0 {{ disk }}
+
+        - name: Start it
+          ansible.builtin.command: qm start {{ vmid }}
+
+        # Ask the guest agent rather than assuming an address. First boot
+        # installs packages, so allow time for it.
+        - name: Wait for the guest agent to answer
+          ansible.builtin.command: qm guest cmd {{ vmid }} network-get-interfaces
+          register: guest_net
+          until: guest_net.rc == 0
+          retries: 40
+          delay: 15
+          changed_when: false
+          failed_when: false
+
+        - name: Work out which address it got
+          ansible.builtin.set_fact:
+            devbox_ip: >-
+              {{ (guest_net.stdout | from_json
+                  | selectattr('name', 'ne', 'lo')
+                  | map(attribute='ip-addresses') | select('defined') | flatten
+                  | selectattr('ip-address-type', 'equalto', 'ipv4')
+                  | map(attribute='ip-address') | first | default('')) }}
+          when: guest_net.rc == 0
+
+        - name: Report how to reach it
+          ansible.builtin.debug:
+            msg:
+              - "{{ name }} (VM {{ vmid }}) is up."
+              - ""
+              - "    ssh {{ username }}@{{ devbox_ip | default('<address>') }}"
+              - ""
+              - "VS Code: Remote-SSH to that host and work on it directly."
+              - "Pin the address in your router or with -e address=ip=A.B.C.D/24,gw=A.B.C.1"
+              - "if you would rather it never moved."
+          when: guest_net.rc == 0
+
+        - name: Report that the address could not be read
+          ansible.builtin.debug:
+            msg:
+              - "{{ name }} (VM {{ vmid }}) started, but the guest agent did not answer."
+              - "It is probably still running first-boot package installs."
+              - "Find its address with:  qm guest cmd {{ vmid }} network-get-interfaces"
+              - "or open its console:    qm terminal {{ vmid }}"
+          when: guest_net.rc != 0

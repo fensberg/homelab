@@ -1,0 +1,11 @@
+---
+# Copy to inventory.yml and point it at your Proxmox host.
+# inventory.yml is gitignored: it holds an address, which is nobody's business
+# but yours.
+all:
+  children:
+    hypervisor:
+      hosts:
+        proxmox:
+          ansible_host: 192.168.50.10
+          ansible_user: root

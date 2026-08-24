@@ -60,3 +60,6 @@ management/hypervisor/tailscale.auto.yml
 management/hypervisor/site.auto.yml
 
 state-backup.key
+
+# Points at a real hypervisor; not for git
+workstation/inventory.yml

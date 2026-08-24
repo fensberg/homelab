@@ -75,23 +75,11 @@ One entrypoint, run from Windows PowerShell:
 .\scripts\Start-Homelab.ps1 -Site site0        # every time after
 ```
 
-**Windows is a stopgap.** A Linux workstation runs on the hypervisor itself:
-
-```powershell
-.\scripts\Start-Homelab.ps1 -DevWorkstation     # build it
-.\scripts\Start-Homelab.ps1 -DevWorkstation -Remove
-```
-
-It sits on the cluster network, so the Talos nodes, the Kubernetes API and the
-state database are directly reachable from it - no overlay network, no static
-routes, nothing that depends on the client's router. Reach it with the
-hypervisor as a jump host:
-
-    ssh -J root@<hypervisor> dev@10.<octet>.10.10
-
-It is deliberately outside the phase sequence. The ignition root destroys
-everything it owns when a run fails, and a workstation that disappeared with a
-failed cluster build would be useless.
+**Windows is a stopgap.** `workstation/` provisions a Linux machine on the
+hypervisor for day-to-day work. It is deliberately independent - no shared
+config, no 1Password, and nothing in the cluster lifecycle can touch it, so a
+failed ignition cannot take your development environment with it. See
+[`workstation/README.md`](workstation/README.md).
 
 `-Site` selects a key in the config's `sites` map. Each site declares its own
 `octet`, which picks its `/16`, names the site and its VMs, and bands its VM
