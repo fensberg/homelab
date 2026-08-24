@@ -254,6 +254,13 @@ To be completed when the epoch closes.
 
 ## Gotchas
 
+- **Proxmox privilege names change between major versions.** `VM.Monitor`
+  existed in PVE 8 and does not in PVE 9. `pveum` rejects the whole role with a
+  bare "400 Parameter verification failed" naming only the first offender, so
+  the playbook validates the requested list against the built-in Administrator
+  role - which holds every privilege the running version defines - and names
+  all of them at once.
+
 - **Ansible reaches the hypervisor over SSH from inside WSL**, not from
   Windows, so it is WSL's key and WSL's `known_hosts` that matter. A key
   installed for the Windows user does nothing here.

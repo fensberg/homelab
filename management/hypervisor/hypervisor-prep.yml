@@ -25,8 +25,17 @@
     pve_role: "TerraformProv"
 
     # Privileges the bpg/proxmox provider needs.
+    #
     # Datastore.AllocateTemplate is required to download the Talos ISO into a
     # datastore - without it the ISO task fails with a 403.
+    #
+    # VM.Monitor is deliberately absent: Proxmox VE 9 no longer defines it, and
+    # it granted access to the QEMU monitor, which nothing here uses. The guest
+    # agent is disabled in compute.tf, so there is no monitor traffic at all.
+    #
+    # Privilege names change between major Proxmox versions. The task that
+    # validates this list against the running host is what turns that from an
+    # opaque "400 Parameter verification failed" into a named list.
     pve_role_privs:
       - VM.Allocate
       - VM.Clone
@@ -40,7 +49,6 @@
       - VM.Config.Options
       - VM.Audit
       - VM.PowerMgmt
-      - VM.Monitor
       - Datastore.AllocateSpace
       - Datastore.AllocateTemplate
       - Datastore.Audit
@@ -264,6 +272,34 @@
       register: existing_roles
       changed_when: false
       check_mode: false
+      tags: [rbac]
+
+    # The built-in Administrator role holds every privilege the running version
+    # defines, so it doubles as the authoritative list of valid names.
+    - name: Determine which privileges this Proxmox version defines
+      ansible.builtin.set_fact:
+        # .split() is a string method rather than a filter: Jinja has no split
+        # filter, so the pipeline has to end and the method be called on it.
+        pve_known_privs: >-
+          {{ ((existing_roles.stdout | from_json
+               | selectattr('roleid', 'equalto', 'Administrator')
+               | map(attribute='privs') | first | default(''))
+              | regex_replace('[,\s]+', ' ') | trim).split(' ') }}
+      tags: [rbac]
+
+    # pveum reports only the first offender and does so as a bare 400, which
+    # says nothing about which name is wrong or why. Checking the whole list
+    # up front names every one of them at once.
+    - name: Fail on privileges this Proxmox version does not define
+      ansible.builtin.assert:
+        that: (pve_role_privs | difference(pve_known_privs) | length) == 0
+        fail_msg: >-
+          This host ({{ pve_version.stdout }}) does not define:
+          {{ pve_role_privs | difference(pve_known_privs) | join(', ') }}.
+          Privilege names change between major Proxmox versions - update
+          pve_role_privs in this playbook.
+        success_msg: "All requested privileges exist on this host."
+      when: (pve_known_privs | length) > 0
       tags: [rbac]
 
     - name: Create the OpenTofu management role
