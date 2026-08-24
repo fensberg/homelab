@@ -149,6 +149,12 @@ octet, so two sites cannot collide on BGP or VXLAN any more than they can on
 addressing. EVPN also needs FRR, which a simple zone does not, so the playbook
 installs and starts it.
 
+**The cost:** an EVPN zone does not support Proxmox's built-in dnsmasq DHCP -
+the API rejects the property outright. Nothing here needed it. Talos nodes take
+static addresses from cloud-init and pods get theirs from the CNI, so the
+subnet exists for its gateway and SNAT. The dnsmasq package and the DHCP pool
+were removed along with it rather than left as decoration.
+
 ### CloudNativePG for the state database
 
 **Chose:** CloudNativePG, deployed by Flux, backing up to object storage via

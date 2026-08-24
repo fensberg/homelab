@@ -170,8 +170,6 @@ function Get-SiteNetwork {
         SiteCidr    = "10.$o.0.0/16"
         NodeCidr    = "10.$o.10.0/24"
         Gateway     = "10.$o.10.1"
-        DhcpStart   = "10.$o.10.50"
-        DhcpEnd     = "10.$o.10.99"
 
         # EVPN identifiers, derived from the octet so two sites cannot collide
         # on BGP or VXLAN either. 64512-65534 is the private ASN range, and an
@@ -431,8 +429,6 @@ If the desktop app is installed, enable Settings > Developer > Integrate with
         "---",
         "sdn_subnet: `"$($Net.NodeCidr)`"",
         "sdn_gateway: `"$($Net.Gateway)`"",
-        "sdn_dhcp_start: `"$($Net.DhcpStart)`"",
-        "sdn_dhcp_end: `"$($Net.DhcpEnd)`"",
         "advertise_routes: `"$($Net.SiteCidr)`"",
         "sdn_asn: $($Net.Asn)",
         "sdn_vrf_vni: $($Net.VrfVni)",
@@ -645,7 +641,7 @@ Talos on $node never came up within 5 minutes.
 Open that VM's console in the Proxmox web UI. Talos prints its IP on the
 maintenance-mode banner:
 
-  - No IP shown    -> the SDN bridge or DHCP is wrong (see the Verify phase).
+  - No IP shown    -> the SDN bridge is down or absent (see the Verify phase).
   - A different IP -> cloud-init did not apply your static address.
   - The correct IP -> the VM is fine and this is a routing problem.
 "@

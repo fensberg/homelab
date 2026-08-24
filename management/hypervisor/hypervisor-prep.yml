@@ -83,8 +83,6 @@
     # configuring the wrong network.
     sdn_subnet: "UNSET"
     sdn_gateway: "UNSET"
-    sdn_dhcp_start: "UNSET"
-    sdn_dhcp_end: "UNSET"
 
     # Derived from the site's octet so two sites on one tailnet cannot collide
     # on BGP or VXLAN identifiers either. 0 means "not supplied".
@@ -125,8 +123,6 @@
         that:
           - sdn_subnet != "UNSET"
           - sdn_gateway != "UNSET"
-          - sdn_dhcp_start != "UNSET"
-          - sdn_dhcp_end != "UNSET"
           - advertise_routes != "UNSET"
           - (sdn_asn | int) > 0
           - (sdn_vrf_vni | int) > 0
@@ -150,7 +146,6 @@
           - "Proxmox:      {{ pve_version.stdout }}"
           - "Dist-upgrade: {{ 'YES' if do_dist_upgrade else 'no' }}"
           - "SDN subnet:   {{ sdn_subnet }} (gateway {{ sdn_gateway }})"
-          - "DHCP pool:    {{ sdn_dhcp_start }} - {{ sdn_dhcp_end }}"
           - "Advertising:  {{ advertise_routes }}"
 
   tasks:
@@ -193,7 +188,6 @@
           - gnupg
           - sudo
           - ca-certificates
-          - dnsmasq
           # EVPN's control plane is BGP, which Proxmox drives through FRR. A
           # 'simple' zone needs none of this; an EVPN zone will not come up
           # without it.
@@ -202,15 +196,6 @@
         state: present
         update_cache: true
         cache_valid_time: 3600
-      tags: [packages]
-
-    # Proxmox SDN starts its own per-zone dnsmasq instances. The stock
-    # system-wide service must stay down or it will fight them for port 53.
-    - name: Disable the stock dnsmasq service
-      ansible.builtin.systemd:
-        name: dnsmasq
-        enabled: false
-        state: stopped
       tags: [packages]
 
     - name: Upgrade all packages (opt-in only)
@@ -469,7 +454,7 @@
         --controller {{ sdn_controller }}
         --vrf-vxlan {{ sdn_vrf_vni }}
         --exitnodes {{ sdn_exit_nodes | join(',') }}
-        --ipam pve --dhcp dnsmasq
+        --ipam pve
       when: sdn_zone not in (sdn_zones.stdout | from_json | map(attribute='zone') | list)
       run_once: true
       tags: [sdn]
@@ -482,20 +467,6 @@
         --exitnodes {{ sdn_exit_nodes | join(',') }}
       when: sdn_zone in (sdn_zones.stdout | from_json | map(attribute='zone') | list)
       changed_when: false
-      run_once: true
-      tags: [sdn]
-
-    - name: Read the SDN zone configuration
-      ansible.builtin.command: pvesh get /cluster/sdn/zones/{{ sdn_zone }} --output-format json
-      register: sdn_zone_cfg
-      changed_when: false
-      check_mode: false
-      run_once: true
-      tags: [sdn]
-
-    - name: Ensure DHCP is enabled on the zone
-      ansible.builtin.command: pvesh set /cluster/sdn/zones/{{ sdn_zone }} --dhcp dnsmasq
-      when: (sdn_zone_cfg.stdout | from_json).dhcp | default('') != 'dnsmasq'
       run_once: true
       tags: [sdn]
 
@@ -527,11 +498,14 @@
       run_once: true
       tags: [sdn]
 
-    - name: Create the subnet with SNAT and a DHCP pool
+    # No DHCP. An EVPN zone does not accept Proxmox's dnsmasq DHCP - the API
+    # rejects the property outright - and nothing here needs it: the Talos
+    # nodes take static addresses from cloud-init, and pods get theirs from the
+    # CNI. The gateway and SNAT are what this subnet is actually for.
+    - name: Create the subnet with SNAT
       ansible.builtin.command: >-
         pvesh create /cluster/sdn/vnets/{{ sdn_vnet }}/subnets
         --type subnet --subnet {{ sdn_subnet }} --gateway {{ sdn_gateway }} --snat 1
-        --dhcp-range start-address={{ sdn_dhcp_start }},end-address={{ sdn_dhcp_end }}
       when: >-
         sdn_subnets.rc != 0 or
         (sdn_subnets.stdout | default('[]') | from_json | length) == 0
