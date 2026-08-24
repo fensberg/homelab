@@ -32,8 +32,13 @@ resource "tailscale_tailnet_key" "hypervisor" {
   reusable      = true  # the playbook is re-run; a single-use key would break that
   ephemeral     = false # the hypervisor is not a throwaway node
   preauthorized = true  # no device-approval step, same no-ClickOps reasoning
-  # Tailscale caps this at 50 characters.
-  description = "homelab subnet router (OpenTofu)"
+  # Tailscale caps this at 50 characters and rejects punctuation - parentheses
+  # come back as "description had invalid characters (400)". Letters, digits
+  # and spaces only.
+  #
+  # Naming it for the site means the Tailscale console shows which estate a
+  # key belongs to, which matters once more than one site shares a tailnet.
+  description = "${local.site_name} subnet router"
   tags        = [local.overlay_router_tag]
 
   # 90 days. A fresh key is minted on every run, so this is only an upper bound

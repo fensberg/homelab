@@ -77,10 +77,28 @@ Put them wherever that engagement's secrets live, matching the paths in
 `config/management.tpl.json`:
 
 ```
-overlay-network/domain          the tailnet name, or "-" for the OAuth client's own tailnet
-overlay-network/client_id
-overlay-network/client_secret
+overlay_network/provider        tailscale
+overlay_network/domain          -
+overlay_network/client_id
+overlay_network/client_secret
 ```
+
+### About `domain`
+
+Tailscale calls your whole network a **tailnet**, and `domain` is its name.
+The admin console shows it at the top, and it looks like one of:
+
+| Form                | When                                        |
+| ------------------- | ------------------------------------------- |
+| `tail1a2b3c.ts.net` | the default, auto-generated                 |
+| `example.com`       | a custom domain or Google Workspace tailnet |
+| `someuser.github`   | a GitHub-backed account                     |
+
+**Use `-` and do not think about it again.** The API accepts `-` as "whichever
+tailnet the credential belongs to", and an OAuth client belongs to exactly one
+tailnet by construction, so `-` is always correct here. Naming the tailnet
+explicitly only matters for a personal API key with access to several, which
+this project does not use.
 
 Ignition takes it from there. `management/cluster/overlay-network.tf` mints a
 tagged key per run; the playbook logs the hypervisor in with it; the policy

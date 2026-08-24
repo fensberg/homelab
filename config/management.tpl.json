@@ -30,7 +30,7 @@
       "overlay_network": {
         "provider": "tailscale",
         "vault_provider": "{{ op://homelab/site0/overlay_network/provider }}",
-        "domain": "{{ op://homelab/site0/overlay_network/domain }}",
+        "domain": "-",
         "client_id": "{{ op://homelab/site0/overlay_network/client_id }}",
         "client_secret": "{{ op://homelab/site0/overlay_network/client_secret }}"
       },

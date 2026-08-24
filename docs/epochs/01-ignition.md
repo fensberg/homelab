@@ -244,6 +244,10 @@ To be completed when the epoch closes.
 
 ## Gotchas
 
+- **Tailscale auth key descriptions reject punctuation.** The API returns
+  "description had invalid characters (400)" for parentheses; the field is
+  also capped at 50 characters. Letters, digits and spaces only.
+
 - **The age private key is never referenced by the automation, and must not
   be.** The config contract carries only `backup_recipient`, the public half,
   so the start button can write backups and cannot read them. Putting the
