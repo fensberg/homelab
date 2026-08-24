@@ -202,6 +202,21 @@ function Invoke-Native {
     if ($LASTEXITCODE -ne 0) { throw "$What failed with exit code $LASTEXITCODE" }
 }
 
+function Invoke-Tofu {
+    <#
+      Arguments MUST be splatted from an array. Windows PowerShell 5.1 splits a
+      bare token like -target=type.name at the dot, so tofu receives
+      "-target=type" and ".name" as two arguments and rejects the target as
+      incomplete. Splatting passes each element through untouched.
+    #>
+    param(
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [string]$What = 'tofu'
+    )
+    & tofu @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "$What failed with exit code $LASTEXITCODE" }
+}
+
 function Invoke-TofuInit {
     <#
       Plain init by default, so the committed .terraform.lock.hcl decides the
@@ -209,7 +224,9 @@ function Invoke-TofuInit {
       re-resolves against the constraints, which is only correct right after a
       constraint changes.
     #>
-    & tofu init -input=false @(if ($Upgrade) { '-upgrade' })
+    $initArgs = @('init', '-input=false')
+    if ($Upgrade) { $initArgs += '-upgrade' }
+    & tofu @initArgs
     if ($LASTEXITCODE -eq 0) { return }
 
     if (-not $Upgrade) {
@@ -274,15 +291,32 @@ function Invoke-PhaseRender {
         throw "1Password CLI ('op') not found. Run scripts\Install-Dependencies.ps1."
     }
 
-    # Fail early and clearly if the CLI is not signed in, rather than letting
-    # 'op inject' emit a half-rendered file.
+    # Sign in first rather than failing and making the operator do it. An
+    # unsigned CLI would otherwise surface as 'op inject' emitting a
+    # half-rendered file, which is a far worse failure than a prompt.
     & op whoami 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "1Password CLI is not signed in. Run:  op signin"
+        Write-Info "not signed in to 1Password - starting sign-in"
+        & op signin
+        & op whoami 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw @"
+Still not signed in to 1Password after attempting sign-in.
+
+If the desktop app is installed, enable Settings > Developer > Integrate with
+1Password CLI, unlock the app, and re-run. Otherwise sign in manually:
+
+    op signin
+
+"@
+        }
     }
+    $account = (& op whoami --format=json 2>$null | ConvertFrom-Json)
+    if ($account) { Write-Ok "signed in to 1Password as $($account.email)" }
 
     Write-Info "rendering config\management.rendered.json"
-    Invoke-Native { op inject -i $ConfigTpl -o $ConfigRendered -f } '1Password inject (config)'
+    # op inject prints the output path on success; it is noise here.
+    Invoke-Native { op inject -i $ConfigTpl -o $ConfigRendered -f | Out-Null } '1Password inject (config)'
 
     # The inventory is generated, not templated: op inject substitutes into a
     # fixed file and cannot loop over sites[].hypervisor.nodes. Generating it is
@@ -328,9 +362,10 @@ function Invoke-PhaseOverlay {
         # tagged key. The tag is what makes autoApprovers approve the subnet
         # route without anyone touching the admin console.
         Write-Info "minting a tagged auth key"
-        Invoke-Native {
-            tofu apply -input=false -auto-approve -target=tailscale_tailnet_key.hypervisor
-        } 'tofu apply (overlay network)'
+        Invoke-Tofu @(
+            'apply', '-input=false', '-auto-approve',
+            '-target=tailscale_tailnet_key.hypervisor'
+        ) 'tofu apply (overlay network)'
 
         $key = & tofu output -raw overlay_network_auth_key
         if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($key)) {
@@ -436,11 +471,11 @@ function Invoke-PhaseCompute {
         # Build the VMs only. Splitting this from the Talos phase means a
         # failure here is obviously a Proxmox problem, not a Talos one.
         Write-Info "creating the ISO and the virtual machines"
-        Invoke-Native {
-            tofu apply -input=false -auto-approve `
-                -target=proxmox_virtual_environment_file.talos_iso `
-                -target=proxmox_virtual_environment_vm.talos_cp
-        } 'tofu apply (compute)'
+        Invoke-Tofu @(
+            'apply', '-input=false', '-auto-approve',
+            '-target=proxmox_virtual_environment_file.talos_iso',
+            '-target=proxmox_virtual_environment_vm.talos_cp'
+        ) 'tofu apply (compute)'
 
         Write-Ok "VMs created"
 
@@ -477,21 +512,22 @@ function Invoke-PhaseCluster {
     Push-Location $ClusterDir
     try {
         Write-Info "applying the Talos machine configuration"
-        Invoke-Native {
-            tofu apply -input=false -auto-approve `
-                -target=talos_machine_configuration_apply.control_plane
-        } 'tofu apply (talos config)'
+        Invoke-Tofu @(
+            'apply', '-input=false', '-auto-approve',
+            '-target=talos_machine_configuration_apply.control_plane'
+        ) 'tofu apply (talos config)'
 
         Write-Info "bootstrapping etcd"
-        Invoke-Native {
-            tofu apply -input=false -auto-approve -target=talos_machine_bootstrap.this
-        } 'tofu apply (bootstrap)'
+        Invoke-Tofu @(
+            'apply', '-input=false', '-auto-approve',
+            '-target=talos_machine_bootstrap.this'
+        ) 'tofu apply (bootstrap)'
 
         # Everything else, including the Flux bootstrap. Flux goes last because
         # its provider is configured from the kubeconfig the previous steps
         # produce.
         Write-Info "installing Flux and finishing the apply"
-        Invoke-Native { tofu apply -input=false -auto-approve } 'tofu apply (flux)'
+        Invoke-Tofu @('apply', '-input=false', '-auto-approve') 'tofu apply (flux)'
 
         Write-Ok "cluster is up and Flux is reconciling"
     }
@@ -536,9 +572,10 @@ function Invoke-PhaseMigrate {
         Copy-Item $BackendPgOff $BackendPgOn -Force
 
         Write-Info "migrating state (local -> Postgres)"
-        Invoke-Native {
-            tofu init -input=false -migrate-state -force-copy -backend-config="conn_str=$connStr"
-        } 'tofu init -migrate-state'
+        Invoke-Tofu @(
+            'init', '-input=false', '-migrate-state', '-force-copy',
+            "-backend-config=conn_str=$connStr"
+        ) 'tofu init -migrate-state'
 
         Write-Ok "state now lives in Postgres"
     }
