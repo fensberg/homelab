@@ -29,25 +29,25 @@
 
       "overlay_network": {
         "provider": "tailscale",
-        "vault_provider": "{{ op://homelab/site0/overlay-network/provider }}",
-        "domain": "{{ op://homelab/site0/overlay-network/domain }}",
-        "client_id": "{{ op://homelab/site0/overlay-network/client_id }}",
-        "client_secret": "{{ op://homelab/site0/overlay-network/client_secret }}"
+        "vault_provider": "{{ op://homelab/site0/overlay_network/provider }}",
+        "domain": "{{ op://homelab/site0/overlay_network/domain }}",
+        "client_id": "{{ op://homelab/site0/overlay_network/client_id }}",
+        "client_secret": "{{ op://homelab/site0/overlay_network/client_secret }}"
       },
 
       "object_storage": {
         "provider": "cloudflare",
-        "vault_provider": "{{ op://homelab/site0/object-storage/provider }}",
-        "account_id": "{{ op://homelab/site0/object-storage/account_id }}",
-        "admin_token": "{{ op://homelab/site0/object-storage/admin_token }}",
-        "access_key_id": "{{ op://homelab/site0/object-storage/access_key_id }}",
-        "secret_access_key": "{{ op://homelab/site0/object-storage/secret_access_key }}",
-        "bucket": "{{ op://homelab/site0/object-storage/bucket }}"
+        "vault_provider": "{{ op://homelab/site0/object_storage/provider }}",
+        "account_id": "{{ op://homelab/site0/object_storage/account_id }}",
+        "admin_token": "{{ op://homelab/site0/object_storage/admin_token }}",
+        "access_key_id": "{{ op://homelab/site0/object_storage/access_key_id }}",
+        "secret_access_key": "{{ op://homelab/site0/object_storage/secret_access_key }}",
+        "bucket": "{{ op://homelab/site0/object_storage/bucket }}"
       },
 
       "state": {
-        "db_password": "{{ op://homelab/site0/state-database/db_password }}",
-        "backup_recipient": "{{ op://homelab/site0/state-database/backup_recipient }}"
+        "db_password": "{{ op://homelab/site0/state_database/db_password }}",
+        "backup_recipient": "{{ op://homelab/site0/state_database/backup_recipient }}"
       }
     }
   }

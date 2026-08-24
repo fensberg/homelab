@@ -32,8 +32,9 @@ resource "tailscale_tailnet_key" "hypervisor" {
   reusable      = true  # the playbook is re-run; a single-use key would break that
   ephemeral     = false # the hypervisor is not a throwaway node
   preauthorized = true  # no device-approval step, same no-ClickOps reasoning
-  description   = "homelab hypervisor subnet router (managed by OpenTofu)"
-  tags          = [local.overlay_router_tag]
+  # Tailscale caps this at 50 characters.
+  description = "homelab subnet router (OpenTofu)"
+  tags        = [local.overlay_router_tag]
 
   # 90 days. A fresh key is minted on every run, so this is only an upper bound
   # on how long an unused one stays valid.

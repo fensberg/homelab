@@ -67,6 +67,11 @@ param(
     # site's identity comes from the octet it declares.
     [string]$Site = 'site0',
 
+    # Re-resolve providers against the version constraints instead of the
+    # committed lock file. Needed only after a constraint changes; the new
+    # lock must then be committed.
+    [switch]$Upgrade,
+
     [switch]$KeepOnFailure,
     [switch]$SkipUpgrade,
     [switch]$WhatIfPhase,
@@ -197,6 +202,32 @@ function Invoke-Native {
     if ($LASTEXITCODE -ne 0) { throw "$What failed with exit code $LASTEXITCODE" }
 }
 
+function Invoke-TofuInit {
+    <#
+      Plain init by default, so the committed .terraform.lock.hcl decides the
+      provider versions and every machine gets the same ones. -Upgrade
+      re-resolves against the constraints, which is only correct right after a
+      constraint changes.
+    #>
+    & tofu init -input=false @(if ($Upgrade) { '-upgrade' })
+    if ($LASTEXITCODE -eq 0) { return }
+
+    if (-not $Upgrade) {
+        throw @"
+tofu init failed with exit code $LASTEXITCODE.
+
+If it complained that a locked provider does not match its version
+constraint, the committed lock file is behind management/cluster/versions.tf.
+Re-resolve and commit the result:
+
+    .\scripts\Start-Homelab.ps1 -Phase Overlay -Upgrade
+    git add management/cluster/.terraform.lock.hcl && git commit
+
+"@
+    }
+    throw "tofu init -upgrade failed with exit code $LASTEXITCODE"
+}
+
 function Read-RenderedConfig {
     if (-not (Test-Path $ConfigRendered)) {
         throw "Rendered config not found. Run the Render phase first."
@@ -291,7 +322,7 @@ function Invoke-PhaseOverlay {
     Push-Location $ClusterDir
     try {
         Write-Info "tofu init"
-        Invoke-Native { tofu init -input=false } 'tofu init'
+        Invoke-TofuInit
 
         # Applied ahead of the playbook so the hypervisor can log in with a
         # tagged key. The tag is what makes autoApprovers approve the subnet
@@ -400,7 +431,7 @@ function Invoke-PhaseCompute {
     Push-Location $ClusterDir
     try {
         Write-Info "tofu init"
-        Invoke-Native { tofu init -input=false } 'tofu init'
+        Invoke-TofuInit
 
         # Build the VMs only. Splitting this from the Talos phase means a
         # failure here is obviously a Proxmox problem, not a Talos one.
