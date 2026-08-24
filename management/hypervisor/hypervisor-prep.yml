@@ -446,14 +446,48 @@
       check_mode: false
       tags: [sdn]
 
-    - name: Report the vnet bridge state
-      ansible.builtin.debug:
-        msg: >-
-          {{ ('vnet ' + sdn_vnet + ' is up: ' + vnet_state.stdout)
-             if vnet_state.rc == 0
-             else ('WARNING: ' + sdn_vnet + ' does not exist on the host yet. '
-                   + 'VMs attached to it will have no network. '
-                   + 'Check: pvesh get /cluster/sdn/vnets') }}
+    - name: Fail if the vnet bridge was never created
+      ansible.builtin.assert:
+        that: vnet_state.rc == 0
+        fail_msg: >-
+          {{ sdn_vnet }} does not exist on this host. The SDN configuration was
+          applied but produced no interface. Check
+          'pvesh get /cluster/sdn/vnets' and the zone's status.
+        success_msg: "{{ sdn_vnet }} exists."
+      tags: [sdn]
+
+    # 'pvesh set /cluster/sdn' writes the interface definition but does not
+    # bring it up, which leaves the bridge DOWN with its gateway address
+    # assigned - reachable from nowhere. The web UI's Apply runs 'ifreload -a'
+    # to finish the job, but that reloads every interface on a live hypervisor
+    # and can drop the management link. Bringing up this one interface achieves
+    # the same result and cannot disturb anything else.
+    - name: Bring the vnet bridge up
+      ansible.builtin.command: ip link set dev {{ sdn_vnet }} up
+      changed_when: "'UP' not in vnet_state.stdout"
+      tags: [sdn]
+
+    # A flag check is not enough here: a bridge with no ports attached can
+    # report DOWN for lack of carrier while still routing its own address
+    # perfectly well. Pinging the gateway from the host settles it.
+    - name: Confirm the gateway answers on the host itself
+      ansible.builtin.command: ping -c 2 -W 2 {{ sdn_gateway }}
+      register: gateway_ping
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: [sdn]
+
+    - name: Fail if the gateway does not answer locally
+      ansible.builtin.assert:
+        that: gateway_ping.rc == 0
+        fail_msg: >-
+          {{ sdn_gateway }} does not answer on {{ inventory_hostname }} itself,
+          so nothing reached over the overlay network will reach it either.
+          Inspect with 'ip -br addr show {{ sdn_vnet }}' and
+          'journalctl -u pvedaemon -n 50'.
+        success_msg: >-
+          {{ sdn_gateway }} answers locally - the subnet is live and routable.
       tags: [sdn]
 
     # ========================================================================

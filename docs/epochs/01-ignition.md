@@ -254,6 +254,13 @@ To be completed when the epoch closes.
 
 ## Gotchas
 
+- **Applying the SDN config does not bring the bridge up.**
+  `pvesh set /cluster/sdn` writes the interface definition and stops, leaving
+  the vnet DOWN with its gateway address assigned - existing, addressed, and
+  reachable from nowhere. The web UI finishes the job with `ifreload -a`,
+  which reloads every interface on a live hypervisor and can drop the
+  management link, so the playbook brings up only the one interface instead.
+
 - **Proxmox privilege names change between major versions.** `VM.Monitor`
   existed in PVE 8 and does not in PVE 9. `pveum` rejects the whole role with a
   bare "400 Parameter verification failed" naming only the first offender, so
