@@ -72,8 +72,21 @@ One entrypoint, a Go program, run from the Linux workstation:
 
 ```sh
 ./scripts/install-dependencies.sh   # once
-task start SITE=site0               # every time after
+task start SITE=site0               # builds ignite and prints the command to run it
+./scripts/ignite/ignite -site site0 # the actual run - always run this directly, never through task
 ```
+
+**`task start` deliberately does not run ignite itself.** `task` intercepts
+Ctrl-C for its own purposes but does not proxy the signal to the process it's
+supervising - a confirmed, currently-open upstream limitation
+(`go-task/task#1408`). Ignite's own destroy-then-sterilize cleanup on
+interrupt only runs if something actually delivers it the signal, so the
+real ignition run has to be invoked directly. Every other `task`-wrapped
+ignite phase (`render-secrets`, `verify`, `configure-hypervisor`,
+`backup-state`, `clean-secrets`) stays safe to wrap regardless, because none
+of them can reach the Compute phase - an interrupted one leaves stale
+secrets at worst, recoverable with `task clean-secrets`, never an orphaned
+VM.
 
 **`workstation/` provisions the Linux machine this runs from.** It is
 deliberately independent from `management/` - no shared config, no

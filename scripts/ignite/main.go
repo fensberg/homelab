@@ -26,9 +26,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"syscall"
 
 	"homelab/ignite/internal/phases"
 	"homelab/ignite/internal/run"
@@ -85,7 +87,7 @@ func main() {
 	// OpenTofu reads the same config; this tells it which site to use.
 	os.Setenv("TF_VAR_site", ctx.Site)
 
-	runErr := runPhases(ctx, toRun)
+	runErr := runInterruptibly(ctx, toRun)
 	completed := runErr == nil
 
 	if runErr != nil {
@@ -145,4 +147,38 @@ func runPhases(ctx *run.Context, toRun []string) error {
 		}
 	}
 	return nil
+}
+
+// runInterruptibly runs the phase sequence in the background and races it
+// against Ctrl-C / SIGTERM, so an interrupted run gets the same
+// destroy-then-sterilize cleanup a normal failure does.
+//
+// Without this, Ctrl-C's default action kills the process immediately -
+// no signal handler means no chance to run cleanup at all. That is exactly
+// what "the workspace is sterilized on every exit" is supposed to prevent,
+// and an interrupted run is not a hypothetical: a hung phase is the most
+// likely moment anyone actually reaches for Ctrl-C.
+//
+// The in-flight external command (tofu/ansible-playbook/ssh) receives the
+// same signal directly, since it shares this process's terminal foreground
+// group, and dies on its own moments after we do. Cleanup then runs fresh
+// tofu/ansible invocations of its own, so the two never truly race for long;
+// on local state, Terraform's own lock file turns any remaining overlap into
+// a loud "state locked" error rather than silent corruption.
+func runInterruptibly(ctx *run.Context, toRun []string) error {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	resultCh := make(chan error, 1)
+	go func() { resultCh <- runPhases(ctx, toRun) }()
+
+	select {
+	case err := <-resultCh:
+		return err
+	case sig := <-sigCh:
+		fmt.Println()
+		run.Warn(fmt.Sprintf("received %s - cleaning up before exit", sig))
+		return fmt.Errorf("interrupted by %s", sig)
+	}
 }

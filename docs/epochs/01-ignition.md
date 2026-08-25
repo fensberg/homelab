@@ -108,6 +108,59 @@ never actually gitignored. And `config/management.tpl.json`'s
 `op inject` requires, so it would never have been substituted on a real
 render.
 
+### `task start` builds ignite but does not run it
+
+**Chose:** `task start` runs `go build` and then prints the command to run
+`./scripts/ignite/ignite` directly. Every other ignite-invoking task
+(`render-secrets`, `verify`, `configure-hypervisor`, `backup-state`,
+`clean-secrets`) still execs the binary through `task` as normal.
+**Rejected:** the original design, where `task start` ran ignite directly,
+same as every other phase task.
+**Because:** discovered the hard way, on the second real hardware run.
+Ignite's whole safety model - destroy before sterilize, on any failure -
+depends on catching Ctrl-C and running that cleanup. It had never been
+signal-aware at all (fixed in the same pass: `main.go` now races phase
+execution against `os/signal.Notify(syscall.SIGINT, syscall.SIGTERM)` and
+treats an interrupt exactly like a returned error). But adding that turned
+out not to be enough on its own: `task` itself intercepts SIGINT for its own
+purposes and does not proxy it to the subprocess it's supervising - a
+confirmed, currently-open upstream limitation
+(`github.com/go-task/task/issues/1408`). Verified directly: a signal-aware
+binary invoked straight from a shell catches Ctrl-C and runs its cleanup
+every time; the identical binary invoked through `task` does not - the
+child dies before its handler ever runs. No amount of code in `ignite` can
+fix a signal that `task` never delivers.
+
+The blast radius of skipping this: a Ctrl-C during a `task start` run left
+three real VMs orphaned - Terraform's state believed their Talos machine
+config had applied successfully; the live nodes had no network config at
+all and never joined etcd. State and reality had diverged in a way that
+was not safe to reconcile forward, only to destroy and rebuild.
+
+Every other ignite-invoking task stays wrapped in `task` because none of
+them can reach the Compute phase on their own, so the same failure mode
+just leaves stale secrets on disk - recoverable with `task clean-secrets`,
+never an orphaned VM. Only the one command that can create real
+infrastructure needed to change.
+
+### The Tailscale login retries itself
+
+**Chose:** wrap the `tailscale up` task in Ansible's own `until`/`retries: 2`/
+`delay: 15`, so a control-plane blip is absorbed inside the same playbook run.
+**Rejected:** the original design, which bounded the login with `--timeout`
+and then treated a failure as the operator's problem to notice and fix by
+re-running the whole start button.
+**Because:** discovered on the first real run against hardware - the
+coordination server hiccuped, `--force-reauth` fired mid-login, and the fix
+really was just "run it again," but making a human be the retry loop is not
+what "safe to re-run" was supposed to mean in practice. The retry is safe
+specifically because of the recoverable-logout property already documented
+above: a logged-out host takes the plain login path next attempt, so retrying
+in place is never worse than the failure it is recovering from. Bounded at 3
+attempts total rather than retried forever, so a genuinely unreachable
+coordination server still fails loudly with the existing diagnostics instead
+of hanging the playbook indefinitely.
+
 ### Route approval is codified, but the policy is not managed per site
 
 **Chose:** the tailnet policy (`tagOwners`, `autoApprovers`) is set up once per
@@ -358,6 +411,16 @@ To be completed when the epoch closes.
   in `ansible.cfg` so it does not bury real output. Trigger: an ansible-core
   upgrade approaching 2.25, or the next time that playbook is exercised
   against a disposable host.
+- **The Hypervisor phase authenticates as `root@pam` over SSH, for every run,
+  not just the first one.** Necessarily true on a factory-fresh Proxmox
+  install - there is no non-root account to use yet - but every re-run after
+  that still goes over root SSH too. A harder setup would have the first run
+  create a dedicated non-root admin user with sudo, install this SSH key for
+  that user, and have every task after that - including the rest of that
+  same first run - use it via `become: true`, ideally disabling
+  `PermitRootLogin` once it exists. Deferred deliberately: get ignition
+  working end to end first, harden the bootstrap identity after. Trigger:
+  once the MVP cluster is up and the project moves from MVP to V1.
 
 ## Gotchas
 
@@ -369,7 +432,12 @@ To be completed when the epoch closes.
   firing in between leaves the host logged out and worse off than before the
   run - which is why the timeout is 180s rather than something tight. The
   state is recoverable: a logged-out host takes the plain login path on the
-  next run, with no `--force-reauth`.
+  next attempt, with no `--force-reauth`. Originally that "next attempt"
+  meant a human noticing the failure and re-running the whole start button -
+  discovered too manual on the first real hardware run, so the login task now
+  retries itself in place (`until`/`retries: 2`/`delay: 15`) rather than
+  surfacing this as something the operator has to catch and fix by hand. See
+  "The Tailscale login retries itself" below.
 - **The overlay network is load-bearing for ignition only because the
   workstation is remote.** The Verify phase reaches the SDN gateway across the
   tailnet, so a Tailscale outage blocks provisioning entirely. Running the
