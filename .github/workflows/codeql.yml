@@ -33,6 +33,13 @@ jobs:
     permissions:
       security-events: write
       contents: read
+      # Required only when the repository is private. It is not today, but this
+      # repository is the template for client engagements, where it will be -
+      # and the failure mode there is a 403 from init that reads like a bug.
+      # `packages: read`, which GitHub's template also suggests, is genuinely
+      # not needed: that is for fetching private CodeQL packs, and the queries
+      # below are public ones.
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +72,15 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: none
+          # The default suite is the conservative one. security-extended adds
+          # the queries that trade a higher false-positive rate for catching
+          # more, which is the right trade when the plan is to block merges on
+          # what this finds - a gate is only worth having if it looks hard.
+          #
+          # Deliberately not security-and-quality: the extra queries there are
+          # maintainability rather than security, and style opinions have no
+          # business refusing a merge.
+          queries: security-extended
 
       - name: Analyze
         uses: github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
