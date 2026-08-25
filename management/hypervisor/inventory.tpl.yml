@@ -1,6 +1,0 @@
-all:
-  children:
-    hypervisors:
-      hosts:
-        '{{ op://{{env "REPO"}}/node0/hostname }}':
-          ansible_host: '{{ op://{{env "REPO"}}/node0/ip }}'

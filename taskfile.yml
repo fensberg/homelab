@@ -1,41 +1,89 @@
 version: "3"
 
+vars:
+  # Which site to deploy. Override: task start SITE=site1
+  SITE: '{{.SITE | default "site0"}}'
+
+  # Keep this tag in step with the SHA pinned in pr-validation.yml. They are
+  # the same release, and the point of running it locally is that it is.
+  LINT_IMAGE: ghcr.io/super-linter/super-linter:slim-v8.7.0
+
+# The single entrypoint is scripts/Start-Homelab.ps1. These tasks are thin
+# wrappers so the same verbs work from any shell.
+
 tasks:
   start:
-    desc: "Start"
+    desc: "The start button: render -> tailnet -> hypervisor -> verify -> compute -> cluster -> migrate -> backup -> sterilize"
     cmds:
-      - defer: task clean-secrets
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}}
 
-      - task: render-secrets
-      - task: configure-hypervisor
-      - task: deploy-cluster
-      - echo "🔥 Ignition complete. The cluster is now self-sustaining."
-    silent: true
+  plan:
+    desc: "Show which phases would run, without running them"
+    cmds:
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -WhatIfPhase
 
   render-secrets:
-    desc: "Hydrate all infrastructure templates via 1Password"
+    desc: "Hydrate templates from 1Password"
     cmds:
-      - echo "🔐 Injecting secrets from 1Password..."
-      - op inject -i config/management.tpl.json -o config/management.rendered.json
-      - op inject -i management/hypervisor/inventory.tpl.yml -o management/hypervisor/inventory.yml
-      - op inject -i management/cluster/backend_s3.tf.tpl -o management/cluster/backend_s3.tf
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Render
 
-  clean-secrets:
-    desc: "Wipe rendered secret files from the local disk"
+  verify:
+    desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:
-      - echo "🧹 Wiping temporary secret files..."
-      - rm -f config/management.rendered.json management/hypervisor/inventory.yml
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Verify
 
   configure-hypervisor:
-    desc: "Install mesh networking, configure software-defined routing, and generate scoped API access tokens"
+    desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
+    cmds:
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Hypervisor
+
+  check-hypervisor:
+    desc: "Dry-run the playbook: show what would change, change nothing"
     dir: management/hypervisor
     cmds:
-      - echo "⚙️ Applying baseline configuration to bare-metal hypervisor..."
-      - ansible-playbook -i inventory.yml hypervisor-prep.yml --ask-become-pass
+      - ansible-playbook -i inventory.yml hypervisor-prep.yml --check --diff
 
-  deploy-cluster:
-    desc: "Deploy immutable OS virtual machines, bootstrap control plane, and migrate state"
-    dir: management/cluster
+  backup-state:
+    desc: "Encrypt the current state and push it to Cloudflare R2"
     cmds:
-      - echo "🚀 Provisioning compute nodes and migrating infrastructure state..."
-      - ./deploy-local.sh
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Backup
+
+  fix:
+    desc: "Format everything. Seconds, no Docker. Run this before you push."
+    cmds:
+      # The same hooks CI's Format lane runs, at the same pinned versions, and
+      # they correct the file rather than complaining about it.
+      - pre-commit run --all-files
+
+  validate:
+    desc: "Prove the code resolves: tofu validate and a kustomize build"
+    cmds:
+      # What CI's Validate lane does, minus kubeconform - which needs one more
+      # binary and catches a class of error (a placeholder in a typed field)
+      # that a build failure here would have caught first anyway.
+      - bash .github/scripts/placeholder-config.sh
+      - tofu -chdir=management/cluster init -backend=false -input=false
+      - tofu -chdir=management/cluster validate
+      - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
+      - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
+      - rm -f config/management.rendered.json
+
+  lint:
+    desc: "The slow analysis lane: checkov, tflint, ansible-lint, shellcheck"
+    cmds:
+      # Needs Docker and takes a couple of minutes, which is why `fix` and
+      # `validate` exist separately - between them they catch most of what
+      # this would, in a fraction of the time. Worth running before opening a
+      # pull request, not before every commit.
+      - >-
+        docker run --rm
+        -e RUN_LOCAL=true
+        -e DEFAULT_BRANCH=main
+        --env-file .github/super-linter.vars
+        -v "{{.USER_WORKING_DIR}}:/tmp/lint"
+        {{.LINT_IMAGE}}
+
+  clean-secrets:
+    desc: "Wipe every rendered secret and the local state file"
+    cmds:
+      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Sterilize

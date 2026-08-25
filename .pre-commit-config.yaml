@@ -1,15 +1,32 @@
+# Fast checks, run before the commit lands. Everything here finishes in a few
+# seconds and most of it fixes the problem rather than reporting it.
+#
+# The rule that keeps this honest: EACH CHECK HAS EXACTLY ONE OWNER. Formatting
+# is owned here, pinned to exact versions, and CI runs this same file rather
+# than its own copy of the same tools. Analysis - checkov, kubeconform, tflint,
+# shellcheck, ansible-lint, PSScriptAnalyzer - is owned by Super-Linter, and
+# every formatter it would otherwise duplicate is switched off in
+# .github/super-linter.vars.
+#
+# Nothing appears in both places. Two copies of prettier, on two versions, is
+# what put formatting errors on a pull request that this file had just passed.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
       - id: check-merge-conflict
       - id: detect-private-key
+      - id: check-yaml
+        # Kubernetes manifests legitimately hold several documents in one file,
+        # separated by ---. Without this the hook rejects every Flux manifest.
+        args: ["--allow-multiple-documents"]
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
 
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.1.0
+  # rbubley's mirror rather than pre-commit's, which is archived on prettier
+  # 3.1. The rev pins prettier exactly; nothing else in the project runs it.
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.9.6
     hooks:
       - id: prettier
         types_or: [json, yaml, markdown]
@@ -32,10 +49,6 @@ repos:
         entry: tofu fmt
         language: system
         files: \.tf$
-
-  # - repo: https://github.com/open-policy-agent/conftest
-  #   rev: v0.54.0
-  #   hooks:
-  #     - id: conftest
-  #       args: ["test", "--all-namespaces", "--policy", "policy/"]
-  #       files: ^\.github/workflows/.*\.yml$
+        # A system hook: it needs tofu on PATH. CI has no tofu binary in the
+        # Format lane, so it sets SKIP=tofu-fmt there and the Validate lane
+        # runs `tofu fmt -check` once it has installed one.

@@ -1,19 +1,54 @@
 {
-  "nodes": [
-    {
-      "hostname": "op://homelab/node0/hostname"
-    }
-  ],
   "organization": {
-    "name": "op://homelab/organization/name"
+    "name": "{{ op://homelab/organization/name }}"
   },
-  "git": {
-    "url": "op://homelab/git/url",
-    "github_pat_reference": "op://homelab/git/token"
+
+  "source_control": {
+    "repo_url": "{{ op://homelab/source-control/url }}",
+    "token": "{{ op://homelab/source-control/token }}"
   },
-  "hypervisor": {
-    "url": "op://homelab/hypervisor/url",
-    "token_id": "op://homelab/hypervisor/token_id",
-    "token_secret": "op://homelab/hypervisor/token_secret"
+
+  "sites": {
+    "site0": {
+      "name": "{{ op://homelab/site0/name }}",
+      "octet": 10,
+      "control_plane_count": 3,
+
+      "hypervisor": {
+        "provider": "proxmox",
+        "vault_provider": "{{ op://homelab/site0/hypervisor/provider }}",
+        "token_id": "{{ op://homelab/site0/hypervisor/token_id }}",
+        "token_secret": "{{ op://homelab/site0/hypervisor/token_secret }}",
+        "nodes": {
+          "node0": {
+            "hostname": "{{ op://homelab/site0/node0/hostname }}",
+            "ip": "{{ op://homelab/site0/node0/ip }}"
+          }
+        }
+      },
+
+      "overlay_network": {
+        "provider": "tailscale",
+        "vault_provider": "{{ op://homelab/site0/overlay_network/provider }}",
+        "domain": "op://homelab/site0/overlay_network/domain",
+        "client_id": "{{ op://homelab/site0/overlay_network/client_id }}",
+        "client_secret": "{{ op://homelab/site0/overlay_network/client_secret }}"
+      },
+
+      "object_storage": {
+        "provider": "cloudflare",
+        "vault_provider": "{{ op://homelab/site0/object_storage/provider }}",
+        "account_id": "{{ op://homelab/site0/object_storage/account_id }}",
+        "admin_token": "{{ op://homelab/site0/object_storage/admin_token }}",
+        "access_key_id": "{{ op://homelab/site0/object_storage/access_key_id }}",
+        "secret_access_key": "{{ op://homelab/site0/object_storage/secret_access_key }}",
+        "bucket": "{{ op://homelab/site0/object_storage/bucket }}"
+      },
+
+      "state": {
+        "db_password": "{{ op://homelab/site0/state_database/db_password }}",
+        "backup_recipient": "{{ op://homelab/site0/state_database/backup_recipient }}"
+      }
+    }
   }
 }

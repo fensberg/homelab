@@ -1,5 +1,19 @@
 ---
-- name: Bootstrap Proxmox VE Nodes for OpenTofu & Mesh Networking
+# =============================================================================
+# Proxmox hypervisor preparation
+#
+# Safe to run repeatedly. Every task either checks before it acts or is
+# naturally idempotent. Nothing here reboots the host, reloads live network
+# interfaces, or upgrades packages unless you explicitly ask for it.
+#
+#   ansible-playbook -i inventory.yml hypervisor-prep.yml
+#   ansible-playbook -i inventory.yml hypervisor-prep.yml --check --diff
+#   ansible-playbook -i inventory.yml hypervisor-prep.yml --tags sdn
+#   ansible-playbook -i inventory.yml hypervisor-prep.yml -e do_dist_upgrade=true
+#
+# Tags: repos, packages, tailscale, rbac, sdn, routing
+# =============================================================================
+- name: Bootstrap Proxmox VE nodes for OpenTofu and mesh networking
   hosts: hypervisors
   become: true
   gather_facts: true
@@ -9,36 +23,187 @@
     pve_realm: "pve"
     pve_token_id: "pipeline"
     pve_role: "TerraformProv"
-    # Privileges required for OpenTofu/bpg-proxmox provider to manage VMs and storage
-    pve_role_privs: "VM.Allocate VM.Clone VM.Config.CDROM VM.Config.CPU VM.Config.Cloudinit VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options VM.Audit VM.PowerMgmt VM.Monitor Datastore.AllocateSpace Datastore.Audit SDN.Use"
-    # Optional: Pass a Tailscale pre-auth key if bootstrapping non-interactively
-    tailscale_auth_key: ""
+
+    # Privileges the bpg/proxmox provider needs.
+    #
+    # Datastore.AllocateTemplate is required to download the Talos ISO into a
+    # datastore - without it the ISO task fails with a 403.
+    #
+    # VM.Monitor is deliberately absent: Proxmox VE 9 no longer defines it, and
+    # it granted access to the QEMU monitor, which nothing here uses. The guest
+    # agent is disabled in compute.tf, so there is no monitor traffic at all.
+    #
+    # Privilege names change between major Proxmox versions. The task that
+    # validates this list against the running host is what turns that from an
+    # opaque "400 Parameter verification failed" into a named list.
+    pve_role_privs:
+      - VM.Allocate
+      - VM.Clone
+      - VM.Config.CDROM
+      - VM.Config.CPU
+      - VM.Config.Cloudinit
+      - VM.Config.Disk
+      - VM.Config.HWType
+      - VM.Config.Memory
+      - VM.Config.Network
+      - VM.Config.Options
+      - VM.Audit
+      - VM.PowerMgmt
+      - Datastore.AllocateSpace
+      - Datastore.AllocateTemplate
+      - Datastore.Audit
+      - SDN.Use
+      - Sys.Audit
+
+    sdn_zone: "internal"
+    sdn_vnet: "vnetint"
+    sdn_controller: "evpnctl"
+
+    # EVPN, not simple.
+    #
+    # A 'simple' zone is node-local: every node gets its own isolated bridge
+    # carrying the same subnet, so VMs on different nodes cannot reach each
+    # other. It works for exactly one hypervisor and breaks silently the moment
+    # a second joins the Proxmox cluster - the cluster forms and then fails to
+    # talk to itself.
+    #
+    # EVPN spans nodes and still provides the gateway and SNAT that this design
+    # depends on. A plain 'vxlan' zone would give L2 across nodes but no gateway
+    # and no SNAT, so it is not a like-for-like replacement.
+    #
+    # Peers and exit nodes are derived from the inventory rather than
+    # configured, so adding a hypervisor to the fleet is genuinely sufficient
+    # on this side too.
+    sdn_peers: "{{ groups['hypervisors'] | map('extract', hostvars, 'ansible_host') | list }}"
+    sdn_exit_nodes: "{{ groups['hypervisors'] | list }}"
+
+    # Every value below is supplied per site by the start button, via
+    # site.auto.yml generated from the site index. The defaults are only
+    # here so a bare ansible-playbook run fails loudly rather than silently
+    # configuring the wrong network.
+    sdn_subnet: "UNSET"
+    sdn_gateway: "UNSET"
+
+    # Derived from the site's octet so two sites on one tailnet cannot collide
+    # on BGP or VXLAN identifiers either. 0 means "not supplied".
+    sdn_asn: 0
+    sdn_vrf_vni: 0
+    sdn_vnet_vni: 0
+
+    # The route advertised over the overlay network is the site's whole /16,
+    # not just the node subnet. Advertising the /16 means new subnets at this
+    # site need no further route approval.
+    advertise_routes: "UNSET"
+
+    # A full dist-upgrade on a live hypervisor can pull a new kernel and leave
+    # ZFS or the network wanting a reboot. Opt in deliberately.
+    do_dist_upgrade: false
+
+    # Supplied by the Overlay phase via overlay-network.auto.yml, which OpenTofu
+    # generates and the Sterilize phase deletes. Empty means "log in by hand".
+    overlay_auth_key: ""
+
+    # Exported by overlay-network.tf alongside the key, so the tag checked here
+    # is by construction the tag the key carries.
+    overlay_router_tag: "tag:homelab-router"
+
+    # Bounded so a login cannot hang forever, but generous: a tailscaled that
+    # has just restarted may take well over a minute to sync, and a timeout
+    # firing mid-login leaves the host logged out.
+    tailscale_login_timeout: "180s"
+
+    # The overlay network is REMOTE ACCESS, not cluster plumbing.
+    #
+    # The SDN, its gateway and its SNAT are entirely local to the hypervisor
+    # and need no overlay at all. The overlay exists so an operator who is not
+    # on the hypervisor's LAN can reach that subnet. Welding the two together
+    # meant a Tailscale problem blocked cluster provisioning outright, which is
+    # backwards - the cluster does not care whether anyone can reach it
+    # remotely.
+    #
+    # Set false when running from the hypervisor's own LAN. Reaching the SDN
+    # then needs one static route on the workstation, pointing at the
+    # hypervisor - see docs/epochs/01-ignition.md.
+    configure_overlay: true
+
+  pre_tasks:
+    - name: Confirm this host is actually Proxmox VE
+      ansible.builtin.stat:
+        path: /usr/bin/pvesh
+      register: pvesh_binary
+      changed_when: false
+
+    - name: Fail fast if pvesh is missing
+      ansible.builtin.assert:
+        that: pvesh_binary.stat.exists
+        fail_msg: >-
+          /usr/bin/pvesh not found. This host does not look like a Proxmox VE
+          node. Check your inventory before running again.
+        success_msg: "Proxmox VE detected."
+
+    - name: Require per-site network values
+      ansible.builtin.assert:
+        that:
+          - sdn_subnet != "UNSET"
+          - sdn_gateway != "UNSET"
+          - advertise_routes != "UNSET"
+          - (sdn_asn | int) > 0
+          - (sdn_vrf_vni | int) > 0
+          - (sdn_vnet_vni | int) > 0
+        fail_msg: >-
+          Per-site network values are missing. Run this through the start
+          button, which generates site.auto.yml from the site index, or
+          pass them yourself with -e.
+        success_msg: "Per-site network values supplied."
+
+    - name: Read the Proxmox version
+      ansible.builtin.command: pveversion
+      register: pve_version
+      changed_when: false
+      check_mode: false
+
+    - name: Show what we are about to configure
+      ansible.builtin.debug:
+        msg:
+          - "Host:         {{ inventory_hostname }}"
+          - "Proxmox:      {{ pve_version.stdout }}"
+          - "Dist-upgrade: {{ 'YES' if do_dist_upgrade else 'no' }}"
+          - "SDN subnet:   {{ sdn_subnet }} (gateway {{ sdn_gateway }})"
+          - "Advertising:  {{ advertise_routes }}"
 
   tasks:
-    # ---------------------------------------------------------
-    # 1. Clean Enterprise Repositories
-    # ---------------------------------------------------------
-    - name: Remove Proxmox enterprise repo files
-      ansible.builtin.shell: |
-        grep -rl 'enterprise.proxmox.com' /etc/apt/ | xargs rm -f
-      register: repo_cleanup
-      changed_when: repo_cleanup.stdout != ""
-      failed_when: false
+    # ========================================================================
+    # 1. APT repositories
+    # ========================================================================
+    - name: Find enterprise repository files
+      ansible.builtin.find:
+        paths: /etc/apt
+        recurse: true
+        patterns: ["*.list", "*.sources"]
+        contains: ".*enterprise\\.proxmox\\.com.*"
+      register: enterprise_repos
+      tags: [repos]
 
-    - name: Ensure no-subscription repository is present (Debian Trixie / PVE 9)
+    - name: Remove enterprise repository files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ enterprise_repos.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      tags: [repos]
+
+    - name: Ensure the no-subscription repository is present
       ansible.builtin.apt_repository:
-        repo: "deb http://download.proxmox.com/debian/pve trixie pve-no-subscription"
+        repo: "deb http://download.proxmox.com/debian/pve {{ ansible_distribution_release }} pve-no-subscription"
         state: present
         filename: "pve-no-subscription"
-
-    # ---------------------------------------------------------
-    # 2. System Update & Dependencies
-    # ---------------------------------------------------------
-    - name: Update apt cache and upgrade system packages
-      ansible.builtin.apt:
         update_cache: true
-        upgrade: dist
+      tags: [repos]
 
+    # ========================================================================
+    # 2. Packages
+    # ========================================================================
     - name: Install prerequisite packages
       ansible.builtin.apt:
         name:
@@ -46,169 +211,566 @@
           - gnupg
           - sudo
           - ca-certificates
+          # EVPN's control plane is BGP, which Proxmox drives through FRR. A
+          # 'simple' zone needs none of this; an EVPN zone will not come up
+          # without it.
+          - frr
+          - frr-pythontools
         state: present
+        update_cache: true
+        cache_valid_time: 3600
+      tags: [packages]
 
-    # ---------------------------------------------------------
-    # 3. Tailscale Installation & Setup
-    # ---------------------------------------------------------
-    - name: Download Tailscale GPG key
+    - name: Upgrade all packages (opt-in only)
+      ansible.builtin.apt:
+        upgrade: dist
+        update_cache: true
+      when: do_dist_upgrade | bool
+      tags: [packages]
+
+    # ========================================================================
+    # 3. Tailscale
+    # ========================================================================
+    - name: Download the Tailscale signing key
       ansible.builtin.get_url:
-        url: "https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg"
-        dest: "/usr/share/keyrings/tailscale-archive-keyring.gpg"
+        url: "https://pkgs.tailscale.com/stable/debian/{{ ansible_distribution_release }}.noarmor.gpg"
+        dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
         mode: "0644"
+      when: configure_overlay | bool
+      tags: [tailscale]
 
-    - name: Add Tailscale repository
+    - name: Add the Tailscale repository
       ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian trixie main"
+        repo: >-
+          deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
+          https://pkgs.tailscale.com/stable/debian {{ ansible_distribution_release }} main
         state: present
-        filename: "tailscale"
+        filename: tailscale
+        update_cache: true
+      when: configure_overlay | bool
+      tags: [tailscale]
 
-    - name: Install Tailscale package
+    - name: Install Tailscale
       ansible.builtin.apt:
         name: tailscale
         state: present
-        update_cache: true
+      when: configure_overlay | bool
+      tags: [tailscale]
 
-    - name: Enable and start Tailscale service
+    - name: Enable and start tailscaled
       ansible.builtin.systemd:
         name: tailscaled
         enabled: true
         state: started
+      when: configure_overlay | bool
+      tags: [tailscale]
 
-    - name: Bring Tailscale up with Pre-Auth Key (if provided)
-      ansible.builtin.command: "tailscale up --authkey={{ tailscale_auth_key }}"
-      when: tailscale_auth_key != ""
-      register: ts_up_auto
-      changed_when: "'Success' in ts_up_auto.stdout or ts_up_auto.rc == 0"
+    - name: Check whether Tailscale is already logged in
+      ansible.builtin.command: tailscale status --json
+      register: ts_status_raw
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: configure_overlay | bool
+      tags: [tailscale, routing]
 
-    - name: Prompt to run 'tailscale up' interactively if no key provided
+    - name: Record Tailscale backend state
+      ansible.builtin.set_fact:
+        ts_running: >-
+          {{ ts_status_raw.rc == 0
+             and (ts_status_raw.stdout | length) > 0
+             and (ts_status_raw.stdout | from_json).BackendState | default('') == 'Running' }}
+        # "Running" is not the same as "logged in the way this project needs".
+        # A host logged in manually is user-owned and carries no tags, so
+        # autoApprovers - which is keyed on the router tag - never applies to
+        # it, and every route it advertises waits for a human. Checking the tag
+        # is what distinguishes the two.
+        ts_tagged: >-
+          {{ overlay_router_tag in
+             (((ts_status_raw.stdout | default('{}', true) | from_json).Self
+               | default({}, true)).Tags | default([], true)) }}
+      when: configure_overlay | bool
+      tags: [tailscale, routing]
+
+    - name: Report why Tailscale is being re-authenticated
       ansible.builtin.debug:
-        msg: "No tailscale_auth_key defined. Run 'tailscale up' manually on the host terminal to authenticate."
-      when: tailscale_auth_key == ""
+        msg: >-
+          This host is on the tailnet but is not tagged {{ overlay_router_tag }},
+          so it is user-owned and autoApprovers cannot apply to it. Re-running
+          'tailscale up --force-reauth' with the tagged key to convert it.
+      when:
+        - ts_running | bool
+        - not (ts_tagged | bool)
+        - (overlay_auth_key | length) > 0
+        - configure_overlay | bool
+      tags: [tailscale]
 
-    # ---------------------------------------------------------
-    # 4. Proxmox RBAC & Token Creation
-    # ---------------------------------------------------------
-    - name: Check existing Proxmox roles
-      ansible.builtin.command: pveum role list
+    # Run when not connected at all, OR when connected without the tag.
+    # Changing a node from user-owned to tagged requires re-authentication;
+    # a plain 'tailscale up' on an already-running node will not do it, which
+    # is why --force-reauth is used in that case.
+    # --timeout is not optional here. 'tailscale up' blocks until the control
+    # plane confirms the login, so a host that cannot reach the coordination
+    # server hangs forever with no output rather than failing. Bounding it
+    # turns an unrecoverable wait into a diagnosable error.
+    #
+    # But it must be generous. --force-reauth logs the node OUT first and then
+    # logs it back in; a timeout that fires mid-login leaves the host logged
+    # out and worse off than before it ran. A freshly restarted tailscaled
+    # syncing from scratch can take well over a minute, so 60s was too short
+    # and cost exactly that.
+    - name: Log in to Tailscale and advertise the SDN subnet
+      ansible.builtin.command: >-
+        tailscale up
+        --authkey={{ overlay_auth_key }}
+        --advertise-routes={{ advertise_routes }}
+        --accept-dns=false
+        --timeout={{ tailscale_login_timeout }}
+        {{ '--force-reauth' if (ts_running | bool) else '' }}
+      register: ts_up
+      failed_when: false
+      when:
+        - (overlay_auth_key | length) > 0
+        - not (ts_running | bool) or not (ts_tagged | bool)
+        - configure_overlay | bool
+      no_log: true
+      tags: [tailscale]
+
+    - name: Fail with the reason Tailscale could not authenticate
+      ansible.builtin.assert:
+        that: ts_up.rc == 0
+        fail_msg: >-
+          'tailscale up' did not complete within {{ tailscale_login_timeout }}
+          (exit {{ ts_up.rc | default('n/a') }}).
+
+          IF --force-reauth WAS USED, THIS HOST IS NOW LOGGED OUT. That is
+          recoverable: it de-authenticates before re-authenticating, so a run
+          interrupted in between leaves it logged out rather than broken.
+          Re-running the start button mints a fresh key and completes the
+          login, since a logged-out host takes the plain path with no
+          --force-reauth.
+
+          If it fails again, the host cannot reach the coordination server.
+          Check 'journalctl -u tailscaled -n 30 --no-pager' and try
+          'systemctl restart tailscaled' - a wedged daemon shows exactly these
+          symptoms while the network underneath it tests fine.
+        success_msg: "Tailscale authenticated with the tagged key."
+      when:
+        - ts_up is defined
+        - not (ts_up.skipped | default(false))
+        - configure_overlay | bool
+      tags: [tailscale]
+
+    - name: Explain how to log in when no key was supplied
+      ansible.builtin.debug:
+        msg: >-
+          Tailscale is installed but not logged in, and no auth key was
+          supplied. Run the Overlay phase first, or log in by hand with:
+          tailscale up --advertise-routes={{ advertise_routes }}
+      when:
+        - not (ts_running | bool)
+        - (overlay_auth_key | length) == 0
+        - configure_overlay | bool
+      tags: [tailscale]
+
+    # ========================================================================
+    # 4. Proxmox RBAC
+    # ========================================================================
+    - name: List existing Proxmox roles
+      ansible.builtin.command: pveum role list --output-format json
       register: existing_roles
       changed_when: false
+      check_mode: false
+      tags: [rbac]
 
-    - name: Create OpenTofu management role
-      ansible.builtin.command: "pveum role add {{ pve_role }} -privs '{{ pve_role_privs }}'"
-      when: pve_role not in existing_roles.stdout
+    # The built-in Administrator role holds every privilege the running version
+    # defines, so it doubles as the authoritative list of valid names.
+    - name: Determine which privileges this Proxmox version defines
+      ansible.builtin.set_fact:
+        # .split() is a string method rather than a filter: Jinja has no split
+        # filter, so the pipeline has to end and the method be called on it.
+        pve_known_privs: >-
+          {{ ((existing_roles.stdout | from_json
+               | selectattr('roleid', 'equalto', 'Administrator')
+               | map(attribute='privs') | first | default(''))
+              | regex_replace('[,\s]+', ' ') | trim).split(' ') }}
+      tags: [rbac]
 
-    - name: Check existing Proxmox users
-      ansible.builtin.command: pveum user list
+    # pveum reports only the first offender and does so as a bare 400, which
+    # says nothing about which name is wrong or why. Checking the whole list
+    # up front names every one of them at once.
+    - name: Fail on privileges this Proxmox version does not define
+      ansible.builtin.assert:
+        that: (pve_role_privs | difference(pve_known_privs) | length) == 0
+        fail_msg: >-
+          This host ({{ pve_version.stdout }}) does not define:
+          {{ pve_role_privs | difference(pve_known_privs) | join(', ') }}.
+          Privilege names change between major Proxmox versions - update
+          pve_role_privs in this playbook.
+        success_msg: "All requested privileges exist on this host."
+      when: (pve_known_privs | length) > 0
+      tags: [rbac]
+
+    - name: Create the OpenTofu management role
+      ansible.builtin.command: >-
+        pveum role add {{ pve_role }} --privs "{{ pve_role_privs | join(' ') }}"
+      when: pve_role not in (existing_roles.stdout | from_json | map(attribute='roleid') | list)
+      tags: [rbac]
+
+    # Deliberately no "modify existing role" task. This playbook initialises a
+    # host from zero; it does not reconcile one that has drifted. If the role
+    # already exists, it was created by a previous run of this same code.
+    # Privilege changes ship as a new version and are picked up by a rebuild.
+
+    - name: List existing Proxmox users
+      ansible.builtin.command: pveum user list --output-format json
       register: existing_users
       changed_when: false
+      check_mode: false
+      tags: [rbac]
 
-    - name: Create OpenTofu service user
-      ansible.builtin.command: "pveum user add {{ pve_user }}@{{ pve_realm }} --comment 'OpenTofu Service Account'"
-      when: (pve_user + '@' + pve_realm) not in existing_users.stdout
+    - name: Create the OpenTofu service user
+      ansible.builtin.command: >-
+        pveum user add {{ pve_user }}@{{ pve_realm }} --comment "OpenTofu Service Account"
+      when: >-
+        (pve_user + '@' + pve_realm) not in
+        (existing_users.stdout | from_json | map(attribute='userid') | list)
+      tags: [rbac]
 
-    - name: Assign permissions to OpenTofu service user
-      ansible.builtin.command: "pveum acl modify / -user {{ pve_user }}@{{ pve_realm }} -role {{ pve_role }}"
-      changed_when: true
+    - name: Grant the service user its role at the root path
+      ansible.builtin.command: >-
+        pveum acl modify / --user {{ pve_user }}@{{ pve_realm }} --role {{ pve_role }}
+      changed_when: false
+      tags: [rbac]
 
-    - name: Check existing API tokens for user
-      ansible.builtin.command: "pveum user token list {{ pve_user }}@{{ pve_realm }}"
+    - name: List existing API tokens
+      ansible.builtin.command: >-
+        pveum user token list {{ pve_user }}@{{ pve_realm }} --output-format json
       register: existing_tokens
       changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: [rbac]
 
-    - name: Generate API Token
-      ansible.builtin.command: "pveum user token add {{ pve_user }}@{{ pve_realm }} {{ pve_token_id }} --privsep 0 --output-format json"
+    - name: Generate the API token
+      ansible.builtin.command: >-
+        pveum user token add {{ pve_user }}@{{ pve_realm }} {{ pve_token_id }}
+        --privsep 0 --output-format json
       register: generated_token
-      when: pve_token_id not in existing_tokens.stdout
+      when: >-
+        existing_tokens.rc != 0 or
+        pve_token_id not in
+        (existing_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list)
+      tags: [rbac]
 
-    - name: Display Generated API Token (Store immediately in 1Password)
+    # The secret is shown exactly once and cannot be recovered afterwards.
+    # This is the one value that still needs a human to move it into 1Password.
+    - name: Show the new token so you can store it in 1Password
       ansible.builtin.debug:
         msg:
-          - "Token ID: {{ pve_user }}@{{ pve_realm }}!{{ pve_token_id }}"
-          - "Token Secret: {{ (generated_token.stdout | from_json).value if (generated_token is defined and generated_token.stdout is defined and generated_token.stdout != '') else 'Token already exists (secret not recoverable)' }}"
-      when: generated_token is changed
+          - "======================================================"
+          - "STORE THIS IN 1PASSWORD NOW - it cannot be shown again"
+          - "  token_id     = {{ pve_user }}@{{ pve_realm }}!{{ pve_token_id }}"
+          - "  token_secret = {{ (generated_token.stdout | from_json).value }}"
+          - "======================================================"
+      when: generated_token.changed | default(false)
+      tags: [rbac]
 
-    # ---------------------------------------------------------
-    # 5. Proxmox SDN (Software Defined Network) & DHCP Setup
-    # ---------------------------------------------------------
-    - name: Install dnsmasq for Proxmox SDN DHCP
-      ansible.builtin.apt:
-        name: dnsmasq
-        state: present
+    # ========================================================================
+    # 5. SDN
+    # ========================================================================
+    # SDN objects are cluster-wide, so they are created once rather than once
+    # per hypervisor. Only the per-node checks further down run everywhere.
+    - name: List SDN controllers
+      ansible.builtin.command: pvesh get /cluster/sdn/controllers --output-format json
+      register: sdn_controllers
+      changed_when: false
+      check_mode: false
+      run_once: true
+      tags: [sdn]
 
-    - name: Disable default dnsmasq service (Proxmox SDN manages its own instances)
-      ansible.builtin.systemd:
-        name: dnsmasq
-        enabled: false
-        state: stopped
+    - name: Create the EVPN controller
+      ansible.builtin.command: >-
+        pvesh create /cluster/sdn/controllers
+        --controller {{ sdn_controller }} --type evpn
+        --asn {{ sdn_asn }} --peers {{ sdn_peers | join(',') }}
+      when: sdn_controller not in (sdn_controllers.stdout | from_json | map(attribute='controller') | list)
+      run_once: true
+      tags: [sdn]
 
-    - name: Check existing SDN zones
+    # Peers is the list of hypervisors that speak BGP to each other. With one
+    # node it contains only itself, which is valid and becomes correct
+    # automatically when the fleet grows.
+    - name: Keep the controller's peer list in step with the fleet
+      ansible.builtin.command: >-
+        pvesh set /cluster/sdn/controllers/{{ sdn_controller }}
+        --peers {{ sdn_peers | join(',') }}
+      when: sdn_controller in (sdn_controllers.stdout | from_json | map(attribute='controller') | list)
+      changed_when: false
+      run_once: true
+      tags: [sdn]
+
+    - name: List SDN zones
       ansible.builtin.command: pvesh get /cluster/sdn/zones --output-format json
       register: sdn_zones
       changed_when: false
+      check_mode: false
+      run_once: true
+      tags: [sdn]
 
-    - name: Create 'internal' SDN zone
-      ansible.builtin.command: pvesh create /cluster/sdn/zones -zone internal -type simple -ipam pve
-      when: "'internal' not in (sdn_zones.stdout | from_json | map(attribute='zone') | list)"
+    # A zone's type cannot be changed in place. Refusing loudly is better than
+    # half-migrating: switching from simple means deleting the vnet and zone,
+    # which detaches every VM already on them.
+    - name: Refuse to run against a zone of the wrong type
+      ansible.builtin.assert:
+        that: >-
+          (sdn_zones.stdout | from_json
+           | selectattr('zone', 'equalto', sdn_zone)
+           | map(attribute='type') | first | default('evpn')) == 'evpn'
+        fail_msg: >-
+          Zone '{{ sdn_zone }}' already exists and is not an EVPN zone. Its
+          type cannot be changed in place. Delete the vnet and the zone - which
+          detaches any VM using them - and re-run:
+          'pvesh delete /cluster/sdn/vnets/{{ sdn_vnet }}' then
+          'pvesh delete /cluster/sdn/zones/{{ sdn_zone }}' then
+          'pvesh set /cluster/sdn'.
+        success_msg: "Zone '{{ sdn_zone }}' is absent or already EVPN."
+      run_once: true
+      tags: [sdn]
 
-    - name: Check 'internal' SDN zone DHCP configuration
-      ansible.builtin.command: pvesh get /cluster/sdn/zones/internal --output-format json
-      register: sdn_zone_internal
+    - name: Create the EVPN zone
+      ansible.builtin.command: >-
+        pvesh create /cluster/sdn/zones
+        --zone {{ sdn_zone }} --type evpn
+        --controller {{ sdn_controller }}
+        --vrf-vxlan {{ sdn_vrf_vni }}
+        --exitnodes {{ sdn_exit_nodes | join(',') }}
+        --ipam pve
+      when: sdn_zone not in (sdn_zones.stdout | from_json | map(attribute='zone') | list)
+      run_once: true
+      tags: [sdn]
+
+    # Exit nodes are the hypervisors that route this subnet to the outside
+    # world. Every node is one, so losing a box does not cut off the others.
+    - name: Keep the zone's exit nodes in step with the fleet
+      ansible.builtin.command: >-
+        pvesh set /cluster/sdn/zones/{{ sdn_zone }}
+        --exitnodes {{ sdn_exit_nodes | join(',') }}
+      when: sdn_zone in (sdn_zones.stdout | from_json | map(attribute='zone') | list)
       changed_when: false
+      run_once: true
+      tags: [sdn]
 
-    - name: Enable DHCP (dnsmasq) on 'internal' SDN zone
-      ansible.builtin.command: pvesh set /cluster/sdn/zones/internal -dhcp dnsmasq
-      when: "(sdn_zone_internal.stdout | from_json).dhcp | default('') != 'dnsmasq'"
-      register: dhcp_configured
-
-    - name: Check existing SDN VNets
+    - name: List SDN vnets
       ansible.builtin.command: pvesh get /cluster/sdn/vnets --output-format json
       register: sdn_vnets
       changed_when: false
+      check_mode: false
+      run_once: true
+      tags: [sdn]
 
-    - name: Create 'vnetint' VNet
-      ansible.builtin.command: pvesh create /cluster/sdn/vnets -vnet vnetint -zone internal
-      when: "'vnetint' not in (sdn_vnets.stdout | from_json | map(attribute='vnet') | list)"
+    # An EVPN vnet needs a VXLAN VNI, which a simple vnet does not. It is
+    # derived from the octet so two sites cannot pick the same one.
+    - name: Create the vnet
+      ansible.builtin.command: >-
+        pvesh create /cluster/sdn/vnets
+        --vnet {{ sdn_vnet }} --zone {{ sdn_zone }} --tag {{ sdn_vnet_vni }}
+      when: sdn_vnet not in (sdn_vnets.stdout | from_json | map(attribute='vnet') | list)
+      run_once: true
+      tags: [sdn]
 
-    - name: Check existing Subnets for vnetint
-      ansible.builtin.command: pvesh get /cluster/sdn/vnets/vnetint/subnets --output-format json
+    - name: List subnets on the vnet
+      ansible.builtin.command: >-
+        pvesh get /cluster/sdn/vnets/{{ sdn_vnet }}/subnets --output-format json
       register: sdn_subnets
       changed_when: false
-      failed_when: false # Fails gracefully if vnetint was just created and has no subnets yet
+      failed_when: false
+      check_mode: false
+      run_once: true
+      tags: [sdn]
 
-    - name: Create 10.10.10.0/24 Subnet with SNAT
-      ansible.builtin.command: pvesh create /cluster/sdn/vnets/vnetint/subnets -type subnet -subnet 10.10.10.0/24 -gateway 10.10.10.1 -snat 1
-      when: "sdn_subnets.rc != 0 or '10.10.10.0-24' not in (sdn_subnets.stdout | default('[]') | from_json | map(attribute='subnet') | list)"
-      register: subnet_created
+    # No DHCP. An EVPN zone does not accept Proxmox's dnsmasq DHCP - the API
+    # rejects the property outright - and nothing here needs it: the Talos
+    # nodes take static addresses from cloud-init, and pods get theirs from the
+    # CNI. The gateway and SNAT are what this subnet is actually for.
+    - name: Create the subnet with SNAT
+      ansible.builtin.command: >-
+        pvesh create /cluster/sdn/vnets/{{ sdn_vnet }}/subnets
+        --type subnet --subnet {{ sdn_subnet }} --gateway {{ sdn_gateway }} --snat 1
+      when: >-
+        sdn_subnets.rc != 0 or
+        (sdn_subnets.stdout | default('[]') | from_json | length) == 0
+      run_once: true
+      tags: [sdn]
 
-    - name: Apply Proxmox SDN Configuration
+    # Always commit. 'pvesh set /cluster/sdn' is the API equivalent of the
+    # Apply button in the web UI: idempotent, and it reloads only what changed.
+    #
+    # We deliberately do NOT run 'ifreload -a'. That reloads every interface on
+    # a live hypervisor and can drop the management link out from under you.
+    - name: Apply the pending SDN configuration
       ansible.builtin.command: pvesh set /cluster/sdn
-      when: subnet_created.changed or dhcp_configured.changed
+      changed_when: false
+      run_once: true
+      tags: [sdn]
 
-    - name: Reload Network Interfaces (Apply Bridge to Kernel)
-      ansible.builtin.command: ifreload -a
-      when: subnet_created.changed or dhcp_configured.changed
+    # FRR carries the BGP session that EVPN's control plane runs over. It is
+    # not needed by a simple zone, so a host converted from one may never have
+    # had it started.
+    - name: Enable and start FRR
+      ansible.builtin.systemd:
+        name: frr
+        enabled: true
+        state: started
+      tags: [sdn]
 
-    # ---------------------------------------------------------
-    # 6. Tailscale Subnet Router Configuration
-    # ---------------------------------------------------------
-    - name: Enable IPv4 forwarding for Tailscale subnet routing
+    - name: Verify the vnet bridge exists on the host
+      ansible.builtin.command: ip -brief address show {{ sdn_vnet }}
+      register: vnet_state
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: [sdn]
+
+    - name: Fail if the vnet bridge was never created
+      ansible.builtin.assert:
+        that: vnet_state.rc == 0
+        fail_msg: >-
+          {{ sdn_vnet }} does not exist on this host. The SDN configuration was
+          applied but produced no interface. Check
+          'pvesh get /cluster/sdn/vnets' and the zone's status.
+        success_msg: "{{ sdn_vnet }} exists."
+      tags: [sdn]
+
+    # 'pvesh set /cluster/sdn' writes the interface definition but does not
+    # bring it up, which leaves the bridge DOWN with its gateway address
+    # assigned - reachable from nowhere. The web UI's Apply runs 'ifreload -a'
+    # to finish the job, but that reloads every interface on a live hypervisor
+    # and can drop the management link. Bringing up this one interface achieves
+    # the same result and cannot disturb anything else.
+    - name: Bring the vnet bridge up
+      ansible.builtin.command: ip link set dev {{ sdn_vnet }} up
+      changed_when: "'UP' not in vnet_state.stdout"
+      tags: [sdn]
+
+    # A flag check is not enough here: a bridge with no ports attached can
+    # report DOWN for lack of carrier while still routing its own address
+    # perfectly well. Pinging the gateway from the host settles it.
+    - name: Confirm the gateway answers on the host itself
+      ansible.builtin.command: ping -c 2 -W 2 {{ sdn_gateway }}
+      register: gateway_ping
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: [sdn]
+
+    - name: Fail if the gateway does not answer locally
+      ansible.builtin.assert:
+        that: gateway_ping.rc == 0
+        fail_msg: >-
+          {{ sdn_gateway }} does not answer on {{ inventory_hostname }} itself,
+          so nothing reached over the overlay network will reach it either.
+          Inspect with 'ip -br addr show {{ sdn_vnet }}' and
+          'journalctl -u pvedaemon -n 50'.
+        success_msg: >-
+          {{ sdn_gateway }} answers locally - the subnet is live and routable.
+      tags: [sdn]
+
+    # ========================================================================
+    # 6. Subnet routing
+    # ========================================================================
+    - name: Enable IPv4 forwarding
       ansible.posix.sysctl:
         name: net.ipv4.ip_forward
         value: "1"
         sysctl_set: true
         state: present
         reload: true
+      tags: [routing]
 
-    - name: Enable IPv6 forwarding for Tailscale subnet routing
+    # IPv6 forwarding is deliberately OFF, and this task exists to undo it on
+    # hosts an earlier version of this playbook turned it on.
+    #
+    # Enabling it has a side effect that is easy to miss: the kernel stops
+    # honouring router advertisements unless accept_ra is also set to 2. A host
+    # that gets its IPv6 configuration by SLAAC therefore loses its global
+    # address and its default route the moment forwarding is switched on. The
+    # symptom is not obviously IPv6 at all - tailscaled keeps selecting IPv6
+    # DERP relays and failing with "network is unreachable" while every IPv4
+    # test passes, which reads as a wedged daemon.
+    #
+    # Nothing here needs it. The subnets advertised over the overlay network
+    # are IPv4 only. If IPv6 subnet routing is ever added, this must become
+    # forwarding=1 AND accept_ra=2, not forwarding alone.
+    - name: Ensure IPv6 forwarding is off
       ansible.posix.sysctl:
         name: net.ipv6.conf.all.forwarding
-        value: "1"
+        value: "0"
         sysctl_set: true
         state: present
         reload: true
+      register: ipv6_fwd
+      tags: [routing]
 
-    - name: Configure Tailscale to advertise the internal SDN subnet
-      ansible.builtin.command: tailscale set --advertise-routes=10.10.10.0/24
-      register: ts_routes
-      changed_when: "'10.10.10.0/24' not in ts_routes.stdout"
+    - name: Report that IPv6 routing was repaired
+      ansible.builtin.debug:
+        msg: >-
+          IPv6 forwarding was on and has been turned off. The kernel will
+          accept router advertisements again, but the existing default route
+          is not restored retroactively - restart tailscaled, or wait for the
+          next router advertisement, before expecting the overlay network to
+          recover.
+      when: ipv6_fwd.changed
+      tags: [routing]
+
+    - name: Advertise the SDN subnet over Tailscale
+      ansible.builtin.command: tailscale set --advertise-routes={{ advertise_routes }}
+      when:
+        - configure_overlay | bool
+        - ts_running | bool
+      changed_when: false
+      tags: [routing]
+
+    # No approval check here, deliberately.
+    #
+    # A previous version asserted on Self.PrimaryRoutes from
+    # 'tailscale status --json'. That field describes routes a node is primary
+    # for as seen from ANOTHER node; the local node's own Self entry leaves it
+    # empty whether or not the route is approved, so the check failed closed and
+    # blocked a correctly configured tailnet.
+    #
+    # There is no reliable local signal for control-plane approval, and inventing
+    # one that fails closed is worse than not checking. The Verify phase pings
+    # the gateway across the overlay network, which tests the thing that actually
+    # matters, and its failure message names autoApprovers as the likely cause.
+    - name: Explain how to reach the subnet without the overlay
+      ansible.builtin.debug:
+        msg:
+          - "The overlay network is disabled, so nothing advertises {{ sdn_subnet }} off this host."
+          - "That is fine for building the cluster - the SDN is local to this hypervisor."
+          - ""
+          - "To reach it from a workstation, that workstation must be ON THIS HOST'S"
+          - "SUBNET. A static route's next hop has to be on-link; naming a gateway on"
+          - "another subnet makes the kernel treat it as directly attached, so it ARPs"
+          - "for an address nobody answers and loses the route it already had."
+          - ""
+          - "Same subnet as {{ ansible_host | default(inventory_hostname) }}:"
+          - "    Windows : route -p add {{ sdn_subnet.split('/')[0] }} mask 255.255.0.0 {{ ansible_host | default(inventory_hostname) }}"
+          - "    Linux   : ip route add {{ sdn_subnet }} via {{ ansible_host | default(inventory_hostname) }}"
+          - ""
+          - "A different subnet: use the overlay network instead, or add the route on the"
+          - "router that joins them. Do NOT point a workstation route at this host."
+      when: not (configure_overlay | bool)
+      tags: [routing]
+
+    - name: Report the advertised route
+      ansible.builtin.debug:
+        msg: >-
+          {{ advertise_routes }} is advertised over the overlay network. If the
+          Verify phase cannot reach {{ sdn_gateway }}, check the Subnets panel
+          in the Tailscale admin console - an unapproved route is carried
+          nowhere. See docs/tailnet-setup.md.
+      when:
+        - configure_overlay | bool
+        - ts_running | bool
+      tags: [routing]

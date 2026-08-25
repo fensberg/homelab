@@ -1,0 +1,85 @@
+# =============================================================================
+# Compute: the Talos control-plane virtual machines.
+# Vendor: Proxmox VE (bpg/proxmox provider).
+# =============================================================================
+
+# One copy per hypervisor that will host a VM. A Proxmox node can only boot a
+# VM from an ISO in its own datastore, so this scales with the node list rather
+# than assuming a single box.
+resource "proxmox_virtual_environment_file" "talos_iso" {
+  for_each = toset(local.vm_placement)
+
+  content_type = "iso"
+  datastore_id = "local-iso"
+  node_name    = each.value
+
+  source_file {
+    path      = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/nocloud-amd64.iso"
+    file_name = "talos-${local.talos_version}-nocloud-amd64.iso"
+  }
+}
+
+resource "proxmox_virtual_environment_vm" "talos_cp" {
+  count      = local.node_count
+  depends_on = [proxmox_virtual_environment_file.talos_iso]
+  name       = local.vm_names[count.index]
+  node_name  = local.vm_placement[count.index]
+  vm_id      = local.vm_ids[count.index]
+
+  # Disk first, ISO second. On first boot the disk is empty so it falls through
+  # to the ISO; once Talos has installed itself it boots from disk.
+  boot_order = ["virtio0", "ide0"]
+
+  cpu {
+    cores = 4
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 4096
+  }
+
+  network_device {
+    bridge = "vnetint"
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = "local-zfs"
+    file_format  = "raw"
+    interface    = "virtio0"
+    size         = 64
+  }
+
+  cdrom {
+    file_id   = proxmox_virtual_environment_file.talos_iso[local.vm_placement[count.index]].id
+    interface = "ide0"
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  smbios {
+    serial       = local.vm_names[count.index]
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
+  }
+
+  initialization {
+    datastore_id = "local-zfs"
+
+    dns {
+      servers = ["1.1.1.1", "1.0.0.1"]
+    }
+
+    ip_config {
+      ipv4 {
+        address = "${local.node_ips[count.index]}/24"
+        gateway = local.node_gateway
+      }
+    }
+  }
+}
