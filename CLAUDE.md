@@ -138,9 +138,19 @@ depends on it and uses them.
   are the security lanes. Everything except Secrets waits on Format.
   Reordering is the only speed lever here — the security lanes overlap on
   purpose and none of them comes out.
+- `codeql.yml` — CodeQL on `actions`, the only language here it supports.
+  Workflows are the part of this repository that runs with a token, so that is
+  where a finding matters. Moved off GitHub's default setup so it is pinned and
+  reviewable; the two are mutually exclusive, so default setup must stay off.
 - `scorecard.yml` — repository posture, weekly and on merges to `main`. It
   grades the repository rather than the diff, so a pull request cannot change
   its answer.
+- **Egress is deny-by-default.** Every job pins `harden-runner` to
+  `egress-policy: block` with an explicit allowlist, so a compromised action or
+  linter cannot exfiltrate quietly. The one exception is the TruffleHog lane,
+  which stays on `audit` and says why in a comment: verification works by
+  calling the API of whichever vendor issued a leaked key, and an allowlist
+  would silently downgrade verified findings to unverified rather than fail.
 - `deploy-infrastructure.yml` — applies OpenTofu on a self-hosted runner.
   Path-filtered to `environments/**` and `modules/**`, so Ignition changes
   never trigger it. That is intentional.

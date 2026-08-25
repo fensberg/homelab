@@ -43,7 +43,25 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-          egress-policy: audit
+          # pre-commit builds a Go toolchain for actionlint and a Node one
+          # for prettier, which is why this list is the longest in the file.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            codeload.github.com:443
+            dl.google.com:443
+            files.pythonhosted.org:443
+            github.com:443
+            go.dev:443
+            nodejs.org:443
+            objects.githubusercontent.com:443
+            proxy.golang.org:443
+            pypi.org:443
+            raw.githubusercontent.com:443
+            registry.npmjs.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,7 +103,19 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-          egress-policy: audit
+          # get.opentofu.org serves both the installer and the GPG key it
+          # verifies the release with. Provider downloads start at the registry
+          # and are redirected to GitHub release assets. The schema fetches for
+          # kubeconform come from raw.githubusercontent.com.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            get.opentofu.org:443
+            github.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            registry.opentofu.org:443
+            release-assets.githubusercontent.com:443
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -106,7 +136,7 @@ jobs:
       # and is itself a check: it fails if the template stops being valid JSON
       # once injected, or stops carrying a key the OpenTofu reads.
       - name: Render a placeholder config
-        run: python3 .github/scripts/placeholder-config.py
+        run: ./.github/scripts/placeholder-config.sh
 
       - name: Check OpenTofu formatting
         run: tofu fmt -check -recursive management/
@@ -171,7 +201,18 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-          egress-policy: audit
+          # The slim image carries its own linters, so this is the container
+          # pull plus the update checks a few of the tools make on startup.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            files.pythonhosted.org:443
+            ghcr.io:443
+            github.com:443
+            objects.githubusercontent.com:443
+            pkg-containers.githubusercontent.com:443
+            pypi.org:443
+            raw.githubusercontent.com:443
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -227,7 +268,17 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-          egress-policy: audit
+          # Trivy pulls its misconfiguration database as an OCI artifact,
+          # from ghcr.io with a Google mirror as fallback.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            ghcr.io:443
+            github.com:443
+            mirror.gcr.io:443
+            objects.githubusercontent.com:443
+            pkg-containers.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -256,6 +307,12 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
+          # DELIBERATELY audit, not block. TruffleHog verifies a candidate
+          # secret by presenting it to the API of whichever vendor issued it,
+          # and there is no way to know in advance which vendors those are - a
+          # leaked key belongs to whoever it belongs to. An allowlist here
+          # would not fail loudly; it would quietly turn verified findings into
+          # unverified ones, which is the opposite of what this lane is for.
           egress-policy: audit
 
       - name: Checkout Code

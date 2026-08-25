@@ -1,0 +1,72 @@
+name: "CodeQL"
+
+# Moved off GitHub's default setup and into a workflow file so it is pinned,
+# reviewable and reported alongside the other pull request checks.
+#
+# BEFORE THIS WORKS, default setup has to be turned off:
+#   Settings -> Advanced Security -> Code scanning -> Default setup -> Disable
+# The two are mutually exclusive. While default setup is on, the upload from
+# this workflow is rejected.
+#
+# TO MAKE IT BLOCK A MERGE, add a ruleset on main with "Require code scanning
+# results", listing CodeQL as a required tool. A branch protection status check
+# only proves the workflow ran; the ruleset is what refuses a merge because of
+# what the workflow found.
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    # Queries improve after code is written, so re-analysing unchanged code
+    # still finds new things. Sunday, off the critical path.
+    - cron: "41 5 * * 0"
+
+permissions: read-all
+
+jobs:
+  analyze:
+    name: "Analyze (${{ matrix.language }})"
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # `actions` is the whole list, and that is not an oversight. CodeQL
+        # analyses source code; this repository is HCL, YAML and PowerShell,
+        # none of which it supports. Workflows it does support, and workflows
+        # are the part of this repository that runs with a token and can be
+        # influenced by a pull request - which is exactly where a CodeQL
+        # finding would matter most.
+        language: ["actions"]
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            uploads.github.com:443
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        with:
+          category: "/language:${{ matrix.language }}"
