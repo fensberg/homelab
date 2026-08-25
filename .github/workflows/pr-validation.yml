@@ -71,6 +71,9 @@ jobs:
         uses: super-linter/super-linter/slim@4ce20838b8ab83717e78138c5b3a1407148e0918 # v8.7.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # CI lints the diff. A local run lints everything, because RUN_LOCAL
+          # forces it - which is why this is here and not in the shared file.
+          VALIDATE_ALL_CODEBASE: false
 
   # -----------------------------------------------------------------
   # LANE 3: Static Application Security Testing (SAST)

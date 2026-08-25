@@ -95,10 +95,13 @@ output "state_db_endpoint" {
 output "state_conn_str" {
   description = "Connection string for the OpenTofu pg backend."
   sensitive   = true
-  # checkov:skip=CKV_SECRET_4:This is a format string, not a credential. The
-  # only secret in it is local.site_state.db_password, which comes from
-  # 1Password at run time and is never written to a file in this repository.
+  # A format string, not a credential: the only secret in it is
+  # local.site_state.db_password, read from 1Password at run time. The skip
+  # has to sit on the line directly above the match - checkov's secrets
+  # scanner looks one line back, not at the enclosing block, which is why the
+  # first attempt at this was ignored.
   value = format(
+    # checkov:skip=CKV_SECRET_4:format string, see above
     "postgres://%s:%s@%s:%d/%s?sslmode=require",
     local.state_db_owner,
     urlencode(local.site_state.db_password),

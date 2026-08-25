@@ -1,49 +1,25 @@
+# Nothing here runs a linter that Super-Linter also runs.
+#
+# Two copies of prettier is what put formatting errors on a pull request that
+# `pre-commit run --all-files` had just passed: this file pinned 3.1 through a
+# mirror that has since been archived, and Super-Linter pinned ^3.8.3. Same
+# tool, two versions, two answers. The same trap was set for actionlint, shfmt
+# and terraform fmt, which were also configured in both places.
+#
+# So every linter now has exactly one version in the whole stack - the one
+# baked into the Super-Linter image, pinned by SHA in pr-validation.yml. Run it
+# with `task lint`, or `task fix` to have it correct formatting in place.
+#
+# What is left below are pre-commit's own hooks. They shell out to nothing, so
+# there is no version to drift, and they catch things worth catching before a
+# push rather than after one.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: detect-private-key
       - id: check-yaml
         # Kubernetes manifests legitimately hold several documents in one file,
         # separated by ---. Without this the hook rejects every Flux manifest.
         args: ["--allow-multiple-documents"]
-      - id: check-merge-conflict
-      - id: detect-private-key
-
-  # rbubley's mirror rather than pre-commit's, which is archived and stuck on
-  # prettier 3.1. Keep this version in step with the prettier that Super-Linter
-  # pins (dependencies/package.json in the super-linter tag CI uses) - when the
-  # two drift, pre-commit passes and CI fails on formatting, which is the least
-  # useful failure there is.
-  - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.9.6
-    hooks:
-      - id: prettier
-        types_or: [json, yaml, markdown]
-
-  - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.1
-    hooks:
-      - id: actionlint
-
-  - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.8.0-1
-    hooks:
-      - id: shfmt
-        args: ["-w", "-s", "-i", "0"]
-
-  - repo: local
-    hooks:
-      - id: tofu-fmt
-        name: tofu fmt
-        entry: tofu fmt
-        language: system
-        files: \.tf$
-
-  # - repo: https://github.com/open-policy-agent/conftest
-  #   rev: v0.54.0
-  #   hooks:
-  #     - id: conftest
-  #       args: ["test", "--all-namespaces", "--policy", "policy/"]
-  #       files: ^\.github/workflows/.*\.yml$

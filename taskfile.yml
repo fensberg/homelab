@@ -4,6 +4,16 @@ vars:
   # Which site to deploy. Override: task start SITE=site1
   SITE: '{{.SITE | default "site0"}}'
 
+  # One definition of how the linters are invoked, shared by `lint` and `fix`.
+  # Split so `fix` can add flags: docker wants them before the image name.
+  LINT_RUN: >-
+    docker run --rm
+    -e RUN_LOCAL=true
+    -e DEFAULT_BRANCH=main
+    --env-file .github/super-linter.vars
+    -v "{{.USER_WORKING_DIR}}:/tmp/lint"
+  LINT_IMAGE: ghcr.io/super-linter/super-linter:slim-v8.7.0
+
 # The single entrypoint is scripts/Start-Homelab.ps1. These tasks are thin
 # wrappers so the same verbs work from any shell.
 
@@ -45,20 +55,26 @@ tasks:
       - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Backup
 
   lint:
-    desc: "Run the exact linters CI runs, in the exact versions CI runs them"
+    desc: "Every linter CI runs, from the same pinned image, so a pass means a pass"
     cmds:
-      # pre-commit covers formatting; this is everything else CI checks -
-      # checkov, kubeconform, markdownlint, textlint, tflint, shellcheck.
-      # Running the pinned image is the only way to be sure a local pass means
-      # a CI pass: reimplementing fifteen linters in pre-commit just moves the
-      # version skew somewhere harder to see.
+      # This is the whole linting stack - prettier, checkov, kubeconform,
+      # markdownlint, tflint, shellcheck, actionlint, terraform fmt. It is the
+      # image pinned by SHA in pr-validation.yml, so there is exactly one
+      # version of each tool anywhere in the project. Keep the tag here and the
+      # SHA there in step; they are the same release.
+      - "{{.LINT_RUN}} {{.LINT_IMAGE}}"
+
+  fix:
+    desc: "The same run, allowed to correct formatting in place"
+    cmds:
       - >-
-        docker run --rm
-        -e RUN_LOCAL=true
-        -e DEFAULT_BRANCH=main
-        --env-file .github/super-linter.vars
-        -v "{{.USER_WORKING_DIR}}:/tmp/lint"
-        ghcr.io/super-linter/super-linter:slim-v8.7.0
+        {{.LINT_RUN}}
+        -e FIX_JSON_PRETTIER=true
+        -e FIX_YAML_PRETTIER=true
+        -e FIX_MARKDOWN_PRETTIER=true
+        -e FIX_TERRAFORM_FMT=true
+        -e FIX_SHELL_SHFMT=true
+        {{.LINT_IMAGE}}
 
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
