@@ -1,0 +1,10 @@
+---
+# Copy to inventory.yml and point it at your Proxmox host.
+# inventory.yml is gitignored: this file describes the shape, not your estate.
+all:
+  children:
+    hypervisor:
+      hosts:
+        proxmox:
+          ansible_host: 192.168.0.10
+          ansible_user: root
