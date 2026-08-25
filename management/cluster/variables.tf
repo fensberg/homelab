@@ -57,10 +57,6 @@ locals {
   node_gateway = cidrhost(local.node_cidr, 1)
   node_ips     = [for i in range(local.node_count) : cidrhost(local.node_cidr, 100 + i)]
 
-  # DHCP pool, disjoint from the static nodes above.
-  dhcp_start = cidrhost(local.node_cidr, 50)
-  dhcp_end   = cidrhost(local.node_cidr, 99)
-
   # --- placement -----------------------------------------------------------
   # Control-plane VMs are dealt round-robin across whatever hypervisors the
   # site has. One hypervisor puts all of them on it; three put one on each,

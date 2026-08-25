@@ -74,6 +74,17 @@
           ansible.builtin.debug:
             msg: "{{ name }} (VM {{ vmid }}) removed."
 
+      # qm destroy refuses while a disk is locked by a running backup or a
+      # migration, and leaves the VM exactly as it was. Say which VM is stuck
+      # rather than letting an unexplained non-zero exit stand.
+      rescue:
+        - name: Explain a teardown that did not finish
+          ansible.builtin.fail:
+            msg:
+              - "Could not remove {{ name }} (VM {{ vmid }})."
+              - "Check whether it is locked:  qm config {{ vmid }} | grep lock"
+              - "Clear a stale lock with:     qm unlock {{ vmid }}"
+
     - name: Stop here when tearing down
       ansible.builtin.meta: end_play
       when: state == "absent"
@@ -217,3 +228,16 @@
               - "Find its address with:  qm guest cmd {{ vmid }} network-get-interfaces"
               - "or open its console:    qm terminal {{ vmid }}"
           when: guest_net.rc != 0
+
+      # A build that fails partway leaves VM 9000 half-made, and the next run
+      # finds it, decides the workstation already exists and leaves it alone -
+      # a dead end that reads like success. Say plainly that the VM has to be
+      # torn down before trying again.
+      rescue:
+        - name: Explain a half-built workstation
+          ansible.builtin.fail:
+            msg:
+              - "Building {{ name }} (VM {{ vmid }}) failed partway."
+              - "A partial VM may exist, and re-running will find it and skip the build."
+              - "Tear it down first:"
+              - "    ansible-playbook -i inventory.yml provision.yml -e state=absent"

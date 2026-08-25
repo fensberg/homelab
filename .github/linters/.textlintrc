@@ -1,0 +1,14 @@
+{
+  "rules": {
+    "terminology": {
+      "defaultTerms": true,
+      "exclude": [
+        "Git",
+        "repository",
+        "copypaste",
+        "Visual Studio Code",
+        "filenames"
+      ]
+    }
+  }
+}

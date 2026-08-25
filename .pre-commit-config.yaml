@@ -11,8 +11,13 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
 
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.1.0
+  # rbubley's mirror rather than pre-commit's, which is archived and stuck on
+  # prettier 3.1. Keep this version in step with the prettier that Super-Linter
+  # pins (dependencies/package.json in the super-linter tag CI uses) - when the
+  # two drift, pre-commit passes and CI fails on formatting, which is the least
+  # useful failure there is.
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.9.6
     hooks:
       - id: prettier
         types_or: [json, yaml, markdown]

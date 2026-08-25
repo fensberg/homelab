@@ -130,6 +130,8 @@ depends on it and uses them.
 ## CI
 
 - `pr-validation.yml` — TruffleHog, Super-Linter, Semgrep, Trivy, Scorecard.
+  Super-Linter's settings live in `.github/super-linter.vars` and its rule
+  files in `.github/linters/`, so `task lint` reproduces CI exactly.
 - `deploy-infrastructure.yml` — applies OpenTofu on a self-hosted runner.
   Path-filtered to `environments/**` and `modules/**`, so Ignition changes
   never trigger it. That is intentional.
@@ -138,4 +140,7 @@ depends on it and uses them.
 
 - Branch per epoch: `epoch/<nn>-<slug>`. One PR per epoch into `main`.
 - Close an epoch by filling in its record in `docs/epochs/` **before** merging.
-- `pre-commit` is configured; run it before pushing.
+- `pre-commit` is configured; run it before pushing. It covers formatting only.
+  `task lint` runs the rest of what CI runs - checkov, kubeconform,
+  markdownlint, textlint, tflint - from the same pinned Super-Linter image,
+  configured by the same `.github/super-linter.vars` the workflow reads.

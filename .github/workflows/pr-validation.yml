@@ -62,14 +62,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # The same file `task lint` passes to the container, so a local run and
+      # CI are configured identically. See .github/super-linter.vars.
+      - name: Load Super-Linter configuration
+        run: grep -v "^#" .github/super-linter.vars | grep . >> "$GITHUB_ENV"
+
       - name: Run Super-Linter
         uses: super-linter/super-linter/slim@4ce20838b8ab83717e78138c5b3a1407148e0918 # v8.7.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VALIDATE_ALL_CODEBASE: false
-          VALIDATE_BIOME_LINT: false
-          VALIDATE_BIOME_FORMAT: false
-          VALIDATE_JSCPD: false
 
   # -----------------------------------------------------------------
   # LANE 3: Static Application Security Testing (SAST)

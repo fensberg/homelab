@@ -23,7 +23,7 @@ existing rules do.
   // Who may apply the router tag. Narrow this from autogroup:admin if the
   // tailnet has operators who should not be able to route subnets.
   "tagOwners": {
-    "tag:homelab-router": ["autogroup:admin"]
+    "tag:homelab-router": ["autogroup:admin"],
   },
 
   // Routes advertised by a node carrying the router tag are approved with no
@@ -36,9 +36,9 @@ existing rules do.
   // have tagged as routers can advertise anything at all.
   "autoApprovers": {
     "routes": {
-      "10.0.0.0/8": ["tag:homelab-router"]
-    }
-  }
+      "10.0.0.0/8": ["tag:homelab-router"],
+    },
+  },
 }
 ```
 
@@ -76,7 +76,7 @@ Note the client ID and secret — the secret is shown once.
 Put them wherever that engagement's secrets live, matching the paths in
 `config/management.tpl.json`:
 
-```
+```text
 overlay_network/provider        tailscale
 overlay_network/domain          -
 overlay_network/client_id

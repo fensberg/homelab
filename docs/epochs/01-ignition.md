@@ -110,7 +110,7 @@ nothing reads and that drifts out of sync. That was wrong. As an _assertion_
 it earns its place: the code in this root speaks to exactly one vendor per
 concern, and without the check, pointing the vault at S3 credentials while the
 code still calls Cloudflare produces an opaque authentication failure instead
-of "this config declares cloudflare". A declaration the code verifies cannot
+of "this config declares `cloudflare`". A declaration the code verifies cannot
 drift, because drifting fails the plan.
 
 It is added only where the code is genuinely vendor-locked - hypervisor,
@@ -385,16 +385,16 @@ To be completed when the epoch closes.
   `StrictHostKeyChecking=accept-new` trusts a host the first time and pins it,
   but still refuses one whose key has changed. `no` would silently accept a
   substituted host forever, and the default fails outright because Ansible
-  runs ssh without a TTY to answer the prompt.
+  runs `ssh` without a TTY to answer the prompt.
 
 - **Renaming a site renames its VMs.** Everything nameable derives from
   `sites.<key>.name`, so changing it in the vault makes OpenTofu see different
   VMs and destroy and recreate them. Rename deliberately, not casually.
 - **The WSL command is written to a file, not passed as `bash -lc`.** WSL
   inherits the Windows PATH, which contains `Program Files (x86)`, and an
-  unquoted assignment of it is a bash syntax error at the parenthesis. A
+  unquoted assignment of it is a `bash` syntax error at the parenthesis. A
   script file sidesteps every layer of quoting between PowerShell, wsl.exe
-  and bash.
+  and `bash`.
 
 - **Tailscale auth key descriptions reject punctuation.** The API returns
   "description had invalid characters (400)" for parentheses; the field is

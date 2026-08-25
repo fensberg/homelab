@@ -95,6 +95,9 @@ output "state_db_endpoint" {
 output "state_conn_str" {
   description = "Connection string for the OpenTofu pg backend."
   sensitive   = true
+  # checkov:skip=CKV_SECRET_4:This is a format string, not a credential. The
+  # only secret in it is local.site_state.db_password, which comes from
+  # 1Password at run time and is never written to a file in this repository.
   value = format(
     "postgres://%s:%s@%s:%d/%s?sslmode=require",
     local.state_db_owner,
