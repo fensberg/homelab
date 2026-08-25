@@ -68,20 +68,24 @@ belongs in an epoch record.
 
 ## The button
 
-One entrypoint, run from Windows PowerShell:
+One entrypoint, a Go program, run from the Linux workstation:
 
-```powershell
-.\scripts\Install-Dependencies.ps1              # once, elevated
-.\scripts\Start-Homelab.ps1 -Site site0        # every time after
+```sh
+./scripts/install-dependencies.sh   # once
+task start SITE=site0               # every time after
 ```
 
-**Windows is a stopgap.** `workstation/` provisions a Linux machine on the
-hypervisor for day-to-day work. It is deliberately independent - no shared
-config, no 1Password, and nothing in the cluster lifecycle can touch it, so a
-failed ignition cannot take your development environment with it. See
-[`workstation/README.md`](workstation/README.md).
+**`workstation/` provisions the Linux machine this runs from.** It is
+deliberately independent from `management/` - no shared config, no
+1Password, and nothing in the cluster lifecycle can touch it, so a failed
+ignition cannot take your development environment with it. See
+[`workstation/README.md`](workstation/README.md). Ignition was originally a
+PowerShell entrypoint run from Windows, with Ansible hopping into WSL2
+because it has no supported Windows control node; once `workstation/` made a
+Linux dev machine the norm rather than a stopgap, that whole layer became
+unnecessary and the entrypoint moved to Go - see the epoch record for why Go.
 
-`-Site` selects a key in the config's `sites` map. Each site declares its own
+`-site` selects a key in the config's `sites` map. Each site declares its own
 `octet`, which picks its `/16`, names the site and its VMs, and bands its VM
 IDs - so `site10-cp-01` lives at `10.10.10.100`. Octets are asserted unique and
 within 1-95 across every site, at plan time and again in the start button.

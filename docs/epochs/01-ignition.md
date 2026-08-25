@@ -66,6 +66,48 @@ ordering makes an aggressive cleanup policy safe. `-KeepOnFailure` opts out.
 `Install-Dependencies.ps1` with mirrored networking, so it inherits the
 Windows host's Tailscale routes rather than sitting behind its own NAT.
 
+**Superseded by "The entrypoint moves from PowerShell to Go" below**, once
+`workstation/` made a Linux dev machine the norm. Left here rather than
+deleted - it documents a real problem this project actually had, and the
+WSL-specific gotchas later in this record explain failures anyone using an
+old clone or old habits could still hit.
+
+### The entrypoint moves from PowerShell to Go
+
+**Chose:** port `Start-Homelab.ps1` and `Install-Dependencies.ps1` to a Go
+program (`scripts/ignite`) plus a plain bash bootstrap
+(`scripts/install-dependencies.sh`), run from the Linux devbox
+`workstation/` provisions rather than from Windows.
+**Rejected:** Python, which needed no new toolchain (the devbox already runs
+it for Ansible) and would have been less code to write.
+**Because:** the project's purpose is learning production-grade patterns,
+not shipping the least-effort implementation. Every other tool this root
+depends on - OpenTofu, Talos, Flux, kubectl - is a Go binary, and so is the
+rest of the ecosystem this project's choices already model themselves on
+(Helm, Argo CD, cluster-api, Vault). That is the same reasoning that picked
+CloudNativePG over a plain StatefulSet: the operator pattern, not the
+shortest path, is the transferable skill. Go was the closer match to what
+this project is actually for.
+
+Moving off Windows also deleted a whole layer rather than porting it: the
+WSL2 hop, its path translation, and the `ANSIBLE_CONFIG` workaround for a
+world-writable `/mnt/c` all existed solely because Ansible has no supported
+Windows control node. Ansible now runs natively, and `ansible.cfg` is picked
+up by the same ambient discovery `check-hypervisor` already relied on.
+
+The bootstrap script stayed bash on purpose: `scripts/ignite` needs Go to
+run, so whatever installs Go cannot itself depend on Go already being
+present.
+
+While reading the original script to port it, two live bugs surfaced and
+were fixed in the same pass, independent of the language: `.gitignore`
+excluded a file named `tailscale.auto.yml`, but the Overlay phase has always
+written the Tailscale auth key to `overlay-network.auto.yml` - that file was
+never actually gitignored. And `config/management.tpl.json`'s
+`overlay_network.domain` field was missing the `{{ }}` template braces
+`op inject` requires, so it would never have been substituted on a real
+render.
+
 ### Route approval is codified, but the policy is not managed per site
 
 **Chose:** the tailnet policy (`tagOwners`, `autoApprovers`) is set up once per

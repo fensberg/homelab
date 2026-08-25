@@ -8,34 +8,36 @@ vars:
   # the same release, and the point of running it locally is that it is.
   LINT_IMAGE: ghcr.io/super-linter/super-linter:slim-v8.7.0
 
-# The single entrypoint is scripts/Start-Homelab.ps1. These tasks are thin
-# wrappers so the same verbs work from any shell.
+# The single entrypoint is scripts/ignite, a Go program. `go run` rather than
+# a built binary: it always runs current source, with no stale artifact to
+# remember to rebuild, matching how the PowerShell original was invoked
+# directly from source.
 
 tasks:
   start:
     desc: "The start button: render -> tailnet -> hypervisor -> verify -> compute -> cluster -> migrate -> backup -> sterilize"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}}
+      - go run -C scripts/ignite . -site {{.SITE}}
 
   plan:
     desc: "Show which phases would run, without running them"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -WhatIfPhase
+      - go run -C scripts/ignite . -site {{.SITE}} -whatif
 
   render-secrets:
     desc: "Hydrate templates from 1Password"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Render
+      - go run -C scripts/ignite . -site {{.SITE}} -phase render
 
   verify:
     desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Verify
+      - go run -C scripts/ignite . -site {{.SITE}} -phase verify
 
   configure-hypervisor:
     desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Hypervisor
+      - go run -C scripts/ignite . -site {{.SITE}} -phase hypervisor
 
   check-hypervisor:
     desc: "Dry-run the playbook: show what would change, change nothing"
@@ -46,7 +48,7 @@ tasks:
   backup-state:
     desc: "Encrypt the current state and push it to Cloudflare R2"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Backup
+      - go run -C scripts/ignite . -site {{.SITE}} -phase backup
 
   fix:
     desc: "Format everything. Seconds, no Docker. Run this before you push."
@@ -67,6 +69,8 @@ tasks:
       - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
       - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
       - rm -f config/management.rendered.json
+      - go vet -C scripts/ignite ./...
+      - go build -C scripts/ignite -o /dev/null .
 
   lint:
     desc: "The slow analysis lane: checkov, tflint, ansible-lint, shellcheck"
@@ -86,4 +90,4 @@ tasks:
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Sterilize
+      - go run -C scripts/ignite . -site {{.SITE}} -phase sterilize

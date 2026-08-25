@@ -14,8 +14,8 @@ homelab/
 ├── docs/epochs/ # Why things are the way they are, per phase
 │
 ├── scripts/ # THE START BUTTON
-│ ├── Install-Dependencies.ps1 # One-time workstation setup
-│ └── Start-Homelab.ps1 # Nine-phase ignition sequence
+│ ├── install-dependencies.sh # One-time workstation setup
+│ └── ignite/ # Nine-phase ignition sequence (Go)
 │
 ├── config/
 │ └── management.tpl.json # The one config: sites[], topology, secret references

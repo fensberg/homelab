@@ -52,3 +52,12 @@ repos:
         # A system hook: it needs tofu on PATH. CI has no tofu binary in the
         # Format lane, so it sets SKIP=tofu-fmt there and the Validate lane
         # runs `tofu fmt -check` once it has installed one.
+
+      - id: go-fmt
+        name: gofmt
+        entry: gofmt -w
+        language: system
+        files: \.go$
+        # Same shape as tofu-fmt: needs go on PATH. Super-Linter's Go
+        # analysis (golangci-lint, unaffected by this) stays the owner of
+        # everything beyond formatting.

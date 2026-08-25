@@ -5,7 +5,7 @@
 # THIS IS NOT PART OF THE HOMELAB WORKFLOW.
 #
 # It shares no configuration with management/, reads nothing from 1Password,
-# and is never touched by scripts/Start-Homelab.ps1. Nothing in the cluster
+# and is never touched by scripts/ignite. Nothing in the cluster
 # lifecycle can create, modify or destroy it - which is the point. The ignition
 # run destroys everything it owns when it fails, and a machine you code on for
 # the next several years must not be inside that blast radius.
