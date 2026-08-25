@@ -61,7 +61,7 @@ tasks:
       # What CI's Validate lane does, minus kubeconform - which needs one more
       # binary and catches a class of error (a placeholder in a typed field)
       # that a build failure here would have caught first anyway.
-      - ./.github/scripts/placeholder-config.sh
+      - bash .github/scripts/placeholder-config.sh
       - tofu -chdir=management/cluster init -backend=false -input=false
       - tofu -chdir=management/cluster validate
       - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null

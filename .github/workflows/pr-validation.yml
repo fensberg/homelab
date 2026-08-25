@@ -136,7 +136,7 @@ jobs:
       # and is itself a check: it fails if the template stops being valid JSON
       # once injected, or stops carrying a key the OpenTofu reads.
       - name: Render a placeholder config
-        run: ./.github/scripts/placeholder-config.sh
+        run: bash .github/scripts/placeholder-config.sh
 
       - name: Check OpenTofu formatting
         run: tofu fmt -check -recursive management/
@@ -201,18 +201,24 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-          # The slim image carries its own linters, so this is the container
-          # pull plus the update checks a few of the tools make on startup.
+          # The slim image carries its own linters, but two of them fetch data
+          # at run time rather than shipping it: Super-Linter bundles Trivy,
+          # which pulls its vulnerability database as an OCI artifact from
+          # mirror.gcr.io (redirected to storage.googleapis.com), and checkov
+          # checks pypi on startup.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
             files.pythonhosted.org:443
             ghcr.io:443
             github.com:443
+            mirror.gcr.io:443
             objects.githubusercontent.com:443
             pkg-containers.githubusercontent.com:443
             pypi.org:443
             raw.githubusercontent.com:443
+            registry.npmjs.org:443
+            storage.googleapis.com:443
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
