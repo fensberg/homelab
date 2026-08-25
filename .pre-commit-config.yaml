@@ -1,18 +1,15 @@
-# Nothing here runs a linter that Super-Linter also runs.
+# Fast checks, run before the commit lands. Everything here finishes in a few
+# seconds and most of it fixes the problem rather than reporting it.
 #
-# Two copies of prettier is what put formatting errors on a pull request that
-# `pre-commit run --all-files` had just passed: this file pinned 3.1 through a
-# mirror that has since been archived, and Super-Linter pinned ^3.8.3. Same
-# tool, two versions, two answers. The same trap was set for actionlint, shfmt
-# and terraform fmt, which were also configured in both places.
+# The rule that keeps this honest: EACH CHECK HAS EXACTLY ONE OWNER. Formatting
+# is owned here, pinned to exact versions, and CI runs this same file rather
+# than its own copy of the same tools. Analysis - checkov, kubeconform, tflint,
+# shellcheck, ansible-lint, PSScriptAnalyzer - is owned by Super-Linter, and
+# every formatter it would otherwise duplicate is switched off in
+# .github/super-linter.vars.
 #
-# So every linter now has exactly one version in the whole stack - the one
-# baked into the Super-Linter image, pinned by SHA in pr-validation.yml. Run it
-# with `task lint`, or `task fix` to have it correct formatting in place.
-#
-# What is left below are pre-commit's own hooks. They shell out to nothing, so
-# there is no version to drift, and they catch things worth catching before a
-# push rather than after one.
+# Nothing appears in both places. Two copies of prettier, on two versions, is
+# what put formatting errors on a pull request that this file had just passed.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
@@ -23,3 +20,35 @@ repos:
         # Kubernetes manifests legitimately hold several documents in one file,
         # separated by ---. Without this the hook rejects every Flux manifest.
         args: ["--allow-multiple-documents"]
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+
+  # rbubley's mirror rather than pre-commit's, which is archived on prettier
+  # 3.1. The rev pins prettier exactly; nothing else in the project runs it.
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.9.6
+    hooks:
+      - id: prettier
+        types_or: [json, yaml, markdown]
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.1
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.8.0-1
+    hooks:
+      - id: shfmt
+        args: ["-w", "-s", "-i", "0"]
+
+  - repo: local
+    hooks:
+      - id: tofu-fmt
+        name: tofu fmt
+        entry: tofu fmt
+        language: system
+        files: \.tf$
+        # A system hook: it needs tofu on PATH. CI has no tofu binary in the
+        # Format lane, so it sets SKIP=tofu-fmt there and the Validate lane
+        # runs `tofu fmt -check` once it has installed one.

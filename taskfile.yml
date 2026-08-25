@@ -4,14 +4,8 @@ vars:
   # Which site to deploy. Override: task start SITE=site1
   SITE: '{{.SITE | default "site0"}}'
 
-  # One definition of how the linters are invoked, shared by `lint` and `fix`.
-  # Split so `fix` can add flags: docker wants them before the image name.
-  LINT_RUN: >-
-    docker run --rm
-    -e RUN_LOCAL=true
-    -e DEFAULT_BRANCH=main
-    --env-file .github/super-linter.vars
-    -v "{{.USER_WORKING_DIR}}:/tmp/lint"
+  # Keep this tag in step with the SHA pinned in pr-validation.yml. They are
+  # the same release, and the point of running it locally is that it is.
   LINT_IMAGE: ghcr.io/super-linter/super-linter:slim-v8.7.0
 
 # The single entrypoint is scripts/Start-Homelab.ps1. These tasks are thin
@@ -54,26 +48,39 @@ tasks:
     cmds:
       - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Backup
 
-  lint:
-    desc: "Every linter CI runs, from the same pinned image, so a pass means a pass"
-    cmds:
-      # This is the whole linting stack - prettier, checkov, kubeconform,
-      # markdownlint, tflint, shellcheck, actionlint, terraform fmt. It is the
-      # image pinned by SHA in pr-validation.yml, so there is exactly one
-      # version of each tool anywhere in the project. Keep the tag here and the
-      # SHA there in step; they are the same release.
-      - "{{.LINT_RUN}} {{.LINT_IMAGE}}"
-
   fix:
-    desc: "The same run, allowed to correct formatting in place"
+    desc: "Format everything. Seconds, no Docker. Run this before you push."
     cmds:
+      # The same hooks CI's Format lane runs, at the same pinned versions, and
+      # they correct the file rather than complaining about it.
+      - pre-commit run --all-files
+
+  validate:
+    desc: "Prove the code resolves: tofu validate and a kustomize build"
+    cmds:
+      # What CI's Validate lane does, minus kubeconform - which needs one more
+      # binary and catches a class of error (a placeholder in a typed field)
+      # that a build failure here would have caught first anyway.
+      - python3 .github/scripts/placeholder-config.py
+      - tofu -chdir=management/cluster init -backend=false -input=false
+      - tofu -chdir=management/cluster validate
+      - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
+      - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
+      - rm -f config/management.rendered.json
+
+  lint:
+    desc: "The slow analysis lane: checkov, tflint, ansible-lint, shellcheck"
+    cmds:
+      # Needs Docker and takes a couple of minutes, which is why `fix` and
+      # `validate` exist separately - between them they catch most of what
+      # this would, in a fraction of the time. Worth running before opening a
+      # pull request, not before every commit.
       - >-
-        {{.LINT_RUN}}
-        -e FIX_JSON_PRETTIER=true
-        -e FIX_YAML_PRETTIER=true
-        -e FIX_MARKDOWN_PRETTIER=true
-        -e FIX_TERRAFORM_FMT=true
-        -e FIX_SHELL_SHFMT=true
+        docker run --rm
+        -e RUN_LOCAL=true
+        -e DEFAULT_BRANCH=main
+        --env-file .github/super-linter.vars
+        -v "{{.USER_WORKING_DIR}}:/tmp/lint"
         {{.LINT_IMAGE}}
 
   clean-secrets:

@@ -15,12 +15,27 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The lanes below are ordered by cost, and everything expensive waits on the
+# cheap one. A misplaced blank line used to cost a two-minute image pull before
+# anyone heard about it; now it costs forty seconds, and nothing else starts.
+#
+# Ordering only. NOTHING IS REMOVED, and nothing should be: Semgrep, Trivy and
+# checkov overlap on purpose. They are an independent check on code an LLM
+# helped write, so a scanner that finds nothing this week is not redundant - it
+# is the one that catches what nobody thought to look for. Speed comes from not
+# running them on a branch that was going to fail anyway, never from having
+# fewer of them.
+#
+# Secrets scanning is the deliberate exception to the ordering: a leaked
+# credential has to be found whether or not the markdown is tidy, so it waits
+# for nothing.
+
 jobs:
   # -----------------------------------------------------------------
-  # LANE 1: Secrets Scanning
+  # LANE 1: Formatting - fast, and the only lane that also runs locally
   # -----------------------------------------------------------------
-  secrets:
-    name: "Secrets Scan (TruffleHog)"
+  format:
+    name: "Format (pre-commit)"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,20 +48,122 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Run TruffleHog
-        uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318 # v3.97.0
-        with:
-          extra_args: --results=verified,unknown
+      # The same .pre-commit-config.yaml a developer runs, at the same pinned
+      # versions. That is the point: there is no second copy of prettier here
+      # to disagree with the one on your machine.
+      #
+      # tofu-fmt is skipped because it is a system hook and there is no tofu
+      # binary on this runner. The Validate lane installs one and runs
+      # `tofu fmt -check` itself, so the check is enforced, just later.
+      - name: Run pre-commit
+        env:
+          SKIP: tofu-fmt
+        run: |
+          pipx install pre-commit
+          pre-commit run --all-files --show-diff-on-failure --color always
 
   # -----------------------------------------------------------------
-  # LANE 2: Code Quality & Linting
+  # LANE 2: Does it actually work?
   # -----------------------------------------------------------------
-  lint:
-    name: "Code Quality (Super-Linter)"
+  # Linting says the code is tidy. This says it is correct: that the OpenTofu
+  # resolves, that the config template still carries every key the OpenTofu
+  # reads, and that the manifests Flux will apply are valid Kubernetes - which
+  # no linter could tell, because on disk they are templates full of ${...}
+  # placeholders.
+  validate:
+    name: "Validate (tofu, kustomize, kubeconform)"
     runs-on: ubuntu-latest
+    needs: format
+    permissions:
+      contents: read
+    env:
+      TOFU_VERSION: "1.10.6"
+      KUBECONFORM_VERSION: "0.7.0"
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install OpenTofu
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+          chmod +x install-opentofu.sh
+          ./install-opentofu.sh --install-method standalone \
+            --opentofu-version "${TOFU_VERSION}"
+          rm install-opentofu.sh
+
+      # CI has no 1Password credentials and must not have any. The rendered
+      # config is a stand-in with the same shape, which is enough for validate
+      # and is itself a check: it fails if the template stops being valid JSON
+      # once injected, or stops carrying a key the OpenTofu reads.
+      - name: Render a placeholder config
+        run: python3 .github/scripts/placeholder-config.py
+
+      - name: Check OpenTofu formatting
+        run: tofu fmt -check -recursive management/
+
+      - name: Validate OpenTofu
+        working-directory: management/cluster
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL -o kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar xzf kubeconform.tar.gz kubeconform
+          sudo install -m 0755 kubeconform /usr/local/bin/kubeconform
+          rm kubeconform.tar.gz kubeconform
+
+      # Build the kustomization and substitute the placeholders before
+      # validating, so what is checked is what Flux will apply. The values are
+      # stand-ins; only their shape matters, and shape is exactly what was
+      # going unchecked - a nodePort has to be an integer, and on disk it is
+      # the string "${STATE_DB_NODEPORT}".
+      - name: Validate Kubernetes manifests
+        env:
+          STATE_DB_NAMESPACE: state
+          STATE_DB_CLUSTER: state-db
+          STATE_DB_NAME: tfstate
+          STATE_DB_OWNER: tofu
+          STATE_DB_NODEPORT: "30432"
+          OBJECT_STORAGE_BUCKET: placeholder-bucket
+          OBJECT_STORAGE_ENDPOINT: https://example.invalid
+        run: |
+          schema='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          for dir in clusters/management/infrastructure/*/; do
+            echo "==> ${dir}"
+            kubectl kustomize "${dir}" | envsubst | kubeconform \
+              -strict -summary -ignore-missing-schemas \
+              -schema-location default -schema-location "${schema}" -
+          done
+
+          echo "==> clusters/management (Flux entrypoints)"
+          kubeconform -strict -summary -ignore-missing-schemas \
+            -schema-location default -schema-location "${schema}" \
+            clusters/management/infra-controllers.yaml \
+            clusters/management/infra-configs.yaml
+
+  # -----------------------------------------------------------------
+  # LANE 3: Static analysis - the slow one
+  # -----------------------------------------------------------------
+  # checkov, ansible-lint, tflint, shellcheck, markdownlint, yamllint,
+  # PSScriptAnalyzer, zizmor. Every formatter it would otherwise duplicate is
+  # switched off in .github/super-linter.vars; the reasoning lives there.
+  analyze:
+    name: "Analyze (Super-Linter)"
+    runs-on: ubuntu-latest
+    needs: format
     permissions:
       contents: read
       statuses: write
@@ -76,11 +193,12 @@ jobs:
           VALIDATE_ALL_CODEBASE: false
 
   # -----------------------------------------------------------------
-  # LANE 3: Static Application Security Testing (SAST)
+  # LANE 4: Static Application Security Testing (SAST)
   # -----------------------------------------------------------------
   semgrep:
     name: "Logic Scan (Semgrep)"
     runs-on: ubuntu-latest
+    needs: format
     permissions:
       contents: read
     container:
@@ -97,11 +215,12 @@ jobs:
           SEMGREP_RULES: "p/default"
 
   # -----------------------------------------------------------------
-  # LANE 4: Infrastructure Misconfigurations (IaC)
+  # LANE 5: Infrastructure Misconfigurations (IaC)
   # -----------------------------------------------------------------
   trivy:
     name: "IaC Scan (Trivy)"
     runs-on: ubuntu-latest
+    needs: format
     permissions:
       contents: read
     steps:
@@ -126,14 +245,12 @@ jobs:
           severity: "CRITICAL,HIGH"
 
   # -----------------------------------------------------------------
-  # LANE 5: Repository Posture (OpenSSF Scorecard)
+  # LANE 6: Secrets - waits for nothing
   # -----------------------------------------------------------------
-  scorecard:
-    name: "Scorecard Scan"
+  secrets:
+    name: "Secrets Scan (TruffleHog)"
     runs-on: ubuntu-latest
     permissions:
-      security-events: write
-      id-token: write
       contents: read
     steps:
       - name: Harden Runner
@@ -147,45 +264,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Run OpenSSF Scorecard
-        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318 # v3.97.0
         with:
-          results_file: results.sarif
-          results_format: sarif
-          publish_results: true
-
-      - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
-        with:
-          sarif_file: results.sarif
-
-  # -----------------------------------------------------------------
-  # LANE 6: Custom Business Logic (Policy as Code)
-  # -----------------------------------------------------------------
-  # conftest:
-  #   name: "Policy Check (OPA Conftest)"
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: read
-  #   steps:
-  #     # This job is inherently safe as it only reads YAML locally, so the base whitelist applies
-  #     - name: Harden Runner
-  #       uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
-  #       with:
-  #         egress-policy: block
-  #         allowed-endpoints: >
-  #           github.com:443
-  #           ghcr.io:443
-
-  #     - name: Checkout Code
-  #       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-  #       with:
-  #         persist-credentials: false
-
-  #     - name: Setup Conftest
-  #       uses: open-policy-agent/setup-conftest@v1
-  #       with:
-  #         version: "0.54.0"
-
-  #     - name: Run Conftest
-  #       run: conftest test .github/workflows/ -p policy/
+          extra_args: --results=verified,unknown

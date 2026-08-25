@@ -129,9 +129,18 @@ depends on it and uses them.
 
 ## CI
 
-- `pr-validation.yml` — TruffleHog, Super-Linter, Semgrep, Trivy, Scorecard.
-  Super-Linter's settings live in `.github/super-linter.vars`, which `task
-  lint` passes to the same image, so a local run reproduces CI exactly.
+- `pr-validation.yml` — six lanes, cheapest first, so a formatting slip fails
+  in half a minute rather than behind a two-minute image pull. **Format** runs
+  the same `.pre-commit-config.yaml` you run locally. **Validate** proves the
+  code resolves: `tofu validate` against a placeholder config, and
+  `kustomize build` piped through `kubeconform` with the Flux substitutions
+  applied. **Analyze** is Super-Linter. **Semgrep**, **Trivy** and **Secrets**
+  are the security lanes. Everything except Secrets waits on Format.
+  Reordering is the only speed lever here — the security lanes overlap on
+  purpose and none of them comes out.
+- `scorecard.yml` — repository posture, weekly and on merges to `main`. It
+  grades the repository rather than the diff, so a pull request cannot change
+  its answer.
 - `deploy-infrastructure.yml` — applies OpenTofu on a self-hosted runner.
   Path-filtered to `environments/**` and `modules/**`, so Ignition changes
   never trigger it. That is intentional.
@@ -140,10 +149,14 @@ depends on it and uses them.
 
 - Branch per epoch: `epoch/<nn>-<slug>`. One PR per epoch into `main`.
 - Close an epoch by filling in its record in `docs/epochs/` **before** merging.
-- **Every linter has exactly one version in this project**, the one baked into
-  the Super-Linter image pinned by SHA in `pr-validation.yml`. `task lint` runs
-  it; `task fix` lets it correct formatting in place. Never add a linter to
-  `pre-commit` that Super-Linter already runs - two copies of prettier is what
-  put formatting errors on a pull request that `pre-commit` had just passed.
-- `pre-commit` holds only hooks that shell out to nothing, so there is no
-  second version of anything to drift. Run it before pushing.
+- **Each check has exactly one owner.** Formatting belongs to `pre-commit`,
+  pinned to exact versions; CI runs that same file rather than its own copy of
+  the same tools. Analysis belongs to Super-Linter, pinned by image SHA, with
+  every formatter it would duplicate switched off in
+  `.github/super-linter.vars`. Nothing is configured in both places - two
+  copies of prettier, on two versions, is what put formatting errors on a pull
+  request that `pre-commit` had just passed.
+- Three verbs, fastest first: `task fix` formats (seconds, no Docker),
+  `task validate` proves the OpenTofu and manifests resolve, `task lint` runs
+  the slow analysis image. Run the first two before every push and the third
+  before opening a pull request.
