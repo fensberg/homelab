@@ -57,9 +57,9 @@ else
 	curl -fsSL -o "$TMP/go.tar.gz" "https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz"
 	sudo rm -rf /usr/local/go
 	sudo tar -C /usr/local -xzf "$TMP/go.tar.gz"
+	# shellcheck disable=SC2016 # single-quoted on purpose: $PATH/$HOME must
+	# expand when .bashrc is later sourced, not now.
 	grep -q '/usr/local/go/bin' ~/.bashrc 2>/dev/null ||
-		# shellcheck disable=SC2016 # single-quoted on purpose: $PATH/$HOME
-		# must expand when .bashrc is later sourced, not now.
 		echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >>~/.bashrc
 	export PATH="$PATH:/usr/local/go/bin"
 	ok "go ${GO_VERSION} installed"
