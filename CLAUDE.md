@@ -197,6 +197,21 @@ depends on it and uses them.
   `task validate` proves the OpenTofu and manifests resolve, `task lint` runs
   the slow analysis image. Run the first two before every push and the third
   before opening a pull request.
+- **Tests are written before the code they test, in every language this
+  project uses one for.** The same shift-left reasoning as formatting, one
+  step further left: a defect caught while writing the test is cheaper than
+  one caught by `task validate`, which is cheaper than one caught by CI,
+  which is far cheaper than one only caught by running real infrastructure -
+  the actual, repeated failure mode in this project's own history (the
+  self-healing-import fix, the Longhorn bugs, the first full ignition run).
+  Go logic in `scripts/ignite` is tested with the standard library's own
+  `testing` package - no third-party assertion library, since none of this
+  module's other code needed one either. OpenTofu logic (`locals`,
+  `precondition`/`postcondition` blocks) is tested with OpenTofu's own native
+  `tofu test` and `.tftest.hcl` files - not a custom harness, the same
+  vendor-provided tool this project already runs. Both run in `task
+validate`, alongside `go vet`/`go build`/`tofu validate`, so a broken test
+  is caught in the same seconds-not-minutes place formatting already is.
 - **Formatting is enforced locally first, shifted as far left as this repo
   can reach.** `./scripts/install-dependencies.sh` wires `pre-commit` into the
   `pre-commit` git hook, so a formatting mistake is caught on the machine
