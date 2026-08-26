@@ -1,0 +1,70 @@
+name: "Ruleset Recipe Drift Check"
+
+# Weekly, plus workflow_dispatch so the mechanism itself can be proven out
+# on demand rather than waiting for Monday.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+permissions: read-all
+
+# This repo's branch ruleset (Settings -> Rules -> Rulesets) was hand-imported
+# from github/ruleset-recipes and is not itself tracked in git - there is
+# nothing here for a diff to compare against yet. governance/tracked-rulesets.tsv
+# deliberately lists upstream sources with no local copy alongside them: the
+# point of this job, for now, is only to prove the fetch reaches every listed
+# URL and to show real content back - not to reconcile anything automatically.
+# Once a local copy is committed for a row, this job starts actually comparing
+# it against upstream on every scheduled run and fails loudly (which is what
+# should trigger a GitHub notification) the moment they diverge.
+jobs:
+  check-drift:
+    name: "Check tracked rulesets against upstream"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            raw.githubusercontent.com:443
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch each tracked ruleset and compare against its local copy
+        run: |
+          drifted=0
+          while IFS=$'\t' read -r local upstream_url; do
+            [[ "$local" =~ ^#.*$ || -z "$local" ]] && continue
+
+            fetched="$(mktemp)"
+            if ! curl -fsSL "$upstream_url" -o "$fetched"; then
+              echo "::error::could not fetch ${upstream_url}"
+              drifted=1
+              continue
+            fi
+
+            if [ ! -f "$local" ]; then
+              echo "::warning::${local} has no local copy yet - upstream (${upstream_url}) fetched fine, here is its current content:"
+              cat "$fetched"
+              drifted=1
+              continue
+            fi
+
+            if ! diff -u "$local" "$fetched"; then
+              echo "::warning::${local} has drifted from ${upstream_url} (diff above)"
+              drifted=1
+            fi
+          done <governance/tracked-rulesets.tsv
+
+          if [ "$drifted" -eq 1 ]; then
+            echo "::error::one or more tracked rulesets need attention - see warnings above"
+            exit 1
+          fi
