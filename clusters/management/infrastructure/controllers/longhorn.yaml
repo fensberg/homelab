@@ -32,7 +32,10 @@ spec:
   chart:
     spec:
       chart: longhorn
-      # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
+      # Nothing bumps this automatically today: Dependabot (what this repo
+      # actually runs) has no ecosystem for a Flux HelmRelease chart version,
+      # only Renovate does. This is a manual version bump until/unless that
+      # changes.
       version: "1.12.1"
       sourceRef:
         kind: HelmRepository

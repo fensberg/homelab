@@ -86,7 +86,7 @@ jobs:
         env:
           SKIP: tofu-fmt,go-fmt
         run: |
-          pipx install pre-commit
+          pipx install pre-commit==4.6.2
           pre-commit run --all-files --show-diff-on-failure --color always
 
   # -----------------------------------------------------------------
@@ -337,7 +337,12 @@ jobs:
     permissions:
       contents: read
     container:
-      image: semgrep/semgrep:1.172.0
+      # Pinned by digest for Scorecard's Pinned-Dependencies check. Nothing
+      # bumps this automatically - Dependabot's docker ecosystem covers
+      # Dockerfiles/compose files, not an image reference embedded in a
+      # workflow's container: block - so this needs a manual version+digest
+      # refresh occasionally.
+      image: semgrep/semgrep:1.172.0@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
