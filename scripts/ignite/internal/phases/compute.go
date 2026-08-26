@@ -153,8 +153,15 @@ func adoptOrphanedDiskImage(ctx *run.Context, cfg *config.Config, net *config.Si
 // file matching the naming pattern compute.tf uses, or "" if none is there.
 func findTalosDiskImage(hv config.Hypervisor, node config.Node) (string, error) {
 	client := &http.Client{
-		Timeout:   15 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}, //nolint:gosec // matches versions.tf's own insecure=true for this same self-signed homelab endpoint
+		Timeout: 15 * time.Second,
+		// InsecureSkipVerify is deliberate, not a bug: this hits the same
+		// self-signed Proxmox endpoint versions.tf's own provider config
+		// already accepts with insecure = true. Skipping verification here
+		// too keeps this one Go call consistent with that existing,
+		// already-accepted decision rather than silently enforcing a
+		// stricter policy in one code path than the rest of the project does.
+		// nosemgrep: problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification.bypass-tls-verification
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}, //nolint:gosec
 	}
 
 	url := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/storage/local-iso/content", node.IP, node.Hostname)
