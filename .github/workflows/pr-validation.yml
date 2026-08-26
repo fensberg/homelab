@@ -15,20 +15,25 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# The lanes below are ordered by cost, and everything expensive waits on the
-# cheap one. A misplaced blank line used to cost a two-minute image pull before
-# anyone heard about it; now it costs forty seconds, and nothing else starts.
+# All lanes run in parallel, Format included. Formatting is enforced by the
+# git hook `install-dependencies.sh` wires up (`pre-commit install`), which is
+# where it belongs - shift left, catch it in seconds on the machine that wrote
+# it, not minutes later in CI. Format's own lane here exists only as the
+# backstop for whoever's local hook is missing or bypassed: a first-time
+# contributor who never ran the setup script, a bot PR that never touches a
+# git hook at all. Gating every other lane on Format used to buy a faster
+# failure for a formatting slip, but it also meant a bot or outside PR with
+# nothing wrong except formatting would never even get its other lanes run -
+# and their results would land staggered by however long Format took, rather
+# than together. Running everything at once costs a bit more compute on a
+# branch that turns out to have a formatting slip, in exchange for every lane
+# - Format included - actually running for every PR, and their results
+# landing together.
 #
-# Ordering only. NOTHING IS REMOVED, and nothing should be: Semgrep, Trivy and
+# NOTHING IS REMOVED beyond that, and nothing should be: Semgrep, Trivy and
 # checkov overlap on purpose. They are an independent check on code an LLM
-# helped write, so a scanner that finds nothing this week is not redundant - it
-# is the one that catches what nobody thought to look for. Speed comes from not
-# running them on a branch that was going to fail anyway, never from having
-# fewer of them.
-#
-# Secrets scanning is the deliberate exception to the ordering: a leaked
-# credential has to be found whether or not the markdown is tidy, so it waits
-# for nothing.
+# helped write, so a scanner that finds nothing this week is not redundant -
+# it is the one that catches what nobody thought to look for.
 
 jobs:
   # -----------------------------------------------------------------
@@ -96,7 +101,6 @@ jobs:
   shellcheck:
     name: "Shell Lint (ShellCheck)"
     runs-on: ubuntu-latest
-    needs: format
     permissions:
       contents: read
     steps:
@@ -137,7 +141,6 @@ jobs:
   validate:
     name: "Validate (tofu, kustomize, kubeconform, go)"
     runs-on: ubuntu-latest
-    needs: format
     permissions:
       contents: read
     env:
@@ -151,13 +154,22 @@ jobs:
           # get.opentofu.org serves both the installer and the GPG key it
           # verifies the release with. Provider downloads start at the registry
           # and are redirected to GitHub release assets. The schema fetches for
-          # kubeconform come from raw.githubusercontent.com. actions/setup-go
-          # fetches the pinned toolchain from go.dev, redirected to
-          # dl.google.com.
+          # kubeconform come from raw.githubusercontent.com.
+          #
+          # actions/setup-go (confirmed from its own source at this pinned
+          # commit, not assumed) has two real, different paths depending on
+          # whether the hosted actions/go-versions manifest resolves: the
+          # normal one walks api.github.com's git/trees + git/blobs endpoints
+          # then downloads from github.com's releases, redirected to
+          # release-assets.githubusercontent.com - confirmed as the actual
+          # path taken in a real run. The fallback, unexercised so far but
+          # real in the source, lists versions from go.dev and downloads the
+          # archive from storage.googleapis.com. dl.google.com, which used to
+          # be listed here, appears nowhere in setup-go's source - a full
+          # grep of every file that touches a URL found no reference to it.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
-            dl.google.com:443
             get.opentofu.org:443
             github.com:443
             go.dev:443
@@ -165,6 +177,7 @@ jobs:
             raw.githubusercontent.com:443
             registry.opentofu.org:443
             release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -264,7 +277,6 @@ jobs:
   analyze:
     name: "Analyze (Super-Linter)"
     runs-on: ubuntu-latest
-    needs: format
     permissions:
       contents: read
       statuses: write
@@ -322,7 +334,6 @@ jobs:
   semgrep:
     name: "Logic Scan (Semgrep)"
     runs-on: ubuntu-latest
-    needs: format
     permissions:
       contents: read
     container:
@@ -360,7 +371,6 @@ jobs:
   trivy:
     name: "IaC Scan (Trivy)"
     runs-on: ubuntu-latest
-    needs: format
     permissions:
       contents: read
     steps:

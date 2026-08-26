@@ -146,18 +146,25 @@ depends on it and uses them.
 
 ## CI
 
-- `pr-validation.yml` — seven lanes, cheapest first, so a formatting slip
-  fails in half a minute rather than behind a two-minute image pull.
-  **Format** runs the same `.pre-commit-config.yaml` you run locally.
-  **Shell Lint** runs ShellCheck directly, pulled out of Super-Linter for the
-  same one-owner-per-check reason as Go and Trivy below. **Validate** proves
-  the code resolves: `tofu validate` against a placeholder config, and
-  `kustomize build` piped through `kubeconform` with the Flux substitutions
-  applied - Go vetting/building lives here too, for the same reason. **Analyze**
-  is Super-Linter, for everything not already owned by a dedicated lane.
-  **Semgrep**, **Trivy** and **Secrets** are the security lanes. Everything
-  except Secrets waits on Format. Reordering is the only speed lever here —
-  the security lanes overlap on purpose and none of them comes out.
+- `pr-validation.yml` — seven lanes, all running in parallel, Format
+  included. Formatting is enforced locally first (the git hook
+  `./scripts/install-dependencies.sh` wires up via `pre-commit install`) -
+  shift left, catch it in seconds on the machine that wrote it. **Format**'s
+  CI lane, running the same `.pre-commit-config.yaml` as that hook, exists as
+  the backstop for whoever's local hook is missing or bypassed: a fresh clone
+  that skipped setup, or a bot/outside PR that never touches a git hook at
+  all. It does not gate the other lanes - a formatting slip no longer delays
+  or blocks the lanes that actually check correctness and security, and every
+  lane's result lands for every PR at roughly the same time, not staggered
+  behind however long Format took. **Shell Lint** runs ShellCheck directly,
+  pulled out of Super-Linter for the same one-owner-per-check reason as Go
+  and Trivy below. **Validate** proves the code resolves: `tofu validate`
+  against a placeholder config, and `kustomize build` piped through
+  `kubeconform` with the Flux substitutions applied - Go vetting/building
+  lives here too, for the same reason. **Analyze** is Super-Linter, for
+  everything not already owned by a dedicated lane. **Semgrep**, **Trivy**
+  and **Secrets** are the security lanes, and overlap with each other and
+  with Analyze on purpose - none of them comes out.
 - `codeql.yml` — CodeQL on `actions`, the only language here it supports.
   Workflows are the part of this repository that runs with a token, so that is
   where a finding matters. Moved off GitHub's default setup so it is pinned and
@@ -190,3 +197,14 @@ depends on it and uses them.
   `task validate` proves the OpenTofu and manifests resolve, `task lint` runs
   the slow analysis image. Run the first two before every push and the third
   before opening a pull request.
+- **Formatting is enforced locally first, shifted as far left as this repo
+  can reach.** `./scripts/install-dependencies.sh` wires `pre-commit` into
+  both the `pre-commit` and `pre-push` git hooks, so a formatting mistake is
+  caught on the machine that made it - in seconds, not minutes later in CI.
+  Nothing client-side is ever truly unbypassable (`--no-verify` exists, and
+  GitHub.com has no server-side pre-receive hook to close that gap), so
+  Format's CI lane isn't redundant with the local hooks - it is what actually
+  catches a bypassed hook, a fresh clone that skipped setup, or a bot/outside
+  PR that never runs a local hook at all. That lane runs in parallel with
+  everything else, not gating it, so a formatting slip on someone else's PR
+  never delays or blocks the lanes that check correctness and security.
