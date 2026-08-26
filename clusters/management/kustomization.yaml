@@ -1,0 +1,16 @@
+# Without this file, Flux's kustomize-controller auto-generates one that
+# flattens in every manifest it finds recursively - including the raw
+# infrastructure/configs and infrastructure/controllers content directly.
+# That bypasses the dependsOn ordering between infra-controllers and
+# infra-configs entirely, since the root Kustomization would apply the
+# CNPG Cluster custom resource itself, with no relationship to the
+# operator that provides its CRD. This root only ever manages Flux's own
+# install and the two Kustomization objects below - each of those then
+# independently reconciles its own subtree, in the order dependsOn
+# actually enforces.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - flux-system
+  - infra-controllers.yaml
+  - infra-configs.yaml

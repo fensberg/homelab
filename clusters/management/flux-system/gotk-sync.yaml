@@ -21,6 +21,10 @@ spec:
   interval: 1h0m0s
   path: ./clusters/management
   prune: true
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: cluster-vars
   sourceRef:
     kind: GitRepository
     name: flux-system
