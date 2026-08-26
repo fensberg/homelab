@@ -185,5 +185,22 @@ step "Ansible collections"
 ansible-galaxy collection install -r "$(dirname "$0")/../management/hypervisor/requirements.yml"
 ok "ansible collections installed"
 
+step "pre-commit"
+if has pre-commit; then
+	skip "pre-commit already present ($(pre-commit --version))"
+else
+	info "installing pre-commit via pip"
+	python3 -m pip install --user --break-system-packages pre-commit
+	ok "pre-commit installed"
+fi
+# Installing the tool is not enough on its own: without this, pre-commit only
+# ever runs when invoked by hand (`task fix`), never automatically on `git
+# commit` - which is exactly how an unformatted file landed in a real commit
+# on this checkout. This writes .git/hooks/pre-commit so a commit cannot skip
+# it by simply forgetting to run `task fix` first.
+info "wiring pre-commit into git hooks"
+(cd "$(dirname "$0")/.." && pre-commit install)
+ok "pre-commit hook installed"
+
 echo
 ok "all dependencies present. Run 'task start' to ignite."
