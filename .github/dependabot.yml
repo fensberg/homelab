@@ -9,3 +9,20 @@ updates:
     directory: /scripts/ignite
     schedule:
       interval: daily
+
+  # versions.tf pins every provider version with a ~> constraint. Dependabot
+  # bumps within that constraint the same way it would a package's semver
+  # range - this is the one directory in the repo with a required_providers
+  # block; modules/ and environments/ get their own entry once they exist.
+  - package-ecosystem: terraform
+    directory: /management/cluster
+    schedule:
+      interval: daily
+
+# What Dependabot has no ecosystem for at all, so it isn't a config gap here:
+# - Ansible Galaxy collections (management/hypervisor/requirements.yml)
+# - A Flux HelmRelease's chart version (clusters/management/.../longhorn.yaml)
+# - A container image pinned inside a workflow's container: block
+#   (pr-validation.yml's Semgrep job)
+# All three are Renovate's job, once there's a cluster for it to run in -
+# see docs/epochs/01-ignition.md's Deferred section.
