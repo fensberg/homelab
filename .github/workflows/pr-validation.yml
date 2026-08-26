@@ -342,6 +342,13 @@ jobs:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
+          # Stays audit, not block, until a real run's egress log gives an
+          # allowed-endpoints list worth trusting - semgrep ci reaches its
+          # rule registry at a set of hosts this repo has never actually
+          # observed, and guessing them risks either breaking the scan or
+          # rubber-stamping an allowlist nobody checked. See the Format lane
+          # above for how that list gets built the right way: run audit
+          # first, then transcribe the real destinations it logged.
           egress-policy: audit
 
       - name: Checkout Code
