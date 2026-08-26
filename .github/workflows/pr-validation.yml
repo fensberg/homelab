@@ -1,10 +1,13 @@
 name: "PR Validation"
 
 on:
+  # No push: trigger to main. The ruleset there has bypass_actors: [],
+  # current_user_can_bypass: never, and requires a pull_request - a direct
+  # push cannot land, so a push-to-main run would only ever re-validate
+  # content this same workflow already validated as a pull_request seconds
+  # earlier. If that ruleset is ever loosened to allow a bypass, reconsider
+  # this then.
   pull_request:
-    branches:
-      - main
-  push:
     branches:
       - main
 
