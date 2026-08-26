@@ -24,3 +24,20 @@ once it's actually being worked on.
   gap: promote a change there, watch Flux actually apply and heal it, then
   promote the same change to the real cluster - the standard staging pattern,
   just not built yet for a single-cluster homelab.
+- **Break the Analyze (Super-Linter) lane into dedicated per-tool jobs.**
+  Go validation, Trivy, Semgrep and Secrets are already their own lanes;
+  checkov, ansible-lint, tflint, shellcheck, markdownlint, yamllint,
+  PSScriptAnalyzer and zizmor are still bundled into one Super-Linter image.
+  Several of today's real debugging time went straight into that bundling:
+  a golangci-lint version baked into the image that didn't match this
+  project's pinned Go version, Checkov silently ignoring the repo-wide
+  `FILTER_REGEX_EXCLUDE` because it is one of the tools Super-Linter's own
+  docs say always scans the whole workspace regardless, and a confirmed
+  upstream bug in how Super-Linter hands multi-package Go diffs to
+  golangci-lint. Splitting each tool into its own dedicated, individually
+  pinned job would trade one shared version/config surface for eight
+  smaller ones - more jobs to maintain, but each one debuggable and
+  upgradable on its own, matching the pattern already used for Trivy and
+  Semgrep. Coverage has to stay 1:1 with what Super-Linter currently runs;
+  this is a real CI restructure (new egress allowlists per job, a rewrite
+  of the CI section in the root `CLAUDE.md`), not a small tweak.
