@@ -92,3 +92,20 @@ data "talos_client_configuration" "this" {
   client_configuration = talos_machine_secrets.this.client_configuration
   endpoints            = [local.node_ips[0]]
 }
+
+# talos_machine_bootstrap returning doesn't mean the Kubernetes API is
+# actually reachable yet - etcd forming and kube-apiserver becoming ready
+# both happen asynchronously after bootstrap. Every kubernetes_* resource in
+# this configuration depends on this instead of talos_cluster_kubeconfig
+# directly, so they wait for a real, checked "the API answers" rather than
+# racing it and hitting connection refused.
+data "talos_cluster_health" "this" {
+  depends_on           = [talos_cluster_kubeconfig.this]
+  client_configuration = talos_machine_secrets.this.client_configuration
+  control_plane_nodes  = local.node_ips
+  endpoints            = local.node_ips
+
+  timeouts = {
+    read = "10m"
+  }
+}
