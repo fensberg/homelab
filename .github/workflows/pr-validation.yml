@@ -297,7 +297,18 @@ jobs:
           SEMGREP_RULES: "p/default"
 
   # -----------------------------------------------------------------
-  # LANE 5: Infrastructure Misconfigurations (IaC)
+  # LANE 5: Infrastructure Misconfigurations + Dependency Vulnerabilities
+  # (IaC + vuln) - the sole owner of Trivy. Super-Linter bundles its own
+  # Trivy invocation, but VALIDATE_TRIVY is switched off in
+  # super-linter.vars so it never runs there: two Trivy invocations with
+  # two different configs is exactly the failure mode that put an
+  # unformatted 11k-line file on a PR that pre-commit had already passed
+  # (see the "owned by" comments in super-linter.vars). scan-type "fs"
+  # with scanners vuln+misconfig covers what Super-Linter's bundled Trivy
+  # was doing (gomod vulnerability scanning + Kubernetes/Terraform
+  # misconfiguration scanning) in a single pass; secret scanning is
+  # deliberately left off scanners here because Secrets Scan (TruffleHog)
+  # already owns that.
   # -----------------------------------------------------------------
   trivy:
     name: "IaC Scan (Trivy)"
@@ -330,7 +341,8 @@ jobs:
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          scan-type: "config"
+          scan-type: "fs"
+          scanners: "vuln,misconfig"
           hide-progress: false
           format: "table"
           exit-code: "1"
