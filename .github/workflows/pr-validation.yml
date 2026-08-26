@@ -335,6 +335,14 @@ jobs:
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
+          # clusters/management/flux-system/ is Flux's own generated install
+          # manifest, committed verbatim (see super-linter.vars for the full
+          # reasoning). Its ClusterRoles need broad permissions to reconcile
+          # arbitrary resource types - that is how Flux has to work, not a
+          # misconfiguration in code we control - so this is excluded from
+          # scanning entirely rather than suppressing the specific rule IDs
+          # project-wide, which would also silence real findings elsewhere.
+          skip-dirs: "clusters/management/flux-system"
 
   # -----------------------------------------------------------------
   # LANE 6: Secrets - waits for nothing
