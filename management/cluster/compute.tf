@@ -22,6 +22,20 @@
 # are explicit that compressed images cannot use `import_from` - they need
 # `file_id` with `content_type = "iso"`, and Proxmox's zstd decompressor
 # transparently handles the xz stream despite the mismatched name.
+# Adopts a file already sitting at this exact path instead of failing with
+# "already exists ... created outside of Terraform" - which is exactly what
+# happened once this session, when a prior run's teardown didn't get far
+# enough to clean this up before state was lost. import blocks are a no-op
+# once the resource is already in state, so this costs nothing on a normal
+# run; it only matters on the one it would otherwise be needed for. Static
+# rather than for_each over every hypervisor - there is only one today, and
+# adding a second is already a one-line edit to local.hypervisors elsewhere;
+# add a matching import block alongside it then.
+import {
+  to = proxmox_download_file.talos_disk_image[local.vm_placement[0]]
+  id = "${local.vm_placement[0]}/local-iso:iso/talos-${local.talos_version}-nocloud-amd64.iso"
+}
+
 resource "proxmox_download_file" "talos_disk_image" {
   for_each = toset(local.vm_placement)
 
@@ -107,6 +121,24 @@ resource "proxmox_virtual_environment_vm" "talos_template" {
     serial       = "${local.site_name}-talos-template"
     manufacturer = "Sidero Labs"
     product      = "Talos Linux"
+  }
+
+  lifecycle {
+    # file_id is a stable string ("local-iso:iso/talos-<version>-....iso") -
+    # the datastore path doesn't change even when the schematic (hence the
+    # actual image bytes at that path) does, since neither is part of the
+    # file name. Without this, replacing the disk image resource silently
+    # leaves this template's already-materialized OS disk on the old bytes:
+    # confirmed by a real apply that changed the schematic and still showed
+    # "0 to change" here. replace_triggered_by forces the rebuild on any
+    # change to the upstream resource, independent of whether file_id's own
+    # value looks different. [each.key], not [each.value]: OpenTofu only
+    # permits each.key in this specific expression (confirmed by a real
+    # validate error - each.value, identical in value for this set-keyed
+    # for_each, is still rejected syntactically) - and not the bare
+    # resource name either, which would tie every template to every
+    # hypervisor's image instead of just its own.
+    replace_triggered_by = [proxmox_download_file.talos_disk_image[each.key]]
   }
 }
 

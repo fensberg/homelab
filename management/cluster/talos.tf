@@ -78,6 +78,15 @@ data "talos_machine_configuration" "controlplane" {
         diskSelector = {
           match = "!system_disk"
         }
+        # Talos's apiserver rejects a UserVolumeConfig with neither bound
+        # set ("min size or max size is required") - the provider's own
+        # example omits both, so this was only caught by a real apply, not
+        # by anything client-side. minSize is set low on purpose: it only
+        # needs to comfortably undershoot the dedicated 32Gi disk in
+        # compute.tf, not describe it exactly. grow claims the rest of the
+        # disk rather than stopping at the minimum.
+        minSize = "1GiB"
+        grow    = true
       }
       filesystem = {
         type = "xfs"

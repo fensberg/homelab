@@ -571,6 +571,45 @@ Two things worth knowing about the Terraform side of this:
   - already renamed here rather than knowingly building on something flagged
     for removal before v1.0.
 
+### EmergencyDestroy migrates state back to local before destroying
+
+**Chose:** when state currently lives in Postgres, `EmergencyDestroy`
+reconstructs the connection string from the rendered config (not by reading
+it back as a Terraform output - that requires the backend already reachable,
+which cannot be assumed here) and runs `tofu init -migrate-state` back to
+local before attempting the actual destroy.
+**Rejected:** destroying directly against the pg backend, which is what this
+function did until a real destroy hit exactly the failure this predicts:
+Terraform destroys in dependency order, so the Kubernetes-hosted resources
+(including the database backing this very state) are torn down before the
+VMs are reached. The moment that database disappears, Terraform can no
+longer record the destroy's own progress, and the run is stranded with
+infrastructure still running and no way for the tool to see it.
+**Because:** a state backend that lives inside the infrastructure it
+describes has to leave that infrastructure before destroying it, or the
+destroy cannot outlive its own bookkeeping. This was found by hand once (a
+manual `tofu destroy` against a live pg-backed cluster left four VMs running
+with no state anywhere) and is now something `EmergencyDestroy` does before
+every full-run teardown that needs it, not something a human has to remember
+to do first.
+
+### Self-healing import blocks for orphan-prone resources
+
+**Chose:** `import` blocks on `proxmox_download_file.talos_disk_image` and
+`cloudflare_r2_bucket.homelab`, adopting whatever already exists at their
+deterministic path/name instead of failing to create a duplicate.
+**Rejected:** leaving both resources to fail loudly on the next apply if a
+prior run's teardown left either one behind - which is exactly what happened
+twice in one session (the Proxmox ISO with "created outside of Terraform",
+then the R2 bucket with "already exists, and you own it"), each requiring a
+human to diagnose and intervene by hand.
+**Because:** "tear down is not always reliable" is a real, recurring
+property of this project's own automation, not a hypothetical - two
+independent resource types hit the identical failure mode in the same day.
+Both blocks are no-ops once the resource is already in state, so they cost
+nothing on a normal run; they only matter on the one that would otherwise
+need a person to notice and fix it by hand.
+
 ## Outcome
 
 To be completed when the epoch closes.

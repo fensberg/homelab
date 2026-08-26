@@ -20,6 +20,16 @@
 # age-encrypted to a public recipient before upload.
 # =============================================================================
 
+# Adopts a bucket that already exists instead of failing with "The bucket
+# you tried to create already exists, and you own it" - exactly what
+# happened once this session, when an earlier run's teardown never reached
+# this resource before state was lost. A no-op once already in state, so
+# this costs nothing on a normal run.
+import {
+  to = cloudflare_r2_bucket.homelab
+  id = "${local.object_storage.account_id}/${local.object_storage.bucket}"
+}
+
 resource "cloudflare_r2_bucket" "homelab" {
   account_id = local.object_storage.account_id
   name       = local.object_storage.bucket
