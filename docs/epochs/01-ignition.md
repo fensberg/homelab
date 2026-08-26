@@ -625,6 +625,11 @@ To be completed when the epoch closes.
 - **`insecure = true` on the Proxmox provider** — trigger: a trusted cert.
 - **QEMU guest agent** is off deliberately; Talos will not report ready
   without the extension in the Factory schematic.
+- **Self-hosted Renovate**, to replace or complement Dependabot for the
+  ecosystems it can't cover at all: a Flux `HelmRelease`'s chart version
+  (Longhorn's is a manual bump today) and a digest-pinned container image
+  embedded in a workflow's `container:` block (Semgrep's is too). Trigger:
+  once the cluster is up and running, so it has somewhere to actually run.
 
 ## Deferred (Ansible)
 
