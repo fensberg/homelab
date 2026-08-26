@@ -8,8 +8,19 @@ variable "site" {
   EOT
 }
 
+variable "config_path" {
+  type        = string
+  default     = "../../config/management.rendered.json"
+  description = <<-EOT
+    Path to the rendered config JSON. Overridden only by tofu test, to point
+    at a fixture instead of the real rendered config - a real run, task
+    validate's placeholder render, and CI never set this, so the default is
+    the only path any of them ever see.
+  EOT
+}
+
 locals {
-  config = jsondecode(file("../../config/management.rendered.json"))
+  config = jsondecode(file(var.config_path))
 
   site = local.config.sites[var.site]
 

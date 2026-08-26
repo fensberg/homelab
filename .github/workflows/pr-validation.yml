@@ -212,6 +212,13 @@ jobs:
           tofu init -backend=false -input=false
           tofu validate
 
+      # Tests the locals/precondition logic in registry.tf against fixture
+      # configs (management/cluster/tests/*.tftest.hcl) - never the real
+      # rendered config, so this needs nothing this job doesn't already have.
+      - name: Test OpenTofu
+        working-directory: management/cluster
+        run: tofu test
+
       - name: Install kubeconform
         run: |
           curl -fsSL -o kubeconform.tar.gz \
@@ -270,6 +277,7 @@ jobs:
         run: |
           go vet ./...
           go build -o /dev/null .
+          go test ./...
 
   # -----------------------------------------------------------------
   # LANE 4: Static analysis - the slow one

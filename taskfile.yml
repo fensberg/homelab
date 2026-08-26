@@ -98,11 +98,16 @@ tasks:
       - bash .github/scripts/placeholder-config.sh
       - tofu -chdir=management/cluster init -backend=false -input=false
       - tofu -chdir=management/cluster validate
+      # Tests the locals/precondition logic in registry.tf against
+      # management/cluster/tests/*.tftest.hcl - fixture configs, never the
+      # real rendered one, so this runs regardless of the line below.
+      - tofu -chdir=management/cluster test
       - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
       - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
       - rm -f config/management.rendered.json
       - go vet -C scripts/ignite ./...
       - go build -C scripts/ignite -o /dev/null .
+      - go test -C scripts/ignite ./...
 
   lint:
     desc: "The slow analysis lane: checkov, tflint, ansible-lint, shellcheck"
