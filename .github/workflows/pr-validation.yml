@@ -454,7 +454,36 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Not the marketplace action: its own action.yml runs
+      # `docker run "${IMAGE}:${VERSION}"` with VERSION defaulting to
+      # `latest` and no input that can express a digest (the template is
+      # hardcoded to `image:tag`, never `image@sha256:...`). SHA-pinning the
+      # action only pins its orchestration script - it still silently pulls
+      # whatever `latest` resolves to today on the one job in this repo
+      # that's deliberately not egress-blocked. Installing the CLI directly,
+      # pinned and checksum-verified, closes that gap the same way tofu and
+      # kubeconform already are in the Validate lane above.
+      - name: Install trufflehog (pinned, checksum-verified)
+        env:
+          TRUFFLEHOG_VERSION: "3.97.1"
+          TRUFFLEHOG_SHA256: "f863ea3a8d786f7d097870496c977944cce7372a2fe1e56707d965016e543ece"
+        run: |
+          tarball="trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/${tarball}"
+          echo "${TRUFFLEHOG_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "${tarball}" trufflehog
+          sudo install -m 0755 trufflehog /usr/local/bin/trufflehog
+
+      # Same flags the marketplace action passed internally. base/head come
+      # straight from the pull_request event - this workflow no longer has a
+      # push trigger (see the on: block above), so that is the only case
+      # worth handling.
       - name: Run TruffleHog
-        uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318 # v3.97.0
-        with:
-          extra_args: --results=verified,unknown
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          trufflehog git "file://$(pwd)" \
+            --since-commit "${BASE_SHA}" \
+            --branch "${HEAD_SHA}" \
+            --fail --no-update --github-actions --results=verified,unknown
