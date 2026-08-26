@@ -1,0 +1,9 @@
+---
+# Collections hypervisor-prep.yml needs beyond ansible-core. Pinned to the
+# same major version already validated on the devbox, following this
+# project's "pin everything" convention.
+collections:
+  - name: community.crypto
+    version: ">=3.0.3,<4.0.0"
+  - name: ansible.posix
+    version: ">=2.1.0,<3.0.0"

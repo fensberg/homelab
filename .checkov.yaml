@@ -1,0 +1,13 @@
+# Checkov config, read automatically from the repo root (CHECKOV_FILE_NAME
+# in .github/super-linter.vars is unset, which defaults to this filename).
+#
+# Checkov is one of the tools Super-Linter's own docs list as always
+# scanning the whole workspace regardless of FILTER_REGEX_EXCLUDE - so
+# excluding clusters/management/flux-system/ (Flux's own generated install
+# and sync manifest, committed verbatim - see super-linter.vars for the full
+# reasoning) needs Checkov's own skip-path mechanism instead. It is not ours
+# to edit, and the broad ClusterRole permissions it flags are inherent to
+# how a GitOps controller has to work, not a misconfiguration in code we
+# control.
+skip-path:
+  - clusters/management/flux-system

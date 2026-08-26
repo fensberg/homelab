@@ -11,7 +11,7 @@
 #   ansible-playbook -i inventory.yml hypervisor-prep.yml --tags sdn
 #   ansible-playbook -i inventory.yml hypervisor-prep.yml -e do_dist_upgrade=true
 #
-# Tags: repos, packages, tailscale, rbac, sdn, routing
+# Tags: repos, packages, tailscale, rbac, ssh-import, sdn, routing
 # =============================================================================
 - name: Bootstrap Proxmox VE nodes for OpenTofu and mesh networking
   hosts: hypervisors
@@ -19,6 +19,10 @@
   gather_facts: true
 
   vars:
+    # Which config/management.tpl.json site this run provisions secrets for -
+    # matches the "site0" in every op://homelab/site0/... reference there.
+    site_name: "site0"
+    op_vault: "homelab"
     pve_user: "terraform"
     pve_realm: "pve"
     pve_token_id: "pipeline"
@@ -28,6 +32,15 @@
     #
     # Datastore.AllocateTemplate is required to download the Talos ISO into a
     # datastore - without it the ISO task fails with a 403.
+    #
+    # Sys.AccessNetwork is required for the same download-url API call
+    # (Datastore.AllocateTemplate alone covers writing into the datastore, not
+    # fetching the URL itself) - without it, the call fails with a 403
+    # "Permission check failed" before ever reaching the remote host. The
+    # older, broader alternative is Sys.Modify on /, which download-url also
+    # accepts for backwards compatibility; Sys.AccessNetwork exists precisely
+    # so a token that only ever downloads files doesn't need node-wide modify
+    # rights.
     #
     # VM.Monitor is deliberately absent: Proxmox VE 9 no longer defines it, and
     # it granted access to the QEMU monitor, which nothing here uses. The guest
@@ -54,6 +67,21 @@
       - Datastore.Audit
       - SDN.Use
       - Sys.Audit
+      - Sys.AccessNetwork
+
+    # A separate, narrower system account for the one thing the Proxmox API
+    # token cannot do: bpg/proxmox needs to SSH into the node itself to turn
+    # a downloaded disk image into an actual VM disk (see compute.tf). This
+    # is not the Talos guest - Talos has no SSH daemon and nothing here
+    # reaches one. Kept as its own account, rather than reusing the API
+    # token's identity or root, so a leaked key's blast radius is the three
+    # sudo rules below and nothing else.
+    disk_import_user: "svc-terraform"
+    # /var/tmp, not /tmp: /tmp is commonly tmpfs, and community.crypto's
+    # openssh_keypair sets file attributes (chattr) as part of writing the
+    # key, which tmpfs rejects with "Operation not supported". /var/tmp is
+    # meant to survive reboots and is essentially never tmpfs.
+    disk_import_key_path: "/var/tmp/{{ disk_import_user }}_ed25519"
 
     sdn_zone: "internal"
     sdn_vnet: "vnetint"
@@ -319,6 +347,14 @@
     # out and worse off than before it ran. A freshly restarted tailscaled
     # syncing from scratch can take well over a minute, so 60s was too short
     # and cost exactly that.
+    #
+    # Retried in place rather than left for a human to notice and re-run the
+    # whole start button: a --force-reauth interrupted mid-login leaves the
+    # host logged out, and a logged-out host takes the plain login path with
+    # no --force-reauth, so the very next attempt is strictly easier than the
+    # one that just failed. Bounded at 3 attempts total so a genuinely
+    # unreachable coordination server still fails loudly instead of retrying
+    # forever.
     - name: Log in to Tailscale and advertise the SDN subnet
       ansible.builtin.command: >-
         tailscale up
@@ -329,6 +365,9 @@
         {{ '--force-reauth' if (ts_running | bool) else '' }}
       register: ts_up
       failed_when: false
+      until: ts_up.rc == 0
+      retries: 2
+      delay: 15
       when:
         - (overlay_auth_key | length) > 0
         - not (ts_running | bool) or not (ts_tagged | bool)
@@ -341,19 +380,17 @@
         that: ts_up.rc == 0
         fail_msg: >-
           'tailscale up' did not complete within {{ tailscale_login_timeout }}
-          (exit {{ ts_up.rc | default('n/a') }}).
+          (exit {{ ts_up.rc | default('n/a') }}), even after 3 attempts.
 
-          IF --force-reauth WAS USED, THIS HOST IS NOW LOGGED OUT. That is
-          recoverable: it de-authenticates before re-authenticating, so a run
-          interrupted in between leaves it logged out rather than broken.
-          Re-running the start button mints a fresh key and completes the
-          login, since a logged-out host takes the plain path with no
-          --force-reauth.
-
-          If it fails again, the host cannot reach the coordination server.
-          Check 'journalctl -u tailscaled -n 30 --no-pager' and try
+          The host cannot reach the coordination server. Check
+          'journalctl -u tailscaled -n 30 --no-pager' and try
           'systemctl restart tailscaled' - a wedged daemon shows exactly these
           symptoms while the network underneath it tests fine.
+
+          If --force-reauth was used, this host may now be logged out. That
+          is recoverable, not broken: a logged-out host takes the plain login
+          path with no --force-reauth, so re-running the start button once
+          the network problem above is fixed will complete the login.
         success_msg: "Tailscale authenticated with the tagged key."
       when:
         - ts_up is defined
@@ -452,6 +489,31 @@
       check_mode: false
       tags: [rbac]
 
+    - name: Check whether the token secret already exists in 1Password
+      ansible.builtin.command: >-
+        op read op://{{ op_vault }}/{{ site_name }}/hypervisor/token_secret
+      register: existing_token_secret
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      failed_when: false
+      tags: [rbac]
+
+    # A token can exist in Proxmox with no secret anywhere in 1Password if an
+    # earlier run created it and then failed before storing it (the same
+    # class of gap the SSH credential below guards against). Proxmox never
+    # lets an existing token's secret be read back, so "it already exists"
+    # is not recoverable here the way it is for the SSH key - the only way
+    # out is to delete the orphan and mint a replacement.
+    - name: Delete an orphaned token that has no secret stored anywhere
+      ansible.builtin.command: >-
+        pveum user token remove {{ pve_user }}@{{ pve_realm }} {{ pve_token_id }}
+      when: >-
+        existing_token_secret.rc != 0 and
+        pve_token_id in
+        (existing_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list)
+      tags: [rbac]
+
     - name: Generate the API token
       ansible.builtin.command: >-
         pveum user token add {{ pve_user }}@{{ pve_realm }} {{ pve_token_id }}
@@ -460,24 +522,262 @@
       when: >-
         existing_tokens.rc != 0 or
         pve_token_id not in
-        (existing_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list)
+        (existing_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list) or
+        existing_token_secret.rc != 0
       tags: [rbac]
 
-    # The secret is shown exactly once and cannot be recovered afterwards.
-    # This is the one value that still needs a human to move it into 1Password.
-    - name: Show the new token so you can store it in 1Password
-      ansible.builtin.debug:
-        msg:
-          - "======================================================"
-          - "STORE THIS IN 1PASSWORD NOW - it cannot be shown again"
-          - "  token_id     = {{ pve_user }}@{{ pve_realm }}!{{ pve_token_id }}"
-          - "  token_secret = {{ (generated_token.stdout | from_json).value }}"
-          - "======================================================"
+    # Granting the role to the user (above) is not enough on its own: this
+    # token is created with --privsep 0, which normally makes it inherit the
+    # owning user's permissions - but a token's privsep can drift independent
+    # of this playbook (e.g. a token created before --privsep 0 was added
+    # here), and when privsep is 1, Proxmox's permission checks only ever
+    # consult ACL entries bound to the token principal itself
+    # (user@realm!tokenid), never the owning user's. Binding the role to the
+    # token directly makes every check work regardless of that flag, and
+    # since `pveum acl modify` is idempotent this is safe to run every time.
+    - name: Grant the API token its role directly, independent of privsep
+      ansible.builtin.command: >-
+        pveum acl modify / --tokens {{ pve_user }}@{{ pve_realm }}!{{ pve_token_id }} --roles {{ pve_role }}
+      changed_when: false
+      tags: [rbac]
+
+    # Written directly into 1Password rather than shown for a human to paste
+    # in - the service account already has write access to this vault, so a
+    # secret this sensitive never needs to touch a terminal scrollback.
+    # Piped as a JSON template (op item edit's own documented safe path,
+    # `cat updated.json | op item edit`) rather than an assignment-statement
+    # argument, since those are visible to other processes via the command
+    # line - the exact class of exposure this project has hit before.
+    - name: Store the new token secret in 1Password
+      ansible.builtin.shell:
+        executable: /bin/bash
+        # A literal block scalar (|), not folded (>-): a folded scalar's
+        # newline-to-space rules depend on relative indentation between
+        # lines, which a script with several nested indentation levels
+        # (like this jq filter) hits unpredictably. | preserves every
+        # newline exactly as written, so the script Ansible actually runs
+        # matches what is on screen here.
+        cmd: |
+          set -o pipefail
+          op item get {{ site_name }} --vault {{ op_vault }} --format=json | jq --arg tid "{{ pve_user }}@{{ pve_realm }}!{{ pve_token_id }}" '
+            (.sections[] | select(.label=="hypervisor") | .id) as $hv
+            | .fields |= (
+                map(select(.section.id != $hv or (.label != "token_id" and .label != "token_secret")))
+                + [
+                    {id: "token_id", type: "STRING", label: "token_id", value: $tid, section: {id: $hv}},
+                    {id: "token_secret", type: "CONCEALED", label: "token_secret", value: env.TOKEN_SECRET, section: {id: $hv}}
+                  ]
+              )
+          ' | op item edit {{ site_name }} --vault {{ op_vault }}
+      environment:
+        TOKEN_SECRET: "{{ (generated_token.stdout | from_json).value }}"
+      delegate_to: localhost
+      become: false
+      when: generated_token.changed | default(false)
+      tags: [rbac]
+
+    # A write returning success only proves op item edit accepted the
+    # request, not that the value which landed matches what Proxmox actually
+    # generated - a jq escaping bug or a field written to the wrong section
+    # would still exit 0. Read it back and compare exactly before trusting it.
+    - name: Read back the stored token secret for verification
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          op item get {{ site_name }} --vault {{ op_vault }} --format=json | jq -c '{
+            token_id: ([.fields[] | select(.label=="token_id")][0].value),
+            token_secret: ([.fields[] | select(.label=="token_secret")][0].value)
+          }'
+      register: stored_token
+      delegate_to: localhost
+      become: false
+      when: generated_token.changed | default(false)
+      changed_when: false
+      tags: [rbac]
+
+    - name: Verify the token secret round-tripped into 1Password correctly
+      ansible.builtin.assert:
+        that:
+          - >-
+            (stored_token.stdout | from_json).token_id ==
+            pve_user + '@' + pve_realm + '!' + pve_token_id
+          - >-
+            (stored_token.stdout | from_json).token_secret ==
+            (generated_token.stdout | from_json).value
+        fail_msg: >-
+          The token secret written to 1Password does not match what Proxmox
+          generated - do not proceed with a mismatched credential. Check the
+          'hypervisor' section on the {{ site_name }} item by hand.
+        success_msg: "Token secret verified in 1Password."
       when: generated_token.changed | default(false)
       tags: [rbac]
 
     # ========================================================================
-    # 5. SDN
+    # 5. SSH access for disk-import operations
+    # ========================================================================
+    # Confirmed directly from the provider's source
+    # (proxmoxtf/resource/vm/disk/disk.go, this pinned tag): creating a VM
+    # disk from a file_id runs exactly three commands over SSH, via sudo if
+    # the connected user is not root - `pvesm path`, `qm disk import`, and
+    # `qm set`. The sudoers rule below grants exactly those three and nothing
+    # more, mirroring how the Proxmox API token above is scoped to a named
+    # role rather than Administrator.
+    - name: Create the dedicated disk-import service user
+      ansible.builtin.user:
+        name: "{{ disk_import_user }}"
+        system: true
+        # Not /usr/sbin/nologin: that shell's entire job is to print "This
+        # account is currently not available." and refuse to run anything,
+        # for ANY command execution over SSH - not just interactive
+        # sessions. bpg/proxmox needs to actually run pvesm/qm commands
+        # through this account's SSH session, which nologin blocks
+        # unconditionally. The sudoers rule above is what actually restricts
+        # this account, not the shell.
+        shell: /bin/bash
+        create_home: true
+      register: disk_import_user_created
+      tags: [ssh-import]
+
+    # Confirmed from the provider's own source (proxmox/ssh/client.go,
+    # probeSudo): before running the real commands, bpg/proxmox checks
+    # whether sudo is usable by running `sudo -n /usr/sbin/pvesm apiinfo`
+    # and, if that fails, `sudo -n /usr/sbin/qm --help`. Neither of those
+    # was in this list - so `sudo -n` failed silently, the provider decided
+    # sudo was not available, and every real command below then ran as the
+    # plain unprivileged user instead of root. That is what produced
+    # "ipcc_send_rec failed" / "Unable to load access control list" - not a
+    # concurrency problem, not a permissions-too-narrow-for-security
+    # problem, just these two read-only probe commands missing from the
+    # allowlist they need to be on for the probe to succeed at all.
+    - name: Grant the service user sudo rights scoped to exactly what bpg/proxmox runs over SSH
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ disk_import_user }}"
+        content: |
+          {{ disk_import_user }} ALL=(root) NOPASSWD: /usr/sbin/pvesm path *, /usr/sbin/pvesm apiinfo, /usr/sbin/qm disk import *, /usr/sbin/qm set *, /usr/sbin/qm --help
+        mode: "0440"
+        validate: "visudo -cf %s"
+      tags: [ssh-import]
+
+    # Whether to bootstrap the keypair is decided by whether 1Password
+    # already has it, not by whether the Linux account was just created in
+    # this run - those two can disagree. A run that creates the account but
+    # then fails before storing the key (as an earlier run here did, on a
+    # chattr/tmpfs error) leaves the account present but no credential
+    # anywhere; gating on account-creation would make every later re-run
+    # silently skip the entire rest of this section forever, since the
+    # account already exists. Checking the actual target resource - same
+    # idiom as the role and token existence checks above - avoids that.
+    - name: Check whether the SSH credential already exists in 1Password
+      ansible.builtin.command: >-
+        op read op://{{ op_vault }}/{{ site_name }}/hypervisor/ssh_private_key
+      register: existing_ssh_credential
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      failed_when: false
+      tags: [ssh-import]
+
+    # Generated fresh on the control node (this devbox), shown once, then
+    # removed from local disk - the same one-shot pattern as the API token
+    # secret above.
+    - name: Generate an SSH keypair for the service user
+      community.crypto.openssh_keypair:
+        path: "{{ disk_import_key_path }}"
+        type: ed25519
+        comment: "{{ disk_import_user }}@{{ inventory_hostname }} - bpg/proxmox disk import"
+      register: disk_import_keypair
+      delegate_to: localhost
+      become: false
+      when: existing_ssh_credential.rc != 0
+      tags: [ssh-import]
+
+    - name: Authorize the public key for the service user
+      ansible.posix.authorized_key:
+        user: "{{ disk_import_user }}"
+        key: "{{ lookup('file', disk_import_key_path + '.pub') }}"
+        state: present
+      when: existing_ssh_credential.rc != 0
+      tags: [ssh-import]
+
+    # Written directly into 1Password rather than shown for a human to paste
+    # in - see the token-secret task above for why. --rawfile reads the key
+    # straight from the file generated a few tasks up, so the private key
+    # never becomes a command-line argument (a jq --arg would) or an Ansible
+    # variable that might end up in a log; adds ssh_username/ssh_private_key
+    # to the hypervisor section since they don't exist there yet.
+    - name: Store the SSH credential in 1Password
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          op item get {{ site_name }} --vault {{ op_vault }} --format=json | jq --arg user "{{ disk_import_user }}" --rawfile key {{ disk_import_key_path }} '
+            (.sections[] | select(.label=="hypervisor") | .id) as $hv
+            | .fields |= (
+                map(select(.section.id != $hv or (.label != "ssh_username" and .label != "ssh_private_key")))
+                + [
+                    {id: "ssh_username", type: "STRING", label: "ssh_username", value: $user, section: {id: $hv}},
+                    {id: "ssh_private_key", type: "CONCEALED", label: "ssh_private_key", value: $key, section: {id: $hv}}
+                  ]
+              )
+          ' | op item edit {{ site_name }} --vault {{ op_vault }}
+      delegate_to: localhost
+      become: false
+      when: existing_ssh_credential.rc != 0
+      tags: [ssh-import]
+
+    # Same reasoning as the token-secret verification above: a successful
+    # write doesn't prove the value is right. This runs before the local key
+    # is deleted on purpose - if the comparison fails, the play stops here
+    # and the only good copy of the key is still on disk to recover from.
+    - name: Read back the stored SSH credential for verification
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          op item get {{ site_name }} --vault {{ op_vault }} --format=json | jq -c '{
+            ssh_username: ([.fields[] | select(.label=="ssh_username")][0].value),
+            ssh_private_key: ([.fields[] | select(.label=="ssh_private_key")][0].value)
+          }'
+      register: stored_ssh
+      delegate_to: localhost
+      become: false
+      when: existing_ssh_credential.rc != 0
+      changed_when: false
+      tags: [ssh-import]
+
+    - name: Verify the SSH credential round-tripped into 1Password correctly
+      ansible.builtin.assert:
+        that:
+          - >-
+            (stored_ssh.stdout | from_json).ssh_username == disk_import_user
+          - >-
+            (stored_ssh.stdout | from_json).ssh_private_key.rstrip('\n') ==
+            lookup('file', disk_import_key_path).rstrip('\n')
+        fail_msg: >-
+          The SSH private key written to 1Password does not match the key
+          generated and authorized on the host. The local copy at
+          {{ disk_import_key_path }} has deliberately NOT been deleted -
+          check the 'hypervisor' section on the {{ site_name }} item by hand
+          before re-running this playbook.
+        success_msg: "SSH credential verified in 1Password."
+      when: existing_ssh_credential.rc != 0
+      tags: [ssh-import]
+
+    - name: Remove the private key from local disk
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ disk_import_key_path }}"
+        - "{{ disk_import_key_path }}.pub"
+      delegate_to: localhost
+      become: false
+      when: existing_ssh_credential.rc != 0
+      tags: [ssh-import]
+
+    # ========================================================================
+    # 6. SDN
     # ========================================================================
     # SDN objects are cluster-wide, so they are created once rather than once
     # per hypervisor. Only the per-node checks further down run everywhere.
@@ -677,7 +977,7 @@
       tags: [sdn]
 
     # ========================================================================
-    # 6. Subnet routing
+    # 7. Subnet routing
     # ========================================================================
     - name: Enable IPv4 forwarding
       ansible.posix.sysctl:

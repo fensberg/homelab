@@ -10,7 +10,7 @@ earlier epoch whose decisions you are about to touch.
 ## State of the world
 
 - **Current epoch:** 01 — Ignition
-- **Built:** the phased ignition button (`scripts/Start-Homelab.ps1`), an
+- **Built:** the phased ignition button (`scripts/ignite`), an
   idempotent Proxmox playbook, Talos + Flux provisioning, codified overlay-network
   route auto-approval, and a two-layer state backup story.
 - **Database:** CloudNativePG, reconciled by Flux, streaming backups to object

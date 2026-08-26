@@ -63,7 +63,7 @@ resource "kubernetes_secret" "object_storage_credentials" {
 # the manifests at reconcile time (postBuild.substituteFrom). This is how the
 # bucket name and account-specific endpoint stay out of the repository.
 resource "kubernetes_secret" "cluster_vars" {
-  depends_on = [flux_bootstrap_git.this]
+  depends_on = [kubernetes_namespace.flux_system]
 
   metadata {
     name      = "cluster-vars"

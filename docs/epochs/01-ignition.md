@@ -66,6 +66,181 @@ ordering makes an aggressive cleanup policy safe. `-KeepOnFailure` opts out.
 `Install-Dependencies.ps1` with mirrored networking, so it inherits the
 Windows host's Tailscale routes rather than sitting behind its own NAT.
 
+**Superseded by "The entrypoint moves from PowerShell to Go" below**, once
+`workstation/` made a Linux dev machine the norm. Left here rather than
+deleted - it documents a real problem this project actually had, and the
+WSL-specific gotchas later in this record explain failures anyone using an
+old clone or old habits could still hit.
+
+### The entrypoint moves from PowerShell to Go
+
+**Chose:** port `Start-Homelab.ps1` and `Install-Dependencies.ps1` to a Go
+program (`scripts/ignite`) plus a plain bash bootstrap
+(`scripts/install-dependencies.sh`), run from the Linux devbox
+`workstation/` provisions rather than from Windows.
+**Rejected:** Python, which needed no new toolchain (the devbox already runs
+it for Ansible) and would have been less code to write.
+**Because:** the project's purpose is learning production-grade patterns,
+not shipping the least-effort implementation. Every other tool this root
+depends on - OpenTofu, Talos, Flux, kubectl - is a Go binary, and so is the
+rest of the ecosystem this project's choices already model themselves on
+(Helm, Argo CD, cluster-api, Vault). That is the same reasoning that picked
+CloudNativePG over a plain StatefulSet: the operator pattern, not the
+shortest path, is the transferable skill. Go was the closer match to what
+this project is actually for.
+
+Moving off Windows also deleted a whole layer rather than porting it: the
+WSL2 hop, its path translation, and the `ANSIBLE_CONFIG` workaround for a
+world-writable `/mnt/c` all existed solely because Ansible has no supported
+Windows control node. Ansible now runs natively, and `ansible.cfg` is picked
+up by the same ambient discovery `check-hypervisor` already relied on.
+
+The bootstrap script stayed bash on purpose: `scripts/ignite` needs Go to
+run, so whatever installs Go cannot itself depend on Go already being
+present.
+
+While reading the original script to port it, two live bugs surfaced and
+were fixed in the same pass, independent of the language: `.gitignore`
+excluded a file named `tailscale.auto.yml`, but the Overlay phase has always
+written the Tailscale auth key to `overlay-network.auto.yml` - that file was
+never actually gitignored. And `config/management.tpl.json`'s
+`overlay_network.domain` field was missing the `{{ }}` template braces
+`op inject` requires, so it would never have been substituted on a real
+render.
+
+### `task start` builds ignite but does not run it
+
+**Chose:** `task start` runs `go build` and then prints the command to run
+`./scripts/ignite/ignite` directly. Every other ignite-invoking task
+(`render-secrets`, `verify`, `configure-hypervisor`, `backup-state`,
+`clean-secrets`) still execs the binary through `task` as normal.
+**Rejected:** the original design, where `task start` ran ignite directly,
+same as every other phase task.
+**Because:** discovered the hard way, on the second real hardware run.
+Ignite's whole safety model - destroy before sterilize, on any failure -
+depends on catching Ctrl-C and running that cleanup. It had never been
+signal-aware at all (fixed in the same pass: `main.go` now races phase
+execution against `os/signal.Notify(syscall.SIGINT, syscall.SIGTERM)` and
+treats an interrupt exactly like a returned error). But adding that turned
+out not to be enough on its own: `task` itself intercepts SIGINT for its own
+purposes and does not proxy it to the subprocess it's supervising - a
+confirmed, currently-open upstream limitation
+(`github.com/go-task/task/issues/1408`). Verified directly: a signal-aware
+binary invoked straight from a shell catches Ctrl-C and runs its cleanup
+every time; the identical binary invoked through `task` does not - the
+child dies before its handler ever runs. No amount of code in `ignite` can
+fix a signal that `task` never delivers.
+
+The blast radius of skipping this: a Ctrl-C during a `task start` run left
+three real VMs orphaned - Terraform's state believed their Talos machine
+config had applied successfully; the live nodes had no network config at
+all and never joined etcd. State and reality had diverged in a way that
+was not safe to reconcile forward, only to destroy and rebuild.
+
+Every other ignite-invoking task stays wrapped in `task` because none of
+them can reach the Compute phase on their own, so the same failure mode
+just leaves stale secrets on disk - recoverable with `task clean-secrets`,
+never an orphaned VM. Only the one command that can create real
+infrastructure needed to change.
+
+### EmergencyDestroy waits for the interrupted step to actually exit first
+
+**Chose:** on interrupt, block on the phase goroutine's result a second time
+before calling `EmergencyDestroy` - not just react to the signal and proceed
+immediately. `EmergencyDestroy` itself now reports whether the destroy
+actually succeeded, and `main` only runs Sterilize when it did.
+**Rejected:** the first version of the interrupt fix (above), which reacted
+to the signal and called `EmergencyDestroy` right away.
+**Because:** proven wrong on the very next real interrupt. `tofu` runs its
+own graceful shutdown after SIGINT ("Gracefully shutting down... Stopping
+operation...") that takes real time to release its state lock. Racing
+straight to a fresh `tofu destroy` hit "Error acquiring the state lock"
+every time, because the original interrupted apply still held it. Worse,
+the old code ran Sterilize regardless of whether destroy succeeded - so a
+failed destroy was immediately followed by deleting the only state that
+could have retried it. That combination orphaned three real VMs with no
+state left to destroy them through; recovering meant destroying them by
+hand directly against the Proxmox API, bypassing Terraform entirely.
+Waiting for the original subprocess to genuinely exit before attempting
+anything, and refusing to sterilize after a destroy that failed, closes
+both halves of that failure at once.
+
+### The persisted Talos machine config had no network section
+
+**Chose:** three separate multi-document config patches - `LinkConfig` for
+the static address and default route, `ResolverConfig` for nameservers, and
+`HostnameConfig` (`auto: "off"` plus `hostname`) for the hostname - none of
+them touching the legacy `machine.network` block at all.
+**Rejected, in order:**
+
+1. Leaving networking entirely to Proxmox cloud-init, which is what every
+   prior version of this config did.
+2. Setting `hostname` inside a monolithic `machine.network` block. Talos
+   1.12+ generates its own `HostnameConfig` document by default
+   (`auto: stable`), and a `machine.network.hostname` field collides with it
+   outright: "static hostname is already set in v1alpha1 config."
+3. Setting the address/routes/nameservers the same monolithic way, believing
+   they were fine because they produced no error anywhere in the pipeline -
+   generation or apply. They were not fine: `NetworkConfig`, the struct
+   backing all of `machine.network.*`, is fully deprecated
+   (`pkg/machinery/config/types/v1alpha1/v1alpha1_types.go`, this pinned
+   tag: "all fields in NetworkConfig are deprecated, use corresponding
+   multi-doc config types instead"). It accepted the config and silently
+   didn't apply the address. A node that never gets a real address is
+   indistinguishable, from the outside, from one that's just slow to
+   reboot - the second real hardware attempt burned a full cycle on exactly
+   that ambiguity.
+
+**Because:** cloud-init's `ip_config`/`dns` (in `compute.tf`) only feeds
+Talos's ephemeral nocloud network bring-up before any real machine config
+exists - it has no bearing on what Talos actually persists. A node would
+boot with a correct address from cloud-init, then lose it permanently the
+moment the real machine config applied, because nothing it understood as
+current API described a replacement. This subnet's DHCP pool is pinned to
+`.50-.99` (see the SDN gotcha below), which does not cover the `.100+`
+control-plane range, so the failure mode was never "gets a different
+address" - it was silent, permanent, total loss of connectivity.
+
+Getting `HostnameConfig` right took two attempts on its own: patches merge
+field-by-field into the generator's own document rather than replacing it,
+so adding `hostname` alone left the generator's `auto: stable` sitting right
+next to it - rejected as "'auto' and 'hostname' cannot be set at the same
+time." `auto = false` (tried next) isn't a valid enum member - `Validate()`
+in `pkg/machinery/config/types/network/hostname.go` only accepts `"stable"`
+and `"off"`, and the "conflict" only actually fires when `auto` is anything
+other than exactly `"off"` - the two aren't mutually exclusive the way the
+prose docs imply.
+
+**The process failure worth recording alongside the technical one:** every
+wrong guess above except the last was made by triangulating web search
+summaries and third-party blog posts - some of which directly contradicted
+each other - against a live Talos node, at the cost of a full VM
+provisioning cycle each time. The actual answer, both times, was sitting in
+`github.com/siderolabs/talos` at the exact pinned tag, one `gh api` /
+GitHub code search away, and unambiguous the moment it was read. `talosctl`
+(already on the workstation) generates and validates real multi-document
+configs completely offline via `talosctl gen config` /
+`talosctl validate` - every patch in this decision was proven against that,
+against source, before it ever touched hardware again.
+
+### The Tailscale login retries itself
+
+**Chose:** wrap the `tailscale up` task in Ansible's own `until`/`retries: 2`/
+`delay: 15`, so a control-plane blip is absorbed inside the same playbook run.
+**Rejected:** the original design, which bounded the login with `--timeout`
+and then treated a failure as the operator's problem to notice and fix by
+re-running the whole start button.
+**Because:** discovered on the first real run against hardware - the
+coordination server hiccuped, `--force-reauth` fired mid-login, and the fix
+really was just "run it again," but making a human be the retry loop is not
+what "safe to re-run" was supposed to mean in practice. The retry is safe
+specifically because of the recoverable-logout property already documented
+above: a logged-out host takes the plain login path next attempt, so retrying
+in place is never worse than the failure it is recovering from. Bounded at 3
+attempts total rather than retried forever, so a genuinely unreachable
+coordination server still fails loudly with the existing diagnostics instead
+of hanging the playbook indefinitely.
+
 ### Route approval is codified, but the policy is not managed per site
 
 **Chose:** the tailnet policy (`tagOwners`, `autoApprovers`) is set up once per
@@ -291,6 +466,82 @@ encrypted copy off-site.
 it cannot exist at first apply. R2 covers the circular dependency that
 creates — losing the cluster would otherwise lose the state describing it.
 
+## Compute boots from a pre-installed disk image, not an installer ISO
+
+**Status: resolved.** Every control-plane node was losing network
+connectivity permanently, within seconds, the moment Talos actually
+installed itself to disk - independent of which config was being applied,
+independent of Talos version, independent of everything this epoch tried in
+`talos.tf`.
+
+**What's ruled out, each confirmed directly rather than assumed:**
+
+- The `LinkConfig`/`ResolverConfig`/`HostnameConfig` patches this epoch
+  settled on (see the decision above) - field-for-field identical to Talos's
+  own official "Static Addressing" documentation, decoded correctly by
+  `talosctl validate --strict` offline.
+- Interface name (`eth0`) and disk name (`/dev/vda`) - both confirmed live
+  against real hardware via `talosctl get links` / `talosctl get disks`, not
+  assumed from convention.
+- Reboot/install timing - the address is still missing even after a
+  _verified complete_ disk-boot cycle (uptime reset to seconds, `TYPE:
+controlplane` confirmed, meaning it genuinely booted from the installed
+  disk, not the ISO).
+- A `DHCPv4Config` workaround some users report needing alongside
+  `LinkConfig` - tested directly, no effect.
+- Talos version - reproduced identically, on a from-scratch VM with a single
+  `apply-config` call, on both currently-supported minors: `v1.13.8` and
+  `v1.13.9`.
+
+**What's confirmed, by direct isolation:** applying the exact same
+`LinkConfig` to a node where install _cannot_ succeed (an intentionally
+invalid disk/image target) leaves the address stable indefinitely. Applying
+it where install _does_ succeed destroys it within seconds, every time. The
+install process itself is what's corrupting the network state - not
+anything specific to how this project configures networking. Talos's own
+`block.VolumeManagerController` fails repeatedly during this with `error
+evaluating disk locator: no such attribute(s): system_disk`, an internal CEL
+expression evaluation bug, not anything user-configurable.
+
+**Why, structurally:** Talos 1.13.0 introduced a `LifecycleService` API for
+installs, with an explicit disk argument and proper sequencing (pull
+installer, install, drain, reboot). Per Sidero's own Omni changelog, Omni
+`v1.9.0`/`v1.10.0` deliberately moved _away_ from letting a plain config
+apply implicitly trigger install - which is exactly the mechanism this
+project's `talos_machine_configuration_apply` resource (and every manual
+`talosctl apply-config` test run here) depends on. Confirmed directly:
+there is no way to invoke the modern path against an unmanaged,
+maintenance-mode node through plain `talosctl` - `--insecure`, required to
+reach maintenance mode at all, explicitly forces the deprecated fallback
+(`talosctl upgrade --insecure` prints its own deprecation warning saying
+so). That orchestration currently appears to live inside Omni, Sidero's
+commercial control-plane product, not in the open CLI/Terraform surface
+this epoch uses.
+
+**Resolved:** `compute.tf` now builds VMs from a pre-installed disk image
+(`nocloud-amd64.raw.xz`) instead of the installer ISO, the same pattern
+`workstation/provision.yml` already uses for its Debian cloud image. Talos
+is already installed the moment the VM boots, so there is no install-time
+transition left to corrupt anything, and `talos.tf`'s `config_patches` carry
+no `machine.install` section any more - there is nothing left for it to do.
+Proven first as a throwaway VM outside Terraform entirely (`qm importdisk`
+
+- a single `apply-config` with no install section): address stable, node
+  fully reachable and authenticated, confirmed repeatedly over time - before
+  touching real code.
+
+Two things worth knowing about the Terraform side of this:
+
+- Image Factory serves the disk image `xz`-compressed. The `bpg/proxmox`
+  provider's own docs are explicit that a compressed image cannot use
+  `import_from` - it needs `file_id` with `content_type = "iso"`, and
+  Proxmox's zstd decompressor transparently handles the `xz` stream despite
+  the mismatched name.
+- `proxmox_virtual_environment_download_file` is deprecated in favor of
+  `proxmox_download_file` as of this pinned provider version (`~> 0.111.0`)
+  - already renamed here rather than knowingly building on something flagged
+    for removal before v1.0.
+
 ## Outcome
 
 To be completed when the epoch closes.
@@ -316,6 +567,16 @@ To be completed when the epoch closes.
   in `ansible.cfg` so it does not bury real output. Trigger: an ansible-core
   upgrade approaching 2.25, or the next time that playbook is exercised
   against a disposable host.
+- **The Hypervisor phase authenticates as `root@pam` over SSH, for every run,
+  not just the first one.** Necessarily true on a factory-fresh Proxmox
+  install - there is no non-root account to use yet - but every re-run after
+  that still goes over root SSH too. A harder setup would have the first run
+  create a dedicated non-root admin user with sudo, install this SSH key for
+  that user, and have every task after that - including the rest of that
+  same first run - use it via `become: true`, ideally disabling
+  `PermitRootLogin` once it exists. Deferred deliberately: get ignition
+  working end to end first, harden the bootstrap identity after. Trigger:
+  once the MVP cluster is up and the project moves from MVP to V1.
 
 ## Gotchas
 
@@ -327,7 +588,12 @@ To be completed when the epoch closes.
   firing in between leaves the host logged out and worse off than before the
   run - which is why the timeout is 180s rather than something tight. The
   state is recoverable: a logged-out host takes the plain login path on the
-  next run, with no `--force-reauth`.
+  next attempt, with no `--force-reauth`. Originally that "next attempt"
+  meant a human noticing the failure and re-running the whole start button -
+  discovered too manual on the first real hardware run, so the login task now
+  retries itself in place (`until`/`retries: 2`/`delay: 15`) rather than
+  surfacing this as something the operator has to catch and fix by hand. See
+  "The Tailscale login retries itself" below.
 - **The overlay network is load-bearing for ignition only because the
   workstation is remote.** The Verify phase reaches the SDN gateway across the
   tailnet, so a Tailscale outage blocks provisioning entirely. Running the

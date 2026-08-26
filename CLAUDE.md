@@ -68,20 +68,37 @@ belongs in an epoch record.
 
 ## The button
 
-One entrypoint, run from Windows PowerShell:
+One entrypoint, a Go program, run from the Linux workstation:
 
-```powershell
-.\scripts\Install-Dependencies.ps1              # once, elevated
-.\scripts\Start-Homelab.ps1 -Site site0        # every time after
+```sh
+./scripts/install-dependencies.sh   # once
+task start SITE=site0               # builds ignite and prints the command to run it
+./scripts/ignite/ignite -site site0 # the actual run - always run this directly, never through task
 ```
 
-**Windows is a stopgap.** `workstation/` provisions a Linux machine on the
-hypervisor for day-to-day work. It is deliberately independent - no shared
-config, no 1Password, and nothing in the cluster lifecycle can touch it, so a
-failed ignition cannot take your development environment with it. See
-[`workstation/README.md`](workstation/README.md).
+**`task start` deliberately does not run ignite itself.** `task` intercepts
+Ctrl-C for its own purposes but does not proxy the signal to the process it's
+supervising - a confirmed, currently-open upstream limitation
+(`go-task/task#1408`). Ignite's own destroy-then-sterilize cleanup on
+interrupt only runs if something actually delivers it the signal, so the
+real ignition run has to be invoked directly. Every other `task`-wrapped
+ignite phase (`render-secrets`, `verify`, `configure-hypervisor`,
+`backup-state`, `clean-secrets`) stays safe to wrap regardless, because none
+of them can reach the Compute phase - an interrupted one leaves stale
+secrets at worst, recoverable with `task clean-secrets`, never an orphaned
+VM.
 
-`-Site` selects a key in the config's `sites` map. Each site declares its own
+**`workstation/` provisions the Linux machine this runs from.** It is
+deliberately independent from `management/` - no shared config, no
+1Password, and nothing in the cluster lifecycle can touch it, so a failed
+ignition cannot take your development environment with it. See
+[`workstation/README.md`](workstation/README.md). Ignition was originally a
+PowerShell entrypoint run from Windows, with Ansible hopping into WSL2
+because it has no supported Windows control node; once `workstation/` made a
+Linux dev machine the norm rather than a stopgap, that whole layer became
+unnecessary and the entrypoint moved to Go - see the epoch record for why Go.
+
+`-site` selects a key in the config's `sites` map. Each site declares its own
 `octet`, which picks its `/16`, names the site and its VMs, and bands its VM
 IDs - so `site10-cp-01` lives at `10.10.10.100`. Octets are asserted unique and
 within 1-95 across every site, at plan time and again in the start button.
@@ -129,15 +146,18 @@ depends on it and uses them.
 
 ## CI
 
-- `pr-validation.yml` — six lanes, cheapest first, so a formatting slip fails
-  in half a minute rather than behind a two-minute image pull. **Format** runs
-  the same `.pre-commit-config.yaml` you run locally. **Validate** proves the
-  code resolves: `tofu validate` against a placeholder config, and
+- `pr-validation.yml` — seven lanes, cheapest first, so a formatting slip
+  fails in half a minute rather than behind a two-minute image pull.
+  **Format** runs the same `.pre-commit-config.yaml` you run locally.
+  **Shell Lint** runs ShellCheck directly, pulled out of Super-Linter for the
+  same one-owner-per-check reason as Go and Trivy below. **Validate** proves
+  the code resolves: `tofu validate` against a placeholder config, and
   `kustomize build` piped through `kubeconform` with the Flux substitutions
-  applied. **Analyze** is Super-Linter. **Semgrep**, **Trivy** and **Secrets**
-  are the security lanes. Everything except Secrets waits on Format.
-  Reordering is the only speed lever here — the security lanes overlap on
-  purpose and none of them comes out.
+  applied - Go vetting/building lives here too, for the same reason. **Analyze**
+  is Super-Linter, for everything not already owned by a dedicated lane.
+  **Semgrep**, **Trivy** and **Secrets** are the security lanes. Everything
+  except Secrets waits on Format. Reordering is the only speed lever here —
+  the security lanes overlap on purpose and none of them comes out.
 - `codeql.yml` — CodeQL on `actions`, the only language here it supports.
   Workflows are the part of this repository that runs with a token, so that is
   where a finding matters. Moved off GitHub's default setup so it is pinned and

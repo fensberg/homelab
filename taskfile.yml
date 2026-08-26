@@ -8,34 +8,67 @@ vars:
   # the same release, and the point of running it locally is that it is.
   LINT_IMAGE: ghcr.io/super-linter/super-linter:slim-v8.7.0
 
-# The single entrypoint is scripts/Start-Homelab.ps1. These tasks are thin
-# wrappers so the same verbs work from any shell.
+# The single entrypoint is scripts/ignite, a Go program. Every task below
+# builds it fresh (fast, and always current source - no stale binary to
+# remember to rebuild) and then execs the binary directly, rather than
+# `go run`. That distinction matters here specifically: `go run`'s wrapper
+# process has no signal handler of its own, so a real Ctrl-C can kill it
+# before the actual program gets a clean chance to run its own cleanup -
+# exactly the failure mode that orphaned infrastructure once already.
+# Running the built binary directly is what makes Ctrl-C's cleanup reliable
+# for `task`-wrapped phases that never touch real infrastructure on their own.
+#
+# `start` is deliberately NOT one of those wrapped phases - see its own
+# comment below for why.
 
 tasks:
-  start:
-    desc: "The start button: render -> tailnet -> hypervisor -> verify -> compute -> cluster -> migrate -> backup -> sterilize"
+  build:
+    desc: "Build the ignite binary"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}}
+      - go build -C scripts/ignite -o ignite .
+
+  start:
+    desc: "Builds ignite, then tells you to run it directly - see comment"
+    # This does not exec ignite itself, on purpose. `task` intercepts SIGINT
+    # for itself but does not proxy it to the subprocess it's supervising -
+    # a confirmed, currently-open upstream limitation
+    # (github.com/go-task/task/issues/1408). A Ctrl-C aimed at `task start`
+    # can kill ignite before its own signal handler ever runs, which is
+    # exactly what leaves VMs orphaned instead of destroyed. ignite's
+    # destroy-then-sterilize cleanup on interrupt only works when something
+    # actually delivers it the signal - which means running the binary
+    # yourself, not through task. Every other ignite-invoking task below is
+    # safe to wrap because none of them can reach the Compute phase, so an
+    # interrupted one leaves stale secrets at worst - recoverable with
+    # `task clean-secrets` - never an orphaned VM.
+    cmds:
+      - task: build
+      - 'echo "Built. Run directly so Ctrl-C can safely destroy and sterilize:"'
+      - 'echo "  ./scripts/ignite/ignite -site {{.SITE}}"'
 
   plan:
     desc: "Show which phases would run, without running them"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -WhatIfPhase
+      - task: build
+      - ./scripts/ignite/ignite -site {{.SITE}} -whatif
 
   render-secrets:
     desc: "Hydrate templates from 1Password"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Render
+      - task: build
+      - ./scripts/ignite/ignite -site {{.SITE}} -phase render
 
   verify:
     desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Verify
+      - task: build
+      - ./scripts/ignite/ignite -site {{.SITE}} -phase verify
 
   configure-hypervisor:
     desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Hypervisor
+      - task: build
+      - ./scripts/ignite/ignite -site {{.SITE}} -phase hypervisor
 
   check-hypervisor:
     desc: "Dry-run the playbook: show what would change, change nothing"
@@ -46,7 +79,8 @@ tasks:
   backup-state:
     desc: "Encrypt the current state and push it to Cloudflare R2"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Backup
+      - task: build
+      - ./scripts/ignite/ignite -site {{.SITE}} -phase backup
 
   fix:
     desc: "Format everything. Seconds, no Docker. Run this before you push."
@@ -67,6 +101,8 @@ tasks:
       - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
       - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
       - rm -f config/management.rendered.json
+      - go vet -C scripts/ignite ./...
+      - go build -C scripts/ignite -o /dev/null .
 
   lint:
     desc: "The slow analysis lane: checkov, tflint, ansible-lint, shellcheck"
@@ -86,4 +122,5 @@ tasks:
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
     cmds:
-      - powershell -NoProfile -File ./scripts/Start-Homelab.ps1 -Site {{.SITE}} -Phase Sterilize
+      - task: build
+      - ./scripts/ignite/ignite -site {{.SITE}} -phase sterilize
