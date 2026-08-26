@@ -11,3 +11,8 @@
 # control.
 skip-path:
   - clusters/management/flux-system
+  # The root kustomization.yaml lists flux-system as a resource, so
+  # Checkov's kustomize build starting from this file pulls in the same
+  # vendored Deployment/ClusterRole objects and attributes findings about
+  # them here instead - same reasoning as the exclusion above.
+  - clusters/management/kustomization.yaml
