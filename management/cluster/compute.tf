@@ -108,6 +108,24 @@ resource "proxmox_virtual_environment_vm" "talos_template" {
     manufacturer = "Sidero Labs"
     product      = "Talos Linux"
   }
+
+  lifecycle {
+    # file_id is a stable string ("local-iso:iso/talos-<version>-....iso") -
+    # the datastore path doesn't change even when the schematic (hence the
+    # actual image bytes at that path) does, since neither is part of the
+    # file name. Without this, replacing the disk image resource silently
+    # leaves this template's already-materialized OS disk on the old bytes:
+    # confirmed by a real apply that changed the schematic and still showed
+    # "0 to change" here. replace_triggered_by forces the rebuild on any
+    # change to the upstream resource, independent of whether file_id's own
+    # value looks different. [each.key], not [each.value]: OpenTofu only
+    # permits each.key in this specific expression (confirmed by a real
+    # validate error - each.value, identical in value for this set-keyed
+    # for_each, is still rejected syntactically) - and not the bare
+    # resource name either, which would tie every template to every
+    # hypervisor's image instead of just its own.
+    replace_triggered_by = [proxmox_download_file.talos_disk_image[each.key]]
+  }
 }
 
 resource "proxmox_virtual_environment_vm" "talos_cp" {
