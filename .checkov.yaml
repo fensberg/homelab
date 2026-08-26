@@ -16,3 +16,11 @@ skip-path:
   # vendored Deployment/ClusterRole objects and attributes findings about
   # them here instead - same reasoning as the exclusion above.
   - clusters/management/kustomization.yaml
+  # tofu test fixtures - deliberately fake values, some deliberately shaped
+  # like a real credential (aws-shaped-key.json exists specifically to
+  # trigger the AKIA/ASIA check). Checkov's secrets scanner can't tell fake
+  # from real by looking at shape/entropy alone, so every fixture trips
+  # CKV_SECRET_2/CKV_SECRET_6. Hand-tuning each value to dodge the entropy
+  # heuristic is fragile and would just recur on the next fixture; excluding
+  # the directory is the same call already made for flux-system above.
+  - management/cluster/tests
