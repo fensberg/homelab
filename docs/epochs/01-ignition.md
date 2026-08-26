@@ -143,6 +143,86 @@ just leaves stale secrets on disk - recoverable with `task clean-secrets`,
 never an orphaned VM. Only the one command that can create real
 infrastructure needed to change.
 
+### EmergencyDestroy waits for the interrupted step to actually exit first
+
+**Chose:** on interrupt, block on the phase goroutine's result a second time
+before calling `EmergencyDestroy` - not just react to the signal and proceed
+immediately. `EmergencyDestroy` itself now reports whether the destroy
+actually succeeded, and `main` only runs Sterilize when it did.
+**Rejected:** the first version of the interrupt fix (above), which reacted
+to the signal and called `EmergencyDestroy` right away.
+**Because:** proven wrong on the very next real interrupt. `tofu` runs its
+own graceful shutdown after SIGINT ("Gracefully shutting down... Stopping
+operation...") that takes real time to release its state lock. Racing
+straight to a fresh `tofu destroy` hit "Error acquiring the state lock"
+every time, because the original interrupted apply still held it. Worse,
+the old code ran Sterilize regardless of whether destroy succeeded - so a
+failed destroy was immediately followed by deleting the only state that
+could have retried it. That combination orphaned three real VMs with no
+state left to destroy them through; recovering meant destroying them by
+hand directly against the Proxmox API, bypassing Terraform entirely.
+Waiting for the original subprocess to genuinely exit before attempting
+anything, and refusing to sterilize after a destroy that failed, closes
+both halves of that failure at once.
+
+### The persisted Talos machine config had no network section
+
+**Chose:** three separate multi-document config patches - `LinkConfig` for
+the static address and default route, `ResolverConfig` for nameservers, and
+`HostnameConfig` (`auto: "off"` plus `hostname`) for the hostname - none of
+them touching the legacy `machine.network` block at all.
+**Rejected, in order:**
+
+1. Leaving networking entirely to Proxmox cloud-init, which is what every
+   prior version of this config did.
+2. Setting `hostname` inside a monolithic `machine.network` block. Talos
+   1.12+ generates its own `HostnameConfig` document by default
+   (`auto: stable`), and a `machine.network.hostname` field collides with it
+   outright: "static hostname is already set in v1alpha1 config."
+3. Setting the address/routes/nameservers the same monolithic way, believing
+   they were fine because they produced no error anywhere in the pipeline -
+   generation or apply. They were not fine: `NetworkConfig`, the struct
+   backing all of `machine.network.*`, is fully deprecated
+   (`pkg/machinery/config/types/v1alpha1/v1alpha1_types.go`, this pinned
+   tag: "all fields in NetworkConfig are deprecated, use corresponding
+   multi-doc config types instead"). It accepted the config and silently
+   didn't apply the address. A node that never gets a real address is
+   indistinguishable, from the outside, from one that's just slow to
+   reboot - the second real hardware attempt burned a full cycle on exactly
+   that ambiguity.
+
+**Because:** cloud-init's `ip_config`/`dns` (in `compute.tf`) only feeds
+Talos's ephemeral nocloud network bring-up before any real machine config
+exists - it has no bearing on what Talos actually persists. A node would
+boot with a correct address from cloud-init, then lose it permanently the
+moment the real machine config applied, because nothing it understood as
+current API described a replacement. This subnet's DHCP pool is pinned to
+`.50-.99` (see the SDN gotcha below), which does not cover the `.100+`
+control-plane range, so the failure mode was never "gets a different
+address" - it was silent, permanent, total loss of connectivity.
+
+Getting `HostnameConfig` right took two attempts on its own: patches merge
+field-by-field into the generator's own document rather than replacing it,
+so adding `hostname` alone left the generator's `auto: stable` sitting right
+next to it - rejected as "'auto' and 'hostname' cannot be set at the same
+time." `auto = false` (tried next) isn't a valid enum member - `Validate()`
+in `pkg/machinery/config/types/network/hostname.go` only accepts `"stable"`
+and `"off"`, and the "conflict" only actually fires when `auto` is anything
+other than exactly `"off"` - the two aren't mutually exclusive the way the
+prose docs imply.
+
+**The process failure worth recording alongside the technical one:** every
+wrong guess above except the last was made by triangulating web search
+summaries and third-party blog posts - some of which directly contradicted
+each other - against a live Talos node, at the cost of a full VM
+provisioning cycle each time. The actual answer, both times, was sitting in
+`github.com/siderolabs/talos` at the exact pinned tag, one `gh api` /
+GitHub code search away, and unambiguous the moment it was read. `talosctl`
+(already on the workstation) generates and validates real multi-document
+configs completely offline via `talosctl gen config` /
+`talosctl validate` - every patch in this decision was proven against that,
+against source, before it ever touched hardware again.
+
 ### The Tailscale login retries itself
 
 **Chose:** wrap the `tailscale up` task in Ansible's own `until`/`retries: 2`/
@@ -385,6 +465,82 @@ encrypted copy off-site.
 **Because:** the Postgres backend runs _on_ the cluster this code creates, so
 it cannot exist at first apply. R2 covers the circular dependency that
 creates — losing the cluster would otherwise lose the state describing it.
+
+## Compute boots from a pre-installed disk image, not an installer ISO
+
+**Status: resolved.** Every control-plane node was losing network
+connectivity permanently, within seconds, the moment Talos actually
+installed itself to disk - independent of which config was being applied,
+independent of Talos version, independent of everything this epoch tried in
+`talos.tf`.
+
+**What's ruled out, each confirmed directly rather than assumed:**
+
+- The `LinkConfig`/`ResolverConfig`/`HostnameConfig` patches this epoch
+  settled on (see the decision above) - field-for-field identical to Talos's
+  own official "Static Addressing" documentation, decoded correctly by
+  `talosctl validate --strict` offline.
+- Interface name (`eth0`) and disk name (`/dev/vda`) - both confirmed live
+  against real hardware via `talosctl get links` / `talosctl get disks`, not
+  assumed from convention.
+- Reboot/install timing - the address is still missing even after a
+  _verified complete_ disk-boot cycle (uptime reset to seconds, `TYPE:
+controlplane` confirmed, meaning it genuinely booted from the installed
+  disk, not the ISO).
+- A `DHCPv4Config` workaround some users report needing alongside
+  `LinkConfig` - tested directly, no effect.
+- Talos version - reproduced identically, on a from-scratch VM with a single
+  `apply-config` call, on both currently-supported minors: `v1.13.8` and
+  `v1.13.9`.
+
+**What's confirmed, by direct isolation:** applying the exact same
+`LinkConfig` to a node where install _cannot_ succeed (an intentionally
+invalid disk/image target) leaves the address stable indefinitely. Applying
+it where install _does_ succeed destroys it within seconds, every time. The
+install process itself is what's corrupting the network state - not
+anything specific to how this project configures networking. Talos's own
+`block.VolumeManagerController` fails repeatedly during this with `error
+evaluating disk locator: no such attribute(s): system_disk`, an internal CEL
+expression evaluation bug, not anything user-configurable.
+
+**Why, structurally:** Talos 1.13.0 introduced a `LifecycleService` API for
+installs, with an explicit disk argument and proper sequencing (pull
+installer, install, drain, reboot). Per Sidero's own Omni changelog, Omni
+`v1.9.0`/`v1.10.0` deliberately moved _away_ from letting a plain config
+apply implicitly trigger install - which is exactly the mechanism this
+project's `talos_machine_configuration_apply` resource (and every manual
+`talosctl apply-config` test run here) depends on. Confirmed directly:
+there is no way to invoke the modern path against an unmanaged,
+maintenance-mode node through plain `talosctl` - `--insecure`, required to
+reach maintenance mode at all, explicitly forces the deprecated fallback
+(`talosctl upgrade --insecure` prints its own deprecation warning saying
+so). That orchestration currently appears to live inside Omni, Sidero's
+commercial control-plane product, not in the open CLI/Terraform surface
+this epoch uses.
+
+**Resolved:** `compute.tf` now builds VMs from a pre-installed disk image
+(`nocloud-amd64.raw.xz`) instead of the installer ISO, the same pattern
+`workstation/provision.yml` already uses for its Debian cloud image. Talos
+is already installed the moment the VM boots, so there is no install-time
+transition left to corrupt anything, and `talos.tf`'s `config_patches` carry
+no `machine.install` section any more - there is nothing left for it to do.
+Proven first as a throwaway VM outside Terraform entirely (`qm importdisk`
+
+- a single `apply-config` with no install section): address stable, node
+  fully reachable and authenticated, confirmed repeatedly over time - before
+  touching real code.
+
+Two things worth knowing about the Terraform side of this:
+
+- Image Factory serves the disk image `xz`-compressed. The `bpg/proxmox`
+  provider's own docs are explicit that a compressed image cannot use
+  `import_from` - it needs `file_id` with `content_type = "iso"`, and
+  Proxmox's zstd decompressor transparently handles the `xz` stream despite
+  the mismatched name.
+- `proxmox_virtual_environment_download_file` is deprecated in favor of
+  `proxmox_download_file` as of this pinned provider version (`~> 0.111.0`)
+  - already renamed here rather than knowingly building on something flagged
+    for removal before v1.0.
 
 ## Outcome
 

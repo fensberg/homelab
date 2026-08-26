@@ -101,11 +101,15 @@ func main() {
 		}
 
 		// Only auto-destroy if this run could actually have created
-		// infrastructure.
+		// infrastructure. A destroy that fails must not be followed by
+		// sterilize - see EmergencyDestroy's own comment for why.
+		safeToSterilize := true
 		if slices.Contains(toRun, "compute") {
-			phases.EmergencyDestroy(ctx)
+			safeToSterilize = phases.EmergencyDestroy(ctx)
 		}
-		_ = phases.Sterilize(ctx, true)
+		if safeToSterilize {
+			_ = phases.Sterilize(ctx, true)
+		}
 		os.Exit(1)
 	}
 
@@ -161,10 +165,17 @@ func runPhases(ctx *run.Context, toRun []string) error {
 //
 // The in-flight external command (tofu/ansible-playbook/ssh) receives the
 // same signal directly, since it shares this process's terminal foreground
-// group, and dies on its own moments after we do. Cleanup then runs fresh
-// tofu/ansible invocations of its own, so the two never truly race for long;
-// on local state, Terraform's own lock file turns any remaining overlap into
-// a loud "state locked" error rather than silent corruption.
+// group. It is not necessarily dead by the time the select below wakes up -
+// tofu in particular runs its own graceful shutdown ("Gracefully shutting
+// down... Stopping operation...") that takes real time to actually release
+// its state lock. Proceeding straight to EmergencyDestroy's own `tofu
+// destroy` without waiting for that was tried and failed for real: it hit
+// "Error acquiring the state lock" because the interrupted apply still held
+// it, destroy aborted, and sterilize still ran afterward regardless - wiping
+// the only state that could have destroyed the three VMs it left running.
+// Waiting for resultCh a second time blocks until that original subprocess
+// has actually exited and released its lock, so cleanup only ever starts
+// once it is genuinely safe to.
 func runInterruptibly(ctx *run.Context, toRun []string) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -178,7 +189,8 @@ func runInterruptibly(ctx *run.Context, toRun []string) error {
 		return err
 	case sig := <-sigCh:
 		fmt.Println()
-		run.Warn(fmt.Sprintf("received %s - cleaning up before exit", sig))
+		run.Warn(fmt.Sprintf("received %s - waiting for the current step to exit before cleaning up", sig))
+		<-resultCh
 		return fmt.Errorf("interrupted by %s", sig)
 	}
 }

@@ -173,7 +173,7 @@ jobs:
           OBJECT_STORAGE_ENDPOINT: https://example.invalid
         run: |
           schema='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
-          for dir in clusters/management/infrastructure/*/; do
+          for dir in clusters/management/infrastructure/*/ clusters/management/flux-system/; do
             echo "==> ${dir}"
             kubectl kustomize "${dir}" | envsubst | kubeconform \
               -strict -summary -ignore-missing-schemas \

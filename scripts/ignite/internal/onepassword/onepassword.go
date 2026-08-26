@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // Available reports whether the op CLI is on PATH at all.
@@ -55,4 +56,19 @@ func Inject(templatePath, outPath string) error {
 		return fmt.Errorf("1Password inject (config): %w", err)
 	}
 	return nil
+}
+
+// Read resolves a single op:// reference, for values that must not go
+// through the whole-template Inject pass - specifically, values that do not
+// exist yet at Render time on a brand new site because a later phase is
+// what creates them (the hypervisor phase's SSH credential, created by
+// hypervisor-prep.yml, is read here by the compute phase rather than
+// templated in config/management.tpl.json, so Render succeeding never
+// depends on a phase that has not run yet).
+func Read(ref string) (string, error) {
+	out, err := exec.Command("op", "read", ref).Output()
+	if err != nil {
+		return "", fmt.Errorf("1Password read (%s): %w", ref, err)
+	}
+	return strings.TrimRight(string(out), "\n"), nil
 }

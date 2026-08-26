@@ -176,5 +176,14 @@ else
 	ok "ansible installed"
 fi
 
+step "Ansible collections"
+# ansible-core does not bundle community collections the way the full
+# 'ansible' metapackage does, so hypervisor-prep.yml's use of
+# community.crypto and ansible.posix needs them installed explicitly. Pinned
+# in requirements.yml alongside the playbook; install is idempotent, so this
+# runs unconditionally rather than trying to detect what is already present.
+ansible-galaxy collection install -r "$(dirname "$0")/../management/hypervisor/requirements.yml"
+ok "ansible collections installed"
+
 echo
 ok "all dependencies present. Run 'task start' to ignite."

@@ -15,9 +15,9 @@ locals {
   octet_max = 95
 
   # What this root actually implements, per concern. source_control is absent
-  # on purpose: flux_bootstrap_git speaks plain git over HTTPS and works
-  # against GitHub, GitLab or Gitea alike, so asserting a vendor the code does
-  # not depend on would be noise rather than a guard.
+  # on purpose: Flux's GitRepository source speaks plain git over HTTPS and
+  # works against GitHub, GitLab or Gitea alike, so asserting a vendor the
+  # code does not depend on would be noise rather than a guard.
   required_providers_by_concern = {
     hypervisor      = "proxmox"
     overlay_network = "tailscale"
