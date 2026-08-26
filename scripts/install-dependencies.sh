@@ -135,13 +135,22 @@ else
 	ok "age installed"
 fi
 
-step "rclone"
+step "rclone (pinned)"
+RCLONE_VERSION=1.75.0
 if has rclone; then
 	skip "rclone already present ($(rclone version | head -1))"
 else
-	info "installing rclone via the official install script"
-	curl -fsSL https://rclone.org/install.sh | sudo bash
-	ok "rclone installed"
+	# Not the official install script: it pipes an unpinned, unverified
+	# remote script straight into `sudo bash`, which is both a real
+	# supply-chain risk and unpinned, contrary to this project's own rule.
+	# A pinned .deb from the same GitHub release everything else here
+	# downloads from is no less official and never executes anything the
+	# way a fetched shell script would.
+	info "installing rclone ${RCLONE_VERSION}"
+	curl -fsSL -o "$TMP/rclone.deb" \
+		"https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${GOARCH}.deb"
+	sudo apt-get install -y "$TMP/rclone.deb"
+	ok "rclone ${RCLONE_VERSION} installed"
 fi
 
 step "task (go-task)"

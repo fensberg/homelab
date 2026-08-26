@@ -203,11 +203,15 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-          # The slim image carries its own linters, but two of them fetch data
-          # at run time rather than shipping it: Super-Linter bundles Trivy,
-          # which pulls its vulnerability database as an OCI artifact from
-          # mirror.gcr.io (redirected to storage.googleapis.com), and checkov
-          # checks pypi on startup.
+          # The slim image carries its own linters, but three of them fetch
+          # data at run time rather than shipping it: Super-Linter bundles
+          # Trivy, which pulls its vulnerability database as an OCI artifact
+          # from mirror.gcr.io (redirected to storage.googleapis.com);
+          # checkov checks pypi on startup; and the Go linters auto-download
+          # a matching toolchain via GOPROXY/GOSUMDB whenever the image's
+          # bundled Go is older than go.mod's pinned version (scripts/ignite
+          # pins go 1.27, deliberately - see the root CLAUDE.md - so this is
+          # not a version to relax to dodge the network requirement).
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
@@ -217,10 +221,12 @@ jobs:
             mirror.gcr.io:443
             objects.githubusercontent.com:443
             pkg-containers.githubusercontent.com:443
+            proxy.golang.org:443
             pypi.org:443
             raw.githubusercontent.com:443
             registry.npmjs.org:443
             storage.googleapis.com:443
+            sum.golang.org:443
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

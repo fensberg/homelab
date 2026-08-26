@@ -12,7 +12,14 @@ import (
 // distinguishes a nonzero exit from a launch failure via the returned error -
 // unlike PowerShell, where $ErrorActionPreference does not apply to native
 // exit codes and every native call needs its own check.
+//
+// name is never attacker-influenced: every call site in this module passes a
+// hardcoded literal ("tofu", "age", "rclone" - verified by grepping every
+// caller), and exec.Command never spawns a shell, so even a dynamic argument
+// value cannot inject a second command. This is also an `internal/` package,
+// so nothing outside this module can call it with a different name at all.
 func Cmd(dir, name string, args ...string) error {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
 	c.Stdin = os.Stdin
@@ -26,8 +33,10 @@ func Cmd(dir, name string, args ...string) error {
 
 // CmdEnv is Cmd plus extra environment variables, scoped to this one
 // process rather than the parent's environment - so there is nothing to
-// remember to unset afterwards.
+// remember to unset afterwards. Same reasoning as Cmd above: name is always
+// a hardcoded literal at every call site in this internal package.
 func CmdEnv(dir string, extraEnv []string, name string, args ...string) error {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
 	c.Env = append(os.Environ(), extraEnv...)
@@ -41,8 +50,11 @@ func CmdEnv(dir string, extraEnv []string, name string, args ...string) error {
 }
 
 // CmdOutput runs a command and returns trimmed stdout, with stderr still
-// streamed to the terminal so failures are visible.
+// streamed to the terminal so failures are visible. Same reasoning as Cmd
+// above: name is always a hardcoded literal at every call site in this
+// internal package.
 func CmdOutput(dir, name string, args ...string) (string, error) {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
 	var out bytes.Buffer
