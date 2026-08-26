@@ -151,6 +151,16 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
     size = 64
   }
 
+  # Longhorn's own data path, kept off the OS disk on purpose - Longhorn's
+  # documented Talos support expects a real mounted volume, not free space
+  # shared with the ephemeral/state partitions Talos grows to fill disk 0.
+  disk {
+    datastore_id = "local-zfs"
+    file_format  = "raw"
+    interface    = "virtio1"
+    size         = 32
+  }
+
   operating_system { type = "l26" }
 
   agent {

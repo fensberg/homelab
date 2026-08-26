@@ -85,7 +85,12 @@ locals {
   # --- platform ------------------------------------------------------------
   # renovate: datasource=github-releases depName=siderolabs/talos
   talos_version = "v1.13.8"
-  schematic_id  = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
+  # Two system extensions, generated via factory.talos.dev's schematic API -
+  # both are Longhorn's own documented prerequisites for Talos Linux:
+  # siderolabs/iscsi-tools (iscsid/iscsiadm, which Kubernetes persistent
+  # volume operations need) and siderolabs/util-linux-tools (fstrim, for
+  # volume trimming). Talos ships neither by default.
+  schematic_id = "613e1592b2da41ae5e265e8789429f22e121aab91cb4deb6bc3c0b6262961245"
 
   gitops_target_path = "clusters/management"
 
