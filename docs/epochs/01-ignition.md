@@ -375,6 +375,35 @@ the Postgres operators, so the knowledge carries outside this homelab. It also
 brings replication, failover, and point-in-time recovery without hand-rolling
 any of them.
 
+### Longhorn for cluster storage
+
+**Chose:** Longhorn, deployed by Flux like every other controller, backing
+CloudNativePG's PersistentVolumeClaims. Talos's disk image gained two system
+extensions for it (`siderolabs/iscsi-tools`, `siderolabs/util-linux-tools`,
+both Longhorn's own documented Talos prerequisites), each control-plane node
+gained a second disk, and a `UserVolumeConfig` mounts it at
+`/var/mnt/longhorn`, matching Longhorn's documented Talos data path.
+**Rejected:** Rook/Ceph, the more traditionally "enterprise" answer for
+distributed on-prem Kubernetes storage. **Rejected:** a hypervisor-level CSI
+(a Proxmox CSI plugin backed by `local-zfs`), which is also a legitimate,
+common production pattern.
+**Because:** both are real, and the choice is about which one fits a fleet
+that is one hypervisor today and heading toward several, run without a
+dedicated storage team. Ceph is proven at large scale but wants a real
+minimum node count and a non-trivial resource footprint before it is worth
+running - overkill here. A hypervisor CSI ties every PersistentVolume to
+`local-zfs` on whichever single Proxmox host provisioned it, which is no
+better than what CNPG's PVC already had - it does not gain real redundancy
+until Proxmox's own storage layer (Ceph or ZFS replication) is also built,
+a separate and larger undertaking. Longhorn replicates across whichever
+Kubernetes nodes it schedules to, entirely independent of which physical
+hypervisor they live on - the property that actually matters the moment a
+second hypervisor exists, which is the direction this fleet is already
+headed. `defaultReplicaCount: 2` reflects the honest current state: two
+replicas is what three control-plane nodes on one hypervisor supports
+without every replica landing on the same underlying disk regardless; raise
+it once a second hypervisor is real.
+
 ### Secrets are written by OpenTofu, not committed to git
 
 **Chose:** OpenTofu creates the namespace and secrets; Flux reconciles

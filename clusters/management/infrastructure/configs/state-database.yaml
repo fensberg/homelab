@@ -12,10 +12,12 @@ metadata:
 spec:
   instances: 3
 
-  # Talos mounts no local-path provisioner by default. If this pends forever,
-  # the cluster has no default StorageClass yet - that is the thing to fix.
+  # Named explicitly rather than relying on whichever StorageClass happens to
+  # be marked default - see docs/epochs for why Longhorn over Ceph or a
+  # hypervisor-level CSI at this scale.
   storage:
     size: 10Gi
+    storageClass: longhorn
 
   bootstrap:
     initdb:
