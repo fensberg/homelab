@@ -22,6 +22,20 @@
 # are explicit that compressed images cannot use `import_from` - they need
 # `file_id` with `content_type = "iso"`, and Proxmox's zstd decompressor
 # transparently handles the xz stream despite the mismatched name.
+# Adopts a file already sitting at this exact path instead of failing with
+# "already exists ... created outside of Terraform" - which is exactly what
+# happened once this session, when a prior run's teardown didn't get far
+# enough to clean this up before state was lost. import blocks are a no-op
+# once the resource is already in state, so this costs nothing on a normal
+# run; it only matters on the one it would otherwise be needed for. Static
+# rather than for_each over every hypervisor - there is only one today, and
+# adding a second is already a one-line edit to local.hypervisors elsewhere;
+# add a matching import block alongside it then.
+import {
+  to = proxmox_download_file.talos_disk_image[local.vm_placement[0]]
+  id = "${local.vm_placement[0]}/local-iso:iso/talos-${local.talos_version}-nocloud-amd64.iso"
+}
+
 resource "proxmox_download_file" "talos_disk_image" {
   for_each = toset(local.vm_placement)
 
