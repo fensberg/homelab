@@ -1,8 +1,13 @@
 package phases
 
 import (
+	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"homelab/ignite/internal/config"
@@ -62,6 +67,10 @@ func Compute(ctx *run.Context) error {
 		return err
 	}
 
+	if err := adoptOrphanedDiskImage(ctx, cfg, net); err != nil {
+		return err
+	}
+
 	// Three steps, not one apply targeting everything: download the image
 	// (API only), build one template per hypervisor from it (the only step
 	// that needs SSH - see compute.tf's talos_template resource for why
@@ -107,4 +116,83 @@ maintenance-mode banner:
 		run.Ok(node + " is up in maintenance mode")
 	}
 	return nil
+}
+
+// adoptOrphanedDiskImage imports the Talos disk image if a prior run's
+// incomplete teardown already left it sitting in the datastore. See
+// run.AdoptIfOrphaned for why this is Go and not a `.tf` import block.
+//
+// The exact expected file_name embeds talos_version, which lives only in
+// variables.tf - duplicating it here would be a second copy of that value
+// to keep in sync. Matching by pattern and importing whatever real filename
+// the datastore actually reports sidesteps that: if it happens to be a
+// stale image from a previous talos_version, the url/decompression_algorithm
+// mismatch already documented in compute.tf forces an immediate replace
+// anyway, so the outcome still converges - just with one adopt-then-replace
+// cycle instead of a clean adopt, the same tradeoff already known and
+// accepted for this resource.
+func adoptOrphanedDiskImage(ctx *run.Context, cfg *config.Config, net *config.SiteNetwork) error {
+	site := cfg.Sites[ctx.Site]
+	hv := net.Hypervisors[0]
+	address := fmt.Sprintf("proxmox_download_file.talos_disk_image[%q]", hv.Hostname)
+
+	return run.AdoptIfOrphaned(ctx, address, func() (string, error) {
+		volID, err := findTalosDiskImage(site.Hypervisor, hv)
+		if err != nil || volID == "" {
+			return "", err
+		}
+		// bpg/proxmox's own import ID shape: node_name/datastore_id:content_type/file_name
+		// - volID from the API is already "datastore_id:content_type/file_name".
+		return hv.Hostname + "/" + volID, nil
+	})
+}
+
+// findTalosDiskImage lists the local-iso datastore's content directly via
+// the Proxmox API - not through Terraform, which cannot answer "does this
+// exist" without already having it in state - and returns the volid of a
+// file matching the naming pattern compute.tf uses, or "" if none is there.
+func findTalosDiskImage(hv config.Hypervisor, node config.Node) (string, error) {
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, //nolint:gosec // matches versions.tf's own insecure=true for this same self-signed homelab endpoint
+	}
+
+	url := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/storage/local-iso/content", node.IP, node.Hostname)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", hv.TokenID, hv.TokenSecret))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("querying the local-iso datastore: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("querying the local-iso datastore: HTTP %d: %s", resp.StatusCode, body)
+	}
+
+	var parsed struct {
+		Data []struct {
+			VolID string `json:"volid"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", fmt.Errorf("parsing the datastore content response: %w", err)
+	}
+
+	for _, item := range parsed.Data {
+		// "local-iso:iso/talos-v1.13.8-nocloud-amd64.iso" - the exact
+		// version segment doesn't matter here, see the doc comment above.
+		if strings.HasPrefix(item.VolID, "local-iso:iso/talos-") && strings.HasSuffix(item.VolID, "-nocloud-amd64.iso") {
+			return item.VolID, nil
+		}
+	}
+	return "", nil
 }
