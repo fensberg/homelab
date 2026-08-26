@@ -19,7 +19,13 @@ jobs:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-          egress-policy: audit
+          # This action only ever queries GitHub's own advisory data over the
+          # API it already authenticates to - no third-party endpoint to
+          # allow for.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
 
       - name: "Checkout Repository"
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

@@ -19,6 +19,16 @@ jobs:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
+          # Stays audit, not block, until this job has actually run: it
+          # applies whatever `environments/` and `modules/` turn out to
+          # need - Proxmox, Cloudflare, Tailscale, object storage, the state
+          # Postgres, the OpenTofu registry - and none of those hosts are
+          # known yet because neither directory exists (epoch 02/03, not
+          # started; this workflow's path filters mean it cannot trigger
+          # today). Flip to block with the observed allowed-endpoints before
+          # this job ever runs for real - not before, since a guessed
+          # allowlist on the one job with write access to real
+          # infrastructure is worse than an audited one.
           egress-policy: audit
 
       - name: Checkout Code
