@@ -10,16 +10,6 @@
 #
 # Nothing appears in both places. Two copies of prettier, on two versions, is
 # what put formatting errors on a pull request that this file had just passed.
-#
-# Installed at both pre-commit and pre-push (scripts/install-dependencies.sh
-# calls plain `pre-commit install`, which installs whatever is listed here).
-# Neither is unbypassable - nothing client-side ever is, and GitHub.com has no
-# server-side pre-receive hook to fall back on - but a commit made with
-# --no-verify still gets caught at push, which is the actual point: shift
-# enforcement as far left as this repo can reach, with the Format lane in
-# pr-validation.yml as the real, unbypassable backstop for whatever gets
-# through anyway.
-default_install_hook_types: [pre-commit, pre-push]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0

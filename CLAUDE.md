@@ -198,12 +198,16 @@ depends on it and uses them.
   the slow analysis image. Run the first two before every push and the third
   before opening a pull request.
 - **Formatting is enforced locally first, shifted as far left as this repo
-  can reach.** `./scripts/install-dependencies.sh` wires `pre-commit` into
-  both the `pre-commit` and `pre-push` git hooks, so a formatting mistake is
-  caught on the machine that made it - in seconds, not minutes later in CI.
-  Nothing client-side is ever truly unbypassable (`--no-verify` exists, and
-  GitHub.com has no server-side pre-receive hook to close that gap), so
-  Format's CI lane isn't redundant with the local hooks - it is what actually
+  can reach.** `./scripts/install-dependencies.sh` wires `pre-commit` into the
+  `pre-commit` git hook, so a formatting mistake is caught on the machine
+  that made it - in seconds, not minutes later in CI. (Not also `pre-push`:
+  in this project's actual workflow a commit is pushed within seconds of
+  being made, so a second hook there would just re-check the identical diff
+  pre-commit had already checked moments earlier - no real coverage gained
+  for the cost of running it twice.) Nothing client-side is ever truly
+  unbypassable (`--no-verify` exists, and GitHub.com has no server-side
+  pre-receive hook to close that gap), so Format's CI lane isn't redundant
+  with the local hook - it is what actually
   catches a bypassed hook, a fresh clone that skipped setup, or a bot/outside
   PR that never runs a local hook at all. That lane runs in parallel with
   everything else, not gating it, so a formatting slip on someone else's PR
