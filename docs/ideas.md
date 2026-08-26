@@ -25,8 +25,8 @@ once it's actually being worked on.
   promote the same change to the real cluster - the standard staging pattern,
   just not built yet for a single-cluster homelab.
 - **Break the Analyze (Super-Linter) lane into dedicated per-tool jobs.**
-  Go validation, Trivy, Semgrep and Secrets are already their own lanes;
-  checkov, ansible-lint, tflint, shellcheck, markdownlint, yamllint,
+  Go validation, ShellCheck, Trivy, Semgrep and Secrets are already their
+  own lanes; checkov, ansible-lint, tflint, markdownlint, yamllint,
   PSScriptAnalyzer and zizmor are still bundled into one Super-Linter image.
   Several of today's real debugging time went straight into that bundling:
   a golangci-lint version baked into the image that didn't match this

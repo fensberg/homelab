@@ -85,7 +85,49 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure --color always
 
   # -----------------------------------------------------------------
-  # LANE 2: Does it actually work?
+  # LANE 2: Shell scripts - the sole owner of ShellCheck. Super-Linter
+  # bundles its own shellcheck invocation (BASH), switched off in
+  # super-linter.vars for the same one-owner-per-check reason Trivy was
+  # pulled out: this repo has two shell scripts, so a dedicated lane costs
+  # nothing and is one less shared version/config surface to keep in sync.
+  # BASH_EXEC (execute-bit checking) stays in Super-Linter - it isn't
+  # shellcheck and doesn't overlap with this.
+  # -----------------------------------------------------------------
+  shellcheck:
+    name: "Shell Lint (ShellCheck)"
+    runs-on: ubuntu-latest
+    needs: format
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          # action-shellcheck downloads the pinned shellcheck binary
+          # straight from its GitHub release.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        with:
+          # Pinned to match the shellcheck version Super-Linter slim-v8.7.0
+          # bundles, so a lint that passes here would also have passed
+          # there - one version to reason about, not two.
+          version: "v0.11.0"
+          check_together: "yes"
+
+  # -----------------------------------------------------------------
+  # LANE 3: Does it actually work?
   # -----------------------------------------------------------------
   # Linting says the code is tidy. This says it is correct: that the OpenTofu
   # resolves, that the config template still carries every key the OpenTofu
@@ -214,7 +256,7 @@ jobs:
           go build -o /dev/null .
 
   # -----------------------------------------------------------------
-  # LANE 3: Static analysis - the slow one
+  # LANE 4: Static analysis - the slow one
   # -----------------------------------------------------------------
   # checkov, ansible-lint, tflint, shellcheck, markdownlint, yamllint,
   # PSScriptAnalyzer, zizmor. Every formatter it would otherwise duplicate is
@@ -275,7 +317,7 @@ jobs:
           VALIDATE_ALL_CODEBASE: false
 
   # -----------------------------------------------------------------
-  # LANE 4: Static Application Security Testing (SAST)
+  # LANE 5: Static Application Security Testing (SAST)
   # -----------------------------------------------------------------
   semgrep:
     name: "Logic Scan (Semgrep)"
@@ -297,7 +339,7 @@ jobs:
           SEMGREP_RULES: "p/default"
 
   # -----------------------------------------------------------------
-  # LANE 5: Infrastructure Misconfigurations + Dependency Vulnerabilities
+  # LANE 6: Infrastructure Misconfigurations + Dependency Vulnerabilities
   # (IaC + vuln) - the sole owner of Trivy. Super-Linter bundles its own
   # Trivy invocation, but VALIDATE_TRIVY is switched off in
   # super-linter.vars so it never runs there: two Trivy invocations with
@@ -357,7 +399,7 @@ jobs:
           skip-dirs: "clusters/management/flux-system"
 
   # -----------------------------------------------------------------
-  # LANE 6: Secrets - waits for nothing
+  # LANE 7: Secrets - waits for nothing
   # -----------------------------------------------------------------
   secrets:
     name: "Secrets Scan (TruffleHog)"

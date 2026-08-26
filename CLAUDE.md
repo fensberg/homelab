@@ -146,15 +146,18 @@ depends on it and uses them.
 
 ## CI
 
-- `pr-validation.yml` — six lanes, cheapest first, so a formatting slip fails
-  in half a minute rather than behind a two-minute image pull. **Format** runs
-  the same `.pre-commit-config.yaml` you run locally. **Validate** proves the
-  code resolves: `tofu validate` against a placeholder config, and
+- `pr-validation.yml` — seven lanes, cheapest first, so a formatting slip
+  fails in half a minute rather than behind a two-minute image pull.
+  **Format** runs the same `.pre-commit-config.yaml` you run locally.
+  **Shell Lint** runs ShellCheck directly, pulled out of Super-Linter for the
+  same one-owner-per-check reason as Go and Trivy below. **Validate** proves
+  the code resolves: `tofu validate` against a placeholder config, and
   `kustomize build` piped through `kubeconform` with the Flux substitutions
-  applied. **Analyze** is Super-Linter. **Semgrep**, **Trivy** and **Secrets**
-  are the security lanes. Everything except Secrets waits on Format.
-  Reordering is the only speed lever here — the security lanes overlap on
-  purpose and none of them comes out.
+  applied - Go vetting/building lives here too, for the same reason. **Analyze**
+  is Super-Linter, for everything not already owned by a dedicated lane.
+  **Semgrep**, **Trivy** and **Secrets** are the security lanes. Everything
+  except Secrets waits on Format. Reordering is the only speed lever here —
+  the security lanes overlap on purpose and none of them comes out.
 - `codeql.yml` — CodeQL on `actions`, the only language here it supports.
   Workflows are the part of this repository that runs with a token, so that is
   where a finding matters. Moved off GitHub's default setup so it is pinned and
