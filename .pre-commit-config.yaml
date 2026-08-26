@@ -61,3 +61,7 @@ repos:
         # Same shape as tofu-fmt: needs go on PATH. Super-Linter's Go
         # analysis (golangci-lint, unaffected by this) stays the owner of
         # everything beyond formatting.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
