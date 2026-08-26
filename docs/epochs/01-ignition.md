@@ -630,6 +630,15 @@ To be completed when the epoch closes.
   (Longhorn's is a manual bump today) and a digest-pinned container image
   embedded in a workflow's `container:` block (Semgrep's is too). Trigger:
   once the cluster is up and running, so it has somewhere to actually run.
+- **A persistent tool-cache on a self-hosted runner**, so pinned binaries
+  this repo already downloads-and-verifies fresh every run (tofu,
+  kubeconform, the trufflehog CLI) don't repeat that fetch on every job -
+  a long-lived runner can keep them warm across runs instead. The
+  verification step doesn't go away, it just stops repeating on every run
+  for a version that hasn't changed. Actions Runner Controller with a
+  persistent volume backing the runner's tool-cache directory is the
+  natural mechanism, since `deploy-infrastructure.yml` already targets
+  `self-hosted`. Trigger: once self-hosted runners exist.
 
 ## Deferred (Ansible)
 
