@@ -25,6 +25,18 @@ resource "cloudflare_r2_bucket" "homelab" {
   name       = local.object_storage.bucket
 
   location = "WNAM"
+
+  lifecycle {
+    # location is a placement hint, not a guarantee: Cloudflare's own API
+    # has read the bucket back as a different region code than requested
+    # (WNAM requested, ENAM read back), which OpenTofu treats as drift to
+    # correct - but the provider's own response to that "fix" attempt then
+    # disagrees with its own plan, a documented "bug in the provider"
+    # (its error text says so) rather than anything in our config. Ignoring
+    # it stops that from turning into a failed apply on every run that
+    # happens to re-touch this resource.
+    ignore_changes = [location]
+  }
 }
 
 output "object_storage_bucket" {
