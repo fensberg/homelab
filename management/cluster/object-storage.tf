@@ -24,7 +24,16 @@ resource "cloudflare_r2_bucket" "homelab" {
   account_id = local.object_storage.account_id
   name       = local.object_storage.bucket
 
-  location = "WNAM"
+  # No location argument, deliberately. It is schema'd Optional+Computed
+  # with RequiresReplace - asserting a value here holds Cloudflare to it as
+  # a firm promise, but Cloudflare's own R2 docs describe the location hint
+  # as best-effort, not guaranteed. Setting it to "WNAM" got "ENAM" back
+  # from Create every time (twice, identically - not random flakiness, more
+  # likely this account's data-location policy overriding the hint), which
+  # OpenTofu's provider SDK then reports as "Provider produced inconsistent
+  # result after apply" and fails the whole apply. Leaving it unset lets
+  # Cloudflare assign whatever it was always going to assign, with nothing
+  # asserted here for it to disagree with.
 }
 
 output "object_storage_bucket" {

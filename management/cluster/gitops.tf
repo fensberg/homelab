@@ -17,7 +17,7 @@
 # =============================================================================
 
 resource "kubernetes_namespace" "flux_system" {
-  depends_on = [talos_cluster_kubeconfig.this]
+  depends_on = [data.talos_cluster_health.this]
 
   metadata {
     name = "flux-system"
@@ -63,7 +63,23 @@ resource "terraform_data" "flux_bootstrap_apply" {
       tmp=$(mktemp)
       trap 'rm -f "$tmp"' EXIT
       printf '%s' "$KUBECONFIG_CONTENT" >"$tmp"
-      KUBECONFIG="$tmp" kubectl apply -k "${path.module}/../../${local.gitops_target_path}/flux-system"
+      export KUBECONFIG="$tmp"
+      flux_system="${path.module}/../../${local.gitops_target_path}/flux-system"
+
+      # Two applies, not one kubectl apply -k: a single invocation builds its
+      # REST-mapping cache once at the start, before the CRDs it is about to
+      # create exist, so gotk-sync.yaml's GitRepository/Kustomization objects
+      # fail with "no matches for kind" even though the CRDs were created
+      # moments earlier in the same command. This is the documented
+      # kubectl/CRD ordering limitation, and exactly why `flux bootstrap`
+      # applies components and sync manifests as two separate steps
+      # internally - this replicates that, waiting on the
+      # app.kubernetes.io/part-of=flux label rather than a hardcoded CRD
+      # list so a future Flux version adding CRDs doesn't go stale here.
+      kubectl apply -f "$flux_system/gotk-components.yaml"
+      kubectl wait --for condition=established --timeout=60s \
+        crd -l app.kubernetes.io/part-of=flux
+      kubectl apply -f "$flux_system/gotk-sync.yaml"
     EOT
   }
 }

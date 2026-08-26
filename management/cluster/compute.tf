@@ -36,6 +36,16 @@ resource "proxmox_download_file" "talos_disk_image" {
   # stored where compressed non-ISO images are allowed to live.
   file_name               = "talos-${local.talos_version}-nocloud-amd64.iso"
   decompression_algorithm = "zst"
+
+  # Without this, the provider compares the URL's advertised size (the
+  # compressed .raw.xz, ~200MB) against the size actually stored in the
+  # datastore (the decompressed raw disk, ~4.5GB), sees a mismatch every
+  # single plan, and forces a destroy-and-reimport - even on a plan that
+  # otherwise has nothing to do with this resource. size is provider-computed
+  # with nothing configured to compare against, so lifecycle.ignore_changes
+  # cannot suppress this; overwrite=false is the mechanism the provider's own
+  # plan output names for exactly this case.
+  overwrite = false
 }
 
 # One template VM per hypervisor, built once from the downloaded disk image.
