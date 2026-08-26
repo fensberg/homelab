@@ -49,7 +49,7 @@ if [ "${#need_apt[@]}" -gt 0 ]; then
 fi
 
 step "Go (pinned)"
-GO_VERSION=1.27.0
+GO_VERSION=1.26.7
 if has go; then
 	skip "go already present ($(go version))"
 else

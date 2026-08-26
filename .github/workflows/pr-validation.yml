@@ -93,7 +93,7 @@ jobs:
   # no linter could tell, because on disk they are templates full of ${...}
   # placeholders.
   validate:
-    name: "Validate (tofu, kustomize, kubeconform)"
+    name: "Validate (tofu, kustomize, kubeconform, go)"
     runs-on: ubuntu-latest
     needs: format
     permissions:
@@ -101,6 +101,7 @@ jobs:
     env:
       TOFU_VERSION: "1.10.6"
       KUBECONFORM_VERSION: "0.7.0"
+      GO_VERSION: "1.26.7"
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
@@ -108,12 +109,16 @@ jobs:
           # get.opentofu.org serves both the installer and the GPG key it
           # verifies the release with. Provider downloads start at the registry
           # and are redirected to GitHub release assets. The schema fetches for
-          # kubeconform come from raw.githubusercontent.com.
+          # kubeconform come from raw.githubusercontent.com. actions/setup-go
+          # fetches the pinned toolchain from go.dev, redirected to
+          # dl.google.com.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
+            dl.google.com:443
             get.opentofu.org:443
             github.com:443
+            go.dev:443
             objects.githubusercontent.com:443
             raw.githubusercontent.com:443
             registry.opentofu.org:443
@@ -185,6 +190,28 @@ jobs:
             -schema-location default -schema-location "${schema}" \
             clusters/management/infra-controllers.yaml \
             clusters/management/infra-configs.yaml
+
+      # Not Super-Linter's Go linting: in diff mode, when a PR's changed Go
+      # files span more than one package directory, Super-Linter hands them
+      # to golangci-lint as a flat file list, which go/packages rejects with
+      # "named files must all be in one directory" - a confirmed upstream
+      # bug (super-linter/super-linter#6294), not anything about this code.
+      # go vet/build here works on whole packages, so it is not exposed to
+      # that bug, and it is not diff-limited either. VALIDATE_GO and
+      # VALIDATE_GO_MODULES are off in super-linter.vars accordingly.
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # No go.sum: scripts/ignite has zero external dependencies, so
+          # there is nothing meaningful to cache.
+          cache: false
+
+      - name: Validate Go
+        working-directory: scripts/ignite
+        run: |
+          go vet ./...
+          go build -o /dev/null .
 
   # -----------------------------------------------------------------
   # LANE 3: Static analysis - the slow one
