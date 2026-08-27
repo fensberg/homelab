@@ -259,7 +259,7 @@ floor a pull request may not drop below and is free to leave alone.
   one caught by `task validate`, which is cheaper than one caught by CI,
   which is far cheaper than one only caught by running real infrastructure -
   the actual, repeated failure mode in this project's own history (the
-  self-healing-import fix, the Longhorn bugs, the first full ignition run).
+  self-healing-import fix, the storage-sizing bug, the first full ignition run).
   Go logic in `scripts/ignite` is tested with the standard library's own
   `testing` package - no third-party assertion library, because that module
   has no third-party anything, and keeping it that way is what stops a test

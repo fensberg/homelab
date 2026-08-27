@@ -595,6 +595,11 @@ to do first.
 
 ### Self-healing import blocks for orphan-prone resources
 
+> **Superseded.** This decision described `import` blocks on both orphan-prone
+> resources. That can never work for the one in the Compute phase, and the
+> reasoning below survives only as the description of a problem that still
+> needs solving. See the entry after it.
+
 **Chose:** `import` blocks on `proxmox_download_file.talos_disk_image` and
 `cloudflare_r2_bucket.homelab`, adopting whatever already exists at their
 deterministic path/name instead of failing to create a duplicate.
@@ -609,6 +614,49 @@ independent resource types hit the identical failure mode in the same day.
 Both blocks are no-ops once the resource is already in state, so they cost
 nothing on a normal run; they only matter on the one that would otherwise
 need a person to notice and fix it by hand.
+
+### Correction: import cannot run before the cluster exists
+
+**Chose:** delete the orphaned Talos disk image and let the apply re-download
+it; keep adopting the R2 bucket, but materialise
+`talos_cluster_kubeconfig.this` with a targeted apply first.
+**Because:** `tofu import` configures **every** provider in the root, not only
+the one owning the resource being imported. `versions.tf` configures the
+kubernetes provider from `talos_cluster_kubeconfig` attributes that do not
+exist until the cluster is built, so an import during Compute fails with
+"Invalid provider configuration" pointing at `versions.tf` - before it ever
+reaches the resource in question. Confirmed against the real estate: a
+`-target`ed plan of that same resource succeeds, because targeting configures
+only the providers the target needs; an import of it does not.
+**Rejected:** leaving apply to tolerate the pre-existing file - tested, and it
+fails with "refusing to override existing file", which is exactly why the
+adopt existed. And deleting the R2 bucket the way the disk image is deleted,
+because one is derived data worth two minutes of download and the other holds
+the backups.
+**Note:** the underlying cause is a provider configured from a resource in its
+own root, which is the design constraint recorded in
+[`02-abstraction.md`](02-abstraction.md).
+
+### Storage: OpenEBS Local PV, not a replicated engine
+
+**Chose:** OpenEBS Local PV Hostpath on the dedicated second disk, one copy per
+volume, with the CloudNativePG request cut from 10Gi to 4Gi.
+**Because:** CloudNativePG already replicates at the database layer - three
+Postgres instances with streaming replication. A replicated storage engine
+underneath stored a second copy of each, so the cluster held six copies of a
+dataset whose entire encrypted backup is under 200KB. That amplification was
+not theoretical: Longhorn could not schedule the third replica (3 x 10Gi x 2
+against 34GB disks, minus its own 25% reserve), the state database sat at 2/3
+for half an hour, and ignition reported success anyway.
+**Rejected:** Longhorn, but not for being proprietary - it is CNCF and Apache
+2.0, exactly like OpenEBS. Rejected for storing redundancy in the wrong layer
+at this scale. Also rejected: a bigger disk, which buys the same waste with
+more hardware.
+**Gives up:** ReadWriteMany, storage-level snapshots, and volume survival when
+a node dies. All acceptable - CNPG rebuilds a replica from the primary, and
+the age-encrypted backup in object storage answers the case where more than
+one node is lost. A workload that genuinely needs RWX wants OpenEBS Replicated
+PV (Mayastor), which can be enabled alongside this later.
 
 ## Outcome
 
@@ -639,6 +687,18 @@ To be completed when the epoch closes.
   persistent volume backing the runner's tool-cache directory is the
   natural mechanism, since `deploy-infrastructure.yml` already targets
   `self-hosted`. Trigger: once self-hosted runners exist.
+
+- **Ignition has never been run against a factory-fresh Proxmox host.** Every
+  run so far has been against a hypervisor that already had the SDN, the
+  tailnet membership, the API token and the disk-import SSH account from an
+  earlier run. The playbook is idempotent, so those runs pass - but "install
+  Proxmox, run the button, get a cluster" is the epoch's actual promise and it
+  is currently unproven. What has been proven is "start from an almost-fresh
+  Proxmox", which is a weaker claim and the honest one to make until then.
+  Trigger: buying a second hypervisor. That is the first machine that can be
+  wiped without taking the estate down with it, and the first genuine test of
+  the client-onboarding story in
+  [`02-abstraction.md`](02-abstraction.md).
 
 ## Deferred (Ansible)
 

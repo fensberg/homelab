@@ -110,11 +110,22 @@ locals {
   # --- platform ------------------------------------------------------------
   # renovate: datasource=github-releases depName=siderolabs/talos
   talos_version = "v1.13.8"
-  # Two system extensions, generated via factory.talos.dev's schematic API -
-  # both are Longhorn's own documented prerequisites for Talos Linux:
-  # siderolabs/iscsi-tools (iscsid/iscsiadm, which Kubernetes persistent
-  # volume operations need) and siderolabs/util-linux-tools (fstrim, for
-  # volume trimming). Talos ships neither by default.
+  # Two system extensions, generated via factory.talos.dev's schematic API:
+  # siderolabs/iscsi-tools and siderolabs/util-linux-tools. Talos ships
+  # neither by default.
+  #
+  # Both were added as Longhorn's documented prerequisites, and Longhorn is
+  # gone - OpenEBS Local PV Hostpath hands out directories on a mounted
+  # filesystem and needs no iSCSI at all. iscsi-tools is therefore now
+  # vestigial and could be dropped; util-linux-tools provides fstrim, which
+  # stays useful regardless.
+  #
+  # Deliberately not dropped in the same change that removed Longhorn.
+  # Editing this list means minting a new schematic ID through the Factory
+  # API, which changes the image URL, forces a re-download and rebuilds every
+  # node - a second, independent way for a run to fail, folded into a change
+  # that already replaces the storage layer. Worth doing on its own, when the
+  # only thing being tested is the image.
   schematic_id = "613e1592b2da41ae5e265e8789429f22e121aab91cb4deb6bc3c0b6262961245"
 
   gitops_target_path = "clusters/management"

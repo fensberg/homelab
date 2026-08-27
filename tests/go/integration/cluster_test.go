@@ -78,7 +78,7 @@ func TestEveryNodeIsReadyAndTheCountIsOdd(t *testing.T) {
 		"an even node count adds an etcd member without adding a tiebreaker; quorum is fixed at creation, so this cannot be fixed by scaling")
 
 	// Polled rather than asserted once: a node can be briefly NotReady
-	// during an ordinary Talos or Longhorn rollout, and failing on that
+	// during an ordinary Talos or storage-provisioner rollout, and failing on that
 	// would make the suite flaky for a reason that is not a defect.
 	k8s.WaitUntilAllNodesReady(t, opts, 12, 10*time.Second)
 }
