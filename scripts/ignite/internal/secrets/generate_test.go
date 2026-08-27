@@ -29,7 +29,7 @@ func TestPassword_IsConnectionStringSafe(t *testing.T) {
 		// still be the host.
 		u, err := url.Parse("postgres://tofu:" + pw + "@10.10.10.100:30432/tofu_state?sslmode=require")
 		if err != nil {
-			t.Fatalf("password %q produced an unparseable URI: %v", pw, err)
+			t.Fatalf("password %q produced an unparsable URI: %v", pw, err)
 		}
 		if u.Hostname() != "10.10.10.100" || u.Port() != "30432" {
 			t.Fatalf("password %q moved the host to %s:%s", pw, u.Hostname(), u.Port())

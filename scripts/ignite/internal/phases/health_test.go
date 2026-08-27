@@ -74,7 +74,7 @@ func TestNotReady_AllReadyIsEmpty(t *testing.T) {
 
 func TestNotReady_RejectsGarbage(t *testing.T) {
 	if _, err := notReady([]byte("not json")); err == nil {
-		t.Error("expected an error for unparseable output")
+		t.Error("expected an error for unparsable output")
 	}
 }
 
