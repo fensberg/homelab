@@ -117,6 +117,12 @@ it can write backups but cannot read them back.`, ctx.Site)
 
 	run.Ok("encrypted state backed up to Cloudflare R2")
 
+	// Bounded storage, but never at the cost of the only copy. The prune
+	// re-lists the bucket and refuses to delete anything unless the upload
+	// just made is actually in that listing - "rclone exited zero" is a claim
+	// about a request, not about what is in the bucket.
+	pruneOldBackups(ctx, rcloneEnv, dest, stamp)
+
 	// The private identity is deliberately absent from the config contract:
 	// this program can write backups and must not be able to read them. It
 	// is fetched by a human, by hand, only when restoring.

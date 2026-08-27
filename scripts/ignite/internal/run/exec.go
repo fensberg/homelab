@@ -187,3 +187,18 @@ func Wipe(b []byte) {
 		b[i] = 0
 	}
 }
+
+// CmdOutputEnv is CmdOutput plus extra environment variables, for tools
+// configured entirely through the environment so that no credential is ever
+// written to a config file on disk.
+func CmdOutputEnv(dir string, extraEnv []string, name string, args ...string) (string, error) {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command(name, args...)
+	c.Dir = dir
+	c.Env = append(os.Environ(), extraEnv...)
+	var out bytes.Buffer
+	c.Stdout = &out
+	c.Stderr = os.Stderr
+	err := c.Run()
+	return strings.TrimSpace(out.String()), err
+}

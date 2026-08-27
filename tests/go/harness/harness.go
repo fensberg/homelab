@@ -105,10 +105,12 @@ type Site_ struct {
 		} `json:"nodes"`
 	} `json:"hypervisor"`
 	ObjectStorage struct {
-		Provider   string `json:"provider"`
-		AccountID  string `json:"account_id"`
-		AdminToken string `json:"admin_token"`
-		Bucket     string `json:"bucket"`
+		Provider        string `json:"provider"`
+		AccountID       string `json:"account_id"`
+		AdminToken      string `json:"admin_token"`
+		AccessKeyID     string `json:"access_key_id"`
+		SecretAccessKey string `json:"secret_access_key"`
+		Bucket          string `json:"bucket"`
 	} `json:"object_storage"`
 	State struct {
 		DBPassword string `json:"db_password"`

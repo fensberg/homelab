@@ -105,6 +105,26 @@ jobs:
         working-directory: tests/go
         run: go test -tags=api -timeout 10m -v ./api/...
 
+      # Taken before the assertions below, on purpose. Passively checking how
+      # old the newest backup is would mean nothing: backups otherwise happen
+      # only during an ignition run, which is rare, so a month-old copy would
+      # be both normal and indistinguishable from a backup pipeline that broke
+      # three weeks ago.
+      #
+      # Taking one here exercises the whole path every night - pull state,
+      # encrypt, upload, verify the upload landed, prune the old generation -
+      # and makes "the newest backup is under a day old" a question worth
+      # asking. It is also the repair: if last night's backup was missing or
+      # stale, tonight's fixes it, and if it cannot, this step fails.
+      #
+      # The alert is this workflow failing, which GitHub already emails about.
+      # That is one fewer moving part than any monitoring stack.
+      - name: Take a fresh backup
+        if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
+        env:
+          SITE: ${{ inputs.site || 'site0' }}
+        run: ./scripts/ignite/ignite -site "$SITE" -phase backup -keep-on-failure
+
       - name: Integration tests
         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
         env:

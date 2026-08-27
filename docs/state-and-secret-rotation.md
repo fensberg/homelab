@@ -190,98 +190,105 @@ serious alternative. `ignite -destroy` followed by a fresh ignition is well
 tested, fully automated, and takes less time than a careful CA rotation — and
 it leaves nothing behind to be uncertain about.
 
-## Making off-site recovery enterprise grade
+## What off-site recovery looks like here, and why
 
-Today the recovery story is: one bucket, one credential, two prefixes, 30 days
-of retention, and a restore procedure nobody has run. That is a backup. It is
-not yet a recovery capability. In rough order of value:
+The threat model is deliberately scoped. The data in this estate is
+reproducible by re-running ignition, so its value is the practice rather than
+the contents. Controls justified mainly by protecting the _data_ lose to
+controls that keep the _mechanism_ honest and the storage flat.
 
-### 1. Encrypt the state (prerequisite, not an optional extra)
+Three things were considered and deliberately rejected, so they do not get
+re-proposed:
 
-Everything else on this list assumes the off-site copy is not a plaintext copy
-of the cluster's private keys. Until Layer 1 is cut over, it is. Do this first.
+- **A second copy at a second vendor.** 3-2-1 is right when losing the data
+  costs something. Here it costs a re-run.
+- **Compliance-mode immutability.** R2 could not do it anyway — see below —
+  and it defends against a compromised Cloudflare account, which is a scenario
+  with much larger problems attached.
+- **Bucket locks.** Verified against Cloudflare's docs and genuinely capable:
+  R2 implements neither S3 Object Lock nor versioning (both listed
+  unimplemented, including `x-amz-bucket-object-lock-enabled` at creation), but
+  it has its own _bucket locks_, which "prevent the deletion and overwriting of
+  objects... for a specified period — or indefinitely", can target a prefix,
+  and take strict precedence over lifecycle rules. Rejected because they fight
+  the thing that matters more here: a locked object refuses to be pruned, so
+  bounded storage and immutability cannot both be had. Safety comes from the
+  code instead, below.
 
-### 2. Bucket locks, on both prefixes
+### One key for work, one for breaking glass
 
-**Verified against Cloudflare's own documentation**, because the obvious
-answer turns out to be wrong: R2 does **not** implement S3 Object Lock and
-does **not** support bucket versioning. Both are listed as unimplemented,
-including `x-amz-bucket-object-lock-enabled` at bucket creation.
+There are two encryption keys and they do different jobs:
 
-What R2 has instead is its own _bucket locks_, and they are the right tool:
+| Key                                 | Where it lives              | What it protects                                                                                         | Who can use it       |
+| ----------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------- |
+| OpenTofu `TF_ENCRYPTION` passphrase | 1Password, read by ignite   | State at rest — the local file, the Postgres rows, and therefore the WAL and base backups in `postgres/` | The automation       |
+| age identity                        | Offline, in a human's hands | The standalone dump in `management-cluster/`                                                             | **Nobody automatic** |
 
-- They "prevent the deletion and overwriting of objects in an R2 bucket for a
-  specified period — or indefinitely."
-- Rules can target a prefix, so `postgres/` and `management-cluster/` can carry
-  different retention.
-- They take **strict precedence over lifecycle rules**: "if a lifecycle rule
-  attempts to delete an object at 30 days but a bucket lock rule requires it be
-  retained for 90 days, the object will not be deleted until the 90-day
-  requirement is met."
+That is the whole custody story. Day to day there is one key. The age identity
+is used for nothing routine and exists so that one artefact survives the
+compromise of everything else — including the 1Password service account. It is
+the break-glass, rather than a separate mechanism bolted on next to one.
 
-This is the control that turns "we have backups" into "we have backups an
-attacker cannot take away", because the credential that writes the backups
-cannot destroy them. It fits the credential split this project already makes:
-the cluster holds only an Object Read & Write key, while the account-scoped
-`admin_token` that could change a lock rule is wiped after ignition and lives
-only in 1Password.
+The automation can _write_ the age dump and cannot read it back, which is why
+the health check below verifies its shape and not its contents. That is a
+deliberate limit, not an oversight.
 
-Two caveats to design around rather than discover:
+### Storage stays flat, and never at the cost of the only copy
 
-- **Not compliance mode.** Lock rules can be removed or modified by the account
-  owner. This defends against a compromised _cluster_, not a compromised
-  _Cloudflare account_. See item 5.
-- **It will break CloudNativePG's pruning.** `retentionPolicy: "30d"` issues
-  deletes. Any object still inside a longer lock period will refuse to be
-  deleted, and CNPG will log failures. Either align the lock period with the
-  retention policy, or set the lock deliberately longer and accept the noise —
-  but decide, because the default is a confusing error every night.
+`management-cluster/` keeps `latest.tfstate.age` plus **one** previous
+generation. Two objects, fixed, forever. `postgres/` keeps 7 days rather than
+30 — still a real point-in-time-recovery window, at roughly a quarter of the
+storage, for a database holding a few hundred kilobytes.
 
-### 3. Split the credential by prefix
+The prune obeys one rule, which is the rule that was asked for: **never delete
+the old copy until the new one is confirmed to exist.** It re-lists the bucket
+after uploading and refuses to delete anything at all unless the object it just
+wrote is in that listing — because "rclone exited zero" is a claim about a
+request, not about what is in the bucket. A prune that cannot confirm the new
+upload warns and does nothing, leaving more copies than intended, which is the
+correct direction to fail in.
 
-One key currently does everything. CloudNativePG needs write to `postgres/`
-and nothing else; the Backup phase needs write to `management-cluster/` and
-nothing else; neither needs to read the other's prefix, and neither needs
-delete once bucket locks are in place. Two scoped tokens cost nothing and mean
-a compromised cluster cannot even read the age dumps it did not write.
+A prune failure never fails the Backup phase either. The backup has already
+succeeded by that point, and turning a tidiness problem into a failed ignition
+run would be the wrong trade.
 
-### 4. Restore on a schedule — the biggest gap
+### The alarm
 
-**A backup nobody has restored is a hypothesis.** Nothing here has ever been
-restored, so the honest status of the recovery path is "unknown".
+Nobody watches this, so the check has to be the thing that would notice.
 
-This is the item the new test framework is built for, and the one that most
-separates a homelab from a production estate. A scheduled job on the
-self-hosted runner that pulls the latest age dump and the latest CNPG base
-backup, restores them into a throwaway target, asserts the state parses and
-the database answers, then tears it down — that is an `integration` tier test
-with a `restore` build tag, and it converts a hypothesis into a fact every
-night. It needs the disposable site that `docs/ideas.md` already wants.
+Passively asking "how old is the newest backup?" would be meaningless, because
+backups otherwise happen only during an ignition run — a month-old copy is both
+normal and indistinguishable from a pipeline that broke three weeks ago. So the
+nightly job **takes a backup first** and then asserts against what landed. That
+exercises the entire path every night, and makes freshness a question worth
+asking.
 
-### 5. A second copy, at a second vendor
+It checks four things:
 
-Bucket locks are removable by the account owner, so one compromised Cloudflare
-login — or a billing lapse, or an account suspension — still takes everything.
-The 3-2-1 answer is a second target in a different account at a different
-provider, ideally one that _does_ implement S3 Object Lock in compliance mode
-(AWS S3, Backblaze B2, Wasabi), where retention cannot be shortened by anyone,
-including the account owner. The age dump is small and already encrypted, so
-mirroring `management-cluster/` there is cheap; the CNPG backups are the
-expensive half and can stay single-vendor if cost matters.
+1. `latest.tfstate.age` exists, is under a day old, and is larger than a
+   plausible floor.
+2. It begins with `age-encryption.org/v1` — proof of a well-formed encrypted
+   file rather than a truncated upload. This is the most that can be checked
+   without the identity, and the identity is offline by design.
+3. The number of stored generations is still bounded, which is how a prune that
+   silently stopped running would show up.
+4. WAL archiving is actually working, read from `pg_stat_archiver` — plain
+   Postgres, whose column names are stable in a way CloudNativePG's own status
+   fields are not. A last-failure more recent than the last success means
+   archiving is broken right now.
 
-### 6. Custody for the age identity
+**The alert is the workflow failing**, which GitHub already emails about — one
+fewer moving part than a monitoring stack. And the nightly backup is also the
+repair: if last night's was missing or stale, tonight's replaces it, and if it
+cannot, the run goes red.
 
-The current instruction is "store the private key file somewhere offline". The
-bus factor on the entire off-site recovery path is therefore one person and
-one file. Split it (Shamir), or put it on two hardware tokens held by two
-people, or escrow it — but write down who can actually perform a restore at
-3am, because right now the answer is "one person, if they still have the file".
+### What is still missing
 
-### 7. Notice when it stops
-
-Nothing currently alerts if WAL archiving fails. CloudNativePG exposes the age
-of the last archived WAL; a backup that quietly stopped six weeks ago is
-indistinguishable from a healthy one until the day it matters.
+A **restore** has never been performed. Every check above verifies that
+something plausible was written; none of them proves it can be read back and
+used, because doing that needs the offline identity and somewhere disposable to
+restore into. That remains the largest gap, and it is blocked on the disposable
+site in `docs/ideas.md`.
 
 ## What is deliberately not automated
 
