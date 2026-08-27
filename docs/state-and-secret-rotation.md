@@ -18,16 +18,53 @@ This document is what that means in practice here.
 OpenTofu state stores resource attributes verbatim, including the sensitive
 ones. `terraform.tfstate` for this project holds:
 
-| From                                           | What is in there                                                            | Worst case if leaked                                                         |
-| ---------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `talos_machine_secrets`                        | The entire Talos PKI — cluster CA private key, etcd CA, service-account key | **Total cluster compromise.** Mint credentials for any node or user, forever |
-| `talos_cluster_kubeconfig`                     | Kubernetes client certificate and key                                       | `cluster-admin` until the CA is rotated                                      |
-| `kubernetes_secret.state_db_credentials`       | The state database password                                                 | Read and write the state itself                                              |
-| `kubernetes_secret.object_storage_credentials` | R2 access key and secret                                                    | Read and delete every off-site backup                                        |
-| `tailscale_tailnet_key`                        | The hypervisor's tailnet auth key                                           | Join the overlay network as a node                                           |
+| From                                           | What is in there                                                            | Worst case if leaked                                                                   |
+| ---------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `talos_machine_secrets`                        | The entire Talos PKI — cluster CA private key, etcd CA, service-account key | **Total cluster compromise.** Mint credentials for any node or user, forever           |
+| `talos_cluster_kubeconfig`                     | Kubernetes client certificate and key                                       | `cluster-admin` until the CA is rotated                                                |
+| `kubernetes_secret.state_db_credentials`       | The state database password                                                 | Read and write the state itself                                                        |
+| `kubernetes_secret.object_storage_credentials` | R2 access key and secret                                                    | **A second door into the same room** — see below, not merely "read and delete backups" |
+| `tailscale_tailnet_key`                        | The hypervisor's tailnet auth key                                           | Join the overlay network as a node                                                     |
 
 The Talos PKI is the one that matters most and is the hardest to rotate. Rank
 everything below against that.
+
+## The off-site copy is two different things
+
+It is tempting to think of the R2 bucket as "the encrypted fallback". One
+_prefix_ is. The bucket is not.
+
+| Prefix                | Written by                  | Protection                                                                                                                                                 |
+| --------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `management-cluster/` | ignite's Backup phase       | age-encrypted. The private identity is deliberately absent from config, state and the cluster — the automation can write backups and cannot read them back |
+| `postgres/`           | CloudNativePG, continuously | `compression: gzip`. That is the whole of it                                                                                                               |
+
+The second row is the problem, because **the Postgres database _is_ the
+OpenTofu state.** So `postgres/` is a continuously-refreshed, readable copy of
+everything the age file protects: the Talos PKI, the state database password,
+and the R2 credentials themselves.
+
+That closes a loop worth drawing explicitly:
+
+```text
+leaked state file  ->  R2 credentials  ->  read postgres/  ->  the whole PKI
+```
+
+The age encryption does not stand in the way, because an attacker never has to
+touch the age file. They read the other prefix. One set of credentials covers
+both — CloudNativePG and the Backup phase authenticate with the same key.
+
+**This is the real argument for Layer 1, and it is stronger than "it protects
+the local file".** Encrypt the state and the ciphertext flows all the way
+down: the rows in Postgres are ciphertext, so the WAL archive is ciphertext,
+so the base backups are ciphertext, and the age dump is encrypted twice. One
+change makes the whole chain worthless without the passphrase in 1Password.
+
+One thing not to do: barman supports `encryption: AES256` on the object store,
+and it looks like the obvious fix. It is not. That is server-side encryption,
+where Cloudflare holds the key — it defends against someone stealing disks in
+a datacentre, not against someone holding your R2 credentials, which is the
+threat that actually exists here.
 
 ## Layer 1 — encrypt the state, so the file is worthless by construction
 
@@ -78,11 +115,15 @@ Encryption protects the file. Rotation protects against the case where the key
 leaked too, or where state was read while decrypted. Ordered by value to an
 attacker.
 
-### Object storage keys — easy, do this first
+### Object storage keys — easy, and more urgent than it looks
 
-R2 API tokens are created and revoked through the Cloudflare API with no
-downtime, and the credential in the cluster is a Kubernetes secret
-CloudNativePG re-reads. Rotating is: create a new token scoped to the one
+Easy because R2 API tokens are created and revoked through the Cloudflare API
+with no downtime, and the credential in the cluster is a Kubernetes secret
+CloudNativePG re-reads. Urgent because of the loop above: these keys read
+`postgres/`, and `postgres/` is the state. **Treat a leaked state file as a
+leaked PKI even if the age dump was never touched.**
+
+Rotating is: create a new token scoped to the one
 bucket with Object Read & Write, update
 `op://homelab/<site>/object_storage/{access_key_id,secret_access_key}`,
 re-run ignite's Cluster phase to rewrite the secret, confirm WAL archiving
@@ -148,6 +189,99 @@ warranted, and if it is, treat rebuilding the cluster from scratch as a
 serious alternative. `ignite -destroy` followed by a fresh ignition is well
 tested, fully automated, and takes less time than a careful CA rotation — and
 it leaves nothing behind to be uncertain about.
+
+## Making off-site recovery enterprise grade
+
+Today the recovery story is: one bucket, one credential, two prefixes, 30 days
+of retention, and a restore procedure nobody has run. That is a backup. It is
+not yet a recovery capability. In rough order of value:
+
+### 1. Encrypt the state (prerequisite, not an optional extra)
+
+Everything else on this list assumes the off-site copy is not a plaintext copy
+of the cluster's private keys. Until Layer 1 is cut over, it is. Do this first.
+
+### 2. Bucket locks, on both prefixes
+
+**Verified against Cloudflare's own documentation**, because the obvious
+answer turns out to be wrong: R2 does **not** implement S3 Object Lock and
+does **not** support bucket versioning. Both are listed as unimplemented,
+including `x-amz-bucket-object-lock-enabled` at bucket creation.
+
+What R2 has instead is its own _bucket locks_, and they are the right tool:
+
+- They "prevent the deletion and overwriting of objects in an R2 bucket for a
+  specified period — or indefinitely."
+- Rules can target a prefix, so `postgres/` and `management-cluster/` can carry
+  different retention.
+- They take **strict precedence over lifecycle rules**: "if a lifecycle rule
+  attempts to delete an object at 30 days but a bucket lock rule requires it be
+  retained for 90 days, the object will not be deleted until the 90-day
+  requirement is met."
+
+This is the control that turns "we have backups" into "we have backups an
+attacker cannot take away", because the credential that writes the backups
+cannot destroy them. It fits the credential split this project already makes:
+the cluster holds only an Object Read & Write key, while the account-scoped
+`admin_token` that could change a lock rule is wiped after ignition and lives
+only in 1Password.
+
+Two caveats to design around rather than discover:
+
+- **Not compliance mode.** Lock rules can be removed or modified by the account
+  owner. This defends against a compromised _cluster_, not a compromised
+  _Cloudflare account_. See item 5.
+- **It will break CloudNativePG's pruning.** `retentionPolicy: "30d"` issues
+  deletes. Any object still inside a longer lock period will refuse to be
+  deleted, and CNPG will log failures. Either align the lock period with the
+  retention policy, or set the lock deliberately longer and accept the noise —
+  but decide, because the default is a confusing error every night.
+
+### 3. Split the credential by prefix
+
+One key currently does everything. CloudNativePG needs write to `postgres/`
+and nothing else; the Backup phase needs write to `management-cluster/` and
+nothing else; neither needs to read the other's prefix, and neither needs
+delete once bucket locks are in place. Two scoped tokens cost nothing and mean
+a compromised cluster cannot even read the age dumps it did not write.
+
+### 4. Restore on a schedule — the biggest gap
+
+**A backup nobody has restored is a hypothesis.** Nothing here has ever been
+restored, so the honest status of the recovery path is "unknown".
+
+This is the item the new test framework is built for, and the one that most
+separates a homelab from a production estate. A scheduled job on the
+self-hosted runner that pulls the latest age dump and the latest CNPG base
+backup, restores them into a throwaway target, asserts the state parses and
+the database answers, then tears it down — that is an `integration` tier test
+with a `restore` build tag, and it converts a hypothesis into a fact every
+night. It needs the disposable site that `docs/ideas.md` already wants.
+
+### 5. A second copy, at a second vendor
+
+Bucket locks are removable by the account owner, so one compromised Cloudflare
+login — or a billing lapse, or an account suspension — still takes everything.
+The 3-2-1 answer is a second target in a different account at a different
+provider, ideally one that _does_ implement S3 Object Lock in compliance mode
+(AWS S3, Backblaze B2, Wasabi), where retention cannot be shortened by anyone,
+including the account owner. The age dump is small and already encrypted, so
+mirroring `management-cluster/` there is cheap; the CNPG backups are the
+expensive half and can stay single-vendor if cost matters.
+
+### 6. Custody for the age identity
+
+The current instruction is "store the private key file somewhere offline". The
+bus factor on the entire off-site recovery path is therefore one person and
+one file. Split it (Shamir), or put it on two hardware tokens held by two
+people, or escrow it — but write down who can actually perform a restore at
+3am, because right now the answer is "one person, if they still have the file".
+
+### 7. Notice when it stops
+
+Nothing currently alerts if WAL archiving fails. CloudNativePG exposes the age
+of the last archived WAL; a backup that quietly stopped six weeks ago is
+indistinguishable from a healthy one until the day it matters.
 
 ## What is deliberately not automated
 

@@ -73,3 +73,15 @@ once it's actually being worked on.
   out to a targeted `tofu plan` for its fast pre-flight. That trades
   millisecond feedback for a subprocess and a provider directory, which is
   why it was not done now - but it is the version with no drift to detect.
+
+- **Prove the off-site recovery path by restoring it, nightly.** Nothing in
+  this repository has ever been restored, so the honest status of the recovery
+  story is "unknown" rather than "working". The test framework now has the
+  right shape for it: a `restore`-tagged tier on the self-hosted runner that
+  pulls the latest age-encrypted state dump and the latest CloudNativePG base
+  backup, restores both into a throwaway target, asserts the state parses and
+  the database answers, then tears it down. It needs the disposable site above,
+  which makes that idea a prerequisite rather than a nice-to-have. See
+  `docs/state-and-secret-rotation.md` for the rest of the off-site hardening
+  list - bucket locks, per-prefix credentials, a second vendor, and key
+  custody for the age identity.
