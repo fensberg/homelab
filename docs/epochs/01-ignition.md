@@ -851,12 +851,19 @@ To be completed when the epoch closes.
   also capped at 50 characters. Letters, digits and spaces only.
 
 - **The age private key is never referenced by the automation, and must not
-  be.** The config contract carries only `backup_recipient`, the public half,
-  so the start button can write backups and cannot read them. Putting the
+  be.** The config contract carries only `state_backup.recipient`, the public
+  half, so the start button can write backups and cannot read them. Putting the
   identity in `management.tpl.json` would render it to disk on every run and
   hand every historical backup to anyone who compromised the workstation. It
-  lives in 1Password as `backup_identity` and is fetched by a human, by hand,
-  only when restoring.
+  lives in 1Password at `op://homelab/state_backup/identity` and is fetched by
+  a human, by hand, only when restoring. This is no longer a matter of
+  remembering: `tests/go/repo/breakglass_test.go` fails if any `.tf` file or
+  the config template so much as names it.
+- **The keypair is one per estate, not one per site.** It sits at the top level
+  of the config, outside `sites`, because the recipient is a public key —
+  sharing it across sites costs nothing, while a key per site would multiply
+  the number of private halves a restore has to find. The per-site database
+  password is the opposite case and stays inside the site.
 - **Rotating the age key orphans every existing backup.** Backups are
   encrypted to a recipient, so a new key pair cannot read anything written
   under the old one. Rotate before real backups exist, or decrypt and

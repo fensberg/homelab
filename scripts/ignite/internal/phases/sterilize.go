@@ -61,7 +61,7 @@ func tearDown(ctx *run.Context) bool {
 		run.Warn("State lives in Postgres, inside the cluster this destroy is about to tear down - migrating it back to local first. Destroying in dependency order kills the database hosting this state before the VMs themselves are reached, which would otherwise strand the destroy partway through with no way to record what it had already done.")
 		if err := demigrateStateToLocal(ctx); err != nil {
 			run.Warn("Could not migrate state back to local: " + err.Error())
-			run.Warn("The standalone age-encrypted state backup in object storage is the documented fallback for exactly this (see docs/epochs/01-ignition.md). Restoring it needs backup_identity from 1Password, fetched by a human, then a local 'tofu init -migrate-state' back to the local backend before destroy can proceed.")
+			run.Warn("The standalone age-encrypted state backup in object storage is the documented fallback for exactly this (see docs/epochs/01-ignition.md). Restoring it needs the state-backup identity from 1Password (" + BackupIdentityRef + "), fetched by a human, then a local 'tofu init -migrate-state' back to the local backend before destroy can proceed.")
 			return false
 		}
 		run.Ok("state migrated back to local")
@@ -147,7 +147,7 @@ func buildStateConnStr(ctx *run.Context) (connStr, host string, port int, err er
 
 	host = fmt.Sprintf("10.%d.10.%d", site.Octet, stateDBFirstNodeHost)
 	connStr = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=require",
-		stateDBOwner, site.State.DBPassword, host, stateDBNodePort, stateDBName)
+		stateDBOwner, site.Database.Password, host, stateDBNodePort, stateDBName)
 
 	return connStr, host, stateDBNodePort, nil
 }

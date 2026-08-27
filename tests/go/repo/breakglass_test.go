@@ -22,7 +22,20 @@ import (
 // Neither is caught by anything else - both would work perfectly, and the
 // failure only shows up as an absence of protection nobody notices.
 
-const breakGlassField = "backup_identity"
+// The identity is addressed two ways, and both are forbidden: as the vault
+// reference a human pastes, and as the config path OpenTofu would traverse if
+// somebody added it to the template. "identity" on its own is too common a
+// word to grep for without false positives, so the tokens are anchored to the
+// item that holds it.
+//
+// "backup_identity" is the name this field had before the keypair moved out of
+// the per-site item and up to the estate. It stays on the list so that
+// reintroducing the old name does not quietly reintroduce the old exposure.
+var breakGlassTokens = []string{
+	"state_backup/identity",
+	"state_backup.identity",
+	"backup_identity",
+}
 
 func TestBreakGlassIdentityIsNeverReferencedByOpenTofu(t *testing.T) {
 	root := repoRoot(t)
@@ -46,7 +59,7 @@ func TestBreakGlassIdentityIsNeverReferencedByOpenTofu(t *testing.T) {
 		if readErr != nil {
 			return readErr
 		}
-		if strings.Contains(string(body), breakGlassField) {
+		if tok, found := firstMatch(string(body), breakGlassTokens); found {
 			rel, _ := filepath.Rel(root, path)
 			t.Errorf(`%s references %q.
 
@@ -55,7 +68,7 @@ reads is a value Terraform can write to state - and state is precisely what
 this key exists to make worthless. A state file containing the key that
 decrypts the backups of that state protects nothing.
 
-It is read by scripts/ignite in Go, through op, and only during a restore.`, rel, breakGlassField)
+It is read by scripts/ignite in Go, through op, and only during a restore.`, rel, tok)
 		}
 		return nil
 	})
@@ -76,16 +89,26 @@ func TestBreakGlassIdentityIsNotInTheConfigTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading the config template: %v", err)
 	}
-	if strings.Contains(string(body), breakGlassField) {
+	if tok, found := firstMatch(string(body), breakGlassTokens); found {
 		t.Errorf(`config/management.tpl.json references %q.
 
 Adding it there would render the private half into
 config/management.rendered.json on every run, next to every other secret. The
 recipient belongs in the template because encryption needs it; the identity is
-only ever needed by a human performing a restore.`, breakGlassField)
+only ever needed by a human performing a restore.`, tok)
 	}
-	// Guard against the assertion silently passing because the file moved.
-	if !strings.Contains(string(body), "backup_recipient") {
-		t.Fatal("the template no longer mentions backup_recipient - this test is checking the wrong file")
+	// Guard against the assertion silently passing because the file moved or
+	// the block was renamed again.
+	if !strings.Contains(string(body), "state_backup/recipient") {
+		t.Fatal("the template no longer references state_backup/recipient - this test is checking the wrong file")
 	}
+}
+
+func firstMatch(body string, tokens []string) (string, bool) {
+	for _, tok := range tokens {
+		if strings.Contains(body, tok) {
+			return tok, true
+		}
+	}
+	return "", false
 }

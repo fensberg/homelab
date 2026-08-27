@@ -44,6 +44,7 @@ var RequiredProvidersByConcern = map[string]string{
 type Config struct {
 	Organization  Organization    `json:"organization"`
 	SourceControl SourceControl   `json:"source_control"`
+	StateBackup   StateBackup     `json:"state_backup"`
 	Sites         map[string]Site `json:"sites"`
 }
 
@@ -63,7 +64,7 @@ type Site struct {
 	Hypervisor        Hypervisor     `json:"hypervisor"`
 	OverlayNetwork    OverlayNetwork `json:"overlay_network"`
 	ObjectStorage     ObjectStorage  `json:"object_storage"`
-	State             State          `json:"state"`
+	Database          Database       `json:"database"`
 }
 
 type Hypervisor struct {
@@ -97,9 +98,24 @@ type ObjectStorage struct {
 	Bucket          string `json:"bucket"`
 }
 
-type State struct {
-	DBPassword      string `json:"db_password"`
-	BackupRecipient string `json:"backup_recipient"`
+// Database is the site's own state database. Per-site, because each site
+// runs its own cluster and its own Postgres: sharing this password would mean
+// compromising one site reaches every other.
+type Database struct {
+	Password string `json:"password"`
+}
+
+// StateBackup sits at the top level rather than inside a site because there is
+// one break-glass key for the whole estate, not one per site. Rotating it
+// strands every backup encrypted to the previous recipient, so it is generated
+// once by a human and shared - and sharing a public key costs nothing, which
+// is exactly why this one field can live where the per-site credentials cannot.
+//
+// Only the public half appears here. The private identity is deliberately
+// absent from the config contract, and tests/go/repo/breakglass_test.go
+// enforces that it never appears in OpenTofu either.
+type StateBackup struct {
+	Recipient string `json:"recipient"`
 }
 
 // LoadRendered reads and parses the rendered config. Callers should have run

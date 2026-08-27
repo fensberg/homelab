@@ -154,15 +154,20 @@ is fixed at creation; see `docs/epochs/02-abstraction.md` for what actually
 autoscales here and what cannot.
 
 **What sits where.** Anything describing one estate lives inside the site -
-`hypervisor`, `overlay_network`, `object_storage` and `state`, each with its
-own asserted `provider`. Anything describing the whole fleet stays at the top:
-`organization`, and `source_control`, because one repository drives every
-cluster through Flux. Each site runs its own cluster with its own database, so
-sharing state credentials across sites would mean compromising one reaches all.
+`hypervisor`, `overlay_network`, `object_storage` (each with its own asserted
+`provider`) and `database`. Anything describing the whole fleet stays at the
+top: `organization` and `source_control`, because one repository drives every
+cluster through Flux, and `state_backup`, because one break-glass key covers
+the estate. Each site runs its own cluster with its own database, so sharing
+that password across sites would mean compromising one reaches all - the
+backup recipient is the exception precisely because it is a public key, and
+sharing it costs nothing.
 
 Hostnames, credentials and even the site's human name are `op://` references,
 so the file shows the shape of the estate without revealing what or where
-anything is.
+anything is. Every one of them must be wrapped in `{{ }}` - `op inject`
+substitutes nothing else, and a bare `op://` string is valid JSON that reaches
+the reader verbatim. `tests/go/repo` asserts it.
 
 **Every `op://` reference in the template must resolve.** There is no way to
 leave a placeholder site or node, so add the vault items first, then the

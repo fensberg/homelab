@@ -232,9 +232,9 @@ func TestAssertRenderedConfigComplete_UnsubstitutedReference(t *testing.T) {
 
 func TestAssertRenderedConfigComplete_ResolvedToEmpty(t *testing.T) {
 	dir := t.TempDir()
-	tpl := writeJSON(t, dir, "tpl.json", `{"state":{"db_password":"{{ op://homelab/site0/state_database/db_password }}"}}`)
+	tpl := writeJSON(t, dir, "tpl.json", `{"database":{"password":"{{ op://homelab/site0/database/password }}"}}`)
 	// The field exists in the vault item but has no content.
-	rendered := writeJSON(t, dir, "rendered.json", `{"state":{"db_password":""}}`)
+	rendered := writeJSON(t, dir, "rendered.json", `{"database":{"password":""}}`)
 
 	err := AssertRenderedConfigComplete(tpl, rendered)
 	if err == nil {

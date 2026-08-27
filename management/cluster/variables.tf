@@ -62,7 +62,7 @@ locals {
   # the others.
   overlay_network = local.site.overlay_network
   object_storage  = local.site.object_storage
-  site_state      = local.site.state
+  site_database   = local.site.database
   node_count      = local.site.control_plane_count
 
   # --- addressing ----------------------------------------------------------

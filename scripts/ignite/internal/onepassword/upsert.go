@@ -43,18 +43,23 @@ func upsertField(raw []byte, section, field, value string) ([]byte, error) {
 		return nil, fmt.Errorf("parsing the item: %w", err)
 	}
 
+	// An empty section is not "unknown", it is "directly on the item" - the
+	// three-segment op:// shape, which the estate's backup keypair uses. Those
+	// fields carry no section object at all, so the id to match on is "".
 	sectionID := ""
-	for _, s := range it.Sections {
-		if s.Label == section {
-			sectionID = s.ID
-			break
+	if section != "" {
+		for _, s := range it.Sections {
+			if s.Label == section {
+				sectionID = s.ID
+				break
+			}
 		}
-	}
-	if sectionID == "" {
-		// Deliberately not created. A section that does not exist means the
-		// reference is wrong, and inventing one puts a real credential
-		// somewhere nobody will look for it.
-		return nil, fmt.Errorf("the item has no section %q", section)
+		if sectionID == "" {
+			// Deliberately not created. A section that does not exist means
+			// the reference is wrong, and inventing one puts a real credential
+			// somewhere nobody will look for it.
+			return nil, fmt.Errorf("the item has no section %q", section)
+		}
 	}
 
 	// Rebuild rather than mutate in place: drop any existing occurrence of
@@ -79,13 +84,16 @@ func upsertField(raw []byte, section, field, value string) ([]byte, error) {
 		}
 		kept = append(kept, rf)
 	}
-	generic["fields"] = append(kept, map[string]any{
-		"id":      field,
-		"type":    "CONCEALED",
-		"label":   field,
-		"value":   value,
-		"section": map[string]any{"id": sectionID},
-	})
+	added := map[string]any{
+		"id":    field,
+		"type":  "CONCEALED",
+		"label": field,
+		"value": value,
+	}
+	if sectionID != "" {
+		added["section"] = map[string]any{"id": sectionID}
+	}
+	generic["fields"] = append(kept, added)
 	return json.Marshal(generic)
 }
 

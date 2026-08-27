@@ -11,11 +11,11 @@ const itemJSON = `{
   "vault": {"id": "vaultid", "name": "homelab"},
   "sections": [
     {"id": "sec-hyp", "label": "hypervisor"},
-    {"id": "sec-db",  "label": "state_database"}
+    {"id": "sec-db",  "label": "database"}
   ],
   "fields": [
     {"id": "token_id", "type": "STRING", "label": "token_id", "value": "keep-me", "section": {"id": "sec-hyp"}},
-    {"id": "db_password", "type": "CONCEALED", "label": "db_password", "value": "OLD", "section": {"id": "sec-db"}}
+    {"id": "password", "type": "CONCEALED", "label": "password", "value": "OLD", "section": {"id": "sec-db"}}
   ]
 }`
 
@@ -44,14 +44,14 @@ func find(fs []item2Field, label, section string) (item2Field, bool) {
 }
 
 func TestUpsertField_ReplacesInPlace(t *testing.T) {
-	out, err := upsertField([]byte(itemJSON), "state_database", "db_password", "NEW")
+	out, err := upsertField([]byte(itemJSON), "database", "password", "NEW")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	fs := fieldsOf(t, out)
-	got, ok := find(fs, "db_password", "sec-db")
+	got, ok := find(fs, "password", "sec-db")
 	if !ok {
-		t.Fatal("db_password is missing after the upsert")
+		t.Fatal("password is missing after the upsert")
 	}
 	if got.value != "NEW" {
 		t.Errorf("value = %q, want NEW", got.value)
@@ -59,18 +59,18 @@ func TestUpsertField_ReplacesInPlace(t *testing.T) {
 	// Exactly one, or op keeps both and a later read is a coin flip.
 	n := 0
 	for _, f := range fs {
-		if f.label == "db_password" && f.section == "sec-db" {
+		if f.label == "password" && f.section == "sec-db" {
 			n++
 		}
 	}
 	if n != 1 {
-		t.Errorf("db_password appears %d times; the old value was not removed", n)
+		t.Errorf("password appears %d times; the old value was not removed", n)
 	}
 }
 
 // The blast radius of this function is every other secret in the item.
 func TestUpsertField_LeavesEverythingElseAlone(t *testing.T) {
-	out, err := upsertField([]byte(itemJSON), "state_database", "db_password", "NEW")
+	out, err := upsertField([]byte(itemJSON), "database", "password", "NEW")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,15 +81,15 @@ func TestUpsertField_LeavesEverythingElseAlone(t *testing.T) {
 }
 
 func TestUpsertField_AddsAMissingField(t *testing.T) {
-	out, err := upsertField([]byte(itemJSON), "state_database", "backup_recipient", "age1xyz")
+	out, err := upsertField([]byte(itemJSON), "database", "encryption_passphrase", "age1xyz")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	got, ok := find(fieldsOf(t, out), "backup_recipient", "sec-db")
+	got, ok := find(fieldsOf(t, out), "encryption_passphrase", "sec-db")
 	if !ok || got.value != "age1xyz" {
 		t.Errorf("new field not added correctly: %+v (present=%v)", got, ok)
 	}
-	if _, ok := find(fieldsOf(t, out), "db_password", "sec-db"); !ok {
+	if _, ok := find(fieldsOf(t, out), "password", "sec-db"); !ok {
 		t.Error("adding a field removed a sibling")
 	}
 }
@@ -122,7 +122,69 @@ func TestUpsertField_RefusesAnUnknownSection(t *testing.T) {
 }
 
 func TestUpsertField_RefusesGarbageInput(t *testing.T) {
-	if _, err := upsertField([]byte("not json"), "state_database", "db_password", "x"); err == nil {
+	if _, err := upsertField([]byte("not json"), "database", "password", "x"); err == nil {
 		t.Error("expected an error for input that is not an item")
+	}
+}
+
+// The estate's backup keypair sits directly on its item, with no section at
+// all - the three-segment op:// shape. That field carries no "section" object,
+// so matching on an empty section id is what finds it, and the replacement
+// must not grow one.
+const sectionlessItemJSON = `{
+  "id": "itemid",
+  "title": "state_backup",
+  "vault": {"id": "vaultid", "name": "homelab"},
+  "fields": [
+    {"id": "recipient", "type": "CONCEALED", "label": "recipient", "value": "OLD"},
+    {"id": "identity", "type": "CONCEALED", "label": "identity", "value": "keep-me"}
+  ]
+}`
+
+func TestUpsertField_NoSection(t *testing.T) {
+	out, err := upsertField([]byte(sectionlessItemJSON), "", "recipient", "age1new")
+	if err != nil {
+		t.Fatalf("upsertField: %v", err)
+	}
+	fs := fieldsOf(t, out)
+
+	got, ok := find(fs, "recipient", "")
+	if !ok || got.value != "age1new" {
+		t.Fatalf("recipient did not take the new value, got %+v", fs)
+	}
+	n := 0
+	for _, f := range fs {
+		if f.label == "recipient" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("recipient appears %d times; the old value was not removed", n)
+	}
+	if other, ok := find(fs, "identity", ""); !ok || other.value != "keep-me" {
+		t.Error("the sibling field was not preserved")
+	}
+}
+
+// A field on the item and a same-named field inside a section are different
+// fields. Writing the section-less one must not reach into the section.
+func TestUpsertField_NoSectionDoesNotTouchSameNameInSection(t *testing.T) {
+	mixed := `{
+  "sections": [{"id": "sec-db", "label": "database"}],
+  "fields": [
+    {"id": "recipient", "type": "CONCEALED", "label": "recipient", "value": "TOP"},
+    {"id": "recipient2", "type": "CONCEALED", "label": "recipient", "value": "IN-SECTION", "section": {"id": "sec-db"}}
+  ]
+}`
+	out, err := upsertField([]byte(mixed), "", "recipient", "NEW")
+	if err != nil {
+		t.Fatalf("upsertField: %v", err)
+	}
+	fs := fieldsOf(t, out)
+	if top, ok := find(fs, "recipient", ""); !ok || top.value != "NEW" {
+		t.Errorf("the item-level field was not updated, got %+v", fs)
+	}
+	if inSec, ok := find(fs, "recipient", "sec-db"); !ok || inSec.value != "IN-SECTION" {
+		t.Errorf("the sectioned field of the same name was disturbed, got %+v", fs)
 	}
 }

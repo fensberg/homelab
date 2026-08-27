@@ -37,4 +37,15 @@ if grep -q '{{' "${rendered}"; then
 	exit 1
 fi
 
+# A bare op:// reference, written without the {{ }}, survives both passes above
+# and every schema check after them - `op inject` would not substitute it
+# either, so the literal reference string reaches whatever reads that key. The
+# hermetic version of this check lives in tests/go/repo; this is the backstop
+# for anything that renders the template without running the test suite.
+if grep -q 'op://' "${rendered}"; then
+	echo "unwrapped op:// reference(s) in ${template} - wrap them in {{ }}:" >&2
+	grep -n 'op://' "${rendered}" >&2
+	exit 1
+fi
+
 echo "wrote ${rendered}"

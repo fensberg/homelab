@@ -37,8 +37,8 @@ If the desktop app is installed, enable Settings > Developer > Integrate with
 		run.Ok("signed in to 1Password as " + email)
 	}
 
-	// Before the inject, not after: the template resolves
-	// op://.../db_password and op://.../backup_recipient, so anything this
+	// Before the inject, not after: the template resolves the site's
+	// database password and the estate's backup recipient, so anything this
 	// generates has to be in the vault by the time op reads it.
 	if err := ensureGeneratedSecrets(ctx); err != nil {
 		return err

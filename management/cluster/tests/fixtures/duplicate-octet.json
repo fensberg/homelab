@@ -6,6 +6,9 @@
     "repo_url": "https://example.invalid/fixture/repo",
     "token": "fixture-token"
   },
+  "state_backup": {
+    "recipient": "age1fixturefixturefixturefixturefixturefixturefixturefixture"
+  },
   "sites": {
     "site0": {
       "name": "Fixture Site",
@@ -39,9 +42,8 @@
         "secret_access_key": "fixture-secret-access-key",
         "bucket": "fixture-state-bucket"
       },
-      "state": {
-        "db_password": "fixture-db-password",
-        "backup_recipient": "age1fixturefixturefixturefixturefixturefixturefixturefixture"
+      "database": {
+        "password": "fixture-db-password"
       }
     },
     "site1": {
@@ -76,9 +78,8 @@
         "secret_access_key": "fixture-secret-access-key",
         "bucket": "fixture-state-bucket"
       },
-      "state": {
-        "db_password": "fixture-db-password",
-        "backup_recipient": "age1fixturefixturefixturefixturefixturefixturefixturefixture"
+      "database": {
+        "password": "fixture-db-password"
       }
     }
   }

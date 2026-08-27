@@ -8,6 +8,10 @@
     "token": "{{ op://homelab/source-control/token }}"
   },
 
+  "state_backup": {
+    "recipient": "{{ op://homelab/state_backup/recipient }}"
+  },
+
   "sites": {
     "site0": {
       "name": "{{ op://homelab/site0/name }}",
@@ -45,9 +49,8 @@
         "bucket": "{{ op://homelab/site0/object_storage/bucket }}"
       },
 
-      "state": {
-        "db_password": "{{ op://homelab/site0/state_database/db_password }}",
-        "backup_recipient": "{{ op://homelab/site0/state_database/backup_recipient }}"
+      "database": {
+        "password": "{{ op://homelab/site0/database/password }}"
       }
     }
   }

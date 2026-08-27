@@ -36,17 +36,19 @@ func Backup(ctx *run.Context) error {
 			return fmt.Errorf("sites.%s.object_storage.%s is missing from the rendered config", ctx.Site, field)
 		}
 	}
-	if strings.TrimSpace(site.State.BackupRecipient) == "" {
-		return fmt.Errorf(`no 'state.backup_recipient' for site %s in the rendered config.
+	recipient := strings.TrimSpace(cfg.StateBackup.Recipient)
+	if recipient == "" {
+		return fmt.Errorf(`no 'state_backup.recipient' in the rendered config.
 
-State is never uploaded in plaintext. Generate a key pair once:
+State is never uploaded in plaintext. Generate a key pair once for the whole
+estate - not one per site:
 
     age-keygen -o state-backup.key
 
 Put the PUBLIC recipient (the 'age1...' line) in 1Password at
-op://homelab/site<N>/state_database/backup_recipient, and store the private
-key file somewhere offline. The automation only ever needs the public half -
-it can write backups but cannot read them back.`, ctx.Site)
+%s, and the private half beside it at %s. The
+automation only ever needs the public half - it can write backups but cannot
+read them back.`, BackupRecipientRef, BackupIdentityRef)
 	}
 
 	for _, tool := range []string{"age", "rclone"} {
@@ -82,13 +84,13 @@ it can write backups but cannot read them back.`, ctx.Site)
 		return fmt.Errorf("state pull returned only %d bytes - refusing to upload it", len(state))
 	}
 
-	recipientPreview := site.State.BackupRecipient
+	recipientPreview := recipient
 	if len(recipientPreview) > 20 {
 		recipientPreview = recipientPreview[:20]
 	}
 	run.Info("encrypting to " + recipientPreview + "...")
 	if err := run.CmdStdin(ctx.ClusterDir, state, "age",
-		"--recipient", site.State.BackupRecipient, "--output", tmpCipher); err != nil {
+		"--recipient", recipient, "--output", tmpCipher); err != nil {
 		return fmt.Errorf("age encrypt: %w", err)
 	}
 	run.Wipe(state)
@@ -129,12 +131,12 @@ it can write backups but cannot read them back.`, ctx.Site)
 	fmt.Printf(`
   To restore, on a machine with op signed in:
 
-    op read "op://homelab/%s/state_database/backup_identity" > /tmp/restore.key
+    op read "%s" > /tmp/restore.key
     rclone cat R2:%s/management-cluster/latest.tfstate.age |
         age -d -i /tmp/restore.key > terraform.tfstate
     rm /tmp/restore.key
 
-`, ctx.Site, store.Bucket)
+`, BackupIdentityRef, store.Bucket)
 
 	return nil
 }

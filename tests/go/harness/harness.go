@@ -112,9 +112,9 @@ type Site_ struct {
 		SecretAccessKey string `json:"secret_access_key"`
 		Bucket          string `json:"bucket"`
 	} `json:"object_storage"`
-	State struct {
-		DBPassword string `json:"db_password"`
-	} `json:"state"`
+	Database struct {
+		Password string `json:"password"`
+	} `json:"database"`
 }
 
 // RenderedConfigPath is where the Render phase writes, overridable for a test
