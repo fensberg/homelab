@@ -202,6 +202,57 @@ to add the site to a file. "Bootstrap a site" is therefore the acceptance test
 for this tier: if adding a site still requires a commit, the abstraction is not
 finished.
 
+### Adding a hypervisor currently re-deals the control plane
+
+The scenario above - "a client buys a server, racks it, installs Proxmox" - is
+the one that breaks first, and it breaks silently.
+
+`vm_placement` deals control-plane VMs round-robin across whatever hypervisors
+a site has:
+
+```hcl
+vm_placement = [
+  for i in range(local.node_count) :
+  local.hypervisors[i % length(local.hypervisors)].hostname
+]
+```
+
+That is a re-deal, not an append. With one hypervisor all three land on it;
+add a second and the arithmetic reassigns the middle one:
+
+| Hypervisors | cp-01 | cp-02   | cp-03 |
+| ----------- | ----- | ------- | ----- |
+| 1           | hv0   | hv0     | hv0   |
+| 2           | hv0   | **hv1** | hv0   |
+
+`node_name` on `proxmox_virtual_environment_vm` cannot be changed in place, so
+OpenTofu resolves that as **destroy and recreate `cp-02`** - a running etcd
+member - and nothing in the flow calls `talosctl etcd remove-member` first. The
+likely outcome is a stale member in the etcd member list and a rebuilt node
+that cannot rejoin, on a cluster that was healthy until someone added capacity.
+
+Quorum survives the moment itself (two of three), which is what makes this
+dangerous: the apply looks like it worked.
+
+**The rule this points to: new hardware must add capacity, never re-place
+existing control-plane members.** Two things follow, and they line up with the
+worker-pool prerequisite already noted above:
+
+1. **Control-plane placement must be sticky.** Once a control-plane node is
+   placed it stays placed, whatever the hypervisor list does afterwards.
+   Deriving placement from a modulo over a growing list cannot express that;
+   the placement has to be recorded rather than recomputed - a field on the
+   site, or an explicit map, so it is reviewable and stable.
+2. **Growth belongs to the worker pool.** etcd is fixed at three (or five) by
+   design; a new server should be absorbed by workers, which are exactly the
+   thing that can move without a quorum question. Until a worker pool exists,
+   "add a hypervisor" has no safe meaning for an existing site.
+
+Until both are true, adding a hypervisor to a **running** site is a manual,
+supervised operation and should be documented as one. Adding a hypervisor to a
+site that does not exist yet is fine, which is the ordinary case for onboarding
+a new client and the one the acceptance test above describes.
+
 ### Design constraint: no provider may depend on a resource in its own root
 
 This is a constraint on how the modules are carved, and it is cheaper to honour
