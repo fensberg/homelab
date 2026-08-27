@@ -98,16 +98,119 @@ tasks:
       - bash .github/scripts/placeholder-config.sh
       - tofu -chdir=management/cluster init -backend=false -input=false
       - tofu -chdir=management/cluster validate
-      # Tests the locals/precondition logic in registry.tf against
-      # management/cluster/tests/*.tftest.hcl - fixture configs, never the
-      # real rendered one, so this runs regardless of the line below.
-      - tofu -chdir=management/cluster test
       - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
       - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
       - rm -f config/management.rendered.json
       - go vet -C scripts/ignite ./...
       - go build -C scripts/ignite -o /dev/null .
+      - go vet -C tests/go ./...
+
+  test:
+    desc: "Every hermetic test: Go, OpenTofu and JS/TS. No credentials needed."
+    # `validate` proves the code resolves. This proves it behaves. They were
+    # one task until the test tiers arrived; splitting them keeps each check
+    # with exactly one owner, and means a failure tells you which kind of
+    # wrong it is without reading the log.
+    #
+    # Everything here is hermetic: no 1Password, no hypervisor, no network
+    # beyond a module download. The tiers that need a real estate are
+    # test:integration, test:api and test:e2e below, and none of them runs
+    # unless you ask for it by name.
+    cmds:
+      - task: test:go
+      - task: test:tofu
+      - task: test:repo
+      - task: test:js
+
+  test:go:
+    desc: "Go unit and contract tests for the ignition button"
+    cmds:
       - go test -C scripts/ignite ./...
+
+  test:tofu:
+    desc: "OpenTofu unit tests: registry.tf's invariants against fixture configs"
+    # Fixture configs, never the real rendered one, so this needs no secrets
+    # and is safe to run at any time. init is required before test and is a
+    # no-op once .terraform exists.
+    cmds:
+      - tofu -chdir=management/cluster init -backend=false -input=false
+      - tofu -chdir=management/cluster test
+
+  test:repo:
+    desc: "Repository invariants: config keys that are silently declared twice"
+    # Untagged, so `./...` picks up only the hermetic tests in tests/go - the
+    # integration, api and e2e tiers all carry a build tag and are not
+    # compiled by this at all.
+    cmds:
+      - go test -C tests/go ./...
+
+  test:js:
+    desc: "Vitest unit tests, plus a TypeScript typecheck"
+    # Self-skipping rather than failing: Node is optional on a workstation
+    # that only ever touches the OpenTofu and Go tiers, and a missing
+    # toolchain should not turn `task test` red for someone who does not need
+    # it. CI always has it, so the lane there always runs.
+    cmds:
+      - |
+        if [ ! -d node_modules ]; then
+          if command -v pnpm >/dev/null 2>&1; then
+            echo "  -> installing JS dependencies"
+            pnpm install --frozen-lockfile
+          else
+            echo "  [skip] pnpm not found - skipping the JS/TS tier."
+            echo "         Install it with ./scripts/install-dependencies.sh"
+            exit 0
+          fi
+        fi
+        pnpm typecheck
+        pnpm test
+
+  test:coverage:
+    desc: "Run the tests with coverage and check it against the committed floor"
+    cmds:
+      - |
+        go test -C scripts/ignite -covermode=atomic -coverprofile=coverage-go.out ./...
+        pct="$(go -C scripts/ignite tool cover -func=coverage-go.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
+        bash scripts/coverage-gate.sh go "$pct"
+      - |
+        if [ -d node_modules ]; then
+          pnpm test:coverage
+          # v8 reports "Unknown" rather than a number when there is nothing
+          # to instrument, which is the honest answer while this tier has no
+          # application code under it. Coerce it to 0 so the gate compares a
+          # number against the 0 baseline instead of failing to parse.
+          pct="$(node -e 'const p=require("./coverage/js/coverage-summary.json").total.statements.pct;console.log(Number.isFinite(p)?p:0)' 2>/dev/null || echo 0)"
+          bash scripts/coverage-gate.sh js "$pct"
+        else
+          echo "  [skip] no node_modules - skipping JS coverage"
+        fi
+
+  test:integration:
+    desc: "Read-only checks against a real, already-built estate. Needs secrets."
+    # Reads the same rendered config the start button reads, so rendering it
+    # is the setup step and clean-secrets is the teardown. Creates nothing and
+    # destroys nothing - see tests/README.md for the tier boundaries.
+    cmds:
+      - go test -C tests/go -tags=integration -timeout 20m -v ./integration/...
+
+  test:api:
+    desc: "Contract checks against the live vendor APIs. Needs secrets."
+    cmds:
+      - go test -C tests/go -tags=api -timeout 10m -v ./api/...
+      - |
+        if [ -n "${HOMELAB_BASE_URL:-}" ] && [ -d node_modules ]; then
+          pnpm test:api
+        else
+          echo "  [skip] HOMELAB_BASE_URL unset - no HTTP service to check yet"
+        fi
+
+  test:e2e:
+    desc: "DESTRUCTIVE. Builds an estate from nothing and tears it down again."
+    # Three gates, and this task passes none of them for you: the build tag is
+    # here, but HOMELAB_TEST_SITE and HOMELAB_E2E_CONFIRM must be set by hand,
+    # to the same disposable site. See tests/go/e2e/ignition_test.go.
+    cmds:
+      - go test -C tests/go -tags=e2e -timeout 90m -v ./e2e/...
 
   lint:
     desc: "The slow analysis lane: checkov, tflint, ansible-lint, shellcheck"
@@ -123,6 +226,23 @@ tasks:
         --env-file .github/super-linter.vars
         -v "{{.USER_WORKING_DIR}}:/tmp/lint"
         {{.LINT_IMAGE}}
+
+  destroy:
+    desc: "Builds ignite, then tells you how to tear a site down - see comment"
+    # Same shape as `start`, and for the same reason: this reaches real
+    # infrastructure, and `task` intercepts Ctrl-C without proxying it to the
+    # process it supervises (go-task/task#1408). An interrupted destroy that
+    # never received the signal cannot wait for tofu to release its state
+    # lock, which is precisely how a half-finished teardown turns into VMs
+    # nothing is tracking. Every other ignite-wrapped task here is safe to
+    # exec directly because none of them can reach real infrastructure; this
+    # one can, so it prints the command instead of running it.
+    cmds:
+      - task: build
+      - 'echo "Built. Run directly so Ctrl-C can wait for tofu to release its lock:"'
+      - 'echo "  ./scripts/ignite/ignite -site {{.SITE}} -destroy -confirm {{.SITE}}"'
+      - 'echo ""'
+      - 'echo "Add -whatif first if you want to see what that would do."'
 
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"

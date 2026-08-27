@@ -64,6 +64,23 @@ state-backup.key
 # Points at a real hypervisor; not for git
 workstation/inventory.yml
 
-# A locally built ignite binary - taskfile.yml always uses `go run`, but
-# nothing stops a stray `go build .`
+# The ignite binary. taskfile.yml builds it here on purpose rather than using
+# `go run`, whose wrapper process has no signal handler of its own - see the
+# comment at the top of taskfile.yml.
 scripts/ignite/ignite
+
+# --- test artefacts ---------------------------------------------------------
+# Coverage output. The committed part of coverage is tests/coverage-baseline.json,
+# which is the floor; the measurements themselves are per-run and disposable.
+scripts/ignite/coverage-go.out
+coverage/
+
+# Go test binaries, if anyone runs `go test -c`
+*.test
+
+# JavaScript/TypeScript. node_modules is reproducible from pnpm-lock.yaml,
+# which IS committed - that lock file is what pins the tier.
+node_modules/
+playwright-report/
+test-results/
+.playwright/

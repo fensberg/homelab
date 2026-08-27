@@ -41,3 +41,47 @@ once it's actually being worked on.
   Semgrep. Coverage has to stay 1:1 with what Super-Linter currently runs;
   this is a real CI restructure (new egress allowlists per job, a rewrite
   of the CI section in the root `CLAUDE.md`), not a small tweak.
+
+- **Give ignite a supported teardown, and an honest name for `-keep-on-failure`.**
+  Two related gaps, both found while building the test tiers. First: a
+  successful single-phase run sterilizes the workspace on the way out
+  (`main.go`'s "belt and braces" block), which means `task render-secrets`
+  deletes the config it just rendered unless `-keep-on-failure` is passed. The
+  flag does the right thing; its name describes a different path, so nobody
+  reaches for it. A `-keep` flag, or exempting `render` specifically, would
+  make the per-phase tasks in `taskfile.yml` work as their descriptions read.
+  Second: `tofu destroy` only exists on the failure route, inside
+  `EmergencyDestroy`. There is no supported way to tear down an estate that
+  ignited successfully - which is why `tests/go/e2e` stops before the Migrate
+  phase, and which the "lower-tier environment" idea above will hit
+  immediately, since a staging cluster is only cheap if it can be thrown away.
+  `EmergencyDestroy` already solves the hard part (migrating state back out of
+  the cluster it is about to destroy); this is mostly about exposing it.
+- **Put a plan gate in front of `deploy-infrastructure.yml`.** It runs
+  `tofu apply -auto-approve` on push to `main`, with no plan posted anywhere
+  and no test step. Nothing has ever triggered it - `environments/` and
+  `modules/` do not exist yet - so this is cheap to fix now and expensive to
+  fix later. The standard shape is plan-on-PR (posted as a comment) and
+  apply-on-merge against that same saved plan, so what gets applied is what
+  was reviewed. Worth doing in the same epoch that first creates
+  `environments/`.
+- **Make the two config-contract implementations one implementation.** The
+  contract tests added in the test epoch prove `registry.tf` and
+  `internal/config/config.go` agree, which is a real improvement over hoping.
+  Proving agreement is still second best to not having two implementations:
+  the invariants could live in the OpenTofu alone, with the Go side shelling
+  out to a targeted `tofu plan` for its fast pre-flight. That trades
+  millisecond feedback for a subprocess and a provider directory, which is
+  why it was not done now - but it is the version with no drift to detect.
+
+- **Prove the off-site recovery path by restoring it, nightly.** Nothing in
+  this repository has ever been restored, so the honest status of the recovery
+  story is "unknown" rather than "working". The test framework now has the
+  right shape for it: a `restore`-tagged tier on the self-hosted runner that
+  pulls the latest age-encrypted state dump and the latest CloudNativePG base
+  backup, restores both into a throwaway target, asserts the state parses and
+  the database answers, then tears it down. It needs the disposable site above,
+  which makes that idea a prerequisite rather than a nice-to-have. See
+  `docs/state-and-secret-rotation.md` for the rest of the off-site hardening
+  list - bucket locks, per-prefix credentials, a second vendor, and key
+  custody for the age identity.

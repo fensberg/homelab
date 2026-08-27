@@ -47,7 +47,16 @@ func Sterilize(ctx *run.Context, quiet bool) error {
 // and sterilizing whatever secrets remain is still correct.
 func EmergencyDestroy(ctx *run.Context) bool {
 	run.Warn("Run did not complete. Tearing down so nothing is left orphaned.")
+	return tearDown(ctx)
+}
 
+// tearDown is the teardown itself, shared by the failure route
+// (EmergencyDestroy, above) and the deliberate one (Destroy, in destroy.go).
+// One implementation on purpose: the ordering below - migrate state out of
+// the cluster before destroying the cluster, and never sterilize after a
+// destroy that failed - was learned the hard way once, and a second copy of
+// it is a second place to get it wrong.
+func tearDown(ctx *run.Context) bool {
 	if _, err := os.Stat(ctx.BackendPgOn); err == nil {
 		run.Warn("State lives in Postgres, inside the cluster this destroy is about to tear down - migrating it back to local first. Destroying in dependency order kills the database hosting this state before the VMs themselves are reached, which would otherwise strand the destroy partway through with no way to record what it had already done.")
 		if err := demigrateStateToLocal(ctx); err != nil {
@@ -98,6 +107,24 @@ func demigrateStateToLocal(ctx *run.Context) error {
 	)
 }
 
+// The break-glass path below rebuilds the state database's connection string
+// from first principles, which means restating values that variables.tf also
+// declares. They are named here rather than written inline so
+// phases/contract_test.go can assert they still match the OpenTofu source -
+// turning a duplication the comment below merely acknowledges into one a test
+// actually enforces.
+const (
+	// variables.tf: local.state_db_nodeport / state_db_name / state_db_owner.
+	stateDBNodePort = 30432
+	stateDBName     = "tofu_state"
+	stateDBOwner    = "tofu"
+
+	// variables.tf: node_ips is cidrhost(local.node_cidr, 100 + i), and
+	// node_cidr is "10.<octet>.10.0/24", so the first control-plane node -
+	// the one hosting the NodePort - is always at .10.100.
+	stateDBFirstNodeHost = 100
+)
+
 // buildStateConnStr reconstructs the pg backend's connection string from the
 // rendered config plus the same fixed locals database.tf itself uses
 // (state_db_nodeport/name/owner - see variables.tf), rather than reading it
@@ -118,16 +145,9 @@ func buildStateConnStr(ctx *run.Context) (connStr, host string, port int, err er
 		return "", "", 0, fmt.Errorf("site %q not found in rendered config", ctx.Site)
 	}
 
-	// Mirrors variables.tf's node_cidr ("10.<octet>.10.0/24") and its first
-	// host (100 + 0), and database.tf's state_db_nodeport/name/owner locals.
-	const (
-		nodePort = 30432
-		dbName   = "tofu_state"
-		dbOwner  = "tofu"
-	)
-	host = fmt.Sprintf("10.%d.10.100", site.Octet)
+	host = fmt.Sprintf("10.%d.10.%d", site.Octet, stateDBFirstNodeHost)
 	connStr = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=require",
-		dbOwner, site.State.DBPassword, host, nodePort, dbName)
+		stateDBOwner, site.State.DBPassword, host, stateDBNodePort, stateDBName)
 
-	return connStr, host, nodePort, nil
+	return connStr, host, stateDBNodePort, nil
 }

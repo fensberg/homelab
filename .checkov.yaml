@@ -24,3 +24,11 @@ skip-path:
   # heuristic is fragile and would just recur on the next fixture; excluding
   # the directory is the same call already made for flux-system above.
   - management/cluster/tests
+  # The test trees. tests/go holds Go source with deliberately fake
+  # credentials in its fixtures and assertions, and node_modules under
+  # tests/ would be third-party code this repository does not own. Same
+  # reasoning as the fixtures directory above: a secrets scanner cannot tell
+  # a fake credential from a real one by shape alone, and these are all fake
+  # by construction.
+  - tests
+  - node_modules

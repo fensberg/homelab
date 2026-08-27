@@ -29,7 +29,14 @@ spec:
   # Continuous WAL archiving plus base backups to object storage. This is what
   # point-in-time recovery restores from.
   backup:
-    retentionPolicy: "30d"
+    # Seven days, not thirty. This database holds OpenTofu state and nothing
+    # else - a few hundred kilobytes - but WAL and base backups accumulate in
+    # the same bucket as the state dumps, and this prefix is the one that
+    # actually grows. A week is a real point-in-time-recovery window: long
+    # enough to notice corruption and rewind past it, short enough that
+    # storage stays flat. The estate itself is reproducible by re-running
+    # ignition, so a longer window buys less here than it would elsewhere.
+    retentionPolicy: "7d"
     barmanObjectStore:
       destinationPath: s3://${OBJECT_STORAGE_BUCKET}/postgres
       endpointURL: ${OBJECT_STORAGE_ENDPOINT}

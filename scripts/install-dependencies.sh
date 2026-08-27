@@ -65,6 +65,53 @@ else
 	ok "go ${GO_VERSION} installed"
 fi
 
+step "Node.js (pinned)"
+# Needed only by the JavaScript/TypeScript test tier (vitest, playwright,
+# tsc - see tests/README.md). Nothing in the ignition path touches Node, so a
+# failure here does not stop the button working; `task test:js` self-skips
+# when it is absent.
+#
+# Installed from the official tarball rather than apt for the same reason Go
+# is: Debian ships whatever it ships, and this project pins. Both checksums
+# are recorded here rather than fetched from SHASUMS256.txt at run time -
+# fetching the checksum from the same place as the artefact proves only that
+# the download was not corrupted in transit, not that it is the file this
+# repository was tested against.
+NODE_VERSION=24.19.0
+case "$GOARCH" in
+amd64) NODE_ARCH=x64 NODE_SHA256=14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647 ;;
+arm64) NODE_ARCH=arm64 NODE_SHA256=01443c1e1a29e531ccad5a46fefa6df490d2189c49f7955904aecdbb0fe86fdc ;;
+esac
+if has node; then
+	skip "node already present ($(node --version))"
+else
+	info "downloading node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"
+	curl -fsSL -o "$TMP/node.tar.xz" \
+		"https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"
+	echo "${NODE_SHA256}  $TMP/node.tar.xz" | sha256sum -c -
+	sudo rm -rf /usr/local/node
+	sudo mkdir -p /usr/local/node
+	sudo tar -C /usr/local/node --strip-components=1 -xJf "$TMP/node.tar.xz"
+	for bin in node npm npx corepack; do
+		sudo ln -sf "/usr/local/node/bin/${bin}" "/usr/local/bin/${bin}"
+	done
+	ok "node ${NODE_VERSION} installed"
+fi
+
+step "pnpm (pinned by package.json)"
+# corepack reads the "packageManager" field in package.json and installs
+# exactly that version, so the pin lives with the project rather than in this
+# script - one place to change it, and CI reads the same field.
+if has pnpm; then
+	skip "pnpm already present ($(pnpm --version))"
+elif has corepack; then
+	info "activating pnpm via corepack"
+	sudo COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack enable --install-directory /usr/local/bin
+	ok "pnpm activated"
+else
+	warn "corepack not found - the JavaScript test tier will be skipped"
+fi
+
 step "OpenTofu (pinned)"
 TOFU_VERSION=1.12.6
 if has tofu; then
@@ -104,7 +151,7 @@ else
 fi
 
 step "talosctl (pinned)"
-TALOSCTL_VERSION=v1.11.2
+TALOSCTL_VERSION=v1.13.8
 if has talosctl; then
 	skip "talosctl already present"
 else
@@ -214,4 +261,5 @@ info "wiring pre-commit into git hooks"
 ok "pre-commit hook installed"
 
 echo
-ok "all dependencies present. Run 'task start' to ignite."
+ok "all dependencies present."
+info "Run 'task test' to check everything still behaves, then 'task start' to ignite."

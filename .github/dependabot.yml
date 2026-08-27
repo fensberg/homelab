@@ -30,6 +30,28 @@ updates:
     cooldown:
       default-days: 7
 
+  # The test-only Go module, tracked separately from /scripts/ignite because
+  # it is a separate module with a completely different dependency profile:
+  # ignite has none at all, and this one has Terratest's ~280. Keeping them
+  # apart is what stops a Terratest bump ever appearing as a pull request
+  # against the program that can destroy infrastructure.
+  - package-ecosystem: gomod
+    directory: /tests/go
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+
+  # The JavaScript/TypeScript test toolchain. devDependencies only - there is
+  # no application here yet - so a bump can break the Test lane but can never
+  # reach anything that runs against real infrastructure.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+
 # What Dependabot has no ecosystem for at all, so it isn't a config gap here:
 # - Ansible Galaxy collections (management/hypervisor/requirements.yml)
 # - A Flux HelmRelease's chart version (clusters/management/.../longhorn.yaml)

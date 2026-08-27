@@ -1,0 +1,85 @@
+{
+  "organization": {
+    "name": "Fixture Org"
+  },
+  "source_control": {
+    "repo_url": "https://example.invalid/fixture/repo",
+    "token": "fixture-token"
+  },
+  "sites": {
+    "site0": {
+      "name": "Fixture Site",
+      "octet": 10,
+      "control_plane_count": 3,
+      "hypervisor": {
+        "provider": "proxmox",
+        "vault_provider": "proxmox",
+        "token_id": "fixture@pve!fixture",
+        "token_secret": "00000000-0000-0000-0000-000000000000",
+        "nodes": {
+          "node0": {
+            "hostname": "fixture-hv0",
+            "ip": "10.10.0.5"
+          }
+        }
+      },
+      "overlay_network": {
+        "provider": "tailscale",
+        "vault_provider": "tailscale",
+        "domain": "fixture.ts.net",
+        "client_id": "fixture-client-id",
+        "client_secret": "fixture-client-secret"
+      },
+      "object_storage": {
+        "provider": "cloudflare",
+        "vault_provider": "cloudflare",
+        "account_id": "fixture-account-id",
+        "admin_token": "fixture-admin-token",
+        "access_key_id": "f1e2d3c4b5a697887766554433221100",
+        "secret_access_key": "fixture-secret-access-key",
+        "bucket": "fixture-state-bucket"
+      },
+      "state": {
+        "db_password": "fixture-db-password",
+        "backup_recipient": "age1fixturefixturefixturefixturefixturefixturefixturefixture"
+      }
+    },
+    "site1": {
+      "name": "Second Fixture Site",
+      "octet": 10,
+      "control_plane_count": 3,
+      "hypervisor": {
+        "provider": "proxmox",
+        "vault_provider": "proxmox",
+        "token_id": "fixture@pve!fixture",
+        "token_secret": "00000000-0000-0000-0000-000000000000",
+        "nodes": {
+          "node0": {
+            "hostname": "fixture-hv0",
+            "ip": "10.10.0.5"
+          }
+        }
+      },
+      "overlay_network": {
+        "provider": "tailscale",
+        "vault_provider": "tailscale",
+        "domain": "fixture.ts.net",
+        "client_id": "fixture-client-id",
+        "client_secret": "fixture-client-secret"
+      },
+      "object_storage": {
+        "provider": "cloudflare",
+        "vault_provider": "cloudflare",
+        "account_id": "fixture-account-id",
+        "admin_token": "fixture-admin-token",
+        "access_key_id": "f1e2d3c4b5a697887766554433221100",
+        "secret_access_key": "fixture-secret-access-key",
+        "bucket": "fixture-state-bucket"
+      },
+      "state": {
+        "db_password": "fixture-db-password",
+        "backup_recipient": "age1fixturefixturefixturefixturefixturefixturefixturefixture"
+      }
+    }
+  }
+}

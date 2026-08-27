@@ -141,3 +141,64 @@ func filepathBase(path string) string {
 	}
 	return path[i+1:]
 }
+
+// CmdStdin is Cmd with bytes fed to the child's stdin instead of the
+// terminal's. It exists so that sensitive material can be handed to another
+// process without going through a file: writing a secret to disk and deleting
+// it afterwards assumes the delete happens, that nothing copied the file
+// first, and that no backup, crash dump or snapshot caught it in between.
+// A pipe makes all three assumptions unnecessary.
+//
+// Same reasoning as Cmd above: name is always a hardcoded literal at every
+// call site in this internal package.
+func CmdStdin(dir string, stdin []byte, name string, args ...string) error {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command(name, args...)
+	c.Dir = dir
+	c.Stdin = bytes.NewReader(stdin)
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("%s failed: %w", name, err)
+	}
+	return nil
+}
+
+// CmdOutputBytes is CmdOutput returning the raw bytes, so a caller holding
+// something sensitive can wipe the buffer when it is done. A string could not
+// be wiped - Go strings are immutable, and the bytes stay in the heap until
+// the garbage collector happens to reuse them.
+func CmdOutputBytes(dir, name string, args ...string) ([]byte, error) {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command(name, args...)
+	c.Dir = dir
+	var out bytes.Buffer
+	c.Stdout = &out
+	c.Stderr = os.Stderr
+	err := c.Run()
+	return out.Bytes(), err
+}
+
+// Wipe overwrites a buffer in place. Not a guarantee - the runtime may have
+// copied it during a heap move - but it removes the copy this program is
+// still holding, which is the one it can actually do something about.
+func Wipe(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+// CmdOutputEnv is CmdOutput plus extra environment variables, for tools
+// configured entirely through the environment so that no credential is ever
+// written to a config file on disk.
+func CmdOutputEnv(dir string, extraEnv []string, name string, args ...string) (string, error) {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command(name, args...)
+	c.Dir = dir
+	c.Env = append(os.Environ(), extraEnv...)
+	var out bytes.Buffer
+	c.Stdout = &out
+	c.Stderr = os.Stderr
+	err := c.Run()
+	return strings.TrimSpace(out.String()), err
+}

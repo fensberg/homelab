@@ -1,0 +1,97 @@
+{
+  "_comment": [
+    "The index of the config-contract corpus. Every case here is run twice:",
+    "once through the HCL implementation of the invariants (registry.tf, driven",
+    "by ../registry.tftest.hcl) and once through the Go implementation of the",
+    "same invariants (config.ResolveSiteNetwork, driven by",
+    "scripts/ignite/internal/config/contract_test.go). Both must reach the same",
+    "verdict on every case, because both are gates a real deployment passes",
+    "through and either one being wrong lets a bad config reach a provider.",
+    "",
+    "'name' is not decoration: contract_test.go asserts that each one appears as",
+    "a run block in registry.tftest.hcl, and that every .json file in this",
+    "directory is claimed by at least one case. Adding a fixture to one side",
+    "only fails the build rather than quietly halving its coverage."
+  ],
+  "cases": [
+    {
+      "name": "valid_config_plans_cleanly",
+      "fixture": "valid.json",
+      "site": "site0",
+      "valid": true,
+      "because": "The baseline every other fixture is a single mutation away from."
+    },
+    {
+      "name": "unknown_site_fails_its_precondition",
+      "fixture": "valid.json",
+      "site": "not-a-site",
+      "valid": false,
+      "go_error_contains": "unknown site",
+      "because": "-site names a key that has to exist before anything else is worth checking."
+    },
+    {
+      "name": "vendor_mismatch_fails_the_vault_attestation_precondition",
+      "fixture": "vendor-mismatch.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "vault item attests",
+      "because": "The vault item's credentials were swapped for another vendor's without updating its provider field."
+    },
+    {
+      "name": "unimplemented_vendor_fails_even_when_config_and_vault_agree",
+      "fixture": "unimplemented-vendor.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "this code implements",
+      "because": "Config and vault agree with each other on a vendor the code does not implement - the case a two-way check cannot see."
+    },
+    {
+      "name": "missing_vault_provider_fails_its_precondition",
+      "fixture": "missing-vault-provider.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "no vault_provider",
+      "because": "A blank attestation is not agreement; it is the absence of one."
+    },
+    {
+      "name": "octet_out_of_range_fails_its_precondition",
+      "fixture": "octet-out-of-range.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "out of range",
+      "because": "Octet 100 collides with the Kubernetes service range at 10.96.0.0/12."
+    },
+    {
+      "name": "duplicate_octet_fails_its_precondition",
+      "fixture": "duplicate-octet.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "duplicate octet",
+      "because": "Two sites owning one /16 present as a broken network rather than a config mistake."
+    },
+    {
+      "name": "no_hypervisor_nodes_fails_its_precondition",
+      "fixture": "no-hypervisor-nodes.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "no hypervisor nodes",
+      "because": "There is nowhere to place a VM, and every later phase assumes nodes[0] exists."
+    },
+    {
+      "name": "control_plane_count_below_one_fails_its_precondition",
+      "fixture": "control-plane-count-zero.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "at least 1",
+      "because": "A control plane with no members is not a cluster."
+    },
+    {
+      "name": "aws_shaped_access_key_fails_on_a_cloudflare_site",
+      "fixture": "aws-shaped-key.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "AWS credential",
+      "because": "Catches the careless swap, where credentials are pasted in without touching any declaration at all."
+    }
+  ]
+}

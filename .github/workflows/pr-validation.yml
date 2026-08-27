@@ -212,12 +212,10 @@ jobs:
           tofu init -backend=false -input=false
           tofu validate
 
-      # Tests the locals/precondition logic in registry.tf against fixture
-      # configs (management/cluster/tests/*.tftest.hcl) - never the real
-      # rendered config, so this needs nothing this job doesn't already have.
-      - name: Test OpenTofu
-        working-directory: management/cluster
-        run: tofu test
+      # `tofu test` used to run here. It moved to the Test lane below, along
+      # with `go test`: this lane answers "does it resolve", that one answers
+      # "does it behave", and one owner per check is the rule everywhere else
+      # in this file too.
 
       - name: Install kubeconform
         run: |
@@ -277,10 +275,171 @@ jobs:
         run: |
           go vet ./...
           go build -o /dev/null .
-          go test ./...
+
+      # The test-only module is deliberately NOT vetted here. It has real
+      # dependencies, so vetting it needs proxy.golang.org, and this lane's
+      # egress allowlist does not carry it - on purpose. scripts/ignite has
+      # no dependencies, and a Validate lane that cannot reach a module proxy
+      # at all is the cheapest possible proof of that. It is vetted in the
+      # Test lane instead, which already has both the endpoints and the
+      # module cache.
 
   # -----------------------------------------------------------------
-  # LANE 4: Static analysis - the slow one
+  # LANE 4: Does it behave?
+  # -----------------------------------------------------------------
+  # Validate above proves the code resolves. This proves it does the right
+  # thing: the Go unit tests, the config-contract tests that hold
+  # scripts/ignite and management/cluster/registry.tf to the same rules, the
+  # OpenTofu invariant tests, and the JavaScript/TypeScript tier.
+  #
+  # Everything here is hermetic - no 1Password, no hypervisor, no cluster.
+  # The tiers that need a real estate live in integration-tests.yml, on a
+  # self-hosted runner, and cannot be triggered by a pull request. That
+  # separation is the point: a fork PR runs this lane in full and still cannot
+  # reach a credential or a machine.
+  #
+  # One lane rather than three because the three steps share a checkout and
+  # most of a toolchain, and splitting them would triple the install time to
+  # buy a slightly more specific red X. The step names carry that information
+  # already.
+  test:
+    name: "Test (go, tofu, vitest)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TOFU_VERSION: "1.10.6"
+      GO_VERSION: "1.26.7"
+      NODE_VERSION: "24.19.0"
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          # Not a guessed list: every entry here is already proven under
+          # egress-policy: block by another lane in this same file. The
+          # OpenTofu and Go entries are the Validate lane's list verbatim
+          # (same installer, same setup-go, same provider downloads); the
+          # nodejs.org and registry.npmjs.org entries come from the Format
+          # lane, which already builds a Node toolchain for prettier under
+          # block. Nothing here is new traffic - it is two existing lanes'
+          # traffic in one job.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            get.opentofu.org:443
+            github.com:443
+            go.dev:443
+            nodejs.org:443
+            objects.githubusercontent.com:443
+            proxy.golang.org:443
+            registry.npmjs.org:443
+            registry.opentofu.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # --- Go -------------------------------------------------------------
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # tests/go is the only module here with dependencies to cache;
+          # scripts/ignite has none, so there is no go.sum of its own to key on.
+          cache-dependency-path: tests/go/go.sum
+
+      - name: Unit and contract tests (Go)
+        working-directory: scripts/ignite
+        run: go test -covermode=atomic -coverprofile=coverage-go.out ./...
+
+      # Every build tag, because `go vet ./...` compiles none of the tiers
+      # that carry one. A compile error in the integration or e2e tier should
+      # surface on the pull request that caused it, not the night someone
+      # first reaches for that suite.
+      - name: Vet the test module (every tier)
+        working-directory: tests/go
+        run: |
+          go vet ./...
+          go vet -tags=api ./...
+          go vet -tags=integration ./...
+          go vet -tags=e2e ./...
+
+      # Reported on every run, enforced as a ratchet: a pull request may not
+      # push coverage below the committed floor, and is free to leave it
+      # exactly where it found it. See tests/coverage-baseline.json.
+      - name: Coverage gate (Go)
+        run: |
+          pct="$(go -C scripts/ignite tool cover -func=coverage-go.out \
+            | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
+          bash scripts/coverage-gate.sh go "$pct"
+
+      # --- OpenTofu --------------------------------------------------------
+      - name: Install OpenTofu
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+          chmod +x install-opentofu.sh
+          ./install-opentofu.sh --install-method standalone \
+            --opentofu-version "${TOFU_VERSION}"
+          rm install-opentofu.sh
+
+      # Fixture configs from management/cluster/tests/fixtures, never the real
+      # rendered one, so this needs no credentials. The Go contract tests
+      # above assert that this corpus and the Go one are the same corpus - a
+      # case added to one side and forgotten on the other fails there.
+      - name: Invariant tests (OpenTofu)
+        working-directory: management/cluster
+        run: |
+          tofu init -backend=false -input=false
+          tofu test
+
+      # Untagged, so this compiles and runs only the hermetic tests in
+      # tests/go: the repository-invariant checks and the state-encryption
+      # cutover rehearsal. The integration, api and e2e tiers all carry a
+      # build tag and are not reachable here.
+      #
+      # After the OpenTofu install above, not before - the cutover rehearsal
+      # drives a real `tofu` against a scratch workspace.
+      - name: Repository invariants and the encryption rehearsal
+        working-directory: tests/go
+        run: go test ./...
+
+      # --- JavaScript / TypeScript ----------------------------------------
+      # Before setup-node, so that setup-node's pnpm cache has a pnpm to
+      # find. The version comes from package.json's packageManager field, so
+      # the pin lives with the project rather than in this file.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The type checker, not a linter: it reads the same tsconfig.json a
+      # developer's editor does, and it is the owner of TypeScript
+      # correctness here - see .github/super-linter.vars.
+      - name: Typecheck (tsc)
+        run: pnpm typecheck
+
+      - name: Unit tests (vitest)
+        run: pnpm test:coverage
+
+      - name: Coverage gate (JS)
+        run: |
+          pct="$(node -e 'const p=require("./coverage/js/coverage-summary.json").total.statements.pct;console.log(Number.isFinite(p)?p:0)' 2>/dev/null || echo 0)"
+          bash scripts/coverage-gate.sh js "$pct"
+
+  # -----------------------------------------------------------------
+  # LANE 5: Static analysis - the slow one
   # -----------------------------------------------------------------
   # checkov, ansible-lint, tflint, shellcheck, markdownlint, yamllint,
   # PSScriptAnalyzer, zizmor. Every formatter it would otherwise duplicate is
@@ -302,7 +461,7 @@ jobs:
           # checkov checks pypi on startup; and the Go linters auto-download
           # a matching toolchain via GOPROXY/GOSUMDB whenever the image's
           # bundled Go is older than go.mod's pinned version (scripts/ignite
-          # pins go 1.27, deliberately - see the root CLAUDE.md - so this is
+          # pins go 1.26, deliberately - see the root CLAUDE.md - so this is
           # not a version to relax to dodge the network requirement).
           egress-policy: block
           allowed-endpoints: >
@@ -340,7 +499,7 @@ jobs:
           VALIDATE_ALL_CODEBASE: false
 
   # -----------------------------------------------------------------
-  # LANE 5: Static Application Security Testing (SAST)
+  # LANE 6: Static Application Security Testing (SAST)
   # -----------------------------------------------------------------
   semgrep:
     name: "Logic Scan (Semgrep)"
@@ -378,7 +537,7 @@ jobs:
           SEMGREP_RULES: "p/default"
 
   # -----------------------------------------------------------------
-  # LANE 6: Infrastructure Misconfigurations + Dependency Vulnerabilities
+  # LANE 7: Infrastructure Misconfigurations + Dependency Vulnerabilities
   # (IaC + vuln) - the sole owner of Trivy. Super-Linter bundles its own
   # Trivy invocation, but VALIDATE_TRIVY is switched off in
   # super-linter.vars so it never runs there: two Trivy invocations with
@@ -437,7 +596,7 @@ jobs:
           skip-dirs: "clusters/management/flux-system"
 
   # -----------------------------------------------------------------
-  # LANE 7: Secrets - waits for nothing
+  # LANE 8: Secrets - waits for nothing
   # -----------------------------------------------------------------
   secrets:
     name: "Secrets Scan (TruffleHog)"

@@ -1,0 +1,143 @@
+name: "Integration Tests"
+
+# The tiers that need a real estate. Deliberately NOT part of PR Validation:
+# a pull request - including one from a fork - must never be able to reach a
+# credential or a machine. Everything a pull request can run is hermetic and
+# lives in pr-validation.yml's Test lane.
+#
+# The e2e tier is deliberately absent from this file. It builds an estate from
+# nothing and destroys it again, and a destructive operation should not be one
+# dropdown selection away in a web UI. It is run by a human, from a
+# workstation, with two environment variables that have to agree:
+#
+#   HOMELAB_TEST_SITE=site1 HOMELAB_E2E_CONFIRM=site1 task test:e2e
+#
+# See tests/README.md.
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Which tier to run"
+        required: true
+        default: "integration"
+        type: choice
+        options:
+          - integration
+          - api
+          - both
+      site:
+        description: "Which site to test against"
+        required: true
+        default: "site0"
+        type: string
+  schedule:
+    # 04:00 UTC daily. The drift check is the reason this runs on a schedule
+    # at all: `tofu plan` against the real state is the only thing in this
+    # repository that can notice somebody changed a VM in the Proxmox web UI,
+    # and it is worth knowing that the morning after rather than the next time
+    # a deploy behaves strangely.
+    - cron: "0 4 * * *"
+
+permissions:
+  contents: read
+
+# One at a time. There is one hypervisor and one cluster; two runs would
+# contend on the same state lock and the same rendered config on disk.
+concurrency:
+  group: integration-tests
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: "Integration (${{ inputs.tier || 'integration' }})"
+    runs-on: self-hosted
+    # Gated on a GitHub environment so the 1Password service-account token
+    # lives behind whatever protection rules that environment carries, rather
+    # than being a repository secret any workflow could reach.
+    environment: integration
+    timeout-minutes: 45
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          # Stays audit, not block, until a real run's egress log gives an
+          # allowed-endpoints list worth trusting. This job talks to 1Password,
+          # Proxmox, Cloudflare, Tailscale, the Kubernetes API and the
+          # OpenTofu registry, and several of those are addresses this
+          # repository deliberately keeps out of git. Guessing them risks
+          # either breaking the run or rubber-stamping an allowlist nobody
+          # checked - the same reasoning, and the same resolution, as
+          # deploy-infrastructure.yml. Transcribe the observed destinations
+          # after the first real run, then flip to block.
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.7"
+          cache-dependency-path: tests/go/go.sum
+
+      # The test tiers read config/management.rendered.json - the same file
+      # the start button reads. Rendering it here is the setup step, and the
+      # Sterilize phase below is the teardown, so this job leaves the runner
+      # in the state it found it.
+      #
+      # -keep-on-failure is what stops ignite sterilizing the workspace the
+      # moment this single phase succeeds. Without it, Render wipes the file
+      # it just wrote and every step below reads nothing.
+      - name: Render the config from 1Password
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SITE: ${{ inputs.site || 'site0' }}
+        run: |
+          go build -C scripts/ignite -o ignite .
+          ./scripts/ignite/ignite -site "$SITE" -phase render -keep-on-failure
+
+      - name: API contract tests
+        if: ${{ inputs.tier == 'api' || inputs.tier == 'both' }}
+        env:
+          HOMELAB_TEST_SITE: ${{ inputs.site || 'site0' }}
+        working-directory: tests/go
+        run: go test -tags=api -timeout 10m -v ./api/...
+
+      # Taken before the assertions below, on purpose. Passively checking how
+      # old the newest backup is would mean nothing: backups otherwise happen
+      # only during an ignition run, which is rare, so a month-old copy would
+      # be both normal and indistinguishable from a backup pipeline that broke
+      # three weeks ago.
+      #
+      # Taking one here exercises the whole path every night - pull state,
+      # encrypt, upload, verify the upload landed, prune the old generation -
+      # and makes "the newest backup is under a day old" a question worth
+      # asking. It is also the repair: if last night's backup was missing or
+      # stale, tonight's fixes it, and if it cannot, this step fails.
+      #
+      # The alert is this workflow failing, which GitHub already emails about.
+      # That is one fewer moving part than any monitoring stack.
+      - name: Take a fresh backup
+        if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
+        env:
+          SITE: ${{ inputs.site || 'site0' }}
+        run: ./scripts/ignite/ignite -site "$SITE" -phase backup -keep-on-failure
+
+      - name: Integration tests
+        if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
+        env:
+          HOMELAB_TEST_SITE: ${{ inputs.site || 'site0' }}
+        working-directory: tests/go
+        run: go test -tags=integration -timeout 20m -v ./integration/...
+
+      # always(), because the whole point is that no secret survives this job
+      # whatever happened above. A self-hosted runner is a long-lived machine:
+      # unlike an ephemeral GitHub-hosted one, a rendered config left behind
+      # here stays behind until something removes it.
+      - name: Sterilize the workspace
+        if: always()
+        env:
+          SITE: ${{ inputs.site || 'site0' }}
+        run: ./scripts/ignite/ignite -site "$SITE" -phase sterilize

@@ -6,11 +6,40 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
+
+// The bounds and the vendor map below are this program's half of a contract
+// it shares with management/cluster/registry.tf, which implements the same
+// rules in HCL so that `tofu plan` fails on a bad config even when the start
+// button is bypassed. Two implementations of one rule can drift, so they are
+// named here rather than written inline, and
+// config/contract_test.go asserts these values still match the ones in the
+// OpenTofu source. Change one and the test names the other.
+const (
+	// OctetMin and OctetMax bound a site's declared octet. Kubernetes
+	// defaults occupy 10.96.0.0/12 (services) and 10.244.0.0/16 (pods);
+	// those are cluster-internal and never routed over the overlay, but
+	// overlapping them makes debugging confusing.
+	OctetMin = 1
+	OctetMax = 95
+)
+
+// RequiredProvidersByConcern is the one vendor this code implements per
+// concern. source_control is absent on purpose: Flux's GitRepository source
+// speaks plain git over HTTPS and works against GitHub, GitLab or Gitea
+// alike, so asserting a vendor the code does not depend on would be noise
+// rather than a guard.
+var RequiredProvidersByConcern = map[string]string{
+	"hypervisor":      "proxmox",
+	"overlay_network": "tailscale",
+	"object_storage":  "cloudflare",
+}
 
 type Config struct {
 	Organization  Organization    `json:"organization"`
@@ -145,27 +174,39 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		sort.Strings(dupes)
 		return nil, fmt.Errorf("duplicate octet(s) in sites: %s. Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network", strings.Join(dupes, ", "))
 	}
-	if site.Octet < 1 || site.Octet > 95 {
-		return nil, fmt.Errorf("octet %d out of range for site '%s'. Use 1-95; Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16", site.Octet, name)
+	if site.Octet < OctetMin || site.Octet > OctetMax {
+		return nil, fmt.Errorf("octet %d out of range for site '%s'. Use %d-%d; Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16", site.Octet, name, OctetMin, OctetMax)
 	}
 
-	// The vault attests what its credentials are, and it must agree with
-	// what the config declares. Comparing the config against the code alone
-	// would compare two files that always change together.
-	type concern struct {
-		label, declared, attested string
+	// Declare the vendor three times and make them agree: this code
+	// implements one vendor per concern, the config declares one in
+	// `provider` where it is reviewable in git, and the 1Password item
+	// attests one in `vault_provider`, travelling with the credentials
+	// themselves. registry.tf checks all three; so does this, so that a
+	// value reaching a provider through the Go path is held to the same
+	// standard as one reaching it through tofu.
+	declared := map[string]string{
+		"hypervisor":      site.Hypervisor.Provider,
+		"overlay_network": site.OverlayNetwork.Provider,
+		"object_storage":  site.ObjectStorage.Provider,
 	}
-	concerns := []concern{
-		{"hypervisor", site.Hypervisor.Provider, site.Hypervisor.VaultProvider},
-		{"overlay_network", site.OverlayNetwork.Provider, site.OverlayNetwork.VaultProvider},
-		{"object_storage", site.ObjectStorage.Provider, site.ObjectStorage.VaultProvider},
+	attested := map[string]string{
+		"hypervisor":      site.Hypervisor.VaultProvider,
+		"overlay_network": site.OverlayNetwork.VaultProvider,
+		"object_storage":  site.ObjectStorage.VaultProvider,
 	}
-	for _, c := range concerns {
-		if strings.TrimSpace(c.attested) == "" {
-			return nil, fmt.Errorf("sites.%s.%s has no vault_provider. The 1Password item must attest which vendor its credentials belong to", name, c.label)
+	// Sorted so a config with several concerns wrong always reports the
+	// same one first, rather than whichever the map happened to yield.
+	for _, concern := range slices.Sorted(maps.Keys(RequiredProvidersByConcern)) {
+		want := RequiredProvidersByConcern[concern]
+		if declared[concern] != want {
+			return nil, fmt.Errorf("provider mismatch in sites.%s.%s - the config declares '%s' but this code implements '%s'. Change the code before changing the declaration", name, concern, declared[concern], want)
 		}
-		if c.declared != c.attested {
-			return nil, fmt.Errorf("vendor mismatch in sites.%s.%s - the config declares '%s' but the vault item attests '%s'. Either the wrong item is referenced, or its credentials were replaced without updating its provider field", name, c.label, c.declared, c.attested)
+		if strings.TrimSpace(attested[concern]) == "" {
+			return nil, fmt.Errorf("sites.%s.%s has no vault_provider. The 1Password item must attest which vendor its credentials belong to", name, concern)
+		}
+		if attested[concern] != want {
+			return nil, fmt.Errorf("vendor mismatch in sites.%s.%s - the config declares '%s' but the vault item attests '%s'. Either the wrong item is referenced, or its credentials were replaced without updating its provider field", name, concern, declared[concern], attested[concern])
 		}
 	}
 

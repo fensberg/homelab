@@ -56,28 +56,30 @@ it can write backups but cannot read them back.`, ctx.Site)
 	}
 
 	stamp := time.Now().Format("20060102-150405")
-	tmpPlain := filepath.Join(os.TempDir(), fmt.Sprintf("tofu-state-%s.json", stamp))
-	tmpCipher := tmpPlain + ".age"
-	defer func() {
-		// The plaintext state is the most sensitive artefact this program
-		// ever touches. Remove it whatever happened above.
-		os.Remove(tmpPlain)
-		os.Remove(tmpCipher)
-	}()
+	// Only the ciphertext ever becomes a file. The plaintext is held in
+	// memory and piped straight into age.
+	tmpCipher := filepath.Join(os.TempDir(), fmt.Sprintf("tofu-state-%s.json.age", stamp))
+	defer os.Remove(tmpCipher)
 
 	// Pull from whichever backend is currently authoritative. After the
 	// Migrate phase that is Postgres, which is exactly what we want to back
 	// up - the local file is already gone by then.
+	//
+	// The plaintext never becomes a file. It used to: state was written to
+	// /tmp, age-encrypted from there, and both removed in a defer. That is
+	// the weaker shape, and it is the one this project's own rule argues
+	// against - deleting a file assumes the delete happens, that nothing
+	// copied it first, and that no crash dump or snapshot caught it in
+	// between. Piping it into age's stdin makes all three assumptions
+	// unnecessary. The buffer is wiped as soon as age has consumed it.
 	run.Info("pulling the current state")
-	state, err := run.CmdOutput(ctx.ClusterDir, "tofu", "state", "pull")
+	state, err := run.CmdOutputBytes(ctx.ClusterDir, "tofu", "state", "pull")
+	defer run.Wipe(state)
 	if err != nil {
 		return fmt.Errorf("tofu state pull: %w", err)
 	}
 	if len(state) < 100 {
 		return fmt.Errorf("state pull returned only %d bytes - refusing to upload it", len(state))
-	}
-	if err := os.WriteFile(tmpPlain, []byte(state), 0o600); err != nil {
-		return err
 	}
 
 	recipientPreview := site.State.BackupRecipient
@@ -85,9 +87,11 @@ it can write backups but cannot read them back.`, ctx.Site)
 		recipientPreview = recipientPreview[:20]
 	}
 	run.Info("encrypting to " + recipientPreview + "...")
-	if err := run.Cmd(ctx.ClusterDir, "age", "--recipient", site.State.BackupRecipient, "--output", tmpCipher, tmpPlain); err != nil {
+	if err := run.CmdStdin(ctx.ClusterDir, state, "age",
+		"--recipient", site.State.BackupRecipient, "--output", tmpCipher); err != nil {
 		return fmt.Errorf("age encrypt: %w", err)
 	}
+	run.Wipe(state)
 
 	// rclone is configured entirely through environment variables scoped to
 	// this process, so no credentials are ever written to a config file on
@@ -112,6 +116,12 @@ it can write backups but cannot read them back.`, ctx.Site)
 	}
 
 	run.Ok("encrypted state backed up to Cloudflare R2")
+
+	// Bounded storage, but never at the cost of the only copy. The prune
+	// re-lists the bucket and refuses to delete anything unless the upload
+	// just made is actually in that listing - "rclone exited zero" is a claim
+	// about a request, not about what is in the bucket.
+	pruneOldBackups(ctx, rcloneEnv, dest, stamp)
 
 	// The private identity is deliberately absent from the config contract:
 	// this program can write backups and must not be able to read them. It

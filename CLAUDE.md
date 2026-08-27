@@ -52,6 +52,15 @@ belongs in an epoch record.
   The one place this cannot reach is Terraform resource names —
   `tailscale_tailnet_key` is irreducibly vendor-specific — so the abstraction lives at the config and
   secrets layer, which is what keeps a vendor swap to a single `.tf` file.
+- **Deletion is not the security property; being worthless is.** Sterilizing
+  the workspace assumes the delete happened and that nothing copied the file
+  first. So the Backup phase never writes plaintext state to disk at all - it
+  pipes `tofu state pull` straight into `age` and wipes the buffer - and the
+  standing plan is to encrypt state at rest with OpenTofu's own state
+  encryption, keyed from 1Password. See
+  [`docs/state-and-secret-rotation.md`](docs/state-and-secret-rotation.md) for
+  what a leaked state file exposes, the cutover procedure, and the rotation
+  runbooks for everything encryption cannot cover.
 - **State migrates local -> Postgres, and is backed up twice.** The first
   apply runs on local state; once the cluster hosts Postgres, state moves
   there and the local copy is destroyed. CloudNativePG streams WAL and base
@@ -87,6 +96,16 @@ ignite phase (`render-secrets`, `verify`, `configure-hypervisor`,
 of them can reach the Compute phase - an interrupted one leaves stale
 secrets at worst, recoverable with `task clean-secrets`, never an orphaned
 VM.
+
+**Tearing it down is `ignite -destroy`**, run directly for the same
+signal-handling reason `start` is. It renders the config first, which is the
+credential check rather than a formality - no 1Password session means no
+Proxmox token and no hypervisor endpoint, so the command is inert in the
+hands of anyone without vault access. `-confirm` must name the site a second
+time, which is the guard against a typo by somebody who does hold it.
+Interrupting a destroy deliberately does _not_ sterilize: wiping state
+part-way through a teardown is how VMs get orphaned, so it waits for tofu to
+release its lock and leaves everything in place to be re-run.
 
 **`workstation/` provisions the Linux machine this runs from.** It is
 deliberately independent from `management/` - no shared config, no
@@ -138,6 +157,7 @@ config entry.
 | `management/cluster/`        | OpenTofu: VMs, Talos, overlay network, storage, Flux       |
 | `clusters/management/`       | Flux-reconciled manifests for this cluster                 |
 | `config/management.tpl.json` | The one config: sites, topology and every secret reference |
+| `tests/`                     | Everything above the unit tier — see `tests/README.md`     |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator
 and the database itself are declared in `clusters/management/` and reconciled
@@ -146,7 +166,7 @@ depends on it and uses them.
 
 ## CI
 
-- `pr-validation.yml` — seven lanes, all running in parallel, Format
+- `pr-validation.yml` — eight lanes, all running in parallel, Format
   included. Formatting is enforced locally first (the git hook
   `./scripts/install-dependencies.sh` wires up via `pre-commit install`) -
   shift left, catch it in seconds on the machine that wrote it. **Format**'s
@@ -161,7 +181,11 @@ depends on it and uses them.
   and Trivy below. **Validate** proves the code resolves: `tofu validate`
   against a placeholder config, and `kustomize build` piped through
   `kubeconform` with the Flux substitutions applied - Go vetting/building
-  lives here too, for the same reason. **Analyze** is Super-Linter, for
+  lives here too, for the same reason. **Test** is the behaviour half of Validate: Go unit and
+  contract tests, `tofu test` against the fixture corpus, and the
+  JavaScript/TypeScript tier. Everything in it is hermetic, which is what
+  lets a fork's pull request run it in full without reaching a credential.
+  **Analyze** is Super-Linter, for
   everything not already owned by a dedicated lane. **Semgrep**, **Trivy**
   and **Secrets** are the security lanes, and overlap with each other and
   with Analyze on purpose - none of them comes out.
@@ -178,9 +202,37 @@ depends on it and uses them.
   which stays on `audit` and says why in a comment: verification works by
   calling the API of whichever vendor issued a leaked key, and an allowlist
   would silently downgrade verified findings to unverified rather than fail.
+- `integration-tests.yml` — the test tiers that need a real estate, on the
+  self-hosted runner: nightly, plus manual dispatch. Not reachable from a
+  pull request, deliberately. The nightly run exists mostly for one
+  assertion no pull request can make - a `tofu plan` against real state,
+  which is the only thing here that can notice somebody changed a VM in the
+  Proxmox web UI. The destructive e2e tier is absent from CI entirely and is
+  run by hand; see `tests/README.md`.
 - `deploy-infrastructure.yml` — applies OpenTofu on a self-hosted runner.
   Path-filtered to `environments/**` and `modules/**`, so Ignition changes
   never trigger it. That is intentional.
+
+## Testing
+
+Tests come before the code they test. `tests/README.md` is the map; the two
+things worth knowing without reading it:
+
+**Five tiers, one line that matters.** unit and contract are hermetic - no
+1Password, no hypervisor, no credentials - so a pull request runs them in
+full, including one from a fork. integration, api and e2e need a real estate
+and never run on a pull request.
+
+**The config contract is checked, not assumed.** `registry.tf` and
+`internal/config/config.go` implement the same invariants twice, so a bad
+config is refused whether it arrives through the start button or a bare
+`tofu plan`. `management/cluster/tests/fixtures/manifest.json` is the single
+corpus both sides are run against, and the contract tests fail if a case
+exists on one side and not the other. Adding an invariant means adding it in
+both places and adding a case to that manifest.
+
+Coverage is a ratchet, not a threshold: `tests/coverage-baseline.json` is a
+floor a pull request may not drop below and is free to leave alone.
 
 ## Conventions
 
@@ -193,10 +245,14 @@ depends on it and uses them.
   `.github/super-linter.vars`. Nothing is configured in both places - two
   copies of prettier, on two versions, is what put formatting errors on a pull
   request that `pre-commit` had just passed.
-- Three verbs, fastest first: `task fix` formats (seconds, no Docker),
-  `task validate` proves the OpenTofu and manifests resolve, `task lint` runs
-  the slow analysis image. Run the first two before every push and the third
-  before opening a pull request.
+- Four verbs, fastest first: `task fix` formats (seconds, no Docker),
+  `task validate` proves the OpenTofu and manifests resolve, `task test`
+  proves they behave, `task lint` runs the slow analysis image. The first
+  three run on every push (the `pre-push` hook wires up `validate` and
+  `test`); the fourth is worth running before opening a pull request.
+  `validate` and `test` are separate on purpose - "does it resolve" and
+  "does it do the right thing" are different questions, and one owner per
+  check is the rule everywhere else here too.
 - **Tests are written before the code they test, in every language this
   project uses one for.** The same shift-left reasoning as formatting, one
   step further left: a defect caught while writing the test is cheaper than
@@ -205,13 +261,16 @@ depends on it and uses them.
   the actual, repeated failure mode in this project's own history (the
   self-healing-import fix, the Longhorn bugs, the first full ignition run).
   Go logic in `scripts/ignite` is tested with the standard library's own
-  `testing` package - no third-party assertion library, since none of this
-  module's other code needed one either. OpenTofu logic (`locals`,
-  `precondition`/`postcondition` blocks) is tested with OpenTofu's own native
-  `tofu test` and `.tftest.hcl` files - not a custom harness, the same
-  vendor-provided tool this project already runs. Both run in `task
-validate`, alongside `go vet`/`go build`/`tofu validate`, so a broken test
-  is caught in the same seconds-not-minutes place formatting already is.
+  `testing` package - no third-party assertion library, because that module
+  has no third-party anything, and keeping it that way is what stops a test
+  dependency ever reaching the program that can destroy infrastructure. The
+  tiers that need a real estate live in their own module and do use
+  Terratest; see `tests/README.md` for why that separation matters. OpenTofu
+  logic (`locals`, `precondition`/`postcondition` blocks) is tested with
+  OpenTofu's own native `tofu test` and `.tftest.hcl` files - not a custom
+  harness, the same vendor-provided tool this project already runs. Both run
+  in `task test`, so a broken test is caught in the same
+  seconds-not-minutes place formatting already is.
 - **Formatting is enforced locally first, shifted as far left as this repo
   can reach.** `./scripts/install-dependencies.sh` wires `pre-commit` into the
   `pre-commit` git hook, so a formatting mistake is caught on the machine

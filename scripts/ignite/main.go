@@ -57,7 +57,14 @@ func main() {
 	skipUpgrade := flag.Bool("skip-upgrade", false, "Tell the playbook not to run a full apt dist-upgrade on the hypervisor.")
 	keepOnFailure := flag.Bool("keep-on-failure", false, "On error, skip the automatic destroy and keep local state for debugging.")
 	whatIf := flag.Bool("whatif", false, "Print which phases would run, without running them.")
+	destroy := flag.Bool("destroy", false, "Tear this site's infrastructure down, then wipe the workspace. Requires -confirm.")
+	confirm := flag.String("confirm", "", "Name the site again, to confirm -destroy.")
 	flag.Parse()
+
+	if err := destroyFlagsOK(*destroy, *phase, *from); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(2)
+	}
 
 	toRun, err := selectPhases(*phase, *from)
 	if err != nil {
@@ -66,6 +73,21 @@ func main() {
 	}
 	if *skipOverlay {
 		toRun = slices.DeleteFunc(toRun, func(p string) bool { return p == "overlay" })
+	}
+
+	if *whatIf && *destroy {
+		fmt.Printf(`
+Would destroy site %q:
+
+  1. render     - pull secrets from 1Password (this is the credential check)
+  2. teardown   - migrate state out of the cluster if it lives there, then
+                  'tofu destroy'
+  3. sterilize  - wipe every secret and the local state file
+
+Nothing has been touched. Re-run without -whatif to do it.
+
+`, *site)
+		return
 	}
 
 	if *whatIf {
@@ -86,6 +108,10 @@ func main() {
 
 	// OpenTofu reads the same config; this tells it which site to use.
 	os.Setenv("TF_VAR_site", ctx.Site)
+
+	if *destroy {
+		os.Exit(runDestroy(ctx, *confirm))
+	}
 
 	runErr := runInterruptibly(ctx, toRun)
 	completed := runErr == nil
@@ -124,6 +150,65 @@ func main() {
 	if completed && !slices.Contains(toRun, "sterilize") && !ctx.KeepOnFailure {
 		_ = phases.Sterilize(ctx, true)
 	}
+}
+
+// destroyFlagsOK rejects flag combinations that cannot mean anything.
+// -destroy is not a phase and does not compose with the phase selectors: a
+// command that appeared to say "destroy, but only the verify phase" would be
+// read by somebody as a safe thing to run.
+func destroyFlagsOK(destroy bool, phase, from string) error {
+	if !destroy {
+		return nil
+	}
+	if phase != "" {
+		return fmt.Errorf("-destroy and -phase cannot be combined; -destroy is not a phase in the ignition sequence")
+	}
+	if from != "" {
+		return fmt.Errorf("-destroy and -from cannot be combined; -destroy is not a phase in the ignition sequence")
+	}
+	return nil
+}
+
+// runDestroy runs a deliberate teardown and returns the process exit code.
+//
+// Interrupt handling here is deliberately NOT the ignition path's. A normal
+// run answers Ctrl-C with destroy-then-sterilize, because an interrupted
+// build may have left infrastructure nothing is tracking. Doing that to an
+// interrupted *destroy* would be catastrophic in the exact way this program
+// already learned once: sterilize would wipe the state describing whatever
+// the interrupted destroy had not reached yet, leaving VMs running that
+// nothing can find. So this waits for the in-flight tofu to exit and release
+// its lock, then stops - state and secrets intact, ready to be re-run.
+func runDestroy(ctx *run.Context, confirm string) int {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	resultCh := make(chan error, 1)
+	go func() { resultCh <- phases.Destroy(ctx, confirm) }()
+
+	var err error
+	select {
+	case err = <-resultCh:
+	case sig := <-sigCh:
+		fmt.Println()
+		run.Warn(fmt.Sprintf("received %s - waiting for the current step to exit", sig))
+		<-resultCh
+		run.Warn("Destroy was interrupted. State and secrets have been left exactly as they are,")
+		run.Warn("on purpose: wiping them now is how VMs get orphaned. Re-run the same command.")
+		return 1
+	}
+
+	if err != nil {
+		fmt.Println()
+		run.Fail("HALTED: " + err.Error())
+		return 1
+	}
+
+	fmt.Println()
+	fmt.Println("Site destroyed and workspace sterilized.")
+	fmt.Println()
+	return 0
 }
 
 func selectPhases(phase, from string) ([]string, error) {
