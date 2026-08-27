@@ -1,48 +1,3 @@
-> **This is a deliberate one-time cutover, not a flag to flip.** State already
-> in Postgres is unencrypted; turning encryption on without a fallback makes it
-> unreadable.
->
-> The sequence below has been **rehearsed for real** — as a hermetic test in
-> `tests/go/encryption`, and by hand once against a throwaway Postgres in
-> Docker using the same `pg` backend the live state uses. In that rehearsal the
-> database row went from readable JSON to an encrypted blob, and back to
-> readable through `tofu state pull`.
->
-> ```hcl
-> # Step 1. Note `method "unencrypted" "migrate"`. An empty `fallback {}` does
-> # NOT parse - OpenTofu rejects it as an invalid expression - and the fallback
-> # must name an explicit unencrypted method. Found by running it.
-> terraform {
->   encryption {
->     method "unencrypted" "migrate" {}
->     key_provider "pbkdf2" "primary" {
->       passphrase = "<from 1Password>"
->     }
->     method "aes_gcm" "primary" {
->       keys = key_provider.pbkdf2.primary
->     }
->     state {
->       method = method.aes_gcm.primary
->       fallback {
->         method = method.unencrypted.migrate
->       }
->     }
->   }
-> }
-> ```
->
-> 1. Apply the config above, then run any state-writing command —
->    `tofu apply -refresh-only` is enough. State is re-encrypted in place.
-> 2. Confirm: the state is now ciphertext at rest, and `tofu state pull` still
->    returns usable JSON (which is what the Backup phase pipes into age).
-> 3. Remove the `fallback` block **and** the `method "unencrypted" "migrate"`
->    declaration. Unencrypted state is now refused outright — verified: putting
->    an old unencrypted state file back produces `encountered unencrypted
-payload without unencrypted method configured`.
->
-> Do this with a fresh `task backup-state` in hand, and confirm the age backup
-> restores before starting.
-
 # State and secret rotation
 
 The workspace is sterilized on every exit — rendered secrets and local state
@@ -141,15 +96,47 @@ state {
 }
 ```
 
-> **This is a deliberate one-time cutover, not a flag to flip.** State that is
-> already in Postgres is unencrypted. Turning encryption on without a
-> `fallback` block makes existing state unreadable. The migration is:
+> **This is a deliberate one-time cutover, not a flag to flip.** State already
+> in Postgres is unencrypted; turning encryption on without a fallback makes it
+> unreadable.
 >
-> 1. Add `state { method = method.aes_gcm.primary; fallback {} }` — the empty
->    fallback means "read unencrypted, write encrypted".
-> 2. Run any state-writing command (`tofu apply -refresh-only`). State is now
->    encrypted in place.
-> 3. Remove the `fallback` block. Unencrypted state is now refused.
+> The sequence below has been **rehearsed for real** — as a hermetic test in
+> `tests/go/encryption`, and by hand once against a throwaway Postgres in
+> Docker using the same `pg` backend the live state uses. In that rehearsal the
+> database row went from readable JSON to an encrypted blob, and back to
+> readable through `tofu state pull`.
+>
+> ```hcl
+> # Step 1. Note `method "unencrypted" "migrate"`. An empty `fallback {}` does
+> # NOT parse - OpenTofu rejects it as an invalid expression - and the fallback
+> # must name an explicit unencrypted method. Found by running it.
+> terraform {
+>   encryption {
+>     method "unencrypted" "migrate" {}
+>     key_provider "pbkdf2" "primary" {
+>       passphrase = "<from 1Password>"
+>     }
+>     method "aes_gcm" "primary" {
+>       keys = key_provider.pbkdf2.primary
+>     }
+>     state {
+>       method = method.aes_gcm.primary
+>       fallback {
+>         method = method.unencrypted.migrate
+>       }
+>     }
+>   }
+> }
+> ```
+>
+> 1. Apply the config above, then run any state-writing command —
+>    `tofu apply -refresh-only` is enough. State is re-encrypted in place.
+> 2. Confirm: the state is now ciphertext at rest, and `tofu state pull` still
+>    returns usable JSON (which is what the Backup phase pipes into age).
+> 3. Remove the `fallback` block **and** the `method "unencrypted" "migrate"`
+>    declaration. Unencrypted state is now refused outright. Verified: putting
+>    an old unencrypted state file back produces the error
+>    `encountered unencrypted payload without unencrypted method configured`.
 >
 > Do this with a fresh `task backup-state` in hand, and confirm the age backup
 > restores before starting.
