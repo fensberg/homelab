@@ -23,6 +23,22 @@ func Cluster(ctx *run.Context) error {
 		return err
 	}
 
+	// Before the bucket adopt, not after, and not optional.
+	//
+	// adoptOrphanedR2Bucket shells out to `tofu import`, and import configures
+	// EVERY provider in the root - including the kubernetes provider, which
+	// versions.tf configures from this very resource's attributes. Until
+	// talos_cluster_kubeconfig.this is in state those attributes are unknown,
+	// so the import fails with "Invalid provider configuration" pointing at
+	// versions.tf rather than at anything to do with the bucket. Materialising
+	// it first is what makes the import below possible at all; the same
+	// mechanism made the disk-image adopt in the Compute phase impossible,
+	// which is why that one deletes instead - see reclaimOrphanedDiskImage.
+	run.Info("materialising the kubeconfig so the providers that read it can configure")
+	if err := run.TofuApply(ctx, "tofu apply (kubeconfig)", "talos_cluster_kubeconfig.this"); err != nil {
+		return err
+	}
+
 	if err := adoptOrphanedR2Bucket(ctx); err != nil {
 		return err
 	}

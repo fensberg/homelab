@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -199,6 +200,19 @@ func CmdOutputEnv(dir string, extraEnv []string, name string, args ...string) (s
 	var out bytes.Buffer
 	c.Stdout = &out
 	c.Stderr = os.Stderr
+	err := c.Run()
+	return strings.TrimSpace(out.String()), err
+}
+
+// CmdOutputQuiet is CmdOutput with stderr discarded, for probes whose failure
+// is an ordinary answer rather than a problem worth showing the operator.
+func CmdOutputQuiet(dir, name string, args ...string) (string, error) {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command(name, args...)
+	c.Dir = dir
+	var out bytes.Buffer
+	c.Stdout = &out
+	c.Stderr = io.Discard
 	err := c.Run()
 	return strings.TrimSpace(out.String()), err
 }

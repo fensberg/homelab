@@ -1,6 +1,9 @@
 package run
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // AdoptIfOrphaned imports a resource that already exists outside Terraform -
 // a prior run's incomplete teardown left it behind - before apply gets a
@@ -17,7 +20,7 @@ import "fmt"
 // No-ops if the resource is already tracked, or if findID reports there is
 // genuinely nothing there yet (an empty id, no error).
 func AdoptIfOrphaned(ctx *Context, address string, findID func() (id string, err error)) error {
-	if inStateAlready(ctx, address) {
+	if InState(ctx, address) {
 		return nil
 	}
 
@@ -33,7 +36,13 @@ func AdoptIfOrphaned(ctx *Context, address string, findID func() (id string, err
 	return Tofu(ctx, "tofu import "+address, "import", "-input=false", address, importID)
 }
 
-func inStateAlready(ctx *Context, address string) bool {
-	out, err := CmdOutput(ctx.ClusterDir, "tofu", "state", "list", address)
-	return err == nil && out != ""
+// InState reports whether Terraform is already tracking an address.
+//
+// stderr is deliberately discarded. `tofu state list <address>` writes a full
+// "Error: Unknown resource instance" block when the address is not tracked,
+// and not being tracked is the ordinary, expected answer here - so printing it
+// made every healthy run look as though it had just failed.
+func InState(ctx *Context, address string) bool {
+	out, err := CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list", address)
+	return err == nil && strings.TrimSpace(out) != ""
 }
