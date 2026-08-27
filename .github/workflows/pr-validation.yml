@@ -276,17 +276,13 @@ jobs:
           go vet ./...
           go build -o /dev/null .
 
-      # The test-only module. Not built or tested here - that is the Test
-      # lane's job - but vetted, because a compile error in a test tier should
-      # surface on the pull request that caused it rather than the night
-      # someone first reaches for the integration suite.
-      - name: Validate the test module
-        working-directory: tests/go
-        run: |
-          go vet ./...
-          go vet -tags=api ./...
-          go vet -tags=integration ./...
-          go vet -tags=e2e ./...
+      # The test-only module is deliberately NOT vetted here. It has real
+      # dependencies, so vetting it needs proxy.golang.org, and this lane's
+      # egress allowlist does not carry it - on purpose. scripts/ignite has
+      # no dependencies, and a Validate lane that cannot reach a module proxy
+      # at all is the cheapest possible proof of that. It is vetted in the
+      # Test lane instead, which already has both the endpoints and the
+      # module cache.
 
   # -----------------------------------------------------------------
   # LANE 4: Does it behave?
@@ -352,14 +348,25 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
-          # scripts/ignite has zero external dependencies, so there is no
-          # go.sum for it to cache. tests/go does have one, but it is not
-          # built in this lane - see the Validate lane, which vets it.
-          cache: false
+          # tests/go is the only module here with dependencies to cache;
+          # scripts/ignite has none, so there is no go.sum of its own to key on.
+          cache-dependency-path: tests/go/go.sum
 
       - name: Unit and contract tests (Go)
         working-directory: scripts/ignite
         run: go test -covermode=atomic -coverprofile=coverage-go.out ./...
+
+      # Every build tag, because `go vet ./...` compiles none of the tiers
+      # that carry one. A compile error in the integration or e2e tier should
+      # surface on the pull request that caused it, not the night someone
+      # first reaches for that suite.
+      - name: Vet the test module (every tier)
+        working-directory: tests/go
+        run: |
+          go vet ./...
+          go vet -tags=api ./...
+          go vet -tags=integration ./...
+          go vet -tags=e2e ./...
 
       # Reported on every run, enforced as a ratchet: a pull request may not
       # push coverage below the committed floor, and is free to leave it

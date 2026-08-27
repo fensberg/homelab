@@ -25,7 +25,7 @@ pull request at all.
 
 ## Where each tier lives, and why
 
-```
+```text
 scripts/ignite/**/*_test.go            unit + contract (Go)      — no dependencies
 management/cluster/tests/*.tftest.hcl  unit (OpenTofu)           — native tofu test
 management/cluster/tests/fixtures/     the shared config corpus
