@@ -26,6 +26,23 @@
 
 locals {
   overlay_router_tag = "tag:homelab-router"
+
+  # One hour, not the 90-day maximum this used to carry.
+  #
+  # The key is only ever used at one moment: the hypervisor's `tailscale up`,
+  # minutes after this resource is created. It has no job after that, because
+  # a *tagged* device does not expire - key expiry is disabled for tagged
+  # nodes, so the node stays on the tailnet indefinitely and a cluster 91 days
+  # from now still routes. What a long expiry actually buys is a valid,
+  # pre-authorized, route-approving credential sitting in a console for three
+  # months after the only thing that needed it has finished. Four of them had
+  # accumulated by the end of epoch 01.
+  #
+  # A short expiry is only safe because the Overlay phase forces this resource
+  # to be replaced on every run (see scripts/ignite/internal/phases/overlay.go).
+  # Without that, re-running `task configure-hypervisor` an hour later would
+  # hand the playbook a key tofu still believes is current.
+  overlay_key_expiry_seconds = 3600
 }
 
 resource "tailscale_tailnet_key" "hypervisor" {
@@ -41,9 +58,8 @@ resource "tailscale_tailnet_key" "hypervisor" {
   description = "${local.site_name} subnet router"
   tags        = [local.overlay_router_tag]
 
-  # 90 days. A fresh key is minted on every run, so this is only an upper bound
-  # on how long an unused one stays valid.
-  expiry = 7776000
+  # See the local for why this is an hour rather than the 90-day maximum.
+  expiry = local.overlay_key_expiry_seconds
 }
 
 output "overlay_network_auth_key" {

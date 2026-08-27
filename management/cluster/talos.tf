@@ -63,17 +63,17 @@ data "talos_machine_configuration" "controlplane" {
       auto       = "off"
       hostname   = local.vm_names[count.index]
     }),
-    # Longhorn's own data path (see compute.tf's second disk on each node).
+    # the storage provisioner's own data path (see compute.tf's second disk on each node).
     # !system_disk is Talos's documented selector for "whichever disk this
     # node did not boot from" - confirmed from pkg/machinery/cel/celenv
     # (this pinned tag) rather than matching on a specific size or device
     # path, which would break the moment a disk is resized or reordered.
     # UserVolumeConfig always mounts at /var/mnt/<name>, so this lands at
-    # /var/mnt/longhorn with no separate mount path to configure.
+    # /var/mnt/storage with no separate mount path to configure.
     yamlencode({
       apiVersion = "v1alpha1"
       kind       = "UserVolumeConfig"
-      name       = "longhorn"
+      name       = "storage"
       provisioning = {
         diskSelector = {
           match = "!system_disk"

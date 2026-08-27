@@ -144,6 +144,199 @@ The management-tier and workload-tier split this repo already describes is the
 right shape: one cluster per site, all reconciled from one git repository by
 Flux. Scale by adding clusters, not by stretching one.
 
+### Bootstrapping a site, not a node
+
+The unit a human should have to think about is the **site**. The target
+experience, stated plainly so the design can be measured against it:
+
+> A client buys a server, racks it, installs Proxmox, and enters that node's
+> credentials into 1Password. Then it just works.
+
+Nothing in that sentence mentions this repository, and that is the point. The
+person adding capacity should not be opening a pull request.
+
+**What stands in the way is the direction the config points.** Today
+`config/management.tpl.json` enumerates every site and every node explicitly,
+and each entry is a set of `op://` references. Adding a node is therefore two
+steps in two systems: create the vault fields, _then_ edit the template and
+merge it. Epoch 01's own notes are explicit that the second step cannot be
+avoided as things stand - `op inject` substitutes into a fixed file and cannot
+loop over `sites[].hypervisor.nodes`, which is exactly why the Ansible
+inventory is generated in Go rather than templated.
+
+So the template is a declaration that _references_ the vault. The requirement
+above inverts that: the vault becomes the source of truth, and the config is
+**discovered** from it rather than declared alongside it.
+
+That is buildable with tools already in use. `op item list --vault homelab
+--format=json` enumerates the items; `op item get <site> --format=json` returns
+its sections and fields, which is precisely the shape `hypervisor-prep.yml`
+already reads and writes. Ignite would build the rendered config in memory
+instead of injecting a template, and a new node would be discovered the moment
+its section exists.
+
+**Three things this trades away, all worth stating before choosing it:**
+
+1. **Git stops showing the shape of the estate.** Epoch 01 deliberately made
+   the template reveal the topology - how many sites, how many nodes - while
+   revealing nothing about what or where they are. Discovery moves that
+   knowledge entirely into the vault, and a reviewer can no longer see from a
+   diff that a site gained a hypervisor. A redacted topology summary emitted by
+   ignite, or committed as a generated artefact, would recover most of it.
+2. **The invariants become load-bearing in a way they are not today.** A
+   hand-edited template gets human review; a vault-authored config does not.
+   `registry.tf` and `config.ResolveSiteNetwork` would become the only thing
+   standing between a mistyped octet and a colliding `/16`. The config-contract
+   corpus in `management/cluster/tests/fixtures` is what makes that acceptable,
+   and it would need to grow rather than stay still.
+3. **Octet assignment has to live somewhere.** It is declared, not derived, on
+   purpose - so that retiring a site leaves a gap rather than renumbering its
+   neighbours. Under discovery it belongs in the vault item as a field the
+   client fills in, with uniqueness asserted across every discovered site
+   rather than across the ones a template happened to list.
+
+**What this means for the modules in this epoch.** A site module instantiated
+once per discovered site is the shape that satisfies the requirement; a
+`TF_VAR_site` switch over a single root is not, because it still needs someone
+to add the site to a file. "Bootstrap a site" is therefore the acceptance test
+for this tier: if adding a site still requires a commit, the abstraction is not
+finished.
+
+### Adding a hypervisor currently re-deals the control plane
+
+The scenario above - "a client buys a server, racks it, installs Proxmox" - is
+the one that breaks first, and it breaks silently.
+
+`vm_placement` deals control-plane VMs round-robin across whatever hypervisors
+a site has:
+
+```hcl
+vm_placement = [
+  for i in range(local.node_count) :
+  local.hypervisors[i % length(local.hypervisors)].hostname
+]
+```
+
+That is a re-deal, not an append. With one hypervisor all three land on it;
+add a second and the arithmetic reassigns the middle one:
+
+| Hypervisors | cp-01 | cp-02   | cp-03 |
+| ----------- | ----- | ------- | ----- |
+| 1           | hv0   | hv0     | hv0   |
+| 2           | hv0   | **hv1** | hv0   |
+
+`node_name` on `proxmox_virtual_environment_vm` cannot be changed in place, so
+OpenTofu resolves that as **destroy and recreate `cp-02`** - a running etcd
+member - and nothing in the flow calls `talosctl etcd remove-member` first. The
+likely outcome is a stale member in the etcd member list and a rebuilt node
+that cannot rejoin, on a cluster that was healthy until someone added capacity.
+
+Quorum survives the moment itself (two of three), which is what makes this
+dangerous: the apply looks like it worked.
+
+**The rule this points to: new hardware must add capacity, never re-place
+existing control-plane members.** Two things follow, and they line up with the
+worker-pool prerequisite already noted above:
+
+1. **Control-plane placement must be sticky.** Once a control-plane node is
+   placed it stays placed, whatever the hypervisor list does afterwards.
+   Deriving placement from a modulo over a growing list cannot express that;
+   the placement has to be recorded rather than recomputed - a field on the
+   site, or an explicit map, so it is reviewable and stable.
+2. **Growth belongs to the worker pool.** etcd is fixed at three (or five) by
+   design; a new server should be absorbed by workers, which are exactly the
+   thing that can move without a quorum question. Until a worker pool exists,
+   "add a hypervisor" has no safe meaning for an existing site.
+
+Until both are true, adding a hypervisor to a **running** site is a manual,
+supervised operation and should be documented as one. Adding a hypervisor to a
+site that does not exist yet is fine, which is the ordinary case for onboarding
+a new client and the one the acceptance test above describes.
+
+### How portable is the overlay network, really
+
+The invariant in `CLAUDE.md` said naming things by function keeps a vendor swap
+"to a single `.tf` file". Measured against the actual estate, that is true of
+the OpenTofu layer and misleading about everything else:
+
+| Where                          | Tailscale-specific                                                  |
+| ------------------------------ | ------------------------------------------------------------------- |
+| `overlay-network.tf`           | 60 lines (all of it)                                                |
+| `versions.tf` provider block   | 2 references                                                        |
+| `registry.tf` vendor assertion | 1 reference                                                         |
+| `config/management.tpl.json`   | 5 fields, Tailscale-shaped (`domain`, `client_id`, `client_secret`) |
+| **`hypervisor-prep.yml`**      | **~50 references**                                                  |
+
+The OpenTofu side genuinely is a small swap. The playbook is not: signing key,
+apt repository, install, `tailscaled` service, login-state detection,
+`tailscale up --force-reauth`, route advertisement and the retry logic around
+all of it. That is where an overlay migration would actually be spent, and the
+config's field names would have to change shape too - a raw WireGuard mesh has
+no notion of an OAuth client or a tailnet domain.
+
+**What each option would actually cost:**
+
+- **Headscale** - the FOSS coordination server that speaks the Tailscale
+  protocol. The client, the tags, the `autoApprovers` concept and every
+  playbook task survive; only the login server changes. By far the smallest
+  migration and the one that preserves the most, which makes it the default
+  answer if the motivation is "self-hosted and FOSS".
+- **NetBird / Nebula** - different agents and different APIs, so the playbook
+  is rewritten and the config fields change shape. A real port.
+- **Raw WireGuard** - no coordination server at all, which means rebuilding
+  NAT traversal, peer distribution, route advertisement and ACLs by hand.
+  Those are the things being paid for today, and a homelab is exactly the
+  scale at which hand-managing peers looks cheap right up until a node moves.
+
+**The constraint that applies to all three:** the overlay is used to _reach_
+the hypervisor during ignition, so a self-hosted control server cannot live
+inside the estate it bootstraps. That is the same circular dependency as the
+state database and the secrets manager, and it has the same shape of answer -
+the control plane sits outside, or the first hop is something else entirely.
+
+### Design constraint: no provider may depend on a resource in its own root
+
+This is a constraint on how the modules are carved, and it is cheaper to honour
+now than to retrofit.
+
+`management/cluster/versions.tf` configures the `kubernetes` provider from
+`talos_cluster_kubeconfig.this` - a resource created in the same root. That is
+a documented anti-pattern, and epoch 01 has been paying for it without saying
+so out loud:
+
+- Provider configuration is evaluated for the **whole root**, so every provider
+  must be resolvable for any operation. `-target` narrows that, which is why
+  ignite's applies are a hand-sequenced chain rather than one apply.
+- `tofu import` has no `-target`, so it can never narrow. Any import before the
+  cluster exists fails on the kubernetes provider rather than on the resource
+  being imported - confirmed by running both against the real estate, where a
+  `-target`ed plan of a Proxmox resource succeeds and an import of that same
+  resource does not.
+- The cost is confined to the bootstrap window, because once the resource is in
+  state the provider resolves from it. But ignition _is_ the bootstrap window,
+  and with N sites it is a window somebody is inside most of the time.
+
+**The seam already exists**, cleanly, along current file boundaries - not one
+resource straddles it:
+
+| Layer            | Files                                                               | Providers                             |
+| ---------------- | ------------------------------------------------------------------- | ------------------------------------- |
+| `infrastructure` | `compute.tf`, `talos.tf`, `overlay-network.tf`, `object-storage.tf` | proxmox, talos, tailscale, cloudflare |
+| `platform`       | `database.tf`, `gitops.tf`                                          | kubernetes                            |
+
+Split there and the platform layer configures its provider from the
+infrastructure layer's **output** - a value already applied, therefore known at
+plan time. The ordering moves out of `cluster.go` and into the structure,
+imports work in either layer, and `-target` goes back to being what OpenTofu
+says it is: for exceptional situations, not routine use.
+
+The cost is two applies and a handoff between them. Ignite already writes the
+kubeconfig to a file for the Flux bootstrap, so the mechanism is not new.
+
+**If `modules/` is carved out of the current monolithic root without this
+split, the coupling is baked into the module boundaries and every future site
+inherits it.**
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying

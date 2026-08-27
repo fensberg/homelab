@@ -36,17 +36,19 @@ func Backup(ctx *run.Context) error {
 			return fmt.Errorf("sites.%s.object_storage.%s is missing from the rendered config", ctx.Site, field)
 		}
 	}
-	if strings.TrimSpace(site.State.BackupRecipient) == "" {
-		return fmt.Errorf(`no 'state.backup_recipient' for site %s in the rendered config.
+	recipient := strings.TrimSpace(cfg.StateBackup.Recipient)
+	if recipient == "" {
+		return fmt.Errorf(`no 'state_backup.recipient' in the rendered config.
 
-State is never uploaded in plaintext. Generate a key pair once:
+State is never uploaded in plaintext. Generate a key pair once for the whole
+estate - not one per site:
 
     age-keygen -o state-backup.key
 
 Put the PUBLIC recipient (the 'age1...' line) in 1Password at
-op://homelab/site<N>-state-database/backup_recipient, and store the private
-key file somewhere offline. The automation only ever needs the public half -
-it can write backups but cannot read them back.`, ctx.Site)
+%s, and the private half beside it at %s. The
+automation only ever needs the public half - it can write backups but cannot
+read them back.`, BackupRecipientRef, BackupIdentityRef)
 	}
 
 	for _, tool := range []string{"age", "rclone"} {
@@ -82,28 +84,18 @@ it can write backups but cannot read them back.`, ctx.Site)
 		return fmt.Errorf("state pull returned only %d bytes - refusing to upload it", len(state))
 	}
 
-	recipientPreview := site.State.BackupRecipient
+	recipientPreview := recipient
 	if len(recipientPreview) > 20 {
 		recipientPreview = recipientPreview[:20]
 	}
 	run.Info("encrypting to " + recipientPreview + "...")
 	if err := run.CmdStdin(ctx.ClusterDir, state, "age",
-		"--recipient", site.State.BackupRecipient, "--output", tmpCipher); err != nil {
+		"--recipient", recipient, "--output", tmpCipher); err != nil {
 		return fmt.Errorf("age encrypt: %w", err)
 	}
 	run.Wipe(state)
 
-	// rclone is configured entirely through environment variables scoped to
-	// this process, so no credentials are ever written to a config file on
-	// disk.
-	rcloneEnv := []string{
-		"RCLONE_CONFIG_R2_TYPE=s3",
-		"RCLONE_CONFIG_R2_PROVIDER=Cloudflare",
-		"RCLONE_CONFIG_R2_ACCESS_KEY_ID=" + store.AccessKeyID,
-		"RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=" + store.SecretAccessKey,
-		"RCLONE_CONFIG_R2_ENDPOINT=https://" + store.AccountID + ".r2.cloudflarestorage.com",
-		"RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true",
-	}
+	rcloneEnv := r2Env(store)
 
 	dest := fmt.Sprintf("R2:%s/management-cluster", store.Bucket)
 	run.Info(fmt.Sprintf("uploading to %s/%s.tfstate.age", dest, stamp))
@@ -123,18 +115,19 @@ it can write backups but cannot read them back.`, ctx.Site)
 	// about a request, not about what is in the bucket.
 	pruneOldBackups(ctx, rcloneEnv, dest, stamp)
 
-	// The private identity is deliberately absent from the config contract:
-	// this program can write backups and must not be able to read them. It
-	// is fetched by a human, by hand, only when restoring.
+	// The private identity is deliberately absent from the config contract and
+	// from OpenTofu: this program writes backups on every run and reads one
+	// only when a human asks it to, from `-restore` and nowhere else.
 	fmt.Printf(`
-  To restore, on a machine with op signed in:
+  To bring this back after a total loss, on a machine with op signed in:
 
-    op read "op://homelab/%s/state-database/backup_identity" > /tmp/restore.key
-    rclone cat R2:%s/management-cluster/latest.tfstate.age |
-        age -d -i /tmp/restore.key > terraform.tfstate
-    rm /tmp/restore.key
+    ./scripts/ignite/ignite -site %s -restore
 
-`, ctx.Site, store.Bucket)
+  It fetches the identity from %s, decrypts, checks that what
+  came back is state describing something, and pushes it through the encrypted
+  backend. It refuses if local state already exists.
+
+`, ctx.Site, BackupIdentityRef)
 
 	return nil
 }

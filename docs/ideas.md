@@ -80,8 +80,79 @@ once it's actually being worked on.
   right shape for it: a `restore`-tagged tier on the self-hosted runner that
   pulls the latest age-encrypted state dump and the latest CloudNativePG base
   backup, restores both into a throwaway target, asserts the state parses and
-  the database answers, then tears it down. It needs the disposable site above,
-  which makes that idea a prerequisite rather than a nice-to-have. See
+  the database answers, then tears it down. `ignite -restore` is now the
+  command that does the first half of that, so what remains is a tier that
+  calls it and asserts on the result - rehearsed against the workstation, not
+  against a second site that is not coming. See
   `docs/state-and-secret-rotation.md` for the rest of the off-site hardening
   list - bucket locks, per-prefix credentials, a second vendor, and key
   custody for the age identity.
+
+- **What the e2e tier is for.** _Decided: let it run against `site0`._
+  `tests/go/e2e` builds an estate from nothing and destroys it again, and it
+  used to refuse to touch `site0` by construction. That was the right guard
+  when it was written, on the assumption that a disposable second estate would
+  appear. It will not, for years - so the guard was not making the tier safer,
+  it was making it unrunnable, and a test that is present, green and
+  unreachable is worse than no test: it looks like coverage and is not.
+
+  The premise that guard rested on is simply false here. This estate _is_ the
+  disposable one - re-running ignition recreates every part of it, and the
+  project's own position is that the data has little value and the practice is
+  the point. So the risk worth guarding is destroying the _wrong_ estate, not
+  destroying one at all, and the two remaining guards already address exactly
+  that: a build tag, and the site named twice - the same thing
+  `ignite -destroy` asks of a human.
+
+  It stays absent from CI. A destructive nuke-and-pave should not be one
+  dropdown selection away in a web UI, and that is unchanged.
+
+- **1Password for ignition, OpenBao for everything else.** _Decided._ 1Password is a password
+  manager doing a secrets-manager's job here, and the seams show: access is
+  granted per vault rather than per path, so narrowing what a CI token can read
+  means splitting vaults rather than writing a policy; there are no dynamic
+  secrets, no leases, no auth methods and no audit device. Those are symptoms
+  of the wrong category of tool, not problems to fix in place — so effort spent
+  restructuring vaults is effort thrown away at migration.
+  **OpenBao** is the natural target: the Linux Foundation fork of HashiCorp
+  Vault after it went BUSL, so it is the production pattern this project's
+  prime directive points at; OpenTofu ships a native `openbao` key provider,
+  which would key the state encryption in
+  `docs/state-and-secret-rotation.md` directly; and External Secrets Operator
+  bridges it into Kubernetes, replacing the OpenTofu-writes-the-secret
+  arrangement `database.tf` currently apologises for.
+  **The hard part is bootstrap, and it should be designed first.** Secrets are
+  read at ignition time, from a workstation, before the cluster exists — so a
+  secrets manager running _in_ that cluster cannot serve them. That is the same
+  circular dependency the state database already has, and it has the same
+  shape of answer: either the secrets manager lives outside the cluster (on the
+  hypervisor, with its own unseal problem), or a minimal bootstrap set stays
+  local and age-encrypted while everything post-bootstrap moves to OpenBao.
+  Auto-unseal without a cloud KMS is the sharpest edge; transit-unseal from a
+  second instance is the usual homelab answer and is worth costing before
+  committing.
+  **The shape of the answer, decided:** 1Password keeps exactly one job — the
+  handful of bootstrap credentials a human's workstation needs before any
+  cluster exists. That is the one role it is genuinely suited to, and no
+  migration removes the need for it. Everything downstream of bootstrap moves
+  to OpenBao: the in-cluster credentials, the state encryption key, the
+  object-storage keys that currently live in a Kubernetes secret indefinitely,
+  and the rotation runbooks in `docs/state-and-secret-rotation.md` that dynamic
+  secrets and leases would make unnecessary rather than automated.
+  That split is what makes this incremental rather than a big-bang cutover,
+  which matters a great deal given there is one estate and no rehearsal target.
+  **Hard requirement to close this epoch: secrets rotate on a cadence, without
+  a human.** Not "OpenBao is deployed" - deployed and still handing out static
+  credentials is the same posture as today with more moving parts. The
+  acceptance test is a Postgres credential that is minted on demand, carries a
+  lease, and is revoked automatically when the lease ends. That is the whole
+  reason to prefer it over continuing to write generated secrets back into
+  1Password: per-run generation makes last month's leaked state worthless,
+  but only leases make _this_ month's worthless too.
+
+  Per-run generation (below) is the interim, and it is deliberately the half
+  that survives the migration - the generation logic moves, only the storage
+  target changes. A bespoke rotation _scheduler_ would not survive, which is
+  why one should not be built.
+
+  This is an epoch, not a task.

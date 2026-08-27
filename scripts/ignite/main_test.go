@@ -129,20 +129,88 @@ func TestSelectPhases_IsCaseSensitive(t *testing.T) {
 // -destroy is not a phase, and must not look like one. A command reading
 // "destroy, but only the verify phase" would be understood by somebody as a
 // safe thing to run, so the combination is refused rather than interpreted.
-func TestDestroyFlagsOK(t *testing.T) {
-	if err := destroyFlagsOK(true, "", ""); err != nil {
+func TestStandaloneFlagsOK(t *testing.T) {
+	if err := standaloneFlagsOK(modes{Destroy: true}, "", ""); err != nil {
 		t.Errorf("plain -destroy should be accepted, got: %v", err)
 	}
-	if err := destroyFlagsOK(false, "verify", "render"); err != nil {
-		t.Errorf("without -destroy the phase selectors are none of this function's business, got: %v", err)
+	if err := standaloneFlagsOK(modes{}, "verify", "render"); err != nil {
+		t.Errorf("with no standalone mode the phase selectors are none of this function's business, got: %v", err)
 	}
 	for _, tc := range []struct{ phase, from string }{
 		{"verify", ""},
 		{"", "render"},
 		{"compute", "render"},
 	} {
-		if err := destroyFlagsOK(true, tc.phase, tc.from); err == nil {
-			t.Errorf("destroyFlagsOK(true, %q, %q) was accepted; -destroy must not compose with the phase selectors", tc.phase, tc.from)
+		if err := standaloneFlagsOK(modes{Destroy: true}, tc.phase, tc.from); err == nil {
+			t.Errorf("(-destroy, %q, %q) was accepted; -destroy must not compose with the phase selectors", tc.phase, tc.from)
+		}
+	}
+}
+
+// -restore is the same shape as -destroy: it is not a step in the ignition
+// sequence, so composing it with a phase selector describes something that
+// does not exist.
+func TestStandaloneFlagsOK_RestoreDoesNotComposeWithPhases(t *testing.T) {
+	if err := standaloneFlagsOK(modes{Restore: true}, "", ""); err != nil {
+		t.Errorf("plain -restore should be accepted, got: %v", err)
+	}
+	if err := standaloneFlagsOK(modes{Restore: true}, "backup", ""); err == nil {
+		t.Error("-restore -phase backup was accepted")
+	}
+}
+
+// The one that would actually hurt. -destroy and -restore in the same
+// invocation is a genuine ambiguity - both reach real infrastructure, and the
+// order they would run in is not something anyone should have to guess.
+func TestStandaloneFlagsOK_ModesAreMutuallyExclusive(t *testing.T) {
+	err := standaloneFlagsOK(modes{Destroy: true, Restore: true}, "", "")
+	if err == nil {
+		t.Fatal("-destroy and -restore together were accepted")
+	}
+	for _, want := range []string{"-destroy", "-restore"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error should name both flags, %q missing from: %v", want, err)
+		}
+	}
+	if err := standaloneFlagsOK(modes{Restore: true, Kubeconfig: true}, "", ""); err == nil {
+		t.Error("-restore and -kubeconfig together were accepted")
+	}
+}
+
+// "Ignition complete. The cluster is now self-sustaining." used to print after
+// every successful invocation, including `-phase render`. That is a claim
+// about a cluster made by a command that only decrypted a JSON file, and it is
+// the kind of false summary that stops someone checking - the same failure
+// mode as reporting "Site destroyed" over three running VMs.
+func TestCompletionMessage_FullSequence(t *testing.T) {
+	got := completionMessage(phases.AllPhases)
+	if !strings.Contains(got, "self-sustaining") {
+		t.Errorf("a full run should report ignition complete, got %q", got)
+	}
+}
+
+func TestCompletionMessage_SinglePhaseDoesNotClaimACluster(t *testing.T) {
+	got := completionMessage([]string{"render"})
+	if strings.Contains(got, "self-sustaining") || strings.Contains(got, "Ignition complete") {
+		t.Errorf("a single phase must not claim the cluster is up, got %q", got)
+	}
+	if !strings.Contains(got, "render") {
+		t.Errorf("the message should name what actually ran, got %q", got)
+	}
+}
+
+// -from compute stops at sterilize, so it does finish the sequence - but it
+// never created the cluster this run's message would be describing. The
+// deciding question is whether the run started at the beginning, not whether
+// it reached the end.
+func TestCompletionMessage_PartialRunEndingAtTheLastPhase(t *testing.T) {
+	got := completionMessage([]string{"migrate", "backup", "sterilize"})
+	if strings.Contains(got, "self-sustaining") {
+		t.Errorf("a run that did not start at the first phase must not claim ignition, got %q", got)
+	}
+	for _, want := range []string{"migrate", "sterilize"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the message should name the range that ran, %q missing from %q", want, got)
 		}
 	}
 }

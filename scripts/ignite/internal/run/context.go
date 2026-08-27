@@ -20,6 +20,12 @@ type Context struct {
 	BackendPgOn    string
 	LocalState     string
 
+	// Written only by `task kubeconfig`, for a human who wants to look at the
+	// cluster. Nothing in the ignition sequence creates it - the Health phase
+	// uses a temporary file it removes itself - but Sterilize owns it, because
+	// a kubeconfig is a credential and this one persists on purpose.
+	Kubeconfig string
+
 	Site          string
 	Upgrade       bool
 	SkipOverlay   bool
@@ -42,6 +48,7 @@ func NewContext(repoRoot, site string) *Context {
 		BackendPgOff:   filepath.Join(clusterDir, "backend_pg.tf.disabled"),
 		BackendPgOn:    filepath.Join(clusterDir, "backend_pg.tf"),
 		LocalState:     filepath.Join(clusterDir, "terraform.tfstate"),
+		Kubeconfig:     filepath.Join(clusterDir, "kubeconfig"),
 		Site:           site,
 	}
 }

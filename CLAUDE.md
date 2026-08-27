@@ -32,7 +32,21 @@ belongs in an epoch record.
   The floor is that credentials issued by third-party consoles (source control
   token, overlay OAuth client, object storage tokens) cannot themselves be
   automated, and the tailnet policy is set up once per tailnet rather than per
-  deployment. See `docs/tailnet-setup.md`. Everything past that floor is code.
+  deployment. The age backup keypair sits on that floor for a different
+  reason: it _could_ be automated, and must not be. Its whole job is to
+  survive this automation being compromised, so a key this program generated
+  and stored somewhere this program can read would foreclose the property in
+  the same breath as creating it. Generated once for the estate with
+  `age-keygen` — one break-glass key, not one per site — and never referenced
+  by OpenTofu, which `tests/go/repo` enforces.
+
+  Everything below that floor is generated: the state database password is
+  created by ignite and written to 1Password, because the rule that decides is
+  where a secret ends up. A secret that becomes a resource attribute is
+  written into OpenTofu state, so a leaked state file yields a live
+  credential; those are ours to generate. A secret that only configures a
+  provider never reaches state at all. See `docs/tailnet-setup.md`. Everything past that floor is code.
+
 - **Ignition is deliberately local-only.** `management/` bootstraps the
   cluster that later runs CI-driven deploys, so it cannot depend on that
   cluster. Do not move it into GitHub Actions.
@@ -51,16 +65,28 @@ belongs in an epoch record.
   in a file header. `source_control.token`, not `git.github_pat_reference`.
   The one place this cannot reach is Terraform resource names —
   `tailscale_tailnet_key` is irreducibly vendor-specific — so the abstraction lives at the config and
-  secrets layer, which is what keeps a vendor swap to a single `.tf` file.
+  secrets layer. That keeps the _OpenTofu_ half of a vendor swap small: 60 lines
+  in `overlay-network.tf` plus a provider block. It does **not** make the swap
+  small overall — `hypervisor-prep.yml` carries ~50 Tailscale-specific
+  references (repo key, install, `tailscale up`, route advertisement,
+  re-auth handling), and that is where a real overlay migration would be
+  spent. See `docs/epochs/02-abstraction.md`.
 - **Deletion is not the security property; being worthless is.** Sterilizing
   the workspace assumes the delete happened and that nothing copied the file
   first. So the Backup phase never writes plaintext state to disk at all - it
-  pipes `tofu state pull` straight into `age` and wipes the buffer - and the
-  standing plan is to encrypt state at rest with OpenTofu's own state
-  encryption, keyed from 1Password. See
+  pipes `tofu state pull` straight into `age` and wipes the buffer - and state
+  is encrypted at rest with OpenTofu's own state encryption, keyed from
+  1Password. The whole `encryption` block is carried in `TF_ENCRYPTION`, set by
+  ignite before the first phase, so nothing in git reveals the scheme or the
+  key and a bare `tofu` run cannot read state at all. That is the lock, not a
+  side effect - and it matters more than protecting the local file, because the
+  state _is_ the Postgres database, which CloudNativePG streams to object
+  storage continuously under nothing but gzip. Encrypting the state makes the
+  WAL archive and the base backups ciphertext too. See
   [`docs/state-and-secret-rotation.md`](docs/state-and-secret-rotation.md) for
-  what a leaked state file exposes, the cutover procedure, and the rotation
-  runbooks for everything encryption cannot cover.
+  what a leaked state file exposes, the manual cutover for an estate that
+  already has unencrypted state, and the rotation runbooks for everything
+  encryption cannot cover.
 - **State migrates local -> Postgres, and is backed up twice.** The first
   apply runs on local state; once the cluster hosts Postgres, state moves
   there and the local copy is destroyed. CloudNativePG streams WAL and base
@@ -69,6 +95,17 @@ belongs in an epoch record.
   needed: the database backups restore into a running cluster, but rebuilding
   that cluster needs the state held in the database. The standalone dump is
   what breaks that circle after a total loss.
+- **A run proves the cluster converged before it trusts it.** The Health
+  phase sits between Cluster and Migrate and refuses to continue unless every
+  node is Ready and counted, every Flux Kustomization and HelmRelease has
+  reconciled, and the state database has all the instances it asked for. It is
+  there because the first successful ignition was not one: it reported success
+  over a database running two of its three instances, because every phase had
+  done its own job and nothing was asking the question the phases together
+  were supposed to answer. A port that answers is the weakest evidence
+  available - it is true from the moment one instance is up. Migrate is the
+  point of no return, so the gate goes before it, not at the end.
+
 - **The workspace is sterilized on every exit.** Success or failure, no
   secrets and no state are left on the workstation. On failure the run
   destroys infrastructure _before_ wiping state, so nothing is orphaned.
@@ -92,7 +129,7 @@ supervising - a confirmed, currently-open upstream limitation
 interrupt only runs if something actually delivers it the signal, so the
 real ignition run has to be invoked directly. Every other `task`-wrapped
 ignite phase (`render-secrets`, `verify`, `configure-hypervisor`,
-`backup-state`, `clean-secrets`) stays safe to wrap regardless, because none
+`backup-state`, `kubeconfig`, `clean-secrets`) stays safe to wrap regardless, because none
 of them can reach the Compute phase - an interrupted one leaves stale
 secrets at worst, recoverable with `task clean-secrets`, never an orphaned
 VM.
@@ -106,6 +143,14 @@ time, which is the guard against a typo by somebody who does hold it.
 Interrupting a destroy deliberately does _not_ sterilize: wiping state
 part-way through a teardown is how VMs get orphaned, so it waits for tofu to
 release its lock and leaves everything in place to be re-run.
+
+**Getting state back is `ignite -restore`.** It fetches the break-glass
+identity, decrypts the latest age backup from object storage, checks that what
+came back is state describing something, and pushes it through the encrypted
+backend. It refuses if local state already exists. It is the only place in the
+program that reads the private half, which `tests/go/repo` enforces, and it
+restores state and stops - what to do with it afterwards is a judgement call,
+not a next step.
 
 **`workstation/` provisions the Linux machine this runs from.** It is
 deliberately independent from `management/` - no shared config, no
@@ -135,15 +180,20 @@ is fixed at creation; see `docs/epochs/02-abstraction.md` for what actually
 autoscales here and what cannot.
 
 **What sits where.** Anything describing one estate lives inside the site -
-`hypervisor`, `overlay_network`, `object_storage` and `state`, each with its
-own asserted `provider`. Anything describing the whole fleet stays at the top:
-`organization`, and `source_control`, because one repository drives every
-cluster through Flux. Each site runs its own cluster with its own database, so
-sharing state credentials across sites would mean compromising one reaches all.
+`hypervisor`, `overlay_network`, `object_storage` (each with its own asserted
+`provider`) and `database`. Anything describing the whole fleet stays at the
+top: `organization` and `source_control`, because one repository drives every
+cluster through Flux, and `state_backup`, because one break-glass key covers
+the estate. Each site runs its own cluster with its own database, so sharing
+that password across sites would mean compromising one reaches all - the
+backup recipient is the exception precisely because it is a public key, and
+sharing it costs nothing.
 
 Hostnames, credentials and even the site's human name are `op://` references,
 so the file shows the shape of the estate without revealing what or where
-anything is.
+anything is. Every one of them must be wrapped in `{{ }}` - `op inject`
+substitutes nothing else, and a bare `op://` string is valid JSON that reaches
+the reader verbatim. `tests/go/repo` asserts it.
 
 **Every `op://` reference in the template must resolve.** There is no way to
 leave a placeholder site or node, so add the vault items first, then the
@@ -259,7 +309,7 @@ floor a pull request may not drop below and is free to leave alone.
   one caught by `task validate`, which is cheaper than one caught by CI,
   which is far cheaper than one only caught by running real infrastructure -
   the actual, repeated failure mode in this project's own history (the
-  self-healing-import fix, the Longhorn bugs, the first full ignition run).
+  self-healing-import fix, the storage-sizing bug, the first full ignition run).
   Go logic in `scripts/ignite` is tested with the standard library's own
   `testing` package - no third-party assertion library, because that module
   has no third-party anything, and keeping it that way is what stops a test

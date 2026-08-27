@@ -1,0 +1,122 @@
+---
+# Local PV Hostpath, and deliberately nothing else.
+#
+# WHY NOT LONGHORN
+# ----------------
+# Not because Longhorn is proprietary - it is CNCF and Apache 2.0, same as
+# OpenEBS. Because of what it stores. CloudNativePG already runs three Postgres
+# instances with streaming replication between them, so the data is replicated
+# at the database layer where it belongs. Putting a replicated volume under
+# each of those instances stored a second copy of every one: three instances
+# times two Longhorn replicas is six copies of a dataset whose encrypted
+# backup is under 200KB.
+#
+# That amplification is also what broke the cluster. Longhorn could not
+# schedule the third replica - 3 instances x 10Gi x 2 replicas against 34GB
+# disks, minus its own 25% reserve - so the state database sat at 2/3 and
+# ignition reported success anyway.
+#
+# Local PV keeps one copy per instance. Redundancy stays with Postgres, which
+# is CloudNativePG's own recommendation for exactly this reason, and the
+# arithmetic stops being interesting.
+#
+# WHAT THIS GIVES UP, said plainly: no ReadWriteMany, no storage-level
+# snapshots, and a volume dies with its node. All three are fine here - CNPG
+# rebuilds a replica from the primary, and the standalone age-encrypted backup
+# in object storage is the answer to losing more than that. A workload that
+# genuinely needs RWX or replicated block wants OpenEBS Replicated PV
+# (Mayastor), which can be enabled alongside this later; it is off below
+# because it wants hugepages and nvme-tcp to serve no current need.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openebs
+  labels:
+    # The provisioner mounts a hostPath to hand out volumes, which Talos's
+    # default baseline pod-security policy refuses.
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: openebs
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://openebs.github.io/openebs
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: openebs
+  namespace: openebs
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: openebs
+      # Manual bump, same as the chart this replaced: Dependabot has no
+      # ecosystem for a Flux HelmRelease chart version - only Renovate does,
+      # and that is deferred until there is a cluster to run it in.
+      version: "4.6.0"
+      sourceRef:
+        kind: HelmRepository
+        name: openebs
+        namespace: flux-system
+      interval: 12h
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    # Loki, Alloy and MinIO all default to ENABLED in this chart, and none of
+    # them is optional-looking from the values file - they are the observability
+    # stack Mayastor's call-home reporting feeds. With Mayastor off they collect
+    # nothing, and left at their defaults they would have installed a log
+    # aggregator and an S3 server onto three 34GB nodes, plus two more
+    # StorageClasses rooted at /var/local on the OS disk. Verified by reading
+    # the pinned chart rather than assuming, which is the only way this was ever
+    # going to be noticed before the apply.
+    loki:
+      enabled: false
+    alloy:
+      enabled: false
+
+    # Volume snapshots are a CSI feature. Local PV Hostpath is not a CSI driver
+    # and cannot snapshot anything, so these CRDs would be installed, marked
+    # keep: true, and never used by anything.
+    openebs-crds:
+      csi:
+        volumeSnapshots:
+          enabled: false
+
+    engines:
+      local:
+        # Both need a device or a pool set up outside Kubernetes. Hostpath
+        # needs neither, and the Talos UserVolumeConfig in talos.tf has
+        # already given it a real disk to sit on.
+        lvm:
+          enabled: false
+        zfs:
+          enabled: false
+      replicated:
+        # The whole point of this change. Leaving it on would also drag in
+        # its etcd and loki stacks, which is a lot of cluster for storage
+        # nothing here asks for.
+        mayastor:
+          enabled: false
+    localpv-provisioner:
+      hostpathClass:
+        enabled: true
+        name: openebs-hostpath
+        # The dedicated second disk from compute.tf, mounted here by the
+        # UserVolumeConfig in talos.tf. Not the default /var/openebs/local,
+        # which would land on the OS disk that Talos grows to fill with its
+        # own state and ephemeral partitions.
+        basePath: /var/mnt/storage
+        isDefaultClass: true
+        reclaimPolicy: Delete

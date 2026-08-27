@@ -74,17 +74,28 @@ This is the strongest available answer, because it does not depend on cleanup
 running or on rotation being remembered — the bytes are unreadable the moment
 they are written.
 
+**This is built and on.** `scripts/ignite/internal/phases/encryption.go`
+resolves the passphrase from 1Password — generating one on first use, the same
+way the state database password is generated — and sets `TF_ENCRYPTION` before
+any phase runs, `-destroy` included.
+
 **Design.** The entire `encryption` block is supplied through the
 `TF_ENCRYPTION` environment variable rather than committed to `.tf` files.
 Nothing in git then reveals the scheme or the key, and a bare `tofu` run
 without that variable cannot read state at all — which is the lock, not a
-side effect. Ignite resolves the passphrase from 1Password and sets the
-variable before invoking tofu; `tofu validate`, `tofu test` and every CI lane
-are unaffected, because none of them touch state.
+side effect. `tofu validate`, `tofu test` and every CI lane are unaffected,
+because none of them touch state.
+
+There is no fallback method and no migration mode in the program. A fresh
+estate is encrypted from its first apply and has no unencrypted state to fall
+back to, and a fallback left switched on is precisely what keeps unencrypted
+state readable. If ignite finds `TF_ENCRYPTION` already set it leaves it
+alone, which is what makes the manual cutover below possible without fighting
+it.
 
 ```hcl
 # The shape of what TF_ENCRYPTION carries. The passphrase comes from
-# op://homelab/<site>/state-database/encryption_passphrase.
+# op://homelab/<site>/database/encryption_passphrase.
 key_provider "pbkdf2" "primary" {
   passphrase = "<from 1Password>"
 }
@@ -96,9 +107,11 @@ state {
 }
 ```
 
-> **This is a deliberate one-time cutover, not a flag to flip.** State already
-> in Postgres is unencrypted; turning encryption on without a fallback makes it
-> unreadable.
+> **Migrating an estate that already has unencrypted state is a deliberate
+> one-time procedure, run by hand.** It is not something ignite offers, because
+> it would be a code path used once per estate that weakens the property for as
+> long as it stays switched on. Export `TF_ENCRYPTION` yourself with the block
+> below and ignite will leave it alone.
 >
 > The sequence below has been **rehearsed for real** — as a hermetic test in
 > `tests/go/encryption`, and by hand once against a throwaway Postgres in
@@ -155,11 +168,36 @@ CloudNativePG re-reads. Urgent because of the loop above: these keys read
 `postgres/`, and `postgres/` is the state. **Treat a leaked state file as a
 leaked PKI even if the age dump was never touched.**
 
-Rotating is: create a new token scoped to the one
-bucket with Object Read & Write, update
+Rotating by hand is: create a new token scoped to the one bucket with Object
+Read & Write, update
 `op://homelab/<site>/object_storage/{access_key_id,secret_access_key}`,
 re-run ignite's Cluster phase to rewrite the secret, confirm WAL archiving
 still works, then delete the old token.
+
+**Automating it is blocked on one console change, and this was checked rather
+than assumed.** These keys end up as attributes of
+`kubernetes_secret.object_storage_credentials`, which puts them in state — so
+by this project's own rule (a secret that lands in state is ours to generate)
+they belong on the generated side, alongside the database password, minted
+fresh every run. Cloudflare supports exactly that: an R2 S3 credential is an
+account API token, where `access_key_id` is the token's id and
+`secret_access_key` is the SHA-256 of its value, and
+`cloudflare_api_token` is a resource the pinned provider already has.
+
+What stops it today is scope. Asked directly, the admin token in
+`op://homelab/site0/object_storage/admin_token` answers:
+
+| Request                                       | Result                                   |
+| --------------------------------------------- | ---------------------------------------- |
+| `GET /accounts/{id}/r2/buckets`               | `200` — it manages buckets, as it should |
+| `GET /accounts/{id}/tokens/permission_groups` | `403` code 9109, unauthorized            |
+
+So it can create the bucket and cannot create the credential that reads it.
+Widening it means adding **Account · API Tokens · Edit** to that token in the
+Cloudflare console — a console action, which puts it on the same honest floor
+as every other credential a third party issues. Until that happens, generating
+these per run would be code that cannot work, and building it untested is the
+failure mode this project keeps re-learning.
 
 ### Proxmox API token — easy
 
@@ -314,21 +352,40 @@ fewer moving part than a monitoring stack. And the nightly backup is also the
 repair: if last night's was missing or stale, tonight's replaces it, and if it
 cannot, the run goes red.
 
-### What is still missing
+### Restoring
 
-A **restore** has never been performed. Every check above verifies that
-something plausible was written; none of them proves it can be read back and
-used, because doing that needs the offline identity and somewhere disposable to
-restore into. That remains the largest gap, and it is blocked on the disposable
-site in `docs/ideas.md`.
+```sh
+./scripts/ignite/ignite -site site0 -restore
+```
+
+This used to be three commands printed at the end of a run, which is not a
+restore — it is a recipe to retype correctly under the one circumstance where
+nobody is calm. The command fetches the break-glass identity, decrypts the
+latest backup, checks that what came back is state describing something, and
+pushes it through the encrypted backend. It refuses outright if local state
+already exists, because restoring over live state replaces the description of a
+running estate with an older one while the estate itself does not change to
+match.
+
+It restores state and stops. What to do next — re-ignite, tear down, or just
+look at how far reality has drifted — is a judgement call made with the facts
+in front of you, not a step to be chained onto a recovery.
+
+It is also the only thing in this program that reads the private half at all;
+`tests/go/repo/breakglass_test.go` fails if any other file does.
+
+**Rehearsing it needs no second estate.** Right after a successful ignition,
+move the local state aside, restore, and compare — the workstation is the
+disposable part, not the site.
 
 ## What is deliberately not automated
 
 Layer 2 and Layer 3 are runbooks rather than code, for now. Automating a
 rotation that can lock you out of your own state is a change that has to be
-rehearsed against a disposable estate before it is trusted, and there is not
-one yet — that is the "lower-tier environment" idea in `docs/ideas.md`, and it
-is a prerequisite rather than a nice-to-have.
+rehearsed before it is trusted — but rehearsed locally, against throwaway
+scaffolding on the workstation, not against a second site. There will not be a
+second site for years, and treating one as a prerequisite is how these runbooks
+stayed runbooks.
 
 What _is_ automated is the part that needs no rehearsal: the Backup phase
 never writes plaintext state to disk. It pipes `tofu state pull` straight into

@@ -11,7 +11,13 @@
 set -euo pipefail
 
 template="config/management.tpl.json"
-rendered="config/management.rendered.json"
+
+# NOT config/management.rendered.json. That filename belongs to the Render
+# phase, and an ignition run in another terminal is reading it - `task
+# validate` used to write and then delete it, which sabotaged a live
+# deployment mid-flight and left its state describing VMs it could no longer
+# see. A separate filename means validate and a real run cannot collide.
+rendered="config/management.placeholder.json"
 
 # Two passes, and the order matters.
 #
@@ -28,6 +34,17 @@ sed -E \
 if grep -q '{{' "${rendered}"; then
 	echo "unresolved template markers remain in ${rendered}:" >&2
 	grep -n '{{' "${rendered}" >&2
+	exit 1
+fi
+
+# A bare op:// reference, written without the {{ }}, survives both passes above
+# and every schema check after them - `op inject` would not substitute it
+# either, so the literal reference string reaches whatever reads that key. The
+# hermetic version of this check lives in tests/go/repo; this is the backstop
+# for anything that renders the template without running the test suite.
+if grep -q 'op://' "${rendered}"; then
+	echo "unwrapped op:// reference(s) in ${template} - wrap them in {{ }}:" >&2
+	grep -n 'op://' "${rendered}" >&2
 	exit 1
 fi
 

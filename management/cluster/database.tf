@@ -31,7 +31,7 @@ resource "kubernetes_secret" "state_db_credentials" {
 
   data = {
     username = local.state_db_owner
-    password = local.site_state.db_password
+    password = local.site_database.password
   }
 }
 
@@ -96,7 +96,7 @@ output "state_conn_str" {
   description = "Connection string for the OpenTofu pg backend."
   sensitive   = true
   # A format string, not a credential: the only secret in it is
-  # local.site_state.db_password, read from 1Password at run time. The skip
+  # local.site_database.password, read from 1Password at run time. The skip
   # has to sit on the line directly above the match - checkov's secrets
   # scanner looks one line back, not at the enclosing block, which is why the
   # first attempt at this was ignored.
@@ -104,7 +104,7 @@ output "state_conn_str" {
     # checkov:skip=CKV_SECRET_4:format string, see above
     "postgres://%s:%s@%s:%d/%s?sslmode=require",
     local.state_db_owner,
-    urlencode(local.site_state.db_password),
+    urlencode(local.site_database.password),
     local.node_ips[0],
     local.state_db_nodeport,
     local.state_db_name,

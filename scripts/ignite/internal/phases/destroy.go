@@ -2,6 +2,7 @@ package phases
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"homelab/ignite/internal/config"
@@ -68,16 +69,78 @@ func Destroy(ctx *run.Context, confirm string) error {
 	run.Warn("  network   " + net.SiteCIDR)
 	fmt.Println()
 
-	run.Info("tofu init")
-	if err := run.TofuInit(ctx); err != nil {
-		return err
+	// Reach the state before trying to destroy what it describes.
+	//
+	// After a successful ignition there is no local state and no
+	// backend_pg.tf: Migrate moved state into Postgres and Sterilize removed
+	// both files. tearDown looks for exactly those two things, so a destroy
+	// run from that state found nothing, skipped the teardown and reported
+	// "Site destroyed" over three running VMs. Which is the only state a real
+	// destroy is ever launched from.
+	//
+	// So if there is no local state, assume the state is where the successful
+	// path put it and wire the backend up explicitly rather than hoping a
+	// leftover .terraform directory still remembers.
+	if _, err := os.Stat(ctx.LocalState); err != nil {
+		if _, err := os.Stat(ctx.BackendPgOn); err != nil {
+			run.Info("no local state - looking for it in the cluster's Postgres")
+			if err := copyFile(ctx.BackendPgOff, ctx.BackendPgOn); err != nil {
+				return fmt.Errorf("enabling the Postgres backend: %w", err)
+			}
+			connStr, host, port, err := buildStateConnStr(ctx)
+			if err != nil {
+				return err
+			}
+			run.Info(fmt.Sprintf("connecting to the state database at %s:%d", host, port))
+			if err := run.Tofu(ctx, "tofu init (pg backend)",
+				"init", "-input=false", "-reconfigure",
+				"-backend-config=conn_str="+connStr,
+			); err != nil {
+				return fmt.Errorf(`could not reach the state database, so there is nothing to destroy from.
+
+State lives in Postgres inside the cluster after a successful ignition. If that
+cluster is already gone, the state went with it - restore the age-encrypted
+backup from object storage first (see docs/state-and-secret-rotation.md), or
+remove whatever is left in Proxmox by hand.
+
+underlying error: %w`, err)
+			}
+		}
+	} else {
+		run.Info("tofu init")
+		if err := run.TofuInit(ctx); err != nil {
+			return err
+		}
 	}
 
-	if ok := tearDown(ctx); !ok {
+	res := tearDown(ctx)
+	if !res.SafeToSterilize {
 		return fmt.Errorf("teardown did not complete - state and secrets have been left in place on purpose, see the messages above")
 	}
 
-	return Sterilize(ctx, false)
+	// Secrets go either way: they are on this workstation and there is no
+	// reading of events in which leaving them is the safer choice.
+	if err := Sterilize(ctx, false); err != nil {
+		return err
+	}
+
+	// But "nothing to destroy" is not "destroyed". Reporting success here is
+	// exactly the bug that printed "Site destroyed" over three running VMs,
+	// and it is worse than a false alarm: it is the one message that stops
+	// anybody going to look.
+	if !res.Destroyed {
+		return fmt.Errorf(`no state was found, so nothing was destroyed.
+
+The workspace has been sterilized - the secrets on it are gone - but this
+command cannot tell you whether the estate is still running. Check the
+hypervisor by hand for %s.
+
+If the estate is still up and its state is only in the cluster's Postgres,
+restore the age-encrypted backup from object storage first: see
+docs/state-and-secret-rotation.md`, vmIDHint(ctx))
+	}
+
+	return nil
 }
 
 // ConfirmDestroy requires the site to be named twice: once to select it and

@@ -595,6 +595,11 @@ to do first.
 
 ### Self-healing import blocks for orphan-prone resources
 
+> **Superseded.** This decision described `import` blocks on both orphan-prone
+> resources. That can never work for the one in the Compute phase, and the
+> reasoning below survives only as the description of a problem that still
+> needs solving. See the entry after it.
+
 **Chose:** `import` blocks on `proxmox_download_file.talos_disk_image` and
 `cloudflare_r2_bucket.homelab`, adopting whatever already exists at their
 deterministic path/name instead of failing to create a duplicate.
@@ -609,6 +614,91 @@ independent resource types hit the identical failure mode in the same day.
 Both blocks are no-ops once the resource is already in state, so they cost
 nothing on a normal run; they only matter on the one that would otherwise
 need a person to notice and fix it by hand.
+
+### Correction: import cannot run before the cluster exists
+
+**Chose:** delete the orphaned Talos disk image and let the apply re-download
+it; keep adopting the R2 bucket, but materialise
+`talos_cluster_kubeconfig.this` with a targeted apply first.
+**Because:** `tofu import` configures **every** provider in the root, not only
+the one owning the resource being imported. `versions.tf` configures the
+kubernetes provider from `talos_cluster_kubeconfig` attributes that do not
+exist until the cluster is built, so an import during Compute fails with
+"Invalid provider configuration" pointing at `versions.tf` - before it ever
+reaches the resource in question. Confirmed against the real estate: a
+`-target`ed plan of that same resource succeeds, because targeting configures
+only the providers the target needs; an import of it does not.
+**Rejected:** leaving apply to tolerate the pre-existing file - tested, and it
+fails with "refusing to override existing file", which is exactly why the
+adopt existed. And deleting the R2 bucket the way the disk image is deleted,
+because one is derived data worth two minutes of download and the other holds
+the backups.
+**Note:** the underlying cause is a provider configured from a resource in its
+own root, which is the design constraint recorded in
+[`02-abstraction.md`](02-abstraction.md).
+
+### Storage: OpenEBS Local PV, not a replicated engine
+
+**Chose:** OpenEBS Local PV Hostpath on the dedicated second disk, one copy per
+volume, with the CloudNativePG request cut from 10Gi to 4Gi.
+**Because:** CloudNativePG already replicates at the database layer - three
+Postgres instances with streaming replication. A replicated storage engine
+underneath stored a second copy of each, so the cluster held six copies of a
+dataset whose entire encrypted backup is under 200KB. That amplification was
+not theoretical: Longhorn could not schedule the third replica (3 x 10Gi x 2
+against 34GB disks, minus its own 25% reserve), the state database sat at 2/3
+for half an hour, and ignition reported success anyway.
+**Rejected:** Longhorn, but not for being proprietary - it is CNCF and Apache
+2.0, exactly like OpenEBS. Rejected for storing redundancy in the wrong layer
+at this scale. Also rejected: a bigger disk, which buys the same waste with
+more hardware.
+**Gives up:** ReadWriteMany, storage-level snapshots, and volume survival when
+a node dies. All acceptable - CNPG rebuilds a replica from the primary, and
+the age-encrypted backup in object storage answers the case where more than
+one node is lost. A workload that genuinely needs RWX wants OpenEBS Replicated
+PV (Mayastor), which can be enabled alongside this later.
+
+## Acceptance test: change 3 to 5 and watch it land
+
+The epoch is signed off when this works, end to end, with no manual step in
+the middle:
+
+> Change `control_plane_count` from `3` to `5` in the config. Run the button.
+> Two more machines exist, joined to the cluster.
+
+It is the right test because it exercises the whole chain in one edit rather
+than any single layer. The count drives addressing (`10.10.10.100-104`),
+naming (`sheridan-cp-01..05`), VM ids (`1000-1004`), placement, the Talos
+machine configuration applied to each new node, and the wait that proves each
+one answered. If any of those is hardcoded, hand-maintained, or quietly
+assumes three, this fails and names the place.
+
+### Why 5 and not 4
+
+Worth stating, because this epoch already records that
+`control_plane_count` is a provisioning input and **not** an autoscaler, and
+that etcd quorum is fixed at creation. Those are not in conflict with this
+test.
+
+Going 3 -> 5 is odd to odd: quorum moves from 2-of-3 to 3-of-5 and the cluster
+gains fault tolerance. Going 3 -> 4 adds a member without adding a tiebreaker,
+which is the thing that must never happen. The rule the earlier decision is
+protecting is "never scale etcd automatically, and never to an even number" -
+not "never change the count deliberately".
+
+### What to check before running it
+
+- **Hypervisor capacity.** Five control-plane VMs at 4 cores and 4GiB each is
+  20 cores and 20GiB, alongside the devbox. Confirm the host has it, because
+  the failure mode otherwise is two VMs that create and never boot.
+- **Datastore capacity.** Each node carries a 64GiB OS disk and a 32GiB
+  storage disk, so five nodes is ~480GiB on `local-zfs` before the template
+  and the devbox.
+- **Placement stays put.** With one hypervisor the round-robin is a no-op -
+  every node lands on it either way - so the re-deal hazard recorded in
+  [`02-abstraction.md`](02-abstraction.md) does not bite here. It would the
+  moment a second hypervisor exists, which is exactly why that entry says
+  adding a hypervisor to a running site has no safe meaning yet.
 
 ## Outcome
 
@@ -639,6 +729,18 @@ To be completed when the epoch closes.
   persistent volume backing the runner's tool-cache directory is the
   natural mechanism, since `deploy-infrastructure.yml` already targets
   `self-hosted`. Trigger: once self-hosted runners exist.
+
+- **Ignition has never been run against a factory-fresh Proxmox host.** Every
+  run so far has been against a hypervisor that already had the SDN, the
+  tailnet membership, the API token and the disk-import SSH account from an
+  earlier run. The playbook is idempotent, so those runs pass - but "install
+  Proxmox, run the button, get a cluster" is the epoch's actual promise and it
+  is currently unproven. What has been proven is "start from an almost-fresh
+  Proxmox", which is a weaker claim and the honest one to make until then.
+  Trigger: buying a second hypervisor. That is the first machine that can be
+  wiped without taking the estate down with it, and the first genuine test of
+  the client-onboarding story in
+  [`02-abstraction.md`](02-abstraction.md).
 
 ## Deferred (Ansible)
 
@@ -749,12 +851,19 @@ To be completed when the epoch closes.
   also capped at 50 characters. Letters, digits and spaces only.
 
 - **The age private key is never referenced by the automation, and must not
-  be.** The config contract carries only `backup_recipient`, the public half,
-  so the start button can write backups and cannot read them. Putting the
+  be.** The config contract carries only `state_backup.recipient`, the public
+  half, so the start button can write backups and cannot read them. Putting the
   identity in `management.tpl.json` would render it to disk on every run and
   hand every historical backup to anyone who compromised the workstation. It
-  lives in 1Password as `backup_identity` and is fetched by a human, by hand,
-  only when restoring.
+  lives in 1Password at `op://homelab/state_backup/identity` and is fetched by
+  a human, by hand, only when restoring. This is no longer a matter of
+  remembering: `tests/go/repo/breakglass_test.go` fails if any `.tf` file or
+  the config template so much as names it.
+- **The keypair is one per estate, not one per site.** It sits at the top level
+  of the config, outside `sites`, because the recipient is a public key —
+  sharing it across sites costs nothing, while a key per site would multiply
+  the number of private halves a restore has to find. The per-site database
+  password is the opposite case and stays inside the site.
 - **Rotating the age key orphans every existing backup.** Backups are
   encrypted to a recipient, so a new key pair cannot read anything written
   under the old one. Rotate before real backups exist, or decrypt and

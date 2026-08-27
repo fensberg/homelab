@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	urlpkg "net/url"
 	"os"
 	"strings"
 	"time"
@@ -67,7 +68,7 @@ func Compute(ctx *run.Context) error {
 		return err
 	}
 
-	if err := adoptOrphanedDiskImage(ctx, cfg, net); err != nil {
+	if err := reclaimOrphanedDiskImage(ctx, cfg, net); err != nil {
 		return err
 	}
 
@@ -118,33 +119,119 @@ maintenance-mode banner:
 	return nil
 }
 
-// adoptOrphanedDiskImage imports the Talos disk image if a prior run's
-// incomplete teardown already left it sitting in the datastore. See
-// run.AdoptIfOrphaned for why this is Go and not a `.tf` import block.
+// reclaimOrphanedDiskImage deletes a Talos disk image left behind by a prior
+// run's incomplete teardown, so the apply that follows can download it fresh.
 //
-// The exact expected file_name embeds talos_version, which lives only in
-// variables.tf - duplicating it here would be a second copy of that value
-// to keep in sync. Matching by pattern and importing whatever real filename
-// the datastore actually reports sidesteps that: if it happens to be a
-// stale image from a previous talos_version, the url/decompression_algorithm
-// mismatch already documented in compute.tf forces an immediate replace
-// anyway, so the outcome still converges - just with one adopt-then-replace
-// cycle instead of a clean adopt, the same tradeoff already known and
-// accepted for this resource.
-func adoptOrphanedDiskImage(ctx *run.Context, cfg *config.Config, net *config.SiteNetwork) error {
+// It used to import it instead, and that could never have worked. `tofu
+// import` configures EVERY provider in the root, not just the one owning the
+// resource being imported - and the kubernetes provider here is configured
+// from talos_cluster_kubeconfig attributes that do not exist until the cluster
+// is built. So an import during Compute fails with "Invalid provider
+// configuration ... depends on values that cannot be determined until apply",
+// pointing at versions.tf, before it ever reaches the resource in question.
+//
+// Confirmed by running both against the real estate: `tofu plan -target` of
+// this same resource succeeds, because targeting configures only the providers
+// the target needs, while `tofu import` of it does not.
+//
+// Deleting rather than adopting is a fair trade for this resource specifically
+// and would not be for others. The image is derived data: re-downloading costs
+// a couple of minutes, and compute.tf already accepts an adopt-then-replace
+// cycle whenever the stored image came from a different talos_version. A
+// bucket holding backups, by contrast, must still be adopted - see
+// adoptOrphanedR2Bucket, which runs late enough for import to work.
+//
+// The expected file name embeds talos_version, which lives only in
+// variables.tf; matching by pattern instead avoids keeping a second copy of
+// that value in step.
+func reclaimOrphanedDiskImage(ctx *run.Context, cfg *config.Config, net *config.SiteNetwork) error {
 	site := cfg.Sites[ctx.Site]
 	hv := net.Hypervisors[0]
 	address := fmt.Sprintf("proxmox_download_file.talos_disk_image[%q]", hv.Hostname)
 
-	return run.AdoptIfOrphaned(ctx, address, func() (string, error) {
-		volID, err := findTalosDiskImage(site.Hypervisor, hv)
-		if err != nil || volID == "" {
-			return "", err
+	// Already tracked: this is an ordinary re-run and the image is ours.
+	if run.InState(ctx, address) {
+		return nil
+	}
+
+	volID, err := findTalosDiskImage(site.Hypervisor, hv)
+	if err != nil {
+		return fmt.Errorf("checking whether a disk image already exists outside Terraform: %w", err)
+	}
+	if volID == "" {
+		return nil
+	}
+
+	run.Info(volID + " exists outside Terraform - a prior run left it behind")
+	run.Info("deleting it so this run can download a known-good copy")
+	if err := deleteDatastoreFile(site.Hypervisor, hv, volID); err != nil {
+		return fmt.Errorf(`could not delete the orphaned disk image %s: %w
+
+Delete it by hand and re-run:
+
+    ssh root@%s "pvesm free %s"`, volID, err, hv.IP, volID)
+	}
+	run.Ok("orphaned disk image removed")
+	return nil
+}
+
+// deleteDatastoreFile removes one volume from a Proxmox datastore. The API
+// answers with a task id and does the work asynchronously, so this polls until
+// the file is actually gone rather than trusting the acknowledgement - a
+// download started while the delete is still running fails exactly the way the
+// orphan did.
+func deleteDatastoreFile(hv config.Hypervisor, node config.Node, volID string) error {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		// Same self-signed endpoint versions.tf already accepts with
+		// insecure = true; see findTalosDiskImage below.
+		// nosemgrep: problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification.bypass-tls-verification
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}, //nolint:gosec
+	}
+
+	url := datastoreFileURL(node, volID)
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", hv.TokenID, hv.TokenSecret))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		remaining, err := findTalosDiskImage(hv, node)
+		if err == nil && remaining == "" {
+			return nil
 		}
-		// bpg/proxmox's own import ID shape: node_name/datastore_id:content_type/file_name
-		// - volID from the API is already "datastore_id:content_type/file_name".
-		return hv.Hostname + "/" + volID, nil
-	})
+		time.Sleep(3 * time.Second)
+	}
+	return fmt.Errorf("the delete was accepted but %s is still in the datastore two minutes later", volID)
+}
+
+// datastoreContentURL lists what is in the local-iso datastore on a node.
+func datastoreContentURL(node config.Node) string {
+	return fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/storage/local-iso/content", node.IP, node.Hostname)
+}
+
+// datastoreFileURL addresses one volume in that datastore.
+//
+// PathEscape, not QueryEscape and not raw. A Proxmox volume id looks like
+// "local-iso:iso/talos-v1.13.8-nocloud-amd64.iso" - it carries both a colon
+// and a slash, and it occupies a single path segment. Left raw, that slash
+// would split the segment and address a URL that does not exist; QueryEscape
+// would turn the spaces-as-plus rule loose on a path, which is a different
+// encoding entirely.
+func datastoreFileURL(node config.Node, volID string) string {
+	return datastoreContentURL(node) + "/" + urlpkg.PathEscape(volID)
 }
 
 // findTalosDiskImage lists the local-iso datastore's content directly via
@@ -164,7 +251,7 @@ func findTalosDiskImage(hv config.Hypervisor, node config.Node) (string, error) 
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}, //nolint:gosec
 	}
 
-	url := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/storage/local-iso/content", node.IP, node.Hostname)
+	url := datastoreContentURL(node)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", err

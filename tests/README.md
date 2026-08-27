@@ -175,18 +175,64 @@ which is how a prune that silently stopped would surface.
 one fewer moving part than a monitoring stack — and the nightly backup doubles
 as the repair: if last night's was missing or stale, tonight's replaces it.
 
+## Running the real-estate tiers for the first time
+
+`integration-tests.yml` has never run. Before it can, two things have to exist
+that live outside this repository.
+
+**1. A GitHub environment called `integration`.** Settings -> Environments ->
+New environment. The workflow names it, and that is what gates access to the
+secret below.
+
+**2. A secret in it called `OP_SERVICE_ACCOUNT_TOKEN`.** The value is a
+1Password service account token. Piping it avoids the value ever appearing in a
+terminal or a shell history:
+
+```sh
+op read "op://homelab-automation/OP_SERVICE_ACCOUNT_TOKEN/credential" \
+  | gh secret set OP_SERVICE_ACCOUNT_TOKEN --env integration --repo <owner>/homelab
+```
+
+> **The thing most likely to break the first run.** That service account must
+> have read access to the **`homelab`** vault, not only to whichever vault the
+> token itself is stored in. Every reference in `config/management.tpl.json` is
+> an `op://homelab/...` path, so a token scoped to a different vault renders
+> nothing and the run dies at its first step. Check before dispatching:
+>
+> ```sh
+> OP_SERVICE_ACCOUNT_TOKEN="$(op read 'op://homelab-automation/OP_SERVICE_ACCOUNT_TOKEN/credential')" \
+>   op vault list
+> ```
+>
+> `homelab` must appear in that list.
+
+**Then dispatch it by hand rather than waiting for 04:00.** Actions ->
+Integration Tests -> Run workflow, tier `integration`. The first run is
+information either way: it either proves the tier works, or it names the first
+thing that does not.
+
+Expect the API tier to need a second pass. Those tests assert on live vendor
+API shapes, and the assertions were written against this project's own code
+rather than against observed responses - see `tests/go/api`.
+
 ## The e2e tier
 
 `tests/go/e2e` builds an estate from nothing and destroys it again. It is
-gated three ways and passes none of them for you:
+gated two ways and passes neither of them for you:
 
 1. A build tag, so `go test ./...` does not compile it.
 2. `HOMELAB_E2E_CONFIRM` must equal `HOMELAB_TEST_SITE`, spelled out.
-3. The site must not be `site0`, the default in the config template.
 
 ```sh
-HOMELAB_TEST_SITE=site1 HOMELAB_E2E_CONFIRM=site1 task test:e2e
+HOMELAB_TEST_SITE=site0 HOMELAB_E2E_CONFIRM=site0 task test:e2e
 ```
+
+There was a third guard - the site must not be `site0` - written when a
+disposable second estate looked likely. It is not coming, and that guard was
+not making this tier safer; it was making it unrunnable, which is worse than
+not having the tier at all. The estate here is disposable by design, so the
+risk worth guarding is destroying the _wrong_ one, and naming the site twice is
+exactly what `ignite -destroy` asks of a human. See `docs/ideas.md`.
 
 It covers the whole ignition sequence - Render through Backup, including
 moving state off local disk into cluster Postgres and pushing an encrypted

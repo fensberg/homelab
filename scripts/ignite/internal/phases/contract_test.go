@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 
 	"homelab/ignite/internal/tfsource"
@@ -141,3 +142,36 @@ func TestContract_EveryPhaseInTheSequenceDispatches(t *testing.T) {
 }
 
 var switchCase = regexp.MustCompile(`(?m)^\s*case\s+"([a-z]+)":`)
+
+// The tailnet key's expiry and the Overlay phase's force-replacement are one
+// mechanism split across two languages: a short expiry is only safe because
+// every run mints a new key, and forcing a replacement every run is only worth
+// the churn because the expiry is short. Either one alone is a regression, and
+// nothing else would notice - a key that quietly outlives its use is not an
+// error anywhere, it is just a credential nobody revoked.
+func TestContract_TailnetKeyExpiryStaysShort(t *testing.T) {
+	src := clusterFile(t, "overlay-network.tf")
+
+	got, err := tfsource.Int(src, "overlay_key_expiry_seconds")
+	if err != nil {
+		t.Fatalf("overlay-network.tf: %v", err)
+	}
+
+	const maxSeconds = 3600
+	if got > maxSeconds {
+		t.Errorf(`overlay_key_expiry_seconds is %d, which is longer than an hour (%d).
+
+The key is used once, at the hypervisor's 'tailscale up', minutes after it is
+minted. A tagged device does not expire, so nothing downstream needs the key to
+stay valid - a long expiry only leaves a pre-authorized, route-approving
+credential sitting in the Tailscale console. Four had accumulated by the end of
+epoch 01.
+
+If this genuinely has to grow, the Overlay phase's -replace (overlay.go) is the
+thing that makes a short one safe; read that first.`, got, maxSeconds)
+	}
+
+	if !strings.Contains(src, "local.overlay_key_expiry_seconds") {
+		t.Error("overlay-network.tf declares overlay_key_expiry_seconds but the key resource does not use it")
+	}
+}

@@ -178,9 +178,10 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
     size = 64
   }
 
-  # Longhorn's own data path, kept off the OS disk on purpose - Longhorn's
-  # documented Talos support expects a real mounted volume, not free space
-  # shared with the ephemeral/state partitions Talos grows to fill disk 0.
+  # The storage provisioner's data path, kept off the OS disk on purpose:
+  # Talos grows disk 0 to fill with its own state and ephemeral partitions,
+  # so a provisioner sharing it has no predictable capacity. talos.tf mounts
+  # this one at /var/mnt/storage, which is where OpenEBS hands out volumes.
   disk {
     datastore_id = "local-zfs"
     file_format  = "raw"

@@ -24,6 +24,7 @@ func Sterilize(ctx *run.Context, quiet bool) error {
 		ctx.BackendPgOn,
 		ctx.LocalState,
 		ctx.LocalState + ".backup",
+		ctx.Kubeconfig,
 	}
 	for _, t := range targets {
 		if err := run.RemoveIfExists(t); err != nil {
@@ -47,7 +48,20 @@ func Sterilize(ctx *run.Context, quiet bool) error {
 // and sterilizing whatever secrets remain is still correct.
 func EmergencyDestroy(ctx *run.Context) bool {
 	run.Warn("Run did not complete. Tearing down so nothing is left orphaned.")
-	return tearDown(ctx)
+	return tearDown(ctx).SafeToSterilize
+}
+
+// teardownResult separates two questions that a single bool used to conflate,
+// and the conflation printed "Site destroyed" over three running VMs.
+//
+// "Is it safe to wipe the workspace" and "was anything actually destroyed" are
+// different, and the case that separates them is the one that matters: no
+// state file at all. There is nothing to destroy and nothing to lose by
+// sterilizing, so SafeToSterilize is true - but nothing was verified gone
+// either, and a deliberate teardown must not report success from an absence.
+type teardownResult struct {
+	SafeToSterilize bool
+	Destroyed       bool
 }
 
 // tearDown is the teardown itself, shared by the failure route
@@ -56,30 +70,37 @@ func EmergencyDestroy(ctx *run.Context) bool {
 // the cluster before destroying the cluster, and never sterilize after a
 // destroy that failed - was learned the hard way once, and a second copy of
 // it is a second place to get it wrong.
-func tearDown(ctx *run.Context) bool {
+func tearDown(ctx *run.Context) teardownResult {
 	if _, err := os.Stat(ctx.BackendPgOn); err == nil {
 		run.Warn("State lives in Postgres, inside the cluster this destroy is about to tear down - migrating it back to local first. Destroying in dependency order kills the database hosting this state before the VMs themselves are reached, which would otherwise strand the destroy partway through with no way to record what it had already done.")
 		if err := demigrateStateToLocal(ctx); err != nil {
 			run.Warn("Could not migrate state back to local: " + err.Error())
-			run.Warn("The standalone age-encrypted state backup in object storage is the documented fallback for exactly this (see docs/epochs/01-ignition.md). Restoring it needs backup_identity from 1Password, fetched by a human, then a local 'tofu init -migrate-state' back to the local backend before destroy can proceed.")
-			return false
+			run.Warn("The standalone age-encrypted state backup in object storage is the documented fallback for exactly this (see docs/epochs/01-ignition.md). Restoring it needs the state-backup identity from 1Password (" + BackupIdentityRef + "), fetched by a human, then a local 'tofu init -migrate-state' back to the local backend before destroy can proceed.")
+			return teardownResult{}
 		}
 		run.Ok("state migrated back to local")
 	}
 
 	if _, err := os.Stat(ctx.LocalState); err != nil {
 		run.Warn("No local state file - nothing for tofu to destroy.")
-		run.Warn("Check Proxmox by hand for VMs 100-102.")
-		return true
+		run.Warn("Check Proxmox by hand for " + vmIDHint(ctx) + ".")
+		return teardownResult{SafeToSterilize: true}
 	}
+
+	// Two things tofu cannot do for itself, both learned by watching a real
+	// teardown of a real estate destroy nothing at all. Order matters: state
+	// is already back on local disk by this point, so neither step can strand
+	// the destroy it is clearing the way for. See teardown.go.
+	forgetClusterInternalResources(ctx)
+	emptyObjectStorage(ctx)
 
 	if err := run.Cmd(ctx.ClusterDir, "tofu", "destroy", "-input=false", "-auto-approve"); err != nil {
 		run.Warn("tofu destroy failed. State and secrets are being left in place - sterilizing now would destroy your only way to retry the destroy or diagnose what's left running.")
-		run.Warn("Check Proxmox manually for VMs 100-102, then either re-run 'tofu destroy' in management/cluster yourself or run 'task clean-secrets' once you've confirmed nothing is orphaned.")
-		return false
+		run.Warn("Check Proxmox manually for " + vmIDHint(ctx) + ", then either re-run 'tofu destroy' in management/cluster yourself or run 'task clean-secrets' once you've confirmed nothing is orphaned.")
+		return teardownResult{}
 	}
 	run.Ok("infrastructure destroyed cleanly")
-	return true
+	return teardownResult{SafeToSterilize: true, Destroyed: true}
 }
 
 // demigrateStateToLocal reverses Migrate: state comes back out of Postgres
@@ -147,7 +168,25 @@ func buildStateConnStr(ctx *run.Context) (connStr, host string, port int, err er
 
 	host = fmt.Sprintf("10.%d.10.%d", site.Octet, stateDBFirstNodeHost)
 	connStr = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=require",
-		stateDBOwner, site.State.DBPassword, host, stateDBNodePort, stateDBName)
+		stateDBOwner, site.Database.Password, host, stateDBNodePort, stateDBName)
 
 	return connStr, host, stateDBNodePort, nil
+}
+
+// vmIDHint names the VM ids this site would have used, so an operator cleaning
+// up by hand knows what to look for. Ids are banded by octet - variables.tf
+// computes them as octet*100 + i - so the hardcoded "100-102" this replaced
+// was wrong for every site including the only one that exists.
+func vmIDHint(ctx *run.Context) string {
+	cfg, err := config.LoadRendered(ctx.ConfigRendered)
+	if err != nil {
+		return "this site's VMs"
+	}
+	site, ok := cfg.Sites[ctx.Site]
+	if !ok || site.ControlPlaneCount < 1 {
+		return "this site's VMs"
+	}
+	first := site.Octet * 100
+	return fmt.Sprintf("VMs %d-%d and the template at %d",
+		first, first+site.ControlPlaneCount-1, first+99)
 }

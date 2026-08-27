@@ -1,15 +1,16 @@
 // Command ignite is the start button. It ignites the homelab management
-// cluster from nothing, running nine phases in order:
+// cluster from nothing, running ten phases in order:
 //
-//	1 render     - pull secrets out of 1Password into gitignored files
-//	2 overlay    - apply the overlay network policy, mint a hypervisor auth key
-//	3 hypervisor - run the Ansible playbook against Proxmox
-//	4 verify     - prove the network works BEFORE spending 20 minutes on tofu
-//	5 compute    - create the VMs and wait for Talos to answer
-//	6 cluster    - apply Talos config, bootstrap etcd, install Flux
-//	7 migrate    - move OpenTofu state from this disk into cluster Postgres
-//	8 backup     - age-encrypt the state and push it off-site to Cloudflare R2
-//	9 sterilize  - wipe every secret and the local state file
+//	 1 render     - pull secrets out of 1Password into gitignored files
+//	 2 overlay    - apply the overlay network policy, mint a hypervisor auth key
+//	 3 hypervisor - run the Ansible playbook against Proxmox
+//	 4 verify     - prove the network works BEFORE spending 20 minutes on tofu
+//	 5 compute    - create the VMs and wait for Talos to answer
+//	 6 cluster    - apply Talos config, bootstrap etcd, install Flux
+//	 7 health     - refuse to go on unless the cluster actually converged
+//	 8 migrate    - move OpenTofu state from this disk into cluster Postgres
+//	 9 backup     - age-encrypt the state and push it off-site to Cloudflare R2
+//	10 sterilize  - wipe every secret and the local state file
 //
 // Safety model: the workspace is always sterilized on the way out. What
 // differs is what happens to infrastructure if the run does not reach the
@@ -30,6 +31,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"syscall"
 
 	"homelab/ignite/internal/phases"
@@ -59,9 +61,11 @@ func main() {
 	whatIf := flag.Bool("whatif", false, "Print which phases would run, without running them.")
 	destroy := flag.Bool("destroy", false, "Tear this site's infrastructure down, then wipe the workspace. Requires -confirm.")
 	confirm := flag.String("confirm", "", "Name the site again, to confirm -destroy.")
+	restore := flag.Bool("restore", false, "Bring the age-encrypted state back from object storage. Refuses if local state already exists.")
+	kubeconfig := flag.Bool("kubeconfig", false, "Write this site's kubeconfig into the workspace and exit. It is a credential; 'task clean-secrets' removes it.")
 	flag.Parse()
 
-	if err := destroyFlagsOK(*destroy, *phase, *from); err != nil {
+	if err := standaloneFlagsOK(modes{Destroy: *destroy, Restore: *restore, Kubeconfig: *kubeconfig}, *phase, *from); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}
@@ -109,8 +113,45 @@ Nothing has been touched. Re-run without -whatif to do it.
 	// OpenTofu reads the same config; this tells it which site to use.
 	os.Setenv("TF_VAR_site", ctx.Site)
 
+	// Before any phase, including -destroy: state is encrypted at rest, so a
+	// tofu invocation without TF_ENCRYPTION cannot read it. Setting it per
+	// phase would leave `-from cluster` and the teardown unable to reach the
+	// state they exist to operate on.
+	if err := phases.EnsureStateEncryption(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+
 	if *destroy {
 		os.Exit(runDestroy(ctx, *confirm))
+	}
+
+	// Not a phase either, and deliberately not part of any sequence: a restore
+	// happens after a loss, on a workstation that has nothing, and what to do
+	// with the state once it is back is a judgement call rather than a next
+	// step.
+	if *restore {
+		if err := phases.Restore(ctx); err != nil {
+			fmt.Println()
+			run.Fail("HALTED: " + err.Error())
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Not a phase: it creates nothing, waits for nothing and has no place in
+	// the ignition sequence. It exists because looking at the cluster used to
+	// mean pasting a tofu output through a shell pipeline and remembering to
+	// delete the result.
+	if *kubeconfig {
+		if err := phases.WriteKubeconfigTo(ctx, ctx.Kubeconfig); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		fmt.Println()
+		fmt.Println("    export KUBECONFIG=" + ctx.Kubeconfig)
+		fmt.Println()
+		return
 	}
 
 	runErr := runInterruptibly(ctx, toRun)
@@ -126,13 +167,19 @@ Nothing has been touched. Re-run without -whatif to do it.
 			os.Exit(1)
 		}
 
-		// Only auto-destroy if this run could actually have created
-		// infrastructure. A destroy that fails must not be followed by
-		// sterilize - see EmergencyDestroy's own comment for why.
-		safeToSterilize := true
-		if slices.Contains(toRun, "compute") {
-			safeToSterilize = phases.EmergencyDestroy(ctx)
-		}
+		// "Could THIS RUN have created infrastructure?" is the wrong
+		// question, and asking it orphaned a real estate: a `-from cluster`
+		// run failed, its phase list contained no "compute", so the destroy
+		// was skipped - and sterilize then deleted the state file describing
+		// three VMs and a template that an earlier `-phase compute` had
+		// created and left running.
+		//
+		// The right question is whether any state exists, which is a fact
+		// about the workspace rather than about this invocation.
+		// EmergencyDestroy already establishes that itself: it reports
+		// "nothing for tofu to destroy" and returns true when there is no
+		// state, so calling it unconditionally is both simpler and correct.
+		safeToSterilize := phases.EmergencyDestroy(ctx)
 		if safeToSterilize {
 			_ = phases.Sterilize(ctx, true)
 		}
@@ -140,7 +187,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 	}
 
 	fmt.Println()
-	fmt.Println("Ignition complete. The cluster is now self-sustaining.")
+	fmt.Println(completionMessage(toRun))
 	fmt.Println()
 
 	// Belt and braces: on a successful full run the Sterilize phase has
@@ -156,15 +203,47 @@ Nothing has been touched. Re-run without -whatif to do it.
 // -destroy is not a phase and does not compose with the phase selectors: a
 // command that appeared to say "destroy, but only the verify phase" would be
 // read by somebody as a safe thing to run.
-func destroyFlagsOK(destroy bool, phase, from string) error {
-	if !destroy {
+// modes are the invocations that are not the ignition sequence. Each reaches
+// real infrastructure or real credentials on its own terms, and none of them
+// is a step that composes with the others.
+type modes struct {
+	Destroy    bool
+	Restore    bool
+	Kubeconfig bool
+}
+
+func (m modes) named() []string {
+	var out []string
+	for _, c := range []struct {
+		on   bool
+		flag string
+	}{{m.Destroy, "-destroy"}, {m.Restore, "-restore"}, {m.Kubeconfig, "-kubeconfig"}} {
+		if c.on {
+			out = append(out, c.flag)
+		}
+	}
+	return out
+}
+
+// standaloneFlagsOK refuses the combinations that describe something which does
+// not exist.
+//
+// Two rules, and the second is the one that matters: -destroy and -restore
+// both reach real infrastructure, and the order they would run in if both were
+// passed is not something anybody should have to guess at.
+func standaloneFlagsOK(m modes, phase, from string) error {
+	on := m.named()
+	if len(on) == 0 {
 		return nil
 	}
+	if len(on) > 1 {
+		return fmt.Errorf("%s cannot be combined; each is a whole invocation, not a step", strings.Join(on, " and "))
+	}
 	if phase != "" {
-		return fmt.Errorf("-destroy and -phase cannot be combined; -destroy is not a phase in the ignition sequence")
+		return fmt.Errorf("%s and -phase cannot be combined; %s is not a phase in the ignition sequence", on[0], on[0])
 	}
 	if from != "" {
-		return fmt.Errorf("-destroy and -from cannot be combined; -destroy is not a phase in the ignition sequence")
+		return fmt.Errorf("%s and -from cannot be combined; %s is not a phase in the ignition sequence", on[0], on[0])
 	}
 	return nil
 }
@@ -209,6 +288,29 @@ func runDestroy(ctx *run.Context, confirm string) int {
 	fmt.Println("Site destroyed and workspace sterilized.")
 	fmt.Println()
 	return 0
+}
+
+// completionMessage says what actually finished.
+//
+// It used to say "Ignition complete. The cluster is now self-sustaining."
+// after any successful invocation - including `-phase render`, which decrypts
+// a JSON file and touches no infrastructure at all. A summary that overstates
+// what happened is not merely untidy; it is the line that stops somebody
+// looking, which is the same way "Site destroyed" came to be printed over
+// three running VMs.
+//
+// The full claim requires the full sequence, starting at the first phase. A
+// run beginning at `-from migrate` reaches the end without ever having built
+// the cluster it would be describing.
+func completionMessage(toRun []string) string {
+	if len(toRun) == len(phases.AllPhases) && slices.Equal(toRun, phases.AllPhases) {
+		return "Ignition complete. The cluster is now self-sustaining."
+	}
+	if len(toRun) == 1 {
+		return "Phase complete: " + toRun[0] + "."
+	}
+	return fmt.Sprintf("Phases complete: %s .. %s (%d of %d).",
+		toRun[0], toRun[len(toRun)-1], len(toRun), len(phases.AllPhases))
 }
 
 func selectPhases(phase, from string) ([]string, error) {

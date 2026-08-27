@@ -95,12 +95,16 @@ tasks:
       # What CI's Validate lane does, minus kubeconform - which needs one more
       # binary and catches a class of error (a placeholder in a typed field)
       # that a build failure here would have caught first anyway.
+      # TF_VAR_config_path, not a -var flag: `tofu validate` does not accept
+      # -var. It points at the placeholder file rather than the Render phase's
+      # output, so this task cannot disturb an ignition run happening in
+      # another terminal - which it used to, by deleting that output.
       - bash .github/scripts/placeholder-config.sh
       - tofu -chdir=management/cluster init -backend=false -input=false
-      - tofu -chdir=management/cluster validate
+      - TF_VAR_config_path=../../config/management.placeholder.json tofu -chdir=management/cluster validate
       - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
       - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
-      - rm -f config/management.rendered.json
+      - rm -f config/management.placeholder.json
       - go vet -C scripts/ignite ./...
       - go build -C scripts/ignite -o /dev/null .
       - go vet -C tests/go ./...
@@ -243,6 +247,16 @@ tasks:
       - 'echo "  ./scripts/ignite/ignite -site {{.SITE}} -destroy -confirm {{.SITE}}"'
       - 'echo ""'
       - 'echo "Add -whatif first if you want to see what that would do."'
+
+  kubeconfig:
+    desc: "Write this site's kubeconfig into the workspace, for looking at the cluster"
+    # Safe to wrap, like every other ignite task except start and destroy: it
+    # reads one tofu output and writes one file, and can no more reach the
+    # Compute phase than `render` can. An interrupted run leaves a credential
+    # on disk at worst, which `task clean-secrets` removes.
+    cmds:
+      - task: build
+      - ./scripts/ignite/ignite -site {{.SITE}} -kubeconfig
 
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
