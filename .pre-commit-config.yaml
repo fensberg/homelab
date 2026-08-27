@@ -88,6 +88,29 @@ repos:
         # runner's worth of compute - which is real electricity once this
         # pipeline is self-hosted, not just a GitHub Actions minute.
 
+      - id: test
+        name: task test (pre-push)
+        entry: task test
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+        # The behaviour half of what `validate` above proves structurally:
+        # Go unit and contract tests, the OpenTofu invariant tests, and the
+        # JS/TS tier. Seconds, entirely hermetic - no 1Password, no
+        # hypervisor - so it costs a push almost nothing and catches the
+        # class of mistake that is most annoying to find in CI: a rule
+        # changed on one side of the config contract and not the other.
+        #
+        # pre-push rather than pre-commit for the same reason `validate` is:
+        # this is not a formatter, it is a real check, and running it on
+        # every commit of a branch that gets pushed once would run it many
+        # times over to learn the same thing.
+        #
+        # Deliberately NOT the integration, api or e2e tiers. Those need
+        # credentials and a real estate; a git hook that could reach either
+        # is a git hook that can break production by accident.
+
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
@@ -102,4 +125,10 @@ repos:
     hooks:
       - id: commitlint
         stages: [commit-msg]
-        additional_dependencies: ["@commitlint/config-conventional"]
+        # Pinned exactly, like every other version in this file. Unpinned, a
+        # commit-msg hook silently resolves whatever the latest preset is on
+        # the day the hook environment is built - so two developers, and CI,
+        # can end up enforcing three different conventions. Kept in step with
+        # the same package in package.json, which is what the JS/TS tier's
+        # commitlint test loads.
+        additional_dependencies: ["@commitlint/config-conventional@21.2.2"]
