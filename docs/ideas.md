@@ -80,32 +80,32 @@ once it's actually being worked on.
   right shape for it: a `restore`-tagged tier on the self-hosted runner that
   pulls the latest age-encrypted state dump and the latest CloudNativePG base
   backup, restores both into a throwaway target, asserts the state parses and
-  the database answers, then tears it down. It needs the disposable site above,
-  which makes that idea a prerequisite rather than a nice-to-have. See
+  the database answers, then tears it down. `ignite -restore` is now the
+  command that does the first half of that, so what remains is a tier that
+  calls it and asserts on the result - rehearsed against the workstation, not
+  against a second site that is not coming. See
   `docs/state-and-secret-rotation.md` for the rest of the off-site hardening
   list - bucket locks, per-prefix credentials, a second vendor, and key
   custody for the age identity.
 
-- **Decide what the e2e tier is for, now that there is nowhere to run it.**
+- **What the e2e tier is for.** _Decided: let it run against `site0`._
   `tests/go/e2e` builds an estate from nothing and destroys it again, and it
-  refuses to touch `site0` by construction - which was the right guard when it
-  was written, and leaves it unrunnable now that a second site is years away
-  rather than months. It currently compiles, is vetted in CI, and can never
-  execute. That is worse than not having it: it looks like coverage and is not.
-  Three honest options, in rough order of preference:
-  1. **Repoint it at a throwaway target.** The state-encryption rehearsal in
-     `tests/go/encryption` shows the pattern - shrink the thing under test
-     until it fits on the workstation. Ignition itself cannot be shrunk that
-     far (it needs a hypervisor), so this probably means exercising the phase
-     _sequencing_ against fakes and accepting that the real build-out stays
-     untested.
-  2. **Delete it,** and rely on the fact that a real ignition run is performed
-     by a human who will notice it failing. Honest, and loses the phase-ordering
-     regression net.
-  3. **Keep it as executable documentation** of the teardown contract, clearly
-     labelled as never-run. Cheapest, and the option most likely to rot.
-     Whichever is chosen, the current state - present, green, and unreachable -
-     should not be one of them.
+  used to refuse to touch `site0` by construction. That was the right guard
+  when it was written, on the assumption that a disposable second estate would
+  appear. It will not, for years - so the guard was not making the tier safer,
+  it was making it unrunnable, and a test that is present, green and
+  unreachable is worse than no test: it looks like coverage and is not.
+
+  The premise that guard rested on is simply false here. This estate _is_ the
+  disposable one - re-running ignition recreates every part of it, and the
+  project's own position is that the data has little value and the practice is
+  the point. So the risk worth guarding is destroying the _wrong_ estate, not
+  destroying one at all, and the two remaining guards already address exactly
+  that: a build tag, and the site named twice - the same thing
+  `ignite -destroy` asks of a human.
+
+  It stays absent from CI. A destructive nuke-and-pave should not be one
+  dropdown selection away in a web UI, and that is unchanged.
 
 - **1Password for ignition, OpenBao for everything else.** _Decided._ 1Password is a password
   manager doing a secrets-manager's job here, and the seams show: access is

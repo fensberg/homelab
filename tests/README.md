@@ -218,15 +218,21 @@ rather than against observed responses - see `tests/go/api`.
 ## The e2e tier
 
 `tests/go/e2e` builds an estate from nothing and destroys it again. It is
-gated three ways and passes none of them for you:
+gated two ways and passes neither of them for you:
 
 1. A build tag, so `go test ./...` does not compile it.
 2. `HOMELAB_E2E_CONFIRM` must equal `HOMELAB_TEST_SITE`, spelled out.
-3. The site must not be `site0`, the default in the config template.
 
 ```sh
-HOMELAB_TEST_SITE=site1 HOMELAB_E2E_CONFIRM=site1 task test:e2e
+HOMELAB_TEST_SITE=site0 HOMELAB_E2E_CONFIRM=site0 task test:e2e
 ```
+
+There was a third guard - the site must not be `site0` - written when a
+disposable second estate looked likely. It is not coming, and that guard was
+not making this tier safer; it was making it unrunnable, which is worse than
+not having the tier at all. The estate here is disposable by design, so the
+risk worth guarding is destroying the _wrong_ one, and naming the site twice is
+exactly what `ignite -destroy` asks of a human. See `docs/ideas.md`.
 
 It covers the whole ignition sequence - Render through Backup, including
 moving state off local disk into cluster Postgres and pushing an encrypted

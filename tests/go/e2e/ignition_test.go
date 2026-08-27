@@ -13,12 +13,15 @@
 //     so a run aimed at the wrong site fails at the guard rather than at the
 //     hypervisor.
 //
-//  3. The site must not be the one config/management.tpl.json ships as the
-//     default. Pointing this at the estate you actually depend on should take
-//     more than an environment variable.
-//
-//     HOMELAB_TEST_SITE=site1 HOMELAB_E2E_CONFIRM=site1 \
+//     HOMELAB_TEST_SITE=site0 HOMELAB_E2E_CONFIRM=site0 \
 //     go test -tags=e2e -timeout 90m ./e2e/...
+//
+// It used to carry a third guard - the site must not be the default one - on
+// the assumption that a disposable second estate would exist to aim it at.
+// There will not be one for years, so that guard did not make this tier safer;
+// it made it unrunnable. The estate here is disposable by design, and the two
+// guards above already require the site to be named twice, which is exactly
+// what `ignite -destroy` asks of a human.
 //
 // # What it covers
 //
@@ -54,7 +57,7 @@ import (
 // sterilizing here would delete the rendered config the assertions still need.
 var buildOutPhases = []string{
 	"render", "overlay", "hypervisor", "verify",
-	"compute", "cluster", "migrate", "backup",
+	"compute", "cluster", "health", "migrate", "backup",
 }
 
 func guard(t *testing.T) string {
@@ -65,8 +68,19 @@ func guard(t *testing.T) string {
 	require.Equalf(t, site, confirm,
 		"this tier destroys real infrastructure. Set HOMELAB_E2E_CONFIRM to the site under test (%q) to proceed; it is currently %q.", site, confirm)
 
-	require.NotEqual(t, "site0", site,
-		"site0 is the default in config/management.tpl.json and is almost certainly the estate you depend on. Point this tier at a disposable site.")
+	// There used to be a third guard here: the site must not be the default in
+	// config/management.tpl.json, on the assumption that a disposable second
+	// estate would exist to point this at. It does not, and it will not for
+	// years - so that guard did not make this tier safer, it made it
+	// unrunnable, which is a worse outcome than running it. An untestable test
+	// protects nothing.
+	//
+	// What remains is the same shape `ignite -destroy` uses and for the same
+	// reason: the site has to be named twice, once to select it and once to
+	// confirm it, which is not something that happens by accident. The estate
+	// this project builds is disposable by design - re-running ignition
+	// recreates all of it - so the risk being guarded against is destroying
+	// the wrong estate, not destroying one at all.
 
 	return site
 }
