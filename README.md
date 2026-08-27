@@ -61,4 +61,4 @@ homelab/
 ├── infrastructure/
 │ └── foo.tf
 └── applications/
-└── kustomization.yaml # Flux/Kustomize overlay for Production
+└── kustomization.yaml # Flux/Kustomize overlay for Production bump
