@@ -107,7 +107,7 @@ once it's actually being worked on.
      Whichever is chosen, the current state - present, green, and unreachable -
      should not be one of them.
 
-- **Replace 1Password with a FOSS secrets manager.** 1Password is a password
+- **1Password for ignition, OpenBao for everything else.** _Decided._ 1Password is a password
   manager doing a secrets-manager's job here, and the seams show: access is
   granted per vault rather than per path, so narrowing what a CI token can read
   means splitting vaults rather than writing a policy; there are no dynamic
@@ -131,4 +131,14 @@ once it's actually being worked on.
   Auto-unseal without a cloud KMS is the sharpest edge; transit-unseal from a
   second instance is the usual homelab answer and is worth costing before
   committing.
+  **The shape of the answer, decided:** 1Password keeps exactly one job — the
+  handful of bootstrap credentials a human's workstation needs before any
+  cluster exists. That is the one role it is genuinely suited to, and no
+  migration removes the need for it. Everything downstream of bootstrap moves
+  to OpenBao: the in-cluster credentials, the state encryption key, the
+  object-storage keys that currently live in a Kubernetes secret indefinitely,
+  and the rotation runbooks in `docs/state-and-secret-rotation.md` that dynamic
+  secrets and leases would make unnecessary rather than automated.
+  That split is what makes this incremental rather than a big-bang cutover,
+  which matters a great deal given there is one estate and no rehearsal target.
   This is an epoch, not a task.
