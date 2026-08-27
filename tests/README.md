@@ -8,13 +8,13 @@ it at all.
 
 ## The tiers
 
-| Tier            | Answers                                        | May touch                       | Runs on a PR |
-| --------------- | ---------------------------------------------- | ------------------------------- | ------------ |
-| **unit**        | Does this function do what it says?            | Nothing outside the process     | Yes          |
-| **contract**    | Do two implementations of one rule agree?      | Files in this repository        | Yes          |
-| **integration** | Does the built estate still look right?        | A real, already-built estate    | No           |
-| **api**         | Does the vendor's API still behave as assumed? | A real vendor API               | No           |
-| **e2e**         | Can this build an estate from nothing?         | Creates and destroys real infra | No           |
+| Tier            | Answers                                                                   | May touch                       | Runs on a PR |
+| --------------- | ------------------------------------------------------------------------- | ------------------------------- | ------------ |
+| **unit**        | Does this function do what it says?                                       | Nothing outside the process     | Yes          |
+| **contract**    | Do two implementations of one rule agree?                                 | Files in this repository        | Yes          |
+| **integration** | Does the built estate still look right, and did last night's backup work? | A real, already-built estate    | No           |
+| **api**         | Does the vendor's API still behave as assumed?                            | A real vendor API               | No           |
+| **e2e**         | Can this build an estate from nothing?                                    | Creates and destroys real infra | No           |
 
 The line that matters is between the first two and the last three. Everything
 above it is hermetic: no 1Password, no hypervisor, no cluster, no credentials
@@ -149,6 +149,31 @@ task destroy SITE=site0     # prints the command; does not run it
 ./scripts/ignite/ignite -site site0 -destroy -whatif
 ./scripts/ignite/ignite -site site0 -destroy -confirm site0
 ```
+
+## The backup alarm
+
+The integration tier carries one check whose ordering matters: the nightly
+workflow runs the Backup phase immediately before it, then asserts against
+what landed.
+
+Asking "how old is the newest backup?" on its own would mean nothing here,
+because backups otherwise happen only during an ignition run — a month-old
+copy is both normal and indistinguishable from a pipeline that broke three
+weeks ago. Taking one first exercises the whole path every night (pull,
+encrypt, upload, confirm it landed, prune the old generation) and makes
+freshness a question worth asking.
+
+It verifies shape, not contents: that the newest object is fresh, large enough
+to be real, and begins with an age header. It cannot decrypt anything, because
+the age identity is deliberately offline — see
+[`docs/state-and-secret-rotation.md`](../docs/state-and-secret-rotation.md).
+It also reads `pg_stat_archiver` directly to confirm WAL archiving is not
+currently failing, and asserts the stored generation count is still bounded,
+which is how a prune that silently stopped would surface.
+
+**The alert is the workflow failing.** GitHub already emails on that, which is
+one fewer moving part than a monitoring stack — and the nightly backup doubles
+as the repair: if last night's was missing or stale, tonight's replaces it.
 
 ## The e2e tier
 
