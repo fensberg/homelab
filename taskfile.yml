@@ -119,6 +119,7 @@ tasks:
     cmds:
       - task: test:go
       - task: test:tofu
+      - task: test:repo
       - task: test:js
 
   test:go:
@@ -134,6 +135,14 @@ tasks:
     cmds:
       - tofu -chdir=management/cluster init -backend=false -input=false
       - tofu -chdir=management/cluster test
+
+  test:repo:
+    desc: "Repository invariants: config keys that are silently declared twice"
+    # Untagged, so `./...` picks up only the hermetic tests in tests/go - the
+    # integration, api and e2e tiers all carry a build tag and are not
+    # compiled by this at all.
+    cmds:
+      - go test -C tests/go ./...
 
   test:js:
     desc: "Vitest unit tests, plus a TypeScript typecheck"

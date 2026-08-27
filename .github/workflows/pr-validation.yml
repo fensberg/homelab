@@ -368,6 +368,13 @@ jobs:
           go vet -tags=integration ./...
           go vet -tags=e2e ./...
 
+      # Untagged, so this compiles and runs only the hermetic tests in
+      # tests/go - today, the repository-invariant checks. The integration,
+      # api and e2e tiers all carry a build tag and are not reachable here.
+      - name: Repository invariants
+        working-directory: tests/go
+        run: go test ./...
+
       # Reported on every run, enforced as a ratchet: a pull request may not
       # push coverage below the committed floor, and is free to leave it
       # exactly where it found it. See tests/coverage-baseline.json.

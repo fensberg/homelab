@@ -29,7 +29,8 @@ pull request at all.
 scripts/ignite/**/*_test.go            unit + contract (Go)      — no dependencies
 management/cluster/tests/*.tftest.hcl  unit (OpenTofu)           — native tofu test
 management/cluster/tests/fixtures/     the shared config corpus
-tests/go/                              integration, api, e2e     — separate module
+tests/go/repo/                         contract: the repo's own files (hermetic)
+tests/go/{integration,api,e2e}/        needs a real estate — build-tagged
 tests/js/                              unit, integration, api, e2e (JS/TS)
 tests/coverage-baseline.json           the coverage floor
 ```
@@ -69,12 +70,52 @@ the build rather than quietly halving its own coverage.
 a `run` block of the same name to `registry.tftest.hcl`. Leaving out any of
 the three is a failing test with a message telling you which one.
 
+## Repository invariants, and where gotchas go
+
+`tests/go/repo` checks this repository's own files rather than the
+infrastructure they describe. It is hermetic and untagged, so `go test ./...`
+in `tests/go` runs it and compiles none of the tiers that need an estate.
+
+It exists because of one class of defect: **a key written twice, where the
+parser keeps the last one and says nothing.** Every format this project
+configures itself in behaves that way — an env file read by `docker
+--env-file`, a JSON object decoded by `encoding/json`, a YAML mapping loaded
+by the PyYAML behind pre-commit's `check-yaml`. No formatter, linter or
+schema validator in this pipeline has anything to say about it.
+
+That is not hypothetical: a merge produced a duplicated `VALIDATE_TERRAGRUNT`
+in `.github/super-linter.vars`, all eleven pre-commit hooks passed the file,
+and it was found only by diffing two resolutions of the same merge against
+each other. The same merge duplicated a `variable "config_path"` block in
+`variables.tf`, which `tofu validate` did catch — so that half stays
+`tofu validate`'s to own, and this package does not repeat it.
+
+**This is where a gotcha becomes a rule.** When something bites once and no
+existing tool catches it, the fix is a check here, not only a comment
+explaining the trap. Two things keep such a check honest:
+
+1. **Test the detector, not just the repository.** A check that only ever
+   asserts "everything is clean" is indistinguishable from one that is
+   silently broken. Each detector has unit tests over synthetic known-bad
+   input, so the check is proven to fail when it should.
+2. **Make it general.** Catch the class, not the file. The duplicate-key
+   check found nothing on the day it was written — it is there for the next
+   merge, in whichever of the three formats that one lands in.
+
+Why not `conftest`/OPA: it is a genuinely good tool and probably the right
+answer later, for policy over Kubernetes manifests and `tofu` plans
+("no container without resource limits"). It is the wrong shape here — a key
+written twice is a lexical property of a file, not a policy over structured
+data, and `conftest` cannot parse an env file at all. It would also add a
+fifth owner of checks, and a new language, for one assertion.
+
 ## Running things
 
 ```sh
 task test              # every hermetic tier. Seconds. No credentials.
 task test:go           # Go unit + contract
 task test:tofu         # OpenTofu invariants against the fixture corpus
+task test:repo         # the repository's own files
 task test:js           # vitest + tsc
 task test:coverage     # the above, with coverage checked against the floor
 
