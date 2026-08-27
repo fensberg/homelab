@@ -111,6 +111,15 @@ Nothing has been touched. Re-run without -whatif to do it.
 	// OpenTofu reads the same config; this tells it which site to use.
 	os.Setenv("TF_VAR_site", ctx.Site)
 
+	// Before any phase, including -destroy: state is encrypted at rest, so a
+	// tofu invocation without TF_ENCRYPTION cannot read it. Setting it per
+	// phase would leave `-from cluster` and the teardown unable to reach the
+	// state they exist to operate on.
+	if err := phases.EnsureStateEncryption(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+
 	if *destroy {
 		os.Exit(runDestroy(ctx, *confirm))
 	}

@@ -74,12 +74,19 @@ belongs in an epoch record.
 - **Deletion is not the security property; being worthless is.** Sterilizing
   the workspace assumes the delete happened and that nothing copied the file
   first. So the Backup phase never writes plaintext state to disk at all - it
-  pipes `tofu state pull` straight into `age` and wipes the buffer - and the
-  standing plan is to encrypt state at rest with OpenTofu's own state
-  encryption, keyed from 1Password. See
+  pipes `tofu state pull` straight into `age` and wipes the buffer - and state
+  is encrypted at rest with OpenTofu's own state encryption, keyed from
+  1Password. The whole `encryption` block is carried in `TF_ENCRYPTION`, set by
+  ignite before the first phase, so nothing in git reveals the scheme or the
+  key and a bare `tofu` run cannot read state at all. That is the lock, not a
+  side effect - and it matters more than protecting the local file, because the
+  state _is_ the Postgres database, which CloudNativePG streams to object
+  storage continuously under nothing but gzip. Encrypting the state makes the
+  WAL archive and the base backups ciphertext too. See
   [`docs/state-and-secret-rotation.md`](docs/state-and-secret-rotation.md) for
-  what a leaked state file exposes, the cutover procedure, and the rotation
-  runbooks for everything encryption cannot cover.
+  what a leaked state file exposes, the manual cutover for an estate that
+  already has unencrypted state, and the rotation runbooks for everything
+  encryption cannot cover.
 - **State migrates local -> Postgres, and is backed up twice.** The first
   apply runs on local state; once the cluster hosts Postgres, state moves
   there and the local copy is destroyed. CloudNativePG streams WAL and base

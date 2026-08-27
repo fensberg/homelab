@@ -74,13 +74,24 @@ This is the strongest available answer, because it does not depend on cleanup
 running or on rotation being remembered — the bytes are unreadable the moment
 they are written.
 
+**This is built and on.** `scripts/ignite/internal/phases/encryption.go`
+resolves the passphrase from 1Password — generating one on first use, the same
+way the state database password is generated — and sets `TF_ENCRYPTION` before
+any phase runs, `-destroy` included.
+
 **Design.** The entire `encryption` block is supplied through the
 `TF_ENCRYPTION` environment variable rather than committed to `.tf` files.
 Nothing in git then reveals the scheme or the key, and a bare `tofu` run
 without that variable cannot read state at all — which is the lock, not a
-side effect. Ignite resolves the passphrase from 1Password and sets the
-variable before invoking tofu; `tofu validate`, `tofu test` and every CI lane
-are unaffected, because none of them touch state.
+side effect. `tofu validate`, `tofu test` and every CI lane are unaffected,
+because none of them touch state.
+
+There is no fallback method and no migration mode in the program. A fresh
+estate is encrypted from its first apply and has no unencrypted state to fall
+back to, and a fallback left switched on is precisely what keeps unencrypted
+state readable. If ignite finds `TF_ENCRYPTION` already set it leaves it
+alone, which is what makes the manual cutover below possible without fighting
+it.
 
 ```hcl
 # The shape of what TF_ENCRYPTION carries. The passphrase comes from
@@ -96,9 +107,11 @@ state {
 }
 ```
 
-> **This is a deliberate one-time cutover, not a flag to flip.** State already
-> in Postgres is unencrypted; turning encryption on without a fallback makes it
-> unreadable.
+> **Migrating an estate that already has unencrypted state is a deliberate
+> one-time procedure, run by hand.** It is not something ignite offers, because
+> it would be a code path used once per estate that weakens the property for as
+> long as it stays switched on. Export `TF_ENCRYPTION` yourself with the block
+> below and ignite will leave it alone.
 >
 > The sequence below has been **rehearsed for real** — as a hermetic test in
 > `tests/go/encryption`, and by hand once against a throwaway Postgres in
