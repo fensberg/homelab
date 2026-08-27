@@ -11,7 +11,13 @@
 set -euo pipefail
 
 template="config/management.tpl.json"
-rendered="config/management.rendered.json"
+
+# NOT config/management.rendered.json. That filename belongs to the Render
+# phase, and an ignition run in another terminal is reading it - `task
+# validate` used to write and then delete it, which sabotaged a live
+# deployment mid-flight and left its state describing VMs it could no longer
+# see. A separate filename means validate and a real run cannot collide.
+rendered="config/management.placeholder.json"
 
 # Two passes, and the order matters.
 #

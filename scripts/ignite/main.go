@@ -126,13 +126,19 @@ Nothing has been touched. Re-run without -whatif to do it.
 			os.Exit(1)
 		}
 
-		// Only auto-destroy if this run could actually have created
-		// infrastructure. A destroy that fails must not be followed by
-		// sterilize - see EmergencyDestroy's own comment for why.
-		safeToSterilize := true
-		if slices.Contains(toRun, "compute") {
-			safeToSterilize = phases.EmergencyDestroy(ctx)
-		}
+		// "Could THIS RUN have created infrastructure?" is the wrong
+		// question, and asking it orphaned a real estate: a `-from cluster`
+		// run failed, its phase list contained no "compute", so the destroy
+		// was skipped - and sterilize then deleted the state file describing
+		// three VMs and a template that an earlier `-phase compute` had
+		// created and left running.
+		//
+		// The right question is whether any state exists, which is a fact
+		// about the workspace rather than about this invocation.
+		// EmergencyDestroy already establishes that itself: it reports
+		// "nothing for tofu to destroy" and returns true when there is no
+		// state, so calling it unconditionally is both simpler and correct.
+		safeToSterilize := phases.EmergencyDestroy(ctx)
 		if safeToSterilize {
 			_ = phases.Sterilize(ctx, true)
 		}

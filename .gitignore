@@ -46,6 +46,7 @@ terraform.rc
 # Ignore dynamically rendered 1Password files
 *.rendered.yml
 *.rendered.json
+config/management.placeholder.json
 inventory.yml
 /tmp/kubeconfig
 

@@ -208,6 +208,11 @@ jobs:
 
       - name: Validate OpenTofu
         working-directory: management/cluster
+        env:
+          # The placeholder render writes its own filename, never the Render
+          # phase's, so nothing here can collide with a real run. `tofu
+          # validate` takes no -var flag, hence the environment variable.
+          TF_VAR_config_path: ../../config/management.placeholder.json
         run: |
           tofu init -backend=false -input=false
           tofu validate
