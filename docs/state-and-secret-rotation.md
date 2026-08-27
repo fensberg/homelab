@@ -168,11 +168,36 @@ CloudNativePG re-reads. Urgent because of the loop above: these keys read
 `postgres/`, and `postgres/` is the state. **Treat a leaked state file as a
 leaked PKI even if the age dump was never touched.**
 
-Rotating is: create a new token scoped to the one
-bucket with Object Read & Write, update
+Rotating by hand is: create a new token scoped to the one bucket with Object
+Read & Write, update
 `op://homelab/<site>/object_storage/{access_key_id,secret_access_key}`,
 re-run ignite's Cluster phase to rewrite the secret, confirm WAL archiving
 still works, then delete the old token.
+
+**Automating it is blocked on one console change, and this was checked rather
+than assumed.** These keys end up as attributes of
+`kubernetes_secret.object_storage_credentials`, which puts them in state — so
+by this project's own rule (a secret that lands in state is ours to generate)
+they belong on the generated side, alongside the database password, minted
+fresh every run. Cloudflare supports exactly that: an R2 S3 credential is an
+account API token, where `access_key_id` is the token's id and
+`secret_access_key` is the SHA-256 of its value, and
+`cloudflare_api_token` is a resource the pinned provider already has.
+
+What stops it today is scope. Asked directly, the admin token in
+`op://homelab/site0/object_storage/admin_token` answers:
+
+| Request                                       | Result                                   |
+| --------------------------------------------- | ---------------------------------------- |
+| `GET /accounts/{id}/r2/buckets`               | `200` — it manages buckets, as it should |
+| `GET /accounts/{id}/tokens/permission_groups` | `403` code 9109, unauthorized            |
+
+So it can create the bucket and cannot create the credential that reads it.
+Widening it means adding **Account · API Tokens · Edit** to that token in the
+Cloudflare console — a console action, which puts it on the same honest floor
+as every other credential a third party issues. Until that happens, generating
+these per run would be code that cannot work, and building it untested is the
+failure mode this project keeps re-learning.
 
 ### Proxmox API token — easy
 
