@@ -106,3 +106,29 @@ once it's actually being worked on.
      labelled as never-run. Cheapest, and the option most likely to rot.
      Whichever is chosen, the current state - present, green, and unreachable -
      should not be one of them.
+
+- **Replace 1Password with a FOSS secrets manager.** 1Password is a password
+  manager doing a secrets-manager's job here, and the seams show: access is
+  granted per vault rather than per path, so narrowing what a CI token can read
+  means splitting vaults rather than writing a policy; there are no dynamic
+  secrets, no leases, no auth methods and no audit device. Those are symptoms
+  of the wrong category of tool, not problems to fix in place — so effort spent
+  restructuring vaults is effort thrown away at migration.
+  **OpenBao** is the natural target: the Linux Foundation fork of HashiCorp
+  Vault after it went BUSL, so it is the production pattern this project's
+  prime directive points at; OpenTofu ships a native `openbao` key provider,
+  which would key the state encryption in
+  `docs/state-and-secret-rotation.md` directly; and External Secrets Operator
+  bridges it into Kubernetes, replacing the OpenTofu-writes-the-secret
+  arrangement `database.tf` currently apologises for.
+  **The hard part is bootstrap, and it should be designed first.** Secrets are
+  read at ignition time, from a workstation, before the cluster exists — so a
+  secrets manager running _in_ that cluster cannot serve them. That is the same
+  circular dependency the state database already has, and it has the same
+  shape of answer: either the secrets manager lives outside the cluster (on the
+  hypervisor, with its own unseal problem), or a minimal bootstrap set stays
+  local and age-encrypted while everything post-bootstrap moves to OpenBao.
+  Auto-unseal without a cloud KMS is the sharpest edge; transit-unseal from a
+  second instance is the usual homelab answer and is worth costing before
+  committing.
+  This is an epoch, not a task.

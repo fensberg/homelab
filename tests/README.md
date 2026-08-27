@@ -189,7 +189,7 @@ secret below.
 terminal or a shell history:
 
 ```sh
-op read "op://homelab-test/OP_SERVICE_ACCOUNT_TOKEN/credential" \
+op read "op://homelab-automation/OP_SERVICE_ACCOUNT_TOKEN/credential" \
   | gh secret set OP_SERVICE_ACCOUNT_TOKEN --env integration --repo <owner>/homelab
 ```
 
@@ -200,7 +200,7 @@ op read "op://homelab-test/OP_SERVICE_ACCOUNT_TOKEN/credential" \
 > nothing and the run dies at its first step. Check before dispatching:
 >
 > ```sh
-> OP_SERVICE_ACCOUNT_TOKEN="$(op read 'op://homelab-test/OP_SERVICE_ACCOUNT_TOKEN/credential')" \
+> OP_SERVICE_ACCOUNT_TOKEN="$(op read 'op://homelab-automation/OP_SERVICE_ACCOUNT_TOKEN/credential')" \
 >   op vault list
 > ```
 >
