@@ -146,3 +146,41 @@ func TestDestroyFlagsOK(t *testing.T) {
 		}
 	}
 }
+
+// "Ignition complete. The cluster is now self-sustaining." used to print after
+// every successful invocation, including `-phase render`. That is a claim
+// about a cluster made by a command that only decrypted a JSON file, and it is
+// the kind of false summary that stops someone checking - the same failure
+// mode as reporting "Site destroyed" over three running VMs.
+func TestCompletionMessage_FullSequence(t *testing.T) {
+	got := completionMessage(phases.AllPhases)
+	if !strings.Contains(got, "self-sustaining") {
+		t.Errorf("a full run should report ignition complete, got %q", got)
+	}
+}
+
+func TestCompletionMessage_SinglePhaseDoesNotClaimACluster(t *testing.T) {
+	got := completionMessage([]string{"render"})
+	if strings.Contains(got, "self-sustaining") || strings.Contains(got, "Ignition complete") {
+		t.Errorf("a single phase must not claim the cluster is up, got %q", got)
+	}
+	if !strings.Contains(got, "render") {
+		t.Errorf("the message should name what actually ran, got %q", got)
+	}
+}
+
+// -from compute stops at sterilize, so it does finish the sequence - but it
+// never created the cluster this run's message would be describing. The
+// deciding question is whether the run started at the beginning, not whether
+// it reached the end.
+func TestCompletionMessage_PartialRunEndingAtTheLastPhase(t *testing.T) {
+	got := completionMessage([]string{"migrate", "backup", "sterilize"})
+	if strings.Contains(got, "self-sustaining") {
+		t.Errorf("a run that did not start at the first phase must not claim ignition, got %q", got)
+	}
+	for _, want := range []string{"migrate", "sterilize"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the message should name the range that ran, %q missing from %q", want, got)
+		}
+	}
+}

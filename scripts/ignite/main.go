@@ -146,7 +146,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 	}
 
 	fmt.Println()
-	fmt.Println("Ignition complete. The cluster is now self-sustaining.")
+	fmt.Println(completionMessage(toRun))
 	fmt.Println()
 
 	// Belt and braces: on a successful full run the Sterilize phase has
@@ -215,6 +215,29 @@ func runDestroy(ctx *run.Context, confirm string) int {
 	fmt.Println("Site destroyed and workspace sterilized.")
 	fmt.Println()
 	return 0
+}
+
+// completionMessage says what actually finished.
+//
+// It used to say "Ignition complete. The cluster is now self-sustaining."
+// after any successful invocation - including `-phase render`, which decrypts
+// a JSON file and touches no infrastructure at all. A summary that overstates
+// what happened is not merely untidy; it is the line that stops somebody
+// looking, which is the same way "Site destroyed" came to be printed over
+// three running VMs.
+//
+// The full claim requires the full sequence, starting at the first phase. A
+// run beginning at `-from migrate` reaches the end without ever having built
+// the cluster it would be describing.
+func completionMessage(toRun []string) string {
+	if len(toRun) == len(phases.AllPhases) && slices.Equal(toRun, phases.AllPhases) {
+		return "Ignition complete. The cluster is now self-sustaining."
+	}
+	if len(toRun) == 1 {
+		return "Phase complete: " + toRun[0] + "."
+	}
+	return fmt.Sprintf("Phases complete: %s .. %s (%d of %d).",
+		toRun[0], toRun[len(toRun)-1], len(toRun), len(phases.AllPhases))
 }
 
 func selectPhases(phase, from string) ([]string, error) {

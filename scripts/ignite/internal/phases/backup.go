@@ -95,17 +95,7 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	}
 	run.Wipe(state)
 
-	// rclone is configured entirely through environment variables scoped to
-	// this process, so no credentials are ever written to a config file on
-	// disk.
-	rcloneEnv := []string{
-		"RCLONE_CONFIG_R2_TYPE=s3",
-		"RCLONE_CONFIG_R2_PROVIDER=Cloudflare",
-		"RCLONE_CONFIG_R2_ACCESS_KEY_ID=" + store.AccessKeyID,
-		"RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=" + store.SecretAccessKey,
-		"RCLONE_CONFIG_R2_ENDPOINT=https://" + store.AccountID + ".r2.cloudflarestorage.com",
-		"RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true",
-	}
+	rcloneEnv := r2Env(store)
 
 	dest := fmt.Sprintf("R2:%s/management-cluster", store.Bucket)
 	run.Info(fmt.Sprintf("uploading to %s/%s.tfstate.age", dest, stamp))

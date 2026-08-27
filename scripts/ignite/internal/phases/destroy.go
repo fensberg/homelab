@@ -113,11 +113,34 @@ underlying error: %w`, err)
 		}
 	}
 
-	if ok := tearDown(ctx); !ok {
+	res := tearDown(ctx)
+	if !res.SafeToSterilize {
 		return fmt.Errorf("teardown did not complete - state and secrets have been left in place on purpose, see the messages above")
 	}
 
-	return Sterilize(ctx, false)
+	// Secrets go either way: they are on this workstation and there is no
+	// reading of events in which leaving them is the safer choice.
+	if err := Sterilize(ctx, false); err != nil {
+		return err
+	}
+
+	// But "nothing to destroy" is not "destroyed". Reporting success here is
+	// exactly the bug that printed "Site destroyed" over three running VMs,
+	// and it is worse than a false alarm: it is the one message that stops
+	// anybody going to look.
+	if !res.Destroyed {
+		return fmt.Errorf(`no state was found, so nothing was destroyed.
+
+The workspace has been sterilized - the secrets on it are gone - but this
+command cannot tell you whether the estate is still running. Check the
+hypervisor by hand for %s.
+
+If the estate is still up and its state is only in the cluster's Postgres,
+restore the age-encrypted backup from object storage first: see
+docs/state-and-secret-rotation.md`, vmIDHint(ctx))
+	}
+
+	return nil
 }
 
 // ConfirmDestroy requires the site to be named twice: once to select it and
