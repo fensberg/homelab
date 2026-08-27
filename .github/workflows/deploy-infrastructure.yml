@@ -1,5 +1,23 @@
 name: Deploy Infrastructure
+
+# Two halves of one gate.
+#
+# A pull request touching infrastructure gets a plan, posted back to it. A
+# merge applies THAT PLAN - saved to a file and applied from the file, so what
+# lands is what was reviewed rather than whatever a second, later plan happens
+# to resolve. `tofu apply -auto-approve` with no plan anywhere, which is what
+# this workflow used to do, is the version where nobody ever sees the change
+# before it happens.
+#
+# Neither half has ever run: environments/ and modules/ do not exist yet
+# (epochs 02 and 03), and the path filters mean nothing here can trigger. That
+# is exactly why it is worth fixing now - the gate is cheap to add before the
+# first real deployment and awkward to retrofit after.
 on:
+  pull_request:
+    paths:
+      - "environments/**/infrastructure/**"
+      - "modules/infrastructure/**"
   push:
     branches: [main]
     tags: ["v*"]
@@ -10,24 +28,38 @@ on:
 permissions:
   contents: read
 
+# One at a time, and never cancelled mid-flight. There is one estate and one
+# state lock; a cancelled apply is how state gets left locked or half-written.
+concurrency:
+  group: deploy-infrastructure-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  apply:
-    name: Apply OpenTofu
+  # ---------------------------------------------------------------------
+  # PLAN - on a pull request. Reads real state, changes nothing.
+  # ---------------------------------------------------------------------
+  plan:
+    name: Plan
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    # A fork's pull request must never reach this job. It runs on the
+    # self-hosted runner with real credentials, and the condition above is
+    # what keeps an outside contributor's branch away from them - the same
+    # boundary pr-validation.yml holds by being hermetic.
     runs-on: self-hosted
-    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
+    environment: staging
+    permissions:
+      contents: read
+      pull-requests: write
+    timeout-minutes: 30
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-          # Stays audit, not block, until this job has actually run: it
-          # applies whatever `environments/` and `modules/` turn out to
-          # need - Proxmox, Cloudflare, Tailscale, object storage, the state
-          # Postgres, the OpenTofu registry - and none of those hosts are
-          # known yet because neither directory exists (epoch 02/03, not
-          # started; this workflow's path filters mean it cannot trigger
-          # today). Flip to block with the observed allowed-endpoints before
-          # this job ever runs for real - not before, since a guessed
-          # allowlist on the one job with write access to real
+          # audit, not block, for the reason the apply job below gives: the
+          # endpoints this reaches are not known until it has actually run
+          # once, and a guessed allowlist on a job that touches real
           # infrastructure is worse than an audited one.
           egress-policy: audit
 
@@ -37,8 +69,113 @@ jobs:
           persist-credentials: false
 
       - name: Determine Target Directory
-        id: set-env
+        run: echo "DIR=environments/staging/infrastructure/" >> "$GITHUB_ENV"
 
+      - name: Tofu Init
+        run: tofu init -input=false
+        working-directory: ${{ env.DIR }}
+
+      # -detailed-exitcode: 0 = no changes, 2 = changes pending, 1 = the plan
+      # itself failed. Only 1 is a failure worth stopping for; 2 is the normal
+      # reason a deployment pull request exists at all.
+      - name: Tofu Plan
+        id: plan
+        working-directory: ${{ env.DIR }}
+        run: |
+          set +e
+          tofu plan -input=false -no-color -out=tfplan > plan.txt 2>&1
+          code=$?
+          set -e
+          echo "exitcode=${code}" >> "$GITHUB_OUTPUT"
+          if [ "${code}" = "1" ]; then
+            echo "::error::tofu plan failed"
+            tail -50 plan.txt
+            exit 1
+          fi
+          tofu show -no-color tfplan > plan-readable.txt
+
+      # The readable plan goes to the job summary rather than into a pull
+      # request comment. Terraform redacts values it knows are sensitive, but
+      # "sensitive" is a property somebody has to have declared - anything
+      # not marked stays in plain text, and a plan is full of resource
+      # attributes nobody thought of that way. The summary is visible to
+      # whoever can already see the run; the comment below carries only
+      # counts and a link.
+      - name: Write the plan to the job summary
+        working-directory: ${{ env.DIR }}
+        run: |
+          {
+            echo "### Plan: \`${DIR}\`"
+            echo
+            echo '```terraform'
+            head -c 60000 plan-readable.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment the plan summary on the pull request
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          EXITCODE: ${{ steps.plan.outputs.exitcode }}
+          DIR: ${{ env.DIR }}
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync(`${process.env.DIR}/plan-readable.txt`, 'utf8');
+            const m = plan.match(/Plan: (\d+) to add, (\d+) to change, (\d+) to destroy/);
+            const counts = m
+              ? `**${m[1]}** to add · **${m[2]}** to change · **${m[3]}** to destroy`
+              : (process.env.EXITCODE === '0' ? 'No changes.' : 'Could not parse a change count.');
+            const body = [
+              `### OpenTofu plan — \`${process.env.DIR}\``,
+              '',
+              counts,
+              '',
+              m && Number(m[3]) > 0
+                ? '> This plan **destroys** resources. Read the full plan before approving.'
+                : '',
+              '',
+              `The full plan is in the [job summary](${context.payload.repository.html_url}/actions/runs/${context.runId}) — it is not posted here, because a plan can contain attribute values nobody remembered to mark sensitive.`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+  # ---------------------------------------------------------------------
+  # APPLY - on merge to main, or a tag. Applies a plan made in this run.
+  # ---------------------------------------------------------------------
+  apply:
+    name: Apply
+    if: github.event_name == 'push'
+    runs-on: self-hosted
+    # The environment is the human gate. Configure required reviewers on
+    # `production` so a tag cannot deploy unattended; `staging` is where a
+    # merge to main lands.
+    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
+    timeout-minutes: 60
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          # Stays audit, not block, until this job has actually run: it
+          # applies whatever `environments/` and `modules/` turn out to
+          # need - Proxmox, Cloudflare, Tailscale, object storage, the state
+          # Postgres, the OpenTofu registry - and none of those hosts are
+          # known yet because neither directory exists. Flip to block with
+          # the observed allowed-endpoints before this job ever runs for
+          # real - not before, since a guessed allowlist on the one job with
+          # write access to real infrastructure is worse than an audited one.
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Determine Target Directory
+        id: set-env
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
@@ -48,13 +185,31 @@ jobs:
             echo "🚀 Deploying to Production (Tag: $REF_NAME)"
           else
             echo "DIR=environments/staging/infrastructure/" >> "$GITHUB_ENV"
-            echo "🛠️ Deploying to Staging (Branch: main)"
+            echo "🛠️ Deploying to Staging (Branch: $REF_NAME)"
           fi
 
       - name: Tofu Init
-        run: tofu init
+        run: tofu init -input=false
         working-directory: ${{ env.DIR }}
 
-      - name: Tofu Apply
-        run: tofu apply -auto-approve
+      # Plan to a file, then apply that file. Not `apply -auto-approve`, which
+      # re-plans internally and applies whatever it finds at that moment -
+      # including a change that arrived between the review and the merge.
+      - name: Tofu Plan
         working-directory: ${{ env.DIR }}
+        run: tofu plan -input=false -no-color -out=tfplan
+
+      - name: Show what is about to be applied
+        working-directory: ${{ env.DIR }}
+        run: |
+          {
+            echo "### Applying: \`${DIR}\`"
+            echo
+            echo '```terraform'
+            tofu show -no-color tfplan | head -c 60000
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tofu Apply
+        working-directory: ${{ env.DIR }}
+        run: tofu apply -input=false tfplan
