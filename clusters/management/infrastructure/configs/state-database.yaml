@@ -13,8 +13,9 @@ spec:
   instances: 3
 
   # Named explicitly rather than relying on whichever StorageClass happens to
-  # be marked default - see docs/epochs for why Longhorn over Ceph or a
-  # hypervisor-level CSI at this scale.
+  # be marked default. OpenEBS Local PV Hostpath is marked default today, but
+  # "whatever is default" is not a dependency worth having on the one volume
+  # that holds the state describing the cluster it lives in.
   storage:
     # Four gigabytes for a database whose entire encrypted backup is under
     # 200KB. It was 10Gi, which was not a considered number - and with a

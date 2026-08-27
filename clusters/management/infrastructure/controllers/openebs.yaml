@@ -73,6 +73,27 @@ spec:
     remediation:
       retries: 3
   values:
+    # Loki, Alloy and MinIO all default to ENABLED in this chart, and none of
+    # them is optional-looking from the values file - they are the observability
+    # stack Mayastor's call-home reporting feeds. With Mayastor off they collect
+    # nothing, and left at their defaults they would have installed a log
+    # aggregator and an S3 server onto three 34GB nodes, plus two more
+    # StorageClasses rooted at /var/local on the OS disk. Verified by reading
+    # the pinned chart rather than assuming, which is the only way this was ever
+    # going to be noticed before the apply.
+    loki:
+      enabled: false
+    alloy:
+      enabled: false
+
+    # Volume snapshots are a CSI feature. Local PV Hostpath is not a CSI driver
+    # and cannot snapshot anything, so these CRDs would be installed, marked
+    # keep: true, and never used by anything.
+    openebs-crds:
+      csi:
+        volumeSnapshots:
+          enabled: false
+
     engines:
       local:
         # Both need a device or a pool set up outside Kubernetes. Hostpath
