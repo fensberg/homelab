@@ -327,21 +327,40 @@ fewer moving part than a monitoring stack. And the nightly backup is also the
 repair: if last night's was missing or stale, tonight's replaces it, and if it
 cannot, the run goes red.
 
-### What is still missing
+### Restoring
 
-A **restore** has never been performed. Every check above verifies that
-something plausible was written; none of them proves it can be read back and
-used, because doing that needs the offline identity and somewhere disposable to
-restore into. That remains the largest gap, and it is blocked on the disposable
-site in `docs/ideas.md`.
+```sh
+./scripts/ignite/ignite -site site0 -restore
+```
+
+This used to be three commands printed at the end of a run, which is not a
+restore — it is a recipe to retype correctly under the one circumstance where
+nobody is calm. The command fetches the break-glass identity, decrypts the
+latest backup, checks that what came back is state describing something, and
+pushes it through the encrypted backend. It refuses outright if local state
+already exists, because restoring over live state replaces the description of a
+running estate with an older one while the estate itself does not change to
+match.
+
+It restores state and stops. What to do next — re-ignite, tear down, or just
+look at how far reality has drifted — is a judgement call made with the facts
+in front of you, not a step to be chained onto a recovery.
+
+It is also the only thing in this program that reads the private half at all;
+`tests/go/repo/breakglass_test.go` fails if any other file does.
+
+**Rehearsing it needs no second estate.** Right after a successful ignition,
+move the local state aside, restore, and compare — the workstation is the
+disposable part, not the site.
 
 ## What is deliberately not automated
 
 Layer 2 and Layer 3 are runbooks rather than code, for now. Automating a
 rotation that can lock you out of your own state is a change that has to be
-rehearsed against a disposable estate before it is trusted, and there is not
-one yet — that is the "lower-tier environment" idea in `docs/ideas.md`, and it
-is a prerequisite rather than a nice-to-have.
+rehearsed before it is trusted — but rehearsed locally, against throwaway
+scaffolding on the workstation, not against a second site. There will not be a
+second site for years, and treating one as a prerequisite is how these runbooks
+stayed runbooks.
 
 What _is_ automated is the part that needs no rehearsal: the Backup phase
 never writes plaintext state to disk. It pipes `tofu state pull` straight into

@@ -115,18 +115,19 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	// about a request, not about what is in the bucket.
 	pruneOldBackups(ctx, rcloneEnv, dest, stamp)
 
-	// The private identity is deliberately absent from the config contract:
-	// this program can write backups and must not be able to read them. It
-	// is fetched by a human, by hand, only when restoring.
+	// The private identity is deliberately absent from the config contract and
+	// from OpenTofu: this program writes backups on every run and reads one
+	// only when a human asks it to, from `-restore` and nowhere else.
 	fmt.Printf(`
-  To restore, on a machine with op signed in:
+  To bring this back after a total loss, on a machine with op signed in:
 
-    op read "%s" > /tmp/restore.key
-    rclone cat R2:%s/management-cluster/latest.tfstate.age |
-        age -d -i /tmp/restore.key > terraform.tfstate
-    rm /tmp/restore.key
+    ./scripts/ignite/ignite -site %s -restore
 
-`, BackupIdentityRef, store.Bucket)
+  It fetches the identity from %s, decrypts, checks that what
+  came back is state describing something, and pushes it through the encrypted
+  backend. It refuses if local state already exists.
+
+`, ctx.Site, BackupIdentityRef)
 
 	return nil
 }

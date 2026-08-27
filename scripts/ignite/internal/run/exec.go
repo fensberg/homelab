@@ -216,3 +216,30 @@ func CmdOutputQuiet(dir, name string, args ...string) (string, error) {
 	err := c.Run()
 	return strings.TrimSpace(out.String()), err
 }
+
+// CmdBytes is the general form the others specialise: optional extra
+// environment, optional stdin, and stdout captured as raw bytes rather than a
+// trimmed string.
+//
+// Raw and untrimmed matters here. The restore pipeline moves age ciphertext
+// and then OpenTofu state through it, and trimming whitespace off a binary
+// stream corrupts it in a way that only shows up as a decryption failure with
+// no obvious cause.
+func CmdBytes(dir string, extraEnv []string, stdin []byte, name string, args ...string) ([]byte, error) {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command(name, args...)
+	c.Dir = dir
+	if len(extraEnv) > 0 {
+		c.Env = append(os.Environ(), extraEnv...)
+	}
+	if stdin != nil {
+		c.Stdin = bytes.NewReader(stdin)
+	}
+	var out bytes.Buffer
+	c.Stdout = &out
+	c.Stderr = os.Stderr
+	if err := c.Run(); err != nil {
+		return nil, fmt.Errorf("%s failed: %w", name, err)
+	}
+	return out.Bytes(), nil
+}

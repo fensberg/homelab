@@ -144,6 +144,14 @@ Interrupting a destroy deliberately does _not_ sterilize: wiping state
 part-way through a teardown is how VMs get orphaned, so it waits for tofu to
 release its lock and leaves everything in place to be re-run.
 
+**Getting state back is `ignite -restore`.** It fetches the break-glass
+identity, decrypts the latest age backup from object storage, checks that what
+came back is state describing something, and pushes it through the encrypted
+backend. It refuses if local state already exists. It is the only place in the
+program that reads the private half, which `tests/go/repo` enforces, and it
+restores state and stops - what to do with it afterwards is a judgement call,
+not a next step.
+
 **`workstation/` provisions the Linux machine this runs from.** It is
 deliberately independent from `management/` - no shared config, no
 1Password, and nothing in the cluster lifecycle can touch it, so a failed

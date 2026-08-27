@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"syscall"
 
 	"homelab/ignite/internal/phases"
@@ -60,10 +61,11 @@ func main() {
 	whatIf := flag.Bool("whatif", false, "Print which phases would run, without running them.")
 	destroy := flag.Bool("destroy", false, "Tear this site's infrastructure down, then wipe the workspace. Requires -confirm.")
 	confirm := flag.String("confirm", "", "Name the site again, to confirm -destroy.")
+	restore := flag.Bool("restore", false, "Bring the age-encrypted state back from object storage. Refuses if local state already exists.")
 	kubeconfig := flag.Bool("kubeconfig", false, "Write this site's kubeconfig into the workspace and exit. It is a credential; 'task clean-secrets' removes it.")
 	flag.Parse()
 
-	if err := destroyFlagsOK(*destroy, *phase, *from); err != nil {
+	if err := standaloneFlagsOK(modes{Destroy: *destroy, Restore: *restore, Kubeconfig: *kubeconfig}, *phase, *from); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}
@@ -122,6 +124,19 @@ Nothing has been touched. Re-run without -whatif to do it.
 
 	if *destroy {
 		os.Exit(runDestroy(ctx, *confirm))
+	}
+
+	// Not a phase either, and deliberately not part of any sequence: a restore
+	// happens after a loss, on a workstation that has nothing, and what to do
+	// with the state once it is back is a judgement call rather than a next
+	// step.
+	if *restore {
+		if err := phases.Restore(ctx); err != nil {
+			fmt.Println()
+			run.Fail("HALTED: " + err.Error())
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Not a phase: it creates nothing, waits for nothing and has no place in
@@ -188,15 +203,47 @@ Nothing has been touched. Re-run without -whatif to do it.
 // -destroy is not a phase and does not compose with the phase selectors: a
 // command that appeared to say "destroy, but only the verify phase" would be
 // read by somebody as a safe thing to run.
-func destroyFlagsOK(destroy bool, phase, from string) error {
-	if !destroy {
+// modes are the invocations that are not the ignition sequence. Each reaches
+// real infrastructure or real credentials on its own terms, and none of them
+// is a step that composes with the others.
+type modes struct {
+	Destroy    bool
+	Restore    bool
+	Kubeconfig bool
+}
+
+func (m modes) named() []string {
+	var out []string
+	for _, c := range []struct {
+		on   bool
+		flag string
+	}{{m.Destroy, "-destroy"}, {m.Restore, "-restore"}, {m.Kubeconfig, "-kubeconfig"}} {
+		if c.on {
+			out = append(out, c.flag)
+		}
+	}
+	return out
+}
+
+// standaloneFlagsOK refuses the combinations that describe something which does
+// not exist.
+//
+// Two rules, and the second is the one that matters: -destroy and -restore
+// both reach real infrastructure, and the order they would run in if both were
+// passed is not something anybody should have to guess at.
+func standaloneFlagsOK(m modes, phase, from string) error {
+	on := m.named()
+	if len(on) == 0 {
 		return nil
 	}
+	if len(on) > 1 {
+		return fmt.Errorf("%s cannot be combined; each is a whole invocation, not a step", strings.Join(on, " and "))
+	}
 	if phase != "" {
-		return fmt.Errorf("-destroy and -phase cannot be combined; -destroy is not a phase in the ignition sequence")
+		return fmt.Errorf("%s and -phase cannot be combined; %s is not a phase in the ignition sequence", on[0], on[0])
 	}
 	if from != "" {
-		return fmt.Errorf("-destroy and -from cannot be combined; -destroy is not a phase in the ignition sequence")
+		return fmt.Errorf("%s and -from cannot be combined; %s is not a phase in the ignition sequence", on[0], on[0])
 	}
 	return nil
 }

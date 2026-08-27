@@ -112,3 +112,71 @@ func firstMatch(body string, tokens []string) (string, bool) {
 	}
 	return "", false
 }
+
+// Where the identity may be read from.
+//
+// The two rules above keep it out of OpenTofu and out of the rendered config.
+// This one keeps it out of the ignition sequence: the identity exists to be
+// fetched when a human is putting the estate back together, and every other
+// phase works with the recipient, which is public.
+//
+//   - restore.go is the one place that fetches the value and uses it, which is
+//     what `-restore` is.
+//   - secrets.go probes whether it is present, so a run can warn that backups
+//     are being written to a key whose private half nobody has stored. `op`
+//     has no existence check that does not also return the value, so this
+//     honestly does read it - and immediately discards it. Worth naming rather
+//     than pretending otherwise.
+//
+// Anything else reading it is a phase that has no business holding the key its
+// own backups are protected from.
+var mayReadBreakGlassIdentity = map[string]bool{
+	"restore.go": true,
+	"secrets.go": true,
+}
+
+func TestBreakGlassIdentityIsReadOnlyByTheRestorePath(t *testing.T) {
+	root := repoRoot(t)
+	dir := filepath.Join(root, "scripts", "ignite")
+	checked := 0
+
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		checked++
+		body, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		// The fetch, not the mention. Naming the reference in an error message
+		// that tells an operator where to put the key is the whole point of
+		// having a constant for it.
+		if !strings.Contains(string(body), "onepassword.Read(") {
+			return nil
+		}
+		if !strings.Contains(string(body), "IdentityRef") {
+			return nil
+		}
+		if mayReadBreakGlassIdentity[filepath.Base(path)] {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		t.Errorf(`%s reads the break-glass identity.
+
+Only the restore path may. Every phase in the ignition sequence works with the
+recipient, which is public - a phase that holds the private half is a phase
+that could decrypt the backups it is writing, which is the property this key
+exists to deny.`, rel)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking scripts/ignite: %v", err)
+	}
+	if checked < 10 {
+		t.Fatalf("only %d Go files were checked; the walk is wrong", checked)
+	}
+}
