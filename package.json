@@ -1,0 +1,28 @@
+{
+  "name": "homelab",
+  "private": true,
+  "description": "Test toolchain for the JavaScript/TypeScript tier. There is no application here yet - see tests/README.md.",
+  "//type": "Deliberately NOT \"module\". commitlint.config.js at the repo root is CommonJS, and it is read by two things outside this package: the commit-msg hook in .pre-commit-config.yaml and Super-Linter's GIT_COMMITLINT validator. Declaring the package ESM reinterprets that file and breaks both - caught by tests/js/unit/commitlint.test.ts the first time it ran. An application added later should declare its own type in its own workspace package.json rather than flipping it here.",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:api": "playwright test --project=api",
+    "test:e2e": "playwright test --project=e2e",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@commitlint/config-conventional": "21.2.2",
+    "@commitlint/lint": "21.2.2",
+    "@commitlint/load": "21.2.2",
+    "@playwright/test": "1.62.1",
+    "@types/node": "26.3.0",
+    "@vitest/coverage-v8": "4.1.11",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  }
+}
