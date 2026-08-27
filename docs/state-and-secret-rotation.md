@@ -84,7 +84,7 @@ are unaffected, because none of them touch state.
 
 ```hcl
 # The shape of what TF_ENCRYPTION carries. The passphrase comes from
-# op://homelab/<site>/state-database/encryption_passphrase.
+# op://homelab/<site>/state_database/encryption_passphrase.
 key_provider "pbkdf2" "primary" {
   passphrase = "<from 1Password>"
 }

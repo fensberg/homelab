@@ -44,7 +44,7 @@ State is never uploaded in plaintext. Generate a key pair once:
     age-keygen -o state-backup.key
 
 Put the PUBLIC recipient (the 'age1...' line) in 1Password at
-op://homelab/site<N>-state-database/backup_recipient, and store the private
+op://homelab/site<N>/state_database/backup_recipient, and store the private
 key file somewhere offline. The automation only ever needs the public half -
 it can write backups but cannot read them back.`, ctx.Site)
 	}
@@ -129,7 +129,7 @@ it can write backups but cannot read them back.`, ctx.Site)
 	fmt.Printf(`
   To restore, on a machine with op signed in:
 
-    op read "op://homelab/%s/state-database/backup_identity" > /tmp/restore.key
+    op read "op://homelab/%s/state_database/backup_identity" > /tmp/restore.key
     rclone cat R2:%s/management-cluster/latest.tfstate.age |
         age -d -i /tmp/restore.key > terraform.tfstate
     rm /tmp/restore.key

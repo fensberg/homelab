@@ -253,6 +253,47 @@ supervised operation and should be documented as one. Adding a hypervisor to a
 site that does not exist yet is fine, which is the ordinary case for onboarding
 a new client and the one the acceptance test above describes.
 
+### How portable is the overlay network, really
+
+The invariant in `CLAUDE.md` said naming things by function keeps a vendor swap
+"to a single `.tf` file". Measured against the actual estate, that is true of
+the OpenTofu layer and misleading about everything else:
+
+| Where                          | Tailscale-specific                                                  |
+| ------------------------------ | ------------------------------------------------------------------- |
+| `overlay-network.tf`           | 60 lines (all of it)                                                |
+| `versions.tf` provider block   | 2 references                                                        |
+| `registry.tf` vendor assertion | 1 reference                                                         |
+| `config/management.tpl.json`   | 5 fields, Tailscale-shaped (`domain`, `client_id`, `client_secret`) |
+| **`hypervisor-prep.yml`**      | **~50 references**                                                  |
+
+The OpenTofu side genuinely is a small swap. The playbook is not: signing key,
+apt repository, install, `tailscaled` service, login-state detection,
+`tailscale up --force-reauth`, route advertisement and the retry logic around
+all of it. That is where an overlay migration would actually be spent, and the
+config's field names would have to change shape too - a raw WireGuard mesh has
+no notion of an OAuth client or a tailnet domain.
+
+**What each option would actually cost:**
+
+- **Headscale** - the FOSS coordination server that speaks the Tailscale
+  protocol. The client, the tags, the `autoApprovers` concept and every
+  playbook task survive; only the login server changes. By far the smallest
+  migration and the one that preserves the most, which makes it the default
+  answer if the motivation is "self-hosted and FOSS".
+- **NetBird / Nebula** - different agents and different APIs, so the playbook
+  is rewritten and the config fields change shape. A real port.
+- **Raw WireGuard** - no coordination server at all, which means rebuilding
+  NAT traversal, peer distribution, route advertisement and ACLs by hand.
+  Those are the things being paid for today, and a homelab is exactly the
+  scale at which hand-managing peers looks cheap right up until a node moves.
+
+**The constraint that applies to all three:** the overlay is used to _reach_
+the hypervisor during ignition, so a self-hosted control server cannot live
+inside the estate it bootstraps. That is the same circular dependency as the
+state database and the secrets manager, and it has the same shape of answer -
+the control plane sits outside, or the first hop is something else entirely.
+
 ### Design constraint: no provider may depend on a resource in its own root
 
 This is a constraint on how the modules are carved, and it is cheaper to honour

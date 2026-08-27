@@ -658,6 +658,48 @@ the age-encrypted backup in object storage answers the case where more than
 one node is lost. A workload that genuinely needs RWX wants OpenEBS Replicated
 PV (Mayastor), which can be enabled alongside this later.
 
+## Acceptance test: change 3 to 5 and watch it land
+
+The epoch is signed off when this works, end to end, with no manual step in
+the middle:
+
+> Change `control_plane_count` from `3` to `5` in the config. Run the button.
+> Two more machines exist, joined to the cluster.
+
+It is the right test because it exercises the whole chain in one edit rather
+than any single layer. The count drives addressing (`10.10.10.100-104`),
+naming (`sheridan-cp-01..05`), VM ids (`1000-1004`), placement, the Talos
+machine configuration applied to each new node, and the wait that proves each
+one answered. If any of those is hardcoded, hand-maintained, or quietly
+assumes three, this fails and names the place.
+
+### Why 5 and not 4
+
+Worth stating, because this epoch already records that
+`control_plane_count` is a provisioning input and **not** an autoscaler, and
+that etcd quorum is fixed at creation. Those are not in conflict with this
+test.
+
+Going 3 -> 5 is odd to odd: quorum moves from 2-of-3 to 3-of-5 and the cluster
+gains fault tolerance. Going 3 -> 4 adds a member without adding a tiebreaker,
+which is the thing that must never happen. The rule the earlier decision is
+protecting is "never scale etcd automatically, and never to an even number" -
+not "never change the count deliberately".
+
+### What to check before running it
+
+- **Hypervisor capacity.** Five control-plane VMs at 4 cores and 4GiB each is
+  20 cores and 20GiB, alongside the devbox. Confirm the host has it, because
+  the failure mode otherwise is two VMs that create and never boot.
+- **Datastore capacity.** Each node carries a 64GiB OS disk and a 32GiB
+  storage disk, so five nodes is ~480GiB on `local-zfs` before the template
+  and the devbox.
+- **Placement stays put.** With one hypervisor the round-robin is a no-op -
+  every node lands on it either way - so the re-deal hazard recorded in
+  [`02-abstraction.md`](02-abstraction.md) does not bite here. It would the
+  moment a second hypervisor exists, which is exactly why that entry says
+  adding a hypervisor to a running site has no safe meaning yet.
+
 ## Outcome
 
 To be completed when the epoch closes.

@@ -141,4 +141,18 @@ once it's actually being worked on.
   secrets and leases would make unnecessary rather than automated.
   That split is what makes this incremental rather than a big-bang cutover,
   which matters a great deal given there is one estate and no rehearsal target.
+  **Hard requirement to close this epoch: secrets rotate on a cadence, without
+  a human.** Not "OpenBao is deployed" - deployed and still handing out static
+  credentials is the same posture as today with more moving parts. The
+  acceptance test is a Postgres credential that is minted on demand, carries a
+  lease, and is revoked automatically when the lease ends. That is the whole
+  reason to prefer it over continuing to write generated secrets back into
+  1Password: per-run generation makes last month's leaked state worthless,
+  but only leases make _this_ month's worthless too.
+
+  Per-run generation (below) is the interim, and it is deliberately the half
+  that survives the migration - the generation logic moves, only the storage
+  target changes. A bespoke rotation _scheduler_ would not survive, which is
+  why one should not be built.
+
   This is an epoch, not a task.

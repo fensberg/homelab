@@ -69,13 +69,13 @@ func tearDown(ctx *run.Context) bool {
 
 	if _, err := os.Stat(ctx.LocalState); err != nil {
 		run.Warn("No local state file - nothing for tofu to destroy.")
-		run.Warn("Check Proxmox by hand for VMs 100-102.")
+		run.Warn("Check Proxmox by hand for " + vmIDHint(ctx) + ".")
 		return true
 	}
 
 	if err := run.Cmd(ctx.ClusterDir, "tofu", "destroy", "-input=false", "-auto-approve"); err != nil {
 		run.Warn("tofu destroy failed. State and secrets are being left in place - sterilizing now would destroy your only way to retry the destroy or diagnose what's left running.")
-		run.Warn("Check Proxmox manually for VMs 100-102, then either re-run 'tofu destroy' in management/cluster yourself or run 'task clean-secrets' once you've confirmed nothing is orphaned.")
+		run.Warn("Check Proxmox manually for " + vmIDHint(ctx) + ", then either re-run 'tofu destroy' in management/cluster yourself or run 'task clean-secrets' once you've confirmed nothing is orphaned.")
 		return false
 	}
 	run.Ok("infrastructure destroyed cleanly")
@@ -150,4 +150,22 @@ func buildStateConnStr(ctx *run.Context) (connStr, host string, port int, err er
 		stateDBOwner, site.State.DBPassword, host, stateDBNodePort, stateDBName)
 
 	return connStr, host, stateDBNodePort, nil
+}
+
+// vmIDHint names the VM ids this site would have used, so an operator cleaning
+// up by hand knows what to look for. Ids are banded by octet - variables.tf
+// computes them as octet*100 + i - so the hardcoded "100-102" this replaced
+// was wrong for every site including the only one that exists.
+func vmIDHint(ctx *run.Context) string {
+	cfg, err := config.LoadRendered(ctx.ConfigRendered)
+	if err != nil {
+		return "this site's VMs"
+	}
+	site, ok := cfg.Sites[ctx.Site]
+	if !ok || site.ControlPlaneCount < 1 {
+		return "this site's VMs"
+	}
+	first := site.Octet * 100
+	return fmt.Sprintf("VMs %d-%d and the template at %d",
+		first, first+site.ControlPlaneCount-1, first+99)
 }

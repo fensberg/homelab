@@ -51,7 +51,12 @@ belongs in an epoch record.
   in a file header. `source_control.token`, not `git.github_pat_reference`.
   The one place this cannot reach is Terraform resource names —
   `tailscale_tailnet_key` is irreducibly vendor-specific — so the abstraction lives at the config and
-  secrets layer, which is what keeps a vendor swap to a single `.tf` file.
+  secrets layer. That keeps the _OpenTofu_ half of a vendor swap small: 60 lines
+  in `overlay-network.tf` plus a provider block. It does **not** make the swap
+  small overall — `hypervisor-prep.yml` carries ~50 Tailscale-specific
+  references (repo key, install, `tailscale up`, route advertisement,
+  re-auth handling), and that is where a real overlay migration would be
+  spent. See `docs/epochs/02-abstraction.md`.
 - **Deletion is not the security property; being worthless is.** Sterilizing
   the workspace assumes the delete happened and that nothing copied the file
   first. So the Backup phase never writes plaintext state to disk at all - it
