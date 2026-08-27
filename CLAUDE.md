@@ -32,7 +32,21 @@ belongs in an epoch record.
   The floor is that credentials issued by third-party consoles (source control
   token, overlay OAuth client, object storage tokens) cannot themselves be
   automated, and the tailnet policy is set up once per tailnet rather than per
-  deployment. See `docs/tailnet-setup.md`. Everything past that floor is code.
+  deployment. The age backup keypair sits on that floor for a different
+  reason: it _could_ be automated, and must not be. Its whole job is to
+  survive this automation being compromised, so a key this program generated
+  and stored somewhere this program can read would foreclose the property in
+  the same breath as creating it. Generated once for the estate with
+  `age-keygen` — one break-glass key, not one per site — and never referenced
+  by OpenTofu, which `tests/go/repo` enforces.
+
+  Everything below that floor is generated: the state database password is
+  created by ignite and written to 1Password, because the rule that decides is
+  where a secret ends up. A secret that becomes a resource attribute is
+  written into OpenTofu state, so a leaked state file yields a live
+  credential; those are ours to generate. A secret that only configures a
+  provider never reaches state at all. See `docs/tailnet-setup.md`. Everything past that floor is code.
+
 - **Ignition is deliberately local-only.** `management/` bootstraps the
   cluster that later runs CI-driven deploys, so it cannot depend on that
   cluster. Do not move it into GitHub Actions.
