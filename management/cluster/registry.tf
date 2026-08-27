@@ -33,10 +33,12 @@ locals {
 
 resource "terraform_data" "invariants" {
   lifecycle {
-    precondition {
-      condition     = contains(keys(local.config.sites), var.site)
-      error_message = "Unknown site '${var.site}'. The config defines: ${join(", ", sort(keys(local.config.sites)))}."
-    }
+    # "Is var.site a real site?" is deliberately NOT here. It used to be, and
+    # it was dead code: local.site indexes sites[var.site] directly, so an
+    # unknown site failed on a raw "Invalid index" against variables.tf before
+    # any precondition here was ever evaluated. It now lives as a validation
+    # block on the variable itself, which runs before locals are evaluated and
+    # cannot be targeted away. See variables.tf.
 
     precondition {
       condition     = length(local.all_octets) == length(distinct(local.all_octets))

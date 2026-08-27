@@ -6,6 +6,20 @@ variable "site" {
     only - the site's identity comes from the octet it declares. Set by the
     start button via TF_VAR_site.
   EOT
+  # Checked here rather than as a precondition on terraform_data.invariants,
+  # where it used to live and could never actually fire: local.site indexes
+  # sites[var.site] directly, so a mistyped -site failed on a raw "Invalid
+  # index" against this file's own line 25 long before any precondition was
+  # evaluated. A variable validation runs before locals are evaluated at all,
+  # and - unlike a resource precondition - cannot be targeted away by the
+  # -target'd applies the Compute phase issues.
+  #
+  # Referencing another variable from a validation needs OpenTofu >= 1.9,
+  # which is why versions.tf's required_version is no longer >= 1.6.0.
+  validation {
+    condition     = contains(keys(jsondecode(file(var.config_path)).sites), var.site)
+    error_message = "Unknown site '${var.site}'. The config at ${var.config_path} defines: ${join(", ", sort(keys(jsondecode(file(var.config_path)).sites)))}."
+  }
 }
 
 variable "config_path" {
