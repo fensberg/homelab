@@ -1,15 +1,16 @@
 // Command ignite is the start button. It ignites the homelab management
-// cluster from nothing, running nine phases in order:
+// cluster from nothing, running ten phases in order:
 //
-//	1 render     - pull secrets out of 1Password into gitignored files
-//	2 overlay    - apply the overlay network policy, mint a hypervisor auth key
-//	3 hypervisor - run the Ansible playbook against Proxmox
-//	4 verify     - prove the network works BEFORE spending 20 minutes on tofu
-//	5 compute    - create the VMs and wait for Talos to answer
-//	6 cluster    - apply Talos config, bootstrap etcd, install Flux
-//	7 migrate    - move OpenTofu state from this disk into cluster Postgres
-//	8 backup     - age-encrypt the state and push it off-site to Cloudflare R2
-//	9 sterilize  - wipe every secret and the local state file
+//	 1 render     - pull secrets out of 1Password into gitignored files
+//	 2 overlay    - apply the overlay network policy, mint a hypervisor auth key
+//	 3 hypervisor - run the Ansible playbook against Proxmox
+//	 4 verify     - prove the network works BEFORE spending 20 minutes on tofu
+//	 5 compute    - create the VMs and wait for Talos to answer
+//	 6 cluster    - apply Talos config, bootstrap etcd, install Flux
+//	 7 health     - refuse to go on unless the cluster actually converged
+//	 8 migrate    - move OpenTofu state from this disk into cluster Postgres
+//	 9 backup     - age-encrypt the state and push it off-site to Cloudflare R2
+//	10 sterilize  - wipe every secret and the local state file
 //
 // Safety model: the workspace is always sterilized on the way out. What
 // differs is what happens to infrastructure if the run does not reach the
@@ -59,6 +60,7 @@ func main() {
 	whatIf := flag.Bool("whatif", false, "Print which phases would run, without running them.")
 	destroy := flag.Bool("destroy", false, "Tear this site's infrastructure down, then wipe the workspace. Requires -confirm.")
 	confirm := flag.String("confirm", "", "Name the site again, to confirm -destroy.")
+	kubeconfig := flag.Bool("kubeconfig", false, "Write this site's kubeconfig into the workspace and exit. It is a credential; 'task clean-secrets' removes it.")
 	flag.Parse()
 
 	if err := destroyFlagsOK(*destroy, *phase, *from); err != nil {
@@ -111,6 +113,21 @@ Nothing has been touched. Re-run without -whatif to do it.
 
 	if *destroy {
 		os.Exit(runDestroy(ctx, *confirm))
+	}
+
+	// Not a phase: it creates nothing, waits for nothing and has no place in
+	// the ignition sequence. It exists because looking at the cluster used to
+	// mean pasting a tofu output through a shell pipeline and remembering to
+	// delete the result.
+	if *kubeconfig {
+		if err := phases.WriteKubeconfigTo(ctx, ctx.Kubeconfig); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		fmt.Println()
+		fmt.Println("    export KUBECONFIG=" + ctx.Kubeconfig)
+		fmt.Println()
+		return
 	}
 
 	runErr := runInterruptibly(ctx, toRun)

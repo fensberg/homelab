@@ -85,3 +85,7 @@ node_modules/
 playwright-report/
 test-results/
 .playwright/
+
+# Written on demand by `task kubeconfig`. A credential, and deliberately
+# transient - the Sterilize phase removes it like everything else here.
+management/cluster/kubeconfig

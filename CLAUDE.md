@@ -88,6 +88,17 @@ belongs in an epoch record.
   needed: the database backups restore into a running cluster, but rebuilding
   that cluster needs the state held in the database. The standalone dump is
   what breaks that circle after a total loss.
+- **A run proves the cluster converged before it trusts it.** The Health
+  phase sits between Cluster and Migrate and refuses to continue unless every
+  node is Ready and counted, every Flux Kustomization and HelmRelease has
+  reconciled, and the state database has all the instances it asked for. It is
+  there because the first successful ignition was not one: it reported success
+  over a database running two of its three instances, because every phase had
+  done its own job and nothing was asking the question the phases together
+  were supposed to answer. A port that answers is the weakest evidence
+  available - it is true from the moment one instance is up. Migrate is the
+  point of no return, so the gate goes before it, not at the end.
+
 - **The workspace is sterilized on every exit.** Success or failure, no
   secrets and no state are left on the workstation. On failure the run
   destroys infrastructure _before_ wiping state, so nothing is orphaned.
@@ -111,7 +122,7 @@ supervising - a confirmed, currently-open upstream limitation
 interrupt only runs if something actually delivers it the signal, so the
 real ignition run has to be invoked directly. Every other `task`-wrapped
 ignite phase (`render-secrets`, `verify`, `configure-hypervisor`,
-`backup-state`, `clean-secrets`) stays safe to wrap regardless, because none
+`backup-state`, `kubeconfig`, `clean-secrets`) stays safe to wrap regardless, because none
 of them can reach the Compute phase - an interrupted one leaves stale
 secrets at worst, recoverable with `task clean-secrets`, never an orphaned
 VM.

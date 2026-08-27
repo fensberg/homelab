@@ -24,6 +24,7 @@ func Sterilize(ctx *run.Context, quiet bool) error {
 		ctx.BackendPgOn,
 		ctx.LocalState,
 		ctx.LocalState + ".backup",
+		ctx.Kubeconfig,
 	}
 	for _, t := range targets {
 		if err := run.RemoveIfExists(t); err != nil {

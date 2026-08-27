@@ -248,6 +248,16 @@ tasks:
       - 'echo ""'
       - 'echo "Add -whatif first if you want to see what that would do."'
 
+  kubeconfig:
+    desc: "Write this site's kubeconfig into the workspace, for looking at the cluster"
+    # Safe to wrap, like every other ignite task except start and destroy: it
+    # reads one tofu output and writes one file, and can no more reach the
+    # Compute phase than `render` can. An interrupted run leaves a credential
+    # on disk at worst, which `task clean-secrets` removes.
+    cmds:
+      - task: build
+      - ./scripts/ignite/ignite -site {{.SITE}} -kubeconfig
+
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
     cmds:
