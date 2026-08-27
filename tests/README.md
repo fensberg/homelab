@@ -175,6 +175,46 @@ which is how a prune that silently stopped would surface.
 one fewer moving part than a monitoring stack — and the nightly backup doubles
 as the repair: if last night's was missing or stale, tonight's replaces it.
 
+## Running the real-estate tiers for the first time
+
+`integration-tests.yml` has never run. Before it can, two things have to exist
+that live outside this repository.
+
+**1. A GitHub environment called `integration`.** Settings -> Environments ->
+New environment. The workflow names it, and that is what gates access to the
+secret below.
+
+**2. A secret in it called `OP_SERVICE_ACCOUNT_TOKEN`.** The value is a
+1Password service account token. Piping it avoids the value ever appearing in a
+terminal or a shell history:
+
+```sh
+op read "op://homelab-test/OP_SERVICE_ACCOUNT_TOKEN/credential" \
+  | gh secret set OP_SERVICE_ACCOUNT_TOKEN --env integration --repo <owner>/homelab
+```
+
+> **The thing most likely to break the first run.** That service account must
+> have read access to the **`homelab`** vault, not only to whichever vault the
+> token itself is stored in. Every reference in `config/management.tpl.json` is
+> an `op://homelab/...` path, so a token scoped to a different vault renders
+> nothing and the run dies at its first step. Check before dispatching:
+>
+> ```sh
+> OP_SERVICE_ACCOUNT_TOKEN="$(op read 'op://homelab-test/OP_SERVICE_ACCOUNT_TOKEN/credential')" \
+>   op vault list
+> ```
+>
+> `homelab` must appear in that list.
+
+**Then dispatch it by hand rather than waiting for 04:00.** Actions ->
+Integration Tests -> Run workflow, tier `integration`. The first run is
+information either way: it either proves the tier works, or it names the first
+thing that does not.
+
+Expect the API tier to need a second pass. Those tests assert on live vendor
+API shapes, and the assertions were written against this project's own code
+rather than against observed responses - see `tests/go/api`.
+
 ## The e2e tier
 
 `tests/go/e2e` builds an estate from nothing and destroys it again. It is

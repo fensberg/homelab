@@ -85,3 +85,24 @@ once it's actually being worked on.
   `docs/state-and-secret-rotation.md` for the rest of the off-site hardening
   list - bucket locks, per-prefix credentials, a second vendor, and key
   custody for the age identity.
+
+- **Decide what the e2e tier is for, now that there is nowhere to run it.**
+  `tests/go/e2e` builds an estate from nothing and destroys it again, and it
+  refuses to touch `site0` by construction - which was the right guard when it
+  was written, and leaves it unrunnable now that a second site is years away
+  rather than months. It currently compiles, is vetted in CI, and can never
+  execute. That is worse than not having it: it looks like coverage and is not.
+  Three honest options, in rough order of preference:
+  1. **Repoint it at a throwaway target.** The state-encryption rehearsal in
+     `tests/go/encryption` shows the pattern - shrink the thing under test
+     until it fits on the workstation. Ignition itself cannot be shrunk that
+     far (it needs a hypervisor), so this probably means exercising the phase
+     _sequencing_ against fakes and accepting that the real build-out stays
+     untested.
+  2. **Delete it,** and rely on the fact that a real ignition run is performed
+     by a human who will notice it failing. Honest, and loses the phase-ordering
+     regression net.
+  3. **Keep it as executable documentation** of the teardown contract, clearly
+     labelled as never-run. Cheapest, and the option most likely to rot.
+     Whichever is chosen, the current state - present, green, and unreachable -
+     should not be one of them.
