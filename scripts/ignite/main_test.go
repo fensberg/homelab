@@ -125,3 +125,24 @@ func TestSelectPhases_IsCaseSensitive(t *testing.T) {
 		t.Error("expected -phase Compute to be rejected; the documented names are lower-case")
 	}
 }
+
+// -destroy is not a phase, and must not look like one. A command reading
+// "destroy, but only the verify phase" would be understood by somebody as a
+// safe thing to run, so the combination is refused rather than interpreted.
+func TestDestroyFlagsOK(t *testing.T) {
+	if err := destroyFlagsOK(true, "", ""); err != nil {
+		t.Errorf("plain -destroy should be accepted, got: %v", err)
+	}
+	if err := destroyFlagsOK(false, "verify", "render"); err != nil {
+		t.Errorf("without -destroy the phase selectors are none of this function's business, got: %v", err)
+	}
+	for _, tc := range []struct{ phase, from string }{
+		{"verify", ""},
+		{"", "render"},
+		{"compute", "render"},
+	} {
+		if err := destroyFlagsOK(true, tc.phase, tc.from); err == nil {
+			t.Errorf("destroyFlagsOK(true, %q, %q) was accepted; -destroy must not compose with the phase selectors", tc.phase, tc.from)
+		}
+	}
+}

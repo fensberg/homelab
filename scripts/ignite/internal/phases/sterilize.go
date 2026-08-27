@@ -47,7 +47,16 @@ func Sterilize(ctx *run.Context, quiet bool) error {
 // and sterilizing whatever secrets remain is still correct.
 func EmergencyDestroy(ctx *run.Context) bool {
 	run.Warn("Run did not complete. Tearing down so nothing is left orphaned.")
+	return tearDown(ctx)
+}
 
+// tearDown is the teardown itself, shared by the failure route
+// (EmergencyDestroy, above) and the deliberate one (Destroy, in destroy.go).
+// One implementation on purpose: the ordering below - migrate state out of
+// the cluster before destroying the cluster, and never sterilize after a
+// destroy that failed - was learned the hard way once, and a second copy of
+// it is a second place to get it wrong.
+func tearDown(ctx *run.Context) bool {
 	if _, err := os.Stat(ctx.BackendPgOn); err == nil {
 		run.Warn("State lives in Postgres, inside the cluster this destroy is about to tear down - migrating it back to local first. Destroying in dependency order kills the database hosting this state before the VMs themselves are reached, which would otherwise strand the destroy partway through with no way to record what it had already done.")
 		if err := demigrateStateToLocal(ctx); err != nil {

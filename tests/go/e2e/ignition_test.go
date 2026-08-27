@@ -20,19 +20,20 @@
 //     HOMELAB_TEST_SITE=site1 HOMELAB_E2E_CONFIRM=site1 \
 //     go test -tags=e2e -timeout 90m ./e2e/...
 //
-// # Why it stops before the Migrate phase
+// # What it covers
 //
-// Migrate moves OpenTofu state off local disk and into Postgres inside the
-// cluster it just built. After that point, tearing down means destroying the
-// database that holds the only record of what there is to destroy - the
-// circular problem EmergencyDestroy solves by migrating state back out first.
-// That path exists only on the failure route; there is no supported
-// "destroy this estate" entrypoint on the success route.
+// The whole ignition sequence: Render through Backup, which includes moving
+// state off local disk into cluster Postgres and pushing an encrypted copy
+// off-site. It used to stop before Migrate, because after that point tearing
+// down means destroying the database holding the only record of what there is
+// to destroy, and the code that unwinds that lived only on the failure route.
+// `ignite -destroy` is now a supported entrypoint that handles it, so this
+// tier can cover the part of ignition that was previously untestable - which
+// is also the part with the most ways to go wrong.
 //
-// So this tier covers Render through Cluster - the entire build-out, which is
-// the part that can actually be wrong - and tears down from local state,
-// which is unambiguous and complete. Extending it through Migrate and Backup
-// needs ignite to grow a real teardown command first; see tests/README.md.
+// Teardown goes through that same entrypoint rather than calling `tofu
+// destroy` directly. A test that tore down its own way would be exercising
+// the test's teardown rather than the one a human uses at 2am.
 package e2e_test
 
 import (
@@ -48,9 +49,13 @@ import (
 	"homelab/tests/harness"
 )
 
-// buildOutPhases is the ignition sequence minus migrate, backup and
-// sterilize - see the package comment for why it stops where it does.
-var buildOutPhases = []string{"render", "overlay", "hypervisor", "verify", "compute", "cluster"}
+// buildOutPhases is the full ignition sequence minus sterilize, which is left
+// out because the teardown below runs it as its own final step - and because
+// sterilizing here would delete the rendered config the assertions still need.
+var buildOutPhases = []string{
+	"render", "overlay", "hypervisor", "verify",
+	"compute", "cluster", "migrate", "backup",
+}
 
 func guard(t *testing.T) string {
 	t.Helper()
@@ -119,31 +124,23 @@ func TestIgnitionBuildsAndTearsDownAnEstate(t *testing.T) {
 	}
 }
 
-// teardown destroys the estate and then wipes the workspace, in that order.
-// The order is the whole point: deleting the state first would leave VMs
-// running that nothing tracks - the same reasoning EmergencyDestroy is built
-// on. State is still local here, so this is a plain destroy with no
-// migration to unwind.
+// teardown runs the supported destroy entrypoint - the same command, with the
+// same guards and the same ordering, that a human would run. It migrates
+// state back out of the cluster before destroying it, destroys, and
+// sterilizes, refusing to sterilize if the destroy itself failed.
+//
+// -confirm is required and must name the site, which is the point: even the
+// test has to say it twice.
 func teardown(t *testing.T, site string) {
-	root := harness.RepoRoot(t)
-	clusterDir := filepath.Join(root, "management", "cluster")
+	if err := ignite(t, site, "-destroy", "-confirm", site); err != nil {
+		t.Errorf(`ignite -destroy failed: %v
 
-	if _, err := os.Stat(filepath.Join(clusterDir, "terraform.tfstate")); err != nil {
-		t.Log("no local state file - nothing to destroy")
-	} else {
-		destroy := exec.Command("tofu", "destroy", "-input=false", "-auto-approve")
-		destroy.Dir = clusterDir
-		destroy.Stdout, destroy.Stderr = os.Stdout, os.Stderr
-		if err := destroy.Run(); err != nil {
-			// Deliberately not sterilizing after a failed destroy: the
-			// state file is the only remaining way to retry it or to find
-			// out what is still running.
-			t.Errorf("tofu destroy failed and the workspace is being left intact on purpose: %v\n\nCheck Proxmox by hand, then re-run `tofu destroy` in management/cluster and `task clean-secrets SITE=%s`.", err, site)
-			return
-		}
+State and secrets have been left in place on purpose - that is what the
+destroy path does when it cannot finish, because wiping them is how VMs get
+orphaned. Check Proxmox by hand, then re-run:
+
+    ./scripts/ignite/ignite -site %s -destroy -confirm %s`, err, site, site)
 	}
-
-	assert.NoError(t, ignite(t, site, "-phase", "sterilize"), "sterilizing the workspace")
 }
 
 func waitForPort(host, port string, timeout time.Duration) bool {

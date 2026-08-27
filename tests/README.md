@@ -136,6 +136,20 @@ tests, and nothing is left on disk that ignite would not have left there.
 > The flag name describes the failure path rather than this one; see
 > `docs/ideas.md`.
 
+**Tearing an estate down** is `ignite -destroy`, which is what the e2e tier
+calls and what a human should call. It renders the config first - that is the
+credential check, not a formality: without a 1Password session there is no
+Proxmox token and no hypervisor endpoint, so somebody with a terminal and a
+copy of this repository can run it all day and destroy nothing. `-confirm`
+must name the site again, which guards against a typo by somebody who _does_
+hold the credentials.
+
+```sh
+task destroy SITE=site0     # prints the command; does not run it
+./scripts/ignite/ignite -site site0 -destroy -whatif
+./scripts/ignite/ignite -site site0 -destroy -confirm site0
+```
+
 ## The e2e tier
 
 `tests/go/e2e` builds an estate from nothing and destroys it again. It is
@@ -149,12 +163,12 @@ gated three ways and passes none of them for you:
 HOMELAB_TEST_SITE=site1 HOMELAB_E2E_CONFIRM=site1 task test:e2e
 ```
 
-It covers Render through Cluster - the whole build-out - and tears down from
-local state. It deliberately stops before Migrate, because after that point
-the state describing what to destroy lives inside the cluster being destroyed.
-`EmergencyDestroy` solves that circle on the failure path; there is no
-equivalent on the success path, so extending this tier through Migrate and
-Backup needs ignite to grow a real teardown command first.
+It covers the whole ignition sequence - Render through Backup, including
+moving state off local disk into cluster Postgres and pushing an encrypted
+copy off-site. Teardown runs `ignite -destroy`, the same supported entrypoint
+a human uses, rather than driving `tofu destroy` itself: a test that tore down
+its own way would be exercising the test's teardown instead of the one that
+has to work at 2am.
 
 It is absent from CI entirely. A destructive nuke-and-pave should not be one
 dropdown selection away in a web UI.

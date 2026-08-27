@@ -227,6 +227,23 @@ tasks:
         -v "{{.USER_WORKING_DIR}}:/tmp/lint"
         {{.LINT_IMAGE}}
 
+  destroy:
+    desc: "Builds ignite, then tells you how to tear a site down - see comment"
+    # Same shape as `start`, and for the same reason: this reaches real
+    # infrastructure, and `task` intercepts Ctrl-C without proxying it to the
+    # process it supervises (go-task/task#1408). An interrupted destroy that
+    # never received the signal cannot wait for tofu to release its state
+    # lock, which is precisely how a half-finished teardown turns into VMs
+    # nothing is tracking. Every other ignite-wrapped task here is safe to
+    # exec directly because none of them can reach real infrastructure; this
+    # one can, so it prints the command instead of running it.
+    cmds:
+      - task: build
+      - 'echo "Built. Run directly so Ctrl-C can wait for tofu to release its lock:"'
+      - 'echo "  ./scripts/ignite/ignite -site {{.SITE}} -destroy -confirm {{.SITE}}"'
+      - 'echo ""'
+      - 'echo "Add -whatif first if you want to see what that would do."'
+
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
     cmds:

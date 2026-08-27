@@ -88,6 +88,16 @@ of them can reach the Compute phase - an interrupted one leaves stale
 secrets at worst, recoverable with `task clean-secrets`, never an orphaned
 VM.
 
+**Tearing it down is `ignite -destroy`**, run directly for the same
+signal-handling reason `start` is. It renders the config first, which is the
+credential check rather than a formality - no 1Password session means no
+Proxmox token and no hypervisor endpoint, so the command is inert in the
+hands of anyone without vault access. `-confirm` must name the site a second
+time, which is the guard against a typo by somebody who does hold it.
+Interrupting a destroy deliberately does _not_ sterilize: wiping state
+part-way through a teardown is how VMs get orphaned, so it waits for tofu to
+release its lock and leaves everything in place to be re-run.
+
 **`workstation/` provisions the Linux machine this runs from.** It is
 deliberately independent from `management/` - no shared config, no
 1Password, and nothing in the cluster lifecycle can touch it, so a failed
