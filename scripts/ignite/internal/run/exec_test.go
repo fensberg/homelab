@@ -68,3 +68,64 @@ func TestFilepathBase(t *testing.T) {
 		}
 	}
 }
+
+func TestWipe(t *testing.T) {
+	b := []byte("a state file full of private keys")
+	Wipe(b)
+	for i, c := range b {
+		if c != 0 {
+			t.Fatalf("byte %d is %q, not zero - the buffer was not wiped", i, c)
+		}
+	}
+	// Length must survive, or callers that reuse the slice get a surprise.
+	if len(b) != 33 {
+		t.Errorf("Wipe changed the length to %d", len(b))
+	}
+}
+
+func TestWipe_EmptyAndNil(t *testing.T) {
+	Wipe(nil)
+	Wipe([]byte{})
+}
+
+// The point of CmdStdin is that sensitive bytes reach another process without
+// becoming a file. `cat` is the smallest possible proof that stdin arrives.
+func TestCmdStdin_DeliversStdin(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+
+	// sh -c writes whatever it reads to a file, so the test can check that
+	// the bytes made the trip without inspecting the pipe itself.
+	if err := CmdStdin(dir, []byte("state-bytes"), "sh", "-c", "cat > "+out); err != nil {
+		t.Fatalf("CmdStdin: %v", err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("reading what the child wrote: %v", err)
+	}
+	if string(got) != "state-bytes" {
+		t.Errorf("child received %q, want %q", got, "state-bytes")
+	}
+}
+
+func TestCmdStdin_ReportsAFailingCommand(t *testing.T) {
+	if err := CmdStdin(t.TempDir(), []byte("x"), "sh", "-c", "exit 3"); err == nil {
+		t.Error("expected an error from a command that exited non-zero")
+	}
+}
+
+func TestCmdOutputBytes(t *testing.T) {
+	got, err := CmdOutputBytes(t.TempDir(), "sh", "-c", "printf 'hello'")
+	if err != nil {
+		t.Fatalf("CmdOutputBytes: %v", err)
+	}
+	if string(got) != "hello" {
+		t.Errorf("got %q, want %q", got, "hello")
+	}
+	// Returned as bytes precisely so it can be wiped; prove that works on
+	// the actual return value rather than on a synthetic slice.
+	Wipe(got)
+	if string(got) == "hello" {
+		t.Error("the returned buffer could not be wiped")
+	}
+}

@@ -52,6 +52,15 @@ belongs in an epoch record.
   The one place this cannot reach is Terraform resource names —
   `tailscale_tailnet_key` is irreducibly vendor-specific — so the abstraction lives at the config and
   secrets layer, which is what keeps a vendor swap to a single `.tf` file.
+- **Deletion is not the security property; being worthless is.** Sterilizing
+  the workspace assumes the delete happened and that nothing copied the file
+  first. So the Backup phase never writes plaintext state to disk at all - it
+  pipes `tofu state pull` straight into `age` and wipes the buffer - and the
+  standing plan is to encrypt state at rest with OpenTofu's own state
+  encryption, keyed from 1Password. See
+  [`docs/state-and-secret-rotation.md`](docs/state-and-secret-rotation.md) for
+  what a leaked state file exposes, the cutover procedure, and the rotation
+  runbooks for everything encryption cannot cover.
 - **State migrates local -> Postgres, and is backed up twice.** The first
   apply runs on local state; once the cluster hosts Postgres, state moves
   there and the local copy is destroyed. CloudNativePG streams WAL and base

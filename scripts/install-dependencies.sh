@@ -151,7 +151,7 @@ else
 fi
 
 step "talosctl (pinned)"
-TALOSCTL_VERSION=v1.11.2
+TALOSCTL_VERSION=v1.13.8
 if has talosctl; then
 	skip "talosctl already present"
 else
