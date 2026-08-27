@@ -19,12 +19,29 @@ jobs:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-          # This action only ever queries GitHub's own advisory data over the
-          # API it already authenticates to - no third-party endpoint to
-          # allow for.
+          # The comment that used to sit here said this action "only ever
+          # queries GitHub's own advisory data ... no third-party endpoint to
+          # allow for." That was true while this repository had almost no
+          # dependencies, and stopped being true the moment it gained some:
+          # the action also enriches each dependency with OpenSSF Scorecard
+          # and deps.dev data, and those are third-party endpoints.
+          #
+          # The symptom was a bare `Error: fetch failed` three seconds in,
+          # with nothing naming a host. The cause is in harden-runner's own
+          # Post-step log, which records every DNS request it drops:
+          #
+          #   [dns-request-dropped] domain=api.securityscorecards.dev. matchedPolicy=NONE
+          #   [dns-request-dropped] domain=api.deps.dev.           matchedPolicy=NONE
+          #
+          # Both endpoints below are transcribed from that log rather than
+          # guessed, which is the same method the Semgrep lane's comment in
+          # pr-validation.yml describes: run it, read what it actually
+          # reached for, then allow exactly that.
           egress-policy: block
           allowed-endpoints: >
+            api.deps.dev:443
             api.github.com:443
+            api.securityscorecards.dev:443
             github.com:443
 
       - name: "Checkout Repository"
