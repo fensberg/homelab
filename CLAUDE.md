@@ -138,6 +138,7 @@ config entry.
 | `management/cluster/`        | OpenTofu: VMs, Talos, overlay network, storage, Flux       |
 | `clusters/management/`       | Flux-reconciled manifests for this cluster                 |
 | `config/management.tpl.json` | The one config: sites, topology and every secret reference |
+| `tests/`                     | Everything above the unit tier — see `tests/README.md`     |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator
 and the database itself are declared in `clusters/management/` and reconciled
@@ -146,7 +147,7 @@ depends on it and uses them.
 
 ## CI
 
-- `pr-validation.yml` — seven lanes, all running in parallel, Format
+- `pr-validation.yml` — eight lanes, all running in parallel, Format
   included. Formatting is enforced locally first (the git hook
   `./scripts/install-dependencies.sh` wires up via `pre-commit install`) -
   shift left, catch it in seconds on the machine that wrote it. **Format**'s
@@ -161,7 +162,11 @@ depends on it and uses them.
   and Trivy below. **Validate** proves the code resolves: `tofu validate`
   against a placeholder config, and `kustomize build` piped through
   `kubeconform` with the Flux substitutions applied - Go vetting/building
-  lives here too, for the same reason. **Analyze** is Super-Linter, for
+  lives here too, for the same reason. **Test** is the behaviour half of Validate: Go unit and
+  contract tests, `tofu test` against the fixture corpus, and the
+  JavaScript/TypeScript tier. Everything in it is hermetic, which is what
+  lets a fork's pull request run it in full without reaching a credential.
+  **Analyze** is Super-Linter, for
   everything not already owned by a dedicated lane. **Semgrep**, **Trivy**
   and **Secrets** are the security lanes, and overlap with each other and
   with Analyze on purpose - none of them comes out.
@@ -178,9 +183,37 @@ depends on it and uses them.
   which stays on `audit` and says why in a comment: verification works by
   calling the API of whichever vendor issued a leaked key, and an allowlist
   would silently downgrade verified findings to unverified rather than fail.
+- `integration-tests.yml` — the test tiers that need a real estate, on the
+  self-hosted runner: nightly, plus manual dispatch. Not reachable from a
+  pull request, deliberately. The nightly run exists mostly for one
+  assertion no pull request can make - a `tofu plan` against real state,
+  which is the only thing here that can notice somebody changed a VM in the
+  Proxmox web UI. The destructive e2e tier is absent from CI entirely and is
+  run by hand; see `tests/README.md`.
 - `deploy-infrastructure.yml` — applies OpenTofu on a self-hosted runner.
   Path-filtered to `environments/**` and `modules/**`, so Ignition changes
   never trigger it. That is intentional.
+
+## Testing
+
+Tests come before the code they test. `tests/README.md` is the map; the two
+things worth knowing without reading it:
+
+**Five tiers, one line that matters.** unit and contract are hermetic - no
+1Password, no hypervisor, no credentials - so a pull request runs them in
+full, including one from a fork. integration, api and e2e need a real estate
+and never run on a pull request.
+
+**The config contract is checked, not assumed.** `registry.tf` and
+`internal/config/config.go` implement the same invariants twice, so a bad
+config is refused whether it arrives through the start button or a bare
+`tofu plan`. `management/cluster/tests/fixtures/manifest.json` is the single
+corpus both sides are run against, and the contract tests fail if a case
+exists on one side and not the other. Adding an invariant means adding it in
+both places and adding a case to that manifest.
+
+Coverage is a ratchet, not a threshold: `tests/coverage-baseline.json` is a
+floor a pull request may not drop below and is free to leave alone.
 
 ## Conventions
 
@@ -193,10 +226,14 @@ depends on it and uses them.
   `.github/super-linter.vars`. Nothing is configured in both places - two
   copies of prettier, on two versions, is what put formatting errors on a pull
   request that `pre-commit` had just passed.
-- Three verbs, fastest first: `task fix` formats (seconds, no Docker),
-  `task validate` proves the OpenTofu and manifests resolve, `task lint` runs
-  the slow analysis image. Run the first two before every push and the third
-  before opening a pull request.
+- Four verbs, fastest first: `task fix` formats (seconds, no Docker),
+  `task validate` proves the OpenTofu and manifests resolve, `task test`
+  proves they behave, `task lint` runs the slow analysis image. The first
+  three run on every push (the `pre-push` hook wires up `validate` and
+  `test`); the fourth is worth running before opening a pull request.
+  `validate` and `test` are separate on purpose - "does it resolve" and
+  "does it do the right thing" are different questions, and one owner per
+  check is the rule everywhere else here too.
 - **Formatting is enforced locally first, shifted as far left as this repo
   can reach.** `./scripts/install-dependencies.sh` wires `pre-commit` into the
   `pre-commit` git hook, so a formatting mistake is caught on the machine

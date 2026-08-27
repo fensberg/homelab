@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "The floor scripts/coverage-gate.sh holds each language to. A pull request",
+    "may not drop below these numbers (less a small tolerance for run-to-run",
+    "wobble); it is free to leave them exactly where they are.",
+    "",
+    "Raising a number is a deliberate, reviewable commit - which is the point.",
+    "Coverage that ratchets automatically records whatever the last green run",
+    "happened to hit, including a run that got lucky; coverage that ratchets by",
+    "hand records a decision that the new floor is one the project intends to",
+    "keep standing on.",
+    "",
+    "go: scripts/ignite, the shipped program. tests/go is excluded - it is",
+    "test code, and measuring how thoroughly the tests test themselves is a",
+    "number with no meaning.",
+    "js: measured by vitest over any application code. There is none yet, so",
+    "the floor is 0 until there is."
+  ],
+  "baselines": {
+    "go": 24.5,
+    "js": 0
+  }
+}
