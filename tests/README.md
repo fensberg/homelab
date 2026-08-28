@@ -109,6 +109,51 @@ written twice is a lexical property of a file, not a policy over structured
 data, and `conftest` cannot parse an env file at all. It would also add a
 fifth owner of checks, and a new language, for one assertion.
 
+### Reaching the self-hosted runner from a pull request
+
+`repo/selfhosted_test.go` is the second rule of that kind, and it guards the
+one place this repository deliberately crosses the hermetic line:
+`deploy-infrastructure.yml`'s Plan job is `pull_request`-triggered and
+`runs-on: self-hosted`, reading real state with real credentials.
+
+It carries a fork guard —
+`github.event.pull_request.head.repo.full_name == github.repository` — and
+the useful thing to understand is that **a fork guard is not a
+same-repo-branch guard.** It excludes an outside contributor. It does not
+exclude a branch pushed to this repository, and that set is larger than it
+looks: every collaborator, every bot with push access, and anything holding a
+leaked token. Such a branch opens a pull request whose head repo _is_ this
+repository, passes the guard, and runs on a machine on the estate's network.
+
+So the check requires both the fork guard and an `environment:`, plus it
+refuses `pull_request_target` on a self-hosted runner outright — that
+combination hands secrets to a workflow evaluating someone else's branch, and
+no `if` redeems it.
+
+**Half of this invariant is not in the repository, and cannot be.** Whether
+`staging` actually has required reviewers lives in Settings → Environments.
+Worse, an environment named in a workflow but never configured is not an
+error: GitHub creates it on first use with **no protection rules at all**. So
+a workflow can satisfy this test completely while the gate stands open, and
+the test says so in its failure message rather than implying otherwise.
+
+The setting therefore has to be confirmed by hand, and **has been**: `staging`
+and `production` both exist with required reviewers, set before any
+self-hosted runner did — which is the cheap moment to do it and an awkward
+one to retrofit once the runner is live.
+
+Two things follow, and both are the reason this paragraph exists rather than
+a checkbox somewhere:
+
+- **Re-confirm it after anything that recreates an environment.** Deleting
+  one and letting a workflow recreate it silently drops the protection rules,
+  and no test here will notice. The check below tells you the `environment:`
+  line is present; only Settings → Environments tells you it means anything.
+- **`prevent_self_review` is off, deliberately.** The required reviewer is
+  the repository's only human, so turning it on would make the gate
+  unsatisfiable rather than stronger. It stops being the right answer the day
+  a second maintainer exists, which is the point at which to revisit it.
+
 ## Running things
 
 ```sh
