@@ -1000,3 +1000,18 @@ To be completed when the epoch closes.
   `onepassword.Probe` returns a status and never the value, so
   `ignite -check-vault` cannot print one. See "The agent's boundary is
   enforced, not agreed" for the same reasoning applied to credentials.
+- **The agent cannot run `task lint` at all**, because Super-Linter is a
+  Docker image and the `claude` user is deliberately not in the `docker`
+  group. `fix`, `validate` and `test` all run locally; **Analyze is the one
+  gate that only ever fails in CI** for an agent-authored change. That is a
+  cost of the boundary rather than a defect in it - the alternative is docker
+  group membership, which is root on the host - but it means a pull request
+  written by the agent can be locally clean and still fail Analyze. It has:
+  MD046 below. Anyone reviewing agent work should expect that lane to be the
+  one that catches things, and not read a green local run as a green CI run.
+- **markdownlint's MD046 is `consistent`, so the first code block in a file
+  fixes the style for the whole file.** `01-ignition.md` has had an indented
+  block since the Windows route command, which makes a fenced block added
+  anywhere later in it an error - while `tests/README.md`, fenced throughout,
+  is equally correct. The rule is per-file, not per-repository, so match the
+  file you are editing rather than the last one you looked at.
