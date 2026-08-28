@@ -306,6 +306,14 @@ floor a pull request may not drop below and is free to leave alone.
 
 - Branch per epoch: `epoch/<nn>-<slug>`. One PR per epoch into `main`.
 - Close an epoch by filling in its record in `docs/epochs/` **before** merging.
+- **No `Co-Authored-By: Claude` trailer.** Claude commits here under its own
+  git identity, so that trailer credits the same party twice and GitHub shows
+  an author avatar beside a redundant co-author badge. It exists to credit a
+  contributor who is not the author. This contradicts the Claude Code
+  harness's default instruction, which assumes a human is committing the
+  model's work — the reverse of the arrangement here — so `commitlint.config.js`
+  enforces it rather than leaving it to be remembered. A trailer naming a
+  human co-author is still correct and still passes.
 - **Each check has exactly one owner.** Formatting belongs to `pre-commit`,
   pinned to exact versions; CI runs that same file rather than its own copy of
   the same tools. Analysis belongs to Super-Linter, pinned by image SHA, with
