@@ -9,11 +9,20 @@
 # repo's branch protection (a required-PR ruleset with no bypass actors) and,
 # more fundamentally, with treating every reconciled manifest as reviewed
 # code rather than a runtime side effect. So this applies what is already in
-# git instead: OpenTofu creates the namespace and the git-credential secret
-# (the "namespace and secrets" it always owns), then a one-time kubectl apply
+# git instead: OpenTofu creates the namespace, then a one-time kubectl apply
 # installs Flux's controllers and points them at this repository. From then
 # on Flux reconciles the rest - the CloudNativePG operator and the state
 # database - entirely on its own, the same as it always would have.
+#
+# The sync is anonymous, and there is no credential here to create. This
+# repository is public, so the GitRepository's https:// clone succeeds
+# unauthenticated; the secret that used to live here held a source-control
+# token to authenticate a request that never needed authenticating. The cost
+# was not theoretical - a secret OpenTofu creates is a secret in OpenTofu
+# state, so it made a leaked state file yield a live token in exchange for
+# nothing. If this repository is ever made private, the credential comes back
+# with that cost attached and belongs in the decision, not in a quiet edit;
+# tests/go/repo/gitops_test.go says so where somebody would be about to.
 # =============================================================================
 
 resource "kubernetes_namespace" "flux_system" {
@@ -24,22 +33,8 @@ resource "kubernetes_namespace" "flux_system" {
   }
 }
 
-resource "kubernetes_secret" "flux_system_git_auth" {
-  depends_on = [kubernetes_namespace.flux_system]
-
-  metadata {
-    name      = "flux-system"
-    namespace = "flux-system"
-  }
-
-  data = {
-    username = "git"
-    password = local.config.source_control.token
-  }
-}
-
 resource "terraform_data" "flux_bootstrap_apply" {
-  depends_on = [kubernetes_secret.flux_system_git_auth]
+  depends_on = [kubernetes_namespace.flux_system]
 
   # Re-applies whenever the committed manifests change, not just on first
   # create - a Flux version bump or a new controller lands the same way any
