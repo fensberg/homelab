@@ -1,0 +1,32 @@
+# Who gets asked to review, without anybody having to remember to ask.
+#
+# main's protection requires one approving review, so every pull request needs
+# a reviewer named on it. Adding that reviewer by hand is a step that is easy
+# to forget and adds nothing - the answer is the same every time, because this
+# repository has one human. GitHub requests a review from a code owner
+# automatically when a pull request touches a path they own, so declaring it
+# once here is the whole job.
+#
+# It applies to pull requests this repository's automation opens as well -
+# Claude's, Dependabot's - which is the case that actually matters, since
+# those are the ones nobody is sitting in front of at the time.
+#
+# One catch worth knowing: GitHub never requests a review from the author of a
+# pull request. A pull request jlemberg opens gets no request from this file,
+# which is correct - it would be asking someone to approve their own work -
+# but it does mean that one still needs a reviewer chosen by hand, or the
+# admin bypass.
+#
+# A second catch, this one silent: an unmatched or misspelled owner is not an
+# error. GitHub simply requests nothing and reports the problem only in a UI
+# panel nobody opens. `gh api repos/fensberg/homelab/codeowners/errors` is the
+# way to ask directly, and is worth running after editing this file.
+#
+# This does NOT make code-owner review *required* - that is the separate
+# "Require review from Code Owners" toggle in main's branch protection, which
+# is an admin setting rather than a file. Without it, the review is requested
+# but any approving review satisfies the rule. With one human either way, the
+# distinction is currently academic; it stops being academic the day a second
+# maintainer exists.
+
+* @jlemberg
