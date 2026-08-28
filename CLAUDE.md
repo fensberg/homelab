@@ -62,7 +62,7 @@ belongs in an epoch record.
   carry none of this.
 - **Name things by function, never by vendor.** Config keys, 1Password paths,
   and file names describe what a thing does; the vendor lives in the value or
-  in a file header. `source_control.token`, not `git.github_pat_reference`.
+  in a file header. `source_control.repo_url`, not `git.github_repo_url`.
   The one place this cannot reach is Terraform resource names —
   `tailscale_tailnet_key` is irreducibly vendor-specific — so the abstraction lives at the config and
   secrets layer. That keeps the _OpenTofu_ half of a vendor swap small: 60 lines
