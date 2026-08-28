@@ -62,7 +62,7 @@ belongs in an epoch record.
   carry none of this.
 - **Name things by function, never by vendor.** Config keys, 1Password paths,
   and file names describe what a thing does; the vendor lives in the value or
-  in a file header. `source_control.token`, not `git.github_pat_reference`.
+  in a file header. `source_control.repo_url`, not `git.github_repo_url`.
   The one place this cannot reach is Terraform resource names —
   `tailscale_tailnet_key` is irreducibly vendor-specific — so the abstraction lives at the config and
   secrets layer. That keeps the _OpenTofu_ half of a vendor swap small: 60 lines
@@ -288,6 +288,14 @@ floor a pull request may not drop below and is free to leave alone.
 
 - Branch per epoch: `epoch/<nn>-<slug>`. One PR per epoch into `main`.
 - Close an epoch by filling in its record in `docs/epochs/` **before** merging.
+- **No `Co-Authored-By: Claude` trailer.** Claude commits here under its own
+  git identity, so that trailer credits the same party twice and GitHub shows
+  an author avatar beside a redundant co-author badge. It exists to credit a
+  contributor who is not the author. This contradicts the Claude Code
+  harness's default instruction, which assumes a human is committing the
+  model's work — the reverse of the arrangement here — so `commitlint.config.js`
+  enforces it rather than leaving it to be remembered. A trailer naming a
+  human co-author is still correct and still passes.
 - **Each check has exactly one owner.** Formatting belongs to `pre-commit`,
   pinned to exact versions; CI runs that same file rather than its own copy of
   the same tools. Analysis belongs to Super-Linter, pinned by image SHA, with

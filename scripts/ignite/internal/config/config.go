@@ -52,9 +52,12 @@ type Organization struct {
 	Name string `json:"name"`
 }
 
+// SourceControl carries no credential. Flux clones this public repository
+// anonymously over https, so the token that used to sit here authenticated a
+// request that succeeds without it - while being written to OpenTofu state
+// for the privilege. See management/cluster/gitops.tf.
 type SourceControl struct {
 	RepoURL string `json:"repo_url"`
-	Token   string `json:"token"`
 }
 
 type Site struct {

@@ -4,8 +4,7 @@
   },
 
   "source_control": {
-    "repo_url": "{{ op://homelab/source-control/url }}",
-    "token": "{{ op://homelab/source-control/token }}"
+    "repo_url": "{{ op://homelab/source-control/url }}"
   },
 
   "state_backup": {
