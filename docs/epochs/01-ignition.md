@@ -658,6 +658,83 @@ the age-encrypted backup in object storage answers the case where more than
 one node is lost. A workload that genuinely needs RWX wants OpenEBS Replicated
 PV (Mayastor), which can be enabled alongside this later.
 
+### The agent's boundary is enforced, not agreed
+
+**Chose:** Run Claude as an unprivileged OS user with no vault access and a
+GitHub identity that can push a branch and nothing else. Every limit is
+enforced by a system that refuses, not by an instruction the agent is asked to
+respect.
+**Because:** an instruction is a request; a 403 is an answer. The agent writes
+the OpenTofu that can destroy the estate, so the interesting question is not
+whether it behaves but what it is still able to do when it does not - after a
+bad prompt, a confused session, or a prompt injection arriving through a file
+it was asked to read. Everything below survives all three, because none of them
+changes what the token is permitted to do.
+**Rejected:** restricting capability by removing tools. The agent needs `tofu`,
+`git` and the repository to be useful at all, and an agent that cannot act is
+just a worse editor. The scope that actually matters is **time**: credentials
+are handed over for a session and taken back, rather than sitting in the
+environment permanently at reduced power.
+
+Three layers, each independent of the others:
+
+| Layer       | Enforced by                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| Workstation | OS user `claude` (uid 1002). Not in `sudo`, `docker`, `adm`. `/home/dev` is `0750 dev:dev` |
+| Vault       | No 1Password account configured, no `OP_SERVICE_ACCOUNT_TOKEN`                             |
+| Forge       | Fine-grained PAT: push on `fensberg/homelab` only, no admin, no `workflow`                 |
+
+The consequence is the working model: **the agent proposes, the human
+disposes.** Claude opens a pull request; `main protection` requires an
+approving review it cannot give - GitHub refuses a self-approval outright -
+and `require_last_push_approval` closes the case where it pushes again after
+one. Nothing merges without a person.
+
+**The asymmetry is deliberate and worth keeping.** The agent can _read_
+rulesets, environments and protection rules, and cannot _write_ any of them.
+That is what lets it audit the estate's own configuration - confirming
+`staging`, `production` and `integration` all carry required reviewers, say -
+while being unable to weaken what it just inspected. A boundary that blocked
+reading too would have made the agent useless for exactly the work it is best
+suited to.
+
+**Commits are signed** with an SSH key generated on the workstation and
+registered against the bot account, and `main` carries `required_signatures`.
+That is provenance rather than authorisation: it does not grant the agent
+anything, it makes what the agent did attributable and forgery-resistant. The
+private half never leaves the workstation, and the agent cannot register keys
+itself - `POST /user/ssh_signing_keys` is 403 - so a human is in that loop too.
+
+#### Verify it rather than believing this table
+
+The boundary is only true until somebody widens a token. Re-checking it is
+cheap, and every check below is read-only except the two marked, which are
+safe because they are _expected to fail_:
+
+```sh
+# Workstation
+id; sudo -n true; docker ps; ls /home/dev
+
+# Vault
+op whoami; op vault list; env | grep -c '^OP_'
+
+# Forge - all of these must 403
+gh api repos/fensberg/homelab/branches/main/protection
+gh api repos/fensberg/homelab/actions/secrets
+gh api -X PUT repos/fensberg/homelab/environments/probe          # write, must fail
+gh api -X PUT repos/fensberg/homelab/rulesets/<id> -f enforcement=disabled  # write, must fail
+
+# Workflow scope: commit a change under .github/workflows/ and push to a
+# throwaway branch. The push must be rejected server-side.
+```
+
+**Test the wall, do not infer it.** The first attempt at the `main` check used
+`git push --dry-run`, which reported success - `--dry-run` skips the ref update,
+so branch protection is never evaluated. Taken at face value it would have
+concluded `main` was writable by the agent. The real answer came from reading
+the ruleset. A privilege check that has only ever been reasoned about is not a
+privilege check.
+
 ## Acceptance test: change 3 to 5 and watch it land
 
 The epoch is signed off when this works, end to end, with no manual step in
@@ -892,3 +969,36 @@ To be completed when the epoch closes.
   Confirm it exists with `iso` in its content types.
 - **The deploy workflow never fires for this epoch.** Its path filters cover
   only `environments/**` and `modules/**`. Expected, not broken.
+- **`git push --dry-run` does not evaluate branch protection.** It skips the
+  ref update, so a push that would be rejected reports success. It is the
+  wrong tool for "can I write here"; read the ruleset instead. See "The
+  agent's boundary is enforced, not agreed".
+- **`non_fast_forward` applies to feature branches too, not just `main`.** So
+  commits on an open pull request cannot be amended or rebased once pushed -
+  no force-push is possible for anybody, agent or human. Fixing a bad commit
+  message means a new commit, or closing the branch and starting over.
+- **With `required_signatures` on `main`, squash-merge a branch holding
+  unsigned commits.** GitHub creates and signs the squash commit with its own
+  key, so it satisfies the rule; a **rebase** merge replays the original
+  unsigned commits and is rejected. This bites any branch that predates
+  signing being switched on, and `non_fast_forward` above means those commits
+  cannot be retroactively signed.
+- **Merging `main` into a PR branch does not dismiss an approval**, even with
+  `dismiss_stale_reviews_on_push` enabled. GitHub only dismisses on a
+  _reviewable_ push - one that changes the contribution - and carries the
+  approval forward onto the new merge commit, which is visible as the review's
+  `commit_id` changing to a commit that did not exist when it was given. This
+  is intended behaviour and the required status checks re-run on the merge
+  commit, which is the compensating control; what it does not re-review is a
+  semantic conflict that merges cleanly.
+- **A missing GitHub environment is created on first use with no protection
+  rules**, silently. Naming `environment:` in a workflow therefore proves
+  nothing about whether a gate exists -
+  `tests/go/repo/selfhosted_test.go` can only check the file, and says so in
+  its failure message. Confirm the environment in Settings as well.
+- **`op` has no existence check that does not also return the value.** Any
+  "does this reference resolve" test necessarily reads the secret. The
+  handling is to make the value unreachable rather than to be careful with it:
+  `onepassword.Probe` returns a status and never the value, so
+  `ignite -check-vault` cannot print one. See "The agent's boundary is
+  enforced, not agreed" for the same reasoning applied to credentials.

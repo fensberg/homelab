@@ -17,6 +17,12 @@ earlier epoch whose decisions you are about to touch.
   storage. Declared in `clusters/management/`.
 - **Not yet built:** `modules/` and `environments/` — both referenced by
   `README.md` and by the path filters in `deploy-infrastructure.yml`.
+- **Who can do what:** Claude runs unprivileged, with no vault access and a
+  GitHub identity that can push a branch and nothing else — it proposes, a
+  human merges. Enforced by the OS, the absent 1Password account and a
+  fine-grained token, not by instructions. See
+  [the boundary decision](01-ignition.md#the-agents-boundary-is-enforced-not-agreed),
+  which carries the commands to re-verify it rather than trust the write-up.
 
 ## Epochs
 
