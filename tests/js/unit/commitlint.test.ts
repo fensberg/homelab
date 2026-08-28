@@ -12,12 +12,18 @@ import load from "@commitlint/load";
 // enforcement points read. It is also the JavaScript tier's proof of life -
 // the one piece of JavaScript this repository has today is this config, so it
 // is the one thing there is to test.
-// `ignores` and `defaultIgnores` are passed through deliberately. commitlint
-// applies them in lint(), not in load(), so a call that omits them silently
-// tests a stricter convention than the one the hooks actually enforce - which
-// is exactly what this file exists to avoid.
+// `ignores`, `defaultIgnores` and `plugins` are passed through deliberately.
+// commitlint applies all three in lint(), not in load(), so a call that omits
+// them silently tests a different convention than the one the hooks actually
+// enforce - which is exactly what this file exists to avoid.
+//
+// `plugins` matters most of the three, and least visibly: load() returns the
+// *configuration* for a locally-defined rule but leaves its implementation in
+// the plugin object. Omit it and lint() cannot resolve the rule, so a commit
+// the config forbids comes back valid and the test that was supposed to prove
+// otherwise passes.
 async function check(message: string) {
-  const { rules, parserPreset, ignores, defaultIgnores } = await load(
+  const { rules, parserPreset, ignores, defaultIgnores, plugins } = await load(
     {},
     { cwd: process.cwd() },
   );
@@ -25,6 +31,7 @@ async function check(message: string) {
     ...(parserPreset?.parserOpts ? { parserOpts: parserPreset.parserOpts } : {}),
     ignores,
     defaultIgnores,
+    plugins,
   });
 }
 
@@ -63,5 +70,53 @@ describe("the repository's commit convention", () => {
       report.valid,
       "the `ignores` carve-out in commitlint.config.js has stopped matching",
     ).toBe(true);
+  });
+});
+
+// Claude commits to this repository under its own git identity, so a
+// `Co-Authored-By: Claude` trailer credits the same party twice - GitHub
+// renders the commit with an author avatar and a redundant co-author badge.
+// The trailer exists to credit a contributor who is not the author.
+//
+// This is worth a rule rather than a note because the Claude Code harness
+// instructs the model to add that trailer by default, on the assumption that
+// a human is committing the model's work. That assumption is backwards here,
+// so the correction has to live somewhere the next session cannot miss it.
+describe("the no-self-co-authorship rule", () => {
+  const subject = "fix: drop the redundant secret";
+
+  it.each([
+    ["Claude by name", "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"],
+    ["a different model name", "Co-authored-by: Claude <noreply@anthropic.com>"],
+    ["only the vendor domain", "Co-Authored-By: Someone <bot@anthropic.com>"],
+    ["lower-cased entirely", "co-authored-by: claude <noreply@anthropic.com>"],
+  ])("rejects a trailer naming %s", async (_label, trailer) => {
+    const report = await check(`${subject}\n\nA body.\n\n${trailer}`);
+    expect(report.valid, JSON.stringify(report.errors)).toBe(false);
+    expect(report.errors.map((e) => e.name)).toContain("no-self-co-authorship");
+  });
+
+  // The rule targets self-attribution, not co-authorship. A real second
+  // contributor is exactly what the trailer is for, and blocking that would
+  // be trading one wrong answer for another.
+  it("accepts a trailer naming a human co-author", async () => {
+    const report = await check(
+      `${subject}\n\nA body.\n\nCo-Authored-By: A Person <person@example.com>`,
+    );
+    expect(report.valid, JSON.stringify(report.errors)).toBe(true);
+  });
+
+  it("accepts a commit with no trailer at all", async () => {
+    const report = await check(`${subject}\n\nA body.`);
+    expect(report.valid, JSON.stringify(report.errors)).toBe(true);
+  });
+
+  // The word appears in this repository constantly - CLAUDE.md, scripts,
+  // prose about the agent boundary. Only the trailer is the problem.
+  it("accepts a body that merely mentions Claude", async () => {
+    const report = await check(
+      `${subject}\n\nCLAUDE.md says Claude runs as its own user.`,
+    );
+    expect(report.valid, JSON.stringify(report.errors)).toBe(true);
   });
 });

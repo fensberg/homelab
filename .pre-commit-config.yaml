@@ -118,8 +118,9 @@ repos:
 
   # Conventional Commits - see commitlint.config.js at the repo root, the one
   # copy of the rule both this hook and Super-Linter's GIT_COMMITLINT
-  # validator read. Deliberately unconfigured beyond the standard preset for
-  # now: the bones to build on, not the finished shape.
+  # validator read. The standard preset plus one local rule, which forbids a
+  # `Co-Authored-By: Claude` trailer on a commit Claude authored; that file
+  # says why.
   - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
     rev: v9.26.0
     hooks:
