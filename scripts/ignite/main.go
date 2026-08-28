@@ -63,9 +63,10 @@ func main() {
 	confirm := flag.String("confirm", "", "Name the site again, to confirm -destroy.")
 	restore := flag.Bool("restore", false, "Bring the age-encrypted state back from object storage. Refuses if local state already exists.")
 	kubeconfig := flag.Bool("kubeconfig", false, "Write this site's kubeconfig into the workspace and exit. It is a credential; 'task clean-secrets' removes it.")
+	checkVault := flag.Bool("check-vault", false, "Prove every op:// reference in the config template resolves. Reports structure only - never a value.")
 	flag.Parse()
 
-	if err := standaloneFlagsOK(modes{Destroy: *destroy, Restore: *restore, Kubeconfig: *kubeconfig}, *phase, *from); err != nil {
+	if err := standaloneFlagsOK(modes{Destroy: *destroy, Restore: *restore, Kubeconfig: *kubeconfig, CheckVault: *checkVault}, *phase, *from); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}
@@ -112,6 +113,24 @@ Nothing has been touched. Re-run without -whatif to do it.
 
 	// OpenTofu reads the same config; this tells it which site to use.
 	os.Setenv("TF_VAR_site", ctx.Site)
+
+	// Deliberately ahead of EnsureStateEncryption, which is otherwise the
+	// first thing to run. That function reads the encryption passphrase out of
+	// the vault, so a vault this check exists to diagnose would fail there
+	// first - and the operator would be told the state key is unreachable
+	// rather than which reference is wrong. A diagnostic that cannot run when
+	// its subject is broken is not a diagnostic.
+	//
+	// It writes nothing and reads no values, so it is also the one mode with
+	// nothing to sterilize afterwards.
+	if *checkVault {
+		if err := phases.CheckVault(ctx); err != nil {
+			fmt.Println()
+			run.Fail("HALTED: " + err.Error())
+			os.Exit(1)
+		}
+		return
+	}
 
 	// Before any phase, including -destroy: state is encrypted at rest, so a
 	// tofu invocation without TF_ENCRYPTION cannot read it. Setting it per
@@ -210,6 +229,7 @@ type modes struct {
 	Destroy    bool
 	Restore    bool
 	Kubeconfig bool
+	CheckVault bool
 }
 
 func (m modes) named() []string {
@@ -217,7 +237,7 @@ func (m modes) named() []string {
 	for _, c := range []struct {
 		on   bool
 		flag string
-	}{{m.Destroy, "-destroy"}, {m.Restore, "-restore"}, {m.Kubeconfig, "-kubeconfig"}} {
+	}{{m.Destroy, "-destroy"}, {m.Restore, "-restore"}, {m.Kubeconfig, "-kubeconfig"}, {m.CheckVault, "-check-vault"}} {
 		if c.on {
 			out = append(out, c.flag)
 		}

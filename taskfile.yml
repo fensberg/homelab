@@ -58,6 +58,16 @@ tasks:
       - task: build
       - ./scripts/ignite/ignite -site {{.SITE}} -phase render
 
+  check-vault:
+    desc: "Prove every op:// reference in the config template resolves (no values read)"
+    # Safe to wrap, and the safest thing here: it writes nothing at all - no
+    # rendered config, no secrets on disk, nothing for `clean-secrets` to
+    # remove - so an interrupted run leaves the workspace exactly as it found
+    # it. Run it after editing the template or the vault.
+    cmds:
+      - task: build
+      - ./scripts/ignite/ignite -site {{.SITE}} -check-vault
+
   verify:
     desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:

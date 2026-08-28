@@ -152,6 +152,24 @@ program that reads the private half, which `tests/go/repo` enforces, and it
 restores state and stops - what to do with it afterwards is a judgement call,
 not a next step.
 
+**Checking the vault is `ignite -check-vault`** (`task check-vault`). It proves
+every `op://` reference in `config/management.tpl.json` resolves and is
+non-empty, and reports each one as `ok` / `empty` / `missing` — structure only,
+never a value, so the output is safe to paste into an issue or a pull request.
+
+It is `AssertRenderedConfigComplete` shifted as far left as it goes. That check
+compares the template against an already-rendered config, so it can only speak
+after Render has pulled every secret in the estate onto disk — correct, and the
+most expensive possible moment to learn a field was misspelled. This asks the
+same question having written nothing. It earned its place: the template carried
+a reference to `op://homelab/source-control/token`, an item that did not exist,
+which would have failed every run at Render.
+
+`empty` is the quieter half and the reason the check is not just an existence
+test. `op inject` treats a blank field as success and writes an empty string,
+so an empty field does not fail Render at all — it surfaces much later inside a
+provider as something like "credentials are empty", naming no field.
+
 **`workstation/` provisions the Linux machine this runs from.** It is
 deliberately independent from `management/` - no shared config, no
 1Password, and nothing in the cluster lifecycle can touch it, so a failed
