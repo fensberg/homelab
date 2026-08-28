@@ -3,8 +3,7 @@
     "name": "Fixture Org"
   },
   "source_control": {
-    "repo_url": "https://example.invalid/fixture/repo",
-    "token": "fixture-token"
+    "repo_url": "https://example.invalid/fixture/repo"
   },
   "state_backup": {
     "recipient": "age1fixturefixturefixturefixturefixturefixturefixturefixture"
