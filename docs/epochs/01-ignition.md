@@ -711,22 +711,20 @@ The boundary is only true until somebody widens a token. Re-checking it is
 cheap, and every check below is read-only except the two marked, which are
 safe because they are _expected to fail_:
 
-```sh
-# Workstation
-id; sudo -n true; docker ps; ls /home/dev
+    # Workstation
+    id; sudo -n true; docker ps; ls /home/dev
 
-# Vault
-op whoami; op vault list; env | grep -c '^OP_'
+    # Vault
+    op whoami; op vault list; env | grep -c '^OP_'
 
-# Forge - all of these must 403
-gh api repos/fensberg/homelab/branches/main/protection
-gh api repos/fensberg/homelab/actions/secrets
-gh api -X PUT repos/fensberg/homelab/environments/probe          # write, must fail
-gh api -X PUT repos/fensberg/homelab/rulesets/<id> -f enforcement=disabled  # write, must fail
+    # Forge - all of these must 403
+    gh api repos/fensberg/homelab/branches/main/protection
+    gh api repos/fensberg/homelab/actions/secrets
+    gh api -X PUT repos/fensberg/homelab/environments/probe          # write, must fail
+    gh api -X PUT repos/fensberg/homelab/rulesets/<id> -f enforcement=disabled  # write, must fail
 
-# Workflow scope: commit a change under .github/workflows/ and push to a
-# throwaway branch. The push must be rejected server-side.
-```
+    # Workflow scope: commit a change under .github/workflows/ and push to a
+    # throwaway branch. The push must be rejected server-side.
 
 **Test the wall, do not infer it.** The first attempt at the `main` check used
 `git push --dry-run`, which reported success - `--dry-run` skips the ref update,
