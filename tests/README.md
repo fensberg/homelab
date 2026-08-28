@@ -137,12 +137,22 @@ error: GitHub creates it on first use with **no protection rules at all**. So
 a workflow can satisfy this test completely while the gate stands open, and
 the test says so in its failure message rather than implying otherwise.
 
-The setting therefore has to be confirmed by hand:
+The setting therefore has to be confirmed by hand, and **has been**: `staging`
+and `production` both exist with required reviewers, set before any
+self-hosted runner did — which is the cheap moment to do it and an awkward
+one to retrofit once the runner is live.
 
-> **Before the self-hosted runner exists**, set Settings → Environments →
-> `staging` → Required reviewers. There is no runner yet and no `staging`
-> environment yet, so nothing enforces this today — which is exactly why it
-> is cheap to do now and awkward to retrofit once the runner is live.
+Two things follow, and both are the reason this paragraph exists rather than
+a checkbox somewhere:
+
+- **Re-confirm it after anything that recreates an environment.** Deleting
+  one and letting a workflow recreate it silently drops the protection rules,
+  and no test here will notice. The check below tells you the `environment:`
+  line is present; only Settings → Environments tells you it means anything.
+- **`prevent_self_review` is off, deliberately.** The required reviewer is
+  the repository's only human, so turning it on would make the gate
+  unsatisfiable rather than stronger. It stops being the right answer the day
+  a second maintainer exists, which is the point at which to revisit it.
 
 ## Running things
 
