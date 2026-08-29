@@ -123,6 +123,9 @@ jobs:
           git diff --name-only "$BASE" "$HEAD" \
             | .github/scripts/sensitive-paths.sh >>"$GITHUB_OUTPUT"
 
+      # The comment body is built entirely by the script, so changing the
+      # wording never means touching this file. Copy that needs a workflow edit
+      # to fix is copy that stays wrong, and the agent cannot edit workflows.
       - name: Say what is at risk
         if: steps.sensor.outputs.tripped == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -130,20 +133,8 @@ jobs:
           REPORT: ${{ steps.sensor.outputs.report }}
         with:
           script: |
+            const body = process.env.REPORT;
             const marker = '<!-- sensitive-paths -->';
-            const body = [
-              marker,
-              '## This pull request changes a safety property',
-              '',
-              'Not "important files" - properties that fail **quietly**.',
-              'A deleted assertion is a smaller file and a green build.',
-              '',
-              process.env.REPORT,
-              '',
-              '---',
-              'Read the reasons above, then apply the **`sensitive-reviewed`** label',
-              'to clear the failing check.',
-            ].join('\n');
             const {data: comments} = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner, repo: context.repo.repo,
