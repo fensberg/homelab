@@ -1,0 +1,36 @@
+# Paths whose modification demands deliberate review, not a reflexive approval.
+#
+# One path per line, like an allowlist. The text after "#" is the reason shown
+# to the reviewer when the tripwire fires, so write it as the thing to look
+# for, not a label - "this is sensitive" tells nobody anything they had not
+# already assumed. Blank lines and whole-line comments are ignored.
+#
+# Deliberately not YAML. This is read by a shell script in CI and by a Go test,
+# and a format that needs a parser is a format that needs a dependency; the one
+# obvious choice for that job, tj-actions/changed-files, is the action that got
+# backdoored in 2025 to scrape secrets out of runner logs. grep and cut do not
+# have supply chains.
+#
+# What belongs here is narrower than "important". The test is whether a change
+# could remove a safety property WHILE LOOKING ROUTINE IN A DIFF. A deleted
+# assertion is three green lines and a smaller file. Things that break loudly -
+# a bad provider, a malformed manifest - already fail CI and need no shouting.
+#
+# tests/go/repo/sensitivepaths_test.go checks this file: every path must exist,
+# every path must carry a reason, and every code law must be covered.
+
+tests/go/repo/                                # The code laws themselves. Deleting one assertion is a smaller file and a green build.
+.github/sensitive-paths                       # This file. Shortening it turns the alarm off, and that should never ride along in a larger diff.
+.github/workflows/                            # Everything that runs with a token. The agent cannot write here, so a change means a human meant it.
+.pre-commit-config.yaml                       # Owns formatting and the commit-msg hook, pinned exactly. An unpinned hook resolves to whatever is latest that day.
+
+config/management.tpl.json                    # The contract with the vault. An unwrapped op:// reference is valid JSON that reaches a provider as literal text.
+management/cluster/registry.tf                # The invariants a bad config is refused by. These are preconditions, so removing one does not fail - it just stops refusing.
+
+scripts/ignite/internal/onepassword/          # Every secret passes through here. probe.go returns a Status and never the value it read; widening that return type removes the guarantee.
+scripts/ignite/internal/phases/backup.go      # Pipes state into age without ever writing plaintext to disk. Buffering to a file would break the whole backup design.
+scripts/ignite/internal/phases/restore.go     # The only place in the program that reads the break-glass private key.
+scripts/ignite/internal/phases/encryption.go  # Sets TF_ENCRYPTION. Wrong here means state written in plaintext to a database that streams to object storage.
+scripts/ignite/internal/phases/sterilize.go   # Wipes every secret on exit. A change that skips a file leaves secrets on disk and still reports success.
+scripts/ignite/internal/phases/teardown.go    # Destroys real infrastructure. The ordering here is what stops state being wiped before the VMs it describes are gone.
+scripts/signedpush/                           # Reads the GitHub App private key. A supply chain reaching this can mint tokens for this repository.
