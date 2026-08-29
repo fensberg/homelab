@@ -476,6 +476,96 @@ genuinely fleet-wide and stays at the top.
 which may be a client's name - never reaches git, while the positional
 identity (`site0`) that drives addressing stays visible and reviewable.
 
+**Amended by "The object storage account plane is not the site plane" below**,
+which applies this same test to two `object_storage` fields that fail it.
+
+### The object storage account plane is not the site plane
+
+**Chose:** split `object_storage` across both planes rather than leaving it
+whole inside the site. `account_id` and `admin_token` move up to the fleet;
+`bucket`, `access_key_id`, `secret_access_key` and the vendor attestation stay
+in the site.
+
+The attestation staying put is narrower than this decision first said, and the
+implementation is what corrected it: `provider`/`vault_provider` attests the
+credentials it travels with, and those are exactly the fields that did not
+move. Duplicating it onto a two-field account block would assert the same
+vendor twice from within one commit, which is the failure mode "Declare the
+vendor three times" already warns about - two declarations that always change
+together prove nothing.
+**Because:** the rule above is right and was applied too coarsely. The test is
+whether a thing describes one estate or the whole fleet, and applying it field
+by field rather than block by block splits `object_storage` in two:
+
+| Field                                | Describes              | Plane |
+| ------------------------------------ | ---------------------- | ----- |
+| `account_id`                         | the Cloudflare account | fleet |
+| `admin_token`                        | the Cloudflare account | fleet |
+| `bucket`                             | one estate's backups   | site  |
+| `access_key_id`, `secret_access_key` | access to that bucket  | site  |
+
+**What made this visible** rather than theoretical: the admin token was
+re-issued with `Account API Tokens Write` so that per-run R2 credentials can
+be minted, and the Cloudflare console names its own scope plainly - "Entire
+Fensberg / Lemberg account". A credential that says _entire account_ on its
+face, filed under `sites.site0`, claims a blast radius it does not have.
+
+That misfiling is not cosmetic. The whole reason the database password sits
+inside the site is that compromising one site must not reach every other. An
+account-scoped token stored on the site plane inverts exactly that: reading
+`op://homelab/site0/object_storage/admin_token` yields the account, and with
+it every other site's bucket - and now the ability to mint further tokens.
+Filing it at the fleet level does not reduce its power, but it stops the
+layout implying a containment that was never there, and it puts one item in
+front of anyone deciding how far to trust it.
+
+**Rejected:** narrowing the token instead of moving it. There is no
+site-scoped or bucket-scoped form of `Account API Tokens Write` - it is
+account-scoped by construction, because minting tokens is an account
+operation. The choice is to hold that power or to give up generated
+credentials, not to hold a smaller version of it. Given that the credential it
+generates is the one that lands in OpenTofu state, and a leaked state file is
+this estate's worst case, holding it is the better trade - see
+[`state-and-secret-rotation.md`](../state-and-secret-rotation.md).
+
+**Account-owned, not user-owned, and that is the right choice.** The token is
+`cfat_`-prefixed; Cloudflare's user tokens are `cfut_`. An account-owned token
+is a service principal in its own right, so the integration keeps working
+after the person who created it loses access - which is what a token driving
+unattended ignition runs has to do. The prefix is also deliberately scannable,
+so a leak is detectable by credential scanners, which is why the shape check
+below is worth having.
+
+**Two weakenings accepted knowingly.** The token has no expiry and no IP
+filter. IP filtering is not workable - ignition runs from a workstation and
+later from a self-hosted runner, neither on a stable address - but the absence
+of an expiry is a real gap rather than an unavoidable one, and it makes this
+the highest-value credential in the estate. It belongs in the rotation
+runbook, not in a comment.
+
+**Consequence for the shape check.** `registry.tf` already positively
+identifies a wrong-vendor object storage key by its `AKIA`/`ASIA` prefix. The
+same trick now applies to the admin token: it must begin `cfat_`. That catches
+two mistakes the vendor attestation cannot - a user-owned `cfut_` token pasted
+in, which would silently reintroduce the durability problem account-owned
+tokens exist to solve, and a legacy-format token with no prefix at all.
+
+**Migration, in this order.** The template must not reference a vault path
+that does not exist yet, so the vault moves first:
+
+1. Move the item to `op://homelab/object_storage/{account_id,admin_token}` and
+   leave the per-site `bucket`, `access_key_id`, `secret_access_key` alone.
+2. Move the two fields in `config/management.tpl.json`, `config.go` and every
+   fixture; `registry.tf` and `contract_test.go` are the pair that must agree.
+3. `ignite -check-vault` confirms the new references resolve before any run
+   commits to anything - which is the case this check was built for.
+
+**Buckets stay per-site, and gain a human step.** One bucket per site is the
+isolation boundary that survives all of this, and an Object-scoped R2
+credential can only name a bucket that already exists - while OpenTofu is what
+creates it. So the bucket-scoped credential is minted after its bucket, not
+before, whether by hand or eventually by the automation this token unblocks.
+
 ### The connection string is derived, not stored
 
 **Chose:** build `state_conn_str` in OpenTofu from the owner, database name,
@@ -732,6 +822,56 @@ so branch protection is never evaluated. Taken at face value it would have
 concluded `main` was writable by the agent. The real answer came from reading
 the ruleset. A privilege check that has only ever been reasoned about is not a
 privilege check.
+
+### The agent's identity was a single point of failure, and it failed
+
+**What happened:** GitHub suspended the `claude-bot-fensberg` machine account
+mid-session, without warning. Every push and every API call began returning 403. The boundary had been audited that same afternoon and held perfectly - the
+failure was not that the agent could do too much, it was that a third party
+revoked its ability to do anything, and no part of the design had considered
+that direction.
+
+**Chose:** replace the machine account with a GitHub App
+(`fensberg-claude-bot`), authenticating with one-hour installation tokens
+minted from a private key held on the workstation.
+**Because:** the ToS permits machine accounts - "we do permit machine
+accounts", one free machine account alongside a personal one - so the previous
+setup was not against the rules. But GitHub's own documentation recommends
+Apps for automation and scopes personal access tokens to "API testing or
+short-lived scripts", which is exactly what a PAT driving every push was not.
+An App is also structurally immune to what happened: there is no user account
+to suspend.
+
+It matches something the user had already asked for and the PAT had quietly
+failed to deliver - credentials scoped by time rather than by capability. An
+installation token expires in an hour by construction; the PAT expired never
+and was revoked only by hand.
+
+**Three things this cost, worth knowing before trusting any single identity:**
+
+- **Everything the suspended account authored became invisible**, including to
+  the API. Seven merged pull requests vanished from the list entirely. The
+  _code_ survived because it was merged, and so did the reasoning - but only
+  because this project writes long commit messages and epoch records. A pull
+  request description is the ephemeral half of the record. This is the
+  strongest argument yet for the convention that was already here.
+- **Commit signing had to be rebuilt on a different mechanism.** An App cannot
+  hold a signing key, since SSH and GPG signing keys are user-account
+  resources. GitHub signs on the App's behalf instead, for commits created
+  through the Git Data API - see `scripts/signedpush`. Registering the key to
+  the human's account was rejected: it would make the agent's commits appear
+  to be theirs.
+- **An App installs on _all repositories_ by default.** The first installation
+  reached eight, including a private one, until it was checked and narrowed to
+  `homelab` alone. Nothing warned; the widening was silent. The rule that
+  keeps recurring in this record applies to the replacement as much as to the
+  thing it replaced: verify the wall, do not assume it.
+
+**What did not change:** the read-but-not-write asymmetry. The App can read
+rulesets and environments and cannot write either, so it can still audit the
+estate's own protection settings without being able to weaken what it just
+inspected. That property was worth deliberately preserving through the
+migration rather than rediscovering afterwards.
 
 ## Acceptance test: change 3 to 5 and watch it land
 
