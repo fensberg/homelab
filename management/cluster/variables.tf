@@ -62,13 +62,8 @@ locals {
   # the others.
   overlay_network = local.site.overlay_network
   object_storage  = local.site.object_storage
-
-  # Top level, not inside the site: an account id and an admin token describe
-  # the vendor account rather than one estate. See the epoch record, "The
-  # object storage account plane is not the site plane".
-  object_storage_account = local.config.object_storage
-  site_database          = local.site.database
-  node_count             = local.site.control_plane_count
+  site_database   = local.site.database
+  node_count      = local.site.control_plane_count
 
   # --- addressing ----------------------------------------------------------
   # The octet is declared, not computed. Reading the config tells you the

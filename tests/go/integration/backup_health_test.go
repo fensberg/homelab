@@ -51,13 +51,13 @@ type r2Object struct {
 func rcloneEnv(t *testing.T) []string {
 	t.Helper()
 	site := harness.SiteConfig(t)
-	require.NotEmpty(t, harness.ObjectStorageAccount(t).AccountID, "the rendered config has no object_storage.account_id")
+	require.NotEmpty(t, site.ObjectStorage.AccountID, "the rendered config has no object_storage.account_id")
 	return []string{
 		"RCLONE_CONFIG_R2_TYPE=s3",
 		"RCLONE_CONFIG_R2_PROVIDER=Cloudflare",
 		"RCLONE_CONFIG_R2_ACCESS_KEY_ID=" + site.ObjectStorage.AccessKeyID,
 		"RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=" + site.ObjectStorage.SecretAccessKey,
-		"RCLONE_CONFIG_R2_ENDPOINT=https://" + harness.ObjectStorageAccount(t).AccountID + ".r2.cloudflarestorage.com",
+		"RCLONE_CONFIG_R2_ENDPOINT=https://" + site.ObjectStorage.AccountID + ".r2.cloudflarestorage.com",
 		"RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true",
 	}
 }

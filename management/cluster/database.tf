@@ -72,7 +72,7 @@ resource "kubernetes_secret" "cluster_vars" {
 
   data = {
     OBJECT_STORAGE_BUCKET   = local.object_storage.bucket
-    OBJECT_STORAGE_ENDPOINT = "https://${local.object_storage_account.account_id}.r2.cloudflarestorage.com"
+    OBJECT_STORAGE_ENDPOINT = "https://${local.object_storage.account_id}.r2.cloudflarestorage.com"
     STATE_DB_NAMESPACE      = local.state_db_namespace
     STATE_DB_CLUSTER        = local.state_db_cluster
     STATE_DB_NAME           = local.state_db_name

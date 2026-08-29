@@ -25,7 +25,7 @@
 # is the wrong tool: it always attempts the read and hard-fails when the
 # bucket genuinely does not exist yet, which is the normal, common case.
 resource "cloudflare_r2_bucket" "homelab" {
-  account_id = local.object_storage_account.account_id
+  account_id = local.object_storage.account_id
   name       = local.object_storage.bucket
 
   # No location argument, deliberately. It is schema'd Optional+Computed

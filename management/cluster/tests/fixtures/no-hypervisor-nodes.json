@@ -5,10 +5,6 @@
   "source_control": {
     "repo_url": "https://example.invalid/fixture/repo"
   },
-  "object_storage": {
-    "account_id": "fixture-account-id",
-    "admin_token": "fixture-admin-token"
-  },
   "state_backup": {
     "recipient": "age1fixturefixturefixturefixturefixturefixturefixturefixture"
   },
@@ -34,6 +30,8 @@
       "object_storage": {
         "provider": "cloudflare",
         "vault_provider": "cloudflare",
+        "account_id": "fixture-account-id",
+        "admin_token": "fixture-admin-token",
         "access_key_id": "f1e2d3c4b5a697887766554433221100",
         "secret_access_key": "fixture-secret-access-key",
         "bucket": "fixture-state-bucket"

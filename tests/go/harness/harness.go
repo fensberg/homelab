@@ -88,12 +88,6 @@ type Config struct {
 	Organization struct {
 		Name string `json:"name"`
 	} `json:"organization"`
-	// Top level, mirroring the config: an account id and an admin token
-	// describe the vendor account, not one estate.
-	ObjectStorage struct {
-		AccountID  string `json:"account_id"`
-		AdminToken string `json:"admin_token"`
-	} `json:"object_storage"`
 	Sites map[string]Site_ `json:"sites"`
 }
 
@@ -112,6 +106,8 @@ type Site_ struct {
 	} `json:"hypervisor"`
 	ObjectStorage struct {
 		Provider        string `json:"provider"`
+		AccountID       string `json:"account_id"`
+		AdminToken      string `json:"admin_token"`
 		AccessKeyID     string `json:"access_key_id"`
 		SecretAccessKey string `json:"secret_access_key"`
 		Bucket          string `json:"bucket"`
@@ -159,18 +155,6 @@ underlying error: %v`, path, Site(), Site(), err)
 }
 
 // SiteConfig is LoadConfig narrowed to the site under test.
-// ObjectStorageAccount is the fleet-level half of object storage. Separate
-// accessor from SiteConfig because the two live on different planes, and a
-// test that reached for the account through a site would be asserting a
-// containment the config deliberately does not have.
-func ObjectStorageAccount(t *testing.T) struct {
-	AccountID  string `json:"account_id"`
-	AdminToken string `json:"admin_token"`
-} {
-	t.Helper()
-	return LoadConfig(t).ObjectStorage
-}
-
 func SiteConfig(t *testing.T) Site_ {
 	t.Helper()
 	cfg := LoadConfig(t)

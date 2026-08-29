@@ -66,26 +66,26 @@ func adoptOrphanedR2Bucket(ctx *run.Context) error {
 	site := cfg.Sites[ctx.Site]
 
 	return run.AdoptIfOrphaned(ctx, "cloudflare_r2_bucket.homelab", func() (string, error) {
-		exists, err := r2BucketExists(cfg.ObjectStorage, site.ObjectStorage)
+		exists, err := r2BucketExists(site.ObjectStorage)
 		if err != nil || !exists {
 			return "", err
 		}
-		return cfg.ObjectStorage.AccountID + "/" + site.ObjectStorage.Bucket, nil
+		return site.ObjectStorage.AccountID + "/" + site.ObjectStorage.Bucket, nil
 	})
 }
 
 // r2BucketExists queries the Cloudflare API directly - not through
 // Terraform, which cannot answer "does this exist" without already having
 // it in state.
-func r2BucketExists(acct config.ObjectStorageAccount, os config.ObjectStorage) (bool, error) {
+func r2BucketExists(os config.ObjectStorage) (bool, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 
-	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/r2/buckets/%s", acct.AccountID, os.Bucket)
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/r2/buckets/%s", os.AccountID, os.Bucket)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return false, err
 	}
-	req.Header.Set("Authorization", "Bearer "+acct.AdminToken)
+	req.Header.Set("Authorization", "Bearer "+os.AdminToken)
 
 	resp, err := client.Do(req)
 	if err != nil {
