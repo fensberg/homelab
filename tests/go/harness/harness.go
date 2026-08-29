@@ -106,8 +106,6 @@ type Site_ struct {
 	} `json:"hypervisor"`
 	ObjectStorage struct {
 		Provider        string `json:"provider"`
-		AccountID       string `json:"account_id"`
-		AdminToken      string `json:"admin_token"`
 		AccessKeyID     string `json:"access_key_id"`
 		SecretAccessKey string `json:"secret_access_key"`
 		Bucket          string `json:"bucket"`

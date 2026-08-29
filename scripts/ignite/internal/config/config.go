@@ -42,10 +42,11 @@ var RequiredProvidersByConcern = map[string]string{
 }
 
 type Config struct {
-	Organization  Organization    `json:"organization"`
-	SourceControl SourceControl   `json:"source_control"`
-	StateBackup   StateBackup     `json:"state_backup"`
-	Sites         map[string]Site `json:"sites"`
+	Organization  Organization         `json:"organization"`
+	ObjectStorage ObjectStorageAccount `json:"object_storage"`
+	SourceControl SourceControl        `json:"source_control"`
+	StateBackup   StateBackup          `json:"state_backup"`
+	Sites         map[string]Site      `json:"sites"`
 }
 
 type Organization struct {
@@ -91,11 +92,27 @@ type OverlayNetwork struct {
 	ClientSecret  string `json:"client_secret"`
 }
 
+// ObjectStorageAccount is the object-storage control plane, and it sits at the
+// top level because it describes the vendor account rather than one estate.
+//
+// The rule is the one "Vendor and credentials live inside the site" already
+// states - does this describe one estate or the whole fleet - applied field by
+// field rather than block by block. An account id identifies the account. An
+// admin token is scoped to the whole account by construction, because minting
+// credentials is an account operation and no bucket-scoped form of it exists.
+// Filing either inside sites.site0 would claim a containment neither has: a
+// reader of that one item gets every other site's bucket too.
+type ObjectStorageAccount struct {
+	AccountID  string `json:"account_id"`
+	AdminToken string `json:"admin_token"`
+}
+
+// ObjectStorage is one estate's bucket and the credentials that reach it.
+// These stay per-site, because one bucket per site is the isolation boundary
+// that survives: an Object-scoped R2 credential names a single bucket.
 type ObjectStorage struct {
 	Provider        string `json:"provider"`
 	VaultProvider   string `json:"vault_provider"`
-	AccountID       string `json:"account_id"`
-	AdminToken      string `json:"admin_token"`
 	AccessKeyID     string `json:"access_key_id"`
 	SecretAccessKey string `json:"secret_access_key"`
 	Bucket          string `json:"bucket"`

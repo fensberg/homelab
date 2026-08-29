@@ -26,8 +26,11 @@ func Backup(ctx *run.Context) error {
 	}
 	store := site.ObjectStorage
 
+	if strings.TrimSpace(cfg.ObjectStorage.AccountID) == "" {
+		return fmt.Errorf("object_storage.account_id is empty in the rendered config")
+	}
+
 	for field, val := range map[string]string{
-		"account_id":        store.AccountID,
 		"access_key_id":     store.AccessKeyID,
 		"secret_access_key": store.SecretAccessKey,
 		"bucket":            store.Bucket,
@@ -95,7 +98,7 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	}
 	run.Wipe(state)
 
-	rcloneEnv := r2Env(store)
+	rcloneEnv := r2Env(cfg.ObjectStorage, store)
 
 	dest := fmt.Sprintf("R2:%s/management-cluster", store.Bucket)
 	run.Info(fmt.Sprintf("uploading to %s/%s.tfstate.age", dest, stamp))
