@@ -3,83 +3,81 @@
 A pull request that removes a safety property should not be approvable by
 reflex. This is the mechanism that makes it not be.
 
-## What it guards against
+It guards the change that **looks routine in a diff**: one assertion deleted
+from a guard test is three green lines and a smaller file. Things that break
+loudly - a bad provider, a malformed manifest - already fail CI and need no
+extra shouting.
 
-Not mistakes that break loudly - a bad provider or a malformed manifest fails
-CI on its own. It guards the change that **looks routine in a diff and removes
-a guarantee**: one assertion deleted from a guard test is three green lines and
-a smaller file, and it is the highest-value change anybody could make here.
+## Three parts, and only one needs a human
 
-## The list
+| Part                                    | What it does                                   | Runs                               |
+| --------------------------------------- | ---------------------------------------------- | ---------------------------------- |
+| `.github/sensitive-paths`               | The list, with a reason per line               | —                                  |
+| `.github/scripts/sensitive-paths.sh`    | Matches a change against it, writes the report | Called by the workflow             |
+| `tests/go/repo/sensitivepaths_test.go`  | Keeps both honest                              | **Already** — inside the Test lane |
+| `.github/workflows/sensitive-paths.yml` | Comments, and fails until acknowledged         | **Needs you to add it**            |
 
-[`.github/sensitive-paths`](../.github/sensitive-paths) - one path per line,
-the text after `#` is the reason. Adding one is a single line:
+The test needs nothing from you. It runs in `task test:repo`, which is inside
+the **Test (go, tofu, vitest)** lane, which is already a required status check
+on `main`. The workflow is the only piece that needs adding, because the
+agent's App has no `workflows` permission and a push touching that directory is
+rejected server-side.
+
+## Editing the list
+
+One path per line, reason after `#`:
 
 ```text
 scripts/ignite/internal/phases/health.go   # Gates Migrate on the cluster having actually converged.
 ```
 
-A trailing `/` means the directory and everything under it; no slash means that
+A trailing `/` means the directory and everything below it; no slash means that
 exact file. Blank lines and whole-line comments are ignored.
 
-**Deliberately not YAML.** The file is read by a shell script in CI and by a Go
-test, and a format needing a parser needs a dependency on both sides. `grep`
-and parameter expansion do not have supply chains - which matters more than
-usual here, because the obvious dependency for this job is the one that got
-backdoored (see below).
+**Deliberately not YAML.** The file is read by shell in CI and by a Go test, and
+a format needing a parser needs a dependency on both sides. That matters more
+than usual here: the obvious dependency for this job,
+`tj-actions/changed-files`, is the action that was backdoored in March 2025
+([CVE-2025-30066](https://github.com/advisories/ghsa-mrrh-fwg8-r2c3)) to scrape
+runner memory for credentials and write them into public logs. `grep` and
+parameter expansion have no supply chain.
 
-`tests/go/repo/sensitivepaths_test.go` checks the file: every path must exist,
-every path must carry a reason long enough to be one, and every code law in
-`tests/go/repo` must be covered - discovered by reading the directory rather
-than from a list, so a new guard cannot be added without protection.
+## What the test enforces
 
-**A path that no longer exists does not fail, it stops matching.** So the
-rename that moves a guarded file is also the change that disarms the alarm on
-it. That is why the list is tested rather than trusted.
+- Every declared path **exists**. A path that no longer exists does not fail the
+  tripwire - it stops matching, so the rename that moves a guarded file is also
+  the change that disarms the alarm on it.
+- Every path carries a **reason**, long enough to be one. "This is sensitive"
+  tells a reviewer nothing they had not assumed.
+- Every code law in `tests/go/repo` is **covered** - discovered by reading the
+  directory, so a new guard cannot be added without protection.
+- The **script itself** trips on a guarded path, stays quiet on an innocuous
+  one, does not match `vendor/tests/go/repo/x` for `tests/go/repo/`, and its
+  matching agrees with the Go parser for every line in the list.
+
+That last group matters most: testing the parser alone would prove the list is
+well formed while the script that reads it matched nothing, and a tripwire that
+matches nothing fails silently.
+
+## Why a label, not just a comment
+
+A comment is scrollable-past, and after the third one it is wallpaper. The
+forcing function is a **required check that fails** until a
+`sensitive-reviewed` label is applied - a second deliberate act that Approve
+cannot satisfy by itself.
 
 ## Why not CODEOWNERS
 
 `.github/CODEOWNERS` already contains `* @jlemberg`, so every pull request
 already requests review from the only human here. Path-specific entries would
-request the same person who is already requested: **zero additional signal**,
-because CODEOWNERS routes review to _different_ people and there is only one.
+request the same person: **zero additional signal**, because CODEOWNERS routes
+review to _different_ people and there is only one. "Require review from Code
+Owners" would only bite a pull request the code owner authored, and `main`
+already requires an approving review either way.
 
-"Require review from Code Owners" would not add scrutiny either. It would only
-bite a pull request the code owner authored, and `main` already requires one
-approving review, so that constraint exists either way.
+## The workflow to add
 
-## Why a label, not a comment
-
-A comment is scrollable-past, and after the third one it is wallpaper. The
-forcing function is a **required status check that fails** until a
-`sensitive-reviewed` label is applied, because applying a label is a second
-deliberate act that the Approve button cannot satisfy by itself.
-
-The comment still has a job: naming _which_ property is at risk. "This is
-sensitive" tells a reviewer nothing they had not assumed. "probe.go returns a
-Status and never the value it read" tells them what to look for.
-
-## Why not `tj-actions/changed-files`
-
-It is the obvious choice and it is the wrong one. It was backdoored in March
-2025 ([CVE-2025-30066](https://github.com/advisories/ghsa-mrrh-fwg8-r2c3)) -
-tags retroactively repointed at a commit that scanned runner memory for
-credentials and wrote them into public logs, across 23,000+ repositories. Every
-version through 45.0.7 is affected; the fix is 46.0.1.
-
-`git diff --name-only` answers the same question with no third-party action in
-the path at all, which is the right trade for a job whose entire purpose is
-protecting secrets.
-
-## The workflow
-
-Add this by hand as `.github/workflows/sensitive-paths.yml`. The agent's App
-has no `workflows` permission and a push touching that directory is rejected
-server-side, which is the boundary working as intended.
-
-The detection block below has been run against four cases - a guarded file
-changed, only innocuous files changed, a decoy path (`vendor/tests/go/repo/x`,
-which must **not** match), and an exact-file entry that must match only itself.
+Save as `.github/workflows/sensitive-paths.yml`:
 
 ```yaml
 name: Sensitive Paths
@@ -122,48 +120,8 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          set -euo pipefail
-          changed=$(git diff --name-only "$BASE" "$HEAD")
-          hits=""
-
-          while IFS= read -r line; do
-            path="${line%%#*}"
-            path="$(printf '%s' "$path" | tr -d '[:space:]')"
-            # Not `[ -z "$path" ] && continue`: that returns non-zero on the
-            # common branch and trips `set -e`.
-            if [ -z "$path" ]; then
-              continue
-            fi
-
-            why="${line#*#}"
-            why="$(printf '%s' "$why" | sed 's/^[[:space:]]*//')"
-            [ "$why" = "$line" ] && why="(no reason given)"
-
-            # Anchored, so `tests/go/repo/` is not matched by
-            # `vendor/tests/go/repo/x`. Trailing slash means at-or-below;
-            # no slash means that exact file.
-            case "$path" in
-              */) match=$(printf '%s\n' "$changed" | grep -E "^${path}" || true) ;;
-              *)  match=$(printf '%s\n' "$changed" | grep -Fx "$path" || true) ;;
-            esac
-
-            if [ -n "$match" ]; then
-              hits="${hits}
-          ### \`${path}\`
-
-          ${why}
-
-          $(printf '%s\n' "$match" | sed 's/^/- `/; s/$/`/')
-          "
-            fi
-          done <.github/sensitive-paths
-
-          if [ -n "$hits" ]; then
-            echo "tripped=true" >>"$GITHUB_OUTPUT"
-            { echo 'report<<SENSITIVE_EOF'; printf '%s\n' "$hits"; echo 'SENSITIVE_EOF'; } >>"$GITHUB_OUTPUT"
-          else
-            echo "tripped=false" >>"$GITHUB_OUTPUT"
-          fi
+          git diff --name-only "$BASE" "$HEAD" \
+            | .github/scripts/sensitive-paths.sh >>"$GITHUB_OUTPUT"
 
       - name: Say what is at risk
         if: steps.sensor.outputs.tripped == 'true'
@@ -177,38 +135,27 @@ jobs:
               marker,
               '## This pull request changes a safety property',
               '',
-              'Not "important files" - properties that fail **quietly**. A deleted',
-              'assertion is a smaller file and a green build.',
+              'Not "important files" - properties that fail **quietly**.',
+              'A deleted assertion is a smaller file and a green build.',
               '',
               process.env.REPORT,
               '',
               '---',
               'Read the reasons above, then apply the **`sensitive-reviewed`** label',
-              'to clear the failing check. The label is the point: a second deliberate',
-              'act that Approve cannot do on its own.',
+              'to clear the failing check.',
             ].join('\n');
-
-            // Updated in place rather than one comment per push, so the warning
-            // stays a single item instead of becoming wallpaper.
             const {data: comments} = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner, repo: context.repo.repo,
             });
             const existing = comments.find(c => c.body.includes(marker));
+            const args = {owner: context.repo.owner, repo: context.repo.repo, body};
             if (existing) {
-              await github.rest.issues.updateComment({
-                comment_id: existing.id, owner: context.repo.owner,
-                repo: context.repo.repo, body,
-              });
+              await github.rest.issues.updateComment({...args, comment_id: existing.id});
             } else {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number, owner: context.repo.owner,
-                repo: context.repo.repo, body,
-              });
+              await github.rest.issues.createComment({...args, issue_number: context.issue.number});
             }
 
-      # The forcing function. Fails until the label is applied; the `labeled`
-      # trigger above is what re-runs this when it is.
       - name: Require an explicit acknowledgement
         if: steps.sensor.outputs.tripped == 'true'
         env:
@@ -222,20 +169,20 @@ jobs:
           esac
 ```
 
-## Setting it up
+Then, once:
 
-1. Add the workflow above as `.github/workflows/sensitive-paths.yml`.
-2. `gh label create sensitive-reviewed --color B60205 --description "Sensitive paths read and understood"`
-3. Add **Sensitive Paths** to `main`'s required status checks.
+```sh
+gh label create sensitive-reviewed --color B60205 \
+  --description "Sensitive paths read and understood"
+```
+
+and add **Sensitive Paths** to `main`'s required status checks.
 
 ## The honest limit
 
-This cannot stop a determined maintainer, and it is not trying to. The only
-person who can apply the label is the person who can merge, so what it buys is
-**attention, not authorisation** - the alarm has to be silenced deliberately,
-and the silencing is recorded on the pull request. Against the actual failure
-mode here, a tired human approving their own agent's work at midnight, that is
-the right shape.
-
-Making it authorisation rather than attention needs a second human, which is a
-different problem than this repository has.
+The only person who can apply the label is the person who can merge, so this
+buys **attention, not authorisation** - the alarm has to be silenced
+deliberately, and the silencing is recorded on the pull request. Against the
+actual failure mode here, a tired human approving their own agent's work at
+midnight, that is the right shape. Making it authorisation needs a second
+human, which is a different problem than this repository has.

@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -161,6 +163,105 @@ func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 	} {
 		if !covered(rel) {
 			t.Errorf("%s is named by a code law but no sensitive path covers it", rel)
+		}
+	}
+}
+
+// --- the script CI actually runs -------------------------------------------
+
+// The shell script is the thing that fires the alarm, so it is tested rather
+// than trusted. Testing the Go parser alone would prove the list is well
+// formed while the script that reads it could still match nothing - and a
+// tripwire that matches nothing fails silently, which is the whole class of
+// bug this package exists for.
+func runSensor(t *testing.T, changed string) (string, error) {
+	t.Helper()
+	root := repoRoot(t)
+	cmd := exec.Command("bash", filepath.Join(root, ".github", "scripts", "sensitive-paths.sh"))
+	cmd.Dir = root
+	cmd.Stdin = strings.NewReader(changed)
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	err := cmd.Run()
+	if err != nil {
+		t.Logf("stderr: %s", errb.String())
+	}
+	return out.String(), err
+}
+
+func TestSensorTripsOnAGuardedPath(t *testing.T) {
+	out, err := runSensor(t, "tests/go/repo/breakglass_test.go\nREADME.md\n")
+	if err != nil {
+		t.Fatalf("sensor failed: %v", err)
+	}
+	if !strings.Contains(out, "tripped=true") {
+		t.Errorf("a change to a guard test must trip the alarm:\n%s", out)
+	}
+	// The reason is the payload - a report that names the file but not the
+	// property tells a reviewer nothing they did not already see in the diff.
+	if !strings.Contains(out, "green build") {
+		t.Errorf("the report should carry the reason from the list:\n%s", out)
+	}
+}
+
+func TestSensorIsQuietOnAnInnocuousChange(t *testing.T) {
+	out, err := runSensor(t, "README.md\ndocs/ideas.md\n")
+	if err != nil {
+		t.Fatalf("sensor failed: %v", err)
+	}
+	if !strings.Contains(out, "tripped=false") {
+		t.Errorf("an innocuous change must not trip the alarm:\n%s", out)
+	}
+}
+
+// The match must be anchored. Unanchored, `vendor/tests/go/repo/x` trips the
+// alarm for `tests/go/repo/` and every unrelated change starts crying wolf -
+// which is how a tripwire becomes wallpaper and stops being read.
+func TestSensorDoesNotMatchAPathPrefixedElsewhere(t *testing.T) {
+	out, err := runSensor(t, "vendor/tests/go/repo/x.go\nscripts/ignite/internal/phases/health.go\n")
+	if err != nil {
+		t.Fatalf("sensor failed: %v", err)
+	}
+	if !strings.Contains(out, "tripped=false") {
+		t.Errorf("a decoy path must not trip the alarm:\n%s", out)
+	}
+}
+
+// An entry without a trailing slash names one file, not a prefix.
+func TestSensorFileEntryMatchesOnlyItself(t *testing.T) {
+	hit, err := runSensor(t, "config/management.tpl.json\n")
+	if err != nil {
+		t.Fatalf("sensor failed: %v", err)
+	}
+	if !strings.Contains(hit, "tripped=true") {
+		t.Errorf("the exact file must trip:\n%s", hit)
+	}
+
+	miss, err := runSensor(t, "config/management.tpl.json.bak\n")
+	if err != nil {
+		t.Fatalf("sensor failed: %v", err)
+	}
+	if !strings.Contains(miss, "tripped=false") {
+		t.Errorf("a longer name must not trip:\n%s", miss)
+	}
+}
+
+// The Go parser above and the shell script are two readers of one file. They
+// have to agree about which paths exist, or the list means one thing to the
+// test and another to CI.
+func TestSensorAndParserAgreeOnEveryPath(t *testing.T) {
+	_, entries := loadSensitivePaths(t)
+	for _, e := range entries {
+		probe := e.Path
+		if strings.HasSuffix(probe, "/") {
+			probe += "probe-file"
+		}
+		out, err := runSensor(t, probe+"\n")
+		if err != nil {
+			t.Fatalf("sensor failed for %s: %v", e.Path, err)
+		}
+		if !strings.Contains(out, "tripped=true") {
+			t.Errorf("the parser accepts %q but the script does not match %q", e.Path, probe)
 		}
 	}
 }
