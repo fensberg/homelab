@@ -229,12 +229,18 @@ func ensureLocal(sha, branch string) error {
 }
 
 func syncLocal(branch, sha string) error {
-	dirty, err := git("status", "--porcelain")
+	// --untracked-files=no, because `git reset --hard` does not touch
+	// untracked files and refusing over them is a false positive. The first
+	// version did refuse: publishing from a branch that did not yet carry
+	// scripts/signedpush left the built tool sitting untracked, which read as
+	// a dirty tree and blocked a sync that would have been perfectly safe.
+	// What must block it is a modified tracked file, which reset would discard.
+	dirty, err := git("status", "--porcelain", "--untracked-files=no")
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(dirty) != "" {
-		return fmt.Errorf("the working tree has uncommitted changes")
+		return fmt.Errorf("the working tree has uncommitted changes to tracked files")
 	}
 	if _, err := git("fetch", "--quiet", "origin", branch); err != nil {
 		return err
