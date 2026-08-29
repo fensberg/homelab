@@ -482,9 +482,17 @@ which applies this same test to two `object_storage` fields that fail it.
 ### The object storage account plane is not the site plane
 
 **Chose:** split `object_storage` across both planes rather than leaving it
-whole inside the site. `account_id`, `admin_token` and the vendor attestation
-move up to the fleet; `bucket`, `access_key_id` and `secret_access_key` stay
+whole inside the site. `account_id` and `admin_token` move up to the fleet;
+`bucket`, `access_key_id`, `secret_access_key` and the vendor attestation stay
 in the site.
+
+The attestation staying put is narrower than this decision first said, and the
+implementation is what corrected it: `provider`/`vault_provider` attests the
+credentials it travels with, and those are exactly the fields that did not
+move. Duplicating it onto a two-field account block would assert the same
+vendor twice from within one commit, which is the failure mode "Declare the
+vendor three times" already warns about - two declarations that always change
+together prove nothing.
 **Because:** the rule above is right and was applied too coarsely. The test is
 whether a thing describes one estate or the whole fleet, and applying it field
 by field rather than block by block splits `object_storage` in two:
