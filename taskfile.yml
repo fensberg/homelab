@@ -58,6 +58,25 @@ tasks:
       - task: build
       - ./scripts/ignite/ignite -site {{.SITE}} -phase render
 
+  push:
+    desc: "Publish the current branch as GitHub-signed commits"
+    # A GitHub App cannot hold a signing key, so GitHub signs on its behalf:
+    # a commit created through the Git Data API with an installation token
+    # comes back signed with GitHub's own key. See scripts/signedpush.
+    #
+    # `git push` still works and produces unsigned commits - a visible
+    # failure rather than a silent one, which is why this is a separate verb
+    # rather than a git alias.
+    cmds:
+      - go build -C scripts/signedpush -o signedpush .
+      - ./scripts/signedpush/signedpush {{.CLI_ARGS}}
+
+  gh-token:
+    desc: "Mint a 1-hour GitHub App installation token (for gh auth login --with-token)"
+    cmds:
+      - go build -C scripts/signedpush -o signedpush .
+      - ./scripts/signedpush/signedpush -token
+
   check-vault:
     desc: "Prove every op:// reference in the config template resolves (no values read)"
     # Safe to wrap, and the safest thing here: it writes nothing at all - no
@@ -117,6 +136,8 @@ tasks:
       - rm -f config/management.placeholder.json
       - go vet -C scripts/ignite ./...
       - go build -C scripts/ignite -o /dev/null .
+      - go vet -C scripts/signedpush ./...
+      - go build -C scripts/signedpush -o /dev/null .
       - go vet -C tests/go ./...
 
   test:
@@ -137,9 +158,10 @@ tasks:
       - task: test:js
 
   test:go:
-    desc: "Go unit and contract tests for the ignition button"
+    desc: "Go unit and contract tests for the ignition button and the push tool"
     cmds:
       - go test -C scripts/ignite ./...
+      - go test -C scripts/signedpush ./...
 
   test:tofu:
     desc: "OpenTofu unit tests: registry.tf's invariants against fixture configs"
