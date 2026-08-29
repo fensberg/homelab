@@ -76,7 +76,7 @@ is genuinely stale, move it aside first and decide deliberately:
 		}
 	}
 
-	rcloneEnv := r2Env(store)
+	rcloneEnv := r2Env(cfg.ObjectStorage, store)
 	key := backupObjectKey(store.Bucket)
 
 	// Show what else is there before restoring. The timestamped objects are
