@@ -1,0 +1,98 @@
+name: Sensitive Paths
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  tripwire:
+    name: Sensitive Paths
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Which sensitive paths were touched
+        id: sensor
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --name-only "$BASE" "$HEAD" \
+            | .github/scripts/sensitive-paths.sh >>"$GITHUB_OUTPUT"
+
+      - name: Say what is at risk
+        if: steps.sensor.outputs.tripped == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          REPORT: ${{ steps.sensor.outputs.report }}
+        with:
+          script: |
+            const marker = '<!-- sensitive-paths -->';
+            const body = [
+              marker,
+              '## This pull request changes a safety property',
+              '',
+              'Not "important files" - properties that fail **quietly**.',
+              'A deleted assertion is a smaller file and a green build.',
+              '',
+              process.env.REPORT,
+              '',
+              '---',
+              'Read the reasons above, then apply the **`sensitive-reviewed`** label',
+              'to clear the failing check.',
+            ].join('\n');
+            const {data: comments} = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner, repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            const args = {owner: context.repo.owner, repo: context.repo.repo, body};
+            if (existing) {
+              await github.rest.issues.updateComment({...args, comment_id: existing.id});
+            } else {
+              await github.rest.issues.createComment({...args, issue_number: context.issue.number});
+            }
+
+      # Not just "does the label exist" - who applied it. The agent's App holds
+      # issues: write, which it needs to comment at all, and the same permission
+      # lets it label a pull request. Demonstrated on #49 before this was written.
+      - name: Require an explicit acknowledgement
+        if: steps.sensor.outputs.tripped == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          who=$(gh api "repos/${REPO}/issues/${PR}/timeline" \
+            --jq '[.[]|select(.event=="labeled" and .label.name=="sensitive-reviewed")]|last|.actor.login // empty')
+          case "$who" in
+            "")
+              echo "::error::This pull request changes a safety property. Read the comment, then apply the 'sensitive-reviewed' label."
+              exit 1 ;;
+            *"[bot]")
+              echo "::error::'sensitive-reviewed' was applied by ${who}, which is a bot. The acknowledgement has to come from a human - that is the entire point of it. Remove the label and re-apply it yourself."
+              exit 1 ;;
+            *)
+              echo "acknowledged by ${who}" ;;
+          esac
