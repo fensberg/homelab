@@ -147,6 +147,9 @@ published`, branch, baseSHA[:8], branch, branch)
 		return err
 	}
 	commits := strings.Fields(revs)
+	if err := refuseMerges(commits); err != nil {
+		return err
+	}
 	if len(commits) == 0 {
 		fmt.Println("nothing to publish: the branch matches its remote")
 		return nil
@@ -210,6 +213,45 @@ published`, branch, baseSHA[:8], branch, branch)
 		return nil
 	}
 	fmt.Printf("%s is at %s, verified\n", branch, parent[:8])
+	return nil
+}
+
+// refuseMerges stops a branch containing a merge commit from being published.
+//
+// This program replays commits as a linear chain: each signed commit gets one
+// parent, the previously signed one. A merge commit has two, and flattening it
+// does not fail - it silently produces replicas of everything the merge
+// brought in, with new SHAs. The branch then contains duplicates of commits
+// already on main, main is no longer an ancestor of it, and merging would
+// write those duplicates into main's history.
+//
+// That happened once, to a branch that had `git merge origin/main` run on it.
+// Nothing complained; the branch simply grew a second copy of three merged
+// pull requests. Refusing is the honest behaviour until this replays merges
+// properly, because the failure is invisible in the output and obvious only
+// days later in the log.
+func refuseMerges(commits []string) error {
+	for _, c := range commits {
+		parents, err := git("rev-list", "--parents", "-n", "1", c)
+		if err != nil {
+			return err
+		}
+		// "<sha> <parent> [<parent>...]" - more than two fields means a merge.
+		if len(strings.Fields(parents)) > 2 {
+			subject, _ := git("log", "-1", "--format=%s", c)
+			return fmt.Errorf(`%s is a merge commit, and publishing replays commits as a linear chain.
+
+    %s  %s
+
+Flattening it would republish everything the merge brought in as new commits,
+so the branch would carry duplicates of history already on main and main would
+stop being an ancestor of it.
+
+Rebase instead, which keeps the branch linear:
+
+    git fetch origin && git rebase origin/main`, c[:8], c[:8], subject)
+		}
+	}
 	return nil
 }
 
