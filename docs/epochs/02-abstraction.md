@@ -337,10 +337,107 @@ kubeconfig to a file for the Flux bootstrap, so the mechanism is not new.
 split, the coupling is baked into the module boundaries and every future site
 inherits it.**
 
+## Known driver: the config fixture corpus does not scale
+
+Moving two fields from the site plane to the fleet plane - `account_id` and
+`admin_token`, one small, correct change - touched **23 files**. Nine of them
+were test fixtures, and most differed from `valid.json` by two lines out of
+fifty-one:
+
+| Fixture                         | Lines differing from `valid.json`   |
+| ------------------------------- | ----------------------------------- |
+| `aws-shaped-key.json`           | 2 of 51                             |
+| `vendor-mismatch.json`          | 2 of 51                             |
+| `control-plane-count-zero.json` | 2 of 51                             |
+| `missing-vault-provider.json`   | 2 of 51                             |
+| `octet-out-of-range.json`       | 4 of 51                             |
+| `unimplemented-vendor.json`     | 4 of 51                             |
+| `no-hypervisor-nodes.json`      | 7 of 51                             |
+| `duplicate-octet.json`          | 34 of 51 (adds a whole second site) |
+
+Every fixture restates an entire config in order to vary one field. Adding a
+field to the config means editing ten files that have nothing to say about it,
+and adding a test case means copying fifty lines to change two. That is a
+corpus that will be wrong before it is complete: the failure mode is not a
+loud one, it is a fixture nobody updated that keeps passing while asserting
+the wrong shape.
+
+### Which duplication here is deliberate, and which is not
+
+Worth separating, because the answer is not "remove all of it".
+
+**Deliberate, and it stays.** `registry.tf` and `config.go` implement the same
+invariants twice so a bad config is refused whether it arrives through the
+start button or a bare `tofu plan`. `tests/go/harness` declares its own reader
+for the same reason its comment gives - a test that parsed the file with the
+program's own code would agree with that program about a misreading. Both are
+defence in depth, both cost an edit when the shape changes, and both are worth
+the cost.
+
+**Not deliberate.** Nine near-identical JSON documents are not a design, they
+are what happened. Nothing is being checked twice by `aws-shaped-key.json`
+carrying a full `hypervisor` block; it carries one because it was copied.
+
+### The pattern to borrow
+
+Gherkin and Playwright both solved this, and in the same direction: **express
+the variation, not the whole.**
+
+- A Gherkin `Scenario Outline` writes the scenario once and puts only the
+  varying values in an `Examples` table. The prose is not repeated per case.
+- Playwright's fixtures compose - `test.extend` layers a narrow override onto
+  a base fixture, so a test declares only what makes it different, and a
+  change to the base reaches every test that builds on it.
+
+Applied here, `aws-shaped-key` stops being a 51-line document and becomes the
+one thing it is actually asserting:
+
+```json
+{
+  "sites": {
+    "site0": { "object_storage": { "access_key_id": "AKIAIOSFODNN7EXAMPLE" } }
+  }
+}
+```
+
+A base config plus a per-case patch, merged at test time. Adding a field to
+the config then touches the base and nothing else, and a new case is three
+lines rather than fifty.
+
+### What makes it non-trivial
+
+Three constraints, all of which need settling before any of this is written:
+
+1. **`tofu test` takes a file path.** `var.config_path` points at a real file,
+   so patches have to be materialised into merged documents before the run -
+   a generator step in `task test`, with generated output gitignored. HCL has
+   `merge()` but no deep merge, so doing it inside the test file is not the
+   easy path it looks like.
+2. **Both sides read the same corpus.** `manifest.json` already indexes every
+   case for the HCL and Go halves, and it is the natural home for the patches
+   themselves. That is an opportunity rather than an obstacle - one file would
+   then describe the whole corpus.
+3. **Review has to stay honest.** What is tested is the merged document, but
+   what a reviewer reads is the patch. That is the trade Playwright makes too,
+   and it is only safe while the base is small enough to hold in your head.
+
+**Success criterion:** adding a field to the config touches one fixture-side
+file, not ten. Adding a case is three lines, not fifty.
+
+This belongs in this epoch because it is the same problem the epoch already
+exists to solve - "write the reusable pieces once" - applied to test data
+rather than to OpenTofu. The fixture corpus is the one place in this
+repository where copy-paste is currently the documented workflow, and
+`tests/README.md` says so in as many words: _"write the fixture, add an entry
+to `manifest.json`, and add a `run` block of the same name."_
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying
   single-use in `management/cluster`?
+- The fixture corpus above: generated merged documents, or a deep merge done
+  in HCL? The first needs a build step and a gitignore entry; the second needs
+  a merge function OpenTofu does not have.
 - Module versioning: relative path in-repo, or tagged and pinned?
 - Does the self-hosted runner have what these modules need at apply time?
   `deploy-infrastructure.yml` path-filters on `modules/infrastructure/**`, so
