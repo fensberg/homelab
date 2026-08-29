@@ -154,6 +154,52 @@ a checkbox somewhere:
   unsatisfiable rather than stronger. It stops being the right answer the day
   a second maintainer exists, which is the point at which to revisit it.
 
+### The vault check cannot disclose a secret
+
+`repo/vaultcheck_test.go` guards `ignite -check-vault`. That command's whole
+value is that it is safe to run and safe to share — it reports `ok` / `empty` /
+`missing` per reference, and the output is meant to be pasteable into an issue
+or a pull request.
+
+That property cannot be left to the type system, because of a constraint
+recorded in the epoch log: **`op` has no existence check that does not also
+return the value.** Probing necessarily reads the secret. The design answer is
+to make the value unreachable rather than to handle it carefully —
+`onepassword.Probe` reads it into a local, measures it, and returns a `Status`
+and nothing else. A caller cannot print what it was never handed.
+
+Three rules keep that from being undone by an ordinary-looking edit:
+
+1. `Probe` keeps its one-return-value signature. Widening it to hand back the
+   value — even "just for a better error message" — removes the guarantee.
+2. Nothing in the check's three files fetches or stores a secret
+   (`onepassword.Read`, `Inject`, `WriteField`, `EnsureField`).
+3. Nothing in them writes a file. That is what makes this the one ignite mode
+   with nothing to sterilize afterwards; a file written here is a file somebody
+   has to remember to delete, which is the property this project already
+   decided not to rely on.
+
+A fourth asserts the check still exists and is still driven by `Probe`, so the
+three above cannot pass by guarding a function nobody calls. All four were
+confirmed to fail against a deliberately broken copy before being committed —
+the "test the detector" rule above.
+
+## Where the code laws live
+
+Three places, and the distinction is what each one can see:
+
+| Rule about                      | Lives in                                          |
+| ------------------------------- | ------------------------------------------------- |
+| The repository's own files      | `tests/go/repo/`                                  |
+| Two implementations of one rule | `scripts/ignite/internal/config/contract_test.go` |
+| A config that must be refused   | `management/cluster/registry.tf` (preconditions)  |
+
+`tests/go/repo` is the one to reach for when the rule is "the source must never
+do X" — it reads the source as text, so it can assert things no compiler or
+linter has an opinion about: the break-glass identity never appearing in
+OpenTofu, no unguarded `pull_request` path to the self-hosted runner, no
+credential in the Flux sync, and the vault check above.
+
 ## Running things
 
 ```sh
