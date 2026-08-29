@@ -103,7 +103,7 @@ func emptyObjectStorage(ctx *run.Context) {
 		return
 	}
 
-	env := r2Env(store)
+	env := r2Env(cfg.ObjectStorage, store)
 	remote := "R2:" + store.Bucket
 
 	// Report before deleting. A bucket that is already empty, or was never
@@ -130,13 +130,13 @@ func emptyObjectStorage(ctx *run.Context) {
 // this process, so no credentials are ever written to a config file on disk.
 // Shared by the Backup phase and the teardown: two copies of a credential
 // mapping is two places for a rename to go unnoticed.
-func r2Env(store config.ObjectStorage) []string {
+func r2Env(acct config.ObjectStorageAccount, store config.ObjectStorage) []string {
 	return []string{
 		"RCLONE_CONFIG_R2_TYPE=s3",
 		"RCLONE_CONFIG_R2_PROVIDER=Cloudflare",
 		"RCLONE_CONFIG_R2_ACCESS_KEY_ID=" + store.AccessKeyID,
 		"RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=" + store.SecretAccessKey,
-		"RCLONE_CONFIG_R2_ENDPOINT=https://" + store.AccountID + ".r2.cloudflarestorage.com",
+		"RCLONE_CONFIG_R2_ENDPOINT=https://" + acct.AccountID + ".r2.cloudflarestorage.com",
 		"RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true",
 	}
 }
