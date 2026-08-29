@@ -1111,6 +1111,15 @@ To be completed when the epoch closes.
   ref update, so a push that would be rejected reports success. It is the
   wrong tool for "can I write here"; read the ruleset instead. See "The
   agent's boundary is enforced, not agreed".
+- **A commit made in the GitHub web editor can be unfixable.** The editor does
+  not wrap a body, so `body-max-line-length` rejects it, and it does not
+  prepend a Conventional Commits type, so `type-empty` rejects a plain subject
+  like "Add workflow to monitor sensitive paths". Either failure is permanent:
+  `non_fast_forward` has no bypass actors, so nobody - the repository admin
+  included - can amend the commit afterwards. The only exit is a new branch,
+  which cost two pull requests to learn twice. Write the subject as
+  `type: summary` and wrap the body at 72 before committing from a browser, or
+  commit from a terminal where the `commit-msg` hook catches it first.
 - **`non_fast_forward` applies to feature branches too, not just `main`.** So
   commits on an open pull request cannot be amended or rebased once pushed -
   no force-push is possible for anybody, agent or human. Fixing a bad commit

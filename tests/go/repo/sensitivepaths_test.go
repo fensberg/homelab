@@ -217,13 +217,32 @@ func TestSensorIsQuietOnAnInnocuousChange(t *testing.T) {
 // The match must be anchored. Unanchored, `vendor/tests/go/repo/x` trips the
 // alarm for `tests/go/repo/` and every unrelated change starts crying wolf -
 // which is how a tripwire becomes wallpaper and stops being read.
+//
+// The decoy is derived from the list rather than hardcoded. The first version
+// of this test used a real path as innocuous filler, and the moment that path
+// was added to the list the test failed for a reason that had nothing to do
+// with anchoring.
 func TestSensorDoesNotMatchAPathPrefixedElsewhere(t *testing.T) {
-	out, err := runSensor(t, "vendor/tests/go/repo/x.go\nscripts/ignite/internal/phases/health.go\n")
+	_, entries := loadSensitivePaths(t)
+
+	var decoys []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Path, "/") {
+			decoys = append(decoys, "vendor/"+e.Path+"x.go")
+		} else {
+			decoys = append(decoys, "vendor/"+e.Path)
+		}
+	}
+	if len(decoys) == 0 {
+		t.Fatal("no directory entries to build a decoy from")
+	}
+
+	out, err := runSensor(t, strings.Join(decoys, "\n")+"\n")
 	if err != nil {
 		t.Fatalf("sensor failed: %v", err)
 	}
 	if !strings.Contains(out, "tripped=false") {
-		t.Errorf("a decoy path must not trip the alarm:\n%s", out)
+		t.Errorf("every declared path prefixed with vendor/ must be ignored:\n%s", out)
 	}
 }
 

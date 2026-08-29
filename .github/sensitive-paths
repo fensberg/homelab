@@ -19,18 +19,19 @@
 # tests/go/repo/sensitivepaths_test.go checks this file: every path must exist,
 # every path must carry a reason, and every code law must be covered.
 
-tests/go/repo/                                # The code laws themselves. Deleting one assertion is a smaller file and a green build.
-.github/sensitive-paths                       # This file. Shortening it turns the alarm off, and that should never ride along in a larger diff.
-.github/workflows/                            # Everything that runs with a token. The agent cannot write here, so a change means a human meant it.
-.pre-commit-config.yaml                       # Owns formatting and the commit-msg hook, pinned exactly. An unpinned hook resolves to whatever is latest that day.
+tests/go/repo/                              # The code laws. Deleting one assertion is a smaller file and a green build.
+.github/sensitive-paths                     # This list. Removing a line turns the alarm off for that path, silently.
+.github/workflows/                          # Runs with a token. The agent cannot write here, so a human meant this.
+.pre-commit-config.yaml                     # Owns formatting and the commit-msg hook, pinned exactly. Unpinning resolves to whatever is latest.
 
-config/management.tpl.json                    # The contract with the vault. An unwrapped op:// reference is valid JSON that reaches a provider as literal text.
-management/cluster/registry.tf                # The invariants a bad config is refused by. These are preconditions, so removing one does not fail - it just stops refusing.
+config/management.tpl.json                  # The vault contract. An unwrapped op:// reference reaches a provider as literal text.
+management/cluster/registry.tf              # The invariants that refuse a bad config. Removing one does not fail - it stops refusing.
 
-scripts/ignite/internal/onepassword/          # Every secret passes through here. probe.go returns a Status and never the value it read; widening that return type removes the guarantee.
-scripts/ignite/internal/phases/backup.go      # Pipes state into age without ever writing plaintext to disk. Buffering to a file would break the whole backup design.
-scripts/ignite/internal/phases/restore.go     # The only place in the program that reads the break-glass private key.
-scripts/ignite/internal/phases/encryption.go  # Sets TF_ENCRYPTION. Wrong here means state written in plaintext to a database that streams to object storage.
-scripts/ignite/internal/phases/sterilize.go   # Wipes every secret on exit. A change that skips a file leaves secrets on disk and still reports success.
-scripts/ignite/internal/phases/teardown.go    # Destroys real infrastructure. The ordering here is what stops state being wiped before the VMs it describes are gone.
-scripts/signedpush/                           # Reads the GitHub App private key. A supply chain reaching this can mint tokens for this repository.
+scripts/ignite/internal/onepassword/        # Every secret passes here. probe.go returns a Status, never the value it read.
+scripts/ignite/internal/phases/health.go    # Gates Migrate, the point of no return. Weakening it reports success over a cluster that never converged.
+scripts/ignite/internal/phases/backup.go    # Pipes state into age without plaintext touching disk. Buffering to a file breaks that.
+scripts/ignite/internal/phases/restore.go   # The only place that reads the break-glass private key.
+scripts/ignite/internal/phases/encryption.go# Sets TF_ENCRYPTION. Wrong here writes plaintext state to a database that ships off-site.
+scripts/ignite/internal/phases/sterilize.go # Wipes every secret on exit. Skipping a file leaves secrets on disk and still reports success.
+scripts/ignite/internal/phases/teardown.go  # Destroys real infrastructure. The ordering stops state being wiped before the VMs it describes.
+scripts/signedpush/                         # Reads the GitHub App private key. Reaching this mints tokens for this repository.

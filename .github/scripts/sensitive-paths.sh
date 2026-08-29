@@ -29,6 +29,7 @@ fi
 
 changed=$(cat)
 hits=""
+rules=0
 
 while IFS= read -r line || [ -n "$line" ]; do
 	path="${line%%#*}"
@@ -55,9 +56,11 @@ while IFS= read -r line || [ -n "$line" ]; do
 	esac
 
 	if [ -n "$match" ]; then
-		# Built with a loop rather than sed. `s/$/x/` reads to shellcheck as an
-		# unexpanded variable (SC2016) because a lone $ inside single quotes is
-		# ambiguous, and suppressing a warning is worse than not raising it.
+		rules=$((rules + 1))
+		# Rule and reason on one line, then the files under it. Leading with
+		# the reason rather than the pattern is what makes the comment
+		# actionable: the reviewer is told what breaks before being told
+		# which glob matched.
 		listed=""
 		while IFS= read -r file; do
 			if [ -n "$file" ]; then
@@ -68,12 +71,10 @@ while IFS= read -r line || [ -n "$line" ]; do
 $match
 EOF
 
-		hits="${hits}
-### \`${path}\`
+		hits="${hits}**\`${path}\`** — ${why}
 
-${why}
-
-${listed}"
+${listed}
+"
 	fi
 done <"$LIST"
 
@@ -82,7 +83,28 @@ if [ -z "$hits" ]; then
 	exit 0
 fi
 
+# The whole comment body, not a fragment. Keeping the copy here rather than in
+# the workflow means it can be edited by whoever maintains this file - the
+# workflow is off-limits to the agent, and copy that needs a human to change is
+# copy that stays wrong.
+if [ "$rules" -eq 1 ]; then
+	summary="**1 rule triggered.**"
+else
+	summary="**${rules} rules triggered.**"
+fi
+
 echo "tripped=true"
 echo "report<<SENSITIVE_PATHS_EOF"
-printf '%s\n' "$hits"
+cat <<EOF
+<!-- sensitive-paths -->
+## Sensitive paths changed — read before approving
+
+${summary} Each line below says what breaks if this change is wrong.
+
+${hits}---
+
+**To merge:** apply the \`sensitive-reviewed\` label. A bot cannot apply it — the
+check reads who did, and refuses a machine. That is the point: approving and
+acknowledging have to be two separate acts.
+EOF
 echo "SENSITIVE_PATHS_EOF"
