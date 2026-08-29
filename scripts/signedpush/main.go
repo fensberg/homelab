@@ -112,7 +112,29 @@ func run(appID, keyPath, branch string, tokenOnly, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	if !branchExists {
+	if branchExists {
+		// The published commits are replicas - same trees, different SHAs,
+		// because GitHub signs a commit it creates rather than the one that
+		// was committed locally. So the remote tip is an object the local
+		// clone may not have yet, and once it does have it, HEAD has to
+		// actually descend from it or there is no common base to build on.
+		// Both are recoverable, and neither should be guessed at.
+		if err := ensureLocal(baseSHA, branch); err != nil {
+			return err
+		}
+		if _, err := git("merge-base", "--is-ancestor", baseSHA, "HEAD"); err != nil {
+			return fmt.Errorf(`%s has diverged from its remote.
+
+The remote tip (%s) is not an ancestor of HEAD, which happens when a publish
+half-completed or the branch was rewritten. Nothing here can pick the right
+history for you:
+
+    git fetch origin %s && git reset --hard origin/%s
+
+will take the published side, discarding local commits that were never
+published`, branch, baseSHA[:8], branch, branch)
+		}
+	} else {
 		// A new branch forks from wherever it actually diverged, not from
 		// whatever main happens to be now.
 		if baseSHA, err = git("merge-base", "origin/main", "HEAD"); err != nil {
@@ -172,7 +194,54 @@ func run(appID, keyPath, branch string, tokenOnly, dryRun bool) error {
 	if err := a.setRef(owner, repo, headRef, parent, branchExists); err != nil {
 		return err
 	}
+
+	// Move local onto the published history. Without this, local keeps the
+	// unsigned originals while the remote has the signed replicas, the two
+	// diverge permanently, and the next publish has no common base - which is
+	// exactly the failure this program hit the first time it published itself.
+	//
+	// Content-neutral by construction: the signed commit carries the same tree,
+	// so nothing in the working directory changes. It is still refused on a
+	// dirty tree, because "no files change" is a property of the commits, not
+	// a promise about uncommitted work.
+	if err := syncLocal(branch, parent); err != nil {
+		fmt.Fprintf(os.Stderr, "\npublished, but the local branch was left behind: %v\n", err)
+		fmt.Fprintf(os.Stderr, "run: git fetch origin %s && git reset --hard origin/%s\n", branch, branch)
+		return nil
+	}
 	fmt.Printf("%s is at %s, verified\n", branch, parent[:8])
+	return nil
+}
+
+// ensureLocal makes a remote object available locally, fetching only if it is
+// actually missing.
+func ensureLocal(sha, branch string) error {
+	if _, err := git("cat-file", "-e", sha+"^{commit}"); err == nil {
+		return nil
+	}
+	if _, err := git("fetch", "--quiet", "origin", branch); err != nil {
+		return fmt.Errorf("fetching %s to learn the published history: %w", branch, err)
+	}
+	if _, err := git("cat-file", "-e", sha+"^{commit}"); err != nil {
+		return fmt.Errorf("the remote tip %s is still unknown after fetching %s", sha[:8], branch)
+	}
+	return nil
+}
+
+func syncLocal(branch, sha string) error {
+	dirty, err := git("status", "--porcelain")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(dirty) != "" {
+		return fmt.Errorf("the working tree has uncommitted changes")
+	}
+	if _, err := git("fetch", "--quiet", "origin", branch); err != nil {
+		return err
+	}
+	if _, err := git("reset", "--hard", "--quiet", sha); err != nil {
+		return err
+	}
 	return nil
 }
 
