@@ -7,6 +7,11 @@
     "repo_url": "{{ op://homelab/source-control/url }}"
   },
 
+  "object_storage": {
+    "account_id": "{{ op://homelab/object_storage/account_id }}",
+    "admin_token": "{{ op://homelab/object_storage/admin_token }}"
+  },
+
   "state_backup": {
     "recipient": "{{ op://homelab/state_backup/recipient }}"
   },
@@ -41,8 +46,6 @@
       "object_storage": {
         "provider": "cloudflare",
         "vault_provider": "{{ op://homelab/site0/object_storage/provider }}",
-        "account_id": "{{ op://homelab/site0/object_storage/account_id }}",
-        "admin_token": "{{ op://homelab/site0/object_storage/admin_token }}",
         "access_key_id": "{{ op://homelab/site0/object_storage/access_key_id }}",
         "secret_access_key": "{{ op://homelab/site0/object_storage/secret_access_key }}",
         "bucket": "{{ op://homelab/site0/object_storage/bucket }}"

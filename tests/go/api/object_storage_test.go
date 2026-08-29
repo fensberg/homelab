@@ -26,16 +26,16 @@ import (
 // in r2BucketExists falls through to its default branch and the whole Cluster
 // phase fails with "HTTP 200" - during a run that has already created VMs.
 func TestObjectStorageMissingBucketIsA404(t *testing.T) {
-	site := harness.SiteConfig(t)
-	require.NotEmpty(t, site.ObjectStorage.AccountID, "the rendered config has no object_storage.account_id")
-	require.NotEmpty(t, site.ObjectStorage.AdminToken, "the rendered config has no object_storage.admin_token")
+	acct := harness.ObjectStorageAccount(t)
+	require.NotEmpty(t, acct.AccountID, "the rendered config has no object_storage.account_id")
+	require.NotEmpty(t, acct.AdminToken, "the rendered config has no object_storage.admin_token")
 
 	// A name that cannot exist: bucket names are lowercase alphanumerics and
 	// hyphens, so this is safe to probe without any chance of naming
 	// something real.
 	missing := fmt.Sprintf("homelab-test-absent-%d", time.Now().UnixNano())
 
-	status := headBucket(t, site.ObjectStorage.AccountID, site.ObjectStorage.AdminToken, missing)
+	status := headBucket(t, acct.AccountID, acct.AdminToken, missing)
 	require.Equal(t, http.StatusNotFound, status,
 		"a missing bucket answered %d, not 404. r2BucketExists treats anything that is neither 200 nor 404 as a hard error, so the Cluster phase would now fail mid-run rather than adopting or creating the bucket.", status)
 }
@@ -45,9 +45,10 @@ func TestObjectStorageMissingBucketIsA404(t *testing.T) {
 // does not exist and apply would try to create one that is already there.
 func TestObjectStorageExistingBucketIsA200(t *testing.T) {
 	site := harness.SiteConfig(t)
+	acct := harness.ObjectStorageAccount(t)
 	require.NotEmpty(t, site.ObjectStorage.Bucket, "the rendered config has no object_storage.bucket")
 
-	status := headBucket(t, site.ObjectStorage.AccountID, site.ObjectStorage.AdminToken, site.ObjectStorage.Bucket)
+	status := headBucket(t, acct.AccountID, acct.AdminToken, site.ObjectStorage.Bucket)
 	require.Equal(t, http.StatusOK, status,
 		"the configured bucket %q answered %d. Either it has not been created yet - run the Cluster phase - or the API's success status has changed.", site.ObjectStorage.Bucket, status)
 }
