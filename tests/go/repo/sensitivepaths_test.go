@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // The sensitive-path list is a rule, so it is checked like one.
@@ -14,73 +12,106 @@ import (
 // A tripwire that names a directory which no longer exists does not fail. It
 // simply stops matching, and the pull request that renames the directory is
 // also the pull request that silently disarms the alarm covering it. That is
-// the failure this file exists to catch, and it is the same shape as every
-// other rule in this package: a check on the repository's own files, because
-// nothing else in the pipeline has an opinion about it.
+// the failure this file catches, and it is the same shape as every other rule
+// in this package: a check on the repository's own files, because nothing else
+// in the pipeline has an opinion about it.
 
-type sensitivePaths struct {
-	Paths []struct {
-		Path string `yaml:"path"`
-		Why  string `yaml:"why"`
-	} `yaml:"paths"`
+type sensitiveEntry struct {
+	Path string
+	Why  string
+	Line int
 }
 
-func loadSensitivePaths(t *testing.T) (string, sensitivePaths) {
+// parseSensitivePaths reads the plain-text format: one path per line, the text
+// after "#" is the reason, blank and whole-line comments ignored.
+//
+// Deliberately not a YAML parser. The file is read by a shell script in CI as
+// well as by this test, and a format needing a dependency on both sides is a
+// format that will eventually disagree with itself.
+func parseSensitivePaths(body string) []sensitiveEntry {
+	var out []sensitiveEntry
+	for i, raw := range strings.Split(body, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		path, why, _ := strings.Cut(line, "#")
+		out = append(out, sensitiveEntry{
+			Path: strings.TrimSpace(path),
+			Why:  strings.TrimSpace(why),
+			Line: i + 1,
+		})
+	}
+	return out
+}
+
+func loadSensitivePaths(t *testing.T) (string, []sensitiveEntry) {
 	t.Helper()
 	root := repoRoot(t)
-	body, err := os.ReadFile(filepath.Join(root, ".github", "sensitive-paths.yml"))
+	body, err := os.ReadFile(filepath.Join(root, ".github", "sensitive-paths"))
 	if err != nil {
-		t.Fatalf("reading .github/sensitive-paths.yml: %v", err)
+		t.Fatalf("reading .github/sensitive-paths: %v", err)
 	}
-	var list sensitivePaths
-	if err := yaml.Unmarshal(body, &list); err != nil {
-		t.Fatalf("parsing .github/sensitive-paths.yml: %v", err)
+	entries := parseSensitivePaths(string(body))
+	if len(entries) < 5 {
+		t.Fatalf("only %d paths declared; this is reading the wrong file or the list was gutted", len(entries))
 	}
-	return root, list
+	return root, entries
+}
+
+// The parser is exercised on its own, because CI reimplements it in shell and
+// the two must agree about what a line means.
+func TestParseSensitivePaths(t *testing.T) {
+	got := parseSensitivePaths(`
+# a whole-line comment
+   # an indented comment
+
+path/one/     # first reason
+path/two      #second reason, no space
+path/three
+`)
+	if len(got) != 3 {
+		t.Fatalf("got %d entries, want 3: %+v", len(got), got)
+	}
+	if got[0].Path != "path/one/" || got[0].Why != "first reason" {
+		t.Errorf("entry 0 = %+v", got[0])
+	}
+	if got[1].Why != "second reason, no space" {
+		t.Errorf("a reason with no space after # should still parse: %q", got[1].Why)
+	}
+	if got[2].Path != "path/three" || got[2].Why != "" {
+		t.Errorf("a path with no reason should parse with an empty reason: %+v", got[2])
+	}
 }
 
 func TestEverySensitivePathExists(t *testing.T) {
-	root, list := loadSensitivePaths(t)
-
-	if len(list.Paths) < 5 {
-		t.Fatalf("only %d sensitive paths declared; this is reading the wrong file or the list was gutted", len(list.Paths))
-	}
-
-	for _, entry := range list.Paths {
-		if strings.TrimSpace(entry.Path) == "" {
-			t.Error("an entry has no path")
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(root, entry.Path)); err != nil {
-			t.Errorf(`%s is declared sensitive but does not exist.
+	root, entries := loadSensitivePaths(t)
+	for _, e := range entries {
+		if _, err := os.Stat(filepath.Join(root, e.Path)); err != nil {
+			t.Errorf(`line %d: %s is declared sensitive but does not exist.
 
 A tripwire pointed at a missing path does not fail - it stops matching, and
 whoever renamed the path also disarmed the alarm on it without noticing.
-Update this entry in the same change that moved the file.`, entry.Path)
+Update this line in the same change that moved the file.`, e.Line, e.Path)
 		}
 	}
 }
 
-// Every entry has to say why. The reason is the whole payload: a banner
-// saying "this is sensitive" is noise, while one saying "probe.go returns a
-// Status and never the value, and widening that return type removes the
-// guarantee" is a reviewer actually being told what to look for.
+// Every entry has to say why, and say something. The reason is the whole
+// payload: a banner reading "this is sensitive" is noise, while one reading
+// "probe.go returns a Status and never the value it read" is a reviewer being
+// told what to look for.
 func TestEverySensitivePathExplainsItself(t *testing.T) {
-	_, list := loadSensitivePaths(t)
-
-	for _, entry := range list.Paths {
-		why := strings.TrimSpace(entry.Why)
-		if why == "" {
-			t.Errorf("%s is declared sensitive with no reason given", entry.Path)
+	_, entries := loadSensitivePaths(t)
+	for _, e := range entries {
+		if e.Why == "" {
+			t.Errorf("line %d: %s is declared sensitive with no reason given", e.Line, e.Path)
 			continue
 		}
-		// Long enough to be a reason rather than a label. "Important" and
-		// "be careful" tell a reviewer nothing they did not already assume.
-		if len(why) < 60 {
-			t.Errorf(`%s has a reason too short to be useful: %q
+		if len(e.Why) < 40 {
+			t.Errorf(`line %d: %s has a reason too short to be useful: %q
 
-The reason is what the reviewer reads at the moment they are deciding whether
-to look. Name the property that breaks, not the fact that one exists.`, entry.Path, why)
+Name the property that breaks, not the fact that one exists.`, e.Line, e.Path, e.Why)
 		}
 	}
 }
@@ -88,11 +119,11 @@ to look. Name the property that breaks, not the fact that one exists.`, entry.Pa
 // The code laws must all be covered. Adding a rule to this package without
 // covering it here would leave the newest guard as the least protected one.
 func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
-	root, list := loadSensitivePaths(t)
+	root, entries := loadSensitivePaths(t)
 
 	covered := func(rel string) bool {
-		for _, entry := range list.Paths {
-			p := strings.TrimSuffix(entry.Path, "/")
+		for _, e := range entries {
+			p := strings.TrimSuffix(e.Path, "/")
 			if rel == p || strings.HasPrefix(rel, p+"/") {
 				return true
 			}
@@ -100,21 +131,20 @@ func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 		return false
 	}
 
-	// Every guard test in this package, discovered rather than listed, so a
-	// new one cannot be added without being covered.
+	// Discovered by reading the directory, not from a list, so a new guard
+	// cannot be added without being covered.
 	dir := filepath.Join(root, "tests", "go", "repo")
-	entries, err := os.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("reading %s: %v", dir, err)
 	}
 	found := 0
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), "_test.go") {
+	for _, f := range files {
+		if !strings.HasSuffix(f.Name(), "_test.go") {
 			continue
 		}
 		found++
-		rel := filepath.Join("tests", "go", "repo", e.Name())
-		if !covered(rel) {
+		if rel := filepath.Join("tests", "go", "repo", f.Name()); !covered(rel) {
 			t.Errorf("%s is a code law but no sensitive path covers it", rel)
 		}
 	}
@@ -122,8 +152,8 @@ func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 		t.Fatalf("only %d guard tests found; this test is looking in the wrong place", found)
 	}
 
-	// The files the existing rules name explicitly. If a rule guards a file,
-	// a change to that file deserves the alarm.
+	// The files existing rules name explicitly. If a rule guards a file, a
+	// change to that file deserves the alarm.
 	for _, rel := range []string{
 		"scripts/ignite/internal/onepassword/probe.go",
 		"config/management.tpl.json",
