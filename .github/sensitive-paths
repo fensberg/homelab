@@ -28,6 +28,7 @@ config/management.tpl.json                    # The contract with the vault. An 
 management/cluster/registry.tf                # The invariants a bad config is refused by. These are preconditions, so removing one does not fail - it just stops refusing.
 
 scripts/ignite/internal/onepassword/          # Every secret passes through here. probe.go returns a Status and never the value it read; widening that return type removes the guarantee.
+scripts/ignite/internal/phases/health.go      # Gates Migrate on the cluster having actually converged. It once reported success over a database running 2 of 3 instances.
 scripts/ignite/internal/phases/backup.go      # Pipes state into age without ever writing plaintext to disk. Buffering to a file would break the whole backup design.
 scripts/ignite/internal/phases/restore.go     # The only place in the program that reads the break-glass private key.
 scripts/ignite/internal/phases/encryption.go  # Sets TF_ENCRYPTION. Wrong here means state written in plaintext to a database that streams to object storage.
