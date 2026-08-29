@@ -1,0 +1,78 @@
+name: Sensitive Paths
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  tripwire:
+    name: Sensitive Paths
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Which sensitive paths were touched
+        id: sensor
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --name-only "$BASE" "$HEAD" \
+            | .github/scripts/sensitive-paths.sh >>"$GITHUB_OUTPUT"
+
+      # The comment body is built entirely by the script, so changing the
+      # wording never means touching this file. Copy that needs a workflow edit
+      # to fix is copy that stays wrong, and the agent cannot edit workflows.
+      - name: Say what is at risk
+        if: steps.sensor.outputs.tripped == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          REPORT: ${{ steps.sensor.outputs.report }}
+        with:
+          script: |
+            const body = process.env.REPORT;
+            const marker = '<!-- sensitive-paths -->';
+            const {data: comments} = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner, repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            const args = {owner: context.repo.owner, repo: context.repo.repo, body};
+            if (existing) {
+              await github.rest.issues.updateComment({...args, comment_id: existing.id});
+            } else {
+              await github.rest.issues.createComment({...args, issue_number: context.issue.number});
+            }
+
+      - name: Require an explicit acknowledgement
+        if: steps.sensor.outputs.tripped == 'true'
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          case ",$LABELS," in
+            *,sensitive-reviewed,*) echo "acknowledged" ;;
+            *)
+              echo "::error::This pull request changes a safety property. Read the comment, then apply the 'sensitive-reviewed' label."
+              exit 1 ;;
+          esac
