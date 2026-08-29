@@ -170,6 +170,25 @@ test. `op inject` treats a blank field as success and writes an empty string,
 so an empty field does not fail Render at all — it surfaces much later inside a
 provider as something like "credentials are empty", naming no field.
 
+**Agent commits are published with `task push`** (`scripts/signedpush`), which
+is beside ignite and never inside it — different job, different blast radius,
+and a bug in a push tool has no business living in the binary that can destroy
+the estate. Both are zero-dependency Go for the same reason: this one reads
+the GitHub App private key, so a supply chain that reaches it can mint tokens
+for this repository.
+
+A GitHub App cannot hold a signing key — SSH and GPG signing keys are
+user-account resources, and the agent deliberately has no user account. What
+an App can do is have GitHub sign for it: a commit created through the Git
+Data API with an installation token comes back signed with GitHub's own key.
+`git push` still works and produces unsigned commits, which is a visible
+failure rather than a silent one — hence a separate verb rather than an alias.
+
+The naive form uploads a blob per changed file. This does not: `git push`
+moves the objects as one packfile to a ref outside `refs/heads/`, and since
+git and GitHub compute identical SHAs the tree is then already addressable, so
+the API work is a constant three calls at any diff size.
+
 **`workstation/` provisions the Linux machine this runs from.** It is
 deliberately independent from `management/` - no shared config, no
 1Password, and nothing in the cluster lifecycle can touch it, so a failed
