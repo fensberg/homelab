@@ -70,6 +70,9 @@ workstation/inventory.yml
 # comment at the top of taskfile.yml.
 scripts/ignite/ignite
 
+# Same, for the signed-push tool.
+scripts/signedpush/signedpush
+
 # --- test artefacts ---------------------------------------------------------
 # Coverage output. The committed part of coverage is tests/coverage-baseline.json,
 # which is the floor; the measurements themselves are per-run and disposable.
