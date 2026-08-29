@@ -55,13 +55,25 @@ while IFS= read -r line || [ -n "$line" ]; do
 	esac
 
 	if [ -n "$match" ]; then
+		# Built with a loop rather than sed. `s/$/x/` reads to shellcheck as an
+		# unexpanded variable (SC2016) because a lone $ inside single quotes is
+		# ambiguous, and suppressing a warning is worse than not raising it.
+		listed=""
+		while IFS= read -r file; do
+			if [ -n "$file" ]; then
+				listed="${listed}- \`${file}\`
+"
+			fi
+		done <<EOF
+$match
+EOF
+
 		hits="${hits}
 ### \`${path}\`
 
 ${why}
 
-$(printf '%s\n' "$match" | sed 's/^/- `/; s/$/`/')
-"
+${listed}"
 	fi
 done <"$LIST"
 
