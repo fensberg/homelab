@@ -431,6 +431,33 @@ repository where copy-paste is currently the documented workflow, and
 `tests/README.md` says so in as many words: _"write the fixture, add an entry
 to `manifest.json`, and add a `run` block of the same name."_
 
+## Known driver: de-bloat
+
+This repository has more files than it has ideas. The sensitive-path tripwire
+arrived as six of them - a data file, two shell scripts, a Go test, a document
+and a workflow - for one feature whose whole logic is under sixty lines. Two of
+the six were never justified: a four-line script that belonged inline in the
+workflow that called it, and a `docs/` page restating what the data file's own
+header comments already said.
+
+**The rule going in: a new file has to earn itself.** Length that would be
+unreadable inline earns one. A linter or a test that only sees real files earns
+one. Genuine reuse from more than one caller earns one. "It is a separate
+concern" does not, when the concern is four lines - two small scripts that are
+always invoked together are one script, or none.
+
+The audit is a file-count pass over `.github/`, `scripts/` and `docs/` asking
+of each file: what would break if this were three lines inside the thing that
+calls it? Start with the tripwire, because it is the freshest example and the
+one whose sprawl is best understood.
+
+Two things worth deciding rather than assuming while doing it. Documentation
+beside a thing tends to drift from the thing; header comments in the file being
+edited are read by whoever is editing it, and a `docs/` page usually is not.
+And shellcheck coverage is a real benefit of a script over an inline block, but
+it is not worth a whole file for a handful of lines - the question is what the
+coverage is buying, not whether it exists.
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying

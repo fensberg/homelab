@@ -156,16 +156,29 @@ jobs:
               await github.rest.issues.createComment({...args, issue_number: context.issue.number});
             }
 
+      # Not just "does the label exist" - who applied it. The agent's App holds
+      # issues: write, which it needs in order to comment at all, and the same
+      # permission lets it label a pull request. Checking only for the label's
+      # presence lets the agent silence its own alarm on its own change, which
+      # was demonstrated on #49 before this was written.
       - name: Require an explicit acknowledgement
         if: steps.sensor.outputs.tripped == 'true'
         env:
-          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
-          case ",$LABELS," in
-            *,sensitive-reviewed,*) echo "acknowledged" ;;
-            *)
+          who=$(gh api "repos/${REPO}/issues/${PR}/timeline" \
+            --jq '[.[]|select(.event=="labeled" and .label.name=="sensitive-reviewed")]|last|.actor.login // empty')
+          case "$who" in
+            "")
               echo "::error::This pull request changes a safety property. Read the comment, then apply the 'sensitive-reviewed' label."
               exit 1 ;;
+            *"[bot]")
+              echo "::error::'sensitive-reviewed' was applied by ${who}, which is a bot. The acknowledgement has to come from a human - that is the entire point of it. Remove the label and re-apply it yourself."
+              exit 1 ;;
+            *)
+              echo "acknowledged by ${who}" ;;
           esac
 ```
 
