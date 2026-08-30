@@ -46,6 +46,7 @@ type Config struct {
 	ObjectStorage ObjectStorageAccount `json:"object_storage"`
 	SourceControl SourceControl        `json:"source_control"`
 	StateBackup   StateBackup          `json:"state_backup"`
+	Runner        Runner               `json:"runner"`
 	Sites         map[string]Site      `json:"sites"`
 }
 

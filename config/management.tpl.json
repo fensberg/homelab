@@ -16,6 +16,12 @@
     "recipient": "{{ op://homelab/state_backup/recipient }}"
   },
 
+  "runner": {
+    "app_id": "{{ op://homelab/runner/app_id }}",
+    "installation_id": "{{ op://homelab/runner/installation_id }}",
+    "private_key": "{{ op://homelab/runner/private_key }}"
+  },
+
   "sites": {
     "site0": {
       "name": "{{ op://homelab/site0/name }}",

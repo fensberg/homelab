@@ -42,6 +42,16 @@ func Render(ctx *run.Context) error {
 		return err
 	}
 
+	// Checked here rather than at the Cluster phase that consumes it. The
+	// runner credential is fleet-level, so it is wrong for every site the
+	// moment it is wrong at all, and the failures it causes are all remote
+	// from their cause - a 401 naming no field, a base64decode inside a
+	// plan, a secret full of the wrong bytes. Render is the first moment the
+	// value exists, which makes it the cheapest moment to refuse it.
+	if err := config.ValidateRunner(cfg); err != nil {
+		return err
+	}
+
 	run.Info(fmt.Sprintf("generating inventory for %s (%d hypervisor(s))", net.Name, len(net.Hypervisors)))
 	var inv strings.Builder
 	inv.WriteString("---\nall:\n  children:\n    hypervisors:\n      hosts:\n")
