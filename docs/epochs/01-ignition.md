@@ -1022,6 +1022,86 @@ installation token is short-lived by construction. This estate already runs one
 App for the agent's own pushes, and the same reasoning applies twice over to a
 credential that lives inside the cluster.
 
+### The runner build, and the order it goes in
+
+**The identity.** One GitHub App installed on the organization, not on the
+repository. Estate-scoped by construction - the organization is what bounds the
+estate - and narrowed twice over: the permission is `Organization Self-hosted
+runners: read & write` plus `Metadata: read`, which can add and remove runners
+and nothing else, and the scale set is placed in a runner group restricted to
+this repository so the App's reach does not silently widen when a second
+repository joins the organization.
+
+That scoping is the fail-closed invariant applied. A repository-scoped App
+would carry `Administration: read & write`, which includes branch protection -
+the mechanism that makes "the agent proposes, the human disposes" true. Same
+key, same storage, same likelihood of theft; one worst case is a compromised
+review requirement and the other is a runner list that needs tidying.
+
+**The scale set keeps the name `self-hosted`.** With runner scale sets
+`runs-on` matches the installation name exactly, so this is a naming decision
+rather than a label decision, and the existing `runs-on: self-hosted` in
+`deploy-infrastructure.yml` and `integration-tests.yml` stays untouched along
+with the guard in `tests/go/repo/selfhosted_test.go`. The reasoning is that the
+App is restricted to this repository, so within this repository `self-hosted`
+resolves to exactly one thing and cannot be ambiguous. A second estate has its
+own organization and its own App, so the word means nothing there rather than
+meaning the wrong thing - which is the failure a more specific name would have
+been protecting against. Verify at build time that ARC accepts `self-hosted` as
+a scale set name, since it is also GitHub's implicit label for every
+self-hosted runner; if it refuses, that is the moment to revisit, not before.
+
+**What builds what.** The division of labour is the one already used for the
+state database, unchanged: OpenTofu creates only the namespace and the
+credential secret, rendered from the vault; the controller and the scale set
+are declared in `clusters/management/` and reconciled by Flux.
+
+1. Vault items, then the config template entries that reference them - in that
+   order, because every `op://` reference must resolve.
+2. `management/cluster/runner.tf`: the namespaces and the App credential.
+3. `clusters/management/infrastructure/controllers/`: the controller.
+4. `clusters/management/infrastructure/configs/`: the scale set.
+5. A `NetworkPolicy` in both namespaces, deny by default.
+
+**Controller and runners live in separate namespaces**, and the App secret is
+mounted only in the controller's. A compromised job is then not in the same
+namespace as the credential, which is what makes the low likelihood in the
+threat model actually low rather than asserted.
+
+### Pull request lanes stay on hosted runners for now
+
+The eight lanes in `pr-validation.yml` all run on `ubuntu-latest`, and moving
+them here is wanted - a long-lived runner can keep a warm tool cache, which is
+what the persistent tool-cache entry in Deferred is about. It is a separate
+change from building the runner, and it has three prerequisites that are not
+free.
+
+**The fork approval setting is the one that unblocks it, and it is done.** The
+organization now requires approval for all outside collaborators before any
+workflow runs, across every repository. Anyone may still open a pull request;
+nothing executes until a maintainer approves it. That is what makes running
+untrusted code on estate hardware a decision rather than an exposure, and
+combined with ephemeral per-job pods it closes the persistence attack that
+makes a long-lived self-hosted runner on a public repository dangerous.
+
+**`harden-runner` does not survive the move unchanged.** This repository's
+egress posture is deny-by-default, enforced by pinning `harden-runner` to
+`egress-policy: block` in every job. That works by manipulating the runner
+host's networking and does not hold the same way inside a container. The
+replacement is a `NetworkPolicy`, which is arguably the stronger form - the
+cluster enforces it rather than a process inside the job it is policing - but
+it is a migration to perform, not a property that carries over on its own.
+
+**CI does not belong on the control plane.** Eight concurrent jobs, several
+pulling large images, on the same nodes as etcd is a way to make the control
+plane intermittently unwell. Runners want a dedicated worker node, which is
+also where the tool-cache volume belongs.
+
+**And "hermetic" starts doing more work.** Today the Test lane's hermeticity is
+what makes a fork's pull request safe to run in full. Once it runs on estate
+hardware, hermetic is a property being asserted rather than one a disposable
+virtual machine was enforcing on our behalf.
+
 ## Acceptance test: change 3 to 5 and watch it land
 
 The epoch is signed off when this works, end to end, with no manual step in
