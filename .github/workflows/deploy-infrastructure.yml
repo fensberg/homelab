@@ -22,6 +22,11 @@ on:
     branches: [main]
     tags: ["v*"]
     paths:
+      # The ignition tier. A merge here converges the estate that already
+      # exists; it never ignites one. See CLAUDE.md, "Ignition is local-only;
+      # convergence is not".
+      - "management/**"
+      - "config/management.tpl.json"
       - "environments/**/infrastructure/**"
       - "modules/infrastructure/**"
 
@@ -35,6 +40,61 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ---------------------------------------------------------------------
+  # ROUTING - which tier did this push touch? Hermetic, so it stays off the
+  # self-hosted runner: deciding what to run needs no credentials, and giving
+  # it any would widen what a mistake here reaches.
+  # ---------------------------------------------------------------------
+  changes:
+    name: What changed
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      management: ${{ steps.filter.outputs.management }}
+      workload: ${{ steps.filter.outputs.workload }}
+      sites: ${{ steps.sites.outputs.sites }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Classify the change
+        id: filter
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # A tag is always a workload-tier production release. management/ is
+          # never released by tag - the estate has one version, the running one.
+          if [ "${REF_TYPE}" = "tag" ]; then
+            echo "management=false" >> "$GITHUB_OUTPUT"
+            echo "workload=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! files="$(git diff --name-only "${BEFORE}" "${AFTER}" 2>/dev/null)"; then
+            files="$(git diff --name-only HEAD~1 HEAD)"
+          fi
+          echo "changed files:"; echo "${files}"
+          mgmt=false; work=false
+          grep -qE '^(management/|config/management\.tpl\.json$)' <<<"${files}" && mgmt=true
+          grep -qE '^(environments/|modules/)' <<<"${files}" && work=true
+          echo "management=${mgmt}" >> "$GITHUB_OUTPUT"
+          echo "workload=${work}" >> "$GITHUB_OUTPUT"
+
+      - name: List the sites the config declares
+        id: sites
+        run: |
+          set -euo pipefail
+          # The template, not the rendered config: this job holds no vault
+          # credentials. Site keys are plaintext structure; only their values
+          # are op:// references.
+          sites="$(jq -c '.sites | keys' config/management.tpl.json)"
+          echo "sites=${sites}" >> "$GITHUB_OUTPUT"
+
   # ---------------------------------------------------------------------
   # PLAN - on a pull request. Reads real state, changes nothing.
   # ---------------------------------------------------------------------
@@ -148,7 +208,8 @@ jobs:
   # ---------------------------------------------------------------------
   apply:
     name: Apply
-    if: github.event_name == 'push'
+    needs: changes
+    if: github.event_name == 'push' && needs.changes.outputs.workload == 'true'
     runs-on: self-hosted
     # The environment is the human gate. Configure required reviewers on
     # `production` so a tag cannot deploy unattended; `staging` is where a
@@ -213,3 +274,62 @@ jobs:
       - name: Tofu Apply
         working-directory: ${{ env.DIR }}
         run: tofu apply -input=false tfplan
+  # ---------------------------------------------------------------------
+  # CONVERGE - on merge to main, for the ignition tier.
+  #
+  # Not `apply` with a different directory. The workload tier is plain
+  # OpenTofu in a folder; the estate is a phased program that renders
+  # secrets, attaches to state living in this cluster, applies, re-backs-up
+  # and sterilises. `steward converge` is that sequence.
+  #
+  # READ BEFORE WIDENING: this runner lives inside the cluster it is
+  # converging. Adding a control-plane node is safe. A change that disrupts
+  # the control plane or the state database kills this job midway through its
+  # own apply. If that becomes routine, add required reviewers to the
+  # environment below - the merge stops being the only gate.
+  # ---------------------------------------------------------------------
+  converge:
+    name: Converge ${{ matrix.site }}
+    needs: changes
+    if: github.event_name == 'push' && needs.changes.outputs.management == 'true'
+    runs-on: self-hosted
+    environment: staging
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    strategy:
+      # Each site has its own state database and its own lock, so two sites
+      # converge independently. fail-fast off: one site failing is not a
+      # reason to abandon another that was fine.
+      fail-fast: false
+      matrix:
+        site: ${{ fromJSON(needs.changes.outputs.sites) }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          # audit, not block, for the same reason the apply job gives: this
+          # reaches 1Password, Proxmox, Tailscale, Cloudflare, the Kubernetes
+          # API and the OpenTofu registry, and several of those addresses are
+          # deliberately not in git. Transcribe the observed endpoints after
+          # the first real run, then flip to block.
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.7"
+
+      # Built and run directly, not through `task`: task does not proxy SIGINT
+      # to the process it supervises (go-task/task#1408).
+      - name: Converge
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          go build -C scripts/steward -o steward .
+          ./scripts/steward/steward converge -site "${{ matrix.site }}"

@@ -95,8 +95,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SITE: ${{ inputs.site || 'site0' }}
         run: |
-          go build -C scripts/ignite -o ignite .
-          ./scripts/ignite/ignite -site "$SITE" -phase render -keep-on-failure
+          go build -C scripts/steward -o steward .
+          ./scripts/steward/steward ignite -site "$SITE" -phase render -keep-on-failure
 
       - name: API contract tests
         if: ${{ inputs.tier == 'api' || inputs.tier == 'both' }}
@@ -123,7 +123,7 @@ jobs:
         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
         env:
           SITE: ${{ inputs.site || 'site0' }}
-        run: ./scripts/ignite/ignite -site "$SITE" -phase backup -keep-on-failure
+        run: ./scripts/steward/steward ignite -site "$SITE" -phase backup -keep-on-failure
 
       - name: Integration tests
         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
@@ -140,4 +140,4 @@ jobs:
         if: always()
         env:
           SITE: ${{ inputs.site || 'site0' }}
-        run: ./scripts/ignite/ignite -site "$SITE" -phase sterilize
+        run: ./scripts/steward/steward ignite -site "$SITE" -phase sterilize
