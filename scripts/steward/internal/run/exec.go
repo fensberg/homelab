@@ -111,9 +111,24 @@ Re-resolve and commit the result:
 // TofuOutputRaw reads a single output value, failing loudly if it is
 // missing or blank rather than letting an empty string travel further.
 func TofuOutputRaw(ctx *Context, name string) (string, error) {
-	out, err := CmdOutput(ctx.ClusterDir, "tofu", "output", "-raw", name)
+	// -no-color, because this output is a value rather than something a
+	// person reads. tofu writes "Warning: No outputs found" to stdout and
+	// exits zero, so a workspace with no state hands back a coloured
+	// diagnostic that passes both checks below and gets used as the value.
+	// Stripping the colour does not fix that on its own - the caller still
+	// has to know what it asked for - but it stops escape sequences reaching
+	// a file, which is what turns a clear failure into "control characters
+	// are not allowed" somewhere else entirely.
+	out, err := CmdOutput(ctx.ClusterDir, "tofu", "output", "-no-color", "-raw", name)
 	if err != nil || strings.TrimSpace(out) == "" {
 		return "", fmt.Errorf("could not read the %s output", name)
+	}
+	// tofu's diagnostics are boxed with these, and they never appear in a
+	// value. Exit code zero plus a warning on stdout is the case this exists
+	// for, and it is not hypothetical: it produced a kubeconfig that was a
+	// warning message.
+	if strings.ContainsAny(out, "╷╵│") {
+		return "", fmt.Errorf("reading the %s output returned a diagnostic rather than a value - the state is probably not reachable from this workspace", name)
 	}
 	return out, nil
 }
