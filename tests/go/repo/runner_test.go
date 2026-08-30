@@ -8,9 +8,15 @@ import (
 	"testing"
 )
 
-// The runner manifests name the namespaces and the credential secret as
-// literals, while OpenTofu declares the same three values in
-// management/cluster/variables.tf and creates those resources from them. Two declarations of one fact, which is only safe if something
+// The runner manifests name their namespaces as literals, while OpenTofu
+// declares the same values in management/cluster/variables.tf and creates
+// those namespaces from them.
+//
+// The credential secret's name is deliberately absent from this check: it is
+// substituted by Flux from the same local, so the two cannot drift by
+// construction. Substitution beats an assertion wherever it is available -
+// this test only exists for the values that could not be substituted, because
+// a ${VAR} in metadata.name does not survive CI rendering it empty. Two declarations of one fact, which is only safe if something
 // asserts they agree - the same reasoning that has registry.tf and config.go
 // implementing the config contract twice.
 //
@@ -31,7 +37,6 @@ func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
 	}{
 		{"runner_system_namespace", "clusters/management/infrastructure/controllers/actions-runner-controller.yaml", nil},
 		{"runners_namespace", "clusters/management/infrastructure/configs/runner-scale-set.yaml", nil},
-		{"runner_secret_name", "clusters/management/infrastructure/configs/runner-scale-set.yaml", nil},
 	} {
 		want := hclStringLocal(t, tf, tc.local)
 		manifest := readRepoFile(t, tc.manifest)

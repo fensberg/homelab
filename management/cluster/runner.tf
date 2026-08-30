@@ -106,11 +106,14 @@ resource "kubernetes_secret" "runner_vars" {
     namespace = "flux-system"
   }
 
-  # One key, not seven. Everything else the manifests need is constant and is
+  # Two keys, not seven. Everything else the manifests need is constant and is
   # written literally there, where it is legible without cross-referencing a
-  # secret; this is the only value derived from a vault secret, so it is the
-  # only one that cannot be committed.
+  # secret. These two are not: the config URL is derived from a vault secret
+  # and cannot be committed, and the credential's name is substituted so that
+  # it and the secret created above cannot drift - and, incidentally, so that
+  # checkov stops reading a hyphenated identifier as a leaked credential.
   data = {
     RUNNER_GITHUB_CONFIG_URL = local.runner_github_config_url
+    RUNNER_SECRET_NAME       = local.runner_secret_name
   }
 }
