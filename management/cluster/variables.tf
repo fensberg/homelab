@@ -73,7 +73,7 @@ locals {
   # Fleet plane, like the object storage account: one GitHub App serves the
   # estate, and a runner is a site-level deployment of an estate-level
   # identity. See runner.tf for why the App is scoped the way it is.
-  runner = local.config.runner
+  runner = local.config.source_control.foreman_bot
 
   runner_system_namespace = "arc-systems"
   runners_namespace       = "arc-runners"
