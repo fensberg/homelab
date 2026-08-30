@@ -8,10 +8,9 @@ import (
 	"testing"
 )
 
-// The runner manifests write their namespaces, secret name, scale set name and
-// runner group as literals, while OpenTofu declares the same values in
-// management/cluster/variables.tf and creates the namespaces and the secret
-// from them. Two declarations of one fact, which is only safe if something
+// The runner manifests name the namespaces and the credential secret as
+// literals, while OpenTofu declares the same three values in
+// management/cluster/variables.tf and creates those resources from them. Two declarations of one fact, which is only safe if something
 // asserts they agree - the same reasoning that has registry.tf and config.go
 // implementing the config contract twice.
 //
@@ -33,8 +32,6 @@ func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
 		{"runner_system_namespace", "clusters/management/infrastructure/controllers/actions-runner-controller.yaml", nil},
 		{"runners_namespace", "clusters/management/infrastructure/configs/runner-scale-set.yaml", nil},
 		{"runner_secret_name", "clusters/management/infrastructure/configs/runner-scale-set.yaml", nil},
-		{"runner_scale_set_name", "clusters/management/infrastructure/configs/runner-scale-set.yaml", nil},
-		{"runner_group", "clusters/management/infrastructure/configs/runner-scale-set.yaml", nil},
 	} {
 		want := hclStringLocal(t, tf, tc.local)
 		manifest := readRepoFile(t, tc.manifest)
@@ -50,8 +47,13 @@ func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
 // one label among several. A rename on either side silently orphans every
 // workflow targeting it - the job queues forever rather than failing.
 func TestRunnerScaleSetNameMatchesRunsOn(t *testing.T) {
-	tf := readRepoFile(t, "management/cluster/variables.tf")
-	name := hclStringLocal(t, tf, "runner_scale_set_name")
+	// Read from the manifest, which is where the name is declared. It used to
+	// be read from an OpenTofu local that nothing in OpenTofu used - a value
+	// kept alive only so this test could compare against it, which tflint
+	// correctly called dead code. The manifest is the only declaration now,
+	// so it is the one this test reads.
+	manifest := readRepoFile(t, "clusters/management/infrastructure/configs/runner-scale-set.yaml")
+	name := yamlScalar(t, manifest, "runnerScaleSetName")
 
 	for _, wf := range []string{
 		".github/workflows/deploy-infrastructure.yml",
@@ -62,6 +64,19 @@ func TestRunnerScaleSetNameMatchesRunsOn(t *testing.T) {
 			t.Errorf("%s does not declare `runs-on: %s`. The scale set is registered under that name, so a job asking for anything else waits for a runner that will never appear.", wf, name)
 		}
 	}
+}
+
+// yamlScalar pulls one `key: value` scalar out of a manifest. Deliberately not
+// a YAML parse: the file carries a ${VAR} Flux substitutes at reconcile time,
+// which is not a thing a strict decode has to cope with just to read one field.
+func yamlScalar(t *testing.T, body, key string) string {
+	t.Helper()
+	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `:\s*(\S+)\s*$`)
+	m := re.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("no %s: scalar in the scale set manifest", key)
+	}
+	return m[1]
 }
 
 func hclStringLocal(t *testing.T, body, name string) string {

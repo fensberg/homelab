@@ -75,20 +75,14 @@ locals {
   # identity. See runner.tf for why the App is scoped the way it is.
   runner = local.config.source_control.foreman_bot
 
+  # Only what OpenTofu itself creates. The scale set's own name, its runner
+  # group and its ceiling are declared in the manifest that uses them, because
+  # nothing here reads them - a local kept alive purely so a test could compare
+  # against it is dead code with a test-shaped excuse, and tflint was right to
+  # say so.
   runner_system_namespace = "arc-systems"
   runners_namespace       = "arc-runners"
   runner_secret_name      = "github-app-credentials"
-  runner_group            = "homelab"
-  runner_max              = 2
-
-  # Kept as "self-hosted" so the existing runs-on in deploy-infrastructure.yml
-  # and integration-tests.yml keeps working untouched, along with the guard in
-  # tests/go/repo/selfhosted_test.go. With runner scale sets, runs-on matches
-  # the installation name exactly, so this is a name rather than a label - and
-  # within this repository the App resolves it to exactly one thing. A second
-  # estate has its own organization and its own App, so the word means nothing
-  # there rather than meaning the wrong thing.
-  runner_scale_set_name = "self-hosted"
 
   # The scale set is registered against the organization, not the repository,
   # because that is the scope the App was granted. Derived from the repository
