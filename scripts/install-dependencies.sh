@@ -186,9 +186,26 @@ fi
 
 step "rclone (pinned)"
 RCLONE_VERSION=1.75.0
-if has rclone; then
-	skip "rclone already present ($(rclone version | head -1))"
+# Presence is not the same question as version, and this step is the one place
+# that difference has teeth. Debian ships an rclone package that arrives as a
+# dependency of other things, so the binary can already be on PATH years older
+# than the pin - and `has rclone` would then skip, print whatever it found, and
+# leave the step called "pinned" enforcing nothing. R2 is the backend least
+# tolerant of that: an old client fails S3 operations R2 answers with 501
+# NotImplemented, and rclone's own retry can turn that into a success nobody
+# reads, which is how a broken backup passes for a working one.
+rclone_installed_version() {
+	rclone version 2>/dev/null | awk 'NR == 1 { sub(/^v/, "", $2); print $2 }'
+}
+if has rclone && [ "$(rclone_installed_version)" = "$RCLONE_VERSION" ]; then
+	skip "rclone already at the pinned ${RCLONE_VERSION}"
 else
+	if has rclone; then
+		# Includes distribution rebuilds, which report a -DEV suffix and so
+		# never compare equal to the pin. That is deliberate: the pin names a
+		# release binary, and a rebuild of the same version number is not it.
+		warn "rclone $(rclone_installed_version) is not the pinned ${RCLONE_VERSION} - replacing it"
+	fi
 	# Not the official install script: it pipes an unpinned, unverified
 	# remote script straight into `sudo bash`, which is both a real
 	# supply-chain risk and unpinned, contrary to this project's own rule.
