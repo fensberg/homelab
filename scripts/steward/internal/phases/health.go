@@ -332,9 +332,42 @@ func kubectl(ctx *run.Context, kubeconfig string, args ...string) ([]byte, error
 // lifetime of a single check and removes itself. This one persists, which is
 // the whole point, and is therefore a workspace file that Sterilize owns.
 func WriteKubeconfigTo(ctx *run.Context, dest string) error {
+	// Reach the state before reading an output out of it.
+	//
+	// This used to go straight to `tofu output`, which worked only while a run
+	// was in flight. Every other time - which is every time anybody actually
+	// wants a kubeconfig - Sterilize has already removed backend_pg.tf and
+	// tofu's backend record, so there is no state to read and the output comes
+	// back as something that is not a kubeconfig.
+	//
+	// Local state means a run is mid-flight and already holds the
+	// authoritative copy, so leave it alone; otherwise the state is where the
+	// successful path put it. Same reasoning, and the same shape, as destroy.
+	if _, err := os.Stat(ctx.LocalState); err != nil {
+		if err := Render(ctx); err != nil {
+			return fmt.Errorf("could not render the config, so there is nothing to authenticate with: %w", err)
+		}
+		if err := Attach(ctx); err != nil {
+			return err
+		}
+	}
+
 	raw, err := run.TofuOutputRaw(ctx, "kubeconfig")
 	if err != nil {
 		return fmt.Errorf("could not read the kubeconfig output. Has the Cluster phase run? (%w)", err)
+	}
+
+	// A kubeconfig is YAML. Anything else means the output was not what was
+	// asked for - a diagnostic, an empty backend, a truncated read - and
+	// writing it produces a file that fails much later, inside kubectl, with
+	// an error about control characters that names nothing useful.
+	if !looksLikeKubeconfig(raw) {
+		return fmt.Errorf(`the kubeconfig output did not come back as a kubeconfig.
+
+What arrived was %d byte(s) that do not parse as one. That usually means the
+state could not be reached, so tofu answered with something other than the
+value asked for. Check that the cluster is up and that this site's state
+database is reachable`, len(raw))
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return err
@@ -345,4 +378,25 @@ func WriteKubeconfigTo(ctx *run.Context, dest string) error {
 	run.Ok("kubeconfig written to " + dest)
 	run.Warn("It is a credential and it is gitignored, but it is still on this disk. 'task clean-secrets' removes it.")
 	return nil
+}
+
+// looksLikeKubeconfig is a shape check, not a parse. It exists to fail here,
+// naming the output, rather than three commands later inside kubectl.
+func looksLikeKubeconfig(raw string) bool {
+	if strings.TrimSpace(raw) == "" {
+		return false
+	}
+	for _, marker := range []string{"apiVersion:", "clusters:", "users:"} {
+		if !strings.Contains(raw, marker) {
+			return false
+		}
+	}
+	// Control characters are what kubectl actually complains about, and they
+	// are the signature of a diagnostic or a partial read reaching this file.
+	for _, r := range raw {
+		if r < 0x20 && r != '\n' && r != '\r' && r != '\t' {
+			return false
+		}
+	}
+	return true
 }
