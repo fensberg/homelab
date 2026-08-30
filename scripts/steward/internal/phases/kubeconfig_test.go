@@ -10,9 +10,9 @@ func TestLooksLikeKubeconfig(t *testing.T) {
 	const real = `apiVersion: v1
 kind: Config
 clusters:
-- name: fensberg
+- name: example
   cluster:
-    server: https://10.10.10.100:6443
+    server: https://192.0.2.100:6443
 users:
 - name: admin
 `

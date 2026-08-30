@@ -275,8 +275,8 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 
 	// Must match the site_name expression in variables.tf: lowercase, every
 	// run of non-alphanumerics collapsed to a hyphen, trimmed. These become
-	// Proxmox VM names, so "Sheridan Road Office" has to become
-	// "sheridan-road-office".
+	// Proxmox VM names, so "North Street Office" has to become
+	// "north-street-office".
 	slug := strings.ToLower(strings.Trim(slugInvalid.ReplaceAllString(site.Name, "-"), "-"))
 	if slug == "" {
 		slug = name
