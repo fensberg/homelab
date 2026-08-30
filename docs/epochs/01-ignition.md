@@ -585,6 +585,41 @@ encrypted copy off-site.
 it cannot exist at first apply. R2 covers the circular dependency that
 creates — losing the cluster would otherwise lose the state describing it.
 
+### The restore path was exercised, not assumed
+
+**Drilled 2026-08-30, on the first ignition of `site0`.** The Backup phase
+reports `[ok]` on rclone's exit code, and `pruneOldBackups` independently
+re-lists the bucket to confirm the object arrived. Neither answers the question
+the backup exists for, which is whether the bytes in the bucket can be turned
+back into state by the people who would need them. That was checked directly:
+
+    rclone copyto R2:<bucket>/management-cluster/latest.tfstate.age <drill>/latest.age
+    op read op://homelab/state_backup/identity                    > <drill>/id.key
+    age -d -i <drill>/id.key <drill>/latest.age                   > <drill>/state.json
+    jq -r '.version, .serial, (.resources | length)' <drill>/state.json
+
+Result: `4`, `1`, `19` - a schema version, a serial, and nineteen resources.
+That is the whole chain in one pass: the object is in the bucket, the private
+identity is in the vault at the path `-restore` expects, `age` accepts the
+pair, and what falls out is state describing a real estate rather than bytes
+that merely decoded.
+
+**Three things make this worth repeating rather than recording once.** The
+identity is deliberately absent from `config/management.tpl.json`, so
+`-check-vault` cannot see it and a clean 20-of-20 says nothing about it. The
+Secrets phase only warns when the recipient exists without the identity, so a
+run that has already lost the private half still ends in `Ignition complete`.
+And the pair is stored by hand, once, for the whole estate, which means
+nothing in this repository would notice the two halves drifting apart.
+
+**Do not use `ignite -restore` as the drill.** It pushes what it recovers
+through the encrypted backend, and after the Migrate phase that backend is the
+live cluster's Postgres. The drill above is read-only by construction: it never
+runs `ignite` and it touches nothing the estate is using. Decrypt into a
+`mktemp -d` under a home directory rather than `/tmp`, since the plaintext is
+every secret in the estate for as long as it exists, and `shred -u` it
+afterwards.
+
 ## Compute boots from a pre-installed disk image, not an installer ISO
 
 **Status: resolved.** Every control-plane node was losing network
