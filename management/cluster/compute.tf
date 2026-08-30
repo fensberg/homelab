@@ -77,8 +77,9 @@ resource "proxmox_virtual_environment_vm" "talos_template" {
   name      = "${local.site_name}-talos-template"
   node_name = each.value
   # One offset per octet band, above every real control-plane ID that band
-  # can ever hold (vm_ids is octet*100 + 0..N-1, N well under 99).
-  vm_id = local.octet * 100 + 99
+  # can ever hold: vm_ids end at octet*1000 + 100 + N-1, and N is well
+  # under 99, so the top of the band is free.
+  vm_id = local.octet * 1000 + 199
 
   template = true
   started  = false

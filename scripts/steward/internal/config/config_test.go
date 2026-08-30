@@ -57,7 +57,7 @@ func TestResolveSiteNetwork_HappyPath(t *testing.T) {
 	if strings.Join(net.NodeIPs, ",") != strings.Join(wantIPs, ",") {
 		t.Errorf("NodeIPs = %v, want %v", net.NodeIPs, wantIPs)
 	}
-	wantNames := []string{"north-street-office-cp-01", "north-street-office-cp-02", "north-street-office-cp-03"}
+	wantNames := []string{"north-street-office-cp-100", "north-street-office-cp-101", "north-street-office-cp-102"}
 	if strings.Join(net.VMNames, ",") != strings.Join(wantNames, ",") {
 		t.Errorf("VMNames = %v, want %v", net.VMNames, wantNames)
 	}
@@ -254,5 +254,31 @@ func TestAssertRenderedConfigComplete_NonSecretPlaceholderFieldsIgnored(t *testi
 
 	if err := AssertRenderedConfigComplete(tpl, rendered); err != nil {
 		t.Fatalf("unexpected error for plaintext-by-design fields: %v", err)
+	}
+}
+
+// One node, one number. The address, the name and the VM id all carry the host
+// octet, so a machine seen in Proxmox, in kubectl and on the network is
+// obviously the same machine without arithmetic.
+//
+// They used to disagree - .100 was cp-01 was vm 1000 - and each was defensible
+// alone. This asserts they stay agreed, because the cost of them drifting
+// apart is paid during an incident by whoever is cross-referencing three
+// consoles.
+func TestResolveSiteNetwork_AddressNameAndIDShareOneNumber(t *testing.T) {
+	site := validSite()
+	site.ControlPlaneCount = 3
+	cfg := &Config{Sites: map[string]Site{"site0": site}}
+
+	net, err := ResolveSiteNetwork(cfg, "site0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for i, ip := range net.NodeIPs {
+		lastOctet := ip[strings.LastIndex(ip, ".")+1:]
+		if !strings.HasSuffix(net.VMNames[i], "-cp-"+lastOctet) {
+			t.Errorf("node %d is %s but named %q; the name must end in the host octet", i, ip, net.VMNames[i])
+		}
 	}
 }

@@ -72,7 +72,10 @@ func TestContract_StateDatabaseLocalsMatchTheOpenTofuSource(t *testing.T) {
 // so, which is the correct outcome - the contract needs a human then, not a
 // cleverer regex.
 var (
-	nodeIPOffset       = regexp.MustCompile(`cidrhost\(local\.node_cidr,\s*(\d+)\s*\+\s*i\)`)
+	// The offset moved out of node_ips and into host_octets when the id, name
+	// and address were aligned on one number. It is still a single literal in
+	// a single for-expression, which is what this contract needs.
+	nodeIPOffset       = regexp.MustCompile(`host_octets\s*=\s*\[for i in range\(local\.node_count\)\s*:\s*(\d+)\s*\+\s*i\]`)
 	nodeCIDRThirdOctet = regexp.MustCompile(`node_cidr\s*=\s*"10\.\$\{local\.octet\}\.(\d+)\.0/24"`)
 )
 
@@ -81,7 +84,7 @@ func TestContract_FirstControlPlaneHostMatchesTheOpenTofuSource(t *testing.T) {
 
 	m := nodeIPOffset.FindStringSubmatch(src)
 	if m == nil {
-		t.Fatal("could not find the cidrhost(local.node_cidr, N + i) offset in variables.tf.\n\nnode_ips was restructured. sterilize.go hard-codes the first control-plane host to reach the state database during an emergency destroy; confirm by hand that it still matches, then update this test to the new shape.")
+		t.Fatal("could not find the host_octets = [for i in range(local.node_count) : N + i] offset in variables.tf.\n\nnode_ips was restructured. sterilize.go hard-codes the first control-plane host to reach the state database during an emergency destroy; confirm by hand that it still matches, then update this test to the new shape.")
 	}
 	offset, err := strconv.Atoi(m[1])
 	if err != nil {

@@ -107,7 +107,10 @@ locals {
   # pool is reserved at .20.0/24 for epoch 02.
   node_cidr    = "10.${local.octet}.10.0/24"
   node_gateway = cidrhost(local.node_cidr, 1)
-  node_ips     = [for i in range(local.node_count) : cidrhost(local.node_cidr, 100 + i)]
+  # The one number every other identifier is derived from.
+  host_octets = [for i in range(local.node_count) : 100 + i]
+
+  node_ips = [for i in range(local.node_count) : cidrhost(local.node_cidr, local.host_octets[i])]
 
   # --- placement -----------------------------------------------------------
   # Control-plane VMs are dealt round-robin across whatever hypervisors the
@@ -128,11 +131,24 @@ locals {
   cluster_name = trim(lower(replace(
     "${local.config.organization.name}-${local.site_name}",
   "/[^A-Za-z0-9]+/", "-")), "-")
-  vm_names = [for i in range(local.node_count) : format("%s-cp-%02d", local.site_name, i + 1)]
+  # One number per node, used three ways.
+  #
+  # It used to be three: the IP was host octet 100+i, the name was i+1, and the
+  # VM id was octet*100+i - so one machine was .100, cp-01 and 1000 at the same
+  # time. Nothing was wrong with any of them alone, and together they meant
+  # every cross-reference during an incident needed arithmetic.
+  #
+  # Now the host octet is the number. The name carries it, the id ends in it,
+  # and it is the last octet of the address:
+  #
+  #     10.10.10.100   <site>-cp-100   vm 10100
+  vm_names = [for i in range(local.node_count) : format("%s-cp-%d", local.site_name, local.host_octets[i])]
 
-  # Banded by octet so two sites could share a Proxmox cluster without
-  # colliding: octet 10 uses 1000-1099, octet 11 uses 1100-1199.
-  vm_ids = [for i in range(local.node_count) : local.octet * 100 + i]
+  # Banded by octet so two sites can share a Proxmox cluster without colliding,
+  # and ending in the host octet so the id reads back as the address: octet 10
+  # uses 10100-10199, octet 11 uses 11100-11199. The octet is asserted 1-95, so
+  # the widest band is 95100-95199 - well inside Proxmox's range.
+  vm_ids = [for i in range(local.node_count) : local.octet * 1000 + local.host_octets[i]]
 
   # --- platform ------------------------------------------------------------
   # renovate: datasource=github-releases depName=siderolabs/talos
