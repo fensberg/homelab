@@ -24,8 +24,8 @@ func samplePEM() string {
 	return "-----BEGIN RSA " + marker + "\nMIIBOgIBAAJBAK\n-----END RSA " + marker + "\n"
 }
 
-func validRunner() Runner {
-	return Runner{
+func validRunner() ForemanBot {
+	return ForemanBot{
 		AppID:          "4771490",
 		InstallationID: "157746936",
 		PrivateKey:     encodedKey(samplePEM()),
@@ -33,7 +33,7 @@ func validRunner() Runner {
 }
 
 func TestValidateRunner_Valid(t *testing.T) {
-	if err := ValidateRunner(&Config{Runner: validRunner()}); err != nil {
+	if err := ValidateRunner(&Config{SourceControl: SourceControl{ForemanBot: validRunner()}}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -41,7 +41,7 @@ func TestValidateRunner_Valid(t *testing.T) {
 func TestValidateRunner_AppIDMustBeNumeric(t *testing.T) {
 	r := validRunner()
 	r.AppID = "fensberg-homelab-foreman"
-	err := ValidateRunner(&Config{Runner: r})
+	err := ValidateRunner(&Config{SourceControl: SourceControl{ForemanBot: r}})
 	if err == nil {
 		t.Fatal("expected an error when app_id is the app's name rather than its id")
 	}
@@ -55,7 +55,7 @@ func TestValidateRunner_InstallationIDMustBeNumeric(t *testing.T) {
 	// The whole settings URL, which is where the number is read from and so
 	// the likeliest thing to be pasted by mistake.
 	r.InstallationID = "https://github.com/organizations/fensberg/settings/installations/157746936"
-	err := ValidateRunner(&Config{Runner: r})
+	err := ValidateRunner(&Config{SourceControl: SourceControl{ForemanBot: r}})
 	if err == nil {
 		t.Fatal("expected an error when installation_id is the URL it was copied from")
 	}
@@ -72,7 +72,7 @@ func TestValidateRunner_InstallationIDMustBeNumeric(t *testing.T) {
 func TestValidateRunner_RawPEMIsRejected(t *testing.T) {
 	r := validRunner()
 	r.PrivateKey = samplePEM()
-	err := ValidateRunner(&Config{Runner: r})
+	err := ValidateRunner(&Config{SourceControl: SourceControl{ForemanBot: r}})
 	if err == nil {
 		t.Fatal("expected an error when the private key is a raw PEM rather than base64")
 	}
@@ -87,7 +87,7 @@ func TestValidateRunner_RawPEMIsRejected(t *testing.T) {
 func TestValidateRunner_DecodedContentMustBeAKey(t *testing.T) {
 	r := validRunner()
 	r.PrivateKey = base64.StdEncoding.EncodeToString([]byte("not a key at all"))
-	err := ValidateRunner(&Config{Runner: r})
+	err := ValidateRunner(&Config{SourceControl: SourceControl{ForemanBot: r}})
 	if err == nil {
 		t.Fatal("expected an error when the decoded value is not a PEM private key")
 	}
@@ -96,15 +96,15 @@ func TestValidateRunner_DecodedContentMustBeAKey(t *testing.T) {
 func TestValidateRunner_EmptyFieldsAreNamed(t *testing.T) {
 	for _, tc := range []struct {
 		field  string
-		mutate func(*Runner)
+		mutate func(*ForemanBot)
 	}{
-		{"app_id", func(r *Runner) { r.AppID = "" }},
-		{"installation_id", func(r *Runner) { r.InstallationID = "" }},
-		{"private_key", func(r *Runner) { r.PrivateKey = "" }},
+		{"app_id", func(r *ForemanBot) { r.AppID = "" }},
+		{"installation_id", func(r *ForemanBot) { r.InstallationID = "" }},
+		{"private_key", func(r *ForemanBot) { r.PrivateKey = "" }},
 	} {
 		r := validRunner()
 		tc.mutate(&r)
-		err := ValidateRunner(&Config{Runner: r})
+		err := ValidateRunner(&Config{SourceControl: SourceControl{ForemanBot: r}})
 		if err == nil {
 			t.Fatalf("expected an error when %s is empty", tc.field)
 		}

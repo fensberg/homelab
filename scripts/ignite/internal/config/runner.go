@@ -7,8 +7,13 @@ import (
 	"strings"
 )
 
-// Runner is the identity the cluster uses to register and retire its own
+// ForemanBot is the identity the cluster uses to register and retire its own
 // ephemeral CI runners.
+//
+// It is nested under source_control because that is what it authenticates to,
+// and it mirrors the vault, where the item is the forge and its sections are
+// the identities that use it. The key is snake_case like every other key in
+// this config, while the vault section it reads is spelled foreman-bot.
 //
 // It sits at the fleet plane rather than inside a site, for the same reason
 // the object storage account does: one GitHub App serves the estate, and a
@@ -20,7 +25,7 @@ import (
 // else, so the worst use of a stolen copy is registering or deleting runners.
 // They live in the vault anyway, because the config template is meant to show
 // the shape of the estate without naming it.
-type Runner struct {
+type ForemanBot struct {
 	AppID          string `json:"app_id"`
 	InstallationID string `json:"installation_id"`
 
@@ -41,7 +46,7 @@ type Runner struct {
 // which fails when the controller first tries to mint a token. Each of those
 // is expensive to diagnose and cheap to refuse.
 func ValidateRunner(cfg *Config) error {
-	r := cfg.Runner
+	r := cfg.SourceControl.ForemanBot
 
 	for _, f := range []struct {
 		name, value string
@@ -51,7 +56,7 @@ func ValidateRunner(cfg *Config) error {
 		{"private_key", r.PrivateKey},
 	} {
 		if strings.TrimSpace(f.value) == "" {
-			return fmt.Errorf("runner.%s is empty. All three runner fields must be present: the App cannot authenticate without its id, its installation and its key", f.name)
+			return fmt.Errorf("source_control.foreman_bot.%s is empty. All three runner fields must be present: the App cannot authenticate without its id, its installation and its key", f.name)
 		}
 	}
 
@@ -65,13 +70,13 @@ func ValidateRunner(cfg *Config) error {
 		{"installation_id", r.InstallationID, "the end of the installation's settings URL"},
 	} {
 		if _, err := strconv.ParseUint(strings.TrimSpace(f.value), 10, 64); err != nil {
-			return fmt.Errorf("runner.%s must be the number GitHub assigned, taken from %s - got %q", f.name, f.where, f.value)
+			return fmt.Errorf("source_control.foreman_bot.%s must be the number GitHub assigned, taken from %s - got %q", f.name, f.where, f.value)
 		}
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(r.PrivateKey))
 	if err != nil {
-		return fmt.Errorf(`runner.private_key is not base64.
+		return fmt.Errorf(`source_control.foreman_bot.private_key is not base64.
 
 The downloaded .pem is stored base64-encoded on a single line, because this
 config is a JSON template and a PEM's newlines would stop it parsing. Encode
@@ -84,7 +89,7 @@ it where the file already is rather than pasting it through a terminal:
 	// all decodes cleanly, so check that what came back is the thing we asked
 	// for rather than merely well-formed.
 	if !strings.Contains(string(decoded), "PRIVATE KEY") {
-		return fmt.Errorf("runner.private_key is valid base64 but does not decode to a PEM private key. Check that the encoded file was the .pem GitHub generated and not something else")
+		return fmt.Errorf("source_control.foreman_bot.private_key is valid base64 but does not decode to a PEM private key. Check that the encoded file was the .pem GitHub generated and not something else")
 	}
 
 	return nil
