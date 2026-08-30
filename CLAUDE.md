@@ -19,6 +19,39 @@ The three tiers below are also the epoch boundaries:
 | Abstraction | `modules/`      | Consumed by the tiers below      |
 | Workload    | `environments/` | GitHub Actions + Flux            |
 
+## Node, site, estate
+
+Three words that get used precisely here, smallest to largest. They are not
+interchangeable, and the boundaries between them are where isolation decisions
+get made.
+
+| Term       | Is                                                                                                                   | Shares                                              |
+| ---------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **Node**   | One Proxmox machine                                                                                                  | Everything with its site                            |
+| **Site**   | One cluster, one `/16` picked by its `octet`, its own control plane and its own database                             | The fleet plane with every other site in the estate |
+| **Estate** | Every repository under one GitHub organization, and the vault, break-glass key and object storage account they share | Nothing with another estate                         |
+
+**A site is an isolation boundary; an estate is a blast radius.** Sites do not
+share a database password, precisely so that compromising one does not reach
+the others - the backup recipient is the exception because it is a public key
+and sharing it costs nothing. But every site in an estate does share the fleet
+plane: one repository drives them all through Flux, one vault holds their
+secrets, one break-glass key decrypts their backups.
+
+**So a second estate is not a bigger version of a second site.** It is a second
+copy of the whole apparatus - its own organization, its own repositories, its
+own vault, its own break-glass key - and it is what you want when the isolation
+has to be total rather than merely per-cluster. Adding a client is normally a
+new _site_, which is the cheaper model and the one
+[`02-abstraction.md`](docs/epochs/02-abstraction.md) is designed around.
+
+Anything scoped to the estate rather than to one site is **organization-scoped**
+by construction, because the organization is what bounds the estate. That is
+the rule that decides where a shared credential belongs: `organization`,
+`source_control` and `state_backup` sit at the top of the config for the same
+reason the runner's GitHub App is installed on the organization rather than on
+a repository.
+
 ## Invariants
 
 These hold across all epochs. Changing one is an epoch-level decision that
@@ -71,6 +104,28 @@ belongs in an epoch record.
   references (repo key, install, `tailscale up`, route advertisement,
   re-auth handling), and that is where a real overlay migration would be
   spent. See `docs/epochs/02-abstraction.md`.
+- **Fail closed: prefer worthless over unreachable.** Wherever there is a
+  choice between making a compromise unlikely and making what is compromised
+  worthless, take worthless. A safeguard that lowers the probability of theft
+  is the weaker answer; one that lowers the value of the thing stolen is the
+  stronger, because it keeps holding after the safeguard has failed and after
+  whoever was relying on it has stopped paying attention.
+
+  This is the general form of the two rules below it, which are the same idea
+  applied to specific cases: state is encrypted at rest so a leaked state file,
+  WAL archive or base backup is ciphertext rather than credentials, and backups
+  are encrypted to an age _recipient_ rather than a passphrase so the
+  automation can write backups it is unable to read. Neither tries to prevent
+  the file being obtained. Both make obtaining it achieve nothing.
+
+  In practice this decides design arguments in a specific direction. Narrow
+  what a credential is permitted to do before hardening where it is kept: a
+  token whose worst use is noisy, reversible and contained is a better answer
+  than a better-guarded token that can do real damage. When two designs are
+  being compared, state each one's worst case and its actual likelihood rather
+  than asserting that either is secure - a worst case nobody has written down
+  is a worst case nobody has weighed.
+
 - **Deletion is not the security property; being worthless is.** Sterilizing
   the workspace assumes the delete happened and that nothing copied the file
   first. So the Backup phase never writes plaintext state to disk at all - it
