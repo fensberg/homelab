@@ -26,7 +26,7 @@ pull request at all.
 ## Where each tier lives, and why
 
 ```text
-scripts/ignite/**/*_test.go            unit + contract (Go)      — no dependencies
+scripts/steward/**/*_test.go            unit + contract (Go)      — no dependencies
 management/cluster/tests/*.tftest.hcl  unit (OpenTofu)           — native tofu test
 management/cluster/tests/fixtures/     the shared config corpus
 tests/go/repo/                         contract: the repo's own files (hermetic)
@@ -39,13 +39,13 @@ tests/coverage-baseline.json           the coverage floor
 keeps a test from outliving its subject, and it is why `config_test.go` is in
 `internal/config/` rather than here.
 
-**The contract tests are in `scripts/ignite` for a reason Go forces.**
-`internal/` is a per-module rule, so nothing outside `homelab/ignite` can
-import `homelab/ignite/internal/config` - including this module. The contract
+**The contract tests are in `scripts/steward` for a reason Go forces.**
+`internal/` is a per-module rule, so nothing outside `homelab/steward` can
+import `homelab/steward/internal/config` - including this module. The contract
 tests need that package, so they live there. They shell out to nothing and
 read the OpenTofu source as text.
 
-**`tests/go` is a separate Go module on purpose.** `scripts/ignite` has zero
+**`tests/go` is a separate Go module on purpose.** `scripts/steward` has zero
 external dependencies, and that is load-bearing: it is why the Validate lane
 needs no `go.sum` cache, why Trivy's `gomod` scan of the shipped binary has
 nothing to find, and why Dependabot never opens a pull request against the one
@@ -54,7 +54,7 @@ transitive modules. They stay over here.
 
 ## The config contract
 
-`management/cluster/registry.tf` and `scripts/ignite/internal/config/config.go`
+`management/cluster/registry.tf` and `scripts/steward/internal/config/config.go`
 implement the same rules twice - octet bounds, vendor attestation, node
 counts - so that a bad config is refused whether it arrives through the start
 button or through a bare `tofu plan`. Defence in depth is only defence while
@@ -188,11 +188,11 @@ the "test the detector" rule above.
 
 Three places, and the distinction is what each one can see:
 
-| Rule about                      | Lives in                                          |
-| ------------------------------- | ------------------------------------------------- |
-| The repository's own files      | `tests/go/repo/`                                  |
-| Two implementations of one rule | `scripts/ignite/internal/config/contract_test.go` |
-| A config that must be refused   | `management/cluster/registry.tf` (preconditions)  |
+| Rule about                      | Lives in                                           |
+| ------------------------------- | -------------------------------------------------- |
+| The repository's own files      | `tests/go/repo/`                                   |
+| Two implementations of one rule | `scripts/steward/internal/config/contract_test.go` |
+| A config that must be refused   | `management/cluster/registry.tf` (preconditions)   |
 
 `tests/go/repo` is the one to reach for when the rule is "the source must never
 do X" — it reads the source as text, so it can assert things no compiler or
@@ -223,7 +223,7 @@ tests, and nothing is left on disk that ignite would not have left there.
 > **A wrinkle worth knowing.** `ignite -phase render` sterilizes the workspace
 > on the way out, which deletes the config it just wrote. Pass
 > `-keep-on-failure` to stop it:
-> `./scripts/ignite/ignite -site site0 -phase render -keep-on-failure`.
+> `./scripts/steward/steward ignite -site site0 -phase render -keep-on-failure`.
 > The flag name describes the failure path rather than this one; see
 > `docs/ideas.md`.
 
@@ -237,8 +237,8 @@ hold the credentials.
 
 ```sh
 task destroy SITE=site0     # prints the command; does not run it
-./scripts/ignite/ignite -site site0 -destroy -whatif
-./scripts/ignite/ignite -site site0 -destroy -confirm site0
+./scripts/steward/steward ignite -site site0 -destroy -whatif
+./scripts/steward/steward destroy -site site0 -confirm site0
 ```
 
 ## The backup alarm

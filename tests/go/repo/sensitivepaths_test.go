@@ -157,7 +157,7 @@ func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 	// The files existing rules name explicitly. If a rule guards a file, a
 	// change to that file deserves the alarm.
 	for _, rel := range []string{
-		"scripts/ignite/internal/onepassword/probe.go",
+		"scripts/steward/internal/onepassword/probe.go",
 		"config/management.tpl.json",
 		"management/cluster/registry.tf",
 	} {

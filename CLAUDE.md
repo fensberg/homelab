@@ -192,7 +192,7 @@ One entrypoint, a Go program, run from the Linux workstation:
 ```sh
 ./scripts/install-dependencies.sh   # once
 task start SITE=site0               # builds ignite and prints the command to run it
-./scripts/ignite/ignite -site site0 # the actual run - always run this directly, never through task
+./scripts/steward/steward ignite -site site0 # the actual run - always run this directly, never through task
 ```
 
 **`task start` deliberately does not run ignite itself.** `task` intercepts
@@ -447,7 +447,7 @@ floor a pull request may not drop below and is free to leave alone.
   which is far cheaper than one only caught by running real infrastructure -
   the actual, repeated failure mode in this project's own history (the
   self-healing-import fix, the storage-sizing bug, the first full ignition run).
-  Go logic in `scripts/ignite` is tested with the standard library's own
+  Go logic in `scripts/steward` is tested with the standard library's own
   `testing` package - no third-party assertion library, because that module
   has no third-party anything, and keeping it that way is what stops a test
   dependency ever reaching the program that can destroy infrastructure. The

@@ -3,7 +3,7 @@
 A long-lived Linux machine on the Proxmox host, for day-to-day work.
 
 **This is not part of the homelab workflow.** It shares no configuration with
-`management/`, reads nothing from 1Password, and `scripts/ignite`
+`management/`, reads nothing from 1Password, and `scripts/steward`
 never touches it. That separation is the point: the ignition run destroys
 everything it owns when it fails, and a machine you code on for years must not
 sit inside that blast radius.

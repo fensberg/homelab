@@ -4,7 +4,7 @@
     "once through the HCL implementation of the invariants (registry.tf, driven",
     "by ../registry.tftest.hcl) and once through the Go implementation of the",
     "same invariants (config.ResolveSiteNetwork, driven by",
-    "scripts/ignite/internal/config/contract_test.go). Both must reach the same",
+    "scripts/steward/internal/config/contract_test.go). Both must reach the same",
     "verdict on every case, because both are gates a real deployment passes",
     "through and either one being wrong lets a bad config reach a provider.",
     "",

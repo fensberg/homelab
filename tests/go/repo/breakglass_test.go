@@ -68,7 +68,7 @@ reads is a value Terraform can write to state - and state is precisely what
 this key exists to make worthless. A state file containing the key that
 decrypts the backups of that state protects nothing.
 
-It is read by scripts/ignite in Go, through op, and only during a restore.`, rel, tok)
+It is read by scripts/steward in Go, through op, and only during a restore.`, rel, tok)
 		}
 		return nil
 	})
@@ -137,7 +137,7 @@ var mayReadBreakGlassIdentity = map[string]bool{
 
 func TestBreakGlassIdentityIsReadOnlyByTheRestorePath(t *testing.T) {
 	root := repoRoot(t)
-	dir := filepath.Join(root, "scripts", "ignite")
+	dir := filepath.Join(root, "scripts", "steward")
 	checked := 0
 
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -174,7 +174,7 @@ exists to deny.`, rel)
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walking scripts/ignite: %v", err)
+		t.Fatalf("walking scripts/steward: %v", err)
 	}
 	if checked < 10 {
 		t.Fatalf("only %d Go files were checked; the walk is wrong", checked)

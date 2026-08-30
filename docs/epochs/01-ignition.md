@@ -75,7 +75,7 @@ old clone or old habits could still hit.
 ### The entrypoint moves from PowerShell to Go
 
 **Chose:** port `Start-Homelab.ps1` and `Install-Dependencies.ps1` to a Go
-program (`scripts/ignite`) plus a plain bash bootstrap
+program (`scripts/steward`) plus a plain bash bootstrap
 (`scripts/install-dependencies.sh`), run from the Linux devbox
 `workstation/` provisions rather than from Windows.
 **Rejected:** Python, which needed no new toolchain (the devbox already runs
@@ -95,7 +95,7 @@ world-writable `/mnt/c` all existed solely because Ansible has no supported
 Windows control node. Ansible now runs natively, and `ansible.cfg` is picked
 up by the same ambient discovery `check-hypervisor` already relied on.
 
-The bootstrap script stayed bash on purpose: `scripts/ignite` needs Go to
+The bootstrap script stayed bash on purpose: `scripts/steward` needs Go to
 run, so whatever installs Go cannot itself depend on Go already being
 present.
 
@@ -111,7 +111,7 @@ render.
 ### `task start` builds ignite but does not run it
 
 **Chose:** `task start` runs `go build` and then prints the command to run
-`./scripts/ignite/ignite` directly. Every other ignite-invoking task
+`./scripts/steward/steward` directly. Every other ignite-invoking task
 (`render-secrets`, `verify`, `configure-hypervisor`, `backup-state`,
 `clean-secrets`) still execs the binary through `task` as normal.
 **Rejected:** the original design, where `task start` ran ignite directly,
@@ -1251,7 +1251,7 @@ has to carry that end to end with no manual step before this section can claim
 anything. What follows is what exists, written now while it is fresh, so that
 signing off is a matter of confirming rather than reconstructing.
 
-**Built.** A phased Go entrypoint (`scripts/ignite`) that renders secrets from
+**Built.** A phased Go entrypoint (`scripts/steward`) that renders secrets from
 1Password, prepares a Proxmox host with an idempotent Ansible playbook,
 provisions a Talos control plane, bootstraps Flux, migrates its own state into
 cluster Postgres, backs that state up encrypted to object storage, and wipes
