@@ -378,6 +378,62 @@ It is also the only thing in this program that reads the private half at all;
 move the local state aside, restore, and compare — the workstation is the
 disposable part, not the site.
 
+### Total loss: what a rebuild actually looks like
+
+The estate is gone - the hypervisor wiped, the cluster with it, and the state
+that described both. What survives is the vault, the repository, and the
+age-encrypted objects in R2.
+
+**It does not build itself out of nothing, and the gap is deliberate.** The
+Hypervisor phase needs a reachable Proxmox host with credentials in the vault,
+which is this project's documented honest floor: credentials issued by
+third-party consoles cannot themselves be automated. So the sequence starts
+with a human, and the claim worth making is "install Proxmox, put its
+credentials in 1Password, and run two commands" rather than "it rebuilds
+itself".
+
+```sh
+# 1. Install Proxmox on the replacement host by hand, and put its API token,
+#    hostname and IP in the vault under the same paths the config references.
+#    ignite -check-vault will tell you which are still missing, without
+#    printing any of them.
+task check-vault SITE=site0
+
+# 2. Bring the state back. This needs a sterilized workspace, which is the
+#    normal state of one after any successful run.
+./scripts/ignite/ignite -site site0 -restore
+
+# 3. Ignite on top of the restored state, not converge. Converge attaches to
+#    state in a cluster; there is no cluster yet. Ignition finds the restored
+#    state locally, refreshes it, sees that the VMs it describes are gone, and
+#    plans to create them.
+./scripts/ignite/ignite -site site0
+```
+
+**Restoring first is what makes it the same estate rather than a new one.** A
+clean ignition would work and would give you a functioning cluster - but a
+different one. `talos_machine_secrets` is a resource whose value _is_ the
+cluster's PKI: its CA keys, its etcd CA, its service-account key. It lives in
+state and nowhere else. Restore it and the cluster comes back with the identity
+it had; skip the restore and every kubeconfig, every machine certificate and
+every existing backup belongs to a cluster that no longer exists. The same
+argument applies more mildly to the object storage bucket and the tailnet key:
+recreating them is possible, adopting them is cheaper.
+
+**What this does not recover.** Anything created after the last state backup -
+the Backup phase runs at the end of every run, so the window is one run wide.
+Workload data is a separate story with a separate mechanism: CloudNativePG
+streams its own WAL and base backups to object storage, and those restore into
+a running cluster rather than rebuilding one. And the Proxmox host itself is
+outside all of this.
+
+> **Reasoned, not rehearsed.** Every step above follows from what the code
+> does, and no one has executed the sequence end to end. Ignition has also
+> never run against a factory-fresh Proxmox host, which is the same gap seen
+> from the other side. Until somebody does both, this is a plan rather than a
+> capability - and the project's own rule is that a check which has only been
+> reasoned about is not a check.
+
 ## What is deliberately not automated
 
 Layer 2 and Layer 3 are runbooks rather than code, for now. Automating a
