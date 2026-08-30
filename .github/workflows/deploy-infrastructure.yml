@@ -108,7 +108,7 @@ jobs:
     # what keeps an outside contributor's branch away from them - the same
     # boundary pr-validation.yml holds by being hermetic.
     runs-on: self-hosted
-    environment: staging
+    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
     permissions:
       contents: read
       pull-requests: write
@@ -293,7 +293,7 @@ jobs:
     needs: changes
     if: github.event_name == 'push' && needs.changes.outputs.management == 'true'
     runs-on: self-hosted
-    environment: staging
+    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
     permissions:
       contents: read
     timeout-minutes: 60
@@ -324,12 +324,17 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.7"
+          # No cache. scripts/steward has zero external dependencies, so the
+          # cache saves nothing - and on a self-hosted runner it persists
+          # between jobs, which is a poisoning surface for no benefit.
+          cache: false
 
       # Built and run directly, not through `task`: task does not proxy SIGINT
       # to the process it supervises (go-task/task#1408).
       - name: Converge
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SITE: ${{ matrix.site }}
         run: |
           go build -C scripts/steward -o steward .
-          ./scripts/steward/steward converge -site "${{ matrix.site }}"
+          ./scripts/steward/steward converge -site "$SITE"
