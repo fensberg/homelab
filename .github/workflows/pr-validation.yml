@@ -271,19 +271,19 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
-          # No go.sum: scripts/ignite has zero external dependencies, so
+          # No go.sum: scripts/steward has zero external dependencies, so
           # there is nothing meaningful to cache.
           cache: false
 
       - name: Validate Go
-        working-directory: scripts/ignite
+        working-directory: scripts/steward
         run: |
           go vet ./...
           go build -o /dev/null .
 
       # The test-only module is deliberately NOT vetted here. It has real
       # dependencies, so vetting it needs proxy.golang.org, and this lane's
-      # egress allowlist does not carry it - on purpose. scripts/ignite has
+      # egress allowlist does not carry it - on purpose. scripts/steward has
       # no dependencies, and a Validate lane that cannot reach a module proxy
       # at all is the cheapest possible proof of that. It is vetted in the
       # Test lane instead, which already has both the endpoints and the
@@ -294,7 +294,7 @@ jobs:
   # -----------------------------------------------------------------
   # Validate above proves the code resolves. This proves it does the right
   # thing: the Go unit tests, the config-contract tests that hold
-  # scripts/ignite and management/cluster/registry.tf to the same rules, the
+  # scripts/steward and management/cluster/registry.tf to the same rules, the
   # OpenTofu invariant tests, and the JavaScript/TypeScript tier.
   #
   # Everything here is hermetic - no 1Password, no hypervisor, no cluster.
@@ -354,11 +354,11 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           # tests/go is the only module here with dependencies to cache;
-          # scripts/ignite has none, so there is no go.sum of its own to key on.
+          # scripts/steward has none, so there is no go.sum of its own to key on.
           cache-dependency-path: tests/go/go.sum
 
       - name: Unit and contract tests (Go)
-        working-directory: scripts/ignite
+        working-directory: scripts/steward
         run: go test -covermode=atomic -coverprofile=coverage-go.out ./...
 
       # Every build tag, because `go vet ./...` compiles none of the tiers
@@ -378,7 +378,7 @@ jobs:
       # exactly where it found it. See tests/coverage-baseline.json.
       - name: Coverage gate (Go)
         run: |
-          pct="$(go -C scripts/ignite tool cover -func=coverage-go.out \
+          pct="$(go -C scripts/steward tool cover -func=coverage-go.out \
             | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
           bash scripts/coverage-gate.sh go "$pct"
 
@@ -465,7 +465,7 @@ jobs:
           # from mirror.gcr.io (redirected to storage.googleapis.com);
           # checkov checks pypi on startup; and the Go linters auto-download
           # a matching toolchain via GOPROXY/GOSUMDB whenever the image's
-          # bundled Go is older than go.mod's pinned version (scripts/ignite
+          # bundled Go is older than go.mod's pinned version (scripts/steward
           # pins go 1.26, deliberately - see the root CLAUDE.md - so this is
           # not a version to relax to dodge the network requirement).
           egress-policy: block

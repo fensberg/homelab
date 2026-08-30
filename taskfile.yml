@@ -8,7 +8,7 @@ vars:
   # the same release, and the point of running it locally is that it is.
   LINT_IMAGE: ghcr.io/super-linter/super-linter:slim-v8.7.0
 
-# The single entrypoint is scripts/ignite, a Go program. Every task below
+# The single entrypoint is scripts/steward, a Go program. Every task below
 # builds it fresh (fast, and always current source - no stale binary to
 # remember to rebuild) and then execs the binary directly, rather than
 # `go run`. That distinction matters here specifically: `go run`'s wrapper
@@ -25,7 +25,7 @@ tasks:
   build:
     desc: "Build the ignite binary"
     cmds:
-      - go build -C scripts/ignite -o ignite .
+      - go build -C scripts/steward -o steward .
 
   start:
     desc: "Builds ignite, then tells you to run it directly - see comment"
@@ -44,7 +44,7 @@ tasks:
     cmds:
       - task: build
       - 'echo "Built. Run directly so Ctrl-C can safely destroy and sterilize:"'
-      - 'echo "  ./scripts/ignite/ignite -site {{.SITE}}"'
+      - 'echo "  ./scripts/steward/steward ignite -site {{.SITE}}"'
 
   converge:
     desc: "Apply the config to an estate that already exists"
@@ -57,19 +57,19 @@ tasks:
     # running estate and a state file that still describes it.
     cmds:
       - task: build
-      - ./scripts/ignite/ignite -site {{.SITE}} -converge
+      - ./scripts/steward/steward converge -site {{.SITE}}
 
   plan:
     desc: "Show which phases would run, without running them"
     cmds:
       - task: build
-      - ./scripts/ignite/ignite -site {{.SITE}} -whatif
+      - ./scripts/steward/steward ignite -site {{.SITE}} -whatif
 
   render-secrets:
     desc: "Hydrate templates from 1Password"
     cmds:
       - task: build
-      - ./scripts/ignite/ignite -site {{.SITE}} -phase render
+      - ./scripts/steward/steward ignite -site {{.SITE}} -phase render
 
   push:
     desc: "Publish the current branch as GitHub-signed commits"
@@ -98,19 +98,19 @@ tasks:
     # it. Run it after editing the template or the vault.
     cmds:
       - task: build
-      - ./scripts/ignite/ignite -site {{.SITE}} -check-vault
+      - ./scripts/steward/steward check-vault -site {{.SITE}}
 
   verify:
     desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:
       - task: build
-      - ./scripts/ignite/ignite -site {{.SITE}} -phase verify
+      - ./scripts/steward/steward ignite -site {{.SITE}} -phase verify
 
   configure-hypervisor:
     desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
     cmds:
       - task: build
-      - ./scripts/ignite/ignite -site {{.SITE}} -phase hypervisor
+      - ./scripts/steward/steward ignite -site {{.SITE}} -phase hypervisor
 
   check-hypervisor:
     desc: "Dry-run the playbook: show what would change, change nothing"
@@ -122,7 +122,7 @@ tasks:
     desc: "Encrypt the current state and push it to Cloudflare R2"
     cmds:
       - task: build
-      - ./scripts/ignite/ignite -site {{.SITE}} -phase backup
+      - ./scripts/steward/steward ignite -site {{.SITE}} -phase backup
 
   fix:
     desc: "Format everything. Seconds, no Docker. Run this before you push."
@@ -147,8 +147,8 @@ tasks:
       - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
       - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
       - rm -f config/management.placeholder.json
-      - go vet -C scripts/ignite ./...
-      - go build -C scripts/ignite -o /dev/null .
+      - go vet -C scripts/steward ./...
+      - go build -C scripts/steward -o /dev/null .
       - go vet -C scripts/signedpush ./...
       - go build -C scripts/signedpush -o /dev/null .
       # Every tier, not just the untagged one. The integration, api and e2e
@@ -180,7 +180,7 @@ tasks:
   test:go:
     desc: "Go unit and contract tests for the ignition button and the push tool"
     cmds:
-      - go test -C scripts/ignite ./...
+      - go test -C scripts/steward ./...
       - go test -C scripts/signedpush ./...
 
   test:tofu:
@@ -225,8 +225,8 @@ tasks:
     desc: "Run the tests with coverage and check it against the committed floor"
     cmds:
       - |
-        go test -C scripts/ignite -covermode=atomic -coverprofile=coverage-go.out ./...
-        pct="$(go -C scripts/ignite tool cover -func=coverage-go.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
+        go test -C scripts/steward -covermode=atomic -coverprofile=coverage-go.out ./...
+        pct="$(go -C scripts/steward tool cover -func=coverage-go.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
         bash scripts/coverage-gate.sh go "$pct"
       - |
         if [ -d node_modules ]; then
@@ -296,7 +296,7 @@ tasks:
     cmds:
       - task: build
       - 'echo "Built. Run directly so Ctrl-C can wait for tofu to release its lock:"'
-      - 'echo "  ./scripts/ignite/ignite -site {{.SITE}} -destroy -confirm {{.SITE}}"'
+      - 'echo "  ./scripts/steward/steward destroy -site {{.SITE}} -confirm {{.SITE}}"'
       - 'echo ""'
       - 'echo "Add -whatif first if you want to see what that would do."'
 
@@ -308,10 +308,10 @@ tasks:
     # on disk at worst, which `task clean-secrets` removes.
     cmds:
       - task: build
-      - ./scripts/ignite/ignite -site {{.SITE}} -kubeconfig
+      - ./scripts/steward/steward kubeconfig -site {{.SITE}}
 
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
     cmds:
       - task: build
-      - ./scripts/ignite/ignite -site {{.SITE}} -phase sterilize
+      - ./scripts/steward/steward ignite -site {{.SITE}} -phase sterilize

@@ -28,7 +28,7 @@ rejected server-side.
 One path per line, reason after `#`:
 
 ```text
-scripts/ignite/internal/phases/health.go   # Gates Migrate on the cluster having actually converged.
+scripts/steward/internal/phases/health.go   # Gates Migrate on the cluster having actually converged.
 ```
 
 A trailing `/` means the directory and everything below it; no slash means that

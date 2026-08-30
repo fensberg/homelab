@@ -91,7 +91,7 @@ func guard(t *testing.T) string {
 func ignite(t *testing.T, site string, args ...string) error {
 	t.Helper()
 	root := harness.RepoRoot(t)
-	bin := filepath.Join(root, "scripts", "ignite", "ignite")
+	bin := filepath.Join(root, "scripts", "steward", "steward")
 
 	cmd := exec.Command(bin, append([]string{"-site", site}, args...)...)
 	cmd.Dir = root
@@ -102,7 +102,7 @@ func ignite(t *testing.T, site string, args ...string) error {
 
 func buildIgnite(t *testing.T) {
 	t.Helper()
-	build := exec.Command("go", "build", "-C", filepath.Join(harness.RepoRoot(t), "scripts", "ignite"), "-o", "ignite", ".")
+	build := exec.Command("go", "build", "-C", filepath.Join(harness.RepoRoot(t), "scripts", "steward"), "-o", "steward", ".")
 	build.Stdout, build.Stderr = os.Stdout, os.Stderr
 	require.NoError(t, build.Run(), "building ignite")
 }
@@ -153,7 +153,7 @@ State and secrets have been left in place on purpose - that is what the
 destroy path does when it cannot finish, because wiping them is how VMs get
 orphaned. Check Proxmox by hand, then re-run:
 
-    ./scripts/ignite/ignite -site %s -destroy -confirm %s`, err, site, site)
+    ./scripts/steward/steward destroy -site %s -confirm %s`, err, site, site)
 	}
 }
 
