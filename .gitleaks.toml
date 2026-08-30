@@ -1,0 +1,24 @@
+# Gitleaks config, read automatically from the repo root.
+#
+# The default ruleset, plus one allowlist. Everything else stays on: this file
+# exists to describe one directory, not to soften the scan.
+[extend]
+useDefault = true
+
+# The tofu test fixture corpus. Every value in it is fake by construction -
+# aws-shaped-key.json exists specifically to look like a real AWS key so that
+# registry.tf's shape check has something to reject.
+#
+# `generic-api-key` fires on the field name `private_key` regardless of what
+# the value is, so no amount of obviously-fake content quiets it; the fixture
+# has to carry that key because the config schema does, and the whole point of
+# the corpus is to mirror the schema's shape.
+#
+# Same reasoning, and the same directory, as the skip-path already in
+# .checkov.yaml: a secrets scanner cannot tell a fake credential from a real
+# one by shape alone. Nothing here is ever read as a credential - these
+# fixtures drive registry.tf's preconditions and config.ResolveSiteNetwork,
+# neither of which parses a key.
+[[allowlists]]
+description = "tofu test fixtures - fake by construction, and never parsed as credentials"
+paths = ['''management/cluster/tests/fixtures/.*\.json''']

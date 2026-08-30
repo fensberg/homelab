@@ -55,6 +55,33 @@ resource "terraform_data" "invariants" {
       error_message = "Site '${var.site}' has no hypervisor nodes. Add at least one to sites.${var.site}.hypervisor.nodes."
     }
 
+    # A node's identity must be its host octet, not its position in a list.
+    #
+    # With count the key is a position, so removing a node renumbers every node
+    # after it and OpenTofu resolves that as destroying and recreating each one
+    # - a running etcd member torn down for being third instead of fourth, with
+    # nothing calling `talosctl etcd remove-member` first. Keyed by host octet,
+    # replacing one node is one create and one destroy.
+    #
+    # Checked here rather than in a test because a test can only assert it for
+    # the fixtures somebody wrote; this asserts it for whatever config is
+    # actually being deployed, at plan time, before anything is built.
+    precondition {
+      condition     = alltrue([for k, v in local.control_plane : k == tostring(v.host_octet)])
+      error_message = "control_plane is not keyed by host octet, so a node's identity is its position rather than the machine. Removing one node would renumber and replace the others."
+    }
+
+    # One number per node, used three ways. They were three different numbers
+    # once - .100 was cp-01 was vm 1000 - and every cross-reference between
+    # Proxmox, kubectl and the network needed arithmetic.
+    precondition {
+      condition = alltrue([
+        for k, v in local.control_plane :
+        endswith(v.name, "-cp-${k}") && endswith(tostring(v.vm_id), k) && endswith(v.ip, ".${k}")
+      ])
+      error_message = "A node's name, VM id and address must all end in its host octet. They are meant to be one number read three ways."
+    }
+
     precondition {
       condition     = local.node_count >= 1
       error_message = "control_plane_count must be at least 1. Use an odd number: etcd needs a quorum, and an even count adds a member without adding a tiebreaker."

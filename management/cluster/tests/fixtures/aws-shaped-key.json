@@ -3,7 +3,12 @@
     "name": "Fixture Org"
   },
   "source_control": {
-    "repo_url": "https://example.invalid/fixture/repo"
+    "repo_url": "https://example.invalid/fixture/repo",
+    "foreman_bot": {
+      "app_id": "1234567",
+      "installation_id": "12345678",
+      "private_key": "not-a-key-these-fixtures-are-shape-only"
+    }
   },
   "object_storage": {
     "account_id": "fixture-account-id",

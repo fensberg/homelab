@@ -3,7 +3,7 @@ resource "talos_machine_secrets" "this" {
 }
 
 data "talos_machine_configuration" "controlplane" {
-  count              = local.node_count
+  for_each           = local.control_plane
   cluster_name       = local.cluster_name
   machine_type       = "controlplane"
   cluster_endpoint   = "https://${local.node_ips[0]}:6443"
@@ -37,7 +37,7 @@ data "talos_machine_configuration" "controlplane" {
       apiVersion = "v1alpha1"
       kind       = "LinkConfig"
       name       = "eth0"
-      addresses  = [{ address = "${local.node_ips[count.index]}/24" }]
+      addresses  = [{ address = "${each.value.ip}/24" }]
       # destination omitted: a default route is created for the gateway's
       # address family when none is specified (RouteConfig's own doc
       # comment, same source file as LinkConfig).
@@ -61,7 +61,7 @@ data "talos_machine_configuration" "controlplane" {
       apiVersion = "v1alpha1"
       kind       = "HostnameConfig"
       auto       = "off"
-      hostname   = local.vm_names[count.index]
+      hostname   = each.value.name
     }),
     # the storage provisioner's own data path (see compute.tf's second disk on each node).
     # !system_disk is Talos's documented selector for "whichever disk this
@@ -96,12 +96,12 @@ data "talos_machine_configuration" "controlplane" {
 }
 
 resource "talos_machine_configuration_apply" "control_plane" {
-  count                = local.node_count
+  for_each             = local.control_plane
   depends_on           = [proxmox_virtual_environment_vm.talos_cp]
   client_configuration = talos_machine_secrets.this.client_configuration
 
-  machine_configuration_input = data.talos_machine_configuration.controlplane[count.index].machine_configuration
-  node                        = local.node_ips[count.index]
+  machine_configuration_input = data.talos_machine_configuration.controlplane[each.key].machine_configuration
+  node                        = each.value.ip
 }
 
 resource "talos_machine_bootstrap" "this" {

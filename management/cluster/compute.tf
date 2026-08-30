@@ -139,15 +139,17 @@ resource "proxmox_virtual_environment_vm" "talos_template" {
 }
 
 resource "proxmox_virtual_environment_vm" "talos_cp" {
-  count     = local.node_count
-  name      = local.vm_names[count.index]
-  node_name = local.vm_placement[count.index]
-  vm_id     = local.vm_ids[count.index]
+  # Keyed by host octet, so a node's identity is the machine rather than its
+  # position - see the control_plane local in variables.tf.
+  for_each  = local.control_plane
+  name      = each.value.name
+  node_name = each.value.hypervisor
+  vm_id     = each.value.vm_id
 
   boot_order = ["virtio0"]
 
   clone {
-    vm_id = proxmox_virtual_environment_vm.talos_template[local.vm_placement[count.index]].vm_id
+    vm_id = proxmox_virtual_environment_vm.talos_template[each.value.hypervisor].vm_id
     full  = true
   }
 
@@ -197,7 +199,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   }
 
   smbios {
-    serial       = local.vm_names[count.index]
+    serial       = each.value.name
     manufacturer = "Sidero Labs"
     product      = "Talos Linux"
   }
@@ -211,7 +213,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
 
     ip_config {
       ipv4 {
-        address = "${local.node_ips[count.index]}/24"
+        address = "${each.value.ip}/24"
         gateway = local.node_gateway
       }
     }
