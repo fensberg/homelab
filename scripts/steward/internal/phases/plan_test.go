@@ -16,10 +16,10 @@ const planWithSecrets = `{
   "resource_changes": [
     {"address":"proxmox_virtual_environment_vm.talos_cp[3]","type":"proxmox_virtual_environment_vm",
      "change":{"actions":["create"],"before":null,
-       "after":{"name":"sheridan-cp-04","ipv4_addresses":["10.10.10.103"],"description":"secret-value-here"}}},
+       "after":{"name":"example-cp-04","ipv4_addresses":["192.0.2.103"],"description":"secret-value-here"}}},
     {"address":"proxmox_virtual_environment_vm.talos_cp[4]","type":"proxmox_virtual_environment_vm",
      "change":{"actions":["create"],"before":null,
-       "after":{"name":"sheridan-cp-05"}}},
+       "after":{"name":"example-cp-05"}}},
     {"address":"talos_machine_configuration_apply.control_plane[0]","type":"talos_machine_configuration_apply",
      "change":{"actions":["update"],"before":{"x":"old-token"},"after":{"x":"new-token"}}},
     {"address":"tailscale_tailnet_key.this","type":"tailscale_tailnet_key",
@@ -57,7 +57,7 @@ func TestSummarisePlan_NeverLeaksAValue(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, secret := range []string{
-		"sheridan-cp-04", "sheridan-cp-05", // the site's real name
+		"example-cp-04", "example-cp-05", // a site name
 		"10.10.10.103", // addressing
 		"secret-value-here", "old-token", "new-token",
 		"tskey-abc", "tskey-def", "hunter2",

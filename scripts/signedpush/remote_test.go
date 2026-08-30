@@ -10,18 +10,18 @@ func TestParseRemote(t *testing.T) {
 		name, url, owner, repo string
 		wantErr                bool
 	}{
-		{name: "https with .git", url: "https://github.com/fensberg/homelab.git", owner: "fensberg", repo: "homelab"},
-		{name: "https without .git", url: "https://github.com/fensberg/homelab", owner: "fensberg", repo: "homelab"},
-		{name: "trailing slash", url: "https://github.com/fensberg/homelab/", owner: "fensberg", repo: "homelab"},
-		{name: "ssh scp-style", url: "git@github.com:fensberg/homelab.git", owner: "fensberg", repo: "homelab"},
-		{name: "ssh url form", url: "ssh://git@github.com/fensberg/homelab.git", owner: "fensberg", repo: "homelab"},
+		{name: "https with .git", url: "https://github.com/example-org/homelab.git", owner: "example-org", repo: "homelab"},
+		{name: "https without .git", url: "https://github.com/example-org/homelab", owner: "example-org", repo: "homelab"},
+		{name: "trailing slash", url: "https://github.com/example-org/homelab/", owner: "example-org", repo: "homelab"},
+		{name: "ssh scp-style", url: "git@github.com:example-org/homelab.git", owner: "example-org", repo: "homelab"},
+		{name: "ssh url form", url: "ssh://git@github.com/example-org/homelab.git", owner: "example-org", repo: "homelab"},
 		// A token embedded in the remote is a credential this program must not
 		// carry into an API call or an error message.
-		{name: "https with credentials", url: "https://x-access-token:secret@github.com/fensberg/homelab.git", owner: "fensberg", repo: "homelab"},
-		{name: "a repo name containing a dot", url: "https://github.com/fensberg/home.lab.git", owner: "fensberg", repo: "home.lab"},
+		{name: "https with credentials", url: "https://x-access-token:secret@github.com/example-org/homelab.git", owner: "example-org", repo: "homelab"},
+		{name: "a repo name containing a dot", url: "https://github.com/example-org/home.lab.git", owner: "example-org", repo: "home.lab"},
 
-		{name: "not github", url: "https://gitlab.com/fensberg/homelab.git", wantErr: true},
-		{name: "no repo", url: "https://github.com/fensberg", wantErr: true},
+		{name: "not github", url: "https://gitlab.com/example-org/homelab.git", wantErr: true},
+		{name: "no repo", url: "https://github.com/example-org", wantErr: true},
 		{name: "empty", url: "", wantErr: true},
 	}
 

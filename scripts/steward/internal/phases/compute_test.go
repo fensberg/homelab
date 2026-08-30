@@ -7,11 +7,11 @@ import (
 	"homelab/steward/internal/config"
 )
 
-var probeNode = config.Node{Hostname: "martha", IP: "192.0.2.10"}
+var probeNode = config.Node{Hostname: "hv-01", IP: "192.0.2.10"}
 
 func TestDatastoreContentURL(t *testing.T) {
 	got := datastoreContentURL(probeNode)
-	want := "https://192.0.2.10:8006/api2/json/nodes/martha/storage/local-iso/content"
+	want := "https://192.0.2.10:8006/api2/json/nodes/hv-01/storage/local-iso/content"
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
@@ -27,7 +27,7 @@ func TestDatastoreFileURL_EscapesTheVolumeID(t *testing.T) {
 	if strings.HasSuffix(got, "/local-iso:iso/talos-v1.13.8-nocloud-amd64.iso") {
 		t.Fatal("the volume id was not escaped; its slash splits the path segment")
 	}
-	want := "https://192.0.2.10:8006/api2/json/nodes/martha/storage/local-iso/content/" +
+	want := "https://192.0.2.10:8006/api2/json/nodes/hv-01/storage/local-iso/content/" +
 		"local-iso:iso%2Ftalos-v1.13.8-nocloud-amd64.iso"
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)

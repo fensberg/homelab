@@ -9,7 +9,7 @@ import (
 
 func validSite() Site {
 	return Site{
-		Name:              "Sheridan Road Office",
+		Name:              "North Street Office",
 		Octet:             10,
 		ControlPlaneCount: 3,
 		Hypervisor: Hypervisor{
@@ -41,7 +41,7 @@ func TestResolveSiteNetwork_HappyPath(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if net.Name != "sheridan-road-office" {
+	if net.Name != "north-street-office" {
 		t.Errorf("Name = %q, want slugified site name", net.Name)
 	}
 	if net.SiteCIDR != "10.10.0.0/16" {
@@ -57,7 +57,7 @@ func TestResolveSiteNetwork_HappyPath(t *testing.T) {
 	if strings.Join(net.NodeIPs, ",") != strings.Join(wantIPs, ",") {
 		t.Errorf("NodeIPs = %v, want %v", net.NodeIPs, wantIPs)
 	}
-	wantNames := []string{"sheridan-road-office-cp-01", "sheridan-road-office-cp-02", "sheridan-road-office-cp-03"}
+	wantNames := []string{"north-street-office-cp-01", "north-street-office-cp-02", "north-street-office-cp-03"}
 	if strings.Join(net.VMNames, ",") != strings.Join(wantNames, ",") {
 		t.Errorf("VMNames = %v, want %v", net.VMNames, wantNames)
 	}
@@ -208,7 +208,7 @@ func writeJSON(t *testing.T, dir, name, content string) string {
 func TestAssertRenderedConfigComplete_AllResolved(t *testing.T) {
 	dir := t.TempDir()
 	tpl := writeJSON(t, dir, "tpl.json", `{"organization":{"name":"{{ op://homelab/organization/name }}"}}`)
-	rendered := writeJSON(t, dir, "rendered.json", `{"organization":{"name":"Fensberg"}}`)
+	rendered := writeJSON(t, dir, "rendered.json", `{"organization":{"name":"Example Org"}}`)
 
 	if err := AssertRenderedConfigComplete(tpl, rendered); err != nil {
 		t.Fatalf("unexpected error: %v", err)
