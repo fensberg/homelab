@@ -71,6 +71,28 @@ belongs in an epoch record.
   references (repo key, install, `tailscale up`, route advertisement,
   re-auth handling), and that is where a real overlay migration would be
   spent. See `docs/epochs/02-abstraction.md`.
+- **Fail closed: prefer worthless over unreachable.** Wherever there is a
+  choice between making a compromise unlikely and making what is compromised
+  worthless, take worthless. A safeguard that lowers the probability of theft
+  is the weaker answer; one that lowers the value of the thing stolen is the
+  stronger, because it keeps holding after the safeguard has failed and after
+  whoever was relying on it has stopped paying attention.
+
+  This is the general form of the two rules below it, which are the same idea
+  applied to specific cases: state is encrypted at rest so a leaked state file,
+  WAL archive or base backup is ciphertext rather than credentials, and backups
+  are encrypted to an age _recipient_ rather than a passphrase so the
+  automation can write backups it is unable to read. Neither tries to prevent
+  the file being obtained. Both make obtaining it achieve nothing.
+
+  In practice this decides design arguments in a specific direction. Narrow
+  what a credential is permitted to do before hardening where it is kept: a
+  token whose worst use is noisy, reversible and contained is a better answer
+  than a better-guarded token that can do real damage. When two designs are
+  being compared, state each one's worst case and its actual likelihood rather
+  than asserting that either is secure - a worst case nobody has written down
+  is a worst case nobody has weighed.
+
 - **Deletion is not the security property; being worthless is.** Sterilizing
   the workspace assumes the delete happened and that nothing copied the file
   first. So the Backup phase never writes plaintext state to disk at all - it
