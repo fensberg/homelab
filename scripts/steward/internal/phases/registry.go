@@ -19,10 +19,27 @@ var AllPhases = []string{
 // hypervisor is absent because it is slow, reboots-adjacent and unnecessary
 // for a change that does not add a hypervisor; run it on its own with
 // -phase hypervisor when one is added.
+// PlanPhases answers "what would a converge do" and changes nothing.
+//
+// It attaches to the estate's state like a converge does, because a plan
+// against no state is a plan to build everything - and then stops. No overlay,
+// because minting a tailnet key is a side effect and this sequence has none.
+var PlanPhases = []string{
+	"render", "verify", "attach", "plan", "sterilize",
+}
+
 var ConvergePhases = []string{
 	"render", "overlay", "verify", "attach",
 	"compute", "cluster", "health", "backup", "sterilize",
 }
+
+// Sequences is every sequence there is.
+//
+// Declared once so the contract test cannot go stale: a fourth sequence added
+// without touching this list would be invisible to the check that every
+// dispatched phase belongs to one, which is the check that stops a phase
+// existing that nothing can ever run.
+var Sequences = [][]string{AllPhases, ConvergePhases, PlanPhases}
 
 // Run dispatches a single phase by name.
 func Run(ctx *run.Context, name string) error {
@@ -37,6 +54,8 @@ func Run(ctx *run.Context, name string) error {
 		return Verify(ctx)
 	case "attach":
 		return Attach(ctx)
+	case "plan":
+		return Plan(ctx)
 	case "compute":
 		return Compute(ctx)
 	case "cluster":

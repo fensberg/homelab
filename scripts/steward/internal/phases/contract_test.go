@@ -134,20 +134,20 @@ func TestContract_EveryPhaseInTheSequenceDispatches(t *testing.T) {
 	// them - attach only ever runs in a converge, migrate only in an ignition
 	// - so the contract is that dispatch and the union agree exactly, in both
 	// directions.
-	for _, seq := range [][]string{AllPhases, ConvergePhases} {
+	for _, seq := range Sequences {
 		for _, name := range seq {
 			if !dispatched[name] {
 				t.Errorf("phase %q is in a sequence but has no case arm in registry.go: `-phase %s` would panic", name, name)
 			}
 		}
 	}
-	for _, seq := range [][]string{AllPhases, ConvergePhases} {
+	for _, seq := range Sequences {
 		for _, name := range seq {
 			delete(dispatched, name)
 		}
 	}
 	for name := range dispatched {
-		t.Errorf("registry.go dispatches phase %q, which is in neither AllPhases nor ConvergePhases: it can never run as part of a sequence and `-phase %s` is undocumented", name, name)
+		t.Errorf("registry.go dispatches phase %q, which belongs to no sequence in Sequences: it can never run as part of a sequence and `-phase %s` is undocumented", name, name)
 	}
 }
 

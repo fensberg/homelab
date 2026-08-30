@@ -156,7 +156,7 @@ a checkbox somewhere:
 
 ### The vault check cannot disclose a secret
 
-`repo/vaultcheck_test.go` guards `ignite -check-vault`. That command's whole
+`repo/vaultcheck_test.go` guards `steward check-vault`. That command's whole
 value is that it is safe to run and safe to share — it reports `ok` / `empty` /
 `missing` per reference, and the output is meant to be pasteable into an issue
 or a pull request.
@@ -220,14 +220,14 @@ the start button reads. So the setup step is `task render-secrets` and the
 teardown is `task clean-secrets` - no separate secret plumbing exists for
 tests, and nothing is left on disk that ignite would not have left there.
 
-> **A wrinkle worth knowing.** `ignite -phase render` sterilizes the workspace
+> **A wrinkle worth knowing.** `steward ignite -phase render` sterilizes the workspace
 > on the way out, which deletes the config it just wrote. Pass
 > `-keep-on-failure` to stop it:
 > `./scripts/steward/steward ignite -site site0 -phase render -keep-on-failure`.
 > The flag name describes the failure path rather than this one; see
 > `docs/ideas.md`.
 
-**Tearing an estate down** is `ignite -destroy`, which is what the e2e tier
+**Tearing an estate down** is `steward destroy`, which is what the e2e tier
 calls and what a human should call. It renders the config first - that is the
 credential check, not a formality: without a 1Password session there is no
 Proxmox token and no hypervisor endpoint, so somebody with a terminal and a
@@ -323,11 +323,11 @@ disposable second estate looked likely. It is not coming, and that guard was
 not making this tier safer; it was making it unrunnable, which is worse than
 not having the tier at all. The estate here is disposable by design, so the
 risk worth guarding is destroying the _wrong_ one, and naming the site twice is
-exactly what `ignite -destroy` asks of a human. See `docs/ideas.md`.
+exactly what `steward destroy` asks of a human. See `docs/ideas.md`.
 
 It covers the whole ignition sequence - Render through Backup, including
 moving state off local disk into cluster Postgres and pushing an encrypted
-copy off-site. Teardown runs `ignite -destroy`, the same supported entrypoint
+copy off-site. Teardown runs `steward destroy`, the same supported entrypoint
 a human uses, rather than driving `tofu destroy` itself: a test that tore down
 its own way would be exercising the test's teardown instead of the one that
 has to work at 2am.

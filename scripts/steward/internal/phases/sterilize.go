@@ -53,6 +53,10 @@ func sterilizeTargets(ctx *run.Context) []string {
 		// -backend-config explicitly with -reconfigure, so nothing relies on
 		// the cached record.
 		ctx.TofuBackendRecord,
+
+		// A saved plan is a file of resource attributes. Listed here for the
+		// run that fails before the Plan phase removes it itself.
+		ctx.TofuPlanFile,
 	}
 }
 

@@ -557,7 +557,7 @@ that does not exist yet, so the vault moves first:
    leave the per-site `bucket`, `access_key_id`, `secret_access_key` alone.
 2. Move the two fields in `config/management.tpl.json`, `config.go` and every
    fixture; `registry.tf` and `contract_test.go` are the pair that must agree.
-3. `ignite -check-vault` confirms the new references resolve before any run
+3. `steward check-vault` confirms the new references resolve before any run
    commits to anything - which is the case this check was built for.
 
 **Buckets stay per-site, and gain a human step.** One bucket per site is the
@@ -612,7 +612,7 @@ run that has already lost the private half still ends in `Ignition complete`.
 And the pair is stored by hand, once, for the whole estate, which means
 nothing in this repository would notice the two halves drifting apart.
 
-**Do not use `ignite -restore` as the drill.** It pushes what it recovers
+**Do not use `steward restore` as the drill.** It pushes what it recovers
 through the encrypted backend, and after the Migrate phase that backend is the
 live cluster's Postgres. The drill above is read-only by construction: it never
 runs `ignite` and it touches nothing the estate is using. Decrypt into a
@@ -1155,7 +1155,7 @@ estate. `deploy-infrastructure.yml` could not cover it either: it is
 path-filtered to `environments/**` and `modules/**` deliberately, so ignition
 changes never trigger it.
 
-**Chose:** `ignite -converge`, a second sequence rather than a flag on the
+**Chose:** `steward converge`, a second sequence rather than a flag on the
 first.
 **Because:** the two runs differ in what they may assume. Ignition may assume
 nothing exists; convergence may assume everything does. Expressing that as
@@ -1547,7 +1547,7 @@ bring it back.
   "does this reference resolve" test necessarily reads the secret. The
   handling is to make the value unreachable rather than to be careful with it:
   `onepassword.Probe` returns a status and never the value, so
-  `ignite -check-vault` cannot print one. See "The agent's boundary is
+  `steward check-vault` cannot print one. See "The agent's boundary is
   enforced, not agreed" for the same reasoning applied to credentials.
 - **The agent cannot run `task lint` at all**, because Super-Linter is a
   Docker image and the `claude` user is deliberately not in the `docker`

@@ -18,6 +18,7 @@ on:
     paths:
       - "environments/**/infrastructure/**"
       - "modules/infrastructure/**"
+      - "management/**"
   push:
     branches: [main]
     tags: ["v*"]
@@ -41,13 +42,19 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------
-  # ROUTING - which tier did this push touch? Hermetic, so it stays off the
-  # self-hosted runner: deciding what to run needs no credentials, and giving
-  # it any would widen what a mistake here reaches.
+  # ROUTING - which tier does this change touch, and which sites exist?
+  #
+  # Runs on both events. The site list comes from the config and never
+  # depended on the diff; the classification does, and a pull request needs
+  # it just as much as a push - without it, a management-only PR would plan
+  # a workload directory that the change never touched.
+  #
+  # Hermetic, so it stays off the self-hosted runner: deciding what to run
+  # needs no credentials, and giving it any would widen what a mistake here
+  # reaches.
   # ---------------------------------------------------------------------
   changes:
     name: What changed
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       management: ${{ steps.filter.outputs.management }}
@@ -57,27 +64,37 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          # Deep enough to diff a pull request against its base. This
+          # repository is small; the cost is seconds and the alternative is
+          # guessing at a merge base.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Classify the change
         id: filter
         env:
+          EVENT: ${{ github.event_name }}
           REF_TYPE: ${{ github.ref_type }}
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           # A tag is always a workload-tier production release. management/ is
           # never released by tag - the estate has one version, the running one.
-          if [ "${REF_TYPE}" = "tag" ]; then
+          if [ "${EVENT}" = "push" ] && [ "${REF_TYPE}" = "tag" ]; then
             echo "management=false" >> "$GITHUB_OUTPUT"
             echo "workload=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if ! files="$(git diff --name-only "${BEFORE}" "${AFTER}" 2>/dev/null)"; then
+
+          if [ "${EVENT}" = "pull_request" ]; then
+            files="$(git diff --name-only "${PR_BASE}" "${PR_HEAD}")"
+          elif ! files="$(git diff --name-only "${PUSH_BEFORE}" "${PUSH_AFTER}" 2>/dev/null)"; then
             files="$(git diff --name-only HEAD~1 HEAD)"
           fi
+
           echo "changed files:"; echo "${files}"
           mgmt=false; work=false
           grep -qE '^(management/|config/management\.tpl\.json$)' <<<"${files}" && mgmt=true
@@ -100,9 +117,11 @@ jobs:
   # ---------------------------------------------------------------------
   plan:
     name: Plan
+    needs: changes
     if: >-
       github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.changes.outputs.workload == 'true'
     # A fork's pull request must never reach this job. It runs on the
     # self-hosted runner with real credentials, and the condition above is
     # what keeps an outside contributor's branch away from them - the same
@@ -338,3 +357,72 @@ jobs:
         run: |
           go build -C scripts/steward -o steward .
           ./scripts/steward/steward converge -site "$SITE"
+
+  # ---------------------------------------------------------------------
+  # PLAN THE ESTATE - on a pull request touching management/.
+  # Reads real state, changes nothing. Structure only, never a value:
+  # this comment is world-readable.
+  # ---------------------------------------------------------------------
+  plan-estate:
+    name: Plan ${{ matrix.site }}
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.changes.outputs.management == 'true'
+    runs-on: self-hosted
+    environment: management
+    permissions:
+      contents: read
+      pull-requests: write
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        site: ${{ fromJSON(needs.changes.outputs.sites) }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.7"
+          cache: false
+
+      - name: Plan
+        id: plan
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SITE: ${{ matrix.site }}
+        run: |
+          go build -C scripts/steward -o steward .
+          ./scripts/steward/steward plan -site "$SITE" | tee plan-summary.txt
+
+      - name: Comment the plan on the pull request
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('plan-summary.txt', 'utf8');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: [
+                '### Your steward checking in',
+                '',
+                'This is how the estate changes if this merges. Addresses and actions only — never a value.',
+                '',
+                '```',
+                summary.trim(),
+                '```',
+              ].join('\n'),
+            });

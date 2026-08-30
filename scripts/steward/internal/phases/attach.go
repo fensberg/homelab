@@ -56,7 +56,7 @@ deleting it would strand whatever it describes`, ctx.LocalState)
 
 Converge applies a change to a running estate, so the cluster holding its state
 has to be up. If the cluster is gone, this is a restore rather than a converge:
-see 'ignite -restore'`, host, port)
+see 'steward restore'`, host, port)
 	}
 
 	// -reconfigure, never -migrate-state. Migration is the verb that copies
@@ -91,7 +91,7 @@ running. Nothing here can tell which of those two situations you are in, so it
 stops.
 
 If this really is a new estate, run ignition rather than converge. If it is not,
-the state has been lost and belongs in 'ignite -restore'`)
+the state has been lost and belongs in 'steward restore'`)
 	}
 
 	run.Ok(fmt.Sprintf("attached to existing state: %d resource(s)", n))
