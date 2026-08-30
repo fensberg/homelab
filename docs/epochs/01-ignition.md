@@ -1194,6 +1194,39 @@ it. That is the remaining half of this epoch: the runner exists now, and
 at which point changing `control_plane_count` and merging is the whole
 operation.
 
+### Rebuilding from a total loss is a plan, not yet a capability
+
+**The question that produced this:** if there were zero existing
+infrastructure, does the estate build itself back out of R2?
+
+**No, and two separate things are in the way.** The first is the honest floor
+this epoch already records - the Hypervisor phase needs a reachable Proxmox
+host with credentials in the vault, and a credential issued by a third-party
+console cannot be automated into existence. So a rebuild starts with a human
+installing Proxmox. The claim worth making is "install Proxmox, put its
+credentials in the vault, run two commands", and it is a good claim; it is just
+not "out of nothing".
+
+The second is that `restore` puts state back and stops, by design - what to do
+next is a judgement call. That leaves the actual rebuild sequence unwritten
+anywhere, which is how a recovery path rots. It is now a runbook in
+[`docs/state-and-secret-rotation.md`](../state-and-secret-rotation.md).
+
+**Restore before ignition, and the reason is `talos_machine_secrets`.** A clean
+ignition on fresh hardware works and produces a functioning cluster - a
+different one. That resource's value _is_ the cluster's PKI, it lives in state
+and nowhere else, and losing it means every kubeconfig, machine certificate and
+prior backup belongs to a cluster that no longer exists. Restoring first adopts
+the identity rather than minting a new one. The bucket and the tailnet key make
+the same argument more mildly.
+
+**None of it has been run.** The sequence follows from what the code does and
+that is all it does. Ignition has also never run against a factory-fresh
+Proxmox host - the same gap seen from the other side, already in Deferred. The
+drill is epoch 01 scope rather than a later nicety, because the estate is
+disposable exactly once and that property expires the moment something worth
+keeping is on it.
+
 ## Acceptance test: change 3 to 5 and watch it land
 
 The epoch is signed off when this works, end to end, with no manual step in
@@ -1284,6 +1317,12 @@ bring it back.
 - **`insecure = true` on the Proxmox provider** — trigger: a trusted cert.
 - **QEMU guest agent** is off deliberately; Talos will not report ready
   without the extension in the Factory schematic.
+- **The total-loss drill: restore, then ignite, on a wiped host.** The
+  sequence is written up in `docs/state-and-secret-rotation.md` and has never
+  been executed. It is the other half of the backup drill already recorded
+  here: that one proved the object decrypts, this one proves it rebuilds.
+  Trigger: **now, while the estate is still disposable** - this is epoch 01
+  scope, not a later nicety.
 - **A CNI that implements `NetworkPolicy`.** Talos's default is Flannel,
   which does not, so a policy object here is accepted and never evaluated.
   This is the prerequisite for isolating runner workloads from the estate,
