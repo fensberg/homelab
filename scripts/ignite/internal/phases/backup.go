@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -63,8 +62,34 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	stamp := time.Now().Format("20060102-150405")
 	// Only the ciphertext ever becomes a file. The plaintext is held in
 	// memory and piped straight into age.
-	tmpCipher := filepath.Join(os.TempDir(), fmt.Sprintf("tofu-state-%s.json.age", stamp))
+	//
+	// Created here rather than named here, and the difference is the point.
+	// A path built from the timestamp is predictable, and it lands in a
+	// directory shared with every other account on the machine - including
+	// the unprivileged one this estate deliberately confines an agent to.
+	// Worse, age creates its --output file honouring the caller's umask, so
+	// under either common default (0022 or 0002) the encrypted state of the
+	// entire estate arrived world-readable. Ciphertext is not an excuse: handing any
+	// account an offline copy of the estate's state is precisely what the
+	// privilege boundary exists to prevent, and it only has to hold until
+	// the recipient half leaks once. os.CreateTemp gives an unpredictable
+	// name at 0600, which is what the two other temp files in this program
+	// (the kubeconfig in health.go, the identity in restore.go) already do.
+	tmp, err := os.CreateTemp("", fmt.Sprintf("tofu-state-%s-*.json.age", stamp))
+	if err != nil {
+		return fmt.Errorf("creating the temporary ciphertext file: %w", err)
+	}
+	tmpCipher := tmp.Name()
 	defer os.Remove(tmpCipher)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return fmt.Errorf("securing the temporary ciphertext file: %w", err)
+	}
+	// Closed, not written through: age opens the path itself. Truncating an
+	// existing file leaves its mode alone, so the 0600 set here survives.
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing the temporary ciphertext file: %w", err)
+	}
 
 	// Pull from whichever backend is currently authoritative. After the
 	// Migrate phase that is Postgres, which is exactly what we want to back
