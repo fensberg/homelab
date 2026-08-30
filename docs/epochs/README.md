@@ -17,6 +17,8 @@ earlier epoch whose decisions you are about to touch.
   storage. Declared in `clusters/management/`.
 - **Not yet built:** `modules/` and `environments/` — both referenced by
   `README.md` and by the path filters in `deploy-infrastructure.yml`.
+- **Not measured:** nothing watches the estate between runs. No metrics, no
+  alerts, no scaling thresholds — see epoch 04.
 - **Who can do what:** Claude runs unprivileged, with no vault access and a
   GitHub identity that can push a branch and nothing else — it proposes, a
   human merges. Enforced by the OS, the absent 1Password account and a
@@ -26,11 +28,12 @@ earlier epoch whose decisions you are about to touch.
 
 ## Epochs
 
-| #   | Name        | Tier / path     | Status      | Record                                 |
-| --- | ----------- | --------------- | ----------- | -------------------------------------- |
-| 01  | Ignition    | `management/`   | In progress | [01-ignition.md](01-ignition.md)       |
-| 02  | Abstraction | `modules/`      | Not started | [02-abstraction.md](02-abstraction.md) |
-| 03  | Workload    | `environments/` | Not started | [03-workload.md](03-workload.md)       |
+| #   | Name          | Tier / path                           | Status      | Record                                     |
+| --- | ------------- | ------------------------------------- | ----------- | ------------------------------------------ |
+| 01  | Ignition      | `management/`                         | In progress | [01-ignition.md](01-ignition.md)           |
+| 02  | Abstraction   | `modules/`                            | Not started | [02-abstraction.md](02-abstraction.md)     |
+| 03  | Workload      | `environments/`                       | Not started | [03-workload.md](03-workload.md)           |
+| 04  | Observability | `clusters/management/infrastructure/` | Not started | [04-observability.md](04-observability.md) |
 
 ## Working an epoch
 
