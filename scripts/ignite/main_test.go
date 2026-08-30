@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 // is an orphaned VM or a leaked secret.
 
 func TestSelectPhases_DefaultsToTheFullSequence(t *testing.T) {
-	got, err := selectPhases("", "")
+	got, err := selectPhases("", "", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -29,7 +30,7 @@ func TestSelectPhases_DefaultsToTheFullSequence(t *testing.T) {
 // shared backing array would let one run's flag mutate the package-level
 // sequence for everything after it.
 func TestSelectPhases_DoesNotAliasThePackageSequence(t *testing.T) {
-	got, err := selectPhases("", "")
+	got, err := selectPhases("", "", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -41,7 +42,7 @@ func TestSelectPhases_DoesNotAliasThePackageSequence(t *testing.T) {
 }
 
 func TestSelectPhases_SinglePhase(t *testing.T) {
-	got, err := selectPhases("compute", "")
+	got, err := selectPhases("compute", "", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,7 +52,7 @@ func TestSelectPhases_SinglePhase(t *testing.T) {
 }
 
 func TestSelectPhases_FromIsInclusiveAndRunsToTheEnd(t *testing.T) {
-	got, err := selectPhases("", "migrate")
+	got, err := selectPhases("", "migrate", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestSelectPhases_FromIsInclusiveAndRunsToTheEnd(t *testing.T) {
 // is the boundary case where an off-by-one would silently skip Render and
 // leave every later phase reading a config that was never written.
 func TestSelectPhases_FromTheFirstPhaseIsTheWholeSequence(t *testing.T) {
-	got, err := selectPhases("", phases.AllPhases[0])
+	got, err := selectPhases("", phases.AllPhases[0], false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestSelectPhases_FromTheFirstPhaseIsTheWholeSequence(t *testing.T) {
 
 func TestSelectPhases_FromTheLastPhaseIsJustThatPhase(t *testing.T) {
 	last := phases.AllPhases[len(phases.AllPhases)-1]
-	got, err := selectPhases("", last)
+	got, err := selectPhases("", last, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestSelectPhases_FromTheLastPhaseIsJustThatPhase(t *testing.T) {
 // choice to pin: the alternative reading (run -from, ignore -phase) would
 // turn a command someone believed was a single safe step into a full run.
 func TestSelectPhases_PhaseWinsOverFrom(t *testing.T) {
-	got, err := selectPhases("verify", "render")
+	got, err := selectPhases("verify", "render", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,7 +104,7 @@ func TestSelectPhases_UnknownNamesAreRejectedAndListTheValidOnes(t *testing.T) {
 		{"nope", ""},
 		{"", "nope"},
 	} {
-		_, err := selectPhases(tc.phase, tc.from)
+		_, err := selectPhases(tc.phase, tc.from, false)
 		if err == nil {
 			t.Errorf("selectPhases(%q, %q): expected an error", tc.phase, tc.from)
 			continue
@@ -121,7 +122,7 @@ func TestSelectPhases_UnknownNamesAreRejectedAndListTheValidOnes(t *testing.T) {
 // "Compute" would create infrastructure from what the operator typed rather
 // than from what the program documents.
 func TestSelectPhases_IsCaseSensitive(t *testing.T) {
-	if _, err := selectPhases("Compute", ""); err == nil {
+	if _, err := selectPhases("Compute", "", false); err == nil {
 		t.Error("expected -phase Compute to be rejected; the documented names are lower-case")
 	}
 }
@@ -212,5 +213,49 @@ func TestCompletionMessage_PartialRunEndingAtTheLastPhase(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("the message should name the range that ran, %q missing from %q", want, got)
 		}
+	}
+}
+
+// A converge indexes a different sequence, and the differences are the whole
+// safety story: it attaches to state that already exists, and it must never
+// run migrate, whose -force-copy would overwrite that state with whatever this
+// workspace happened to hold.
+func TestSelectPhases_ConvergeNeverMigrates(t *testing.T) {
+	got, err := selectPhases("", "", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if slices.Contains(got, "migrate") {
+		t.Fatal("converge included the migrate phase; -force-copy would overwrite the estate's own state with an empty workspace")
+	}
+	if !slices.Contains(got, "attach") {
+		t.Fatal("converge did not include attach, so it would start from an empty workspace and plan a second estate")
+	}
+	if got[0] != "render" {
+		t.Fatalf("converge must render first - every later phase needs the config, and it is the credential check. Got %q", got[0])
+	}
+}
+
+// attach exists only in a converge and migrate only in an ignition. Accepting
+// either against the wrong sequence would let somebody ask for a phase that
+// cannot happen in the run they are actually starting.
+func TestSelectPhases_SequencesDoNotLeak(t *testing.T) {
+	if _, err := selectPhases("attach", "", false); err == nil {
+		t.Error("ignition accepted -phase attach, which only exists in a converge")
+	}
+	if _, err := selectPhases("migrate", "", true); err == nil {
+		t.Error("converge accepted -phase migrate, which would overwrite the estate's state")
+	}
+}
+
+// Ignition ends by sterilizing, and so must a converge: the workstation should
+// hold no state and no secrets afterwards either way.
+func TestSelectPhases_ConvergeStillSterilizes(t *testing.T) {
+	got, err := selectPhases("", "", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got[len(got)-1] != "sterilize" {
+		t.Fatalf("a converge must end sterilized, got %q", got[len(got)-1])
 	}
 }

@@ -1139,13 +1139,75 @@ what makes a fork's pull request safe to run in full. Once it runs on estate
 hardware, hermetic is a property being asserted rather than one a disposable
 virtual machine was enforcing on our behalf.
 
+### The button was a first-run tool, and nothing said so
+
+**Found by asking what a second run would do.** After a successful ignition
+Sterilize deletes both the local state file and `backend_pg.tf`, which is
+correct - a workstation should hold nothing afterwards. The consequence nobody
+had traced is that the next `ignite` run starts from an empty workspace. It
+would plan to create every VM from scratch against an estate where they already
+exist, and if it reached Migrate, `init -migrate-state -force-copy` would copy
+that empty state over the real one. Only `destroy` and `sterilize` ever
+reconnected to the Postgres backend.
+
+So there was no supported way to apply a `management/` change to a running
+estate. `deploy-infrastructure.yml` could not cover it either: it is
+path-filtered to `environments/**` and `modules/**` deliberately, so ignition
+changes never trigger it.
+
+**Chose:** `ignite -converge`, a second sequence rather than a flag on the
+first.
+**Because:** the two runs differ in what they may assume. Ignition may assume
+nothing exists; convergence may assume everything does. Expressing that as
+`ConvergePhases` - `attach` in front, no `migrate`, no `hypervisor` - makes the
+difference reviewable in one place instead of scattered across conditionals
+inside phases that would then have to be read twice.
+**Rejected:** detecting the situation automatically. "Is there state in
+Postgres?" is answerable, but the two wrong answers are a duplicate estate and
+an overwritten state file, and neither is worth risking to save typing a flag.
+
+**Attach carries three refusals, and the third is the one that matters.** It
+refuses when local state exists, because that is an ignition that stopped
+before Migrate and this workspace already holds the authoritative copy. It uses
+`init -reconfigure` rather than `-migrate-state`, because migration is the verb
+that copies one state over another. And it refuses when the backend it just
+attached to is **empty** - because an init against an empty backend succeeds
+exactly as loudly as one against a populated backend, and applying afterwards
+would build a second estate beside the first with the same names, VM ids and
+addresses. Nothing inside the process can distinguish "new estate" from "lost
+state", so it stops and says which two situations it cannot tell apart.
+
+**A converge never destroys on failure.** Ignition's failure path destroys what
+it built, because a half-finished ignition leaves VMs nothing is tracking and
+destroying them is the safe end. A converge begins from an estate that was
+already running, so answering an unreachable hypervisor or a slow Flux
+reconcile by tearing down production would be precisely wrong. `-converge`
+therefore implies the no-destroy path, rather than relying on anyone
+remembering `-keep-on-failure`.
+
+**This does not weaken "ignition is local-only".** Ignition still cannot run in
+CI, because it builds the cluster CI runs on. Convergence has no such
+circularity - the cluster is already there, holding the state - so it may run
+anywhere that can reach the estate, including on the self-hosted runner inside
+it. That is the remaining half of this epoch: the runner exists now, and
+`deploy-infrastructure.yml` has to learn to converge `management/**` on merge,
+at which point changing `control_plane_count` and merging is the whole
+operation.
+
 ## Acceptance test: change 3 to 5 and watch it land
 
 The epoch is signed off when this works, end to end, with no manual step in
 the middle:
 
-> Change `control_plane_count` from `3` to `5` in the config. Run the button.
-> Two more machines exist, joined to the cluster.
+> Change `control_plane_count` from `3` to `5` in the config. **Merge it.**
+> Two more machines exist, joined to the cluster - with nobody having run
+> anything.
+
+The wording used to say "run the button", and that was the weaker test. A
+human running a command after a merge is the step this tier exists to remove;
+if it survives, the estate is still operated by hand and only its
+configuration is in git. The test is what it is because passing it means
+`management/` is genuinely reconciled rather than merely codified.
 
 It is the right test because it exercises the whole chain in one edit rather
 than any single layer. The count drives addressing (`10.10.10.100-104`),

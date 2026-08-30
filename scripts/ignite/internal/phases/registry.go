@@ -8,6 +8,22 @@ var AllPhases = []string{
 	"compute", "cluster", "health", "migrate", "backup", "sterilize",
 }
 
+// ConvergePhases applies a change to an estate that already exists.
+//
+// Two differences from AllPhases, and both are the point. It begins with
+// attach, which connects to the state already in the cluster instead of
+// starting from an empty workspace. And it has no migrate: state is already in
+// Postgres, and migrate's -force-copy would overwrite it with whatever this
+// workspace happened to hold.
+//
+// hypervisor is absent because it is slow, reboots-adjacent and unnecessary
+// for a change that does not add a hypervisor; run it on its own with
+// -phase hypervisor when one is added.
+var ConvergePhases = []string{
+	"render", "overlay", "verify", "attach",
+	"compute", "cluster", "health", "backup", "sterilize",
+}
+
 // Run dispatches a single phase by name.
 func Run(ctx *run.Context, name string) error {
 	switch name {
@@ -19,6 +35,8 @@ func Run(ctx *run.Context, name string) error {
 		return Hypervisor(ctx)
 	case "verify":
 		return Verify(ctx)
+	case "attach":
+		return Attach(ctx)
 	case "compute":
 		return Compute(ctx)
 	case "cluster":

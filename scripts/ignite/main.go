@@ -63,6 +63,7 @@ func main() {
 	confirm := flag.String("confirm", "", "Name the site again, to confirm -destroy.")
 	restore := flag.Bool("restore", false, "Bring the age-encrypted state back from object storage. Refuses if local state already exists.")
 	kubeconfig := flag.Bool("kubeconfig", false, "Write this site's kubeconfig into the workspace and exit. It is a credential; 'task clean-secrets' removes it.")
+	converge := flag.Bool("converge", false, "Apply the config to an estate that already exists, attaching to its state instead of building from scratch.")
 	checkVault := flag.Bool("check-vault", false, "Prove every op:// reference in the config template resolves. Reports structure only - never a value.")
 	flag.Parse()
 
@@ -71,7 +72,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	toRun, err := selectPhases(*phase, *from)
+	toRun, err := selectPhases(*phase, *from, *converge)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
@@ -110,6 +111,20 @@ Nothing has been touched. Re-run without -whatif to do it.
 	ctx.SkipOverlay = *skipOverlay
 	ctx.SkipUpgrade = *skipUpgrade
 	ctx.KeepOnFailure = *keepOnFailure
+
+	// A converge never destroys on failure, and this is not a preference.
+	//
+	// The failure path below exists because an ignition that breaks halfway
+	// has built VMs nobody is tracking, and destroying them is the safe end.
+	// A converge is the opposite situation: the estate was already running
+	// before this process started, and a transient failure - an unreachable
+	// hypervisor, a Flux reconcile that took too long - would otherwise be
+	// answered by tearing down production. Whatever went wrong, the estate is
+	// still there and still described by its state.
+	if *converge {
+		ctx.Converge = true
+		ctx.KeepOnFailure = true
+	}
 
 	// OpenTofu reads the same config; this tells it which site to use.
 	os.Setenv("TF_VAR_site", ctx.Site)
@@ -179,6 +194,13 @@ Nothing has been touched. Re-run without -whatif to do it.
 	if runErr != nil {
 		fmt.Println()
 		run.Fail("HALTED: " + runErr.Error())
+
+		if ctx.Converge {
+			run.Warn("converge failed. The estate is untouched by this failure - it was running before this")
+			run.Warn("started and its state still describes it. Nothing has been destroyed and nothing will be.")
+			run.Warn("Run 'task clean-secrets' to remove what this run rendered, then fix and re-run.")
+			os.Exit(1)
+		}
 
 		if ctx.KeepOnFailure {
 			run.Warn("-keep-on-failure set: leaving state and secrets in place for debugging.")
@@ -333,21 +355,31 @@ func completionMessage(toRun []string) string {
 		toRun[0], toRun[len(toRun)-1], len(toRun), len(phases.AllPhases))
 }
 
-func selectPhases(phase, from string) ([]string, error) {
+func selectPhases(phase, from string, converge bool) ([]string, error) {
+	// Which sequence -phase and -from index into. Naming a phase is a
+	// statement about where in a run you are, and the two runs are not the
+	// same run: "attach" exists only in a converge and "migrate" only in an
+	// ignition, so accepting either against the wrong sequence would let
+	// somebody ask for a phase that cannot happen.
+	seq := phases.AllPhases
+	if converge {
+		seq = phases.ConvergePhases
+	}
+
 	switch {
 	case phase != "":
-		if !slices.Contains(phases.AllPhases, phase) {
-			return nil, fmt.Errorf("unknown phase '%s'. Valid phases: %v", phase, phases.AllPhases)
+		if !slices.Contains(seq, phase) {
+			return nil, fmt.Errorf("unknown phase '%s'. Valid phases: %v", phase, seq)
 		}
 		return []string{phase}, nil
 	case from != "":
-		i := slices.Index(phases.AllPhases, from)
+		i := slices.Index(seq, from)
 		if i < 0 {
-			return nil, fmt.Errorf("unknown phase '%s'. Valid phases: %v", from, phases.AllPhases)
+			return nil, fmt.Errorf("unknown phase '%s'. Valid phases: %v", from, seq)
 		}
-		return slices.Clone(phases.AllPhases[i:]), nil
+		return slices.Clone(seq[i:]), nil
 	default:
-		return slices.Clone(phases.AllPhases), nil
+		return slices.Clone(seq), nil
 	}
 }
 

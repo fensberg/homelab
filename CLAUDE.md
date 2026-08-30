@@ -80,9 +80,27 @@ belongs in an epoch record.
   credential; those are ours to generate. A secret that only configures a
   provider never reaches state at all. See `docs/tailnet-setup.md`. Everything past that floor is code.
 
-- **Ignition is deliberately local-only.** `management/` bootstraps the
-  cluster that later runs CI-driven deploys, so it cannot depend on that
-  cluster. Do not move it into GitHub Actions.
+- **Ignition is local-only; convergence is not.** These are two different
+  operations and conflating them is what made the button a first-run tool
+  without anyone noticing.
+
+  _Ignition_ builds the cluster that later runs CI-driven deploys, so it
+  cannot depend on that cluster. It stays local. Do not move it into GitHub
+  Actions.
+
+  _Convergence_ applies a config change to an estate that already exists. The
+  circular dependency ignition has does not apply - the cluster is already
+  there, holding the state - so a converge may run wherever it can reach the
+  estate, including on the self-hosted runner inside it. `ignite -converge`
+  attaches to the state in Postgres instead of starting from an empty
+  workspace, never runs Migrate, and never destroys on failure.
+
+  The distinction is load-bearing rather than pedantic. After a successful
+  ignition, Sterilize removes both the local state file and `backend_pg.tf`,
+  so a second `ignite` run starts empty, plans to create every VM again, and
+  would copy that empty state over the real one with `-force-copy`. Changing
+  `management/` had no supported path at all until converge existed.
+
 - **Declare the vendor three times, and make them agree.** The code implements
   one vendor per concern; the config declares one in `provider`, where it is
   reviewable in git; and the 1Password item attests one in `vault_provider`,
@@ -188,6 +206,25 @@ ignite phase (`render-secrets`, `verify`, `configure-hypervisor`,
 of them can reach the Compute phase - an interrupted one leaves stale
 secrets at worst, recoverable with `task clean-secrets`, never an orphaned
 VM.
+
+**Changing a running estate is `ignite -converge`** (`task converge`). It
+renders, attaches to the state already in the cluster, and applies - the same
+phases as ignition minus `hypervisor` and `migrate`, plus `attach` in front.
+
+Attach is where the safety lives. It refuses if local state exists, because
+that means an ignition stopped before Migrate and this workspace already holds
+the authoritative copy. It uses `init -reconfigure`, never `-migrate-state`,
+because migration is the verb that copies one state over another. And it
+refuses if the backend it attached to is **empty**: an init against an empty
+backend succeeds exactly as loudly as one against a populated backend, and
+applying afterwards would build a second estate beside the first, with the same
+names, VM ids and addresses. Nothing can tell those two situations apart from
+inside, so it stops.
+
+A converge also never destroys on failure. Ignition's failure path tears down
+what it built because a half-finished ignition leaves VMs nobody tracks; a
+converge starts from an estate that was already running, so answering a
+transient failure by destroying production would be exactly wrong.
 
 **Tearing it down is `ignite -destroy`**, run directly for the same
 signal-handling reason `start` is. It renders the config first, which is the
