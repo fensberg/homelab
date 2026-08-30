@@ -156,6 +156,14 @@ Nothing has been touched. Re-run without -whatif to do it.
 		ctx.KeepOnFailure = true
 	}
 
+	// Only an ignition may destroy on failure, because only an ignition can
+	// have created what it would be destroying. Stated as "not ignite" rather
+	// than by listing the verbs that are safe: a verb added later is
+	// read-only or acts on something already there until somebody decides
+	// otherwise, and the default that fails closed is the one that refuses to
+	// tear down an estate this process did not build.
+	applyDestroyPolicy(ctx, verb)
+
 	// OpenTofu reads the same config; this tells it which site to use.
 	os.Setenv("TF_VAR_site", ctx.Site)
 
@@ -225,8 +233,8 @@ Nothing has been touched. Re-run without -whatif to do it.
 		fmt.Println()
 		run.Fail("HALTED: " + runErr.Error())
 
-		if ctx.Converge {
-			run.Warn("converge failed. The estate is untouched by this failure - it was running before this")
+		if ctx.PreexistingEstate {
+			run.Warn(verb + " failed. The estate is untouched by this failure - it was running before this")
 			run.Warn("started and its state still describes it. Nothing has been destroyed and nothing will be.")
 			run.Warn("Run 'task clean-secrets' to remove what this run rendered, then fix and re-run.")
 			os.Exit(1)
@@ -472,3 +480,10 @@ func deref(p *string) string {
 }
 
 func on(p *bool) bool { return p != nil && *p }
+
+// applyDestroyPolicy decides whether this run is allowed to tear down what it
+// finds. Split out so the decision is testable per verb rather than inferred
+// from reading main.
+func applyDestroyPolicy(ctx *run.Context, verb string) {
+	ctx.PreexistingEstate = verb != "ignite"
+}
