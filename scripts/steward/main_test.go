@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"homelab/steward/internal/phases"
+	"homelab/steward/internal/run"
 )
 
 // selectPhases decides what a run actually does. Every other safety property
@@ -252,5 +253,31 @@ func TestSelectPhases_PlanChangesNothing(t *testing.T) {
 	}
 	if got[len(got)-1] != "sterilize" {
 		t.Fatalf("a plan must end sterilized - it renders secrets and saves a plan file full of attribute values. Got %q", got[len(got)-1])
+	}
+}
+
+// The failure path calls EmergencyDestroy, which tears down whatever the
+// state describes. That is correct for an ignition: a run that broke halfway
+// has built VMs nothing is tracking, and destroying them is the safe end.
+//
+// It is catastrophic for anything else. `steward plan` creates nothing at all,
+// yet it attaches to the estate's state - so when its plan timed out, the
+// failure path was one branch away from destroying a running estate that the
+// command had only ever read. This asserts the guard covers every verb rather
+// than the two somebody remembered.
+func TestPreexistingEstate_OnlyIgniteMayDestroy(t *testing.T) {
+	for _, verb := range knownVerbs {
+		ctx := run.NewContext(t.TempDir(), "site0")
+		applyDestroyPolicy(ctx, verb)
+
+		if verb == "ignite" {
+			if ctx.PreexistingEstate {
+				t.Error("ignite cannot clean up after itself; a half-finished ignition would leave VMs nothing tracks")
+			}
+			continue
+		}
+		if !ctx.PreexistingEstate {
+			t.Errorf("verb %q would reach EmergencyDestroy on failure; it did not create the estate and must never tear it down", verb)
+		}
 	}
 }

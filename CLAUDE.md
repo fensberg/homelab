@@ -274,6 +274,14 @@ attaches to the estate's state, plans, and prints what would change - then
 sterilizes. It is the half of the review a pull request could not give:
 approving a diff of HCL used to mean finding out what it meant afterwards.
 
+**A plan cannot show a change to the control plane's size.**
+`data.talos_cluster_health` reads at plan time against every node the config
+declares, so raising `control_plane_count` makes it wait for machines that do
+not exist yet, time out, and produce nothing. An apply has no such problem -
+the graph creates the machines before reading their health - so `steward plan`
+detects the mismatch up front and says to converge instead of waiting ten
+minutes to fail. That is the one question a plan here genuinely cannot answer.
+
 **It reports structure and never a value.** A plan holds every attribute of
 every resource it touches; this repository keeps hostnames, addresses and
 credentials out of git on purpose, and the repository is public, which makes an

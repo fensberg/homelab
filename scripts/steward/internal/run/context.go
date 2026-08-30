@@ -40,6 +40,14 @@ type Context struct {
 	// Converge means the estate already exists: attach to its state rather
 	// than build from scratch, and never destroy on failure.
 	Converge bool
+
+	// PreexistingEstate means this run did not create what it is looking at,
+	// so it must never tear it down. True for every verb except ignite.
+	//
+	// Kept separate from Converge because the property is broader than one
+	// verb: a plan creates nothing at all and still reached the destroy path,
+	// which is how a read-only command became able to delete an estate.
+	PreexistingEstate bool
 }
 
 func NewContext(repoRoot, site string) *Context {
