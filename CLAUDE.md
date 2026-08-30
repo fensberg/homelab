@@ -134,7 +134,7 @@ belongs in an epoch record.
   _Convergence_ applies a config change to an estate that already exists. The
   circular dependency ignition has does not apply - the cluster is already
   there, holding the state - so a converge may run wherever it can reach the
-  estate, including on the self-hosted runner inside it. `ignite -converge`
+  estate, including on the self-hosted runner inside it. `steward converge`
   attaches to the state in Postgres instead of starting from an empty
   workspace, never runs Migrate, and never destroys on failure.
 
@@ -250,7 +250,7 @@ of them can reach the Compute phase - an interrupted one leaves stale
 secrets at worst, recoverable with `task clean-secrets`, never an orphaned
 VM.
 
-**Changing a running estate is `ignite -converge`** (`task converge`). It
+**Changing a running estate is `steward converge`** (`task converge`). It
 renders, attaches to the state already in the cluster, and applies - the same
 phases as ignition minus `hypervisor` and `migrate`, plus `attach` in front.
 
@@ -269,7 +269,22 @@ what it built because a half-finished ignition leaves VMs nobody tracks; a
 converge starts from an estate that was already running, so answering a
 transient failure by destroying production would be exactly wrong.
 
-**Tearing it down is `ignite -destroy`**, run directly for the same
+**Seeing what a change would do is `steward plan`** (`task plan`). It renders,
+attaches to the estate's state, plans, and prints what would change - then
+sterilizes. It is the half of the review a pull request could not give:
+approving a diff of HCL used to mean finding out what it meant afterwards.
+
+**It reports structure and never a value.** A plan holds every attribute of
+every resource it touches; this repository keeps hostnames, addresses and
+credentials out of git on purpose, and the repository is public, which makes an
+Actions job summary and a pull request comment world-readable by anyone. So the
+output is addresses and verbs and nothing else - the same line `check-vault`
+draws between "the reference resolves" and "here is what it resolved to", for
+the same reason: the output is most useful exactly when somebody wants to paste
+it somewhere. The saved plan file is removed by the phase that made it, and
+listed in Sterilize for the run that dies first.
+
+**Tearing it down is `steward destroy`**, run directly for the same
 signal-handling reason `start` is. It renders the config first, which is the
 credential check rather than a formality - no 1Password session means no
 Proxmox token and no hypervisor endpoint, so the command is inert in the
@@ -279,7 +294,7 @@ Interrupting a destroy deliberately does _not_ sterilize: wiping state
 part-way through a teardown is how VMs get orphaned, so it waits for tofu to
 release its lock and leaves everything in place to be re-run.
 
-**Getting state back is `ignite -restore`.** It fetches the break-glass
+**Getting state back is `steward restore`.** It fetches the break-glass
 identity, decrypts the latest age backup from object storage, checks that what
 came back is state describing something, and pushes it through the encrypted
 backend. It refuses if local state already exists. It is the only place in the
@@ -287,7 +302,7 @@ program that reads the private half, which `tests/go/repo` enforces, and it
 restores state and stops - what to do with it afterwards is a judgement call,
 not a next step.
 
-**Checking the vault is `ignite -check-vault`** (`task check-vault`). It proves
+**Checking the vault is `steward check-vault`** (`task check-vault`). It proves
 every `op://` reference in `config/management.tpl.json` resolves and is
 non-empty, and reports each one as `ok` / `empty` / `missing` — structure only,
 never a value, so the output is safe to paste into an issue or a pull request.

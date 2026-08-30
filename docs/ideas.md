@@ -80,7 +80,7 @@ once it's actually being worked on.
   right shape for it: a `restore`-tagged tier on the self-hosted runner that
   pulls the latest age-encrypted state dump and the latest CloudNativePG base
   backup, restores both into a throwaway target, asserts the state parses and
-  the database answers, then tears it down. `ignite -restore` is now the
+  the database answers, then tears it down. `steward restore` is now the
   command that does the first half of that, so what remains is a tier that
   calls it and asserts on the result - rehearsed against the workstation, not
   against a second site that is not coming. See
@@ -102,7 +102,7 @@ once it's actually being worked on.
   the point. So the risk worth guarding is destroying the _wrong_ estate, not
   destroying one at all, and the two remaining guards already address exactly
   that: a build tag, and the site named twice - the same thing
-  `ignite -destroy` asks of a human.
+  `steward destroy` asks of a human.
 
   It stays absent from CI. A destructive nuke-and-pave should not be one
   dropdown selection away in a web UI, and that is unchanged.

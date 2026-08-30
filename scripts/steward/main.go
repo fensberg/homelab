@@ -58,7 +58,7 @@ func repoRoot() string {
 // of merely refused: each verb registers only the flags that mean something
 // for it, so `steward restore -phase compute` fails on an undefined flag
 // before any of this code runs.
-var knownVerbs = []string{"ignite", "converge", "destroy", "restore", "kubeconfig", "check-vault"}
+var knownVerbs = []string{"ignite", "converge", "plan", "destroy", "restore", "kubeconfig", "check-vault"}
 
 const usage = `steward manages the lifecycle of a site.
 
@@ -69,6 +69,8 @@ verbs:
                the cluster that later converges run inside.
   converge     Apply the config to a site that already exists, attaching to
                the state in its cluster. Never destroys on failure.
+  plan         Show what a converge would change, and change nothing. Reports
+               addresses and actions only, never a value.
   destroy      Tear a site down, then wipe the workspace. Requires -confirm.
   restore      Bring the age-encrypted state back from object storage.
   kubeconfig   Write this site's kubeconfig into the workspace and exit.
@@ -100,7 +102,7 @@ func main() {
 	upgrade, skipOverlay, skipUpgrade := o.upgrade, o.skipOverlay, o.skipUpgrade
 	keepOnFailure, whatIf := o.keepOnFailure, o.whatIf
 	converge := verb == "converge"
-	toRun, err := selectPhases(deref(phase), deref(from), converge)
+	toRun, err := selectPhases(deref(phase), deref(from), verb)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
@@ -333,15 +335,18 @@ func completionMessage(toRun []string) string {
 		toRun[0], toRun[len(toRun)-1], len(toRun), len(phases.AllPhases))
 }
 
-func selectPhases(phase, from string, converge bool) ([]string, error) {
+func selectPhases(phase, from, verb string) ([]string, error) {
 	// Which sequence -phase and -from index into. Naming a phase is a
 	// statement about where in a run you are, and the two runs are not the
 	// same run: "attach" exists only in a converge and "migrate" only in an
 	// ignition, so accepting either against the wrong sequence would let
 	// somebody ask for a phase that cannot happen.
 	seq := phases.AllPhases
-	if converge {
+	switch verb {
+	case "converge":
 		seq = phases.ConvergePhases
+	case "plan":
+		seq = phases.PlanPhases
 	}
 
 	switch {
@@ -436,7 +441,7 @@ func flagsFor(verb string) *opts {
 
 	// Only ignite and converge run a sequence of phases, so only they can be
 	// asked to run part of one.
-	if verb == "ignite" || verb == "converge" {
+	if verb == "ignite" || verb == "converge" || verb == "plan" {
 		o.phase = fs.String("phase", "", "Run a single phase instead of all of them.")
 		o.from = fs.String("from", "", "Start at this phase and run everything after it.")
 		o.upgrade = fs.Bool("upgrade", false, "Re-resolve providers against the version constraints instead of the committed lock file.")

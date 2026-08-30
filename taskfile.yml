@@ -46,6 +46,15 @@ tasks:
       - 'echo "Built. Run directly so Ctrl-C can safely destroy and sterilize:"'
       - 'echo "  ./scripts/steward/steward ignite -site {{.SITE}}"'
 
+  plan:
+    desc: "Show what a converge would change, without changing it"
+    # Safe to wrap: it changes nothing, and an interrupted plan leaves a
+    # rendered config and a saved plan file at worst - both removed by
+    # 'task clean-secrets'.
+    cmds:
+      - task: build
+      - ./scripts/steward/steward plan -site {{.SITE}}
+
   converge:
     desc: "Apply the config to an estate that already exists"
     # Safe to wrap, unlike start, and for a reason that is worth stating
@@ -59,8 +68,11 @@ tasks:
       - task: build
       - ./scripts/steward/steward converge -site {{.SITE}}
 
-  plan:
-    desc: "Show which phases would run, without running them"
+  phases:
+    desc: "List the phases an ignition would run, without running them"
+    # Renamed from 'plan' when `steward plan` arrived. Two different questions
+    # were sharing one word: "which phases run" and "what changes in the
+    # estate". The second is the one anybody means by "plan".
     cmds:
       - task: build
       - ./scripts/steward/steward ignite -site {{.SITE}} -whatif

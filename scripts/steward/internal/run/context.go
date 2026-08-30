@@ -17,9 +17,13 @@ type Context struct {
 	SiteVars          string
 	ClusterDir        string
 	TofuBackendRecord string
-	BackendPgOff      string
-	BackendPgOn       string
-	LocalState        string
+
+	// The saved plan. It holds every attribute of every resource it touches,
+	// so it is sterilized like a secret rather than treated as a build artifact.
+	TofuPlanFile string
+	BackendPgOff string
+	BackendPgOn  string
+	LocalState   string
 
 	// Written only by `task kubeconfig`, for a human who wants to look at the
 	// cluster. Nothing in the ignition sequence creates it - the Health phase
@@ -51,6 +55,7 @@ func NewContext(repoRoot, site string) *Context {
 		SiteVars:          filepath.Join(hypervisorDir, "site.auto.yml"),
 		ClusterDir:        clusterDir,
 		TofuBackendRecord: filepath.Join(clusterDir, ".terraform", "terraform.tfstate"),
+		TofuPlanFile:      filepath.Join(clusterDir, "tfplan"),
 		BackendPgOff:      filepath.Join(clusterDir, "backend_pg.tf.disabled"),
 		BackendPgOn:       filepath.Join(clusterDir, "backend_pg.tf"),
 		LocalState:        filepath.Join(clusterDir, "terraform.tfstate"),

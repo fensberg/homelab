@@ -16,7 +16,7 @@ import (
 // is an orphaned VM or a leaked secret.
 
 func TestSelectPhases_DefaultsToTheFullSequence(t *testing.T) {
-	got, err := selectPhases("", "", false)
+	got, err := selectPhases("", "", "ignite")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestSelectPhases_DefaultsToTheFullSequence(t *testing.T) {
 // shared backing array would let one run's flag mutate the package-level
 // sequence for everything after it.
 func TestSelectPhases_DoesNotAliasThePackageSequence(t *testing.T) {
-	got, err := selectPhases("", "", false)
+	got, err := selectPhases("", "", "ignite")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestSelectPhases_DoesNotAliasThePackageSequence(t *testing.T) {
 }
 
 func TestSelectPhases_SinglePhase(t *testing.T) {
-	got, err := selectPhases("compute", "", false)
+	got, err := selectPhases("compute", "", "ignite")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestSelectPhases_SinglePhase(t *testing.T) {
 }
 
 func TestSelectPhases_FromIsInclusiveAndRunsToTheEnd(t *testing.T) {
-	got, err := selectPhases("", "migrate", false)
+	got, err := selectPhases("", "migrate", "ignite")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestSelectPhases_FromIsInclusiveAndRunsToTheEnd(t *testing.T) {
 // is the boundary case where an off-by-one would silently skip Render and
 // leave every later phase reading a config that was never written.
 func TestSelectPhases_FromTheFirstPhaseIsTheWholeSequence(t *testing.T) {
-	got, err := selectPhases("", phases.AllPhases[0], false)
+	got, err := selectPhases("", phases.AllPhases[0], "ignite")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestSelectPhases_FromTheFirstPhaseIsTheWholeSequence(t *testing.T) {
 
 func TestSelectPhases_FromTheLastPhaseIsJustThatPhase(t *testing.T) {
 	last := phases.AllPhases[len(phases.AllPhases)-1]
-	got, err := selectPhases("", last, false)
+	got, err := selectPhases("", last, "ignite")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestSelectPhases_FromTheLastPhaseIsJustThatPhase(t *testing.T) {
 // choice to pin: the alternative reading (run -from, ignore -phase) would
 // turn a command someone believed was a single safe step into a full run.
 func TestSelectPhases_PhaseWinsOverFrom(t *testing.T) {
-	got, err := selectPhases("verify", "render", false)
+	got, err := selectPhases("verify", "render", "ignite")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestSelectPhases_UnknownNamesAreRejectedAndListTheValidOnes(t *testing.T) {
 		{"nope", ""},
 		{"", "nope"},
 	} {
-		_, err := selectPhases(tc.phase, tc.from, false)
+		_, err := selectPhases(tc.phase, tc.from, "ignite")
 		if err == nil {
 			t.Errorf("selectPhases(%q, %q): expected an error", tc.phase, tc.from)
 			continue
@@ -122,7 +122,7 @@ func TestSelectPhases_UnknownNamesAreRejectedAndListTheValidOnes(t *testing.T) {
 // "Compute" would create infrastructure from what the operator typed rather
 // than from what the program documents.
 func TestSelectPhases_IsCaseSensitive(t *testing.T) {
-	if _, err := selectPhases("Compute", "", false); err == nil {
+	if _, err := selectPhases("Compute", "", "ignite"); err == nil {
 		t.Error("expected -phase Compute to be rejected; the documented names are lower-case")
 	}
 }
@@ -194,7 +194,7 @@ func TestFlagsFor_EveryVerbTakesASite(t *testing.T) {
 // run migrate, whose -force-copy would overwrite that state with whatever this
 // workspace happened to hold.
 func TestSelectPhases_ConvergeNeverMigrates(t *testing.T) {
-	got, err := selectPhases("", "", true)
+	got, err := selectPhases("", "", "converge")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -213,10 +213,10 @@ func TestSelectPhases_ConvergeNeverMigrates(t *testing.T) {
 // either against the wrong sequence would let somebody ask for a phase that
 // cannot happen in the run they are actually starting.
 func TestSelectPhases_SequencesDoNotLeak(t *testing.T) {
-	if _, err := selectPhases("attach", "", false); err == nil {
+	if _, err := selectPhases("attach", "", "ignite"); err == nil {
 		t.Error("ignition accepted -phase attach, which only exists in a converge")
 	}
-	if _, err := selectPhases("migrate", "", true); err == nil {
+	if _, err := selectPhases("migrate", "", "converge"); err == nil {
 		t.Error("converge accepted -phase migrate, which would overwrite the estate's state")
 	}
 }
@@ -224,11 +224,33 @@ func TestSelectPhases_SequencesDoNotLeak(t *testing.T) {
 // Ignition ends by sterilizing, and so must a converge: the workstation should
 // hold no state and no secrets afterwards either way.
 func TestSelectPhases_ConvergeStillSterilizes(t *testing.T) {
-	got, err := selectPhases("", "", true)
+	got, err := selectPhases("", "", "converge")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got[len(got)-1] != "sterilize" {
 		t.Fatalf("a converge must end sterilized, got %q", got[len(got)-1])
+	}
+}
+
+// plan is its own sequence for the same reason converge is: what a run may
+// assume differs. A plan must reach attach - a plan against no state is a plan
+// to build everything, which is the opposite of the answer being asked for -
+// and must contain nothing that changes the estate.
+func TestSelectPhases_PlanChangesNothing(t *testing.T) {
+	got, err := selectPhases("", "", "plan")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !slices.Contains(got, "attach") {
+		t.Fatal("plan does not attach, so it would plan against an empty workspace and report building the whole estate")
+	}
+	for _, mutating := range []string{"compute", "cluster", "migrate", "backup", "hypervisor", "overlay"} {
+		if slices.Contains(got, mutating) {
+			t.Errorf("plan includes %q, which changes something. A plan changes nothing.", mutating)
+		}
+	}
+	if got[len(got)-1] != "sterilize" {
+		t.Fatalf("a plan must end sterilized - it renders secrets and saves a plan file full of attribute values. Got %q", got[len(got)-1])
 	}
 }

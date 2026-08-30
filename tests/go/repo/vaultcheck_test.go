@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// `ignite -check-vault` must never be able to disclose a secret.
+// `steward check-vault` must never be able to disclose a secret.
 //
 // The whole reason it exists is to be safe to run and safe to share: it
 // answers "does the vault still match the config template" and its output is
