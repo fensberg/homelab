@@ -993,6 +993,35 @@ estate's own protection settings without being able to weaken what it just
 inspected. That property was worth deliberately preserving through the
 migration rather than rediscovering afterwards.
 
+### The self-hosted runner belongs in this epoch, not the next one
+
+**Chose:** build the runner here, before the epoch closes.
+**Because:** the goal of this epoch is "enough of a platform that later epochs
+can deploy through CI instead of locally", and without a runner that sentence
+is not true. `deploy-infrastructure.yml` and `integration-tests.yml` both
+declare `runs-on: self-hosted`, and `tests/go/repo/selfhosted_test.go` already
+enforces rules about how a pull request may reach it. All three describe a
+machine that does not exist: the workflows cannot run at all, and the guard
+protects nothing. Closing the epoch in that state would sign off a promise the
+estate cannot keep.
+**Rejected:** opening epoch 02 with it. Epoch 02 is about reusable modules, and
+its first act would be to finish 01's goal - which is how an epoch boundary
+stops meaning anything.
+
+**It follows the shape everything else here follows.** OpenTofu creates only
+what Flux cannot hold - the namespace and the credential - and the controller
+and scale set are declared in `clusters/management/` and reconciled from git,
+exactly as CloudNativePG and the state database are. The credential sits in
+the account plane rather than the site plane, for the same reason the object
+storage account does: it is one GitHub App for the estate, and a runner is a
+site-level deployment of an estate-level identity.
+
+**A GitHub App, not a PAT.** A PAT carries a person's identity and outlives
+whoever created it; an App is scoped, independently revocable, and its
+installation token is short-lived by construction. This estate already runs one
+App for the agent's own pushes, and the same reasoning applies twice over to a
+credential that lives inside the cluster.
+
 ## Acceptance test: change 3 to 5 and watch it land
 
 The epoch is signed off when this works, end to end, with no manual step in
@@ -1037,16 +1066,42 @@ not "never change the count deliberately".
 
 ## Outcome
 
-To be completed when the epoch closes.
+**Not yet signed off.** The acceptance test above is the gate, and it has not
+run: `control_plane_count` moved from 3 to 5 in its own change, and the button
+has to carry that end to end with no manual step before this section can claim
+anything. What follows is what exists, written now while it is fresh, so that
+signing off is a matter of confirming rather than reconstructing.
+
+**Built.** A phased Go entrypoint (`scripts/ignite`) that renders secrets from
+1Password, prepares a Proxmox host with an idempotent Ansible playbook,
+provisions a Talos control plane, bootstraps Flux, migrates its own state into
+cluster Postgres, backs that state up encrypted to object storage, and wipes
+the workstation on the way out. Storage is OpenEBS Local PV; the state database
+is CloudNativePG, reconciled by Flux, streaming to object storage.
+
+**Proven, rather than assumed.** The estate came up end to end on 2026-08-30.
+The recovery path was drilled the same night rather than inferred: the R2
+object was fetched, decrypted with the identity from the vault, and confirmed
+to be state describing a real estate (schema version 4, serial 1, nineteen
+resources). The privilege boundary was re-verified from the unprivileged side,
+and the `/tmp` hole found in the process was closed rather than documented
+around.
+
+**The honest limit.** Ignition has never run against a factory-fresh Proxmox
+host. Every run so far met a hypervisor that already carried the SDN, the
+tailnet membership, the API token and the disk-import account from an earlier
+run. The playbook is idempotent so those runs pass, but the epoch's promise is
+"install Proxmox, run the button, get a cluster" and what has actually been
+demonstrated is "start from an almost-fresh Proxmox". That gap closes when a
+second hypervisor exists, and it should not be quietly upgraded at sign-off.
+
+**Deliberately left for later epochs.** `modules/` and `environments/` - the
+abstraction and workload tiers - are epochs 02 and 03. Everything else this
+epoch chose not to do is in Deferred below, each with the trigger that should
+bring it back.
 
 ## Deferred
 
-- **A default StorageClass may not exist on Talos yet.** CloudNativePG will
-  request 10Gi per instance and the pods will pend forever if nothing can
-  satisfy the claim. Trigger: the first reconcile of the state database.
-- **OpenTofu native state encryption** (`terraform { encryption { … } }`)
-  would encrypt state at rest inside Postgres, complementing the R2
-  encryption. Trigger: once Postgres is real.
 - **`insecure = true` on the Proxmox provider** — trigger: a trusted cert.
 - **QEMU guest agent** is off deliberately; Talos will not report ready
   without the extension in the Factory schematic.
@@ -1054,7 +1109,8 @@ To be completed when the epoch closes.
   ecosystems it can't cover at all: a Flux `HelmRelease`'s chart version
   (Longhorn's is a manual bump today) and a digest-pinned container image
   embedded in a workflow's `container:` block (Semgrep's is too). Trigger:
-  once the cluster is up and running, so it has somewhere to actually run.
+  once the cluster is up and running, so it has somewhere to actually run -
+  **fired**: site0 is up, so this is now actionable rather than blocked.
 - **A persistent tool-cache on a self-hosted runner**, so pinned binaries
   this repo already downloads-and-verifies fresh every run (tofu,
   kubeconform, the trufflehog CLI) don't repeat that fetch on every job -
