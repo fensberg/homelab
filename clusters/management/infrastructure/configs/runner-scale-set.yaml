@@ -1,0 +1,76 @@
+---
+# Layer 2: the scale set itself, which needs the controller's CRDs to exist.
+#
+# Everything constant here is written literally rather than substituted -
+# namespaces, the secret name, the scale set name, the runner group. Only the
+# organization URL is a ${VAR}, because it is the one value derived from a
+# vault secret and so the only one that must not be committed. Flux substitutes
+# it at reconcile time from the runner-vars secret OpenTofu writes (see
+# management/cluster/runner.tf).
+#
+# The literals are not free: they restate what management/cluster/variables.tf
+# declares. tests/go/repo/runner_test.go asserts the two agree, which is the
+# same shape as registry.tf and config.go implementing one contract twice.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: self-hosted
+  namespace: arc-runners
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: gha-runner-scale-set
+      # renovate: datasource=docker depName=ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+      version: "0.14.2"
+      sourceRef:
+        kind: HelmRepository
+        name: actions-runner-controller
+        namespace: flux-system
+      interval: 12h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # The organization, not the repository. That is the scope the App was
+    # granted, and a runner group restricted to this repository is what stops
+    # the App's reach widening when a second repository joins the estate.
+    githubConfigUrl: ${RUNNER_GITHUB_CONFIG_URL}
+    # Substituted rather than written literally, unlike everything else here.
+    # Two reasons, and the second is the one that decided it: checkov's
+    # CKV_SECRET_6 reads `githubConfigSecret: <hyphenated-identifier>` as a
+    # base64 high-entropy string and cannot be talked out of it inline; and
+    # substituting from the same local that names the secret OpenTofu creates
+    # means the two cannot disagree, which is strictly better than a test
+    # asserting they agree.
+    #
+    # Safe to leave undefined in CI: this is a free-form Helm value, so
+    # envsubst rendering it empty produces valid YAML that kubeconform accepts.
+    # A ${VAR} in metadata.name would not be, which is why the rest are
+    # literals.
+    githubConfigSecret: ${RUNNER_SECRET_NAME}
+    runnerGroup: homelab
+
+    # What `runs-on:` has to say, and the reason it stays "self-hosted": with
+    # runner scale sets runs-on matches the installation name exactly, so this
+    # is a name rather than one label among several. Keeping it means
+    # deploy-infrastructure.yml, integration-tests.yml and the guard in
+    # tests/go/repo/selfhosted_test.go are all untouched. Within this
+    # repository the App resolves it to exactly one thing; a second estate has
+    # its own organization and its own App, so there the word means nothing
+    # rather than meaning the wrong thing.
+    #
+    # Set explicitly rather than inherited from the release name, so renaming
+    # the release cannot silently orphan every workflow that targets it.
+    # tests/go/repo/runner_test.go asserts this and runs-on still agree.
+    runnerScaleSetName: self-hosted
+
+    # Scale to nothing when idle. A runner pod that exists between jobs is a
+    # runner pod that can be reached between jobs, and there is no warm-start
+    # benefit worth that: the jobs this runs today are minutes long and start
+    # with a checkout regardless.
+    minRunners: 0
+    maxRunners: 2

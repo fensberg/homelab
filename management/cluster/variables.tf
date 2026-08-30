@@ -68,7 +68,28 @@ locals {
   # object storage account plane is not the site plane".
   object_storage_account = local.config.object_storage
   site_database          = local.site.database
-  node_count             = local.site.control_plane_count
+
+  # --- CI runners ----------------------------------------------------------
+  # Fleet plane, like the object storage account: one GitHub App serves the
+  # estate, and a runner is a site-level deployment of an estate-level
+  # identity. See runner.tf for why the App is scoped the way it is.
+  runner = local.config.source_control.foreman_bot
+
+  # Only what OpenTofu itself creates. The scale set's own name, its runner
+  # group and its ceiling are declared in the manifest that uses them, because
+  # nothing here reads them - a local kept alive purely so a test could compare
+  # against it is dead code with a test-shaped excuse, and tflint was right to
+  # say so.
+  runner_system_namespace = "arc-systems"
+  runners_namespace       = "arc-runners"
+  runner_secret_name      = "github-app-credentials"
+
+  # The scale set is registered against the organization, not the repository,
+  # because that is the scope the App was granted. Derived from the repository
+  # URL rather than declared again, so the two cannot disagree:
+  # https://host/org/repo -> https://host/org.
+  runner_github_config_url = join("/", slice(split("/", local.config.source_control.repo_url), 0, 4))
+  node_count               = local.site.control_plane_count
 
   # --- addressing ----------------------------------------------------------
   # The octet is declared, not computed. Reading the config tells you the

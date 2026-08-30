@@ -1022,6 +1022,123 @@ installation token is short-lived by construction. This estate already runs one
 App for the agent's own pushes, and the same reasoning applies twice over to a
 credential that lives inside the cluster.
 
+### The runner build, and the order it goes in
+
+**The identity.** One GitHub App installed on the organization, not on the
+repository. Estate-scoped by construction - the organization is what bounds the
+estate - and narrowed twice over: the permission is `Organization Self-hosted
+runners: read & write` plus `Metadata: read`, which can add and remove runners
+and nothing else, and the scale set is placed in a runner group restricted to
+this repository so the App's reach does not silently widen when a second
+repository joins the organization.
+
+That scoping is the fail-closed invariant applied. A repository-scoped App
+would carry `Administration: read & write`, which includes branch protection -
+the mechanism that makes "the agent proposes, the human disposes" true. Same
+key, same storage, same likelihood of theft; one worst case is a compromised
+review requirement and the other is a runner list that needs tidying.
+
+**The scale set keeps the name `self-hosted`.** With runner scale sets
+`runs-on` matches the installation name exactly, so this is a naming decision
+rather than a label decision, and the existing `runs-on: self-hosted` in
+`deploy-infrastructure.yml` and `integration-tests.yml` stays untouched along
+with the guard in `tests/go/repo/selfhosted_test.go`. The reasoning is that the
+App is restricted to this repository, so within this repository `self-hosted`
+resolves to exactly one thing and cannot be ambiguous. A second estate has its
+own organization and its own App, so the word means nothing there rather than
+meaning the wrong thing - which is the failure a more specific name would have
+been protecting against. Verify at build time that ARC accepts `self-hosted` as
+a scale set name, since it is also GitHub's implicit label for every
+self-hosted runner; if it refuses, that is the moment to revisit, not before.
+
+**What builds what.** The division of labour is the one already used for the
+state database, unchanged: OpenTofu creates only the namespace and the
+credential secret, rendered from the vault; the controller and the scale set
+are declared in `clusters/management/` and reconciled by Flux.
+
+1. Vault items, then the config template entries that reference them - in that
+   order, because every `op://` reference must resolve.
+2. `management/cluster/runner.tf`: the namespaces and the App credential.
+3. `clusters/management/infrastructure/controllers/`: the controller.
+4. `clusters/management/infrastructure/configs/`: the scale set.
+5. Network isolation between the two namespaces - which does not exist yet,
+   for the reason below.
+
+**Controller and runners live in separate namespaces**, and the App secret is
+mounted only in the controller's. A compromised job is then not in the same
+namespace as the credential, which is what makes the low likelihood in the
+threat model actually low rather than asserted.
+
+### The NetworkPolicy this design asked for would not have done anything
+
+**Corrected before it shipped.** The plan above called for a deny-by-default
+`NetworkPolicy` in both runner namespaces, and that was written without
+checking what enforces one here. Nothing does. This cluster runs Talos's
+default CNI, Flannel - no `cni` override appears anywhere in `talos.tf` or the
+machine config patches - and Flannel does not implement `NetworkPolicy` at all.
+The API server accepts the object, stores it, and reports it happily. Nothing
+ever evaluates it.
+
+That is the same failure this epoch already found once, in a different place: a
+guard that protects nothing, indistinguishable from a guard that works right up
+until the day it matters. Shipping it would have been worse than shipping
+nothing, because the record would then say the namespaces are isolated.
+
+**So the separation that exists today is the namespace boundary and the
+credential's scope, and no more than that.** The controller and the runners
+hold separate copies of the same secret rather than sharing a mount, and the
+App can do nothing but register and remove runners. Neither of those depends on
+network enforcement. What is genuinely absent is any restriction on what a
+runner pod may talk to.
+
+**And the policy as drafted was wrong on its own terms, separately from being
+inert.** It would have denied runner pods the Proxmox management network and
+the vault - which is precisely what `integration-tests.yml` needs, since it
+renders config from 1Password and plans against real state. A policy that
+worked would have broken the workflows the runner exists to run.
+
+**The shape that is actually right is two scale sets, not one policy.** Jobs
+that touch the estate need estate access and get it; pull request lanes, when
+they move here, need the opposite and should run in a second scale set with a
+different label and no route to anything. That distinction is enforceable by
+policy only once a CNI that implements policy is installed, which makes the CNI
+the real prerequisite for moving pull request lanes - ahead of the tool cache,
+and ahead of the worker node.
+
+### Pull request lanes stay on hosted runners for now
+
+The eight lanes in `pr-validation.yml` all run on `ubuntu-latest`, and moving
+them here is wanted - a long-lived runner can keep a warm tool cache, which is
+what the persistent tool-cache entry in Deferred is about. It is a separate
+change from building the runner, and it has three prerequisites that are not
+free.
+
+**The fork approval setting is the one that unblocks it, and it is done.** The
+organization now requires approval for all outside collaborators before any
+workflow runs, across every repository. Anyone may still open a pull request;
+nothing executes until a maintainer approves it. That is what makes running
+untrusted code on estate hardware a decision rather than an exposure, and
+combined with ephemeral per-job pods it closes the persistence attack that
+makes a long-lived self-hosted runner on a public repository dangerous.
+
+**`harden-runner` does not survive the move unchanged.** This repository's
+egress posture is deny-by-default, enforced by pinning `harden-runner` to
+`egress-policy: block` in every job. That works by manipulating the runner
+host's networking and does not hold the same way inside a container. The
+replacement is a `NetworkPolicy`, which is arguably the stronger form - the
+cluster enforces it rather than a process inside the job it is policing - but
+it is a migration to perform, not a property that carries over on its own.
+
+**CI does not belong on the control plane.** Eight concurrent jobs, several
+pulling large images, on the same nodes as etcd is a way to make the control
+plane intermittently unwell. Runners want a dedicated worker node, which is
+also where the tool-cache volume belongs.
+
+**And "hermetic" starts doing more work.** Today the Test lane's hermeticity is
+what makes a fork's pull request safe to run in full. Once it runs on estate
+hardware, hermetic is a property being asserted rather than one a disposable
+virtual machine was enforcing on our behalf.
+
 ## Acceptance test: change 3 to 5 and watch it land
 
 The epoch is signed off when this works, end to end, with no manual step in
@@ -1105,6 +1222,12 @@ bring it back.
 - **`insecure = true` on the Proxmox provider** — trigger: a trusted cert.
 - **QEMU guest agent** is off deliberately; Talos will not report ready
   without the extension in the Factory schematic.
+- **A CNI that implements `NetworkPolicy`.** Talos's default is Flannel,
+  which does not, so a policy object here is accepted and never evaluated.
+  This is the prerequisite for isolating runner workloads from the estate,
+  and therefore for moving pull request lanes onto the self-hosted runner at
+  all. Cilium or Calico; the choice is its own decision. Trigger: before any
+  workload that should not reach the hypervisor runs on this cluster.
 - **Self-hosted Renovate**, to replace or complement Dependabot for the
   ecosystems it can't cover at all: a Flux `HelmRelease`'s chart version
   (Longhorn's is a manual bump today) and a digest-pinned container image
