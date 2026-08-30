@@ -31,6 +31,10 @@ type Context struct {
 	SkipOverlay   bool
 	SkipUpgrade   bool
 	KeepOnFailure bool
+
+	// Converge means the estate already exists: attach to its state rather
+	// than build from scratch, and never destroy on failure.
+	Converge bool
 }
 
 func NewContext(repoRoot, site string) *Context {

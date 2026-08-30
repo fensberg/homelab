@@ -46,6 +46,19 @@ tasks:
       - 'echo "Built. Run directly so Ctrl-C can safely destroy and sterilize:"'
       - 'echo "  ./scripts/ignite/ignite -site {{.SITE}}"'
 
+  converge:
+    desc: "Apply the config to an estate that already exists"
+    # Safe to wrap, unlike start, and for a reason that is worth stating
+    # rather than assumed. start is unwrapped because an interrupted ignition
+    # can leave VMs nothing is tracking, and only ignite's own signal handler
+    # destroys them. A converge cannot reach that state: the estate already
+    # exists, its state already lives in Postgres, and ignite never destroys
+    # on failure or interrupt in this mode. An interrupted converge leaves a
+    # running estate and a state file that still describes it.
+    cmds:
+      - task: build
+      - ./scripts/ignite/ignite -site {{.SITE}} -converge
+
   plan:
     desc: "Show which phases would run, without running them"
     cmds:

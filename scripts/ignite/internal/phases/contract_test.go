@@ -130,14 +130,24 @@ func TestContract_EveryPhaseInTheSequenceDispatches(t *testing.T) {
 		t.Fatal("found no `case \"...\":` arms in registry.go - the dispatch switch was restructured and this test can no longer see it")
 	}
 
-	for _, name := range AllPhases {
-		if !dispatched[name] {
-			t.Errorf("phase %q is in AllPhases but has no case arm in registry.go: `-phase %s` would panic", name, name)
+	// Both sequences, not just ignition. A phase belongs to at least one of
+	// them - attach only ever runs in a converge, migrate only in an ignition
+	// - so the contract is that dispatch and the union agree exactly, in both
+	// directions.
+	for _, seq := range [][]string{AllPhases, ConvergePhases} {
+		for _, name := range seq {
+			if !dispatched[name] {
+				t.Errorf("phase %q is in a sequence but has no case arm in registry.go: `-phase %s` would panic", name, name)
+			}
 		}
-		delete(dispatched, name)
+	}
+	for _, seq := range [][]string{AllPhases, ConvergePhases} {
+		for _, name := range seq {
+			delete(dispatched, name)
+		}
 	}
 	for name := range dispatched {
-		t.Errorf("registry.go dispatches phase %q, which is not in AllPhases: it can never run as part of a sequence and `-phase %s` is undocumented", name, name)
+		t.Errorf("registry.go dispatches phase %q, which is in neither AllPhases nor ConvergePhases: it can never run as part of a sequence and `-phase %s` is undocumented", name, name)
 	}
 }
 
@@ -173,5 +183,40 @@ thing that makes a short one safe; read that first.`, got, maxSeconds)
 
 	if !strings.Contains(src, "local.overlay_key_expiry_seconds") {
 		t.Error("overlay-network.tf declares overlay_key_expiry_seconds but the key resource does not use it")
+	}
+}
+
+// Converge is the sequence that runs against an estate that already exists, so
+// the two phases it must never contain are the ones that assume it does not.
+// migrate copies local state over the backend with -force-copy; a converge's
+// local state is empty by construction, so running it would erase the estate's
+// own record of itself. This is asserted here rather than left to the sequence
+// literal, because that literal is one careless edit away from being wrong and
+// nothing else would notice until it ran against something real.
+func TestContract_ConvergeExcludesMigrate(t *testing.T) {
+	for _, banned := range []string{"migrate"} {
+		for _, p := range ConvergePhases {
+			if p == banned {
+				t.Fatalf("ConvergePhases contains %q, which overwrites the state of the estate being converged", banned)
+			}
+		}
+	}
+
+	var hasAttach bool
+	for _, p := range ConvergePhases {
+		if p == "attach" {
+			hasAttach = true
+		}
+	}
+	if !hasAttach {
+		t.Fatal("ConvergePhases has no attach phase, so it would start from an empty workspace and plan a second estate beside the real one")
+	}
+
+	// Ignition creates the cluster that holds the state, so it cannot begin by
+	// connecting to it.
+	for _, p := range AllPhases {
+		if p == "attach" {
+			t.Fatal("AllPhases contains attach: ignition cannot attach to state held by a cluster it has not built yet")
+		}
 	}
 }
