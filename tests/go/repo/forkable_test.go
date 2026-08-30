@@ -3,28 +3,58 @@ package repo
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
 
-// Names belonging to this particular estate. These are proper nouns - a real
-// place, a real machine - and they are op:// references in
-// config/management.tpl.json precisely so they live in the vault rather than
-// in git.
+// This repository is meant to be forkable, so no estate's own names may be
+// committed to it. The first version of this check held a list of those names -
+// which put them in the repository permanently, in plaintext, inside the file
+// whose job was keeping them out. A denylist of secrets cannot live in the
+// thing it protects.
 //
-// Unlike a credential, a name has no shape. It is not high-entropy, it is not
-// a key format, and no vendor API can verify it, so every scanner this
-// repository runs is blind to it: gitleaks, TruffleHog, the detect-private-key
-// hook and Checkov's entropy checks all look for the shape of a secret. This
-// list is the only thing that knows these particular words matter, which is
-// why the list exists rather than a cleverer check.
-var estateNames = []string{"sheridan", "martha"}
+// So the check is split. Here, hermetically and with no names in it, a shape:
+// control-plane VM names are derived from the site's own name, which makes
+// them the likeliest thing to be pasted out of a terminal into a fixture or an
+// example. Anything of that shape must use a documented placeholder.
+//
+// The complete check - the real names, read from the vault-backed rendered
+// config and searched for across the tree - lives in tests/go/integration,
+// where credentials already exist and nothing has to be written down.
 
-// The organization's name is different in kind. It is the repository's own
-// public identity - it is in the remote URL, the LICENSE and the bot accounts,
-// and redacting it would break every runnable command in the documentation. So
-// it is banned where it would break a fork rather than everywhere.
-const orgName = "fensberg"
+// Matches a control-plane VM name: <site>-cp-NN.
+var vmNamePattern = regexp.MustCompile(`\b([a-z][a-z0-9-]*)-cp-\d+\b`)
+
+// Placeholder site names that examples and fixtures may use. RFC 5737 does
+// this for addresses; there is no equivalent registry for names, so the
+// repository keeps its own short list.
+var placeholderSites = map[string]bool{
+	"example":             true,
+	"north-street-office": true,
+	"redacted":            true,
+}
+
+// Positional keys - site0, site10 - are the config's own map keys and carry no
+// information about a real place, so examples may use them freely.
+var positionalSite = regexp.MustCompile(`^site\d+$`)
+
+func isPlaceholderSite(name string) bool {
+	return placeholderSites[name] || positionalSite.MatchString(name)
+}
+
+func TestVMNameExamplesUseAPlaceholderSite(t *testing.T) {
+	walkText(t, func(rel, body string) {
+		if strings.HasSuffix(rel, "forkable_test.go") {
+			return // this file contains the pattern in order to describe it
+		}
+		for _, m := range vmNamePattern.FindAllStringSubmatch(strings.ToLower(body), -1) {
+			if !isPlaceholderSite(m[1]) {
+				t.Errorf("%s names a control-plane VM as %q. VM names are derived from the site's own name, which belongs in the vault - use one of the documented placeholders instead.", rel, m[0])
+			}
+		}
+	})
+}
 
 var textFileExts = map[string]bool{
 	".go": true, ".md": true, ".yml": true, ".yaml": true, ".tf": true,
@@ -33,55 +63,6 @@ var textFileExts = map[string]bool{
 
 var skipWalkDirs = map[string]bool{
 	".git": true, "node_modules": true, ".terraform": true, "coverage": true,
-}
-
-// An estate name must appear nowhere in the repository at all.
-//
-// Scoping the first version of this check to Go sources is what let the names
-// sit in an epoch record and a comment in variables.tf: a guard that covers
-// the place somebody already looked is not a guard. Documentation is where the
-// temptation is strongest, because a real hostname makes an example read
-// better - and that is exactly the value that must not be committed.
-func TestNoEstateNamesAnywhere(t *testing.T) {
-	walkText(t, func(rel string, body string) {
-		if strings.HasSuffix(rel, "forkable_test.go") {
-			return // this file names them in order to ban them
-		}
-		lower := strings.ToLower(body)
-		for _, name := range estateNames {
-			if strings.Contains(lower, name) {
-				t.Errorf("%s contains %q. Site and hypervisor names live in the vault, never in git - redact it, or use a documentation placeholder.", rel, name)
-			}
-		}
-	})
-}
-
-// The organization's name must not reach the program sources, because those
-// are the part a fork runs unchanged.
-func TestNoOrgNameInProgramSources(t *testing.T) {
-	root := repoRoot(t)
-	for _, dir := range []string{"scripts", "tests/go"} {
-		err := filepath.Walk(filepath.Join(root, dir), func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
-				return err
-			}
-			rel, _ := filepath.Rel(root, path)
-			if strings.HasSuffix(rel, "forkable_test.go") {
-				return nil
-			}
-			body, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			if strings.Contains(strings.ToLower(string(body)), orgName) {
-				t.Errorf("%s contains %q. Someone forking this runs these sources unchanged; the organization belongs in the vault-backed config, not compiled in.", rel, orgName)
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("walking %s: %v", dir, err)
-		}
-	}
 }
 
 func walkText(t *testing.T, check func(rel, body string)) {

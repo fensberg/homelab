@@ -266,6 +266,21 @@ which is how a prune that silently stopped would surface.
 one fewer moving part than a monitoring stack — and the nightly backup doubles
 as the repair: if last night's was missing or stale, tonight's replaces it.
 
+### Estate names are checked in two tiers, on purpose
+
+`repo/forkable_test.go` is hermetic and holds no names. It checks a shape:
+anything written as a control-plane VM name must use a documented placeholder,
+because those names are derived from the site's own name and are the likeliest
+thing to be pasted out of a terminal into a fixture.
+
+`integration/forkable_test.go` is the complete check. It reads the real names
+from the rendered config at runtime and searches the tree for them, so nothing
+is written down. That is the whole reason it lives here rather than in the
+hermetic tier: the first version of this check held the names in order to look
+for them, which committed them permanently to the repository it was protecting.
+
+It never prints the name it matched. CI logs on a public repository are public.
+
 ## Running the real-estate tiers for the first time
 
 `integration-tests.yml` has never run. Before it can, two things have to exist

@@ -959,10 +959,21 @@ of those properties: `north-street-office-cp-01` is low-entropy, matches no
 credential format, and no vendor can be asked whether it is real. It is
 sensitive by policy, not by structure - and a scanner cannot infer a policy.
 
-**So the only thing that can catch it is a list of the specific words**, which
-is what `tests/go/repo/forkable_test.go` now holds. That feels unsatisfying next
-to a heuristic, and it is the correct shape: the repository is the only place
-that knows which proper nouns belong to this estate.
+**The first fix was worse than the problem.** A list of the specific words is
+the only thing that can catch this - so the check held the names, in plaintext,
+in the file whose job was keeping them out of the repository. A denylist of
+secrets cannot live in the thing it protects, and writing one down permanently
+in order to search for it is not a redaction.
+
+**So the check is split along the line this project already draws.** The
+hermetic tier gets a shape with no names in it: control-plane VM names are
+derived from the site's own name, which makes them the likeliest thing to be
+pasted out of a terminal into a fixture, so anything of that shape must use a
+documented placeholder. The complete check - every real name, read at runtime
+from the vault-backed rendered config and searched for across the tree - lives
+in the integration tier, where credentials already exist and nothing has to be
+committed. It does not print the name it matched, because CI logs on a public
+repository are public.
 
 **Two narrower lessons, both worth more than the fix.**
 
