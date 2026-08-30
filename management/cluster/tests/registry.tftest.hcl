@@ -4,7 +4,7 @@
 # tests/fixtures/manifest.json, which drives the Go half of the same corpus
 # through config.ResolveSiteNetwork. Both implementations gate a real
 # deployment, so both have to reach the same verdict on the same input -
-# scripts/ignite/internal/config/contract_test.go is what proves they do, and
+# scripts/steward/internal/config/contract_test.go is what proves they do, and
 # it fails if a case exists on one side and not the other.
 #
 # Adding a case: write the fixture, add it to manifest.json, add a run block

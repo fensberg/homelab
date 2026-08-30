@@ -52,6 +52,49 @@ the rule that decides where a shared credential belongs: `organization`,
 reason the runner's GitHub App is installed on the organization rather than on
 a repository.
 
+## Tiers, and the one cluster they share
+
+The three tiers are directories and epoch boundaries. They are **not**
+deployment stages, and conflating the two is a mistake this repository has
+already made once in CI.
+
+| Tier        | Path            | What it is                        | Staged? |
+| ----------- | --------------- | --------------------------------- | ------- |
+| Ignition    | `management/`   | The cluster itself - the platform | **No**  |
+| Abstraction | `modules/`      | Reusable definitions              | n/a     |
+| Workload    | `environments/` | What runs on the platform         | **Yes** |
+
+**`site0` is one cluster, and it hosts both staging and production
+workloads.** It is a development platform being built so that real production
+workloads can be deployed onto it. So `environments/staging/` and
+`environments/production/` are two overlays landing on the same hardware,
+separated by namespace and configuration rather than by cluster.
+
+**The management tier therefore has no staging or production form.** There is
+one platform. A converge either changes it or does not; there is no staging
+copy of it to change first. Anything that labels a management operation
+"staging" or "production" is borrowing a word from the tier above and will be
+wrong the moment a production workload lands on the same cluster - a job
+labelled `staging` would be the one restarting a control plane that production
+depends on.
+
+### The four GitHub environments
+
+Each gates one thing, and none overlaps another:
+
+| Environment   | Gates                                    | Triggered by                 |
+| ------------- | ---------------------------------------- | ---------------------------- |
+| `management`  | the platform itself - `steward converge` | merge touching `management/` |
+| `staging`     | workload deploys                         | merge to `main`              |
+| `production`  | workload deploys                         | tag `v*`                     |
+| `integration` | the test tiers that need a real estate   | nightly, or dispatch         |
+
+`management` is a fourth environment rather than a reuse of `staging`
+deliberately. Reusing one would look leaner and would mislabel the job with the
+largest blast radius in the repository. The secret it holds is scoped to match:
+read and write on the `homelab` vault only, because that is the only vault the
+platform's own secrets live in.
+
 ## Invariants
 
 These hold across all epochs. Changing one is an epoch-level decision that
@@ -192,7 +235,7 @@ One entrypoint, a Go program, run from the Linux workstation:
 ```sh
 ./scripts/install-dependencies.sh   # once
 task start SITE=site0               # builds ignite and prints the command to run it
-./scripts/ignite/ignite -site site0 # the actual run - always run this directly, never through task
+./scripts/steward/steward ignite -site site0 # the actual run - always run this directly, never through task
 ```
 
 **`task start` deliberately does not run ignite itself.** `task` intercepts
@@ -447,7 +490,7 @@ floor a pull request may not drop below and is free to leave alone.
   which is far cheaper than one only caught by running real infrastructure -
   the actual, repeated failure mode in this project's own history (the
   self-healing-import fix, the storage-sizing bug, the first full ignition run).
-  Go logic in `scripts/ignite` is tested with the standard library's own
+  Go logic in `scripts/steward` is tested with the standard library's own
   `testing` package - no third-party assertion library, because that module
   has no third-party anything, and keeping it that way is what stops a test
   dependency ever reaching the program that can destroy infrastructure. The

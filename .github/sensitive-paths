@@ -27,11 +27,11 @@ tests/go/repo/                              # The code laws. Deleting one assert
 config/management.tpl.json                  # The vault contract. An unwrapped op:// reference reaches a provider as literal text.
 management/cluster/registry.tf              # The invariants that refuse a bad config. Removing one does not fail - it stops refusing.
 
-scripts/ignite/internal/onepassword/        # Every secret passes here. probe.go returns a Status, never the value it read.
-scripts/ignite/internal/phases/health.go    # Gates Migrate, the point of no return. Weakening it reports success over a cluster that never converged.
-scripts/ignite/internal/phases/backup.go    # Pipes state into age without plaintext touching disk. Buffering to a file breaks that.
-scripts/ignite/internal/phases/restore.go   # The only place that reads the break-glass private key.
-scripts/ignite/internal/phases/encryption.go# Sets TF_ENCRYPTION. Wrong here writes plaintext state to a database that ships off-site.
-scripts/ignite/internal/phases/sterilize.go # Wipes every secret on exit. Skipping a file leaves secrets on disk and still reports success.
-scripts/ignite/internal/phases/teardown.go  # Destroys real infrastructure. The ordering stops state being wiped before the VMs it describes.
+scripts/steward/internal/onepassword/        # Every secret passes here. probe.go returns a Status, never the value it read.
+scripts/steward/internal/phases/health.go    # Gates Migrate, the point of no return. Weakening it reports success over a cluster that never converged.
+scripts/steward/internal/phases/backup.go    # Pipes state into age without plaintext touching disk. Buffering to a file breaks that.
+scripts/steward/internal/phases/restore.go   # The only place that reads the break-glass private key.
+scripts/steward/internal/phases/encryption.go# Sets TF_ENCRYPTION. Wrong here writes plaintext state to a database that ships off-site.
+scripts/steward/internal/phases/sterilize.go # Wipes every secret on exit. Skipping a file leaves secrets on disk and still reports success.
+scripts/steward/internal/phases/teardown.go  # Destroys real infrastructure. The ordering stops state being wiped before the VMs it describes.
 scripts/signedpush/                         # Reads the GitHub App private key. Reaching this mints tokens for this repository.

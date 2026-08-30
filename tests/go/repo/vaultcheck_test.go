@@ -33,9 +33,9 @@ import (
 // so that moving the logic somewhere else fails loudly here instead of
 // silently taking it out of scope.
 var vaultCheckFiles = []string{
-	"scripts/ignite/internal/onepassword/probe.go",
-	"scripts/ignite/internal/phases/checkvault.go",
-	"scripts/ignite/internal/config/vaultrefs.go",
+	"scripts/steward/internal/onepassword/probe.go",
+	"scripts/steward/internal/phases/checkvault.go",
+	"scripts/steward/internal/config/vaultrefs.go",
 }
 
 // Probe's signature is the load-bearing part of the design: one return value,
@@ -45,7 +45,7 @@ var probeSignature = regexp.MustCompile(`func Probe\(ref string\) Status \{`)
 
 func TestVaultProbeReturnsAStatusAndNothingElse(t *testing.T) {
 	root := repoRoot(t)
-	path := filepath.Join(root, "scripts", "ignite", "internal", "onepassword", "probe.go")
+	path := filepath.Join(root, "scripts", "steward", "internal", "onepassword", "probe.go")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading probe.go: %v", err)
@@ -130,7 +130,7 @@ not to rely on.`, rel, call)
 func TestVaultCheckStillExists(t *testing.T) {
 	root := repoRoot(t)
 
-	probe, err := os.ReadFile(filepath.Join(root, "scripts", "ignite", "internal", "phases", "checkvault.go"))
+	probe, err := os.ReadFile(filepath.Join(root, "scripts", "steward", "internal", "phases", "checkvault.go"))
 	if err != nil {
 		t.Fatalf("reading checkvault.go: %v", err)
 	}

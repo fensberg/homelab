@@ -74,7 +74,7 @@ This is the strongest available answer, because it does not depend on cleanup
 running or on rotation being remembered — the bytes are unreadable the moment
 they are written.
 
-**This is built and on.** `scripts/ignite/internal/phases/encryption.go`
+**This is built and on.** `scripts/steward/internal/phases/encryption.go`
 resolves the passphrase from 1Password — generating one on first use, the same
 way the state database password is generated — and sets `TF_ENCRYPTION` before
 any phase runs, `-destroy` included.
@@ -355,7 +355,7 @@ cannot, the run goes red.
 ### Restoring
 
 ```sh
-./scripts/ignite/ignite -site site0 -restore
+./scripts/steward/steward restore -site site0
 ```
 
 This used to be three commands printed at the end of a run, which is not a

@@ -10,7 +10,7 @@
     "hand records a decision that the new floor is one the project intends to",
     "keep standing on.",
     "",
-    "go: scripts/ignite, the shipped program. tests/go is excluded - it is",
+    "go: scripts/steward, the shipped program. tests/go is excluded - it is",
     "test code, and measuring how thoroughly the tests test themselves is a",
     "number with no meaning.",
     "js: measured by vitest over any application code. There is none yet, so",

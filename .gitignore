@@ -65,10 +65,10 @@ state-backup.key
 # Points at a real hypervisor; not for git
 workstation/inventory.yml
 
-# The ignite binary. taskfile.yml builds it here on purpose rather than using
+# The steward binary. taskfile.yml builds it here on purpose rather than using
 # `go run`, whose wrapper process has no signal handler of its own - see the
 # comment at the top of taskfile.yml.
-scripts/ignite/ignite
+scripts/steward/steward
 
 # Same, for the signed-push tool.
 scripts/signedpush/signedpush
@@ -76,7 +76,7 @@ scripts/signedpush/signedpush
 # --- test artefacts ---------------------------------------------------------
 # Coverage output. The committed part of coverage is tests/coverage-baseline.json,
 # which is the floor; the measurements themselves are per-run and disposable.
-scripts/ignite/coverage-go.out
+scripts/steward/coverage-go.out
 coverage/
 
 # Go test binaries, if anyone runs `go test -c`

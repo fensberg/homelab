@@ -80,7 +80,7 @@ func RequireEnv(t *testing.T, names ...string) {
 // --- the rendered config ----------------------------------------------------
 
 // Config holds only the fields a test tier actually reads. It is deliberately
-// a separate declaration from config.Config in scripts/ignite rather than a
+// a separate declaration from config.Config in scripts/steward rather than a
 // shared one: a test that parsed the file with the same code as the program
 // under test would agree with that program about a misreading, which is
 // exactly the class of bug an independent reader catches.

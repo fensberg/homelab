@@ -13,7 +13,7 @@ updates:
       default-days: 7
 
   - package-ecosystem: gomod
-    directory: /scripts/ignite
+    directory: /scripts/steward
     schedule:
       interval: daily
     cooldown:
@@ -30,7 +30,7 @@ updates:
     cooldown:
       default-days: 7
 
-  # The test-only Go module, tracked separately from /scripts/ignite because
+  # The test-only Go module, tracked separately from /scripts/steward because
   # it is a separate module with a completely different dependency profile:
   # ignite has none at all, and this one has Terratest's ~280. Keeping them
   # apart is what stops a Terratest bump ever appearing as a pull request
