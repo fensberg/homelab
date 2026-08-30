@@ -4,7 +4,13 @@
   },
 
   "source_control": {
-    "repo_url": "{{ op://homelab/source-control/url }}"
+    "repo_url": "{{ op://homelab/source-control/url }}",
+
+    "foreman_bot": {
+      "app_id": "{{ op://homelab/source-control/foreman-bot/app_id }}",
+      "installation_id": "{{ op://homelab/source-control/foreman-bot/installation_id }}",
+      "private_key": "{{ op://homelab/source-control/foreman-bot/private_key }}"
+    }
   },
 
   "object_storage": {

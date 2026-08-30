@@ -58,7 +58,8 @@ type Organization struct {
 // request that succeeds without it - while being written to OpenTofu state
 // for the privilege. See management/cluster/gitops.tf.
 type SourceControl struct {
-	RepoURL string `json:"repo_url"`
+	RepoURL    string     `json:"repo_url"`
+	ForemanBot ForemanBot `json:"foreman_bot"`
 }
 
 type Site struct {
