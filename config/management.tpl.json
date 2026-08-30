@@ -17,9 +17,9 @@
   },
 
   "runner": {
-    "app_id": "{{ op://homelab/runner/app_id }}",
-    "installation_id": "{{ op://homelab/runner/installation_id }}",
-    "private_key": "{{ op://homelab/runner/private_key }}"
+    "app_id": "{{ op://homelab/source-control/foreman-bot/app_id }}",
+    "installation_id": "{{ op://homelab/source-control/foreman-bot/installation_id }}",
+    "private_key": "{{ op://homelab/source-control/foreman-bot/private_key }}"
   },
 
   "sites": {
