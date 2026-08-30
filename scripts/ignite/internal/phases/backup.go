@@ -147,7 +147,8 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	// from OpenTofu: this program writes backups on every run and reads one
 	// only when a human asks it to, from `-restore` and nowhere else.
 	fmt.Printf(`
-  To bring this back after a total loss, on a machine with op signed in:
+  To bring this back after a total loss, on a machine with vault access
+  (an 'op signin' session, or OP_SERVICE_ACCOUNT_TOKEN exported):
 
     ./scripts/ignite/ignite -site %s -restore
 
