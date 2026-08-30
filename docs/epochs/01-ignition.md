@@ -943,6 +943,42 @@ avoiding when the answer is meant to be reassuring:
 No output is the pass. Re-run it after a VS Code update, which is exactly when
 a bundled AI component can come back.
 
+### Every secret scanner here is blind to a name
+
+**What happened:** this estate's site and hypervisor names reached test
+fixtures, a comment in `variables.tf` and this record - past a pre-commit hook,
+a secrets-detection hook, a TruffleHog lane, a Semgrep lane, Checkov's entropy
+checks and a repository test suite. None of them was broken. None of them could
+have caught it.
+
+**Because every one of those looks for the _shape_ of a secret.** gitleaks and
+TruffleHog match credential formats and, in TruffleHog's case, verify a
+candidate against the issuing vendor's API. Checkov's `CKV_SECRET_*` checks
+score entropy. `detect-private-key` looks for a PEM header. A hostname has none
+of those properties: `north-street-office-cp-01` is low-entropy, matches no
+credential format, and no vendor can be asked whether it is real. It is
+sensitive by policy, not by structure - and a scanner cannot infer a policy.
+
+**So the only thing that can catch it is a list of the specific words**, which
+is what `tests/go/repo/forkable_test.go` now holds. That feels unsatisfying next
+to a heuristic, and it is the correct shape: the repository is the only place
+that knows which proper nouns belong to this estate.
+
+**Two narrower lessons, both worth more than the fix.**
+
+The `op://` discipline created a false sense of completeness. Every reference in
+`config/management.tpl.json` is asserted to be vault-backed, and that check is
+good - but it covers one file, and it reads like "no values in git". Nothing
+extended the idea to code, because nobody expected code to contain estate
+values.
+
+And tests are where the temptation is strongest. A fixture wants realistic
+data, realistic data is sitting in the terminal scrollback of the run you just
+did, and pasting it makes the test read better. The first version of this guard
+was scoped to Go sources for that reason - and that scoping was itself the
+hole, since it covered the place somebody had just looked rather than the
+places nobody had. Documentation is where the real names actually were.
+
 ### The agent's identity was a single point of failure, and it failed
 
 **What happened:** GitHub suspended the `claude-bot-fensberg` machine account
@@ -1244,7 +1280,7 @@ configuration is in git. The test is what it is because passing it means
 
 It is the right test because it exercises the whole chain in one edit rather
 than any single layer. The count drives addressing (`10.10.10.100-104`),
-naming (`sheridan-cp-01..05`), VM ids (`1000-1004`), placement, the Talos
+naming (`REDACTED-cp-01..05`), VM ids (`1000-1004`), placement, the Talos
 machine configuration applied to each new node, and the wait that proves each
 one answered. If any of those is hardcoded, hand-maintained, or quietly
 assumes three, this fails and names the place.

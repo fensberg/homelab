@@ -39,12 +39,13 @@ locals {
   site = local.config.sites[var.site]
 
   # Everything nameable uses the site's own name, so Proxmox, Talos, kubeconfig
-  # and the Tailscale console all say "sheridan" rather than a positional key
+  # and the Tailscale console all say the site's own name rather than a
+  # positional key
   # nobody recognises. The name is a vault reference, so it never reaches git.
   #
   # Sanitised because these become Proxmox VM names and a Talos cluster name,
-  # which are DNS-shaped: a label like "Sheridan Road Office" has to collapse
-  # to "sheridan-road-office". Falls back to the map key if the name is blank.
+  # which are DNS-shaped: a label like "North Street Office" has to collapse
+  # to "north-street-office". Falls back to the map key if the name is blank.
   site_name = (
     trim(lower(replace(try(local.site.name, ""), "/[^A-Za-z0-9]+/", "-")), "-") != ""
     ? trim(lower(replace(local.site.name, "/[^A-Za-z0-9]+/", "-")), "-")
