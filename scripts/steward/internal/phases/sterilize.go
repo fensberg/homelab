@@ -16,7 +16,23 @@ func Sterilize(ctx *run.Context, quiet bool) error {
 		run.WritePhase("Sterilize", "Remove every secret and the local state file from this workstation.")
 	}
 
-	targets := []string{
+	targets := sterilizeTargets(ctx)
+	for _, t := range targets {
+		if err := run.RemoveIfExists(t); err != nil {
+			return err
+		}
+	}
+	run.Ok("workspace sterilized")
+	return nil
+}
+
+// sterilizeTargets is the list of everything a run may leave behind.
+//
+// Split out so it can be asserted on. A file missing from this list is a
+// secret left on disk or a workspace that no longer validates, and neither
+// failure announces itself - the run still reports success.
+func sterilizeTargets(ctx *run.Context) []string {
+	return []string{
 		ctx.ConfigRendered,
 		ctx.InventoryOut,
 		ctx.OverlayVars,
@@ -25,14 +41,19 @@ func Sterilize(ctx *run.Context, quiet bool) error {
 		ctx.LocalState,
 		ctx.LocalState + ".backup",
 		ctx.Kubeconfig,
+
+		// tofu's record of which backend is configured - not state, but it
+		// remembers that the last one was encrypted Postgres. Left behind, the
+		// next `tofu init -backend=false` fails with "Unsupported state file
+		// format: this state file is encrypted", which breaks `task validate`
+		// and `task test` on any machine that has completed a run. That is
+		// every machine that matters, and the pre-push hook runs both.
+		//
+		// Safe to delete: attach, destroy and sterilize all pass
+		// -backend-config explicitly with -reconfigure, so nothing relies on
+		// the cached record.
+		ctx.TofuBackendRecord,
 	}
-	for _, t := range targets {
-		if err := run.RemoveIfExists(t); err != nil {
-			return err
-		}
-	}
-	run.Ok("workspace sterilized")
-	return nil
 }
 
 // EmergencyDestroy tears down infrastructure a failed run may have created,

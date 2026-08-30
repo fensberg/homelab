@@ -8,17 +8,18 @@ import "path/filepath"
 
 // Context is built once in main and passed to every phase by reference.
 type Context struct {
-	RepoRoot       string
-	ConfigTpl      string
-	ConfigRendered string
-	HypervisorDir  string
-	InventoryOut   string
-	OverlayVars    string
-	SiteVars       string
-	ClusterDir     string
-	BackendPgOff   string
-	BackendPgOn    string
-	LocalState     string
+	RepoRoot          string
+	ConfigTpl         string
+	ConfigRendered    string
+	HypervisorDir     string
+	InventoryOut      string
+	OverlayVars       string
+	SiteVars          string
+	ClusterDir        string
+	TofuBackendRecord string
+	BackendPgOff      string
+	BackendPgOn       string
+	LocalState        string
 
 	// Written only by `task kubeconfig`, for a human who wants to look at the
 	// cluster. Nothing in the ignition sequence creates it - the Health phase
@@ -41,18 +42,19 @@ func NewContext(repoRoot, site string) *Context {
 	hypervisorDir := filepath.Join(repoRoot, "management", "hypervisor")
 	clusterDir := filepath.Join(repoRoot, "management", "cluster")
 	return &Context{
-		RepoRoot:       repoRoot,
-		ConfigTpl:      filepath.Join(repoRoot, "config", "management.tpl.json"),
-		ConfigRendered: filepath.Join(repoRoot, "config", "management.rendered.json"),
-		HypervisorDir:  hypervisorDir,
-		InventoryOut:   filepath.Join(hypervisorDir, "inventory.yml"),
-		OverlayVars:    filepath.Join(hypervisorDir, "overlay-network.auto.yml"),
-		SiteVars:       filepath.Join(hypervisorDir, "site.auto.yml"),
-		ClusterDir:     clusterDir,
-		BackendPgOff:   filepath.Join(clusterDir, "backend_pg.tf.disabled"),
-		BackendPgOn:    filepath.Join(clusterDir, "backend_pg.tf"),
-		LocalState:     filepath.Join(clusterDir, "terraform.tfstate"),
-		Kubeconfig:     filepath.Join(clusterDir, "kubeconfig"),
-		Site:           site,
+		RepoRoot:          repoRoot,
+		ConfigTpl:         filepath.Join(repoRoot, "config", "management.tpl.json"),
+		ConfigRendered:    filepath.Join(repoRoot, "config", "management.rendered.json"),
+		HypervisorDir:     hypervisorDir,
+		InventoryOut:      filepath.Join(hypervisorDir, "inventory.yml"),
+		OverlayVars:       filepath.Join(hypervisorDir, "overlay-network.auto.yml"),
+		SiteVars:          filepath.Join(hypervisorDir, "site.auto.yml"),
+		ClusterDir:        clusterDir,
+		TofuBackendRecord: filepath.Join(clusterDir, ".terraform", "terraform.tfstate"),
+		BackendPgOff:      filepath.Join(clusterDir, "backend_pg.tf.disabled"),
+		BackendPgOn:       filepath.Join(clusterDir, "backend_pg.tf"),
+		LocalState:        filepath.Join(clusterDir, "terraform.tfstate"),
+		Kubeconfig:        filepath.Join(clusterDir, "kubeconfig"),
+		Site:              site,
 	}
 }
