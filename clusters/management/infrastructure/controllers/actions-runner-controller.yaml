@@ -1,0 +1,46 @@
+---
+# Layer 1: the controller that creates and destroys runner pods.
+#
+# It holds the GitHub App credential and talks to the GitHub API; it never runs
+# a workflow itself. The runners it creates live in their own namespace with
+# their own copy of the credential - see management/cluster/runner.tf for why
+# that separation is the point rather than an accident.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: actions-runner-controller
+  namespace: flux-system
+spec:
+  type: oci
+  interval: 24h
+  url: oci://ghcr.io/actions/actions-runner-controller-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gha-runner-scale-set-controller
+  namespace: arc-systems
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: gha-runner-scale-set-controller
+      # renovate: datasource=docker depName=ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+      version: "0.12.1"
+      sourceRef:
+        kind: HelmRepository
+        name: actions-runner-controller
+        namespace: flux-system
+      interval: 12h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # One controller is right for a homelab management cluster, for the same
+    # reason CloudNativePG runs one: it is not in the data path, and a restart
+    # pauses reconciliation rather than losing anything. A job already running
+    # is unaffected.
+    replicaCount: 1

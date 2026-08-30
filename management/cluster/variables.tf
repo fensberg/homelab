@@ -68,7 +68,34 @@ locals {
   # object storage account plane is not the site plane".
   object_storage_account = local.config.object_storage
   site_database          = local.site.database
-  node_count             = local.site.control_plane_count
+
+  # --- CI runners ----------------------------------------------------------
+  # Fleet plane, like the object storage account: one GitHub App serves the
+  # estate, and a runner is a site-level deployment of an estate-level
+  # identity. See runner.tf for why the App is scoped the way it is.
+  runner = local.config.runner
+
+  runner_system_namespace = "arc-systems"
+  runners_namespace       = "arc-runners"
+  runner_secret_name      = "github-app-credentials"
+  runner_group            = "homelab"
+  runner_max              = 2
+
+  # Kept as "self-hosted" so the existing runs-on in deploy-infrastructure.yml
+  # and integration-tests.yml keeps working untouched, along with the guard in
+  # tests/go/repo/selfhosted_test.go. With runner scale sets, runs-on matches
+  # the installation name exactly, so this is a name rather than a label - and
+  # within this repository the App resolves it to exactly one thing. A second
+  # estate has its own organization and its own App, so the word means nothing
+  # there rather than meaning the wrong thing.
+  runner_scale_set_name = "self-hosted"
+
+  # The scale set is registered against the organization, not the repository,
+  # because that is the scope the App was granted. Derived from the repository
+  # URL rather than declared again, so the two cannot disagree:
+  # https://host/org/repo -> https://host/org.
+  runner_github_config_url = join("/", slice(split("/", local.config.source_control.repo_url), 0, 4))
+  node_count               = local.site.control_plane_count
 
   # --- addressing ----------------------------------------------------------
   # The octet is declared, not computed. Reading the config tells you the

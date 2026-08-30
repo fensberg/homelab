@@ -25,3 +25,8 @@ spec:
     substituteFrom:
       - kind: Secret
         name: cluster-vars
+      # Two secrets, two owners: database.tf writes the first and runner.tf
+      # writes this one, so neither file has to be edited to change the
+      # other's variables.
+      - kind: Secret
+        name: runner-vars

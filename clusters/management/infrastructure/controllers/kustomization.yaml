@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
   - cloudnative-pg.yaml
   - openebs.yaml
+  - actions-runner-controller.yaml

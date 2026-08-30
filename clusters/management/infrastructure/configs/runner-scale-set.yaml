@@ -1,0 +1,55 @@
+---
+# Layer 2: the scale set itself, which needs the controller's CRDs to exist.
+#
+# Everything constant here is written literally rather than substituted -
+# namespaces, the secret name, the scale set name, the runner group. Only the
+# organization URL is a ${VAR}, because it is the one value derived from a
+# vault secret and so the only one that must not be committed. Flux substitutes
+# it at reconcile time from the runner-vars secret OpenTofu writes (see
+# management/cluster/runner.tf).
+#
+# The literals are not free: they restate what management/cluster/variables.tf
+# declares. tests/go/repo/runner_test.go asserts the two agree, which is the
+# same shape as registry.tf and config.go implementing one contract twice.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: self-hosted
+  namespace: arc-runners
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: gha-runner-scale-set
+      # renovate: datasource=docker depName=ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+      version: "0.12.1"
+      sourceRef:
+        kind: HelmRepository
+        name: actions-runner-controller
+        namespace: flux-system
+      interval: 12h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # The organization, not the repository. That is the scope the App was
+    # granted, and a runner group restricted to this repository is what stops
+    # the App's reach widening when a second repository joins the estate.
+    githubConfigUrl: ${RUNNER_GITHUB_CONFIG_URL}
+    githubConfigSecret: github-app-credentials
+    runnerGroup: homelab
+
+    # What `runs-on:` has to say. Set explicitly rather than inherited from the
+    # release name, so renaming the release cannot silently orphan every
+    # workflow that targets it.
+    runnerScaleSetName: self-hosted
+
+    # Scale to nothing when idle. A runner pod that exists between jobs is a
+    # runner pod that can be reached between jobs, and there is no warm-start
+    # benefit worth that: the jobs this runs today are minutes long and start
+    # with a checkout regardless.
+    minRunners: 0
+    maxRunners: 2

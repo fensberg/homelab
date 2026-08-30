@@ -24,10 +24,14 @@ rendered="config/management.placeholder.json"
 # Some values have to be shape-correct or a provider rejects them while
 # validate is still evaluating its configuration block - the flux provider
 # checks that the repository URL has a scheme it recognises before anything
-# else happens. So URL-shaped keys are replaced first, by name, and the second
-# pass sweeps up everything left.
+# else happens. private_key is the same class of problem for a different
+# reason: it reaches a Kubernetes secret's binary_data, which must be valid
+# base64, and the literal string "placeholder" is not. So URL-shaped keys and
+# the key are replaced first, by name, and the second pass sweeps up
+# everything left.
 sed -E \
 	-e 's#"([a-z_]*_url|url|endpoint)": *"\{\{[^}]*\}\}"#"\1": "https://example.invalid/placeholder"#' \
+	-e 's#"(private_key)": *"\{\{[^}]*\}\}"#"\1": "cGxhY2Vob2xkZXI="#' \
 	-e 's#\{\{[^}]*\}\}#placeholder#g' \
 	"${template}" >"${rendered}"
 

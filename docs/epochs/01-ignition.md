@@ -1061,12 +1061,49 @@ are declared in `clusters/management/` and reconciled by Flux.
 2. `management/cluster/runner.tf`: the namespaces and the App credential.
 3. `clusters/management/infrastructure/controllers/`: the controller.
 4. `clusters/management/infrastructure/configs/`: the scale set.
-5. A `NetworkPolicy` in both namespaces, deny by default.
+5. Network isolation between the two namespaces - which does not exist yet,
+   for the reason below.
 
 **Controller and runners live in separate namespaces**, and the App secret is
 mounted only in the controller's. A compromised job is then not in the same
 namespace as the credential, which is what makes the low likelihood in the
 threat model actually low rather than asserted.
+
+### The NetworkPolicy this design asked for would not have done anything
+
+**Corrected before it shipped.** The plan above called for a deny-by-default
+`NetworkPolicy` in both runner namespaces, and that was written without
+checking what enforces one here. Nothing does. This cluster runs Talos's
+default CNI, Flannel - no `cni` override appears anywhere in `talos.tf` or the
+machine config patches - and Flannel does not implement `NetworkPolicy` at all.
+The API server accepts the object, stores it, and reports it happily. Nothing
+ever evaluates it.
+
+That is the same failure this epoch already found once, in a different place: a
+guard that protects nothing, indistinguishable from a guard that works right up
+until the day it matters. Shipping it would have been worse than shipping
+nothing, because the record would then say the namespaces are isolated.
+
+**So the separation that exists today is the namespace boundary and the
+credential's scope, and no more than that.** The controller and the runners
+hold separate copies of the same secret rather than sharing a mount, and the
+App can do nothing but register and remove runners. Neither of those depends on
+network enforcement. What is genuinely absent is any restriction on what a
+runner pod may talk to.
+
+**And the policy as drafted was wrong on its own terms, separately from being
+inert.** It would have denied runner pods the Proxmox management network and
+the vault - which is precisely what `integration-tests.yml` needs, since it
+renders config from 1Password and plans against real state. A policy that
+worked would have broken the workflows the runner exists to run.
+
+**The shape that is actually right is two scale sets, not one policy.** Jobs
+that touch the estate need estate access and get it; pull request lanes, when
+they move here, need the opposite and should run in a second scale set with a
+different label and no route to anything. That distinction is enforceable by
+policy only once a CNI that implements policy is installed, which makes the CNI
+the real prerequisite for moving pull request lanes - ahead of the tool cache,
+and ahead of the worker node.
 
 ### Pull request lanes stay on hosted runners for now
 
@@ -1185,6 +1222,12 @@ bring it back.
 - **`insecure = true` on the Proxmox provider** — trigger: a trusted cert.
 - **QEMU guest agent** is off deliberately; Talos will not report ready
   without the extension in the Factory schematic.
+- **A CNI that implements `NetworkPolicy`.** Talos's default is Flannel,
+  which does not, so a policy object here is accepted and never evaluated.
+  This is the prerequisite for isolating runner workloads from the estate,
+  and therefore for moving pull request lanes onto the self-hosted runner at
+  all. Cilium or Calico; the choice is its own decision. Trigger: before any
+  workload that should not reach the hypervisor runs on this cluster.
 - **Self-hosted Renovate**, to replace or complement Dependabot for the
   ecosystems it can't cover at all: a Flux `HelmRelease`'s chart version
   (Longhorn's is a manual bump today) and a digest-pinned container image
