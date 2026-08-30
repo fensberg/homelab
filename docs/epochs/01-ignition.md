@@ -585,6 +585,41 @@ encrypted copy off-site.
 it cannot exist at first apply. R2 covers the circular dependency that
 creates — losing the cluster would otherwise lose the state describing it.
 
+### The restore path was exercised, not assumed
+
+**Drilled 2026-08-30, on the first ignition of `site0`.** The Backup phase
+reports `[ok]` on rclone's exit code, and `pruneOldBackups` independently
+re-lists the bucket to confirm the object arrived. Neither answers the question
+the backup exists for, which is whether the bytes in the bucket can be turned
+back into state by the people who would need them. That was checked directly:
+
+    rclone copyto R2:<bucket>/management-cluster/latest.tfstate.age <drill>/latest.age
+    op read op://homelab/state_backup/identity                    > <drill>/id.key
+    age -d -i <drill>/id.key <drill>/latest.age                   > <drill>/state.json
+    jq -r '.version, .serial, (.resources | length)' <drill>/state.json
+
+Result: `4`, `1`, `19` - a schema version, a serial, and nineteen resources.
+That is the whole chain in one pass: the object is in the bucket, the private
+identity is in the vault at the path `-restore` expects, `age` accepts the
+pair, and what falls out is state describing a real estate rather than bytes
+that merely decoded.
+
+**Three things make this worth repeating rather than recording once.** The
+identity is deliberately absent from `config/management.tpl.json`, so
+`-check-vault` cannot see it and a clean 20-of-20 says nothing about it. The
+Secrets phase only warns when the recipient exists without the identity, so a
+run that has already lost the private half still ends in `Ignition complete`.
+And the pair is stored by hand, once, for the whole estate, which means
+nothing in this repository would notice the two halves drifting apart.
+
+**Do not use `ignite -restore` as the drill.** It pushes what it recovers
+through the encrypted backend, and after the Migrate phase that backend is the
+live cluster's Postgres. The drill above is read-only by construction: it never
+runs `ignite` and it touches nothing the estate is using. Decrypt into a
+`mktemp -d` under a home directory rather than `/tmp`, since the plaintext is
+every secret in the estate for as long as it exists, and `shred -u` it
+afterwards.
+
 ## Compute boots from a pre-installed disk image, not an installer ISO
 
 **Status: resolved.** Every control-plane node was losing network
@@ -768,11 +803,11 @@ environment permanently at reduced power.
 
 Three layers, each independent of the others:
 
-| Layer       | Enforced by                                                                                |
-| ----------- | ------------------------------------------------------------------------------------------ |
-| Workstation | OS user `claude` (uid 1002). Not in `sudo`, `docker`, `adm`. `/home/dev` is `0750 dev:dev` |
-| Vault       | No 1Password account configured, no `OP_SERVICE_ACCOUNT_TOKEN`                             |
-| Forge       | Fine-grained PAT: push on `fensberg/homelab` only, no admin, no `workflow`                 |
+| Layer       | Enforced by                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Workstation | OS user `claude` (uid 1002). Not in `sudo`, `docker`, `adm`. `/home/dev` is `0750 dev:dev`. `/tmp` is polyinstantiated per user |
+| Vault       | No 1Password account configured, no `OP_SERVICE_ACCOUNT_TOKEN`                                                                  |
+| Forge       | Fine-grained PAT: push on `fensberg/homelab` only, no admin, no `workflow`                                                      |
 
 The consequence is the working model: **the agent proposes, the human
 disposes.** Claude opens a pull request; `main protection` requires an
@@ -803,6 +838,7 @@ safe because they are _expected to fail_:
 
     # Workstation
     id; sudo -n true; docker ps; ls /home/dev
+    ls /tmp-inst/; ls /tmp-inst/dev          # both must be Permission denied
 
     # Vault
     op whoami; op vault list; env | grep -c '^OP_'
@@ -822,6 +858,90 @@ so branch protection is never evaluated. Taken at face value it would have
 concluded `main` was writable by the agent. The real answer came from reading
 the ruleset. A privilege check that has only ever been reasoned about is not a
 privilege check.
+
+### `/tmp` was the hole in the workstation layer
+
+**Found while writing a manual procedure around it, which is the tell.** The
+Workstation row above was true and incomplete: `/home/dev` is `0750`, but `/tmp`
+is `1777` and both accounts live in it. It was the one path the privilege wall
+did not cover, and three things were crossing it.
+
+The Backup phase wrote the estate's encrypted state there under a predictable
+name, at the caller's umask, so every ignition run left `claude` a readable copy
+of the whole estate's state - fixed in the commit this record accompanies. Agent
+scratchpad directories were mutually visible: `claude` could not read
+`/tmp/claude-1000` but could see that it existed, who owned it and when it was
+touched. And the VS Code servers for both accounts kept their sockets there.
+
+**Chose:** polyinstantiate `/tmp` and `/var/tmp` per user with `pam_namespace`,
+so the two accounts share no filesystem path at all.
+**Rejected:** telling the operator to prefer a home directory over `/tmp` when
+handling secrets. That is a workaround, and a workaround has to be remembered
+every time; this does not.
+
+    # /etc/security/namespace.conf
+    /tmp       /tmp-inst/       user   root
+    /var/tmp   /var/tmp-inst/   user   root
+
+    # session required pam_namespace.so             -> /etc/pam.d/sshd, /etc/pam.d/login
+    # session required pam_namespace.so unmnt_remnt -> /etc/pam.d/su
+
+**`unmnt_remnt` on `su` is load-bearing.** It unmounts the caller's instance and
+mounts the target's. Without it, `su - dev` from a terminal running as `claude`
+leaves dev inside _claude's_ `/tmp`, writing dev's temporary files into a
+directory claude owns - strictly worse than the shared `/tmp` it replaced.
+
+**The instance directories are `1777`, and that is correct.** `pam_namespace`
+copies the polydir's own mode, and `/tmp` is sticky and world-writable by
+convention. The enforcement is the parent: `/tmp-inst` is `0000 root:root`, so
+nothing but root has search permission on it and the instances underneath are
+reachable only through each user's own bind mount. Tightening the instances
+would break software that expects a normal `/tmp` and would protect nothing.
+
+**Verified from both sides rather than from the config.** As `claude`,
+`/tmp/claude-1000` went from visible to `No such file or directory` and the
+mount namespace id changed; `ls /tmp-inst/` and `ls /tmp-inst/dev` both return
+`Permission denied`. As `dev`, `/tmp` contains only dev-owned entries. Same
+path, two disjoint directories.
+
+**Gotcha, and it costs an hour if it is not written down.** The VS Code server
+keeps its socket in `/tmp`. A server started before this change holds a socket
+in the old shared `/tmp`, so the next connection fails with
+`CodeError(AsyncPipeFailed(... NotFound))` - an error that points nowhere near
+its cause. Both accounts need their server killed once, and the kill only
+sticks after the client has disconnected: killing a server with a client still
+attached just makes the client rebuild it.
+
+### An agent held `dev` for at least two sessions, and nothing noticed
+
+**What happened:** connecting VS Code to the devbox with Remote-SSH as `dev`
+makes `dev` the window's remote user, so the extension host and everything in
+it runs as `dev`. Two artefacts showed it had happened more than once: a
+`dev`-owned agent scratchpad at `/tmp/claude-1000` dated the previous
+afternoon, and a second from that evening, alongside a bundled GitHub Copilot
+process running headless as `dev`. None of the three layers in the table above
+is violated by this - and none of them detects it either, because the
+boundary describes what the `claude` account can reach, not which account an
+agent happens to be running as.
+
+**The property that actually matters is narrower than "no VS Code as `dev`".**
+An editor running as `dev` is ordinary administration. An autonomous coding
+agent holding `dev` is the thing the wall exists to prevent. So the fix is to
+control what runs inside a `dev` window rather than to give the window up:
+uninstall agent extensions from that remote, and disable the AI components
+bundled into the server build itself, which cannot be uninstalled:
+
+    # ~/.vscode-server/data/Machine/settings.json, on dev - scoped to this host only
+    { "chat.disableAIFeatures": true }
+
+**Check it the same way as everything else here.** The brackets stop the
+pattern matching its own command line, which is a false positive worth
+avoiding when the answer is meant to be reassuring:
+
+    ps -u dev -o pid,cmd --no-headers | grep -Ei "[c]opilot|[c]laude"
+
+No output is the pass. Re-run it after a VS Code update, which is exactly when
+a bundled AI component can come back.
 
 ### The agent's identity was a single point of failure, and it failed
 
