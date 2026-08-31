@@ -402,6 +402,26 @@ database is reachable`, len(raw))
 	if err := os.WriteFile(dest, []byte(raw), 0o600); err != nil {
 		return err
 	}
+	// Clean up everything this needed except the thing it was asked for.
+	//
+	// Attaching to read the output writes backend_pg.tf and tofu's backend
+	// record, and Render writes the config - and this verb returns before the
+	// sterilize that a phase sequence would end with. Left behind, the backend
+	// record makes the next `tofu init -backend=false` fail on encrypted
+	// state, which breaks `task validate` and the pre-push hook on a machine
+	// that has done nothing but look at its own cluster.
+	//
+	// The warning below only ever promised to leave the kubeconfig. This makes
+	// that true.
+	for _, t := range sterilizeTargets(ctx) {
+		if t == dest {
+			continue
+		}
+		if err := run.RemoveIfExists(t); err != nil {
+			return err
+		}
+	}
+
 	run.Ok("kubeconfig written to " + dest)
 	run.Warn("It is a credential and it is gitignored, but it is still on this disk. 'task clean-secrets' removes it.")
 	return nil

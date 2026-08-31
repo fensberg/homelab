@@ -1,0 +1,63 @@
+name: Runner Image
+
+# The image CI runs steward in. Rebuilt when the Dockerfile changes or a
+# pinned version does - those are the only two things that can change what is
+# in it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/runner-image/**"
+      - "scripts/versions.env"
+      - ".github/workflows/runner-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: runner-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish
+    # ubuntu-latest deliberately: the runner cannot be relied on to build the
+    # image it is itself running, and this needs no estate access.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to the registry
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+
+      - name: Build and publish
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}-runner
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # The same file install-dependencies.sh reads. Not restated here.
+          . scripts/versions.env
+          docker build \
+            --build-arg TOFU_VERSION="$TOFU_VERSION" \
+            --build-arg RCLONE_VERSION="$RCLONE_VERSION" \
+            -t "${IMAGE}:${SHA}" \
+            -t "${IMAGE}:latest" \
+            .github/runner-image
+          docker push "${IMAGE}:${SHA}"
+          docker push "${IMAGE}:latest"
+          echo "published ${IMAGE}:${SHA}" >> "$GITHUB_STEP_SUMMARY"
