@@ -39,6 +39,7 @@ earlier epoch whose decisions you are about to touch.
 | 03  | Workload       | `environments/`                       | Not started | [03-workload.md](03-workload.md)             |
 | 04  | Observability  | `clusters/management/infrastructure/` | Not started | [04-observability.md](04-observability.md)   |
 | 05  | Node Lifecycle | `management/`, `scripts/contractor/`  | Not started | [05-node-lifecycle.md](05-node-lifecycle.md) |
+| 06  | Consolidation  | repository-wide                       | Not started | [06-consolidation.md](06-consolidation.md)   |
 
 ## Working an epoch
 
