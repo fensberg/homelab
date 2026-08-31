@@ -1,0 +1,14 @@
+# Labels actionlint should accept in `runs-on`, beyond the GitHub-hosted ones
+# it knows about.
+#
+# `homelab-management` is the name of the runner scale set declared in
+# clusters/management/infrastructure/configs/runner-scale-set.yaml. Runners
+# created by a scale set carry only that name as a label - not the default
+# self-hosted / linux / x64 - and jobs reach them by it.
+#
+# Keeping the list here is not busywork: it means a typo in `runs-on` fails at
+# commit time rather than as a job that waits forever for a runner that will
+# never appear, which is exactly how the previous name failed.
+self-hosted-runner:
+  labels:
+    - homelab-management

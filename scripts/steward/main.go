@@ -333,14 +333,42 @@ func runDestroy(ctx *run.Context, confirm string) int {
 // run beginning at `-from migrate` reaches the end without ever having built
 // the cluster it would be describing.
 func completionMessage(toRun []string) string {
-	if len(toRun) == len(phases.AllPhases) && slices.Equal(toRun, phases.AllPhases) {
+	if slices.Equal(toRun, phases.AllPhases) {
 		return "Ignition complete. The cluster is now self-sustaining."
+	}
+	if slices.Equal(toRun, phases.ConvergePhases) {
+		return "Converge complete. The estate matches the config."
 	}
 	if len(toRun) == 1 {
 		return "Phase complete: " + toRun[0] + "."
 	}
+
+	// Out of the sequence this run belongs to, not out of AllPhases. A
+	// complete converge reported "9 of 10" because it was measured against the
+	// ignition sequence it is not part of - which reads as a run that stopped
+	// short.
 	return fmt.Sprintf("Phases complete: %s .. %s (%d of %d).",
-		toRun[0], toRun[len(toRun)-1], len(toRun), len(phases.AllPhases))
+		toRun[0], toRun[len(toRun)-1], len(toRun), len(sequenceFor(toRun)))
+}
+
+// sequenceFor finds the sequence a partial run was taken from, so a count is
+// measured against the right whole.
+//
+// Matched as a suffix rather than by membership, because the sequences overlap:
+// verify and sterilize are in both, so "does this sequence contain the first
+// and last phase" answers yes for the wrong one. selectPhases only ever
+// produces a whole sequence, a suffix of one (-from), or a single phase, so
+// suffix equality identifies it exactly.
+func sequenceFor(toRun []string) []string {
+	for _, seq := range phases.Sequences {
+		if len(toRun) > len(seq) {
+			continue
+		}
+		if slices.Equal(toRun, seq[len(seq)-len(toRun):]) {
+			return seq
+		}
+	}
+	return phases.AllPhases
 }
 
 func selectPhases(phase, from, verb string) ([]string, error) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -279,5 +280,26 @@ func TestPreexistingEstate_OnlyIgniteMayDestroy(t *testing.T) {
 		if !ctx.PreexistingEstate {
 			t.Errorf("verb %q would reach EmergencyDestroy on failure; it did not create the estate and must never tear it down", verb)
 		}
+	}
+}
+
+// A complete converge reported "Phases complete: render .. sterilize (9 of
+// 10)", because the count was measured against the ignition sequence it is not
+// part of. Nine of ten reads as a run that stopped short; it had finished.
+func TestCompletionMessage_MeasuresAgainstTheRightSequence(t *testing.T) {
+	if got := completionMessage(phases.AllPhases); !strings.Contains(got, "Ignition complete") {
+		t.Errorf("a full ignition should say so, got %q", got)
+	}
+	if got := completionMessage(phases.ConvergePhases); !strings.Contains(got, "Converge complete") {
+		t.Errorf("a full converge should say so rather than counting phases, got %q", got)
+	}
+
+	// A partial converge counts against the converge sequence, not the longer
+	// ignition one.
+	partial := phases.ConvergePhases[2:]
+	got := completionMessage(partial)
+	want := fmt.Sprintf("(%d of %d)", len(partial), len(phases.ConvergePhases))
+	if !strings.Contains(got, want) {
+		t.Errorf("partial converge should report %s, got %q", want, got)
 	}
 }

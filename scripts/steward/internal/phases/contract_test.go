@@ -223,3 +223,37 @@ func TestContract_ConvergeExcludesMigrate(t *testing.T) {
 		}
 	}
 }
+
+// vmIDHint tells an operator which VMs to look for in Proxmox after a destroy
+// that could not finish. It computes the band itself rather than reading it
+// from state, because state is exactly what is missing when that message is
+// printed - so the arithmetic is duplicated in Go and can drift from the HCL
+// that actually creates the machines.
+//
+// The address offset already has a contract test. The VM id band did not, and
+// the two were changed together when a node's address, name and id were
+// aligned on one number - which is precisely when a pair like this drifts.
+var vmIDBand = regexp.MustCompile(`vm_id\s*=\s*local\.octet\s*\*\s*(\d+)\s*\+\s*h`)
+
+func TestContract_VMIDBandMatchesTheOpenTofuSource(t *testing.T) {
+	src := clusterFile(t, "variables.tf")
+
+	m := vmIDBand.FindStringSubmatch(src)
+	if m == nil {
+		t.Fatal("could not find `vm_id = local.octet * N + h` in variables.tf.\n\nThe VM id derivation was restructured. sterilize.go computes the same band by hand to tell an operator which VMs to look for after a failed destroy; confirm by hand that it still matches, then update this test to the new shape.")
+	}
+	multiplier, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("multiplier %q is not an integer: %v", m[1], err)
+	}
+	if multiplier != vmIDOctetMultiplier {
+		t.Errorf("VM id band: variables.tf multiplies the octet by %d, sterilize.go by %d.\n\nThe hint printed after a failed destroy would name VMs that do not exist, at the one moment nothing else can say what was created.", multiplier, vmIDOctetMultiplier)
+	}
+
+	// The host octet the band starts at is the same number the addresses start
+	// at - that is the whole point of aligning them - so the existing offset
+	// constant is the right one to check against.
+	if !strings.Contains(src, "host_octets = [for i in range(local.node_count) : "+strconv.Itoa(stateDBFirstNodeHost)+" + i]") {
+		t.Errorf("host_octets no longer starts at %d, so the VM id band and the address range have come apart.", stateDBFirstNodeHost)
+	}
+}

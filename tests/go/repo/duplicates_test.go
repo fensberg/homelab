@@ -97,7 +97,7 @@ func TestYAMLDuplicates(t *testing.T) {
 jobs:
   test:
     runs-on: ubuntu-latest
-    runs-on: self-hosted
+    runs-on: ` + scaleSetName() + `
 `
 	got, err := YAMLDuplicates(content)
 	if err != nil {

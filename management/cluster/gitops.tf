@@ -31,6 +31,18 @@ resource "kubernetes_namespace" "flux_system" {
   metadata {
     name = "flux-system"
   }
+
+  # Flux labels its own namespace once it is running - app.kubernetes.io/*
+  # and kustomize.toolkit.fluxcd.io/*. OpenTofu did not put them there and
+  # would strip them on every run, so Flux re-added them, so the next converge
+  # showed the same update again.
+  #
+  # Harmless on its own, and that is the problem: a change that appears in
+  # every plan is a change nobody reads, and it is the one a real change hides
+  # behind. Ownership of those labels belongs to Flux.
+  lifecycle {
+    ignore_changes = [metadata[0].labels]
+  }
 }
 
 resource "terraform_data" "flux_bootstrap_apply" {
