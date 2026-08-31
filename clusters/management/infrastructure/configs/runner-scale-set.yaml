@@ -113,7 +113,7 @@ spec:
             type: RuntimeDefault
         containers:
           - name: runner
-            image: ghcr.io/fensberg/homelab-runner@sha256:b60c75d13b2e03ccdd183dabcf885a2c0c716266546a9334a7e63c76ae7da612
+            image: ghcr.io/fensberg/homelab-runner@sha256:4f19cd1ab7275b37d1a37c851917b60f0c6d2f27502ec42abb84f49727d9a258
             # Required whenever the template is overridden: the chart supplies
             # this only for its own default runner container.
             command: ["/home/runner/run.sh"]
