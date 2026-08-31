@@ -169,6 +169,12 @@ const (
 	// node_cidr is "10.<octet>.10.0/24", so the first control-plane node -
 	// the one hosting the NodePort - is always at .10.100.
 	stateDBFirstNodeHost = 100
+
+	// The octet multiplier in the VM id band: an id is octet*1000 + host, so
+	// octet 10 owns 10100-10199. Duplicated from variables.tf because the hint
+	// below is printed when state is gone, and pinned by
+	// TestContract_VMIDBandMatchesTheOpenTofuSource.
+	vmIDOctetMultiplier = 1000
 )
 
 // buildStateConnStr reconstructs the pg backend's connection string from the
@@ -211,7 +217,7 @@ func vmIDHint(ctx *run.Context) string {
 	if !ok || site.ControlPlaneCount < 1 {
 		return "this site's VMs"
 	}
-	first := site.Octet*1000 + 100
+	first := site.Octet*vmIDOctetMultiplier + stateDBFirstNodeHost
 	return fmt.Sprintf("VMs %d-%d and the template at %d",
-		first, first+site.ControlPlaneCount-1, site.Octet*1000+199)
+		first, first+site.ControlPlaneCount-1, site.Octet*vmIDOctetMultiplier+199)
 }
