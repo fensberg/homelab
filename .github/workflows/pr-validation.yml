@@ -66,6 +66,9 @@ jobs:
   format:
     name: "Format (pre-commit)"
     runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -125,6 +128,9 @@ jobs:
   shellcheck:
     name: "Shell Lint (ShellCheck)"
     runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows.
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -165,6 +171,9 @@ jobs:
   validate:
     name: "Validate (tofu, kustomize, kubeconform, go)"
     runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -333,6 +342,9 @@ jobs:
   test:
     name: "Test (go, tofu, vitest)"
     runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -477,6 +489,9 @@ jobs:
   analyze:
     name: "Analyze (Super-Linter)"
     runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows.
+    timeout-minutes: 20
     permissions:
       contents: read
       statuses: write
@@ -534,6 +549,9 @@ jobs:
   semgrep:
     name: "Logic Scan (Semgrep)"
     runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows.
+    timeout-minutes: 15
     permissions:
       contents: read
     container:
@@ -583,6 +601,9 @@ jobs:
   trivy:
     name: "IaC Scan (Trivy)"
     runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -631,6 +652,9 @@ jobs:
   secrets:
     name: "Secrets Scan (TruffleHog)"
     runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
