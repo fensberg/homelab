@@ -187,6 +187,21 @@ belongs in an epoch record.
   than asserting that either is secure - a worst case nobody has written down
   is a worst case nobody has weighed.
 
+- **A rendered credential is transient, and that is the safeguard.** The
+  kubeconfig is written on demand and removed by Sterilize. Its short life is
+  the protection, not an inconvenience around it, so nothing may trade that
+  away for convenience: do not keep it between uses, do not reuse an existing
+  copy rather than regenerating one, and do not put `KUBECONFIG` in a shell
+  profile or anything else that assumes it persists. A command that prefers a
+  stale credential on disk over minting a fresh one has swapped the safeguard
+  for two saved seconds.
+
+  The supported form is `contractor kubeconfig -site <site> -- <command>`,
+  which renders into a mode-0600 file outside the repository, runs the command
+  with `KUBECONFIG` pointing at it, and removes it on every exit path including
+  a signal. `contractor kubeconfig` with no command still writes into the
+  workspace for the cases that need a file, and says so.
+
 - **Deletion is not the security property; being worthless is.** Sterilizing
   the workspace assumes the delete happened and that nothing copied the file
   first. So the Backup phase never writes plaintext state to disk at all - it
