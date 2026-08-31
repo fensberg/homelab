@@ -10,7 +10,13 @@
 # not restated here: a plan produced by one version of tofu and applied by
 # another is a difference nobody sees until it matters, and a self-hosted
 # runner is exactly where that drift hides.
-ARG RUNNER_VERSION=2.331.0
+# No default. GitHub retires runner versions server-side: a deprecated one
+# registers, is refused by the broker with "Runner version vX is deprecated and
+# cannot receive messages", and the pod exits - so the scale set churns pods
+# while every job sits queued, with nothing on GitHub's side saying why. The
+# version therefore belongs in versions.env with the others, where it is one
+# line to see and to change.
+ARG RUNNER_VERSION
 FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}
 
 ARG TOFU_VERSION
@@ -89,7 +95,7 @@ RUN curl -fsSL -o /tmp/rclone.deb \
 
 # kubectl, for the Health phase. Pinned to the Talos-supported minor rather
 # than "stable", so an upstream release cannot change what CI runs overnight.
-ARG KUBECTL_VERSION=v1.34.11
+ARG KUBECTL_VERSION
 RUN curl -fsSL -o /usr/local/bin/kubectl \
         "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" \
     && chmod +x /usr/local/bin/kubectl \
