@@ -26,7 +26,7 @@
     "site0": {
       "name": "{{ op://homelab/site0/name }}",
       "octet": 10,
-      "control_plane_count": 5,
+      "control_plane_count": 3,
 
       "hypervisor": {
         "provider": "proxmox",
