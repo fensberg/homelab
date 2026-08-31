@@ -18,6 +18,14 @@ step() { printf '\n\033[36m=== %s\033[0m\n' "$1"; }
 
 has() { command -v "$1" >/dev/null 2>&1; }
 
+# Tool versions live in one file, shared with the runner image's Dockerfile.
+# See scripts/versions.env for why they are not restated in either place.
+# shellcheck source=scripts/versions.env
+# shellcheck disable=SC1091  # ShellCheck needs --external-sources to follow a
+# sourced file, and CI does not pass it. The source= directive above says where
+# the file is for anyone reading; this silences the note about not following it.
+. "$(dirname "$0")/versions.env"
+
 ARCH="$(uname -m)"
 case "$ARCH" in
 x86_64) GOARCH=amd64 ;;
@@ -49,7 +57,6 @@ if [ "${#need_apt[@]}" -gt 0 ]; then
 fi
 
 step "Go (pinned)"
-GO_VERSION=1.26.7
 if has go; then
 	skip "go already present ($(go version))"
 else
@@ -77,7 +84,6 @@ step "Node.js (pinned)"
 # fetching the checksum from the same place as the artefact proves only that
 # the download was not corrupted in transit, not that it is the file this
 # repository was tested against.
-NODE_VERSION=24.19.0
 case "$GOARCH" in
 amd64) NODE_ARCH=x64 NODE_SHA256=14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647 ;;
 arm64) NODE_ARCH=arm64 NODE_SHA256=01443c1e1a29e531ccad5a46fefa6df490d2189c49f7955904aecdbb0fe86fdc ;;
@@ -113,7 +119,6 @@ else
 fi
 
 step "OpenTofu (pinned)"
-TOFU_VERSION=1.12.6
 if has tofu; then
 	skip "tofu already present ($(tofu version | head -1))"
 else
@@ -151,7 +156,6 @@ else
 fi
 
 step "talosctl (pinned)"
-TALOSCTL_VERSION=v1.13.8
 if has talosctl; then
 	skip "talosctl already present"
 else
@@ -163,7 +167,6 @@ else
 fi
 
 step "flux (pinned)"
-FLUX_VERSION=2.7.1
 if has flux; then
 	skip "flux already present"
 else
@@ -185,7 +188,6 @@ else
 fi
 
 step "rclone (pinned)"
-RCLONE_VERSION=1.75.0
 # Presence is not the same question as version, and this step is the one place
 # that difference has teeth. Debian ships an rclone package that arrives as a
 # dependency of other things, so the binary can already be on PATH years older
