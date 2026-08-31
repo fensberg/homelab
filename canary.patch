@@ -1,0 +1,287 @@
+diff --git a/.github/workflows/codeql.yml b/.github/workflows/codeql.yml
+index 0805de7..b704511 100644
+--- a/.github/workflows/codeql.yml
++++ b/.github/workflows/codeql.yml
+@@ -46,6 +46,9 @@ jobs:
+   analyze:
+     name: "Analyze (${{ matrix.language }})"
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 20
+     permissions:
+       security-events: write
+       contents: read
+diff --git a/.github/workflows/dependency-review.yml b/.github/workflows/dependency-review.yml
+index 3b8f904..24a9090 100644
+--- a/.github/workflows/dependency-review.yml
++++ b/.github/workflows/dependency-review.yml
+@@ -31,6 +31,9 @@ defaults:
+ jobs:
+   dependency-review:
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 10
+     steps:
+       - name: Harden the runner (Audit all outbound calls)
+         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 2503776..17fa667 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -73,6 +73,9 @@ jobs:
+   changes:
+     name: What changed
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 10
+     outputs:
+       management: ${{ steps.filter.outputs.management }}
+       workload: ${{ steps.filter.outputs.workload }}
+diff --git a/.github/workflows/estate-canary.yml b/.github/workflows/estate-canary.yml
+new file mode 100644
+index 0000000..b0ad4fe
+--- /dev/null
++++ b/.github/workflows/estate-canary.yml
+@@ -0,0 +1,82 @@
++name: "Estate Canary"
++
++# Watches the estate from outside it.
++#
++# Everything else that reports on this estate runs inside it, and all of it was
++# blind to the failure that actually happened: the estate stopped being able to
++# run jobs at all, and nothing said so for three days. The nightly drift check
++# sat queued from 29 to 31 August without ever failing, because a job that never
++# starts cannot fail - timeout-minutes only counts once a job is running, and a
++# stale queued run is cancelled after about a day with no alarm.
++#
++# So this runs on a GitHub-hosted runner, where the estate cannot starve it. It
++# deliberately holds no credential that reaches the estate: the cluster's API is
++# on the overlay network, and getting to it from here would mean a tailnet key
++# stored outside the estate, which is a worse trade than the blindness it buys.
++
++on:
++  schedule:
++    # Hourly. The threshold for a stuck queue is thirty minutes, so this notices
++    # within the hour - and no more often than that, because a canary that runs
++    # constantly is itself a thing that costs money and makes noise.
++    - cron: "17 * * * *"
++  workflow_dispatch:
++
++permissions:
++  actions: read
++  contents: read
++
++concurrency:
++  group: estate-canary
++  # Safe to cancel, unlike a converge: this reads and changes nothing, so a
++  # newer answer is strictly better than an older one still in flight.
++  cancel-in-progress: true
++
++defaults:
++  run:
++    shell: bash
++
++jobs:
++  canary:
++    name: "Estate Canary"
++    runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 10
++    steps:
++      - name: Harden Runner
++        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
++        with:
++          egress-policy: block
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++            go.dev:443
++            objects.githubusercontent.com:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
++
++      - name: Checkout Code
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      - name: Setup Go
++        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
++        with:
++          go-version: ${{ env.GO_VERSION }}
++          # scripts/canary has no dependencies, so there is nothing to cache.
++          cache: false
++
++      - name: Ask whether the estate is answering for itself
++        env:
++          # Read-only, and scoped to this repository by GitHub. The canary
++          # needs no estate credential at all, which is the point.
++          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          GITHUB_REPOSITORY: ${{ github.repository }}
++        run: |
++          go build -C scripts/canary -o canary .
++          ./scripts/canary/canary | tee "$GITHUB_STEP_SUMMARY"
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index becd169..dd29609 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -66,6 +66,9 @@ jobs:
+   format:
+     name: "Format (pre-commit)"
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 15
+     permissions:
+       contents: read
+     steps:
+@@ -125,6 +128,9 @@ jobs:
+   shellcheck:
+     name: "Shell Lint (ShellCheck)"
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 10
+     permissions:
+       contents: read
+     steps:
+@@ -165,6 +171,9 @@ jobs:
+   validate:
+     name: "Validate (tofu, kustomize, kubeconform, go)"
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 20
+     permissions:
+       contents: read
+     steps:
+@@ -333,6 +342,9 @@ jobs:
+   test:
+     name: "Test (go, tofu, vitest)"
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 20
+     permissions:
+       contents: read
+     steps:
+@@ -477,6 +489,9 @@ jobs:
+   analyze:
+     name: "Analyze (Super-Linter)"
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 20
+     permissions:
+       contents: read
+       statuses: write
+@@ -534,6 +549,9 @@ jobs:
+   semgrep:
+     name: "Logic Scan (Semgrep)"
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 15
+     permissions:
+       contents: read
+     container:
+@@ -583,6 +601,9 @@ jobs:
+   trivy:
+     name: "IaC Scan (Trivy)"
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 15
+     permissions:
+       contents: read
+     steps:
+@@ -631,6 +652,9 @@ jobs:
+   secrets:
+     name: "Secrets Scan (TruffleHog)"
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 15
+     permissions:
+       contents: read
+     steps:
+diff --git a/.github/workflows/scorecard.yml b/.github/workflows/scorecard.yml
+index 123355e..058d450 100644
+--- a/.github/workflows/scorecard.yml
++++ b/.github/workflows/scorecard.yml
+@@ -36,6 +36,9 @@ jobs:
+   scorecard:
+     name: "Repository Posture"
+     runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 15
+     permissions:
+       security-events: write
+       id-token: write
+diff --git a/tests/go/repo/joblaw_test.go b/tests/go/repo/joblaw_test.go
+index 23a9a5a..7685156 100644
+--- a/tests/go/repo/joblaw_test.go
++++ b/tests/go/repo/joblaw_test.go
+@@ -73,13 +73,42 @@ is silent - the checkout succeeds either way.`, file, job)
+ 	})
+ }
+ 
++// A job with no timeout-minutes gets GitHub's default of 360 - six hours. For
++// a lane that normally finishes in two minutes that is not a safety margin, it
++// is six hours of a stuck loop calling whatever the job can reach.
++//
++// That matters here beyond wasted runner time. This estate's workflows talk to
++// Cloudflare, which holds a real credit card, and object storage is billed per
++// operation. A wedged job retrying against R2 is not a hung build, it is an
++// invoice. Twelve of nineteen jobs were unbounded when this was written.
++//
++// The rule is every job rather than only the ones that touch a vendor today,
++// because which jobs those are changes without anyone re-reading this, and a
++// bound on a cheap job costs nothing.
++func TestEveryJobIsBounded(t *testing.T) {
++	forEachJob(t, func(t *testing.T, file, job string, steps []map[string]any) {
++		if jobTimeouts[file+"::"+job] == 0 {
++			t.Errorf(`%s: job %q declares no timeout-minutes.
++
++It therefore inherits GitHub's default of 360 - six hours in which a stuck job
++keeps calling whatever it can reach, including metered vendors. Give it a bound
++comfortably above its normal runtime.`, file, job)
++		}
++	})
++}
++
+ // workflowDoc is the subset of a workflow this file has an opinion about.
+ type workflowDoc struct {
+ 	Jobs map[string]struct {
+-		Steps []map[string]any `yaml:"steps"`
++		Steps   []map[string]any `yaml:"steps"`
++		Timeout int              `yaml:"timeout-minutes"`
+ 	} `yaml:"jobs"`
+ }
+ 
++// jobTimeouts is filled by forEachJob, keyed "<file>::<job>". Kept beside the
++// walk rather than widening its callback, which every other law here ignores.
++var jobTimeouts = map[string]int{}
++
+ func forEachJob(t *testing.T, fn func(t *testing.T, file, job string, steps []map[string]any)) {
+ 	t.Helper()
+ 	dir := filepath.Join(repoRoot(t), ".github", "workflows")
+@@ -104,7 +133,9 @@ func forEachJob(t *testing.T, fn func(t *testing.T, file, job string, steps []ma
+ 		sort.Strings(names) // deterministic output
+ 		for _, n := range names {
+ 			seen++
+-			fn(t, ".github/workflows/"+e.Name(), n, doc.Jobs[n].Steps)
++			file := ".github/workflows/" + e.Name()
++			jobTimeouts[file+"::"+n] = doc.Jobs[n].Timeout
++			fn(t, file, n, doc.Jobs[n].Steps)
+ 		}
+ 	}
+ 	if seen == 0 {
