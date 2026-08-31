@@ -289,8 +289,11 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	nodeIPs := make([]string, site.ControlPlaneCount)
 	vmNames := make([]string, site.ControlPlaneCount)
 	for i := 0; i < site.ControlPlaneCount; i++ {
-		nodeIPs[i] = fmt.Sprintf("10.%d.10.%d", o, 100+i)
-		vmNames[i] = fmt.Sprintf("%s-cp-%02d", slug, i+1)
+		// One number, three uses. See the vm_names local in
+		// management/cluster/variables.tf for why they used to differ.
+		host := 100 + i
+		nodeIPs[i] = fmt.Sprintf("10.%d.10.%d", o, host)
+		vmNames[i] = fmt.Sprintf("%s-cp-%d", slug, host)
 	}
 
 	return &SiteNetwork{

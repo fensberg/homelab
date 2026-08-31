@@ -165,7 +165,7 @@ const (
 	stateDBName     = "tofu_state"
 	stateDBOwner    = "tofu"
 
-	// variables.tf: node_ips is cidrhost(local.node_cidr, 100 + i), and
+	// variables.tf: host_octets is 100 + i and node_ips indexes it, so
 	// node_cidr is "10.<octet>.10.0/24", so the first control-plane node -
 	// the one hosting the NodePort - is always at .10.100.
 	stateDBFirstNodeHost = 100
@@ -200,7 +200,7 @@ func buildStateConnStr(ctx *run.Context) (connStr, host string, port int, err er
 
 // vmIDHint names the VM ids this site would have used, so an operator cleaning
 // up by hand knows what to look for. Ids are banded by octet - variables.tf
-// computes them as octet*100 + i - so the hardcoded "100-102" this replaced
+// computes them as octet*1000 + 100 + i - so the hardcoded "100-102" this replaced
 // was wrong for every site including the only one that exists.
 func vmIDHint(ctx *run.Context) string {
 	cfg, err := config.LoadRendered(ctx.ConfigRendered)
@@ -211,7 +211,7 @@ func vmIDHint(ctx *run.Context) string {
 	if !ok || site.ControlPlaneCount < 1 {
 		return "this site's VMs"
 	}
-	first := site.Octet * 100
+	first := site.Octet*1000 + 100
 	return fmt.Sprintf("VMs %d-%d and the template at %d",
-		first, first+site.ControlPlaneCount-1, first+99)
+		first, first+site.ControlPlaneCount-1, site.Octet*1000+199)
 }

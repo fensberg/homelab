@@ -107,7 +107,53 @@ locals {
   # pool is reserved at .20.0/24 for epoch 02.
   node_cidr    = "10.${local.octet}.10.0/24"
   node_gateway = cidrhost(local.node_cidr, 1)
-  node_ips     = [for i in range(local.node_count) : cidrhost(local.node_cidr, 100 + i)]
+  # The one number every other identifier is derived from.
+  host_octets = [for i in range(local.node_count) : 100 + i]
+
+  # The control plane, keyed by host octet rather than by position.
+  #
+  # for_each, not count. With count the key is a position, so removing a node
+  # renumbers every node after it and OpenTofu replaces all of them - a running
+  # etcd member destroyed for being third instead of fourth, with nothing
+  # calling `talosctl etcd remove-member` first. Keyed by the host octet,
+  # identity is the machine rather than its place in a list: adding "105" is
+  # one create, removing "102" is one destroy, and nothing else moves.
+  #
+  # That is the difference between a control plane whose nodes can be replaced
+  # one at a time and one that can only be rebuilt.
+  control_plane = {
+    for i, h in local.host_octets : tostring(h) => {
+      host_octet = h
+      ip         = cidrhost(local.node_cidr, h)
+      name       = format("%s-cp-%d", local.site_name, h)
+
+      # Banded by octet so two sites can share a Proxmox cluster without
+      # colliding, and ending in the host octet so the id reads back as the
+      # address: octet 10 uses 10100-10199, octet 11 uses 11100-11199. The
+      # octet is asserted 1-95, so the widest band is 95100-95199 - well
+      # inside Proxmox's range.
+      vm_id = local.octet * 1000 + h
+
+      # Still a re-deal when the hypervisor count changes - see
+      # docs/epochs/02-abstraction.md, "Adding a hypervisor currently re-deals
+      # the control plane". Keying by host octet fixes identity churn, not
+      # placement churn; the placement fix needs the assignment to be recorded
+      # rather than recomputed, which is its own change.
+      #
+      # Guarded rather than indexed directly: a site with no hypervisors has an
+      # empty list, and `i % 0` is an error that aborts evaluation before
+      # registry.tf's precondition can say "site has no hypervisor nodes" in
+      # words. The corpus caught exactly that. The empty string never reaches a
+      # resource, because that precondition stops the plan first.
+      hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[i % length(local.hypervisors)].hostname : ""
+    }
+  }
+
+  # Ordered views, for the places that genuinely need a list: the first node is
+  # the cluster endpoint and the NodePort host, and the health data source takes
+  # every address. Sorted by key, which for three-digit octets is numeric order.
+  cp_keys  = sort(keys(local.control_plane))
+  node_ips = [for k in local.cp_keys : local.control_plane[k].ip]
 
   # --- placement -----------------------------------------------------------
   # Control-plane VMs are dealt round-robin across whatever hypervisors the
@@ -115,10 +161,7 @@ locals {
   # which is what makes the cluster survive losing a box. Appending a node to
   # sites[].hypervisor.nodes is all it takes here - but a multi-node Proxmox
   # cluster also needs a vxlan or evpn SDN zone, see docs/epochs/01-ignition.md.
-  vm_placement = [
-    for i in range(local.node_count) :
-    local.hypervisors[i % length(local.hypervisors)].hostname
-  ]
+  vm_placement = [for k in local.cp_keys : local.control_plane[k].hypervisor]
 
   # --- identity ------------------------------------------------------------
   # Everything nameable carries the site, so two sites are distinguishable at
@@ -128,11 +171,18 @@ locals {
   cluster_name = trim(lower(replace(
     "${local.config.organization.name}-${local.site_name}",
   "/[^A-Za-z0-9]+/", "-")), "-")
-  vm_names = [for i in range(local.node_count) : format("%s-cp-%02d", local.site_name, i + 1)]
-
-  # Banded by octet so two sites could share a Proxmox cluster without
-  # colliding: octet 10 uses 1000-1099, octet 11 uses 1100-1199.
-  vm_ids = [for i in range(local.node_count) : local.octet * 100 + i]
+  # One number per node, used three ways.
+  #
+  # It used to be three: the IP was host octet 100+i, the name was i+1, and the
+  # VM id was octet*100+i - so one machine was .100, cp-01 and 1000 at the same
+  # time. Nothing was wrong with any of them alone, and together they meant
+  # every cross-reference during an incident needed arithmetic.
+  #
+  # Now the host octet is the number. The name carries it, the id ends in it,
+  # and it is the last octet of the address:
+  #
+  #     10.10.10.100   <site>-cp-100   vm 10100
+  vm_names = [for k in local.cp_keys : local.control_plane[k].name]
 
   # --- platform ------------------------------------------------------------
   # renovate: datasource=github-releases depName=siderolabs/talos

@@ -359,7 +359,8 @@ unnecessary and the entrypoint moved to Go - see the epoch record for why Go.
 
 `-site` selects a key in the config's `sites` map. Each site declares its own
 `octet`, which picks its `/16`, names the site and its VMs, and bands its VM
-IDs - so `site10-cp-01` lives at `10.10.10.100`. Octets are asserted unique and
+IDs - so `site10-cp-100` lives at `10.10.10.100` as VM `10100`. Octets are
+asserted unique and
 within 1-95 across every site, at plan time and again in the start button.
 
 Scaling is three edits, each in one place:

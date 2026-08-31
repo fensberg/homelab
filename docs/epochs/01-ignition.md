@@ -438,7 +438,7 @@ hex characters, which is positive identification rather than a heuristic.
 
 **Chose:** each site carries an explicit `octet`. It picks the site's network
 (`10.<octet>.0.0/16`), names the site (`site10`), names its VMs
-(`site10-cp-01`) and bands its VM IDs (1000-1099).
+(`site10-cp-100`) and bands its VM IDs (10100-10199).
 **Rejected:** deriving the octet from the array index, which the previous
 attempt did.
 
@@ -454,7 +454,8 @@ gaps you can leave, and an array you can safely reorder. For a structure meant
 to be obvious at a glance, that is the better trade.
 
 Names follow the octet rather than the array position for the same reason:
-`site10-cp-01` lives at `10.10.10.100`, which lines up when reading Proxmox or
+`site10-cp-100` lives at `10.10.10.100` as VM `10100`, which lines up when
+reading Proxmox or
 debugging a route, and stays stable however the array is ordered.
 
 ### Vendor and credentials live inside the site
@@ -1273,6 +1274,68 @@ Proxmox host - the same gap seen from the other side, already in Deferred. The
 drill is epoch 01 scope rather than a later nicety, because the estate is
 disposable exactly once and that property expires the moment something worth
 keeping is on it.
+
+### A node's identity is the machine, not its position
+
+**Chose:** `for_each` over a map keyed by host octet, replacing `count`.
+**Because:** with `count` the key is a position. Removing a node renumbers
+every node after it, and OpenTofu resolves that as destroying and recreating
+each one - a running etcd member torn down for being third instead of fourth,
+with nothing calling `talosctl etcd remove-member` first. That is the same root
+cause as the placement re-deal already recorded in
+[`02-abstraction.md`](02-abstraction.md): positional identity, wearing a
+different hat.
+
+**What it buys is the thing that was actually missing.** Keyed by host octet,
+adding `"105"` is one create and removing `"102"` is one destroy, and nothing
+else moves. That is the precondition for replacing a node one at a time -
+which is how an immutable control plane is patched, resized, moved to new
+hardware, or recovered from a dead box. Before this, the only answer to any
+node-level change was to rebuild the cluster, which is a strange property for a
+platform meant to host production workloads.
+
+**It is not the whole of rolling replacement.** This makes a single-node change
+_expressible_; something still has to drive it in the right order - create,
+wait for Ready and etcd healthy at the new quorum, cordon, drain, reset, remove
+the member, next. That is scoped separately.
+
+**Placement is still a re-deal.** Keying by host octet fixes identity churn,
+not placement churn: `vm_placement` still recomputes `i % length(hypervisors)`,
+so adding a hypervisor still reassigns nodes. Fixing that needs the assignment
+recorded rather than derived, which is its own change and belongs with the
+epoch that adds a second hypervisor.
+
+**Asserted at plan time, not in a test.** The keying and the one-number rule
+are preconditions in `registry.tf`, so they hold for whatever config is
+actually being deployed rather than for the fixtures somebody wrote. Writing
+them turned up a real regression immediately: indexing `local.hypervisors` for
+placement aborts evaluation on a site with no hypervisors, before the
+precondition that reports that in words can fire. The corpus caught it.
+
+### One node, one number
+
+**Chose:** the host octet is the only number, and the address, the name and the
+VM id all carry it - `10.10.10.100` is `<site>-cp-100` is VM `10100`.
+**Because:** they used to be three different numbers for one machine. The
+address was host `100 + i`, the name was `i + 1`, and the VM id was
+`octet * 100 + i`, so the first node was simultaneously `.100`, `cp-01` and
+`1000`. Each was defensible on its own and together they meant every
+cross-reference between Proxmox, kubectl and the network needed arithmetic -
+during an incident, by whoever is least equipped to do it.
+**Rejected:** aligning on `01` and renumbering the addresses, which would have
+moved the subnet for cosmetics; and leaving it, which is what three defensible
+choices always look like from the inside.
+
+**It cannot be applied by a converge.** The VM name is the Talos hostname
+(`talos.tf`, the HostnameConfig patch), so it is also the Kubernetes node name
+and the etcd member identity - renaming every node at once is a cluster
+rebuild, not an update. `vm_id` forces replacement besides. So this lands on
+the next ignition, and `steward plan` will refuse to plan it for the reason it
+refuses any control-plane resize.
+
+**The invariant is asserted rather than described.** `config_test.go` checks
+that each node's name ends in the last octet of its address, so the three
+cannot drift apart again quietly.
 
 ## Acceptance test: change 3 to 5 and watch it land
 
