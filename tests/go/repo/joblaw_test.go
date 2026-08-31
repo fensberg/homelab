@@ -73,12 +73,41 @@ is silent - the checkout succeeds either way.`, file, job)
 	})
 }
 
+// A job with no timeout-minutes gets GitHub's default of 360 - six hours. For
+// a lane that normally finishes in two minutes that is not a safety margin, it
+// is six hours of a stuck loop calling whatever the job can reach.
+//
+// That matters here beyond wasted runner time. This estate's workflows talk to
+// Cloudflare, which holds a real credit card, and object storage is billed per
+// operation. A wedged job retrying against R2 is not a hung build, it is an
+// invoice. Twelve of nineteen jobs were unbounded when this was written.
+//
+// The rule is every job rather than only the ones that touch a vendor today,
+// because which jobs those are changes without anyone re-reading this, and a
+// bound on a cheap job costs nothing.
+func TestEveryJobIsBounded(t *testing.T) {
+	forEachJob(t, func(t *testing.T, file, job string, steps []map[string]any) {
+		if jobTimeouts[file+"::"+job] == 0 {
+			t.Errorf(`%s: job %q declares no timeout-minutes.
+
+It therefore inherits GitHub's default of 360 - six hours in which a stuck job
+keeps calling whatever it can reach, including metered vendors. Give it a bound
+comfortably above its normal runtime.`, file, job)
+		}
+	})
+}
+
 // workflowDoc is the subset of a workflow this file has an opinion about.
 type workflowDoc struct {
 	Jobs map[string]struct {
-		Steps []map[string]any `yaml:"steps"`
+		Steps   []map[string]any `yaml:"steps"`
+		Timeout int              `yaml:"timeout-minutes"`
 	} `yaml:"jobs"`
 }
+
+// jobTimeouts is filled by forEachJob, keyed "<file>::<job>". Kept beside the
+// walk rather than widening its callback, which every other law here ignores.
+var jobTimeouts = map[string]int{}
 
 func forEachJob(t *testing.T, fn func(t *testing.T, file, job string, steps []map[string]any)) {
 	t.Helper()
@@ -104,7 +133,9 @@ func forEachJob(t *testing.T, fn func(t *testing.T, file, job string, steps []ma
 		sort.Strings(names) // deterministic output
 		for _, n := range names {
 			seen++
-			fn(t, ".github/workflows/"+e.Name(), n, doc.Jobs[n].Steps)
+			file := ".github/workflows/" + e.Name()
+			jobTimeouts[file+"::"+n] = doc.Jobs[n].Timeout
+			fn(t, file, n, doc.Jobs[n].Steps)
 		}
 	}
 	if seen == 0 {

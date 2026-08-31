@@ -31,6 +31,9 @@ defaults:
 jobs:
   dependency-review:
     runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows.
+    timeout-minutes: 10
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
