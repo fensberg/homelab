@@ -26,9 +26,14 @@ var (
 func TestTalosctlPinTracksTheClusterVersion(t *testing.T) {
 	root := repoRoot(t)
 
-	script, err := os.ReadFile(filepath.Join(root, "scripts", "install-dependencies.sh"))
+	// The pin moved out of install-dependencies.sh and into versions.env when
+	// the runner image began sharing it - the workstation and the runner have
+	// to agree on the toolchain, so a version is written once. The contract is
+	// unchanged: something still has to keep the client in step with the
+	// cluster.
+	script, err := os.ReadFile(filepath.Join(root, "scripts", "versions.env"))
 	if err != nil {
-		t.Fatalf("reading install-dependencies.sh: %v", err)
+		t.Fatalf("reading versions.env: %v", err)
 	}
 	vars, err := os.ReadFile(filepath.Join(root, "management", "cluster", "variables.tf"))
 	if err != nil {
@@ -37,7 +42,7 @@ func TestTalosctlPinTracksTheClusterVersion(t *testing.T) {
 
 	cli := talosctlPin.FindSubmatch(script)
 	if cli == nil {
-		t.Fatal(`could not find TALOSCTL_VERSION=vX.Y.Z in install-dependencies.sh.
+		t.Fatal(`could not find TALOSCTL_VERSION=vX.Y.Z in scripts/versions.env.
 
 If the pin was restructured, this contract needs re-examining rather than
 re-pointing: something still has to keep the client in step with the cluster.`)
