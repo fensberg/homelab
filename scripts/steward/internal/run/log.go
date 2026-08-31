@@ -3,6 +3,7 @@ package run
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 const (
@@ -28,6 +29,16 @@ func WritePhase(name, description string) {
 	fmt.Printf("%s PHASE %d : %s%s\n", colorCyan, phaseNum, strings.ToUpper(name), colorReset)
 	fmt.Printf("%s %s%s\n", colorGray, description, colorReset)
 	fmt.Println(colorCyan + bar + colorReset)
+}
+
+// Elapsed reports how long a phase took.
+//
+// Added because "that takes a long time" was the only thing anyone could say
+// about a run: the banners say what is happening and nothing says for how
+// long, so there is no way to tell a phase that is slow from one that is
+// stuck without watching it.
+func Elapsed(d time.Duration) {
+	fmt.Printf("  %s(%s)%s\n", colorGray, d.Round(time.Second), colorReset)
 }
 
 func Info(msg string) { fmt.Printf("  -> %s\n", msg) }

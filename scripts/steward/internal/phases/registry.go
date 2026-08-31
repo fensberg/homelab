@@ -1,6 +1,10 @@
 package phases
 
-import "homelab/steward/internal/run"
+import (
+	"time"
+
+	"homelab/steward/internal/run"
+)
 
 // AllPhases is the full ignition sequence, in order.
 var AllPhases = []string{
@@ -41,8 +45,17 @@ var ConvergePhases = []string{
 // existing that nothing can ever run.
 var Sequences = [][]string{AllPhases, ConvergePhases, PlanPhases}
 
-// Run dispatches a single phase by name.
+// Run dispatches a single phase by name and reports how long it took.
+//
+// Timed here rather than in each phase: one place, and no phase can forget.
 func Run(ctx *run.Context, name string) error {
+	start := time.Now()
+	err := dispatch(ctx, name)
+	run.Elapsed(time.Since(start))
+	return err
+}
+
+func dispatch(ctx *run.Context, name string) error {
 	switch name {
 	case "render":
 		return Render(ctx)

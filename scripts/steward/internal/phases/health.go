@@ -81,16 +81,43 @@ degraded cluster. Look at what is listed above, then re-run from here:
 
     ./scripts/steward/steward ignite -site %s -from health`, what, timeout, last, ctx.Site)
 		}
-		run.Info("  still waiting: " + firstLine(last.Error()))
+		run.Info("  still waiting: " + summariseWait(last))
 		time.Sleep(15 * time.Second)
 	}
 }
 
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
+// summariseWait turns a multi-line check failure into one progress line that
+// still says which things are outstanding.
+//
+// It used to print only the first line, which for the Flux check was
+// "4 Flux resource(s) not reconciled:" - a colon promising a list that had
+// just been cut off. Worse, the count moves in both directions as Flux
+// discovers more resources to reconcile, so a run that is progressing normally
+// reads as one going backwards. The names are what make that legible.
+func summariseWait(err error) string {
+	lines := strings.Split(err.Error(), "\n")
+	head := strings.TrimSuffix(strings.TrimSpace(lines[0]), ":")
+
+	var items []string
+	for _, l := range lines[1:] {
+		l = strings.TrimSpace(l)
+		// The long-form errors carry an explanation after a blank line; the
+		// itemised ones do not. Stop at the first gap either way.
+		if l == "" {
+			break
+		}
+		items = append(items, l)
 	}
-	return s
+	if len(items) == 0 {
+		return head
+	}
+
+	joined := strings.Join(items, ", ")
+	const cap = 100
+	if len(joined) > cap {
+		joined = joined[:cap] + "..."
+	}
+	return head + ": " + joined
 }
 
 // --- the checks -------------------------------------------------------------
