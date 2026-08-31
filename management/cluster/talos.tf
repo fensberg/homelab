@@ -48,6 +48,34 @@ data "talos_machine_configuration" "controlplane" {
       kind        = "ResolverConfig"
       nameservers = [{ address = "1.1.1.1" }, { address = "1.0.0.1" }]
     }),
+    # Join the node to the overlay.
+    #
+    # This is how the cluster reaches the hypervisor at all. The node subnet
+    # lives in an EVPN VRF, and a VRF cannot deliver to a local address in
+    # another VRF - the hypervisor's management address is the host itself, and
+    # delivery is decided by which VRF the listening socket is bound to, so no
+    # amount of routing makes it reachable from a pod. As a tailnet peer the
+    # node reaches it directly, and the tailnet ACL rather than a subnet decides
+    # what it may touch.
+    #
+    # The extension comes from the schematic; this only configures it. Both
+    # halves have to move together, which is why the schematic id and this
+    # patch are in the same change.
+    yamlencode({
+      apiVersion = "v1alpha1"
+      kind       = "ExtensionServiceConfig"
+      name       = "tailscale"
+      environment = [
+        "TS_AUTHKEY=${tailscale_tailnet_key.nodes.key}",
+        # Tagged, not user-owned: a tagged device does not expire, so a node
+        # does not silently drop off the tailnet 90 days after it was built.
+        "TS_EXTRA_ARGS=--advertise-tags=${local.overlay_node_tag}",
+        # Nodes consume routes; they never advertise any. The hypervisor is
+        # the subnet router for this site and giving a node that job as well
+        # would put two advertisers on one prefix.
+        "TS_ROUTES=",
+      ]
+    }),
     # The generator already emits a HostnameConfig document itself, with
     # `auto: stable` set, and config_patches merge field-by-field rather
     # than replacing the whole document - so adding `hostname` alone left
