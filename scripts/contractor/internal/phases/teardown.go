@@ -109,14 +109,29 @@ func emptyObjectStorage(ctx *run.Context) {
 	// Report before deleting. A bucket that is already empty, or was never
 	// created because the run failed early, is not an error - there is simply
 	// nothing to do, and the destroy carries on to the VMs either way.
-	if size, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "size", remote); err == nil {
-		summary := strings.Join(strings.Fields(strings.ReplaceAll(size, "\n", " ")), " ")
-		if strings.Contains(summary, "Total objects: 0") {
-			run.Info("object storage is already empty")
-			return
-		}
-		run.Warn("emptying " + remote + " - " + summary)
+	size, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "size", remote)
+	if err != nil {
+		// The bucket is not there to be emptied. That is the normal case when a
+		// run failed before object storage was created, and it is not a problem:
+		// there is nothing to delete, and the bucket resource that would have
+		// held it does not exist either.
+		//
+		// This used to fall through to the delete below and print "could not
+		// empty ... Empty it by hand and re-run", which is alarming, wrong, and
+		// lands on the failure path where somebody is already trying to work out
+		// what went wrong. If the bucket genuinely exists and is unreachable,
+		// destroying it fails loudly a moment later, so nothing is hidden by
+		// stopping here.
+		run.Info("no object storage to empty")
+		return
 	}
+
+	summary := strings.Join(strings.Fields(strings.ReplaceAll(size, "\n", " ")), " ")
+	if strings.Contains(summary, "Total objects: 0") {
+		run.Info("object storage is already empty")
+		return
+	}
+	run.Warn("emptying " + remote + " - " + summary)
 
 	if err := run.CmdEnv(ctx.ClusterDir, env, "rclone", "delete", remote); err != nil {
 		run.Warn("could not empty " + remote + ": " + err.Error())
