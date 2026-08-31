@@ -19,9 +19,27 @@ ARG TARGETARCH=amd64
 
 USER root
 
+# Every RUN below that pipes needs pipefail, or the exit status is the last
+# command's alone: `curl ... | gpg --dearmor` would write an empty keyring and
+# report success when the download failed, and the `rclone version | head -1`
+# and `kubectl version | head -3` checks at the end would pass without their
+# binary ever having run. That is the same masked-exit-code failure that made
+# the Plan job post an empty comment instead of failing, so it is worth the
+# line here. The base image is Ubuntu; bash is present.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # ca-certificates and curl to fetch the rest; gnupg for 1Password's repository
 # key; jq because the workflows use it. age comes from Debian, like the
 # workstation script installs it.
+#
+# hadolint's DL3008 wants these apt packages pinned to exact versions. Not
+# here: Ubuntu's archive keeps only the current version of a package, so a
+# pinned one stops existing the moment a security update supersedes it and the
+# image fails to build outright - and until it does, the pin holds the image on
+# a version that is deliberately not receiving those updates. The versions that
+# actually decide what steward does (the runner, tofu, rclone, kubectl) are
+# pinned explicitly, from release artefacts that do not disappear.
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg jq unzip age \
@@ -30,6 +48,8 @@ RUN apt-get update \
 # 1Password CLI, from 1Password's own repository - the same source
 # install-dependencies.sh uses. Pinned by the repository's own release stream
 # rather than a version argument, because that is how the vendor ships it.
+#
+# hadolint ignore=DL3008
 RUN install -d -m 0755 /usr/share/keyrings \
     && curl -fsSL https://downloads.1password.com/linux/keys/1password.asc \
         | gpg --dearmor -o /usr/share/keyrings/1password-archive-keyring.gpg \
