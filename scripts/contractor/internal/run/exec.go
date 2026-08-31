@@ -1,7 +1,9 @@
 package run
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -73,13 +75,113 @@ func Tofu(ctx *Context, what string, args ...string) error {
 	return nil
 }
 
-// TofuApply runs a targeted (or full, if targets is empty) apply.
+// TofuApply runs a targeted (or full, if targets is empty) apply, and reports
+// addresses and verbs rather than streaming what tofu would print.
+//
+// A plain apply writes the whole planned change to stdout, every non-sensitive
+// attribute included. That is fine on a workstation and wrong in CI: a converge
+// runs in a public repository's Actions log, so an attribute derived from a
+// vault value is published to anyone. It is not hypothetical - a converge
+// printed the site's real name inside a resource description, and rotating the
+// name would only have published the new one.
+//
+// So this is the same rule `plan` already follows, applied to the verb that
+// actually changes things. -json turns the stream into structured events whose
+// hooks carry an address and an action and no attribute values; diagnostics are
+// reported by summary, without the detail, because a detail can quote the value
+// that caused it. The detail is still available by re-running on a workstation,
+// which is where somebody debugging an apply already is.
 func TofuApply(ctx *Context, what string, targets ...string) error {
-	args := []string{"apply", "-input=false", "-auto-approve"}
+	args := []string{"apply", "-input=false", "-auto-approve", "-json"}
 	for _, t := range targets {
 		args = append(args, "-target="+t)
 	}
-	return Tofu(ctx, what, args...)
+	return tofuJSON(ctx, what, args)
+}
+
+// tofuEvent is the subset of tofu's -json stream this reports on. Every other
+// field is ignored rather than filtered, so a new field in a future version
+// cannot start leaking by default.
+type tofuEvent struct {
+	Level   string `json:"@level"`
+	Type    string `json:"type"`
+	Message string `json:"@message"`
+	Hook    struct {
+		Resource struct {
+			Addr string `json:"addr"`
+		} `json:"resource"`
+		Action string `json:"action"`
+	} `json:"hook"`
+	Diagnostic struct {
+		Severity string `json:"severity"`
+		Summary  string `json:"summary"`
+	} `json:"diagnostic"`
+	Changes struct {
+		Add    int `json:"add"`
+		Change int `json:"change"`
+		Remove int `json:"remove"`
+	} `json:"changes"`
+}
+
+// summariseApply reduces tofu's -json stream to addresses and verbs. It is
+// separated from the process handling so it can be tested against a recorded
+// stream: the property that matters is that no attribute value survives, and
+// that is a property of this function alone.
+func summariseApply(r io.Reader) (lines []string, failed []string) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for sc.Scan() {
+		var ev tofuEvent
+		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+			// Not JSON, so not something whose shape is known. Dropping it is
+			// the safe default: an unrecognised line could carry anything.
+			continue
+		}
+		switch ev.Type {
+		case "apply_start", "apply_complete", "apply_errored":
+			if addr := ev.Hook.Resource.Addr; addr != "" {
+				lines = append(lines, fmt.Sprintf("%-9s %s", ev.Hook.Action, addr))
+			}
+		case "change_summary":
+			lines = append(lines, fmt.Sprintf("%d added, %d changed, %d destroyed",
+				ev.Changes.Add, ev.Changes.Change, ev.Changes.Remove))
+		case "diagnostic":
+			if ev.Diagnostic.Severity == "error" {
+				failed = append(failed, ev.Diagnostic.Summary)
+			}
+		}
+	}
+	return lines, failed
+}
+
+func tofuJSON(ctx *Context, what string, args []string) error {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command("tofu", args...)
+	c.Dir = ctx.ClusterDir
+	stdout, err := c.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	// tofu writes its diagnostics into the JSON stream under -json; anything
+	// reaching stderr is the binary itself failing, which carries no attributes.
+	c.Stderr = os.Stderr
+	if err := c.Start(); err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+
+	lines, failed := summariseApply(stdout)
+	for _, l := range lines {
+		Info(l)
+	}
+	waitErr := c.Wait()
+	if len(failed) > 0 {
+		return fmt.Errorf("%s: %s\n\nSummaries only - tofu's detail can quote the value that caused the error, and this runs in a public log. Re-run on a workstation for the full diagnostic",
+			what, strings.Join(failed, "; "))
+	}
+	if waitErr != nil {
+		return fmt.Errorf("%s failed: %w", what, waitErr)
+	}
+	return nil
 }
 
 // TofuInit runs plain init by default, so the committed .terraform.lock.hcl
