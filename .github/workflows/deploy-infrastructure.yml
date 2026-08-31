@@ -126,7 +126,7 @@ jobs:
     # self-hosted runner with real credentials, and the condition above is
     # what keeps an outside contributor's branch away from them - the same
     # boundary pr-validation.yml holds by being hermetic.
-    runs-on: self-hosted
+    runs-on: homelab-management
     environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
     permissions:
       contents: read
@@ -229,7 +229,7 @@ jobs:
     name: Apply
     needs: changes
     if: github.event_name == 'push' && needs.changes.outputs.workload == 'true'
-    runs-on: self-hosted
+    runs-on: homelab-management
     # The environment is the human gate. Configure required reviewers on
     # `production` so a tag cannot deploy unattended; `staging` is where a
     # merge to main lands.
@@ -311,7 +311,7 @@ jobs:
     name: Converge ${{ matrix.site }}
     needs: changes
     if: github.event_name == 'push' && needs.changes.outputs.management == 'true'
-    runs-on: self-hosted
+    runs-on: homelab-management
     environment: management
     permissions:
       contents: read
@@ -370,7 +370,7 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       needs.changes.outputs.management == 'true'
-    runs-on: self-hosted
+    runs-on: homelab-management
     environment: management
     permissions:
       contents: read
