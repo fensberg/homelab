@@ -41,31 +41,36 @@ read out of the workspace and so cannot run before checkout.`, file, job, firstI
 	})
 }
 
-// Everything a job needs before it can do its work - the workspace and the
-// pinned versions - comes from one action, so there is one place to add the
-// next thing and no way to end up with a job that skipped it. It also puts
-// persist-credentials: false out of reach: leaving the token on disk lets any
-// later step push with the job's credentials, and as an option per call site
-// it is a thing to forget.
-func TestNoWorkflowChecksOutForItself(t *testing.T) {
-	dir := filepath.Join(repoRoot(t), ".github", "workflows")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
-			continue
-		}
-		if strings.Contains(readFile(t, filepath.Join(dir, e.Name())), "actions/checkout@") {
-			t.Errorf(`.github/workflows/%s calls actions/checkout directly.
+// Checkout has to be written out in each job, because a local action cannot
+// wrap it: `uses: ./...` is read out of the workspace, so nothing local can run
+// until checkout has produced one. An earlier version of this file tried
+// exactly that - a setup action that did the checkout - and every job failed
+// with "Can't find 'action.yml' ... Did you forget to run actions/checkout
+// before running your local action?". The constraint is real and there is no
+// way around it for a local action.
+//
+// So the duplication stays and the property is asserted instead.
+// persist-credentials: false is the part worth enforcing: leaving the token on
+// disk lets any later step, or anything a later step runs, push with the job's
+// credentials. No job here needs it, and omitting it is silent - the checkout
+// succeeds either way.
+func TestEveryCheckoutRefusesToPersistCredentials(t *testing.T) {
+	forEachJob(t, func(t *testing.T, file, job string, steps []map[string]any) {
+		for _, step := range steps {
+			uses, _ := step["uses"].(string)
+			if !strings.Contains(uses, "actions/checkout@") {
+				continue
+			}
+			with, _ := step["with"].(map[string]any)
+			if v, ok := with["persist-credentials"]; !ok || v != false {
+				t.Errorf(`%s: job %q checks out without persist-credentials: false.
 
-Use `+"`uses: ./.github/actions/setup`"+` instead. It checks out and exports the
-pinned versions, pins checkout once rather than once per job, and always passes
-persist-credentials: false. Pass `+"`with: fetch-depth: 0`"+` if the job diffs
-against a base.`, e.Name())
+The job's token stays on disk for every later step otherwise, and anything one
+of those steps runs can push with it. Nothing here needs it, and leaving it out
+is silent - the checkout succeeds either way.`, file, job)
+			}
 		}
-	}
+	})
 }
 
 // workflowDoc is the subset of a workflow this file has an opinion about.
