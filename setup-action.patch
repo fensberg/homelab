@@ -1,0 +1,694 @@
+diff --git a/.github/workflows/codeql.yml b/.github/workflows/codeql.yml
+index 8b05dde..3525fb9 100644
+--- a/.github/workflows/codeql.yml
++++ b/.github/workflows/codeql.yml
+@@ -26,6 +26,22 @@ on:
+
+ permissions: read-all
+
++# GitHub's default shell for `run:` is `bash -e {0}`, which has no
++# pipefail: in `a | b` only b's exit status counts, so a failing command
++# feeding a working one is a green step. Naming the shell explicitly gets
++# `bash --noprofile --norc -eo pipefail {0}` instead.
++#
++# Not theoretical here. `tofu plan | tee` reported success and posted an
++# empty pull request comment, and `rclone version | head -1` verified
++# nothing while passing - both silent, both green, both wrong answers
++# rather than errors. It is set on every workflow, including those with no
++# `run:` step today, so the one added tomorrow is already covered.
++#
++# tests/go/repo/pipefail_test.go asserts this is present.
++defaults:
++  run:
++    shell: bash
++
+ jobs:
+   analyze:
+     name: "Analyze (${{ matrix.language }})"
+@@ -62,10 +78,8 @@ jobs:
+             release-assets.githubusercontent.com:443
+             uploads.github.com:443
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       - name: Initialize CodeQL
+         uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+diff --git a/.github/workflows/dependency-review.yml b/.github/workflows/dependency-review.yml
+index 16e7e62..ea72ddc 100644
+--- a/.github/workflows/dependency-review.yml
++++ b/.github/workflows/dependency-review.yml
+@@ -12,6 +12,22 @@ on: [pull_request]
+ permissions:
+   contents: read
+
++# GitHub's default shell for `run:` is `bash -e {0}`, which has no
++# pipefail: in `a | b` only b's exit status counts, so a failing command
++# feeding a working one is a green step. Naming the shell explicitly gets
++# `bash --noprofile --norc -eo pipefail {0}` instead.
++#
++# Not theoretical here. `tofu plan | tee` reported success and posted an
++# empty pull request comment, and `rclone version | head -1` verified
++# nothing while passing - both silent, both green, both wrong answers
++# rather than errors. It is set on every workflow, including those with no
++# `run:` step today, so the one added tomorrow is already covered.
++#
++# tests/go/repo/pipefail_test.go asserts this is present.
++defaults:
++  run:
++    shell: bash
++
+ jobs:
+   dependency-review:
+     runs-on: ubuntu-latest
+@@ -44,9 +60,7 @@ jobs:
+             api.securityscorecards.dev:443
+             github.com:443
+
+-      - name: "Checkout Repository"
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+       - name: "Dependency Review"
+         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index e459b44..7f84a28 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -40,6 +40,22 @@ concurrency:
+   group: deploy-infrastructure-${{ github.ref }}
+   cancel-in-progress: false
+
++# GitHub's default shell for `run:` is `bash -e {0}`, which has no
++# pipefail: in `a | b` only b's exit status counts, so a failing command
++# feeding a working one is a green step. Naming the shell explicitly gets
++# `bash --noprofile --norc -eo pipefail {0}` instead.
++#
++# Not theoretical here. `tofu plan | tee` reported success and posted an
++# empty pull request comment, and `rclone version | head -1` verified
++# nothing while passing - both silent, both green, both wrong answers
++# rather than errors. It is set on every workflow, including those with no
++# `run:` step today, so the one added tomorrow is already covered.
++#
++# tests/go/repo/pipefail_test.go asserts this is present.
++defaults:
++  run:
++    shell: bash
++
+ jobs:
+   # ---------------------------------------------------------------------
+   # ROUTING - which tier does this change touch, and which sites exist?
+@@ -61,14 +77,23 @@ jobs:
+       workload: ${{ steps.filter.outputs.workload }}
+       sites: ${{ steps.sites.outputs.sites }}
+     steps:
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++      # This job had no harden-runner at all until the building code went in -
++      # it began at checkout. Hermetic and credential-free, so the exposure was
++      # small, but it is the classification step for the workflow that applies
++      # OpenTofu, and "small" is not the standard the other eighteen jobs are
++      # held to.
++      - name: Harden Runner
++        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
++        with:
++          egress-policy: block
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++
++      - name: Set up
++        uses: ./.github/actions/setup
+         with:
+-          # Deep enough to diff a pull request against its base. This
+-          # repository is small; the cost is seconds and the alternative is
+-          # guessing at a merge base.
+           fetch-depth: 0
+-          persist-credentials: false
+
+       - name: Classify the change
+         id: filter
+@@ -142,10 +167,8 @@ jobs:
+           # infrastructure is worse than an audited one.
+           egress-policy: audit
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       - name: Determine Target Directory
+         run: echo "DIR=environments/staging/infrastructure/" >> "$GITHUB_ENV"
+@@ -249,10 +272,8 @@ jobs:
+           # write access to real infrastructure is worse than an audited one.
+           egress-policy: audit
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       - name: Determine Target Directory
+         id: set-env
+@@ -334,10 +355,8 @@ jobs:
+           # the first real run, then flip to block.
+           egress-policy: audit
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       - name: Setup Go
+         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+@@ -386,10 +405,8 @@ jobs:
+         with:
+           egress-policy: audit
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       - name: Setup Go
+         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+diff --git a/.github/workflows/integration-tests.yml b/.github/workflows/integration-tests.yml
+index b92bb94..e9b1c6e 100644
+--- a/.github/workflows/integration-tests.yml
++++ b/.github/workflows/integration-tests.yml
+@@ -47,6 +47,22 @@ concurrency:
+   group: integration-tests
+   cancel-in-progress: false
+
++# GitHub's default shell for `run:` is `bash -e {0}`, which has no
++# pipefail: in `a | b` only b's exit status counts, so a failing command
++# feeding a working one is a green step. Naming the shell explicitly gets
++# `bash --noprofile --norc -eo pipefail {0}` instead.
++#
++# Not theoretical here. `tofu plan | tee` reported success and posted an
++# empty pull request comment, and `rclone version | head -1` verified
++# nothing while passing - both silent, both green, both wrong answers
++# rather than errors. It is set on every workflow, including those with no
++# `run:` step today, so the one added tomorrow is already covered.
++#
++# tests/go/repo/pipefail_test.go asserts this is present.
++defaults:
++  run:
++    shell: bash
++
+ jobs:
+   test:
+     name: "Integration (${{ inputs.tier || 'integration' }})"
+@@ -71,10 +87,8 @@ jobs:
+           # after the first real run, then flip to block.
+           egress-policy: audit
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       - name: Setup Go
+         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 2a2efd7..5bf8393 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -38,6 +38,22 @@ concurrency:
+ # helped write, so a scanner that finds nothing this week is not redundant -
+ # it is the one that catches what nobody thought to look for.
+
++# GitHub's default shell for `run:` is `bash -e {0}`, which has no
++# pipefail: in `a | b` only b's exit status counts, so a failing command
++# feeding a working one is a green step. Naming the shell explicitly gets
++# `bash --noprofile --norc -eo pipefail {0}` instead.
++#
++# Not theoretical here. `tofu plan | tee` reported success and posted an
++# empty pull request comment, and `rclone version | head -1` verified
++# nothing while passing - both silent, both green, both wrong answers
++# rather than errors. It is set on every workflow, including those with no
++# `run:` step today, so the one added tomorrow is already covered.
++#
++# tests/go/repo/pipefail_test.go asserts this is present.
++defaults:
++  run:
++    shell: bash
++
+ jobs:
+   # -----------------------------------------------------------------
+   # LANE 1: Formatting - fast, and the only lane that also runs locally
+@@ -71,10 +87,8 @@ jobs:
+             storage.googleapis.com:443
+             sum.golang.org:443
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       # The same .pre-commit-config.yaml a developer runs, at the same pinned
+       # versions. That is the point: there is no second copy of prettier here
+@@ -119,10 +133,8 @@ jobs:
+             objects.githubusercontent.com:443
+             release-assets.githubusercontent.com:443
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       - name: Run ShellCheck
+         uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+@@ -178,16 +190,8 @@ jobs:
+             release-assets.githubusercontent.com:443
+             storage.googleapis.com:443
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
+-
+-      # Versions come from scripts/versions.env, which is the only place one
+-      # is written. See .github/actions/versions for why this is a step
+-      # rather than a setup job.
+-      - name: Read pinned versions
+-        uses: ./.github/actions/versions
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       - name: Install OpenTofu
+         run: |
+@@ -341,16 +345,8 @@ jobs:
+             storage.googleapis.com:443
+             sum.golang.org:443
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
+-
+-      # Versions come from scripts/versions.env, which is the only place one
+-      # is written. See .github/actions/versions for why this is a step
+-      # rather than a setup job.
+-      - name: Read pinned versions
+-        uses: ./.github/actions/versions
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       # --- Go -------------------------------------------------------------
+       - name: Setup Go
+@@ -488,11 +484,10 @@ jobs:
+             storage.googleapis.com:443
+             sum.golang.org:443
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++      - name: Set up
++        uses: ./.github/actions/setup
+         with:
+           fetch-depth: 0
+-          persist-credentials: false
+
+       # The same file `task lint` passes to the container, so a local run and
+       # CI are configured identically. See .github/super-linter.vars.
+@@ -535,11 +530,10 @@ jobs:
+           # first, then transcribe the real destinations it logged.
+           egress-policy: audit
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++      - name: Set up
++        uses: ./.github/actions/setup
+         with:
+           fetch-depth: 0
+-          persist-credentials: false
+       - name: Run Semgrep CI
+         run: semgrep ci
+         env:
+@@ -580,11 +574,10 @@ jobs:
+             pkg-containers.githubusercontent.com:443
+             release-assets.githubusercontent.com:443
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++      - name: Set up
++        uses: ./.github/actions/setup
+         with:
+           fetch-depth: 0
+-          persist-credentials: false
+
+       - name: Run Trivy Vulnerability Scanner
+         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+@@ -624,17 +617,10 @@ jobs:
+           # unverified ones, which is the opposite of what this lane is for.
+           egress-policy: audit
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++      - name: Set up
++        uses: ./.github/actions/setup
+         with:
+           fetch-depth: 0
+-          persist-credentials: false
+-
+-      # Versions come from scripts/versions.env, which is the only place one
+-      # is written. See .github/actions/versions for why this is a step
+-      # rather than a setup job.
+-      - name: Read pinned versions
+-        uses: ./.github/actions/versions
+
+       # Not the marketplace action: its own action.yml runs
+       # `docker run "${IMAGE}:${VERSION}"` with VERSION defaulting to
+diff --git a/.github/workflows/runner-image.yml b/.github/workflows/runner-image.yml
+index 294a5db..d82982e 100644
+--- a/.github/workflows/runner-image.yml
++++ b/.github/workflows/runner-image.yml
+@@ -20,6 +20,22 @@ concurrency:
+   group: runner-image
+   cancel-in-progress: false
+
++# GitHub's default shell for `run:` is `bash -e {0}`, which has no
++# pipefail: in `a | b` only b's exit status counts, so a failing command
++# feeding a working one is a green step. Naming the shell explicitly gets
++# `bash --noprofile --norc -eo pipefail {0}` instead.
++#
++# Not theoretical here. `tofu plan | tee` reported success and posted an
++# empty pull request comment, and `rclone version | head -1` verified
++# nothing while passing - both silent, both green, both wrong answers
++# rather than errors. It is set on every workflow, including those with no
++# `run:` step today, so the one added tomorrow is already covered.
++#
++# tests/go/repo/pipefail_test.go asserts this is present.
++defaults:
++  run:
++    shell: bash
++
+ jobs:
+   build:
+     name: Build and publish
+@@ -33,10 +49,8 @@ jobs:
+         with:
+           egress-policy: audit
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       - name: Log in to the registry
+         env:
+diff --git a/.github/workflows/scorecard.yml b/.github/workflows/scorecard.yml
+index 9e76c7c..ee8fd38 100644
+--- a/.github/workflows/scorecard.yml
++++ b/.github/workflows/scorecard.yml
+@@ -16,6 +16,22 @@ on:
+
+ permissions: read-all
+
++# GitHub's default shell for `run:` is `bash -e {0}`, which has no
++# pipefail: in `a | b` only b's exit status counts, so a failing command
++# feeding a working one is a green step. Naming the shell explicitly gets
++# `bash --noprofile --norc -eo pipefail {0}` instead.
++#
++# Not theoretical here. `tofu plan | tee` reported success and posted an
++# empty pull request comment, and `rclone version | head -1` verified
++# nothing while passing - both silent, both green, both wrong answers
++# rather than errors. It is set on every workflow, including those with no
++# `run:` step today, so the one added tomorrow is already covered.
++#
++# tests/go/repo/pipefail_test.go asserts this is present.
++defaults:
++  run:
++    shell: bash
++
+ jobs:
+   scorecard:
+     name: "Repository Posture"
+@@ -43,10 +59,8 @@ jobs:
+             tuf-repo-cdn.sigstore.dev:443
+             www.bestpractices.dev:443
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-        with:
+-          persist-credentials: false
++      - name: Set up
++        uses: ./.github/actions/setup
+
+       - name: Run OpenSSF Scorecard
+         uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+diff --git a/.github/workflows/sensitive-paths.yml b/.github/workflows/sensitive-paths.yml
+index 35e09f2..ceb2673 100644
+--- a/.github/workflows/sensitive-paths.yml
++++ b/.github/workflows/sensitive-paths.yml
+@@ -7,6 +7,22 @@ on:
+ permissions:
+   contents: read
+
++# GitHub's default shell for `run:` is `bash -e {0}`, which has no
++# pipefail: in `a | b` only b's exit status counts, so a failing command
++# feeding a working one is a green step. Naming the shell explicitly gets
++# `bash --noprofile --norc -eo pipefail {0}` instead.
++#
++# Not theoretical here. `tofu plan | tee` reported success and posted an
++# empty pull request comment, and `rclone version | head -1` verified
++# nothing while passing - both silent, both green, both wrong answers
++# rather than errors. It is set on every workflow, including those with no
++# `run:` step today, so the one added tomorrow is already covered.
++#
++# tests/go/repo/pipefail_test.go asserts this is present.
++defaults:
++  run:
++    shell: bash
++
+ jobs:
+   tripwire:
+     name: Sensitive Paths
+@@ -26,11 +42,10 @@ jobs:
+             objects.githubusercontent.com:443
+             release-assets.githubusercontent.com:443
+
+-      - name: Checkout Code
+-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++      - name: Set up
++        uses: ./.github/actions/setup
+         with:
+           fetch-depth: 0
+-          persist-credentials: false
+
+       - name: Which sensitive paths were touched
+         id: sensor
+diff --git a/tests/go/repo/joblaw_test.go b/tests/go/repo/joblaw_test.go
+new file mode 100644
+index 0000000..5811f71
+--- /dev/null
++++ b/tests/go/repo/joblaw_test.go
+@@ -0,0 +1,119 @@
++package repo
++
++import (
++	"os"
++	"path/filepath"
++	"sort"
++	"strings"
++	"testing"
++
++	"gopkg.in/yaml.v3"
++)
++
++// Two rules about how a job starts. Both were written after finding that the
++// `changes` job in deploy-infrastructure.yml began at checkout, with no
++// harden-runner at all - in the workflow that applies OpenTofu. Nothing
++// reported it, because a missing step is not an error anywhere: the job simply
++// ran, unmonitored, and passed.
++//
++// A job is where a token, a runner and the network meet, so how it begins is
++// the part worth making impossible to get wrong.
++
++// harden-runner installs an eBPF agent on the runner VM and monitors egress
++// from that point on. Anything before it is unwatched, so "first" is the whole
++// property - a job that hardens on step four has already run three steps in
++// the clear. It cannot be moved into a composite action for the same reason:
++// a local action is read out of the workspace, so it cannot run before
++// checkout, and hardening after checkout is the wrong order.
++func TestEveryJobHardensTheRunnerFirst(t *testing.T) {
++	forEachJob(t, func(t *testing.T, file, job string, steps []map[string]any) {
++		if len(steps) == 0 {
++			t.Errorf("%s: job %q has no steps", file, job)
++			return
++		}
++		if uses, _ := steps[0]["uses"].(string); !strings.Contains(uses, "step-security/harden-runner@") {
++			t.Errorf(`%s: job %q does not begin with harden-runner (its first step is %q).
++
++Every step before harden-runner runs unmonitored, so this must be the first
++step, not merely present. It cannot live in the setup action: a local action is
++read out of the workspace and so cannot run before checkout.`, file, job, firstIdent(steps[0]))
++		}
++	})
++}
++
++// Everything a job needs before it can do its work - the workspace and the
++// pinned versions - comes from one action, so there is one place to add the
++// next thing and no way to end up with a job that skipped it. It also puts
++// persist-credentials: false out of reach: leaving the token on disk lets any
++// later step push with the job's credentials, and as an option per call site
++// it is a thing to forget.
++func TestNoWorkflowChecksOutForItself(t *testing.T) {
++	dir := filepath.Join(repoRoot(t), ".github", "workflows")
++	entries, err := os.ReadDir(dir)
++	if err != nil {
++		t.Fatalf("reading %s: %v", dir, err)
++	}
++	for _, e := range entries {
++		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
++			continue
++		}
++		if strings.Contains(readFile(t, filepath.Join(dir, e.Name())), "actions/checkout@") {
++			t.Errorf(`.github/workflows/%s calls actions/checkout directly.
++
++Use `+"`uses: ./.github/actions/setup`"+` instead. It checks out and exports the
++pinned versions, pins checkout once rather than once per job, and always passes
++persist-credentials: false. Pass `+"`with: fetch-depth: 0`"+` if the job diffs
++against a base.`, e.Name())
++		}
++	}
++}
++
++// workflowDoc is the subset of a workflow this file has an opinion about.
++type workflowDoc struct {
++	Jobs map[string]struct {
++		Steps []map[string]any `yaml:"steps"`
++	} `yaml:"jobs"`
++}
++
++func forEachJob(t *testing.T, fn func(t *testing.T, file, job string, steps []map[string]any)) {
++	t.Helper()
++	dir := filepath.Join(repoRoot(t), ".github", "workflows")
++	entries, err := os.ReadDir(dir)
++	if err != nil {
++		t.Fatalf("reading %s: %v", dir, err)
++	}
++	var seen int
++	for _, e := range entries {
++		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
++			continue
++		}
++		var doc workflowDoc
++		if err := yaml.Unmarshal([]byte(readFile(t, filepath.Join(dir, e.Name()))), &doc); err != nil {
++			t.Errorf("parsing .github/workflows/%s: %v", e.Name(), err)
++			continue
++		}
++		names := make([]string, 0, len(doc.Jobs))
++		for n := range doc.Jobs {
++			names = append(names, n)
++		}
++		sort.Strings(names) // deterministic output
++		for _, n := range names {
++			seen++
++			fn(t, ".github/workflows/"+e.Name(), n, doc.Jobs[n].Steps)
++		}
++	}
++	if seen == 0 {
++		t.Fatal("found no jobs in any workflow, so this test proves nothing")
++	}
++}
++
++// firstIdent names a step for an error message: its `uses`, else its `name`.
++func firstIdent(step map[string]any) string {
++	if u, ok := step["uses"].(string); ok {
++		return u
++	}
++	if n, ok := step["name"].(string); ok {
++		return n
++	}
++	return "(unnamed step)"
++}
+diff --git a/tests/go/repo/pipefail_test.go b/tests/go/repo/pipefail_test.go
+new file mode 100644
+index 0000000..7e0fb14
+--- /dev/null
++++ b/tests/go/repo/pipefail_test.go
+@@ -0,0 +1,61 @@
++package repo
++
++import (
++	"os"
++	"path/filepath"
++	"regexp"
++	"strings"
++	"testing"
++)
++
++// GitHub runs a `run:` step under `bash -e {0}` unless the shell is named.
++// That has -e but not -o pipefail, so in `a | b` only b's status is the step's
++// status: a command that fails while feeding one that succeeds is a green
++// step. Naming the shell explicitly selects
++// `bash --noprofile --norc -eo pipefail {0}`.
++//
++// This repository has paid for that default twice, and neither time looked
++// like a failure:
++//
++//   - `tofu plan | tee` took its status from tee, so a job that had already
++//     failed reported success and posted an empty pull request comment.
++//   - `rclone version | head -1` took its status from head, so the runner
++//     image's own verification step passed whether or not rclone ran. The
++//     check had never checked anything.
++//
++// Neither is visible in a diff, and no linter reports it, because nothing is
++// wrong with the text - the default is wrong. So it is asserted here instead,
++// on every workflow rather than only those with a `run:` step today, so that
++// the one added tomorrow is covered before it is written.
++var pipefailDefault = regexp.MustCompile(`(?m)^defaults:\s*\n\s+run:\s*\n\s+shell:\s+bash\s*$`)
++
++func TestEveryWorkflowDefaultsToAPipefailShell(t *testing.T) {
++	dir := filepath.Join(repoRoot(t), ".github", "workflows")
++	entries, err := os.ReadDir(dir)
++	if err != nil {
++		t.Fatalf("reading %s: %v", dir, err)
++	}
++
++	var checked int
++	for _, e := range entries {
++		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
++			continue
++		}
++		checked++
++		if !pipefailDefault.MatchString(readFile(t, filepath.Join(dir, e.Name()))) {
++			t.Errorf(`.github/workflows/%s does not set a pipefail shell.
++
++Add this above its jobs::
++
++    defaults:
++      run:
++        shell: bash
++
++Without it every `+"`run:`"+` step in the file runs under `+"`bash -e {0}`"+`, where a
++failing command in a pipeline is hidden by whatever it pipes into.`, e.Name())
++		}
++	}
++	if checked == 0 {
++		t.Fatal("found no workflows, so this test proves nothing")
++	}
++}
