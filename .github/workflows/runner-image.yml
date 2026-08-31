@@ -1,6 +1,6 @@
 name: Runner Image
 
-# The image CI runs steward in. Rebuilt when the Dockerfile changes or a
+# The image CI runs contractor in. Rebuilt when the Dockerfile changes or a
 # pinned version does - those are the only two things that can change what is
 # in it.
 on:

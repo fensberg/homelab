@@ -299,7 +299,7 @@ jobs:
   # Not `apply` with a different directory. The workload tier is plain
   # OpenTofu in a folder; the estate is a phased program that renders
   # secrets, attaches to state living in this cluster, applies, re-backs-up
-  # and sterilises. `steward converge` is that sequence.
+  # and sterilises. `contractor converge` is that sequence.
   #
   # READ BEFORE WIDENING: this runner lives inside the cluster it is
   # converging. Adding a control-plane node is safe. A change that disrupts
@@ -343,7 +343,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.7"
-          # No cache. scripts/steward has zero external dependencies, so the
+          # No cache. scripts/contractor has zero external dependencies, so the
           # cache saves nothing - and on a self-hosted runner it persists
           # between jobs, which is a poisoning surface for no benefit.
           cache: false
@@ -355,8 +355,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SITE: ${{ matrix.site }}
         run: |
-          go build -C scripts/steward -o steward .
-          ./scripts/steward/steward converge -site "$SITE"
+          go build -C scripts/contractor -o contractor .
+          ./scripts/contractor/contractor converge -site "$SITE"
 
   # ---------------------------------------------------------------------
   # PLAN THE ESTATE - on a pull request touching management/.
@@ -403,8 +403,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SITE: ${{ matrix.site }}
         run: |
-          go build -C scripts/steward -o steward .
-          ./scripts/steward/steward plan -site "$SITE" | tee plan-summary.txt
+          go build -C scripts/contractor -o contractor .
+          ./scripts/contractor/contractor plan -site "$SITE" | tee plan-summary.txt
 
       - name: Comment the plan on the pull request
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -417,7 +417,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: [
-                '### Your steward checking in',
+                '### Your contractor checking in',
                 '',
                 'This is how the estate changes if this merges. Addresses and actions only — never a value.',
                 '',
