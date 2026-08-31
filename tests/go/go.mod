@@ -1,6 +1,6 @@
-// A module of its own, deliberately separate from scripts/steward.
+// A module of its own, deliberately separate from scripts/contractor.
 //
-// scripts/steward has zero external dependencies, and that is load-bearing:
+// scripts/contractor has zero external dependencies, and that is load-bearing:
 // it is why the Validate lane needs no go.sum cache, why Trivy's gomod scan
 // of the shipped binary has nothing to find, and why Dependabot never opens a
 // pull request against the one program that can destroy infrastructure.
@@ -8,9 +8,9 @@
 // world; putting that in ignite's module would trade all of the above for
 // test-only code that never ships.
 //
-// The cost is that this module cannot import homelab/steward/internal/* - Go's
+// The cost is that this module cannot import homelab/contractor/internal/* - Go's
 // internal/ rule is per-module. That is why the config-contract tests live
-// inside ignite itself (scripts/steward/internal/config/contract_test.go) and
+// inside ignite itself (scripts/contractor/internal/config/contract_test.go) and
 // only the tiers that treat the system as a black box live here.
 module homelab/tests
 

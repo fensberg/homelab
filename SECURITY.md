@@ -22,7 +22,7 @@ architecture). In scope:
 - Anything that could cause a secret to land in git
 - A misconfiguration in `.github/workflows/` that weakens the controls
   `CLAUDE.md` describes (egress policy, token permissions, required checks)
-- A vulnerability in the `scripts/steward` Go program itself
+- A vulnerability in the `scripts/contractor` Go program itself
 
 Out of scope: vulnerabilities in third-party dependencies this project only
 consumes (Proxmox, Talos, Flux, Terraform providers, etc.) - please report

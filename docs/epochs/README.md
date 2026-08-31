@@ -10,7 +10,7 @@ earlier epoch whose decisions you are about to touch.
 ## State of the world
 
 - **Current epoch:** 01 — Ignition
-- **Built:** the phased ignition button (`scripts/steward`), an
+- **Built:** the phased ignition button (`scripts/contractor`), an
   idempotent Proxmox playbook, Talos + Flux provisioning, codified overlay-network
   route auto-approval, and a two-layer state backup story.
 - **Database:** CloudNativePG, reconciled by Flux, streaming backups to object
@@ -38,7 +38,7 @@ earlier epoch whose decisions you are about to touch.
 | 02  | Abstraction    | `modules/`                            | Not started | [02-abstraction.md](02-abstraction.md)       |
 | 03  | Workload       | `environments/`                       | Not started | [03-workload.md](03-workload.md)             |
 | 04  | Observability  | `clusters/management/infrastructure/` | Not started | [04-observability.md](04-observability.md)   |
-| 05  | Node Lifecycle | `management/`, `scripts/steward/`     | Not started | [05-node-lifecycle.md](05-node-lifecycle.md) |
+| 05  | Node Lifecycle | `management/`, `scripts/contractor/`  | Not started | [05-node-lifecycle.md](05-node-lifecycle.md) |
 
 ## Working an epoch
 

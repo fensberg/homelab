@@ -21,7 +21,7 @@
 // There will not be one for years, so that guard did not make this tier safer;
 // it made it unrunnable. The estate here is disposable by design, and the two
 // guards above already require the site to be named twice, which is exactly
-// what `steward destroy` asks of a human.
+// what `contractor demolish` asks of a human.
 //
 // # What it covers
 //
@@ -30,7 +30,7 @@
 // off-site. It used to stop before Migrate, because after that point tearing
 // down means destroying the database holding the only record of what there is
 // to destroy, and the code that unwinds that lived only on the failure route.
-// `steward destroy` is now a supported entrypoint that handles it, so this
+// `contractor demolish` is now a supported entrypoint that handles it, so this
 // tier can cover the part of ignition that was previously untestable - which
 // is also the part with the most ways to go wrong.
 //
@@ -75,7 +75,7 @@ func guard(t *testing.T) string {
 	// unrunnable, which is a worse outcome than running it. An untestable test
 	// protects nothing.
 	//
-	// What remains is the same shape `steward destroy` uses and for the same
+	// What remains is the same shape `contractor demolish` uses and for the same
 	// reason: the site has to be named twice, once to select it and once to
 	// confirm it, which is not something that happens by accident. The estate
 	// this project builds is disposable by design - re-running ignition
@@ -91,7 +91,7 @@ func guard(t *testing.T) string {
 func ignite(t *testing.T, site string, args ...string) error {
 	t.Helper()
 	root := harness.RepoRoot(t)
-	bin := filepath.Join(root, "scripts", "steward", "steward")
+	bin := filepath.Join(root, "scripts", "contractor", "contractor")
 
 	cmd := exec.Command(bin, append([]string{"-site", site}, args...)...)
 	cmd.Dir = root
@@ -102,7 +102,7 @@ func ignite(t *testing.T, site string, args ...string) error {
 
 func buildIgnite(t *testing.T) {
 	t.Helper()
-	build := exec.Command("go", "build", "-C", filepath.Join(harness.RepoRoot(t), "scripts", "steward"), "-o", "steward", ".")
+	build := exec.Command("go", "build", "-C", filepath.Join(harness.RepoRoot(t), "scripts", "contractor"), "-o", "contractor", ".")
 	build.Stdout, build.Stderr = os.Stdout, os.Stderr
 	require.NoError(t, build.Run(), "building ignite")
 }
@@ -147,13 +147,13 @@ func TestIgnitionBuildsAndTearsDownAnEstate(t *testing.T) {
 // test has to say it twice.
 func teardown(t *testing.T, site string) {
 	if err := ignite(t, site, "-destroy", "-confirm", site); err != nil {
-		t.Errorf(`steward destroy failed: %v
+		t.Errorf(`contractor demolish failed: %v
 
 State and secrets have been left in place on purpose - that is what the
 destroy path does when it cannot finish, because wiping them is how VMs get
 orphaned. Check Proxmox by hand, then re-run:
 
-    ./scripts/steward/steward destroy -site %s -confirm %s`, err, site, site)
+    ./scripts/contractor/contractor demolish -site %s -confirm %s`, err, site, site)
 	}
 }
 

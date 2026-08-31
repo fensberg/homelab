@@ -74,7 +74,7 @@ This is the strongest available answer, because it does not depend on cleanup
 running or on rotation being remembered — the bytes are unreadable the moment
 they are written.
 
-**This is built and on.** `scripts/steward/internal/phases/encryption.go`
+**This is built and on.** `scripts/contractor/internal/phases/encryption.go`
 resolves the passphrase from 1Password — generating one on first use, the same
 way the state database password is generated — and sets `TF_ENCRYPTION` before
 any phase runs, `-destroy` included.
@@ -256,7 +256,7 @@ do, which is where the work is:
 Because of (3), the honest sequencing for a suspected state leak is: rotate
 everything in Layer 2 first, then decide whether the Talos PKI rotation is
 warranted, and if it is, treat rebuilding the cluster from scratch as a
-serious alternative. `steward destroy` followed by a fresh ignition is well
+serious alternative. `contractor demolish` followed by a fresh ignition is well
 tested, fully automated, and takes less time than a careful CA rotation — and
 it leaves nothing behind to be uncertain about.
 
@@ -355,7 +355,7 @@ cannot, the run goes red.
 ### Restoring
 
 ```sh
-./scripts/steward/steward restore -site site0
+./scripts/contractor/contractor restore -site site0
 ```
 
 This used to be three commands printed at the end of a run, which is not a
@@ -395,19 +395,19 @@ itself".
 ```sh
 # 1. Install Proxmox on the replacement host by hand, and put its API token,
 #    hostname and IP in the vault under the same paths the config references.
-#    steward check-vault will tell you which are still missing, without
+#    contractor check-inventory will tell you which are still missing, without
 #    printing any of them.
-task check-vault SITE=site0
+task check-inventory SITE=site0
 
 # 2. Bring the state back. This needs a sterilized workspace, which is the
 #    normal state of one after any successful run.
-./scripts/steward/steward restore -site site0
+./scripts/contractor/contractor restore -site site0
 
 # 3. Ignite on top of the restored state, not converge. Converge attaches to
 #    state in a cluster; there is no cluster yet. Ignition finds the restored
 #    state locally, refreshes it, sees that the VMs it describes are gone, and
 #    plans to create them.
-./scripts/steward/steward ignite -site site0
+./scripts/contractor/contractor break-ground -site site0
 ```
 
 **Restoring first is what makes it the same estate rather than a new one.** A

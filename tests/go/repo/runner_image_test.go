@@ -189,15 +189,15 @@ func pinnedKeys(t *testing.T, root string) []string {
 	return keys
 }
 
-// steward shells out to these. A missing one fails at the phase that needs it,
+// contractor shells out to these. A missing one fails at the phase that needs it,
 // on the runner, minutes into a converge - which is how the image came to
 // exist in the first place.
-func TestRunnerImageCarriesEveryBinaryStewardInvokes(t *testing.T) {
+func TestRunnerImageCarriesEveryBinaryTheContractorInvokes(t *testing.T) {
 	dockerfile := readFile(t, filepath.Join(repoRoot(t), ".github", "runner-image", "Dockerfile"))
 
 	for _, bin := range []string{"op", "tofu", "age", "rclone", "kubectl"} {
 		if !strings.Contains(dockerfile, bin) {
-			t.Errorf("the runner image does not install %q, which steward shells out to", bin)
+			t.Errorf("the runner image does not install %q, which contractor shells out to", bin)
 		}
 	}
 

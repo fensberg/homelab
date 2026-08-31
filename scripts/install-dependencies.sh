@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time workstation setup for the homelab project. Run once, on a fresh
-# Linux devbox. Installs every tool the ignition CLI (scripts/steward) needs.
+# Linux devbox. Installs every tool the ignition CLI (scripts/contractor) needs.
 #
 # Deliberately plain bash, not Go: this script's job includes installing Go
 # itself, so it cannot depend on Go already being present to run.
