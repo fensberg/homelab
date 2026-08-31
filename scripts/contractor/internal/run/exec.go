@@ -115,12 +115,20 @@ type tofuEvent struct {
 	Diagnostic struct {
 		Severity string `json:"severity"`
 		Summary  string `json:"summary"`
+		Detail   string `json:"detail"`
 	} `json:"diagnostic"`
 	Changes struct {
 		Add    int `json:"add"`
 		Change int `json:"change"`
 		Remove int `json:"remove"`
 	} `json:"changes"`
+}
+
+// publicLog reports whether this run's output is world-readable. A converge in
+// Actions lands in a public repository's log; the same command on a workstation
+// does not, and the two want different amounts of detail.
+func publicLog() bool {
+	return os.Getenv("GITHUB_ACTIONS") == "true" || os.Getenv("CI") == "true"
 }
 
 // summariseApply reduces tofu's -json stream to addresses and verbs. It is
@@ -147,7 +155,17 @@ func summariseApply(r io.Reader) (lines []string, failed []string) {
 				ev.Changes.Add, ev.Changes.Change, ev.Changes.Remove))
 		case "diagnostic":
 			if ev.Diagnostic.Severity == "error" {
-				failed = append(failed, ev.Diagnostic.Summary)
+				msg := ev.Diagnostic.Summary
+				// The detail is withheld only where the output is published.
+				// Suppressing it on a workstation costs the person debugging
+				// the one thing that would tell them what went wrong, and buys
+				// nothing - which is exactly what happened the first time this
+				// fired: "Failed to create key", with the reason stripped, on a
+				// terminal nobody but the operator could see.
+				if !publicLog() && ev.Diagnostic.Detail != "" {
+					msg += ": " + ev.Diagnostic.Detail
+				}
+				failed = append(failed, msg)
 			}
 		}
 	}
@@ -175,8 +193,8 @@ func tofuJSON(ctx *Context, what string, args []string) error {
 	}
 	waitErr := c.Wait()
 	if len(failed) > 0 {
-		return fmt.Errorf("%s: %s\n\nSummaries only - tofu's detail can quote the value that caused the error, and this runs in a public log. Re-run on a workstation for the full diagnostic",
-			what, strings.Join(failed, "; "))
+		return fmt.Errorf("%s: %s%s",
+			what, strings.Join(failed, "; "), detailNote())
 	}
 	if waitErr != nil {
 		return fmt.Errorf("%s failed: %w", what, waitErr)
@@ -359,4 +377,12 @@ func CmdBytes(dir string, extraEnv []string, stdin []byte, name string, args ...
 		return nil, fmt.Errorf("%s failed: %w", name, err)
 	}
 	return out.Bytes(), nil
+}
+
+// detailNote explains a missing detail, and only when one is actually missing.
+func detailNote() string {
+	if publicLog() {
+		return "\n\nSummaries only - tofu's detail can quote the value that caused the error, and this runs in a public log. Re-run on a workstation for the full diagnostic"
+	}
+	return ""
 }
