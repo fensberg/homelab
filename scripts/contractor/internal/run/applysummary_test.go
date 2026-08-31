@@ -56,9 +56,30 @@ is published. Report the address and the verb; never the value.`, joined)
 	}
 }
 
-// A diagnostic's detail can quote the value that caused the error. Only the
-// summary is reported, and only for errors.
+// A diagnostic's detail can quote the value that caused the error, so it is
+// withheld where the output is published - and only there. Suppressing it on a
+// workstation costs the person debugging the one thing that would help and buys
+// nothing, which is what happened the first time this fired: "Failed to create
+// key", reason stripped, on a terminal only the operator could see.
+func TestApplySummaryWithholdsDiagnosticDetailOnlyInPublicLogs(t *testing.T) {
+	stream := `{"@level":"error","type":"diagnostic","diagnostic":{"severity":"error","summary":"Failed to create key","detail":"the OAuth client is not permitted to mint NORTHVALE keys"}}
+`
+	t.Setenv("GITHUB_ACTIONS", "true")
+	_, failed := summariseApply(strings.NewReader(stream))
+	if len(failed) != 1 || strings.Contains(failed[0], standInSiteName) {
+		t.Errorf("in a public log the detail must not appear: %v", failed)
+	}
+
+	t.Setenv("GITHUB_ACTIONS", "")
+	t.Setenv("CI", "")
+	_, failed = summariseApply(strings.NewReader(stream))
+	if len(failed) != 1 || !strings.Contains(failed[0], "OAuth client is not permitted") {
+		t.Errorf("on a workstation the detail must appear, or the error is undebuggable: %v", failed)
+	}
+}
+
 func TestApplySummaryReportsDiagnosticsWithoutTheirDetail(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "true")
 	stream := `{"@level":"error","type":"diagnostic","diagnostic":{"severity":"error","summary":"Invalid value for variable","detail":"the site NORTHVALE is not reachable at 10.0.0.1"}}
 `
 	lines, failed := summariseApply(strings.NewReader(stream))
