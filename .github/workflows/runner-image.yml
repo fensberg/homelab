@@ -54,7 +54,7 @@ jobs:
           . scripts/versions.env
           docker build \
             --build-arg TOFU_VERSION="$TOFU_VERSION" \
-            --build-arg RCLONE_VERSION="$RCLONE_VERSION" \
+            --build-arg RCLONE_DEB_VERSION="$RCLONE_VERSION" \
             -t "${IMAGE}:${SHA}" \
             -t "${IMAGE}:latest" \
             .github/runner-image

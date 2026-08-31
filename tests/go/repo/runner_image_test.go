@@ -47,16 +47,146 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 		}
 	}
 
-	// The Dockerfile must take them as build arguments, not hard-code them.
+	// The Dockerfile must take them as build arguments, not hard-code them,
+	// and the workflow must actually wire versions.env's value into each one.
+	//
+	// The two names are not always identical. rclone reads every flag from a
+	// matching RCLONE_<FLAG> environment variable, and docker exposes build
+	// arguments to the RUN that uses them, so an ARG called RCLONE_VERSION is
+	// read by rclone as `--version=1.75.0` and every rclone invocation in the
+	// build fails on it. Hence the alias - and hence the workflow check below,
+	// because an alias that nothing passes a value to is a version silently
+	// defaulting to empty rather than coming from versions.env.
+	argFor := map[string]string{
+		"TOFU_VERSION":   "TOFU_VERSION",
+		"RCLONE_VERSION": "RCLONE_DEB_VERSION",
+	}
+
 	dockerfile := readFile(t, filepath.Join(root, ".github", "runner-image", "Dockerfile"))
-	for _, k := range []string{"TOFU_VERSION", "RCLONE_VERSION"} {
-		if !regexp.MustCompile(`(?m)^ARG\s+` + k + `\s*$`).MatchString(dockerfile) {
-			t.Errorf("the Dockerfile does not take %s as a bare build argument, so its value is not coming from versions.env", k)
+	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "runner-image.yml"))
+
+	for envKey, arg := range argFor {
+		if _, ok := pins[envKey]; !ok {
+			t.Errorf("versions.env no longer declares %s, but the runner image still expects it", envKey)
+			continue
 		}
-		if regexp.MustCompile(`(?m)^ARG\s+` + k + `\s*=`).MatchString(dockerfile) {
-			t.Errorf("the Dockerfile gives %s a default, which is a second place a version is written", k)
+		if !regexp.MustCompile(`(?m)^ARG\s+` + arg + `\s*$`).MatchString(dockerfile) {
+			t.Errorf("the Dockerfile does not take %s as a bare build argument, so its value is not coming from versions.env", arg)
+		}
+		if regexp.MustCompile(`(?m)^ARG\s+` + arg + `\s*=`).MatchString(dockerfile) {
+			t.Errorf("the Dockerfile gives %s a default, which is a second place a version is written", arg)
+		}
+		// --build-arg <ARG>="$<ENVKEY>" - the link that makes the alias safe.
+		wired := regexp.MustCompile(`--build-arg\s+` + arg + `="\$` + envKey + `"`)
+		if !wired.MatchString(workflow) {
+			t.Errorf("runner-image.yml does not pass versions.env's %s into the Dockerfile's %s build argument;\nthe image would build with an empty %s instead of the pinned version", envKey, arg, arg)
 		}
 	}
+}
+
+// versions.env is only "the one place a version is pinned" if nothing else
+// writes one down. Workflows were the leak: pr-validation.yml carried its own
+// TOFU_VERSION for long enough that CI validated pull requests on OpenTofu
+// 1.10.6 while the estate was converged with 1.12.6 - two minor versions
+// apart, agreeing with nothing, reported by nobody.
+//
+// This only rejects an *assignment* of a literal. Referring to a pinned
+// version is the entire point (`--build-arg TOFU_VERSION="$TOFU_VERSION"`,
+// `${{ env.GO_VERSION }}`), so a value that starts with $ is a reference and
+// passes.
+func TestNoWorkflowDeclaresAVersionThatVersionsEnvOwns(t *testing.T) {
+	root := repoRoot(t)
+	pins := pinnedKeys(t, root)
+
+	dir := filepath.Join(root, ".github", "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+
+	// The action every workflow reads them through. If it disappears, the
+	// workflows have no way to get a version and this test would pass by
+	// checking nothing.
+	action := filepath.Join(root, ".github", "actions", "versions", "action.yml")
+	if _, err := os.Stat(action); err != nil {
+		t.Fatalf(".github/actions/versions/action.yml is missing: %v\n\nWithout it a workflow cannot read scripts/versions.env, and the only way to give a job a version is to declare one - which is what this test forbids.", err)
+	}
+
+	var checked int
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+			continue
+		}
+		checked++
+		body := readFile(t, filepath.Join(dir, e.Name()))
+		for _, key := range pins {
+			// `KEY: literal` (YAML) or `KEY=literal` (shell), where the
+			// value is not a $reference.
+			assign := regexp.MustCompile(`(?m)^\s*` + key + `\s*[:=]\s*["']?[^$\s"']`)
+			if loc := assign.FindStringIndex(body); loc != nil {
+				line := 1 + strings.Count(body[:loc[0]], "\n")
+				t.Errorf(".github/workflows/%s:%d declares %s itself.\n\nversions.env owns that pin. Read it with `uses: ./.github/actions/versions` and refer to ${{ env.%s }} instead - a second declaration is a version that drifts silently.", e.Name(), line, key, key)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("scanned no workflows, so this test proves nothing")
+	}
+}
+
+// The composite action only exports a line whose key ends in _VERSION or
+// _SHA256 and whose value starts alphanumerically and holds nothing but
+// [A-Za-z0-9._+-]. That pattern is a security boundary, not a convenience:
+// this repository is public and pr-validation.yml runs on pull_request, so on
+// a fork's branch versions.env is attacker-controlled, and a free-form
+// KEY=VALUE written to $GITHUB_ENV is how LD_PRELOAD or NODE_OPTIONS becomes
+// code execution in a later step.
+//
+// The cost of a narrow pattern is that a key outside it is skipped in
+// silence, and the job then runs with an empty version rather than failing.
+// So every key here must be one the action can actually export.
+var exportable = regexp.MustCompile(`^[A-Z][A-Z0-9_]*_(VERSION|SHA256)=[A-Za-z0-9][A-Za-z0-9._+-]*$`)
+
+func TestEveryPinnedVersionCanActuallyBeExported(t *testing.T) {
+	root := repoRoot(t)
+	for _, line := range strings.Split(readFile(t, filepath.Join(root, "scripts", "versions.env")), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !exportable.MatchString(line) {
+			key, _, _ := strings.Cut(line, "=")
+			t.Errorf("versions.env declares %q, which .github/actions/versions will not export.\n\nA key must end in _VERSION or _SHA256, and a value must begin with a letter or digit and contain only letters, digits, dot, underscore, plus or dash. Anything else is skipped silently and the job runs with an empty value - see the action for why the pattern is deliberately this narrow.", key)
+		}
+	}
+
+	// And the action must still be the thing enforcing it. If the pattern is
+	// loosened there, this test would keep passing while the boundary is gone.
+	action := readFile(t, filepath.Join(root, ".github", "actions", "versions", "action.yml"))
+	if !strings.Contains(action, "_(VERSION|SHA256)=[A-Za-z0-9][A-Za-z0-9._+-]*$") {
+		t.Error(".github/actions/versions no longer restricts what it writes to $GITHUB_ENV.\n\nOn a fork's pull request versions.env is attacker-controlled, and an unconstrained write to the environment file is code execution in every later step - including the TruffleHog lane, which is the one lane deliberately not egress-blocked.")
+	}
+}
+
+// pinnedKeys returns every key versions.env declares.
+func pinnedKeys(t *testing.T, root string) []string {
+	t.Helper()
+	var keys []string
+	for _, line := range strings.Split(readFile(t, filepath.Join(root, "scripts", "versions.env")), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, _, ok := strings.Cut(line, "=")
+		if !ok {
+			t.Fatalf("versions.env line is not KEY=VALUE: %q", line)
+		}
+		keys = append(keys, k)
+	}
+	if len(keys) == 0 {
+		t.Fatal("versions.env declares nothing, so this test proves nothing")
+	}
+	return keys
 }
 
 // steward shells out to these. A missing one fails at the phase that needs it,
