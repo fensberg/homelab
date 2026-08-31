@@ -102,4 +102,19 @@ RUN for b in op tofu age rclone kubectl jq; do \
         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done
 
+# The scale set pins runAsUser to this number, because the image's USER is the
+# name "runner" and the kubelet will not start a pod with runAsNonRoot: true
+# and a non-numeric user - it cannot prove a name is not root. That makes the
+# uid part of the contract between this image and
+# clusters/management/infrastructure/configs/runner-scale-set.yaml, and
+# nothing at runtime would report them disagreeing: the pod would come up as
+# an unknown uid with no write access to its own home, and the runner would
+# fail for reasons that look nothing like a renumbered account.
+RUN uid="$(id -u runner)"; \
+    [ "$uid" = "1001" ] || { \
+        echo "the runner account is uid ${uid}, not 1001."; \
+        echo "update runAsUser/runAsGroup/fsGroup in runner-scale-set.yaml to match, then this line."; \
+        exit 1; \
+    }
+
 USER runner
