@@ -50,7 +50,7 @@ concurrency:
 jobs:
   test:
     name: "Integration (${{ inputs.tier || 'integration' }})"
-    runs-on: self-hosted
+    runs-on: homelab-management
     # Gated on a GitHub environment so the 1Password service-account token
     # lives behind whatever protection rules that environment carries, rather
     # than being a repository secret any workflow could reach.
