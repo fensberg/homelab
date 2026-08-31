@@ -31,8 +31,15 @@ repos:
         # Kubernetes manifests legitimately hold several documents in one file,
         # separated by ---. Without this the hook rejects every Flux manifest.
         args: ["--allow-multiple-documents"]
+      # A .patch is a generated file whose whitespace is load-bearing: a diff
+      # marks a blank context line with a single space, and stripping it is
+      # how a valid patch silently becomes one that will not apply. These
+      # hooks rewrote one three times running, each time aborting the commit
+      # and needing a re-stage, which is a button nobody should have to press.
       - id: trailing-whitespace
+        exclude: '\.patch$'
       - id: end-of-file-fixer
+        exclude: '\.patch$'
 
   # rbubley's mirror rather than pre-commit's, which is archived on prettier
   # 3.1. The rev pins prettier exactly; nothing else in the project runs it.

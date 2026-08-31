@@ -75,7 +75,7 @@ old clone or old habits could still hit.
 ### The entrypoint moves from PowerShell to Go
 
 **Chose:** port `Start-Homelab.ps1` and `Install-Dependencies.ps1` to a Go
-program (`scripts/steward`) plus a plain bash bootstrap
+program (`scripts/contractor`) plus a plain bash bootstrap
 (`scripts/install-dependencies.sh`), run from the Linux devbox
 `workstation/` provisions rather than from Windows.
 **Rejected:** Python, which needed no new toolchain (the devbox already runs
@@ -95,7 +95,7 @@ world-writable `/mnt/c` all existed solely because Ansible has no supported
 Windows control node. Ansible now runs natively, and `ansible.cfg` is picked
 up by the same ambient discovery `check-hypervisor` already relied on.
 
-The bootstrap script stayed bash on purpose: `scripts/steward` needs Go to
+The bootstrap script stayed bash on purpose: `scripts/contractor` needs Go to
 run, so whatever installs Go cannot itself depend on Go already being
 present.
 
@@ -111,7 +111,7 @@ render.
 ### `task start` builds ignite but does not run it
 
 **Chose:** `task start` runs `go build` and then prints the command to run
-`./scripts/steward/steward` directly. Every other ignite-invoking task
+`./scripts/contractor/contractor` directly. Every other ignite-invoking task
 (`render-secrets`, `verify`, `configure-hypervisor`, `backup-state`,
 `clean-secrets`) still execs the binary through `task` as normal.
 **Rejected:** the original design, where `task start` ran ignite directly,
@@ -558,7 +558,7 @@ that does not exist yet, so the vault moves first:
    leave the per-site `bucket`, `access_key_id`, `secret_access_key` alone.
 2. Move the two fields in `config/management.tpl.json`, `config.go` and every
    fixture; `registry.tf` and `contract_test.go` are the pair that must agree.
-3. `steward check-vault` confirms the new references resolve before any run
+3. `contractor check-inventory` confirms the new references resolve before any run
    commits to anything - which is the case this check was built for.
 
 **Buckets stay per-site, and gain a human step.** One bucket per site is the
@@ -607,13 +607,13 @@ that merely decoded.
 
 **Three things make this worth repeating rather than recording once.** The
 identity is deliberately absent from `config/management.tpl.json`, so
-`-check-vault` cannot see it and a clean 20-of-20 says nothing about it. The
+`-check-inventory` cannot see it and a clean 20-of-20 says nothing about it. The
 Secrets phase only warns when the recipient exists without the identity, so a
 run that has already lost the private half still ends in `Ignition complete`.
 And the pair is stored by hand, once, for the whole estate, which means
 nothing in this repository would notice the two halves drifting apart.
 
-**Do not use `steward restore` as the drill.** It pushes what it recovers
+**Do not use `contractor restore` as the drill.** It pushes what it recovers
 through the encrypted backend, and after the Migrate phase that backend is the
 live cluster's Postgres. The drill above is read-only by construction: it never
 runs `ignite` and it touches nothing the estate is using. Decrypt into a
@@ -1203,7 +1203,7 @@ estate. `deploy-infrastructure.yml` could not cover it either: it is
 path-filtered to `environments/**` and `modules/**` deliberately, so ignition
 changes never trigger it.
 
-**Chose:** `steward converge`, a second sequence rather than a flag on the
+**Chose:** `contractor converge`, a second sequence rather than a flag on the
 first.
 **Because:** the two runs differ in what they may assume. Ignition may assume
 nothing exists; convergence may assume everything does. Expressing that as
@@ -1330,7 +1330,7 @@ choices always look like from the inside.
 (`talos.tf`, the HostnameConfig patch), so it is also the Kubernetes node name
 and the etcd member identity - renaming every node at once is a cluster
 rebuild, not an update. `vm_id` forces replacement besides. So this lands on
-the next ignition, and `steward plan` will refuse to plan it for the reason it
+the next ignition, and `contractor plan` will refuse to plan it for the reason it
 refuses any control-plane resize.
 
 **The invariant is asserted rather than described.** `config_test.go` checks
@@ -1394,7 +1394,7 @@ has to carry that end to end with no manual step before this section can claim
 anything. What follows is what exists, written now while it is fresh, so that
 signing off is a matter of confirming rather than reconstructing.
 
-**Built.** A phased Go entrypoint (`scripts/steward`) that renders secrets from
+**Built.** A phased Go entrypoint (`scripts/contractor`) that renders secrets from
 1Password, prepares a Proxmox host with an idempotent Ansible playbook,
 provisions a Talos control plane, bootstraps Flux, migrates its own state into
 cluster Postgres, backs that state up encrypted to object storage, and wipes
@@ -1657,7 +1657,7 @@ bring it back.
   "does this reference resolve" test necessarily reads the secret. The
   handling is to make the value unreachable rather than to be careful with it:
   `onepassword.Probe` returns a status and never the value, so
-  `steward check-vault` cannot print one. See "The agent's boundary is
+  `contractor check-inventory` cannot print one. See "The agent's boundary is
   enforced, not agreed" for the same reasoning applied to credentials.
 - **The agent cannot run `task lint` at all**, because Super-Linter is a
   Docker image and the `claude` user is deliberately not in the `docker`

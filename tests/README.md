@@ -26,7 +26,7 @@ pull request at all.
 ## Where each tier lives, and why
 
 ```text
-scripts/steward/**/*_test.go            unit + contract (Go)      — no dependencies
+scripts/contractor/**/*_test.go            unit + contract (Go)      — no dependencies
 management/cluster/tests/*.tftest.hcl  unit (OpenTofu)           — native tofu test
 management/cluster/tests/fixtures/     the shared config corpus
 tests/go/repo/                         contract: the repo's own files (hermetic)
@@ -39,13 +39,13 @@ tests/coverage-baseline.json           the coverage floor
 keeps a test from outliving its subject, and it is why `config_test.go` is in
 `internal/config/` rather than here.
 
-**The contract tests are in `scripts/steward` for a reason Go forces.**
-`internal/` is a per-module rule, so nothing outside `homelab/steward` can
-import `homelab/steward/internal/config` - including this module. The contract
+**The contract tests are in `scripts/contractor` for a reason Go forces.**
+`internal/` is a per-module rule, so nothing outside `homelab/contractor` can
+import `homelab/contractor/internal/config` - including this module. The contract
 tests need that package, so they live there. They shell out to nothing and
 read the OpenTofu source as text.
 
-**`tests/go` is a separate Go module on purpose.** `scripts/steward` has zero
+**`tests/go` is a separate Go module on purpose.** `scripts/contractor` has zero
 external dependencies, and that is load-bearing: it is why the Validate lane
 needs no `go.sum` cache, why Trivy's `gomod` scan of the shipped binary has
 nothing to find, and why Dependabot never opens a pull request against the one
@@ -54,7 +54,7 @@ transitive modules. They stay over here.
 
 ## The config contract
 
-`management/cluster/registry.tf` and `scripts/steward/internal/config/config.go`
+`management/cluster/registry.tf` and `scripts/contractor/internal/config/config.go`
 implement the same rules twice - octet bounds, vendor attestation, node
 counts - so that a bad config is refused whether it arrives through the start
 button or through a bare `tofu plan`. Defence in depth is only defence while
@@ -156,7 +156,7 @@ a checkbox somewhere:
 
 ### The vault check cannot disclose a secret
 
-`repo/vaultcheck_test.go` guards `steward check-vault`. That command's whole
+`repo/vaultcheck_test.go` guards `contractor check-inventory`. That command's whole
 value is that it is safe to run and safe to share — it reports `ok` / `empty` /
 `missing` per reference, and the output is meant to be pasteable into an issue
 or a pull request.
@@ -184,15 +184,15 @@ three above cannot pass by guarding a function nobody calls. All four were
 confirmed to fail against a deliberately broken copy before being committed —
 the "test the detector" rule above.
 
-## Where the code laws live
+## Where the building code live
 
 Three places, and the distinction is what each one can see:
 
-| Rule about                      | Lives in                                           |
-| ------------------------------- | -------------------------------------------------- |
-| The repository's own files      | `tests/go/repo/`                                   |
-| Two implementations of one rule | `scripts/steward/internal/config/contract_test.go` |
-| A config that must be refused   | `management/cluster/registry.tf` (preconditions)   |
+| Rule about                      | Lives in                                              |
+| ------------------------------- | ----------------------------------------------------- |
+| The repository's own files      | `tests/go/repo/`                                      |
+| Two implementations of one rule | `scripts/contractor/internal/config/contract_test.go` |
+| A config that must be refused   | `management/cluster/registry.tf` (preconditions)      |
 
 `tests/go/repo` is the one to reach for when the rule is "the source must never
 do X" — it reads the source as text, so it can assert things no compiler or
@@ -220,14 +220,14 @@ the start button reads. So the setup step is `task render-secrets` and the
 teardown is `task clean-secrets` - no separate secret plumbing exists for
 tests, and nothing is left on disk that ignite would not have left there.
 
-> **A wrinkle worth knowing.** `steward ignite -phase render` sterilizes the workspace
+> **A wrinkle worth knowing.** `contractor break-ground -phase render` sterilizes the workspace
 > on the way out, which deletes the config it just wrote. Pass
 > `-keep-on-failure` to stop it:
-> `./scripts/steward/steward ignite -site site0 -phase render -keep-on-failure`.
+> `./scripts/contractor/contractor break-ground -site site0 -phase render -keep-on-failure`.
 > The flag name describes the failure path rather than this one; see
 > `docs/ideas.md`.
 
-**Tearing an estate down** is `steward destroy`, which is what the e2e tier
+**Tearing an estate down** is `contractor demolish`, which is what the e2e tier
 calls and what a human should call. It renders the config first - that is the
 credential check, not a formality: without a 1Password session there is no
 Proxmox token and no hypervisor endpoint, so somebody with a terminal and a
@@ -237,8 +237,8 @@ hold the credentials.
 
 ```sh
 task destroy SITE=site0     # prints the command; does not run it
-./scripts/steward/steward ignite -site site0 -destroy -whatif
-./scripts/steward/steward destroy -site site0 -confirm site0
+./scripts/contractor/contractor break-ground -site site0 -destroy -whatif
+./scripts/contractor/contractor demolish -site site0 -confirm site0
 ```
 
 ## The backup alarm
@@ -338,11 +338,11 @@ disposable second estate looked likely. It is not coming, and that guard was
 not making this tier safer; it was making it unrunnable, which is worse than
 not having the tier at all. The estate here is disposable by design, so the
 risk worth guarding is destroying the _wrong_ one, and naming the site twice is
-exactly what `steward destroy` asks of a human. See `docs/ideas.md`.
+exactly what `contractor demolish` asks of a human. See `docs/ideas.md`.
 
 It covers the whole ignition sequence - Render through Backup, including
 moving state off local disk into cluster Postgres and pushing an encrypted
-copy off-site. Teardown runs `steward destroy`, the same supported entrypoint
+copy off-site. Teardown runs `contractor demolish`, the same supported entrypoint
 a human uses, rather than driving `tofu destroy` itself: a test that tore down
 its own way would be exercising the test's teardown instead of the one that
 has to work at 2am.

@@ -41,6 +41,22 @@ concurrency:
   group: deploy-infrastructure-${{ github.ref }}
   cancel-in-progress: false
 
+# GitHub's default shell for `run:` is `bash -e {0}`, which has no
+# pipefail: in `a | b` only b's exit status counts, so a failing command
+# feeding a working one is a green step. Naming the shell explicitly gets
+# `bash --noprofile --norc -eo pipefail {0}` instead.
+#
+# Not theoretical here. `tofu plan | tee` reported success and posted an
+# empty pull request comment, and `rclone version | head -1` verified
+# nothing while passing - both silent, both green, both wrong answers
+# rather than errors. It is set on every workflow, including those with no
+# `run:` step today, so the one added tomorrow is already covered.
+#
+# tests/go/repo/pipefail_test.go asserts this is present.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # ---------------------------------------------------------------------
   # ROUTING - which tier does this change touch, and which sites exist?
@@ -62,6 +78,18 @@ jobs:
       workload: ${{ steps.filter.outputs.workload }}
       sites: ${{ steps.sites.outputs.sites }}
     steps:
+      # This job had no harden-runner at all until the building code went in -
+      # it began at checkout. Hermetic and credential-free, so the exposure was
+      # small, but it is the classification step for the workflow that applies
+      # OpenTofu, and "small" is not the standard the other jobs are held to.
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -300,7 +328,7 @@ jobs:
   # Not `apply` with a different directory. The workload tier is plain
   # OpenTofu in a folder; the estate is a phased program that renders
   # secrets, attaches to state living in this cluster, applies, re-backs-up
-  # and sterilises. `steward converge` is that sequence.
+  # and sterilises. `contractor converge` is that sequence.
   #
   # READ BEFORE WIDENING: this runner lives inside the cluster it is
   # converging. Adding a control-plane node is safe. A change that disrupts
@@ -344,7 +372,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.7"
-          # No cache. scripts/steward has zero external dependencies, so the
+          # No cache. scripts/contractor has zero external dependencies, so the
           # cache saves nothing - and on a self-hosted runner it persists
           # between jobs, which is a poisoning surface for no benefit.
           cache: false
@@ -356,8 +384,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SITE: ${{ matrix.site }}
         run: |
-          go build -C scripts/steward -o steward .
-          ./scripts/steward/steward converge -site "$SITE"
+          go build -C scripts/contractor -o contractor .
+          ./scripts/contractor/contractor converge -site "$SITE"
 
   # ---------------------------------------------------------------------
   # PLAN THE ESTATE - on a pull request touching management/.
@@ -404,12 +432,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SITE: ${{ matrix.site }}
         run: |
-          # pipefail, or tee's exit status hides a failed plan: the step goes
-          # green, plan-summary.txt is empty, and the comment below posts a
-          # blank code block that reads as "nothing changes".
-          set -o pipefail
-          go build -C scripts/steward -o steward .
-          ./scripts/steward/steward plan -site "$SITE" 2>&1 | tee plan-summary.txt
+          go build -C scripts/contractor -o contractor .
+          ./scripts/contractor/contractor plan -site "$SITE" | tee plan-summary.txt
 
       - name: Comment the plan on the pull request
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -422,7 +446,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: [
-                '### Your steward checking in',
+                '### Your contractor checking in',
                 '',
                 'This is how the estate changes if this merges. Addresses and actions only — never a value.',
                 '',

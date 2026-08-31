@@ -1,8 +1,8 @@
-# The image CI runs steward in.
+# The image CI runs contractor in.
 #
 # The stock actions-runner image is deliberately minimal - no op, no tofu, no
-# age, no rclone - so `steward plan` failed at Render with "1Password CLI not
-# found on PATH". This layers exactly the binaries steward shells out to, and
+# age, no rclone - so `contractor plan` failed at Render with "1Password CLI not
+# found on PATH". This layers exactly the binaries contractor shells out to, and
 # nothing else.
 #
 # Versions are build arguments fed from scripts/versions.env, the same file
@@ -45,7 +45,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # pinned one stops existing the moment a security update supersedes it and the
 # image fails to build outright - and until it does, the pin holds the image on
 # a version that is deliberately not receiving those updates. The versions that
-# actually decide what steward does (the runner, tofu, rclone, kubectl) are
+# actually decide what contractor does (the runner, tofu, rclone, kubectl) are
 # pinned explicitly, from release artefacts that do not disappear.
 # hadolint ignore=DL3008
 RUN apt-get update \

@@ -103,7 +103,7 @@ func TestEstateNamesAreNotCommitted(t *testing.T) {
 	}
 }
 
-// dnsForm mirrors the sanitising in scripts/steward/internal/config: lowercase,
+// dnsForm mirrors the sanitising in scripts/contractor/internal/config: lowercase,
 // every run of non-alphanumerics to a hyphen, trimmed.
 func dnsForm(s string) string {
 	s = strings.ToLower(s)

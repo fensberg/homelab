@@ -8,7 +8,7 @@ vars:
   # the same release, and the point of running it locally is that it is.
   LINT_IMAGE: ghcr.io/super-linter/super-linter:slim-v8.7.0
 
-# The single entrypoint is scripts/steward, a Go program. Every task below
+# The single entrypoint is scripts/contractor, a Go program. Every task below
 # builds it fresh (fast, and always current source - no stale binary to
 # remember to rebuild) and then execs the binary directly, rather than
 # `go run`. That distinction matters here specifically: `go run`'s wrapper
@@ -23,28 +23,28 @@ vars:
 
 tasks:
   build:
-    desc: "Build the ignite binary"
+    desc: "Build the break-ground binary"
     cmds:
-      - go build -C scripts/steward -o steward .
+      - go build -C scripts/contractor -o contractor .
 
   start:
-    desc: "Builds ignite, then tells you to run it directly - see comment"
-    # This does not exec ignite itself, on purpose. `task` intercepts SIGINT
+    desc: "Builds break-ground, then tells you to run it directly - see comment"
+    # This does not exec break-ground itself, on purpose. `task` intercepts SIGINT
     # for itself but does not proxy it to the subprocess it's supervising -
     # a confirmed, currently-open upstream limitation
     # (github.com/go-task/task/issues/1408). A Ctrl-C aimed at `task start`
-    # can kill ignite before its own signal handler ever runs, which is
-    # exactly what leaves VMs orphaned instead of destroyed. ignite's
+    # can kill break-ground before its own signal handler ever runs, which is
+    # exactly what leaves VMs orphaned instead of destroyed. break-ground's
     # destroy-then-sterilize cleanup on interrupt only works when something
     # actually delivers it the signal - which means running the binary
-    # yourself, not through task. Every other ignite-invoking task below is
+    # yourself, not through task. Every other break-ground-invoking task below is
     # safe to wrap because none of them can reach the Compute phase, so an
     # interrupted one leaves stale secrets at worst - recoverable with
     # `task clean-secrets` - never an orphaned VM.
     cmds:
       - task: build
       - 'echo "Built. Run directly so Ctrl-C can safely destroy and sterilize:"'
-      - 'echo "  ./scripts/steward/steward ignite -site {{.SITE}}"'
+      - 'echo "  ./scripts/contractor/contractor break-ground -site {{.SITE}}"'
 
   plan:
     desc: "Show what a converge would change, without changing it"
@@ -53,35 +53,35 @@ tasks:
     # 'task clean-secrets'.
     cmds:
       - task: build
-      - ./scripts/steward/steward plan -site {{.SITE}}
+      - ./scripts/contractor/contractor plan -site {{.SITE}}
 
   converge:
     desc: "Apply the config to an estate that already exists"
     # Safe to wrap, unlike start, and for a reason that is worth stating
     # rather than assumed. start is unwrapped because an interrupted ignition
-    # can leave VMs nothing is tracking, and only ignite's own signal handler
+    # can leave VMs nothing is tracking, and only break-ground's own signal handler
     # destroys them. A converge cannot reach that state: the estate already
-    # exists, its state already lives in Postgres, and ignite never destroys
+    # exists, its state already lives in Postgres, and break-ground never destroys
     # on failure or interrupt in this mode. An interrupted converge leaves a
     # running estate and a state file that still describes it.
     cmds:
       - task: build
-      - ./scripts/steward/steward converge -site {{.SITE}}
+      - ./scripts/contractor/contractor converge -site {{.SITE}}
 
   phases:
     desc: "List the phases an ignition would run, without running them"
-    # Renamed from 'plan' when `steward plan` arrived. Two different questions
+    # Renamed from 'plan' when `contractor plan` arrived. Two different questions
     # were sharing one word: "which phases run" and "what changes in the
     # estate". The second is the one anybody means by "plan".
     cmds:
       - task: build
-      - ./scripts/steward/steward ignite -site {{.SITE}} -whatif
+      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -whatif
 
   render-secrets:
     desc: "Hydrate templates from 1Password"
     cmds:
       - task: build
-      - ./scripts/steward/steward ignite -site {{.SITE}} -phase render
+      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -phase render
 
   push:
     desc: "Publish the current branch as GitHub-signed commits"
@@ -102,7 +102,7 @@ tasks:
       - go build -C scripts/signedpush -o signedpush .
       - ./scripts/signedpush/signedpush -token
 
-  check-vault:
+  check-inventory:
     desc: "Prove every op:// reference in the config template resolves (no values read)"
     # Safe to wrap, and the safest thing here: it writes nothing at all - no
     # rendered config, no secrets on disk, nothing for `clean-secrets` to
@@ -110,19 +110,19 @@ tasks:
     # it. Run it after editing the template or the vault.
     cmds:
       - task: build
-      - ./scripts/steward/steward check-vault -site {{.SITE}}
+      - ./scripts/contractor/contractor check-inventory -site {{.SITE}}
 
   verify:
     desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:
       - task: build
-      - ./scripts/steward/steward ignite -site {{.SITE}} -phase verify
+      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -phase verify
 
   configure-hypervisor:
     desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
     cmds:
       - task: build
-      - ./scripts/steward/steward ignite -site {{.SITE}} -phase hypervisor
+      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -phase hypervisor
 
   check-hypervisor:
     desc: "Dry-run the playbook: show what would change, change nothing"
@@ -134,7 +134,7 @@ tasks:
     desc: "Encrypt the current state and push it to Cloudflare R2"
     cmds:
       - task: build
-      - ./scripts/steward/steward ignite -site {{.SITE}} -phase backup
+      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -phase backup
 
   fix:
     desc: "Format everything. Seconds, no Docker. Run this before you push."
@@ -159,8 +159,8 @@ tasks:
       - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
       - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
       - rm -f config/management.placeholder.json
-      - go vet -C scripts/steward ./...
-      - go build -C scripts/steward -o /dev/null .
+      - go vet -C scripts/contractor ./...
+      - go build -C scripts/contractor -o /dev/null .
       - go vet -C scripts/signedpush ./...
       - go build -C scripts/signedpush -o /dev/null .
       # Every tier, not just the untagged one. The integration, api and e2e
@@ -192,7 +192,7 @@ tasks:
   test:go:
     desc: "Go unit and contract tests for the ignition button and the push tool"
     cmds:
-      - go test -C scripts/steward ./...
+      - go test -C scripts/contractor ./...
       - go test -C scripts/signedpush ./...
 
   test:tofu:
@@ -237,8 +237,8 @@ tasks:
     desc: "Run the tests with coverage and check it against the committed floor"
     cmds:
       - |
-        go test -C scripts/steward -covermode=atomic -coverprofile=coverage-go.out ./...
-        pct="$(go -C scripts/steward tool cover -func=coverage-go.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
+        go test -C scripts/contractor -covermode=atomic -coverprofile=coverage-go.out ./...
+        pct="$(go -C scripts/contractor tool cover -func=coverage-go.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
         bash scripts/coverage-gate.sh go "$pct"
       - |
         if [ -d node_modules ]; then
@@ -296,34 +296,34 @@ tasks:
         {{.LINT_IMAGE}}
 
   destroy:
-    desc: "Builds ignite, then tells you how to tear a site down - see comment"
+    desc: "Builds break-ground, then tells you how to tear a site down - see comment"
     # Same shape as `start`, and for the same reason: this reaches real
     # infrastructure, and `task` intercepts Ctrl-C without proxying it to the
     # process it supervises (go-task/task#1408). An interrupted destroy that
     # never received the signal cannot wait for tofu to release its state
     # lock, which is precisely how a half-finished teardown turns into VMs
-    # nothing is tracking. Every other ignite-wrapped task here is safe to
+    # nothing is tracking. Every other break-ground-wrapped task here is safe to
     # exec directly because none of them can reach real infrastructure; this
     # one can, so it prints the command instead of running it.
     cmds:
       - task: build
       - 'echo "Built. Run directly so Ctrl-C can wait for tofu to release its lock:"'
-      - 'echo "  ./scripts/steward/steward destroy -site {{.SITE}} -confirm {{.SITE}}"'
+      - 'echo "  ./scripts/contractor/contractor demolish -site {{.SITE}} -confirm {{.SITE}}"'
       - 'echo ""'
       - 'echo "Add -whatif first if you want to see what that would do."'
 
   kubeconfig:
     desc: "Write this site's kubeconfig into the workspace, for looking at the cluster"
-    # Safe to wrap, like every other ignite task except start and destroy: it
+    # Safe to wrap, like every other break-ground task except start and destroy: it
     # reads one tofu output and writes one file, and can no more reach the
     # Compute phase than `render` can. An interrupted run leaves a credential
     # on disk at worst, which `task clean-secrets` removes.
     cmds:
       - task: build
-      - ./scripts/steward/steward kubeconfig -site {{.SITE}}
+      - ./scripts/contractor/contractor kubeconfig -site {{.SITE}}
 
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
     cmds:
       - task: build
-      - ./scripts/steward/steward ignite -site {{.SITE}} -phase sterilize
+      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -phase sterilize
