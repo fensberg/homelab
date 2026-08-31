@@ -82,12 +82,12 @@ depends on.
 
 Each gates one thing, and none overlaps another:
 
-| Environment   | Gates                                    | Triggered by                 |
-| ------------- | ---------------------------------------- | ---------------------------- |
-| `management`  | the platform itself - `steward converge` | merge touching `management/` |
-| `staging`     | workload deploys                         | merge to `main`              |
-| `production`  | workload deploys                         | tag `v*`                     |
-| `integration` | the test tiers that need a real estate   | nightly, or dispatch         |
+| Environment   | Gates                                       | Triggered by                 |
+| ------------- | ------------------------------------------- | ---------------------------- |
+| `management`  | the platform itself - `contractor converge` | merge touching `management/` |
+| `staging`     | workload deploys                            | merge to `main`              |
+| `production`  | workload deploys                            | tag `v*`                     |
+| `integration` | the test tiers that need a real estate      | nightly, or dispatch         |
 
 `management` is a fourth environment rather than a reuse of `staging`
 deliberately. Reusing one would look leaner and would mislabel the job with the
@@ -117,7 +117,7 @@ belongs in an epoch record.
   by OpenTofu, which `tests/go/repo` enforces.
 
   Everything below that floor is generated: the state database password is
-  created by ignite and written to 1Password, because the rule that decides is
+  created by break-ground and written to 1Password, because the rule that decides is
   where a secret ends up. A secret that becomes a resource attribute is
   written into OpenTofu state, so a leaked state file yields a live
   credential; those are ours to generate. A secret that only configures a
@@ -134,13 +134,13 @@ belongs in an epoch record.
   _Convergence_ applies a config change to an estate that already exists. The
   circular dependency ignition has does not apply - the cluster is already
   there, holding the state - so a converge may run wherever it can reach the
-  estate, including on the self-hosted runner inside it. `steward converge`
+  estate, including on the self-hosted runner inside it. `contractor converge`
   attaches to the state in Postgres instead of starting from an empty
   workspace, never runs Migrate, and never destroys on failure.
 
   The distinction is load-bearing rather than pedantic. After a successful
   ignition, Sterilize removes both the local state file and `backend_pg.tf`,
-  so a second `ignite` run starts empty, plans to create every VM again, and
+  so a second `break-ground` run starts empty, plans to create every VM again, and
   would copy that empty state over the real one with `-force-copy`. Changing
   `management/` had no supported path at all until converge existed.
 
@@ -193,7 +193,7 @@ belongs in an epoch record.
   pipes `tofu state pull` straight into `age` and wipes the buffer - and state
   is encrypted at rest with OpenTofu's own state encryption, keyed from
   1Password. The whole `encryption` block is carried in `TF_ENCRYPTION`, set by
-  ignite before the first phase, so nothing in git reveals the scheme or the
+  break-ground before the first phase, so nothing in git reveals the scheme or the
   key and a bare `tofu` run cannot read state at all. That is the lock, not a
   side effect - and it matters more than protecting the local file, because the
   state _is_ the Postgres database, which CloudNativePG streams to object
@@ -234,23 +234,23 @@ One entrypoint, a Go program, run from the Linux workstation:
 
 ```sh
 ./scripts/install-dependencies.sh   # once
-task start SITE=site0               # builds ignite and prints the command to run it
-./scripts/steward/steward ignite -site site0 # the actual run - always run this directly, never through task
+task start SITE=site0               # builds break-ground and prints the command to run it
+./scripts/contractor/contractor break-ground -site site0 # the actual run - always run this directly, never through task
 ```
 
-**`task start` deliberately does not run ignite itself.** `task` intercepts
+**`task start` deliberately does not run break-ground itself.** `task` intercepts
 Ctrl-C for its own purposes but does not proxy the signal to the process it's
 supervising - a confirmed, currently-open upstream limitation
 (`go-task/task#1408`). Ignite's own destroy-then-sterilize cleanup on
 interrupt only runs if something actually delivers it the signal, so the
 real ignition run has to be invoked directly. Every other `task`-wrapped
-ignite phase (`render-secrets`, `verify`, `configure-hypervisor`,
+break-ground phase (`render-secrets`, `verify`, `configure-hypervisor`,
 `backup-state`, `kubeconfig`, `clean-secrets`) stays safe to wrap regardless, because none
 of them can reach the Compute phase - an interrupted one leaves stale
 secrets at worst, recoverable with `task clean-secrets`, never an orphaned
 VM.
 
-**Changing a running estate is `steward converge`** (`task converge`). It
+**Changing a running estate is `contractor converge`** (`task converge`). It
 renders, attaches to the state already in the cluster, and applies - the same
 phases as ignition minus `hypervisor` and `migrate`, plus `attach` in front.
 
@@ -269,7 +269,7 @@ what it built because a half-finished ignition leaves VMs nobody tracks; a
 converge starts from an estate that was already running, so answering a
 transient failure by destroying production would be exactly wrong.
 
-**Seeing what a change would do is `steward plan`** (`task plan`). It renders,
+**Seeing what a change would do is `contractor plan`** (`task plan`). It renders,
 attaches to the estate's state, plans, and prints what would change - then
 sterilizes. It is the half of the review a pull request could not give:
 approving a diff of HCL used to mean finding out what it meant afterwards.
@@ -278,7 +278,7 @@ approving a diff of HCL used to mean finding out what it meant afterwards.
 `data.talos_cluster_health` reads at plan time against every node the config
 declares, so raising `control_plane_count` makes it wait for machines that do
 not exist yet, time out, and produce nothing. An apply has no such problem -
-the graph creates the machines before reading their health - so `steward plan`
+the graph creates the machines before reading their health - so `contractor plan`
 detects the mismatch up front and says to converge instead of waiting ten
 minutes to fail. That is the one question a plan here genuinely cannot answer.
 
@@ -286,13 +286,13 @@ minutes to fail. That is the one question a plan here genuinely cannot answer.
 every resource it touches; this repository keeps hostnames, addresses and
 credentials out of git on purpose, and the repository is public, which makes an
 Actions job summary and a pull request comment world-readable by anyone. So the
-output is addresses and verbs and nothing else - the same line `check-vault`
+output is addresses and verbs and nothing else - the same line `check-inventory`
 draws between "the reference resolves" and "here is what it resolved to", for
 the same reason: the output is most useful exactly when somebody wants to paste
 it somewhere. The saved plan file is removed by the phase that made it, and
 listed in Sterilize for the run that dies first.
 
-**Tearing it down is `steward destroy`**, run directly for the same
+**Tearing it down is `contractor demolish`**, run directly for the same
 signal-handling reason `start` is. It renders the config first, which is the
 credential check rather than a formality - no 1Password session means no
 Proxmox token and no hypervisor endpoint, so the command is inert in the
@@ -302,7 +302,7 @@ Interrupting a destroy deliberately does _not_ sterilize: wiping state
 part-way through a teardown is how VMs get orphaned, so it waits for tofu to
 release its lock and leaves everything in place to be re-run.
 
-**Getting state back is `steward restore`.** It fetches the break-glass
+**Getting state back is `contractor restore`.** It fetches the break-glass
 identity, decrypts the latest age backup from object storage, checks that what
 came back is state describing something, and pushes it through the encrypted
 backend. It refuses if local state already exists. It is the only place in the
@@ -310,7 +310,7 @@ program that reads the private half, which `tests/go/repo` enforces, and it
 restores state and stops - what to do with it afterwards is a judgement call,
 not a next step.
 
-**Checking the vault is `steward check-vault`** (`task check-vault`). It proves
+**Checking the vault is `contractor check-inventory`** (`task check-inventory`). It proves
 every `op://` reference in `config/management.tpl.json` resolves and is
 non-empty, and reports each one as `ok` / `empty` / `missing` — structure only,
 never a value, so the output is safe to paste into an issue or a pull request.
@@ -329,7 +329,7 @@ so an empty field does not fail Render at all — it surfaces much later inside 
 provider as something like "credentials are empty", naming no field.
 
 **Agent commits are published with `task push`** (`scripts/signedpush`), which
-is beside ignite and never inside it — different job, different blast radius,
+is beside break-ground and never inside it — different job, different blast radius,
 and a bug in a push tool has no business living in the binary that can destroy
 the estate. Both are zero-dependency Go for the same reason: this one reads
 the GitHub App private key, so a supply chain that reaches it can mint tokens
@@ -514,7 +514,7 @@ floor a pull request may not drop below and is free to leave alone.
   which is far cheaper than one only caught by running real infrastructure -
   the actual, repeated failure mode in this project's own history (the
   self-healing-import fix, the storage-sizing bug, the first full ignition run).
-  Go logic in `scripts/steward` is tested with the standard library's own
+  Go logic in `scripts/contractor` is tested with the standard library's own
   `testing` package - no third-party assertion library, because that module
   has no third-party anything, and keeping it that way is what stops a test
   dependency ever reaching the program that can destroy infrastructure. The

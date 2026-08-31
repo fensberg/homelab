@@ -39,7 +39,7 @@ locals {
   # accumulated by the end of epoch 01.
   #
   # A short expiry is only safe because the Overlay phase forces this resource
-  # to be replaced on every run (see scripts/steward/internal/phases/overlay.go).
+  # to be replaced on every run (see scripts/contractor/internal/phases/overlay.go).
   # Without that, re-running `task configure-hypervisor` an hour later would
   # hand the playbook a key tofu still believes is current.
   overlay_key_expiry_seconds = 3600

@@ -118,7 +118,7 @@ Name the property that breaks, not the fact that one exists.`, e.Line, e.Path, e
 	}
 }
 
-// The code laws must all be covered. Adding a rule to this package without
+// The building code must all be covered. Adding a rule to this package without
 // covering it here would leave the newest guard as the least protected one.
 func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 	root, entries := loadSensitivePaths(t)
@@ -147,7 +147,7 @@ func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 		}
 		found++
 		if rel := filepath.Join("tests", "go", "repo", f.Name()); !covered(rel) {
-			t.Errorf("%s is a code law but no sensitive path covers it", rel)
+			t.Errorf("%s is a building code but no sensitive path covers it", rel)
 		}
 	}
 	if found < 3 {
@@ -157,12 +157,12 @@ func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 	// The files existing rules name explicitly. If a rule guards a file, a
 	// change to that file deserves the alarm.
 	for _, rel := range []string{
-		"scripts/steward/internal/onepassword/probe.go",
+		"scripts/contractor/internal/onepassword/probe.go",
 		"config/management.tpl.json",
 		"management/cluster/registry.tf",
 	} {
 		if !covered(rel) {
-			t.Errorf("%s is named by a code law but no sensitive path covers it", rel)
+			t.Errorf("%s is named by a building code but no sensitive path covers it", rel)
 		}
 	}
 }

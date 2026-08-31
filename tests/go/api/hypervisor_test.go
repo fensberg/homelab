@@ -28,7 +28,7 @@ import (
 	"homelab/tests/harness"
 )
 
-// hypervisorClient mirrors the one in scripts/steward/internal/phases/compute.go,
+// hypervisorClient mirrors the one in scripts/contractor/internal/phases/compute.go,
 // including its InsecureSkipVerify: Proxmox serves a self-signed certificate
 // and versions.tf's provider block already accepts it with insecure = true.
 // A test that verified the certificate would fail for a reason that has

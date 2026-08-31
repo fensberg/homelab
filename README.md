@@ -15,7 +15,7 @@ homelab/
 │
 ├── scripts/ # THE START BUTTON
 │ ├── install-dependencies.sh # One-time workstation setup
-│ └── ignite/ # Nine-phase ignition sequence (Go)
+│ └── contractor/ # Nine-phase ignition sequence (Go)
 │
 ├── config/
 │ └── management.tpl.json # The one config: sites[], topology, secret references

@@ -17,9 +17,9 @@
 # a bad provider, a malformed manifest - already fail CI and need no shouting.
 #
 # tests/go/repo/sensitivepaths_test.go checks this file: every path must exist,
-# every path must carry a reason, and every code law must be covered.
+# every path must carry a reason, and every building code must be covered.
 
-tests/go/repo/                              # The code laws. Deleting one assertion is a smaller file and a green build.
+tests/go/repo/                              # The building code. Deleting one assertion is a smaller file and a green build.
 .github/sensitive-paths                     # This list. Removing a line turns the alarm off for that path, silently.
 .github/workflows/                          # Runs with a token. The agent cannot write here, so a human meant this.
 .pre-commit-config.yaml                     # Owns formatting and the commit-msg hook, pinned exactly. Unpinning resolves to whatever is latest.
@@ -27,11 +27,11 @@ tests/go/repo/                              # The code laws. Deleting one assert
 config/management.tpl.json                  # The vault contract. An unwrapped op:// reference reaches a provider as literal text.
 management/cluster/registry.tf              # The invariants that refuse a bad config. Removing one does not fail - it stops refusing.
 
-scripts/steward/internal/onepassword/        # Every secret passes here. probe.go returns a Status, never the value it read.
-scripts/steward/internal/phases/health.go    # Gates Migrate, the point of no return. Weakening it reports success over a cluster that never converged.
-scripts/steward/internal/phases/backup.go    # Pipes state into age without plaintext touching disk. Buffering to a file breaks that.
-scripts/steward/internal/phases/restore.go   # The only place that reads the break-glass private key.
-scripts/steward/internal/phases/encryption.go# Sets TF_ENCRYPTION. Wrong here writes plaintext state to a database that ships off-site.
-scripts/steward/internal/phases/sterilize.go # Wipes every secret on exit. Skipping a file leaves secrets on disk and still reports success.
-scripts/steward/internal/phases/teardown.go  # Destroys real infrastructure. The ordering stops state being wiped before the VMs it describes.
+scripts/contractor/internal/onepassword/        # Every secret passes here. probe.go returns a Status, never the value it read.
+scripts/contractor/internal/phases/health.go    # Gates Migrate, the point of no return. Weakening it reports success over a cluster that never converged.
+scripts/contractor/internal/phases/backup.go    # Pipes state into age without plaintext touching disk. Buffering to a file breaks that.
+scripts/contractor/internal/phases/restore.go   # The only place that reads the break-glass private key.
+scripts/contractor/internal/phases/encryption.go# Sets TF_ENCRYPTION. Wrong here writes plaintext state to a database that ships off-site.
+scripts/contractor/internal/phases/sterilize.go # Wipes every secret on exit. Skipping a file leaves secrets on disk and still reports success.
+scripts/contractor/internal/phases/teardown.go  # Destroys real infrastructure. The ordering stops state being wiped before the VMs it describes.
 scripts/signedpush/                         # Reads the GitHub App private key. Reaching this mints tokens for this repository.

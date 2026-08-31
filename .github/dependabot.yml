@@ -13,7 +13,7 @@ updates:
       default-days: 7
 
   - package-ecosystem: gomod
-    directory: /scripts/steward
+    directory: /scripts/contractor
     schedule:
       interval: daily
     cooldown:
@@ -30,9 +30,9 @@ updates:
     cooldown:
       default-days: 7
 
-  # The test-only Go module, tracked separately from /scripts/steward because
+  # The test-only Go module, tracked separately from /scripts/contractor because
   # it is a separate module with a completely different dependency profile:
-  # ignite has none at all, and this one has Terratest's ~280. Keeping them
+  # break-ground has none at all, and this one has Terratest's ~280. Keeping them
   # apart is what stops a Terratest bump ever appearing as a pull request
   # against the program that can destroy infrastructure.
   - package-ecosystem: gomod

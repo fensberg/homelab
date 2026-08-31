@@ -122,7 +122,7 @@ func TestBackupGenerationsAreBounded(t *testing.T) {
 	}
 	sort.Strings(generations)
 
-	// keepGenerations in scripts/steward/internal/phases/prune.go.
+	// keepGenerations in scripts/contractor/internal/phases/prune.go.
 	const keep = 2
 	assert.LessOrEqualf(t, len(generations), keep,
 		"%d timestamped generations are stored, expected at most %d: %v\n\nThe prune is not running, or is refusing to delete because it cannot confirm the newest upload landed - check the Backup phase output for a warning.",
