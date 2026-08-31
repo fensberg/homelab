@@ -69,6 +69,8 @@ jobs:
           # The same file install-dependencies.sh reads. Not restated here.
           . scripts/versions.env
           docker build \
+            --build-arg RUNNER_VERSION="$RUNNER_VERSION" \
+            --build-arg KUBECTL_VERSION="$KUBECTL_VERSION" \
             --build-arg TOFU_VERSION="$TOFU_VERSION" \
             --build-arg RCLONE_DEB_VERSION="$RCLONE_VERSION" \
             -t "${IMAGE}:${SHA}" \
