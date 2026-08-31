@@ -337,6 +337,63 @@ kubeconfig to a file for the Flux bootstrap, so the mechanism is not new.
 split, the coupling is baked into the module boundaries and every future site
 inherits it.**
 
+## Known driver: the cluster reaches the hypervisor over a flat network
+
+A converge that changes the number of machines has to call the hypervisor's
+API, and the self-hosted runner that performs it is a pod inside the cluster
+those machines host. Today that pod reaches the hypervisor by plain IP across a
+flat path, because a firewall rule permits the node subnet to reach the
+management address on one port.
+
+That rule is deliberate and recorded rather than accidental, but it is the
+weaker answer, and it is worth saying exactly why so the replacement is not
+argued from taste.
+
+**The grant cannot be narrowed below the subnet.** The cluster runs Flannel,
+which does not enforce NetworkPolicy, so "only the runner pod may reach the
+hypervisor" is not expressible. Any pod on those nodes can reach the API. The
+credential remains the real control and it lives in the vault, but the network
+layer contributes nothing, and a control that cannot be narrowed is one that
+only ever widens.
+
+**It contradicts the model the estate already has.** `overlay_network` is a
+first-class concern with its own provider abstraction, its own vendor
+attestation, and a hypervisor that already joins the tailnet and advertises
+routes. Reaching that same hypervisor by flat IP means the estate has two paths
+to the same host, one of them governed by an ACL and one by a firewall line.
+Two paths is one more than can be reasoned about.
+
+**It does not survive the second site.** This epoch exists to make a second site
+possible. A flat rule is per-site plumbing that has to be recreated, by hand or
+by Ansible, for every hypervisor added - and the moment two sites exist, "the
+node subnet" stops being a meaningful source, because each site has its own.
+
+### The replacement
+
+Reach the hypervisor over the overlay, addressed by its tailnet name, with
+access governed by tailnet ACLs rather than by a firewall rule. That scopes by
+identity instead of by network, which is the granularity Flannel cannot give,
+and it collapses the two paths back into one.
+
+It also removes an asymmetry that exists today: the workstation reaches the
+hypervisor over the LAN, and the cluster reaches it over a firewall exception.
+If the canonical endpoint is the tailnet address, both use the same value and
+the same policy, and operating the estate from somewhere other than the LAN
+stops being a special case.
+
+The open question is how the cluster joins the tailnet, and it is a real
+decision rather than a detail:
+
+- **The Tailscale Kubernetes operator**, which can expose a tailnet target as an
+  in-cluster Service. Least invasive, but the endpoint then differs depending on
+  where the code runs, which reintroduces two values for one host.
+- **Talos node extensions**, putting the nodes themselves on the tailnet so pods
+  egress through them. One endpoint everywhere, at the cost of every node
+  holding tailnet membership.
+
+Neither is obviously right, which is precisely why the flat rule was taken as
+the interim rather than one of these being chosen in a hurry to unblock a test.
+
 ## Known driver: the config fixture corpus does not scale
 
 Moving two fields from the site plane to the fleet plane - `account_id` and
