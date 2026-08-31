@@ -50,6 +50,12 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 	// The Dockerfile must take them as build arguments, not hard-code them,
 	// and the workflow must actually wire versions.env's value into each one.
 	//
+	// RUNNER_VERSION is here because it was not, and that is how the estate
+	// stopped working: it sat as an ARG default in the Dockerfile, governed by
+	// nothing, until GitHub retired that runner version server-side. Every pod
+	// then registered, was refused by the broker, and exited, while the
+	// converge job sat queued and no error anywhere named the cause.
+	//
 	// The two names are not always identical. rclone reads every flag from a
 	// matching RCLONE_<FLAG> environment variable, and docker exposes build
 	// arguments to the RUN that uses them, so an ARG called RCLONE_VERSION is
@@ -58,8 +64,10 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 	// because an alias that nothing passes a value to is a version silently
 	// defaulting to empty rather than coming from versions.env.
 	argFor := map[string]string{
-		"TOFU_VERSION":   "TOFU_VERSION",
-		"RCLONE_VERSION": "RCLONE_DEB_VERSION",
+		"TOFU_VERSION":    "TOFU_VERSION",
+		"RCLONE_VERSION":  "RCLONE_DEB_VERSION",
+		"RUNNER_VERSION":  "RUNNER_VERSION",
+		"KUBECTL_VERSION": "KUBECTL_VERSION",
 	}
 
 	dockerfile := readFile(t, filepath.Join(root, ".github", "runner-image", "Dockerfile"))
