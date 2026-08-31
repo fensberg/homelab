@@ -54,19 +54,23 @@ spec:
     githubConfigSecret: ${RUNNER_SECRET_NAME}
     runnerGroup: homelab
 
-    # What `runs-on:` has to say, and the reason it stays "self-hosted": with
-    # runner scale sets runs-on matches the installation name exactly, so this
-    # is a name rather than one label among several. Keeping it means
-    # deploy-infrastructure.yml, integration-tests.yml and the guard in
-    # tests/go/repo/selfhosted_test.go are all untouched. Within this
-    # repository the App resolves it to exactly one thing; a second estate has
-    # its own organization and its own App, so there the word means nothing
-    # rather than meaning the wrong thing.
+    # What `runs-on:` has to say. It must NOT be "self-hosted".
+    #
+    # That was the original choice, and it does not work. Runners created by a
+    # scale set carry only the scale set's name as a label - not the default
+    # self-hosted / linux / x64 that a classic runner registers with - while
+    # `runs-on: self-hosted` is routed by GitHub's reserved-label matching,
+    # which no scale set participates in. The result is a scale set that
+    # registers perfectly, a listener that runs for hours, and a job that sits
+    # on "Waiting for a runner to pick up this job..." forever, with nothing
+    # anywhere reporting an error.
     #
     # Set explicitly rather than inherited from the release name, so renaming
     # the release cannot silently orphan every workflow that targets it.
-    # tests/go/repo/runner_test.go asserts this and runs-on still agree.
-    runnerScaleSetName: self-hosted
+    # tests/go/repo/runner_test.go asserts this and runs-on still agree, and
+    # selfhosted_test.go reads this value rather than hard-coding it, so the
+    # pull-request guard cannot come apart from the name it guards.
+    runnerScaleSetName: homelab-management
 
     # Scale to nothing when idle. A runner pod that exists between jobs is a
     # runner pod that can be reached between jobs, and there is no warm-start
