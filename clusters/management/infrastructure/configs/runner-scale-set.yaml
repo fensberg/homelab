@@ -78,3 +78,50 @@ spec:
     # with a checkout regardless.
     minRunners: 0
     maxRunners: 2
+
+    # The image the runner runs in.
+    #
+    # The stock actions-runner image is deliberately minimal - no op, no tofu,
+    # no age, no rclone - so `contractor plan` failed at Render with
+    # "1Password CLI not found on PATH". .github/runner-image/ layers exactly
+    # the binaries the program shells out to, and nothing else.
+    #
+    # Pinned by digest, not by tag. A tag is a pointer someone can move; the
+    # digest is the image. `:latest` exists for humans reading the registry and
+    # must never be what a cluster resolves - "pin everything" means the thing
+    # that actually runs, and a mutable tag is the one pin that silently is not
+    # one. Renovate updates the digest here the same way it updates the chart
+    # version above.
+    #
+    # renovate: datasource=docker depName=ghcr.io/fensberg/homelab-runner
+    template:
+      spec:
+        # runAsUser is set explicitly, and it has to be. The image's own USER
+        # is the name "runner", not a number, and the kubelet refuses a pod
+        # with runAsNonRoot: true and a non-numeric image user - it cannot
+        # verify a name is not root, so it will not start the container at
+        # all. 1001 is that account's uid, read out of the published image's
+        # /etc/passwd rather than assumed; the image build asserts it still
+        # holds, so an upstream renumbering fails there instead of here.
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          # The work directory is an emptyDir the runner must own.
+          fsGroup: 1001
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+          - name: runner
+            image: ghcr.io/fensberg/homelab-runner@sha256:b60c75d13b2e03ccdd183dabcf885a2c0c716266546a9334a7e63c76ae7da612
+            # Required whenever the template is overridden: the chart supplies
+            # this only for its own default runner container.
+            command: ["/home/runner/run.sh"]
+            # This container builds nothing and installs nothing - the image
+            # carries the whole toolchain, pinned. So it needs no capability
+            # and no route to acquire one. The root filesystem stays writable
+            # because a job is a checkout followed by work in the workspace.
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]

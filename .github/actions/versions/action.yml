@@ -1,0 +1,56 @@
+name: "Read pinned versions"
+description: >
+  Export every version pinned in scripts/versions.env into the job's
+  environment, so a workflow never declares a version of its own.
+
+# Why a composite action and not a setup job with outputs:
+#
+# A job that read the file and published outputs would make every lane
+# `needs:` it, and the lanes in pr-validation.yml run in parallel on purpose -
+# a formatting slip is not allowed to delay the lanes that check correctness
+# and security. Serialising all of them behind a version lookup would trade
+# that design away for tidiness. This costs one step per job, adds no runner,
+# and keeps the lanes independent.
+#
+# It must run after actions/checkout: the file it reads is in the repository.
+
+runs:
+  using: composite
+  steps:
+    - name: Export pinned versions
+      shell: bash
+      # This repository is public and pr-validation.yml runs on
+      # pull_request, so scripts/versions.env is attacker-controlled on a
+      # fork's branch. Anything written to $GITHUB_ENV becomes an
+      # environment variable in every later step, and names like LD_PRELOAD,
+      # BASH_ENV or NODE_OPTIONS turn that into code execution. Most lanes
+      # already run a fork's code (go test, vitest, tofu), so they gain
+      # nothing - but the TruffleHog lane does not, and it is the one lane
+      # deliberately left on egress-policy: audit. Exporting a free-form
+      # KEY=VALUE would have handed that job code execution with open
+      # egress.
+      #
+      # So the pattern is the security boundary, not a convenience: a key
+      # must end in _VERSION or _SHA256, and a value must begin
+      # alphanumerically and carry nothing but [A-Za-z0-9._+-] - no spaces,
+      # slashes, quotes or shell metacharacters, and no leading dash that a
+      # consumer might read as a flag. None of the dangerous names can be
+      # spelled that way.
+      #
+      # tests/go/repo asserts every key in versions.env matches this, so a
+      # key this would silently skip fails the build instead of reaching a
+      # job as an empty version.
+      #
+      # grep rather than `source`: the file is data, and sourcing it would
+      # execute whatever it contained.
+      #
+      # zizmor: ignore[github-env]
+      # The audit flags any write to $GITHUB_ENV and cannot see the
+      # constraint above. Passing a value from a file to later steps is what
+      # this action is for; the answer is to bound what may be written,
+      # which the pattern does, not to find another way to write anything.
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        pins='^[A-Z][A-Z0-9_]*_(VERSION|SHA256)=[A-Za-z0-9][A-Za-z0-9._+-]*$'
+        echo "exported $(grep -cE "$pins" scripts/versions.env) pinned versions"
+        grep -E "$pins" scripts/versions.env >> "$GITHUB_ENV"

@@ -14,7 +14,15 @@ ARG RUNNER_VERSION=2.331.0
 FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}
 
 ARG TOFU_VERSION
-ARG RCLONE_VERSION
+# Deliberately not named RCLONE_VERSION. rclone configures every one of its
+# flags from a matching RCLONE_<FLAG> environment variable, and docker puts a
+# build argument into the environment of the RUN that uses it - so an ARG by
+# that name reads to rclone as `--version=1.75.0`, and --version is a boolean.
+# Every rclone invocation during the build then dies on
+# `strconv.ParseBool: parsing "1.75.0": invalid syntax`, which is exactly how
+# this was found. The value still comes from versions.env; the workflow maps
+# it across, and tests/go/repo/runner_image_test.go asserts that mapping.
+ARG RCLONE_DEB_VERSION
 ARG TARGETARCH=amd64
 
 USER root
@@ -73,7 +81,7 @@ RUN curl -fsSL -o /tmp/tofu.zip \
 # and the version whose absence made every backup fail its first attempt with
 # a 501 until the pin was actually enforced.
 RUN curl -fsSL -o /tmp/rclone.deb \
-        "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}.deb" \
+        "https://github.com/rclone/rclone/releases/download/v${RCLONE_DEB_VERSION}/rclone-v${RCLONE_DEB_VERSION}-linux-${TARGETARCH}.deb" \
     && apt-get update \
     && apt-get install -y --no-install-recommends /tmp/rclone.deb \
     && rm -rf /tmp/rclone.deb /var/lib/apt/lists/* \
@@ -93,5 +101,16 @@ RUN curl -fsSL -o /usr/local/bin/kubectl \
 RUN for b in op tofu age rclone kubectl jq; do \
         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done
+
+# The scale set pins runAsUser to this number, because the image's USER is the
+# name "runner" and the kubelet will not start a pod with runAsNonRoot: true
+# and a non-numeric user - it cannot prove a name is not root. That makes the
+# uid part of the contract between this image and
+# clusters/management/infrastructure/configs/runner-scale-set.yaml, and
+# nothing at runtime would report them disagreeing: the pod would come up as
+# an unknown uid with no write access to its own home, and the runner would
+# fail for reasons that look nothing like a renumbered account.
+RUN echo "the runner account is uid $(id -u runner); the scale set expects 1001" \
+    && test "$(id -u runner)" = "1001"
 
 USER runner
