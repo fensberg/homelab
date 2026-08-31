@@ -126,7 +126,13 @@ locals {
       host_octet = h
       ip         = cidrhost(local.node_cidr, h)
       name       = format("%s-cp-%d", local.site_name, h)
-      vm_id      = local.octet * 1000 + h
+
+      # Banded by octet so two sites can share a Proxmox cluster without
+      # colliding, and ending in the host octet so the id reads back as the
+      # address: octet 10 uses 10100-10199, octet 11 uses 11100-11199. The
+      # octet is asserted 1-95, so the widest band is 95100-95199 - well
+      # inside Proxmox's range.
+      vm_id = local.octet * 1000 + h
 
       # Still a re-deal when the hypervisor count changes - see
       # docs/epochs/02-abstraction.md, "Adding a hypervisor currently re-deals
@@ -177,12 +183,6 @@ locals {
   #
   #     10.10.10.100   <site>-cp-100   vm 10100
   vm_names = [for k in local.cp_keys : local.control_plane[k].name]
-
-  # Banded by octet so two sites can share a Proxmox cluster without colliding,
-  # and ending in the host octet so the id reads back as the address: octet 10
-  # uses 10100-10199, octet 11 uses 11100-11199. The octet is asserted 1-95, so
-  # the widest band is 95100-95199 - well inside Proxmox's range.
-  vm_ids = [for k in local.cp_keys : local.control_plane[k].vm_id]
 
   # --- platform ------------------------------------------------------------
   # renovate: datasource=github-releases depName=siderolabs/talos
