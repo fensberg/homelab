@@ -22,6 +22,7 @@
 tests/go/repo/                              # The code laws. Deleting one assertion is a smaller file and a green build.
 .github/sensitive-paths                     # This list. Removing a line turns the alarm off for that path, silently.
 .github/workflows/                          # Runs with a token. The agent cannot write here, so a human meant this.
+.github/actions/                            # Every job's checkout and pinned versions. A change here reaches every lane at once.
 .pre-commit-config.yaml                     # Owns formatting and the commit-msg hook, pinned exactly. Unpinning resolves to whatever is latest.
 
 config/management.tpl.json                  # The vault contract. An unwrapped op:// reference reaches a provider as literal text.
