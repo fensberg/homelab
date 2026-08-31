@@ -110,11 +110,7 @@ RUN for b in op tofu age rclone kubectl jq; do \
 # nothing at runtime would report them disagreeing: the pod would come up as
 # an unknown uid with no write access to its own home, and the runner would
 # fail for reasons that look nothing like a renumbered account.
-RUN uid="$(id -u runner)"; \
-    [ "$uid" = "1001" ] || { \
-        echo "the runner account is uid ${uid}, not 1001."; \
-        echo "update runAsUser/runAsGroup/fsGroup in runner-scale-set.yaml to match, then this line."; \
-        exit 1; \
-    }
+RUN echo "the runner account is uid $(id -u runner); the scale set expects 1001" \
+    && test "$(id -u runner)" = "1001"
 
 USER runner
