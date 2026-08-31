@@ -52,7 +52,9 @@ func Render(ctx *run.Context) error {
 		return err
 	}
 
-	run.Info(fmt.Sprintf("generating inventory for %s (%d hypervisor(s))", net.Name, len(net.Hypervisors)))
+	// The site KEY, never net.Name. The name comes from the vault and this
+	// line lands in a world-readable Actions log; the key is in git already.
+	run.Info(fmt.Sprintf("generating inventory for %s (%d hypervisor(s))", ctx.Site, len(net.Hypervisors)))
 	var inv strings.Builder
 	inv.WriteString("---\nall:\n  children:\n    hypervisors:\n      hosts:\n")
 	for _, h := range net.Hypervisors {

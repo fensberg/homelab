@@ -2,10 +2,14 @@ package phases
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"homelab/contractor/internal/config"
@@ -446,4 +450,65 @@ func looksLikeKubeconfig(raw string) bool {
 		}
 	}
 	return true
+}
+
+// WithKubeconfig runs a command with a kubeconfig that exists only for as long
+// as the command does.
+//
+// The alternative - write the file into the workspace, export KUBECONFIG, and
+// remember to clean up - leaves a live credential on disk between uses, and
+// invites exactly the shortcut of keeping it around because regenerating it is
+// mildly annoying. Transience is the safeguard, so the convenient path is the
+// one that keeps it: the file is created with 0600 in the OS temp directory,
+// never in the repository, and removed on every exit path including a signal.
+//
+// It returns the command's exit code so the caller can pass it on, because a
+// wrapper that swallows a non-zero exit is a wrapper that hides failures.
+func WithKubeconfig(ctx *run.Context, argv []string) (int, error) {
+	if len(argv) == 0 {
+		return 0, errors.New("no command given after --")
+	}
+
+	f, err := os.CreateTemp("", "kubeconfig-*")
+	if err != nil {
+		return 0, fmt.Errorf("creating a temporary kubeconfig: %w", err)
+	}
+	path := f.Name()
+	// Close before writing through the phase, and remove no matter how this
+	// returns - including a panic, which would otherwise strand the file.
+	f.Close()
+	defer os.Remove(path)
+	if err := os.Chmod(path, 0o600); err != nil {
+		return 0, fmt.Errorf("restricting the temporary kubeconfig: %w", err)
+	}
+
+	// A signal has to remove it too. Without this, Ctrl-C during a long
+	// kubectl leaves the credential behind, which is the exact failure this
+	// exists to prevent.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sig)
+	go func() {
+		<-sig
+		os.Remove(path)
+		os.Exit(130)
+	}()
+
+	if err := WriteKubeconfigTo(ctx, path); err != nil {
+		return 0, err
+	}
+
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command(argv[0], argv[1:]...)
+	c.Env = append(os.Environ(), "KUBECONFIG="+path)
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	err = c.Run()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode(), nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("running %q: %w", argv[0], err)
+	}
+	return 0, nil
 }
