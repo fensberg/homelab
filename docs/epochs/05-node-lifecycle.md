@@ -17,6 +17,35 @@ plane whose nodes cannot be replaced individually can only be rebuilt, and
 rebuilding is not a maintenance procedure - it is an outage with a plan
 attached.
 
+## Acceptance test: change 5 to 3 and watch it land
+
+Hard criterion. This epoch does not close without it:
+
+> Change `control_plane_count` from `5` to `3` in the config. **Merge it.**
+> Two machines are cordoned, drained, removed from etcd and destroyed - with
+> nobody having run anything, and the cluster healthy throughout.
+
+It sits here rather than in epoch 01 because removing a node is a different
+problem from adding one, and only the removal needs the machinery this epoch
+builds:
+
+- A **cordon and drain** that honours PodDisruptionBudgets, so work moves
+  before its machine goes.
+- An **etcd member removal**, because destroying the VM leaves the member
+  registered and etcd retrying against a machine that no longer exists.
+- A guarantee that **the machine being destroyed is not running the thing
+  destroying it**. The self-hosted runner lives on these nodes; a converge that
+  deletes its own node terminates mid-apply, holding a state lock, with the
+  estate half-changed.
+
+Adding a node needs none of the three, which is why epoch 01 can prove the
+merge-driven path in the up direction now and this epoch owns the down
+direction.
+
+Note this is ordinary practice rather than novel work - Cluster API with the
+Proxmox provider does all three, which is why the decision below is to adopt it
+rather than write a driver.
+
 ## Scope
 
 **This epoch adopts and integrates. It does not build a node controller.**
