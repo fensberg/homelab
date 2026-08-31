@@ -404,8 +404,12 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SITE: ${{ matrix.site }}
         run: |
+          # pipefail, or tee's exit status hides a failed plan: the step goes
+          # green, plan-summary.txt is empty, and the comment below posts a
+          # blank code block that reads as "nothing changes".
+          set -o pipefail
           go build -C scripts/steward -o steward .
-          ./scripts/steward/steward plan -site "$SITE" | tee plan-summary.txt
+          ./scripts/steward/steward plan -site "$SITE" 2>&1 | tee plan-summary.txt
 
       - name: Comment the plan on the pull request
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
