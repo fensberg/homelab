@@ -23,6 +23,63 @@ Explicitly out of scope:
 
 - New module functionality — belongs in epoch 02.
 
+Two workloads are named success criteria for this epoch. They are not examples:
+if the estate cannot host these, the tier has not done its job.
+
+- **A website**, reachable on the LAN and probably the WAN. HTTP, so it is the
+  easy half and Cloudflare Tunnel can carry it.
+- **A Valheim dedicated server**
+  (https://www.valheimgame.com/support/a-guide-to-dedicated-servers/). This one
+  sets the constraints, because it needs inbound **UDP 2456-2458**.
+
+### Why the game server decides the network design
+
+Cloudflare Tunnel's public hostname routing is HTTP and TCP; it cannot carry
+arbitrary UDP, and public UDP is Spectrum, which is enterprise-priced. Cloudflare
+Zero Trust _can_ carry UDP over WARP private networking, but every player would
+have to enrol in the organisation and run the WARP client, which is a heavier ask
+than it sounds and routes traffic through Cloudflare's edge rather than directly.
+Tailscale would work and gives direct peer paths, at the cost of every player
+installing it.
+
+The decision is a **port forward**. It is the only option that asks players to
+install nothing, and it is the first genuinely inbound path into this estate -
+which is a materially different posture from anything built so far, and the
+reason the isolation question below is not optional.
+
+### The isolation this requires
+
+The intent is that the game server is walled off from everything else, and
+today that is not achievable. The cluster runs Flannel, which **does not enforce
+NetworkPolicy**: a policy saying the game server may not reach the Kubernetes API
+or the state database would apply cleanly, report no error, and do nothing. That
+is worse than having no policy, because it looks like protection.
+
+**The decision is to move to Cilium.** It gives NetworkPolicy that is actually
+enforced, which is what makes "walled off" true rather than decorative.
+
+It is not a swap. Talos ships Flannel, so moving means `cluster.network.cni.name:
+none`, probably `cluster.proxy.disabled: true` since Cilium replaces kube-proxy,
+and - the part that matters - installing Cilium _before nodes go Ready_. A node
+without a CNI never reaches Ready, and Flux cannot schedule until nodes are
+Ready, so Cilium cannot arrive the way OpenEBS and the runner do. It has to come
+from Talos `inlineManifests` or be applied by OpenTofu, ahead of the Health gate.
+
+That changes how the cluster comes into existence, which is why it needs its own
+record before any code moves.
+
+The payoff reaches past the game server: with enforced NetworkPolicy, the
+hypervisor access recorded in `02-abstraction.md` can be narrowed to the runner
+pod rather than every pod on the node subnet - which that record names Flannel
+as the reason it could not be.
+
+### Storage, which is the quieter problem
+
+A Valheim world is state, and OpenEBS Local PV Hostpath pins a volume to one
+node. When that node is replaced - which every image change does, since an image
+change means a rebuild - the world goes with it. Whatever this epoch does about
+workloads has to answer that before anyone plays on it.
+
 ## Open questions to settle first
 
 - `deploy-infrastructure.yml` already encodes the promotion model: `main` ->

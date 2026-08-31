@@ -128,6 +128,23 @@ remains the precondition for any of this, whichever mechanism drives it.
 
 ## Gotchas
 
+### An image change cannot be delivered by a converge
+
+`proxmox_download_file` is identified by its datastore path, which carries the
+Talos version but not the schematic id. Re-minting a schematic therefore
+produces no plan diff, the new image is never fetched, and the nodes never
+rebuild - confirmed by a real plan against a live estate that showed only a
+tailnet key being replaced.
+
+This means no Talos version bump and no extension change can reach a running
+estate today; the only way to deliver one is to tear the estate down and ignite
+it again. That is the same shape as nothing removing an etcd member: an
+operation everybody assumes is supported, which is silently not.
+
+Whatever this epoch adopts has to own image rollout as well as node count, and
+Cluster API's machine templates are exactly that mechanism - replacing a
+machine when its template changes is the thing it does.
+
 - **Cluster API needs a management cluster, and here it would manage its own.**
   The controllers have to run somewhere, and the only cluster is the one being
   managed. `clusterctl move` and a self-hosted pivot are the established
