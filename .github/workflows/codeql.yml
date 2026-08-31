@@ -26,6 +26,22 @@ on:
 
 permissions: read-all
 
+# GitHub's default shell for `run:` is `bash -e {0}`, which has no
+# pipefail: in `a | b` only b's exit status counts, so a failing command
+# feeding a working one is a green step. Naming the shell explicitly gets
+# `bash --noprofile --norc -eo pipefail {0}` instead.
+#
+# Not theoretical here. `tofu plan | tee` reported success and posted an
+# empty pull request comment, and `rclone version | head -1` verified
+# nothing while passing - both silent, both green, both wrong answers
+# rather than errors. It is set on every workflow, including those with no
+# `run:` step today, so the one added tomorrow is already covered.
+#
+# tests/go/repo/pipefail_test.go asserts this is present.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   analyze:
     name: "Analyze (${{ matrix.language }})"
@@ -62,10 +78,8 @@ jobs:
             release-assets.githubusercontent.com:443
             uploads.github.com:443
 
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+      - name: Set up
+        uses: ./.github/actions/setup
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
