@@ -1,0 +1,32 @@
+name: "Read pinned versions"
+description: >
+  Export every version pinned in scripts/versions.env into the job's
+  environment, so a workflow never declares a version of its own.
+
+# Why a composite action and not a setup job with outputs:
+#
+# A job that read the file and published outputs would make every lane
+# `needs:` it, and the lanes in pr-validation.yml run in parallel on purpose -
+# a formatting slip is not allowed to delay the lanes that check correctness
+# and security. Serialising all of them behind a version lookup would trade
+# that design away for tidiness. This costs one step per job, adds no runner,
+# and keeps the lanes independent.
+#
+# It must run after actions/checkout: the file it reads is in the repository.
+
+runs:
+  using: composite
+  steps:
+    - name: Export pinned versions
+      shell: bash
+      # grep rather than `source`: this file is data, and sourcing it would
+      # execute whatever it contained. The pattern is also the validation -
+      # a line that is not KEY=value-without-spaces is simply not exported,
+      # and grep -c exits non-zero if the file yields nothing at all, which
+      # under `set -e` fails the job rather than running it with empty
+      # versions.
+      run: |
+        set -euo pipefail
+        pins='^[A-Z][A-Z0-9_]*=[^[:space:]]+$'
+        echo "exported $(grep -cE "$pins" scripts/versions.env) pinned versions"
+        grep -E "$pins" scripts/versions.env >> "$GITHUB_ENV"

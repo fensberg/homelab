@@ -84,6 +84,77 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 	}
 }
 
+// versions.env is only "the one place a version is pinned" if nothing else
+// writes one down. Workflows were the leak: pr-validation.yml carried its own
+// TOFU_VERSION for long enough that CI validated pull requests on OpenTofu
+// 1.10.6 while the estate was converged with 1.12.6 - two minor versions
+// apart, agreeing with nothing, reported by nobody.
+//
+// This only rejects an *assignment* of a literal. Referring to a pinned
+// version is the entire point (`--build-arg TOFU_VERSION="$TOFU_VERSION"`,
+// `${{ env.GO_VERSION }}`), so a value that starts with $ is a reference and
+// passes.
+func TestNoWorkflowDeclaresAVersionThatVersionsEnvOwns(t *testing.T) {
+	root := repoRoot(t)
+	pins := pinnedKeys(t, root)
+
+	dir := filepath.Join(root, ".github", "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+
+	// The action every workflow reads them through. If it disappears, the
+	// workflows have no way to get a version and this test would pass by
+	// checking nothing.
+	action := filepath.Join(root, ".github", "actions", "versions", "action.yml")
+	if _, err := os.Stat(action); err != nil {
+		t.Fatalf(".github/actions/versions/action.yml is missing: %v\n\nWithout it a workflow cannot read scripts/versions.env, and the only way to give a job a version is to declare one - which is what this test forbids.", err)
+	}
+
+	var checked int
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+			continue
+		}
+		checked++
+		body := readFile(t, filepath.Join(dir, e.Name()))
+		for _, key := range pins {
+			// `KEY: literal` (YAML) or `KEY=literal` (shell), where the
+			// value is not a $reference.
+			assign := regexp.MustCompile(`(?m)^\s*` + key + `\s*[:=]\s*["']?[^$\s"']`)
+			if loc := assign.FindStringIndex(body); loc != nil {
+				line := 1 + strings.Count(body[:loc[0]], "\n")
+				t.Errorf(".github/workflows/%s:%d declares %s itself.\n\nversions.env owns that pin. Read it with `uses: ./.github/actions/versions` and refer to ${{ env.%s }} instead - a second declaration is a version that drifts silently.", e.Name(), line, key, key)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("scanned no workflows, so this test proves nothing")
+	}
+}
+
+// pinnedKeys returns every key versions.env declares.
+func pinnedKeys(t *testing.T, root string) []string {
+	t.Helper()
+	var keys []string
+	for _, line := range strings.Split(readFile(t, filepath.Join(root, "scripts", "versions.env")), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, _, ok := strings.Cut(line, "=")
+		if !ok {
+			t.Fatalf("versions.env line is not KEY=VALUE: %q", line)
+		}
+		keys = append(keys, k)
+	}
+	if len(keys) == 0 {
+		t.Fatal("versions.env declares nothing, so this test proves nothing")
+	}
+	return keys
+}
+
 // steward shells out to these. A missing one fails at the phase that needs it,
 // on the runner, minutes into a converge - which is how the image came to
 // exist in the first place.
