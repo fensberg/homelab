@@ -337,6 +337,53 @@ kubeconfig to a file for the Flux bootstrap, so the mechanism is not new.
 split, the coupling is baked into the module boundaries and every future site
 inherits it.**
 
+## Known driver: the config records an address where it should record a name
+
+`hypervisor.nodes[].ip` holds a single address, used for three different things:
+Ansible's SSH target, the Proxmox API endpoint the OpenTofu provider dials, and
+the Verify phase's reachability check. One value, three consumers, and they do
+not all live on the same network.
+
+That is why putting the cluster nodes on the overlay did not make a converge
+work. The nodes became tailnet peers, but the address being dialled was still
+the hypervisor's LAN address, so traffic routed out through the EVPN VRF - the
+path that cannot deliver to it - rather than over the overlay. Membership only
+helps if the thing being dialled is a tailnet address.
+
+The workaround is to put the tailnet address in that field. It works, because
+every consumer is on the tailnet, but it is wrong in a way worth naming: it
+couples the workstation and Ansible to tailscale being up on the hypervisor, and
+it hard-codes one topology into a field that several different networks read.
+
+### The fix is a name, not an address
+
+The field should hold a hostname - `hypervisor.<site>.<domain>` - and DNS should
+answer it differently depending on who asks. The tailnet's resolver returns the
+tailnet address; the LAN's resolver returns the LAN address. Split-horizon
+resolution is the ordinary answer to exactly this problem, and Tailscale's split
+DNS supports it directly.
+
+Three things follow from it, and they are the reason this belongs in an
+abstraction epoch rather than being filed as a bug:
+
+**The config stops encoding topology.** Today the value silently asserts "every
+consumer of this field shares one network". A name asserts nothing; the resolver
+decides, and each consumer gets the best path available to it.
+
+**No consumer depends on another's network being up.** With the tailnet address
+in the field, a workstation on the same LAN as the hypervisor still routes
+through the overlay to reach it, and loses it entirely if tailscale is down.
+With a name, it resolves locally and goes direct.
+
+**It survives a second site.** Each site's hypervisor gets its own name, and
+adding a site adds a DNS record rather than a decision about which address to
+write down.
+
+The cost is a dependency on DNS being right, which is a real one - a wrong or
+missing record fails in a way that looks like a network problem. Verify already
+distinguishes "cannot resolve" from "cannot reach" badly, and would want to
+distinguish it well.
+
 ## Known driver: the cluster reaches the hypervisor over a flat network
 
 A converge that changes the number of machines has to call the hypervisor's
