@@ -19,6 +19,7 @@ on:
       - "environments/**/infrastructure/**"
       - "modules/infrastructure/**"
       - "management/**"
+      - "config/management.tpl.json"
   push:
     branches: [main]
     tags: ["v*"]
