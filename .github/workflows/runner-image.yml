@@ -20,6 +20,22 @@ concurrency:
   group: runner-image
   cancel-in-progress: false
 
+# GitHub's default shell for `run:` is `bash -e {0}`, which has no
+# pipefail: in `a | b` only b's exit status counts, so a failing command
+# feeding a working one is a green step. Naming the shell explicitly gets
+# `bash --noprofile --norc -eo pipefail {0}` instead.
+#
+# Not theoretical here. `tofu plan | tee` reported success and posted an
+# empty pull request comment, and `rclone version | head -1` verified
+# nothing while passing - both silent, both green, both wrong answers
+# rather than errors. It is set on every workflow, including those with no
+# `run:` step today, so the one added tomorrow is already covered.
+#
+# tests/go/repo/pipefail_test.go asserts this is present.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     name: Build and publish

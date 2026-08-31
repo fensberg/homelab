@@ -40,6 +40,22 @@ concurrency:
   group: deploy-infrastructure-${{ github.ref }}
   cancel-in-progress: false
 
+# GitHub's default shell for `run:` is `bash -e {0}`, which has no
+# pipefail: in `a | b` only b's exit status counts, so a failing command
+# feeding a working one is a green step. Naming the shell explicitly gets
+# `bash --noprofile --norc -eo pipefail {0}` instead.
+#
+# Not theoretical here. `tofu plan | tee` reported success and posted an
+# empty pull request comment, and `rclone version | head -1` verified
+# nothing while passing - both silent, both green, both wrong answers
+# rather than errors. It is set on every workflow, including those with no
+# `run:` step today, so the one added tomorrow is already covered.
+#
+# tests/go/repo/pipefail_test.go asserts this is present.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # ---------------------------------------------------------------------
   # ROUTING - which tier does this change touch, and which sites exist?
@@ -61,6 +77,18 @@ jobs:
       workload: ${{ steps.filter.outputs.workload }}
       sites: ${{ steps.sites.outputs.sites }}
     steps:
+      # This job had no harden-runner at all until the building code went in -
+      # it began at checkout. Hermetic and credential-free, so the exposure was
+      # small, but it is the classification step for the workflow that applies
+      # OpenTofu, and "small" is not the standard the other jobs are held to.
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
