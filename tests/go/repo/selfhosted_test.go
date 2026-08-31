@@ -131,12 +131,13 @@ func triggerNames(n *yaml.Node) []string {
 // A runner group is by definition a set of self-hosted runners, so the
 // mapping form counts even when no label spells "self-hosted".
 func isSelfHosted(n *yaml.Node) bool {
+	name := scaleSetName()
 	switch n.Kind {
 	case yaml.ScalarNode:
-		return n.Value == "self-hosted"
+		return n.Value == name
 	case yaml.SequenceNode:
 		for _, c := range n.Content {
-			if c.Value == "self-hosted" {
+			if c.Value == name {
 				return true
 			}
 		}
@@ -293,7 +294,7 @@ func TestAuditWorkflowCatchesTheWaysInAndIgnoresTheOthers(t *testing.T) {
 on: {pull_request: null}
 jobs:
   plan:
-    runs-on: self-hosted
+    runs-on: ` + scaleSetName() + `
     environment: staging
     if: github.event.pull_request.head.repo.full_name == github.repository
 `,
@@ -307,7 +308,7 @@ jobs:
 on: {pull_request: null}
 jobs:
   plan:
-    runs-on: self-hosted
+    runs-on: ` + scaleSetName() + `
     if: github.event.pull_request.head.repo.full_name == github.repository
 `,
 			findings: 1, examined: 1,
@@ -318,7 +319,7 @@ jobs:
 on: {pull_request: null}
 jobs:
   plan:
-    runs-on: self-hosted
+    runs-on: ` + scaleSetName() + `
 `,
 			findings: 2, examined: 1,
 		},
@@ -331,7 +332,7 @@ on:
   push: {branches: [main]}
 jobs:
   apply:
-    runs-on: self-hosted
+    runs-on: ` + scaleSetName() + `
     if: github.event_name == 'push'
 `,
 			findings: 0, examined: 0,
@@ -342,7 +343,7 @@ jobs:
 on: {pull_request_target: null}
 jobs:
   plan:
-    runs-on: self-hosted
+    runs-on: ` + scaleSetName() + `
     environment: staging
     if: github.event.pull_request.head.repo.full_name == github.repository
 `,
@@ -364,7 +365,7 @@ jobs:
 on: {pull_request: null}
 jobs:
   plan:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [` + scaleSetName() + `, linux, x64]
 `,
 			findings: 2, examined: 1,
 		},
@@ -385,7 +386,7 @@ jobs:
 on: {schedule: [{cron: "0 4 * * *"}]}
 jobs:
   test:
-    runs-on: self-hosted
+    runs-on: ` + scaleSetName() + `
 `,
 			findings: 0, examined: 0,
 		},
@@ -428,3 +429,33 @@ func TestReachableFromPullRequest(t *testing.T) {
 		}
 	}
 }
+
+// scaleSetName reads the runner scale set's name out of the manifest that
+// declares it, rather than hard-coding it here.
+//
+// The guard above decides whether a job reaches the estate's own runner, and
+// it used to compare against the literal "self-hosted". Renaming the scale set
+// - which had to happen, because self-hosted is a reserved label that scale
+// sets are never offered jobs for - would have left this matching a string
+// nothing uses, so every job would have looked hermetic and the guard would
+// have protected nothing while still passing.
+func scaleSetName() string {
+	root, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for i := 0; i < 5; i++ {
+		p := filepath.Join(root, "clusters", "management", "infrastructure", "configs", "runner-scale-set.yaml")
+		if body, err := os.ReadFile(p); err == nil {
+			m := scaleSetNamePattern.FindStringSubmatch(string(body))
+			if m != nil {
+				return m[1]
+			}
+			return ""
+		}
+		root = filepath.Dir(root)
+	}
+	return ""
+}
+
+var scaleSetNamePattern = regexp.MustCompile(`(?m)^\s*runnerScaleSetName:\s*(\S+)\s*$`)
