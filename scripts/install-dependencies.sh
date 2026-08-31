@@ -21,6 +21,9 @@ has() { command -v "$1" >/dev/null 2>&1; }
 # Tool versions live in one file, shared with the runner image's Dockerfile.
 # See scripts/versions.env for why they are not restated in either place.
 # shellcheck source=scripts/versions.env
+# shellcheck disable=SC1091  # ShellCheck needs --external-sources to follow a
+# sourced file, and CI does not pass it. The source= directive above says where
+# the file is for anyone reading; this silences the note about not following it.
 . "$(dirname "$0")/versions.env"
 
 ARCH="$(uname -m)"
