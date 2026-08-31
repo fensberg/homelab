@@ -21,7 +21,8 @@ earlier epoch whose decisions you are about to touch.
   alerts, no scaling thresholds — see epoch 04.
 - **Not replaceable:** a control-plane node cannot be replaced on its own yet.
   Identity is keyed correctly as of epoch 01, so a single-node change is now
-  expressible; nothing drives it in order — see epoch 05.
+  expressible; nothing drives it in order. Epoch 05 adopts Cluster API and
+  `talosctl upgrade` for that rather than building a driver.
 - **Who can do what:** Claude runs unprivileged, with no vault access and a
   GitHub identity that can push a branch and nothing else — it proposes, a
   human merges. Enforced by the OS, the absent 1Password account and a
