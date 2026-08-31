@@ -47,14 +47,39 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 		}
 	}
 
-	// The Dockerfile must take them as build arguments, not hard-code them.
+	// The Dockerfile must take them as build arguments, not hard-code them,
+	// and the workflow must actually wire versions.env's value into each one.
+	//
+	// The two names are not always identical. rclone reads every flag from a
+	// matching RCLONE_<FLAG> environment variable, and docker exposes build
+	// arguments to the RUN that uses them, so an ARG called RCLONE_VERSION is
+	// read by rclone as `--version=1.75.0` and every rclone invocation in the
+	// build fails on it. Hence the alias - and hence the workflow check below,
+	// because an alias that nothing passes a value to is a version silently
+	// defaulting to empty rather than coming from versions.env.
+	argFor := map[string]string{
+		"TOFU_VERSION":   "TOFU_VERSION",
+		"RCLONE_VERSION": "RCLONE_DEB_VERSION",
+	}
+
 	dockerfile := readFile(t, filepath.Join(root, ".github", "runner-image", "Dockerfile"))
-	for _, k := range []string{"TOFU_VERSION", "RCLONE_VERSION"} {
-		if !regexp.MustCompile(`(?m)^ARG\s+` + k + `\s*$`).MatchString(dockerfile) {
-			t.Errorf("the Dockerfile does not take %s as a bare build argument, so its value is not coming from versions.env", k)
+	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "runner-image.yml"))
+
+	for envKey, arg := range argFor {
+		if _, ok := pins[envKey]; !ok {
+			t.Errorf("versions.env no longer declares %s, but the runner image still expects it", envKey)
+			continue
 		}
-		if regexp.MustCompile(`(?m)^ARG\s+` + k + `\s*=`).MatchString(dockerfile) {
-			t.Errorf("the Dockerfile gives %s a default, which is a second place a version is written", k)
+		if !regexp.MustCompile(`(?m)^ARG\s+` + arg + `\s*$`).MatchString(dockerfile) {
+			t.Errorf("the Dockerfile does not take %s as a bare build argument, so its value is not coming from versions.env", arg)
+		}
+		if regexp.MustCompile(`(?m)^ARG\s+` + arg + `\s*=`).MatchString(dockerfile) {
+			t.Errorf("the Dockerfile gives %s a default, which is a second place a version is written", arg)
+		}
+		// --build-arg <ARG>="$<ENVKEY>" - the link that makes the alias safe.
+		wired := regexp.MustCompile(`--build-arg\s+` + arg + `="\$` + envKey + `"`)
+		if !wired.MatchString(workflow) {
+			t.Errorf("runner-image.yml does not pass versions.env's %s into the Dockerfile's %s build argument;\nthe image would build with an empty %s instead of the pinned version", envKey, arg, arg)
 		}
 	}
 }
