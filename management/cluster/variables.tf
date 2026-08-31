@@ -203,7 +203,12 @@ locals {
   # node - a second, independent way for a run to fail, folded into a change
   # that already replaces the storage layer. Worth doing on its own, when the
   # only thing being tested is the image.
-  schematic_id = "613e1592b2da41ae5e265e8789429f22e121aab91cb4deb6bc3c0b6262961245"
+  # Minted 2026-08-31 for tailscale + util-linux-tools. iscsi-tools was dropped
+  # in the same mint: it arrived as a Longhorn prerequisite, Longhorn is gone,
+  # and OpenEBS Local PV Hostpath needs no iSCSI. The record above said that was
+  # worth doing on its own "when the only thing being tested is the image" -
+  # this is that change, and every node is rebuilt by it either way.
+  schematic_id = "6e810eb45767cfabcdb7a45e389eee803045af7a9467faebde5c91164861883a"
 
   gitops_target_path = "clusters/management"
 
