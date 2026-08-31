@@ -56,10 +56,17 @@ edit per new site and buys a smaller blast radius if a router is compromised.
 
 **Settings → OAuth clients → Generate.**
 
-| Setting | Value                     |
-| ------- | ------------------------- |
-| Scope   | write access to auth keys |
-| Tags    | `tag:homelab-router`      |
+| Setting | Value                                    |
+| ------- | ---------------------------------------- |
+| Scope   | write access to auth keys                |
+| Tags    | `tag:homelab-router`, `tag:homelab-node` |
+
+**Both tags.** The client mints two keys: one for the hypervisor acting as a
+subnet router, and one that puts the cluster nodes on the tailnet. A client
+scoped to only the router tag fails the second with `Failed to create key`,
+which is not obviously about tags at all. Tailscale does not let you edit a
+client'"'"'s tags after it is generated - add a tag means generate a new client and
+replace the credentials in the vault.
 
 The tag must already exist in `tagOwners` from step 1, or it cannot be
 selected here. That ordering is why the policy comes first.
