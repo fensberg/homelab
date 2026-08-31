@@ -78,3 +78,25 @@ spec:
     # with a checkout regardless.
     minRunners: 0
     maxRunners: 2
+
+    # The image the runner runs in.
+    #
+    # The stock actions-runner image is deliberately minimal - no op, no tofu,
+    # no age, no rclone - so `contractor plan` failed at Render with
+    # "1Password CLI not found on PATH". .github/runner-image/ layers exactly
+    # the binaries the program shells out to, and nothing else.
+    #
+    # Pinned by digest, not by tag. A tag is a pointer someone can move; the
+    # digest is the image. `:latest` exists for humans reading the registry and
+    # must never be what a cluster resolves - "pin everything" means the thing
+    # that actually runs, and a mutable tag is the one pin that silently is not
+    # one. Renovate updates the digest here the same way it updates the chart
+    # version above.
+    #
+    # renovate: datasource=docker depName=ghcr.io/fensberg/homelab-runner
+    template:
+      spec:
+        containers:
+          - name: runner
+            image: ghcr.io/fensberg/homelab-runner@sha256:b60c75d13b2e03ccdd183dabcf885a2c0c716266546a9334a7e63c76ae7da612
+            command: ["/home/runner/run.sh"]
