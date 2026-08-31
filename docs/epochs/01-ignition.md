@@ -1337,6 +1337,28 @@ refuses any control-plane resize.
 that each node's name ends in the last octet of its address, so the three
 cannot drift apart again quietly.
 
+## Acceptance tests
+
+Two, and both must pass before this epoch is signed off:
+
+1. **Nothing to three.** A bare hypervisor becomes a three-node cluster from
+   one local run of the button. This is ignition, and it is the tier's
+   original reason to exist.
+2. **Three to five, by merging.** The test below.
+
+**Five back to three is deliberately not here.** It moved to
+[`05-node-lifecycle.md`](05-node-lifecycle.md) as a hard acceptance criterion
+of that epoch, and the reason is worth keeping: removing a node needs a cordon,
+a drain that honours PodDisruptionBudgets, an etcd member removal, and a
+guarantee that the machine being destroyed is not the one running the thing
+doing the destroying. None of that exists yet, and a bare `tofu apply` has none
+of it. Adding a node needs none of it, which is why the two directions separate
+cleanly and why this one can be proven now.
+
+That asymmetry is not a limitation of Kubernetes - scaling nodes in both
+directions is ordinary practice, and Cluster API does exactly this. It is a
+limitation of what this estate has built, which is what epoch 05 is for.
+
 ## Acceptance test: change 3 to 5 and watch it land
 
 The epoch is signed off when this works, end to end, with no manual step in
