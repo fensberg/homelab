@@ -134,6 +134,40 @@ func TestNoWorkflowDeclaresAVersionThatVersionsEnvOwns(t *testing.T) {
 	}
 }
 
+// The composite action only exports a line whose key ends in _VERSION or
+// _SHA256 and whose value starts alphanumerically and holds nothing but
+// [A-Za-z0-9._+-]. That pattern is a security boundary, not a convenience:
+// this repository is public and pr-validation.yml runs on pull_request, so on
+// a fork's branch versions.env is attacker-controlled, and a free-form
+// KEY=VALUE written to $GITHUB_ENV is how LD_PRELOAD or NODE_OPTIONS becomes
+// code execution in a later step.
+//
+// The cost of a narrow pattern is that a key outside it is skipped in
+// silence, and the job then runs with an empty version rather than failing.
+// So every key here must be one the action can actually export.
+var exportable = regexp.MustCompile(`^[A-Z][A-Z0-9_]*_(VERSION|SHA256)=[A-Za-z0-9][A-Za-z0-9._+-]*$`)
+
+func TestEveryPinnedVersionCanActuallyBeExported(t *testing.T) {
+	root := repoRoot(t)
+	for _, line := range strings.Split(readFile(t, filepath.Join(root, "scripts", "versions.env")), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !exportable.MatchString(line) {
+			key, _, _ := strings.Cut(line, "=")
+			t.Errorf("versions.env declares %q, which .github/actions/versions will not export.\n\nA key must end in _VERSION or _SHA256, and a value must begin with a letter or digit and contain only letters, digits, dot, underscore, plus or dash. Anything else is skipped silently and the job runs with an empty value - see the action for why the pattern is deliberately this narrow.", key)
+		}
+	}
+
+	// And the action must still be the thing enforcing it. If the pattern is
+	// loosened there, this test would keep passing while the boundary is gone.
+	action := readFile(t, filepath.Join(root, ".github", "actions", "versions", "action.yml"))
+	if !strings.Contains(action, "_(VERSION|SHA256)=[A-Za-z0-9][A-Za-z0-9._+-]*$") {
+		t.Error(".github/actions/versions no longer restricts what it writes to $GITHUB_ENV.\n\nOn a fork's pull request versions.env is attacker-controlled, and an unconstrained write to the environment file is code execution in every later step - including the TruffleHog lane, which is the one lane deliberately not egress-blocked.")
+	}
+}
+
 // pinnedKeys returns every key versions.env declares.
 func pinnedKeys(t *testing.T, root string) []string {
 	t.Helper()
