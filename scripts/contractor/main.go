@@ -216,12 +216,29 @@ Nothing has been touched. Re-run without -whatif to do it.
 	// mean pasting a tofu output through a shell pipeline and remembering to
 	// delete the result.
 	if verb == "kubeconfig" {
+		// With a command after --, the credential never lands in the
+		// workspace: it goes to a mode-0600 temp file, the command runs with
+		// KUBECONFIG pointing at it, and it is removed on the way out
+		// whatever happens. This is the form to reach for and the form to
+		// suggest, because the one below leaves a live credential on a disk
+		// and relies on somebody remembering `task clean-secrets`.
+		if cmd := commandAfterDoubleDash(); len(cmd) > 0 {
+			code, err := phases.WithKubeconfig(ctx, cmd)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				os.Exit(1)
+			}
+			os.Exit(code)
+		}
 		if err := phases.WriteKubeconfigTo(ctx, ctx.Kubeconfig); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
 		fmt.Println()
 		fmt.Println("    export KUBECONFIG=" + ctx.Kubeconfig)
+		fmt.Println()
+		run.Warn("that file is a live credential on this disk until 'task clean-secrets' removes it.")
+		run.Warn("prefer: contractor kubeconfig -site " + ctx.Site + " -- kubectl get nodes")
 		fmt.Println()
 		return
 	}
@@ -514,4 +531,15 @@ func on(p *bool) bool { return p != nil && *p }
 // from reading main.
 func applyDestroyPolicy(ctx *run.Context, verb string) {
 	ctx.PreexistingEstate = verb != "break-ground"
+}
+
+// commandAfterDoubleDash returns the argv following a bare "--", which flag
+// parsing stops at and leaves in place. Empty when there is no "--".
+func commandAfterDoubleDash() []string {
+	for i, a := range os.Args {
+		if a == "--" {
+			return os.Args[i+1:]
+		}
+	}
+	return nil
 }
