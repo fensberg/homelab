@@ -49,8 +49,10 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Log in to the registry
         env:

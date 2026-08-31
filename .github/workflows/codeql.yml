@@ -78,8 +78,10 @@ jobs:
             release-assets.githubusercontent.com:443
             uploads.github.com:443
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3

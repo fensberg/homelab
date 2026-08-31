@@ -80,8 +80,7 @@ jobs:
       # This job had no harden-runner at all until the building code went in -
       # it began at checkout. Hermetic and credential-free, so the exposure was
       # small, but it is the classification step for the workflow that applies
-      # OpenTofu, and "small" is not the standard the other eighteen jobs are
-      # held to.
+      # OpenTofu, and "small" is not the standard the other jobs are held to.
       - name: Harden Runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
@@ -90,10 +89,14 @@ jobs:
             api.github.com:443
             github.com:443
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Deep enough to diff a pull request against its base. This
+          # repository is small; the cost is seconds and the alternative is
+          # guessing at a merge base.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Classify the change
         id: filter
@@ -167,8 +170,10 @@ jobs:
           # infrastructure is worse than an audited one.
           egress-policy: audit
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Determine Target Directory
         run: echo "DIR=environments/staging/infrastructure/" >> "$GITHUB_ENV"
@@ -272,8 +277,10 @@ jobs:
           # write access to real infrastructure is worse than an audited one.
           egress-policy: audit
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Determine Target Directory
         id: set-env
@@ -355,8 +362,10 @@ jobs:
           # the first real run, then flip to block.
           egress-policy: audit
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -405,8 +414,10 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

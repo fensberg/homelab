@@ -10,6 +10,14 @@ on:
   pull_request:
     branches:
       - main
+      # Epoch branches are pull request targets too. Work now lands on the
+      # epoch's branch and the epoch lands on main, so filtering to main alone
+      # meant a pull request into an epoch got two checks out of ten - not the
+      # eight lanes that decide whether it is correct - and everything would be
+      # validated for the first time in one lump when the epoch itself opened.
+      # That is the opposite of shifting left, and it is how #73 came to sit
+      # green with its whole validation suite never having run.
+      - "epoch/**"
 
 permissions: read-all
 
@@ -87,8 +95,10 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The same .pre-commit-config.yaml a developer runs, at the same pinned
       # versions. That is the point: there is no second copy of prettier here
@@ -133,8 +143,10 @@ jobs:
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
@@ -190,8 +202,16 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Versions come from scripts/versions.env, which is the only place one
+      # is written. See .github/actions/versions for why this is a step
+      # rather than a setup job.
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
 
       - name: Install OpenTofu
         run: |
@@ -345,8 +365,16 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Versions come from scripts/versions.env, which is the only place one
+      # is written. See .github/actions/versions for why this is a step
+      # rather than a setup job.
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
 
       # --- Go -------------------------------------------------------------
       - name: Setup Go
@@ -484,10 +512,11 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       # The same file `task lint` passes to the container, so a local run and
       # CI are configured identically. See .github/super-linter.vars.
@@ -530,10 +559,11 @@ jobs:
           # first, then transcribe the real destinations it logged.
           egress-policy: audit
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Run Semgrep CI
         run: semgrep ci
         env:
@@ -574,10 +604,11 @@ jobs:
             pkg-containers.githubusercontent.com:443
             release-assets.githubusercontent.com:443
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -617,10 +648,17 @@ jobs:
           # unverified ones, which is the opposite of what this lane is for.
           egress-policy: audit
 
-      - name: Set up
-        uses: ./.github/actions/setup
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      # Versions come from scripts/versions.env, which is the only place one
+      # is written. See .github/actions/versions for why this is a step
+      # rather than a setup job.
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
 
       # Not the marketplace action: its own action.yml runs
       # `docker run "${IMAGE}:${VERSION}"` with VERSION defaulting to
