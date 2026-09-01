@@ -402,6 +402,62 @@ that the original objection dissolves once the config holds a name resolved by
 split-horizon DNS still stands on its own, because it was never about this
 measurement.
 
+### Re-measured against a live peer: still unreachable
+
+The test was re-run once the hypervisor was back on the tailnet, and it gives
+the same answer it gave before: a pod cannot open 8006 on the hypervisor's
+tailnet address. This time the destination was a live peer, so the result means
+something.
+
+That does not restore the original finding wholesale - the reasoning in it
+("both ports, so it is not about the Proxmox API") was invalid and stays
+retracted - but the headline claim now has one valid measurement behind it
+rather than none.
+
+**What is still unmeasured, and must not be assumed again.** Whether the
+_node_ can reach the hypervisor over the tailnet has never been tested. Pod
+Security Admission refuses the host-network pod that would answer it, correctly,
+so the measurement has to come from somewhere else - `tailscale ping` from the
+hypervisor to a node exercises the same path from the other end and needs no
+privileged workload. Until that is run, "pods do not inherit node membership"
+and "the nodes are not really on the tailnet" both fit the evidence equally,
+and they have completely different fixes.
+
+### A test must prove its own preconditions
+
+The durable lesson from the hours this cost. The test used was:
+
+```text
+pod -> <hypervisor tailnet address>:8006   ->  timed out
+```
+
+It cannot distinguish "there is no path" from "there is nothing there", and it
+was read as the first while the second was true. Every subsequent design
+decision inherited that.
+
+A reachability test in this estate should therefore carry a control in the same
+run: something known to be reachable from the same place, so a failure of the
+subject is visible against a success of the control. A pod probing a tailnet
+address should also probe a public address and a cluster-local one. If all
+three fail, the pod has no egress at all and the tailnet is not the subject; if
+only the tailnet one fails, the result means what it appears to mean.
+
+This is the same rule as "measure from where the traffic starts", extended to
+the other end: establish that the destination is answering before drawing
+conclusions from it not answering.
+
+### Topology note: the workstation is not on the tailnet
+
+Worth recording because it is easy to assume otherwise and it changes what a
+test from there proves. The development workstation is a virtual machine beside
+the estate rather than a member of the overlay - it reaches the cluster API and
+the state database over the site network directly. Only the hypervisor and the
+cluster nodes are tailnet members.
+
+So a successful `task kubectl` from the workstation says nothing about the
+overlay, and the workstation cannot be used to test tailnet reachability at
+all. The two machines that can are the hypervisor and the nodes.
+
 **The process finding is the durable half, and it is the same one as before,
 one level up.** The earlier entry says: measure from where the traffic starts
 before designing what carries it. This adds: establish that the destination is
