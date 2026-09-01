@@ -81,6 +81,52 @@ type peerStatus struct {
 	// not evidence: a stale path is reported the same as a live one.
 	Relay   string `json:"Relay"`
 	CurAddr string `json:"CurAddr"`
+
+	// PrimaryRoutes is what this peer is carrying traffic for. It matters
+	// because the tailnet policy auto-approves a very wide prefix for any
+	// device holding the router tag, so a device that should not have that
+	// tag can claim a site's subnet with no human in the loop.
+	PrimaryRoutes []string `json:"PrimaryRoutes"`
+}
+
+// Expectation is what the estate says should be on the overlay. Supplied by
+// the caller rather than read from the vault, because this runs on a
+// hypervisor which deliberately holds no vault session.
+//
+// Without one, survey can only report what it found. With one, it can report
+// what is missing and what has no business being there - which are different
+// questions from reachability and, in the second case, a different kind of
+// problem entirely.
+type Expectation struct {
+	// Members are the device names the estate declares.
+	Members []string
+	// Routes are the prefixes the estate declares its routers may carry.
+	Routes []string
+	// TagPrefix marks a device as belonging to this estate. A device wearing
+	// it that nobody declared authenticated using an estate credential.
+	TagPrefix string
+
+	// Known is the set of untagged devices somebody has already accepted -
+	// laptops, phones, and anything else a human enrolled deliberately.
+	//
+	// This is a different mechanism from Members above, and the difference is
+	// the point. Members is a *declaration*: the estate says these machines
+	// should exist, and the config is the truth. Known is a *baseline*: a
+	// record of what was observed and accepted last time, because there is no
+	// config that can declare which humans own which laptops. Comparing
+	// against a declaration finds what the estate failed to build; comparing
+	// against a baseline finds what turned up on its own.
+	//
+	// Untagged devices are not errors. A new one is a change, and a change on
+	// a mesh where the policy currently permits every device to reach every
+	// other is worth a human looking at it the same day.
+	Known []string
+
+	// TrackUntagged turns baseline comparison on. Explicit rather than
+	// inferred from Known being empty, because an empty baseline is a
+	// meaningful state - a first run, where every device is new - and must
+	// not be indistinguishable from the feature being switched off.
+	TrackUntagged bool
 }
 
 // result is one cell of the matrix: this host's view of one peer.
@@ -104,11 +150,21 @@ type result struct {
 	Detail string
 }
 
+// finding is something observed that the estate did not ask for, or asked for
+// and did not get. Deliberately separate from result: a peer that cannot be
+// reached is an availability problem, and a peer nobody declared is not.
+type finding struct {
+	Kind   string // "unexpected-member", "unexpected-route", "missing-member"
+	Name   string
+	Detail string
+}
+
 // Verdict is what the caller acts on.
 type Verdict struct {
-	From    string
-	Results []result
-	Health  []string
+	From     string
+	Results  []result
+	Health   []string
+	Findings []finding
 }
 
 // unreachable returns the peers that are registered and do not answer. This is
@@ -214,4 +270,117 @@ func firstLine(s string) string {
 		return strings.TrimSpace(s[:i])
 	}
 	return strings.TrimSpace(s)
+}
+
+// classify compares what is on the overlay against what the estate declared.
+//
+// Three questions, and only the first is about whether anything is working:
+//
+//   - a declared member that is not present at all - it would otherwise be
+//     invisible, because a peer that never registered simply does not appear
+//     in a list of peers, and a check built from that list cannot miss it;
+//   - a device carrying an estate tag that nobody declared - something
+//     authenticated with an estate credential;
+//   - a route advertised by a device that the estate did not say may carry it.
+//
+// The tag is what keeps this usable. A tailnet holds laptops and phones that
+// are nobody's business here; a device wearing the estate's tag is. Without a
+// TagPrefix this returns nothing rather than guessing, because a check that
+// reports every personal device as an intruder gets switched off within a week
+// and takes the real finding with it.
+func classify(peers []*peerStatus, want Expectation) []finding {
+	if want.TagPrefix == "" && !want.TrackUntagged {
+		return nil
+	}
+
+	declared := map[string]bool{}
+	for _, m := range want.Members {
+		declared[strings.ToLower(m)] = true
+	}
+	allowed := map[string]bool{}
+	for _, r := range want.Routes {
+		allowed[r] = true
+	}
+	known := map[string]bool{}
+	for _, k := range want.Known {
+		known[strings.ToLower(k)] = true
+	}
+
+	var out []finding
+	seen := map[string]bool{}
+
+	for _, p := range peers {
+		if !hasEstateTag(p, want.TagPrefix) {
+			if want.TrackUntagged && !known[strings.ToLower(displayName(p))] {
+				out = append(out, finding{
+					Kind: "new-device",
+					Name: displayName(p),
+					Detail: "not tagged as estate infrastructure and not in the " +
+						"accepted baseline - somebody enrolled a machine",
+				})
+			}
+			continue
+		}
+		name := strings.ToLower(displayName(p))
+		seen[name] = true
+
+		if len(declared) > 0 && !declared[name] {
+			out = append(out, finding{
+				Kind: "unexpected-member",
+				Name: displayName(p),
+				Detail: "carries an estate tag and is not declared - something " +
+					"authenticated with an estate credential",
+			})
+		}
+
+		// Routes are checked whether or not the device itself was expected.
+		// An undeclared device advertising a declared route is two findings,
+		// and the second is the one that moves traffic.
+		for _, r := range p.PrimaryRoutes {
+			if isHostRoute(r) {
+				continue // a peer's own address, not a subnet it carries
+			}
+			if len(allowed) > 0 && !allowed[r] {
+				out = append(out, finding{
+					Kind:   "unexpected-route",
+					Name:   displayName(p),
+					Detail: "advertises " + r + ", which the estate did not declare",
+				})
+			}
+		}
+	}
+
+	for _, m := range want.Members {
+		if !seen[strings.ToLower(m)] {
+			out = append(out, finding{
+				Kind:   "missing-member",
+				Name:   m,
+				Detail: "declared by the estate and not on the overlay at all",
+			})
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+func hasEstateTag(p *peerStatus, prefix string) bool {
+	for _, t := range p.Tags {
+		if strings.HasPrefix(t, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// isHostRoute reports whether a prefix is a single address rather than a
+// subnet. Every peer carries its own /32 and /128; treating those as
+// advertised subnets would make every device look like a router.
+func isHostRoute(cidr string) bool {
+	return strings.HasSuffix(cidr, "/32") || strings.HasSuffix(cidr, "/128")
 }

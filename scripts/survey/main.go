@@ -47,7 +47,7 @@ Run it on a member of the overlay. The workstation is not one.
 	}
 
 	report(os.Stdout, v)
-	if len(v.unreachable()) > 0 {
+	if len(v.unreachable()) > 0 || len(v.Findings) > 0 {
 		os.Exit(1)
 	}
 }
@@ -122,10 +122,35 @@ func report(w *os.File, v Verdict) {
 		fmt.Fprintf(w, "[!!]   %s\n", h)
 	}
 
+	// Findings are printed after the row and before the summary, because they
+	// are a different kind of problem. A peer that cannot be reached is an
+	// outage; a peer nobody declared is somebody else's machine on the mesh.
+	for _, f := range v.Findings {
+		switch f.Kind {
+		case "new-device":
+			fmt.Fprintf(w, "[NEW]  %-28s %s\n", f.Name, f.Detail)
+		case "missing-member":
+			fmt.Fprintf(w, "[GONE] %-28s %s\n", f.Name, f.Detail)
+		default:
+			fmt.Fprintf(w, "[??]   %-28s %s\n", f.Name, f.Detail)
+		}
+	}
+
 	fmt.Fprintln(w, strings.Repeat("-", 72))
 	bad := v.unreachable()
-	if len(bad) == 0 {
+	if len(v.Findings) > 0 {
+		fmt.Fprintf(w, "%d finding(s) about what is on this mesh, separate from whether it works.\n",
+			len(v.Findings))
+		fmt.Fprintln(w, "A device nobody declared reaches everything any other device reaches,")
+		fmt.Fprintln(w, "so an unrecognised name here is worth a human today rather than a ticket.")
+		fmt.Fprintln(w, "Accept a device deliberately by adding it to the baseline, the same way")
+		fmt.Fprintln(w, "a sensitive-path change is acknowledged rather than merely observed.")
+	}
+	if len(bad) == 0 && len(v.Findings) == 0 {
 		fmt.Fprintf(w, "%d peer(s) answered. This row of the matrix is clean.\n", len(v.Results))
+		return
+	}
+	if len(bad) == 0 {
 		return
 	}
 	fmt.Fprintf(w, "%d of %d peer(s) are registered and do not answer.\n", len(bad), len(v.Results))
