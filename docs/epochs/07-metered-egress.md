@@ -98,6 +98,48 @@ Explicitly out of scope (and why):
   rather than waiting for this epoch - they are the backstop for anything that
   bypasses the gateway, including the gateway being wrong.
 
+## Related: the teardown destroys the backups
+
+Not metered spend, but the same credential and the same bucket, so it is
+recorded here rather than orphaned.
+
+`demolish` empties the object storage bucket before destroying it, because
+Cloudflare will not delete a non-empty bucket. The consequence is that the
+age-encrypted state dumps - the thing that exists specifically to survive a
+total loss - are destroyed by the operation most likely to precede one. Eleven
+objects went that way on the night this was found. The estate's documented
+escape hatch was removed by the command that made the escape necessary.
+
+Three things follow, roughly in order of value.
+
+**The writer should not be able to delete.** Today one credential both writes
+backups and deletes them, and the teardown used it to erase them. R2's token
+permissions do not separate write from delete, so scoping a token is not the
+mechanism - **bucket-level retention or object lock** is, since it makes objects
+undeletable for a window regardless of which credential asks. Per-site buckets
+and per-site tokens are still worth doing for blast radius, but they do not give
+this property on their own.
+
+**The bucket should not be something the automation can remove.** It belongs on
+the same honest floor as the age keypair, and for the same reason the existing
+invariant gives: a key this program generated and could read would foreclose the
+property in the same breath as creating it. The bucket is that argument from the
+other side - the key is worthless without the ciphertext, so a program that can
+delete the ciphertext has killed the break-glass path whether or not the key
+survives. The teardown should forget the bucket the way it already forgets
+cluster-internal resources, and removing one should be a deliberate human act on
+the rare day a site is decommissioned.
+
+**A destroy should have to prove a restore first.** The user's framing, and it is
+the right shape: `demolish` refuses unless a restore has been proven within the
+same run - the break-glass identity fetched, the newest backup decrypted in
+memory, and the result checked to be state describing something. That belongs in
+`restore` as a verify mode rather than in `demolish`, so the private half stays
+read in exactly one file, which `tests/go/repo` enforces. It needs a freshness
+check too, because an eighteen-month-old backup decrypts perfectly and would
+still lose everything, and an explicit escape hatch for a failed ignition that
+has no backup yet - loud, named, and stating what is being given up.
+
 ## Decisions
 
 _To be filled in as the epoch runs._

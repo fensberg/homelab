@@ -1410,11 +1410,46 @@ not "never change the count deliberately".
 
 ## Outcome
 
-**Not yet signed off.** The acceptance test above is the gate, and it has not
-run: `control_plane_count` moved from 3 to 5 in its own change, and the button
-has to carry that end to end with no manual step before this section can claim
-anything. What follows is what exists, written now while it is fresh, so that
-signing off is a matter of confirming rather than reconstructing.
+**Not yet signed off.** The acceptance test above is the gate. It has now been
+_run_ rather than merely written, and it failed - which is a better position
+than not having run it, because it names the thing in the way.
+
+`control_plane_count` moved from 3 to 5 and was merged (#98). The converge
+fired on the merge, with nobody running anything, which is the half of the test
+this tier exists to prove. It reached PHASE 3 : VERIFY and halted:
+
+    [FAIL] HALTED: cannot reach site site0's hypervisor on the Proxmox API port.
+
+The estate was untouched - Verify runs before anything applies, which is what
+that phase is for - so the failure cost nothing but the answer.
+
+**Why it halted is not a bug in the button.** The converge runs on the
+self-hosted runner, which is a pod on this cluster. A pod cannot reach a tailnet
+address, even though the nodes it runs on are tailnet members: see
+[`02-abstraction.md`](02-abstraction.md), "node tailnet membership does not give
+pods a path". Every layer of the chain the test is meant to exercise - the
+count, the addressing, the naming, the VM ids, the machine config - is
+downstream of a Verify that never passed, so none of it has been exercised
+either. The test failed at the first hop, not at the thing it was written to
+measure.
+
+**So this epoch cannot close on its own.** The acceptance test as written -
+merge it, and two machines appear with nobody having run anything - requires
+that the thing doing the converging can reach the hypervisor. Today it cannot.
+That is a prerequisite this epoch does not own, and the honest statement is that
+**epoch 01 cannot sign off until pod egress to the tailnet exists**, whether
+that arrives as the Tailscale Kubernetes operator's egress proxy or as part of
+the Cilium move already recorded for epoch 03.
+
+The alternative - run the converge from the workstation instead and call the
+epoch done - is not available. The wording of the test was deliberately
+strengthened from "run the button" to "merge it" precisely because a human
+running a command after a merge is the step this tier exists to remove. Passing
+a weaker test would leave the estate operated by hand with its configuration in
+git, which is the condition the test was written to detect.
+
+What follows is what exists, written now while it is fresh, so that signing off
+is a matter of confirming rather than reconstructing.
 
 **Built.** A phased Go entrypoint (`scripts/contractor`) that renders secrets from
 1Password, prepares a Proxmox host with an idempotent Ansible playbook,
@@ -1510,6 +1545,75 @@ bring it back.
   once the MVP cluster is up and the project moves from MVP to V1.
 
 ## Gotchas
+
+### A destroy waits ten minutes on a health check it can never pass
+
+`demolish` evaluates `data.talos_cluster_health`, whose `control_plane_nodes`
+comes from `control_plane_count`. Tearing down an estate whose real node count
+differs from the config asks "is this a healthy N-node cluster?" of a cluster
+with a different number of members, which can never be true, so it spins the
+full `read = "10m"` timeout and fails.
+
+That is backwards on its face: you tear an estate down precisely when it is
+unhealthy. A destroy has no business depending on the cluster being well. The
+workaround used on the night was to make the config match reality first; the
+fix is for the destroy path not to read that data source at all.
+
+Interrupting does not help either. OpenTofu's first interrupt stops it starting
+new work but waits out the in-flight read, so Ctrl-C appears to hang for the
+remainder of the ten minutes. A second interrupt exits immediately, which is
+safe during a _read_ - nothing is being created or destroyed - and would not be
+during an apply.
+
+### The destroy banner reads the config where it should read state
+
+The warning listing what is about to be destroyed is built from the rendered
+config, not from state. On a mismatch it under-reports: with the config at three
+and five machines running, it named three while `tofu destroy` would take all
+five. It is wrong in the reassuring direction at exactly the moment somebody is
+deciding whether to type the confirmation.
+
+### An image change cannot reach a running estate
+
+`proxmox_download_file` is identified by its datastore path, and that path
+contains the Talos version but not the schematic. Changing the schematic
+therefore produces **no plan diff at all** - a local plan against a live estate
+after re-minting the schematic showed one to add and one to destroy, both of
+them the tailnet key, and nothing about the nodes.
+
+`compute.tf` already documents half of this: it carries a `replace_triggered_by`
+so the template's materialised disk rebuilds when the download resource changes.
+But the download resource itself never changes, so the trigger never fires. The
+practical consequence is that **no Talos version or extension change can be
+delivered by a converge**; the estate has to be rebuilt. That is the same family
+of gap as nothing removing an etcd member, and it belongs to epoch 05.
+
+### The change that lets the estate reach outward cannot be applied from inside it
+
+Putting the nodes on the overlay is what allows a converge to reach the
+hypervisor. But a converge halts at Verify - which runs _before_ the phase that
+would apply it - so the fix can never be delivered by the mechanism it fixes.
+
+This is not a defect so much as a bootstrap property, and it is the existing
+"ignition is local-only" invariant one step further out: the change that gives
+the estate a path outward has to arrive from outside it. Worth stating
+explicitly, because it looks like a deadlock until it is named.
+
+### A queued job holds its concurrency slot indefinitely, and then becomes dangerous
+
+`deploy-infrastructure.yml` groups concurrency per ref with
+`cancel-in-progress: false`, which is correct for a converge - nothing should
+cancel an apply mid-flight. The consequence is that a run queued for a runner
+that does not exist blocks every later run on that ref, permanently.
+
+Five refs were blocked this way. Worse, the oldest was pinned to a commit from
+two days earlier: had a runner appeared while it was still queued, it would have
+converged the estate to that old commit's config, with nobody asking for it.
+
+`timeout-minutes` does not help, because it only counts once a job is _running_.
+GitHub cancels a stale queued run after roughly a day, silently. The guard that
+would catch this is the queue-stall canary; the guard that would make it safe is
+a converge that refuses to run when its commit is not the tip of `main`.
 
 - **`tailscale up` blocks forever if the control plane is unreachable.** It
   waits for the coordination server to confirm the login and prints nothing
@@ -1696,3 +1800,22 @@ bring it back.
   anywhere later in it an error - while `tests/README.md`, fenced throughout,
   is equally correct. The rule is per-file, not per-repository, so match the
   file you are editing rather than the last one you looked at.
+
+### The runner that converges the estate lives inside the estate it converges
+
+This epoch already records that _ignition_ is local-only, and that the reason is
+circularity: the button builds the cluster the runner will later live on, so it
+cannot run on it. The converge was assumed to have escaped that, because by then
+the cluster exists.
+
+It has not escaped it, only moved it. The self-hosted runner is a pod on this
+cluster, so a converge asks the estate to reach its own hypervisor from inside
+itself - and a pod has no path to the tailnet, which is where the hypervisor is.
+The dependency is not "the cluster must exist" but "the cluster must be able to
+reach outward", and the second is strictly stronger and was never checked.
+
+Two consequences worth keeping. The estate cannot fix this about itself, for the
+reason recorded above under "the change that lets the estate reach outward
+cannot be applied from inside it" - the repair has to arrive from outside.
+And a converge that halts at Verify is the good failure: it stops before
+touching anything, so the cost of being wrong here is one job, not an estate.

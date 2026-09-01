@@ -337,6 +337,121 @@ kubeconfig to a file for the Flux bootstrap, so the mechanism is not new.
 split, the coupling is baked into the module boundaries and every future site
 inherits it.**
 
+## Known driver: node tailnet membership does not give pods a path
+
+Recorded because it was built, shipped, and did not work - and the reasoning
+that led there was wrong in a way worth keeping.
+
+The cluster nodes carry the tailscale extension and appear in the tailnet as
+tagged devices. A pod on those nodes still cannot reach a tailnet address:
+
+```text
+nc -zv -w5 <hypervisor tailnet address> 8006   Connection timed out
+nc -zv -w5 <hypervisor tailnet address> 22     Connection timed out
+```
+
+Run from inside a pod. Both ports, so it is not about the Proxmox API.
+
+The likely mechanism is that Flannel masquerades pod egress to the node's
+primary address rather than its tailscale address, so packets reach `tailscale0`
+with a source that is not a tailnet IP and are dropped. A node being a peer lets
+_the node_ talk to the tailnet; it does not carry everything behind it. This
+should be confirmed against the node itself before anything is built on it -
+`talosctl` is the only way in, since Talos has no shell.
+
+### The choice that was made, and why it was wrong
+
+Two ways to put the cluster on the overlay were considered: Talos node
+extensions, and the Tailscale Kubernetes operator's egress proxy. Node
+extensions were chosen on the grounds that the operator makes the hypervisor
+reachable through an in-cluster Service, so the endpoint would differ depending
+on where the code runs and one host would end up with two addresses.
+
+That objection was real and is now answered by something else: the config should
+hold a name resolved by split-horizon DNS, so the endpoint is one value
+regardless. The reason for rejecting the operator dissolved, and the option that
+was rejected is the one that actually delivers pod egress.
+
+The deciding constraint was never the endpoint. It was whether pod traffic can
+reach the tailnet at all, and that was assumed rather than tested.
+
+### What remains open
+
+- **A forwarder on the hypervisor**, bound inside `vrf_internal`, forwarding one
+  port to the local API. Small, expressible in Ansible, and grants access by
+  subnet, which Flannel cannot narrow.
+- **The Tailscale operator's egress proxy**, ACL-scoped, and no longer carrying
+  the objection that ruled it out.
+
+Node membership is not wasted either way - it is how a node reaches anything
+else on the tailnet - but it is not what unblocks a converge.
+
+### The process finding
+
+The network work in this epoch produced a sequence of confident, plausible, and
+wrong diagnoses: a firewall rule (the firewall was disabled), a route leak (the
+destination was local, so there was nothing to route to), the SDN gateway
+address (no listener in that VRF), and node tailnet membership (pods do not
+inherit it). Each was disproved by a single command that could have been run
+first.
+
+The pattern is that each hypothesis was reasoned from the layer that had just
+been ruled out, rather than from a measurement of the layer in question. What
+finally settled each one was a direct test from the exact place the traffic
+would originate - `ip vrf exec` on the host, and `nc` from inside a pod.
+
+Worth stating as a rule for this tier: **measure from where the traffic starts,
+before designing what carries it.** Network diagnoses are unusually cheap to test
+and unusually expensive to get wrong, because a wrong one is not idle - it gets
+built, merged, and rebuilt on.
+
+## Known driver: the config records an address where it should record a name
+
+`hypervisor.nodes[].ip` holds a single address, used for three different things:
+Ansible's SSH target, the Proxmox API endpoint the OpenTofu provider dials, and
+the Verify phase's reachability check. One value, three consumers, and they do
+not all live on the same network.
+
+That is why putting the cluster nodes on the overlay did not make a converge
+work. The nodes became tailnet peers, but the address being dialled was still
+the hypervisor's LAN address, so traffic routed out through the EVPN VRF - the
+path that cannot deliver to it - rather than over the overlay. Membership only
+helps if the thing being dialled is a tailnet address.
+
+The workaround is to put the tailnet address in that field. It works, because
+every consumer is on the tailnet, but it is wrong in a way worth naming: it
+couples the workstation and Ansible to tailscale being up on the hypervisor, and
+it hard-codes one topology into a field that several different networks read.
+
+### The fix is a name, not an address
+
+The field should hold a hostname - `hypervisor.<site>.<domain>` - and DNS should
+answer it differently depending on who asks. The tailnet's resolver returns the
+tailnet address; the LAN's resolver returns the LAN address. Split-horizon
+resolution is the ordinary answer to exactly this problem, and Tailscale's split
+DNS supports it directly.
+
+Three things follow from it, and they are the reason this belongs in an
+abstraction epoch rather than being filed as a bug:
+
+**The config stops encoding topology.** Today the value silently asserts "every
+consumer of this field shares one network". A name asserts nothing; the resolver
+decides, and each consumer gets the best path available to it.
+
+**No consumer depends on another's network being up.** With the tailnet address
+in the field, a workstation on the same LAN as the hypervisor still routes
+through the overlay to reach it, and loses it entirely if tailscale is down.
+With a name, it resolves locally and goes direct.
+
+**It survives a second site.** Each site's hypervisor gets its own name, and
+adding a site adds a DNS record rather than a decision about which address to
+write down.
+
+The cost is a dependency on DNS being right, which is a real one - a wrong or
+missing record fails in a way that looks like a network problem. Verify already
+distinguishes "cannot resolve" from "cannot reach" badly, and would want to
+distinguish it well.
+
 ## Known driver: the cluster reaches the hypervisor over a flat network
 
 A converge that changes the number of machines has to call the hypervisor's
