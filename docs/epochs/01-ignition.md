@@ -1408,6 +1408,62 @@ not "never change the count deliberately".
   moment a second hypervisor exists, which is exactly why that entry says
   adding a hypervisor to a running site has no safe meaning yet.
 
+## The runbook for proving this epoch from near-zero
+
+Written down because it existed only in a conversation, and the ordering
+constraints in it were each learned by being bitten.
+
+**Step 0 - land the hypervisor fixes first.** Ignition re-runs the Hypervisor
+phase, so a rebuild on a playbook without the IPv6-disable and the local-table
+routing rule recreates the exact fault that cost a night. Merge those, then
+`task configure-hypervisor SITE=<site>` to persist them on the running host -
+they were applied by hand and do not survive a reboot until the playbook has
+run. Confirm with `ip rule list | grep 5200` and `tailscale netcheck`, wanting
+`UDP: true` and a relay.
+
+**Step 1 - match the config to reality before destroying.** `demolish`
+evaluates `data.talos_cluster_health` against the _config's_
+`control_plane_count`. If the config says five and three machines are running,
+it asks whether a three-node cluster is a healthy five-node cluster, which can
+never be true, and spins the full ten-minute read timeout before failing. Set
+the count to what is actually running first.
+
+**Step 2 - know what the teardown takes with it.** `demolish` empties the
+object storage bucket, because the vendor will not delete a non-empty one, so
+the age-encrypted state backups go too. Acceptable when starting fresh
+deliberately; not something to discover afterwards.
+
+**Step 3 - tear down, directly rather than through the task runner.**
+
+    ./scripts/contractor/contractor demolish -site <site> -confirm <site>
+
+`-confirm` names the site a second time on purpose. Run it directly because the
+task runner intercepts Ctrl-C without proxying the signal, and an interrupted
+teardown is how VMs get orphaned.
+
+**Step 4 - ignite, also directly, for the same reason.**
+
+    task start SITE=<site>
+    ./scripts/contractor/contractor break-ground -site <site>
+
+`-from <phase>` resumes rather than restarting if a phase fails.
+
+**Step 5 - prove it came up healthy rather than merely finished.** The Health
+phase gates this internally; check independently that every node is Ready, that
+every Flux Kustomization and HelmRelease has reconciled, and - the check nothing
+had before - that the overlay carries traffic rather than merely showing
+members online. `scripts/survey` on the hypervisor answers the last one.
+
+**Step 6 - the acceptance test.** Everything above is setup. Change
+`control_plane_count` from three to five and **merge it**; two more machines
+must exist and join with nobody having run anything.
+
+**What this does and does not prove.** It proves the second acceptance test and
+the "nothing to three" half of the first, from a hypervisor that keeps its SDN,
+tailnet membership, API token and disk-import account. It does **not** close the
+factory-fresh gap recorded in Deferred below, which waits for a second
+hypervisor, and a successful run should not be written up as though it had.
+
 ## Outcome
 
 **Not yet signed off.** The acceptance test above is the gate. It has now been
