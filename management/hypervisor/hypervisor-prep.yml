@@ -1023,6 +1023,66 @@
       when: ipv6_fwd.changed
       tags: [routing]
 
+    # Turn IPv6 off at the stack, not just at the interfaces.
+    #
+    # The task above assumed the default route would return on the next router
+    # advertisement. On a network that carries no IPv6 at all, it never does,
+    # and the host is left in a state that is worse than either end:
+    #
+    #   net.ipv6.conf.all.disable_ipv6 = 0   the stack is up, AF_INET6
+    #                                        sockets can be created
+    #   ip -6 addr show                      completely empty - no global
+    #                                        address, not even a link-local
+    #
+    # A program therefore sees an IPv6-capable host, resolves AAAA records,
+    # prefers them, dials, and gets EADDRNOTAVAIL - "cannot assign requested
+    # address" - because the socket exists and has nothing to send from. That
+    # is a different error from IPv6 being absent, which yields EAFNOSUPPORT
+    # and makes a client skip the family and use IPv4 immediately.
+    #
+    # It cost this estate its overlay network. tailscaled resolves the
+    # coordination server and the DERP relays to IPv6 first, so every single
+    # connection attempt landed there and failed; the hypervisor dropped off
+    # the tailnet, and every reachability test aimed at it for hours afterwards
+    # answered a question about a machine that was not present. See
+    # docs/epochs/01-ignition.md.
+    #
+    # Setting this to 1 makes the absence honest: getaddrinfo stops returning
+    # AAAA, clients use IPv4, and the overlay comes back. Confirmed on the
+    # hypervisor before this was written, rather than assumed.
+    #
+    # The intent this encodes is the operator's: the WAN is not to carry IPv6.
+    # Nothing in this estate requires IPv6 internally either - the SDN, the
+    # advertised subnets and the cluster are IPv4 throughout - so there is
+    # nothing to trade away. If IPv6 is ever wanted, it has to be wanted
+    # properly: a working global address and default route, not a stack with
+    # no addresses on it.
+    - name: Disable IPv6 at the stack
+      ansible.posix.sysctl:
+        name: "{{ item }}"
+        value: "1"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        - net.ipv6.conf.all.disable_ipv6
+        - net.ipv6.conf.default.disable_ipv6
+      register: ipv6_off
+      tags: [routing]
+
+    # A running tailscaled does not re-evaluate this on its own: it keeps the
+    # address family it decided on at startup, so the host stays off the
+    # tailnet until it is restarted. Doing it here rather than telling the
+    # operator to, because the failure it prevents is invisible - the daemon
+    # reports "active (running)" and a stale "Connected" status line while
+    # being unreachable.
+    - name: Restart tailscaled so it stops preferring an address family that cannot work
+      ansible.builtin.systemd_service:
+        name: tailscaled
+        state: restarted
+      when: ipv6_off.changed
+      tags: [routing]
+
     - name: Advertise the SDN subnet over Tailscale
       ansible.builtin.command: tailscale set --advertise-routes={{ advertise_routes }}
       when:

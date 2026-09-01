@@ -1929,14 +1929,48 @@ neither of the two working states:
 first, so it lands in the third state on every single connection attempt. Half
 a stack is worse than no stack, and it is the state nothing warns about.
 
-**What has not been established, and must be before anything is changed.** The
-journal shows the IPv4 fallback failing too - "falling back to DNS" followed by
-`context deadline exceeded` - and `netcheck` reporting UDP blocked. So IPv6 is
-demonstrably broken and is demonstrably not the only thing broken. Repairing or
-removing IPv6 may not restore this host, and assuming it would is the same
-mistake this epoch has now made five times: reasoning from the loudest error
-rather than measuring the layer in question. Whether the host can reach the
-internet at all over IPv4 is the next thing to measure, and it is one command.
+**Established, and then fixed.** IPv4 was never the problem:
+
+    ping -4 -c2 1.1.1.1           0% loss, 7ms
+    curl -4 https://controlplane.tailscale.com/health
+                                  control: 404 in 0.36s
+
+A 404 is a completed TLS handshake with the coordination server. DNS resolved
+an A record, TCP connected, the certificate verified. Every layer worked the
+moment the address family was forced.
+
+The state of the stack was the whole story, and it was more extreme than
+"missing default route":
+
+    root@martha:~# ip -6 addr show
+    root@martha:~#
+
+Empty. Not one address on the host, not even a link-local - while
+`net.ipv6.conf.all.disable_ipv6` was still `0`. That combination is what
+produces `EADDRNOTAVAIL` rather than `EAFNOSUPPORT`: the kernel offers the
+family, `getaddrinfo` returns AAAA records for it, a client prefers them, and
+the socket then has no source address in existence to send from.
+
+Turning the stack off resolved it in one step, confirmed both ways:
+
+    sysctl -w net.ipv6.conf.all.disable_ipv6=1 && systemctl restart tailscaled
+
+    # before: martha ... offline, plus a coordination-server health warning
+    # after:  martha ... (no offline marker, health check clear)
+
+    # and resolution changed with it
+    getent ahosts controlplane.tailscale.com
+    192.200.0.102   STREAM controlplane.tailscale.com
+
+The same name that answered with sixteen AAAA records and no A records now
+answers with IPv4. Nothing about DNS was broken; the resolver was correctly
+reporting what a host claiming IPv6 capability should be told.
+
+**A running tailscaled does not recover on its own.** It keeps the address
+family it chose at startup, so the host stays off the tailnet until the daemon
+is restarted - while `systemctl status` reports `active (running)` and a
+`Status:` line that still says `Connected`. The restart is part of the fix, not
+a courtesy.
 
 ### A node's tailnet address does not survive a reboot
 
