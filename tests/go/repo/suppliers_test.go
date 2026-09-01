@@ -94,6 +94,41 @@ func TestEverySupplierGivesAReason(t *testing.T) {
 	}
 }
 
+// kustomizeImages reads the image transformer from a kustomization.yaml, if
+// one sits beside the manifest. An image pinned there is pinned in what
+// actually reaches the cluster, even though the generated manifest it overlays
+// still carries a tag - which is the case for Flux's own components, generated
+// by `flux bootstrap` and pinned by an overlay rather than by editing a file
+// that gets rewritten on every upgrade.
+//
+// Read rather than shelled out to, so this tier stays hermetic: no kubectl, no
+// network, same as every other test in this package.
+func kustomizeImages(t *testing.T, dir string) map[string]bool {
+	t.Helper()
+	pinned := map[string]bool{}
+
+	body, err := os.ReadFile(filepath.Join(dir, "kustomization.yaml"))
+	if err != nil {
+		return pinned // no overlay here; nothing to honour
+	}
+
+	var k struct {
+		Images []struct {
+			Name   string `yaml:"name"`
+			Digest string `yaml:"digest"`
+		} `yaml:"images"`
+	}
+	if err := yaml.Unmarshal(body, &k); err != nil {
+		t.Fatalf("parsing %s: %v", filepath.Join(dir, "kustomization.yaml"), err)
+	}
+	for _, img := range k.Images {
+		if strings.HasPrefix(img.Digest, "sha256:") {
+			pinned[img.Name] = true
+		}
+	}
+	return pinned
+}
+
 var imageRef = regexp.MustCompile(`(?m)^\s*(?:-\s*)?image:\s*["']?([a-zA-Z0-9][a-zA-Z0-9./:@_-]+)["']?\s*$`)
 
 // An image must come from an approved registry and be pinned by digest.
@@ -130,6 +165,7 @@ func TestClusterImagesComeFromApprovedRegistriesAndArePinned(t *testing.T) {
 			return err
 		}
 		rel, _ := filepath.Rel(root, path)
+		overlay := kustomizeImages(t, filepath.Dir(path))
 		for _, m := range imageRef.FindAllStringSubmatch(string(body), -1) {
 			ref := m[1]
 			// A bare name with no registry and no path is a Helm value
@@ -145,7 +181,9 @@ func TestClusterImagesComeFromApprovedRegistriesAndArePinned(t *testing.T) {
 					"Add it to scripts/approved-suppliers.yml with a reason, or use a registry already approved.",
 					rel, ref, host)
 			}
-			if !strings.Contains(ref, "@sha256:") {
+			// Pinned either inline, or by the overlay that builds this file.
+			name, _, _ := strings.Cut(ref, ":")
+			if !strings.Contains(ref, "@sha256:") && !overlay[name] {
 				if exempt[rel] {
 					used[rel] = true
 					continue

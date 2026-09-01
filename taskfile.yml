@@ -171,6 +171,10 @@ tasks:
       - TF_VAR_config_path=../../config/management.placeholder.json tofu -chdir=management/cluster validate
       - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
       - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
+      # flux-system was absent here, which is how its components stayed tag
+      # pinned unnoticed. It carries an image transformer now, and a
+      # transformer that does not build is a pin that silently is not applied.
+      - kubectl kustomize clusters/management/flux-system > /dev/null
       - rm -f config/management.placeholder.json
       - go vet -C scripts/contractor ./...
       - go build -C scripts/contractor -o /dev/null .
