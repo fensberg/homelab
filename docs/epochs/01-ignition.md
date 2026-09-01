@@ -2174,6 +2174,48 @@ families fail for different reasons, and only one of them has been explained.
 Which leaves one unmeasured thing: whether this network can reach a real relay
 node at all. Everything else is now ruled out.
 
+### Established: the network reaches the relay; the daemon on that host does not
+
+Re-run against the hostname the daemon actually dials:
+
+    curl -4 https://derp12d.tailscale.com/     derp12d: 200 in 0.029s
+
+Twenty-nine milliseconds to a completed TLS handshake with the exact relay
+node `tailscaled` reports it cannot reach, from a shell on the same machine, at
+the same time, over the same protocol, port and address family.
+
+So the contradiction is real this time, and it is now a small one. Everything
+between this host and that relay works. What does not work is one process on
+it.
+
+**The full elimination, for whoever picks this up.** Each of these was a
+hypothesis, and each is now closed by a measurement rather than an argument:
+
+| Suspected                             | Ruled out by                                            |
+| ------------------------------------- | ------------------------------------------------------- |
+| The CNI / Flannel                     | a pod reached the public internet                       |
+| Pods not inheriting node membership   | peer-to-peer ping failed with no pod involved           |
+| The nodes' overlay                    | two live relay connections, STUN, and node-to-node RSTs |
+| Userspace networking on the nodes     | `tailscale0` exists and is a `tun`                      |
+| Node addressing or routing            | the address and per-peer routes are present             |
+| The local (non-overlay) path          | a VRF cannot deliver to the host's own address          |
+| Egress filtering or the host firewall | a shell reaches the relay; no firewall policy set       |
+| The UDP stack                         | `dig` over UDP answers                                  |
+| The socket bind                       | both UDP listeners are present                          |
+| The network path to the relay         | 200 in 29ms to the exact node                           |
+
+**What is left is between `tailscaled` and the wire on the hypervisor**, with
+the network, the kernel and the peers all cleared. Two candidates fit and
+neither has been tested: packet filtering that treats the daemon's traffic
+differently from a shell's - this host runs a hypervisor whose own firewalling
+uses a different backend from the one `tailscale` may be programming, which is
+a known class of conflict - or something internal to the daemon's dialling.
+
+The measurement that separates them is whether its packets leave the host at
+all. If SYNs go out and nothing returns, something on the path is dropping
+them selectively. If nothing leaves, the failure is inside the process and no
+amount of network work will find it.
+
 ### A node's tailnet address does not survive a reboot
 
 The cluster nodes join as **ephemeral** devices, which is what the auth key
