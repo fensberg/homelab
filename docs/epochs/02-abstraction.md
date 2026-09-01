@@ -462,6 +462,54 @@ about userspace mode. That is worth checking first because it is cheap and it
 fits, but it is not established, and this epoch has already paid for the habit
 of building on the most plausible-sounding explanation.
 
+### The local path does not work either, and the VRF claim survives testing
+
+The controlled probe, run from a pod with two subjects and two controls in the
+same run:
+
+```text
+FAIL  hypervisor-via-tailnet     100.70.14.95:8006
+FAIL  hypervisor-via-lan         <hypervisor local address>:8006
+OK    public-internet            1.1.1.1:443
+OK    cluster-api-on-sdn         10.10.10.100:6443
+```
+
+The controls are what make this readable. **Pods have working egress** - a pod
+opened a socket to the public internet, which means Flannel is doing its job
+and every version of "the CNI cannot get traffic out" is wrong. The SDN path
+works too. Only the hypervisor is unreachable, and it is unreachable by _both_
+of its addresses.
+
+**That confirms the assertion in `talos.tf`**, which is worth stating plainly
+because most of tonight's assertions did not survive contact:
+
+> the node subnet lives in an EVPN VRF, and a VRF cannot deliver to a local
+> address in another VRF ... so no amount of routing makes it reachable from a
+> pod
+
+Traffic from a pod transits the hypervisor perfectly well - that is what the
+public-internet control proves - and still cannot be delivered to the
+hypervisor's own management address, because the listening socket is in a
+different VRF from the arriving packet. Transit and delivery are different
+things, and this is the case that separates them.
+
+**So the overlay is not an accident of history in this path; it is the only
+path there is.** The previous section asked whether the cluster needs the
+overlay to reach the hypervisor at all, on the grounds that the workstation is
+no longer remote. The answer is yes for anything running _inside_ the cluster:
+the local address is not merely inconvenient from there, it is unreachable by
+construction. The overlay data plane has to be repaired rather than routed
+around.
+
+That does not apply to the workstation, which is not in the cluster and reaches
+the local address directly - and this is precisely the "one host, two
+endpoints" problem this file already records. The endpoint that works depends
+on where the caller is standing: a pod must use the overlay, the workstation
+must use the local address, and neither can use the other's. A single address
+in the site configuration cannot be right for both, which is the argument for
+the field holding a **name** resolved by split-horizon DNS rather than an
+address, made here by measurement rather than by preference.
+
 ### The overlay may not need to be in this path at all
 
 The stronger question, and it is a design question rather than a bug.
