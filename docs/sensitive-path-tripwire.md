@@ -169,6 +169,53 @@ gh label create sensitive-reviewed --color B60205 \
 
 and add **Sensitive Paths** to `main`'s required status checks.
 
+## Decision: the label is being replaced by an attestation
+
+The label is a placeholder. It is being replaced by an explicit inspector that
+demands an **attestation** rather than a mark on a pull request, and the reason
+is that three separate defects were found in the label check in one sitting -
+two of them fixable, and one that is a property of using a label at all.
+
+**Measured, not supposed:**
+
+1. **The check reads only the first page of the timeline.** `gh api` paginates
+   at thirty events, so on a long pull request the labelling event is not on the
+   first page and the check reports that no label was applied. On the pull
+   request where this was found, the same query returned zero labelling events
+   without `--paginate` and two with it. It fails closed, so it blocked a
+   correctly labelled change - but it fails on exactly the long-running pull
+   requests most likely to touch something sensitive.
+2. **It reads `labeled` events and ignores `unlabeled`.** It takes the last
+   labelling event, so a label that was applied and then removed still satisfies
+   it. That one fails **open**.
+3. **A label survives new commits, and this is the one that matters.** The
+   workflow runs on `synchronize`, so it re-runs on every push - and finds the
+   label still applied, because GitHub dismisses stale _reviews_ on a push and
+   does not remove labels. Label the pull request, push anything afterwards, and
+   the tripwire is satisfied for content nobody has looked at.
+
+The first two are bugs. The third is the mechanism working as designed, and it
+is fatal to the purpose. **A label acknowledges a pull request; the tripwire
+exists to make somebody look at a specific dangerous diff.** An acknowledgement
+that does not bind to what was looked at cannot do that job, and no amount of
+fixing the query changes it.
+
+So an attestation binds to content. What it has to name is the thing that was
+reviewed - the commit or the diff of the sensitive paths within it - so that
+pushing another commit invalidates it by construction rather than by anybody
+remembering to remove something. The mechanism is not settled here; the
+requirement is.
+
+Note this does not change what the gate buys. It is still attention rather than
+authorisation, for the reason in the section below: one human, who is also the
+person who merges. What changes is that the attention is provably about the
+change in front of them.
+
+**Naming.** This gate is the **inspector** - an inspector signs off before work
+may be covered up, which is exactly what it does. That name is taken, so the
+cluster admission control discussed for image provenance needs a different one;
+calling both "inspector" would put two unrelated mechanisms behind one word.
+
 ## The honest limit
 
 The only person who can apply the label is the person who can merge, so this
