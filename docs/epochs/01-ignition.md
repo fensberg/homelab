@@ -1546,6 +1546,75 @@ bring it back.
 
 ## Gotchas
 
+### A destroy waits ten minutes on a health check it can never pass
+
+`demolish` evaluates `data.talos_cluster_health`, whose `control_plane_nodes`
+comes from `control_plane_count`. Tearing down an estate whose real node count
+differs from the config asks "is this a healthy N-node cluster?" of a cluster
+with a different number of members, which can never be true, so it spins the
+full `read = "10m"` timeout and fails.
+
+That is backwards on its face: you tear an estate down precisely when it is
+unhealthy. A destroy has no business depending on the cluster being well. The
+workaround used on the night was to make the config match reality first; the
+fix is for the destroy path not to read that data source at all.
+
+Interrupting does not help either. OpenTofu's first interrupt stops it starting
+new work but waits out the in-flight read, so Ctrl-C appears to hang for the
+remainder of the ten minutes. A second interrupt exits immediately, which is
+safe during a _read_ - nothing is being created or destroyed - and would not be
+during an apply.
+
+### The destroy banner reads the config where it should read state
+
+The warning listing what is about to be destroyed is built from the rendered
+config, not from state. On a mismatch it under-reports: with the config at three
+and five machines running, it named three while `tofu destroy` would take all
+five. It is wrong in the reassuring direction at exactly the moment somebody is
+deciding whether to type the confirmation.
+
+### An image change cannot reach a running estate
+
+`proxmox_download_file` is identified by its datastore path, and that path
+contains the Talos version but not the schematic. Changing the schematic
+therefore produces **no plan diff at all** - a local plan against a live estate
+after re-minting the schematic showed one to add and one to destroy, both of
+them the tailnet key, and nothing about the nodes.
+
+`compute.tf` already documents half of this: it carries a `replace_triggered_by`
+so the template's materialised disk rebuilds when the download resource changes.
+But the download resource itself never changes, so the trigger never fires. The
+practical consequence is that **no Talos version or extension change can be
+delivered by a converge**; the estate has to be rebuilt. That is the same family
+of gap as nothing removing an etcd member, and it belongs to epoch 05.
+
+### The change that lets the estate reach outward cannot be applied from inside it
+
+Putting the nodes on the overlay is what allows a converge to reach the
+hypervisor. But a converge halts at Verify - which runs _before_ the phase that
+would apply it - so the fix can never be delivered by the mechanism it fixes.
+
+This is not a defect so much as a bootstrap property, and it is the existing
+"ignition is local-only" invariant one step further out: the change that gives
+the estate a path outward has to arrive from outside it. Worth stating
+explicitly, because it looks like a deadlock until it is named.
+
+### A queued job holds its concurrency slot indefinitely, and then becomes dangerous
+
+`deploy-infrastructure.yml` groups concurrency per ref with
+`cancel-in-progress: false`, which is correct for a converge - nothing should
+cancel an apply mid-flight. The consequence is that a run queued for a runner
+that does not exist blocks every later run on that ref, permanently.
+
+Five refs were blocked this way. Worse, the oldest was pinned to a commit from
+two days earlier: had a runner appeared while it was still queued, it would have
+converged the estate to that old commit's config, with nobody asking for it.
+
+`timeout-minutes` does not help, because it only counts once a job is _running_.
+GitHub cancels a stale queued run after roughly a day, silently. The guard that
+would catch this is the queue-stall canary; the guard that would make it safe is
+a converge that refuses to run when its commit is not the tip of `main`.
+
 - **`tailscale up` blocks forever if the control plane is unreachable.** It
   waits for the coordination server to confirm the login and prints nothing
   while it does, so a wedged or disconnected `tailscaled` presents as a hung
