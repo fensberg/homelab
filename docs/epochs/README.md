@@ -41,6 +41,7 @@ earlier epoch whose decisions you are about to touch.
 | 05  | Node Lifecycle | `management/`, `scripts/contractor/`  | Not started | [05-node-lifecycle.md](05-node-lifecycle.md) |
 | 06  | Consolidation  | repository-wide                       | Not started | [06-consolidation.md](06-consolidation.md)   |
 | 07  | Metered Egress | `clusters/management/`, `scripts/`    | Not started | [07-metered-egress.md](07-metered-egress.md) |
+| 08  | Agent Roles    | `.github/`, `scripts/`                | Not started | [08-agent-roles.md](08-agent-roles.md)       |
 
 ## Working an epoch
 
