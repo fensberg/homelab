@@ -1897,6 +1897,47 @@ overlay, or the address is wrong, and those have entirely different remedies.
 Checking tailnet membership before the port, and saying which failed, would
 have ended this in seconds.
 
+### The same symptom, a second cause: IPv6 half-off is worse than either end
+
+The entry above pointed at the recorded cause - IPv6 forwarding breaking
+`accept_ra` on a SLAAC host. Measured, it is not that:
+
+    net.ipv6.conf.all.forwarding = 0
+    net.ipv6.conf.default.accept_ra = 1
+
+    root@martha:~# ip -o -6 addr show scope global
+    root@martha:~#
+
+Forwarding is off, so nothing suppressed the router advertisements, and yet
+there is no global IPv6 address and no default route. The recorded mechanism
+produces this state; it is not the only thing that does, and the record should
+not be read as if it were.
+
+**What the error actually tells us.** `cannot assign requested address` is
+`EADDRNOTAVAIL`: the socket was created, so the kernel's IPv6 stack is up, and
+then there was no source address to send from. That is a different failure from
+IPv6 being disabled, which yields `EAFNOSUPPORT` and makes a client skip the
+family. The distinction decides the remedy, because it says the host is in
+neither of the two working states:
+
+- **IPv6 fully working:** clients use it and it succeeds.
+- **IPv6 fully disabled:** clients see no IPv6 and use IPv4 immediately.
+- **What this host is:** clients believe IPv6 is available, prefer it, dial it,
+  and fail - spending every attempt on a family that cannot work.
+
+`tailscaled` resolves the coordination server and the DERP relays to IPv6
+first, so it lands in the third state on every single connection attempt. Half
+a stack is worse than no stack, and it is the state nothing warns about.
+
+**What has not been established, and must be before anything is changed.** The
+journal shows the IPv4 fallback failing too - "falling back to DNS" followed by
+`context deadline exceeded` - and `netcheck` reporting UDP blocked. So IPv6 is
+demonstrably broken and is demonstrably not the only thing broken. Repairing or
+removing IPv6 may not restore this host, and assuming it would is the same
+mistake this epoch has now made five times: reasoning from the loudest error
+rather than measuring the layer in question. Whether the host can reach the
+internet at all over IPv4 is the next thing to measure, and it is one command.
+
 ### A node's tailnet address does not survive a reboot
 
 The cluster nodes join as **ephemeral** devices, which is what the auth key
