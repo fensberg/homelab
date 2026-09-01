@@ -21,16 +21,15 @@ func TestScratchRefIsAllowed(t *testing.T) {
 
 // The whole point: a direct branch update is what produces an unsigned commit.
 func TestBranchUpdateIsRefused(t *testing.T) {
+	// An unsigned commit on a branch is the thing being refused. The range is
+	// unreadable in this bare test environment, which fails closed - and
+	// failing closed is itself the property worth asserting.
 	for _, ref := range []string{
 		"refs/heads/main",
 		"refs/heads/docs/some-branch",
 	} {
-		err := run(ref)
-		if err == nil {
-			t.Fatalf("run(%q) allowed a direct branch update", ref)
-		}
-		if !strings.Contains(err.Error(), "task push") {
-			t.Errorf("run(%q) refused without naming the remedy: %v", ref, err)
+		if err := run(ref); err == nil {
+			t.Fatalf("run(%q) allowed a branch update it could not vet", ref)
 		}
 	}
 }
@@ -78,4 +77,33 @@ func readSignedpushSource(t *testing.T) string {
 		t.Fatalf("cannot read %s to check the scratch ref agrees: %v", path, err)
 	}
 	return string(b)
+}
+
+// The refusal has to name both routes. Telling the human to use `task push` is
+// wrong - it reads a key inside the agent's home that they cannot open - and
+// telling the agent to sign locally is wrong, because it has no user account
+// and so no signing key. One message, two remedies.
+func TestTheRefusalNamesBothWaysToSign(t *testing.T) {
+	msg := refused("some-branch", []string{"abc12345"})
+
+	if !strings.Contains(msg, "commit.gpgsign") {
+		t.Error("the refusal does not tell a human how to sign locally, which is " +
+			"the route available to anyone with a user account")
+	}
+	if !strings.Contains(msg, "task push") {
+		t.Error("the refusal does not name the agent's route, which is the only " +
+			"one available to something with no user account")
+	}
+	if !strings.Contains(msg, "abc12345") {
+		t.Error("the refusal does not name the offending commits, so there is " +
+			"nothing to act on")
+	}
+}
+
+// Being unable to read the commits is not evidence that they are signed.
+func TestAnUnreadableRangeFailsClosed(t *testing.T) {
+	if _, err := unsignedCommits("not-a-ref", "also-not-a-ref"); err == nil {
+		t.Fatal("an unreadable range reported no unsigned commits, which would " +
+			"wave a push through because the guard could not look")
+	}
 }
