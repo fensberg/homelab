@@ -503,7 +503,27 @@ floor a pull request may not drop below and is free to leave alone.
 
 ## Conventions
 
-- Branch per epoch: `epoch/<nn>-<slug>`. One PR per epoch into `main`.
+- **Branch per epoch, and work merges into the epoch rather than into `main`.**
+  `epoch/<nn>-<slug>` targets `main` and stays open for the life of the epoch.
+  Individual pieces open against **that branch as their base**, not against
+  `main`. Set the base deliberately; defaulting to `main` breaks the model.
+
+  The point is to keep the number of pull requests landing on `main` small
+  while still reviewing each piece on its own. A reviewer sees one change at a
+  time, and `main` sees one coherent epoch.
+
+  Two consequences worth stating, because both have bitten:
+
+  - **Bugs become issues, and fixes batch.** Open an issue for a defect rather
+    than only describing it in a pull request body. Fix issues on their own
+    branches, then merge several together into one bug-fix pull request that
+    closes them all — individually tracked, few landings. Reference the issue
+    number so the link survives the branch.
+  - **Merging needs the branch up to date**, so GitHub's "Update branch" lands
+    a merge commit on the epoch branch. That is normal and expected. It also
+    means an epoch branch **must not** require linear history, which would make
+    that button unusable.
+
 - Close an epoch by filling in its record in `docs/epochs/` **before** merging.
 - **No `Co-Authored-By: Claude` trailer.** Claude commits here under its own
   git identity, so that trailer credits the same party twice and GitHub shows
