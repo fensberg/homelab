@@ -1,0 +1,151 @@
+# The approved suppliers list.
+#
+# Every outside party this estate is permitted to take delivery from, declared
+# once. It sits beside versions.env deliberately, and the two answer halves of
+# one question: that file says WHAT VERSION of a thing we take, this one says
+# WHO WE TAKE IT FROM. versions.env already makes the argument in its own
+# header - "a checksum belongs beside the version it pins, because the two only
+# ever change together" - and a supplier is the same class of fact. They stay
+# two files only because versions.env is sourced by shell and must remain
+# KEY=VALUE. "Supplier" rather than "allowlist" because that is what these are: a
+# construction site does not accept materials from whoever turns up, it accepts
+# them from suppliers somebody approved in advance, and the list is written down
+# before the delivery rather than argued about at the gate.
+#
+# WHY THIS EXISTS
+#
+# An unpinned third-party image (`nicolaka/netshoot`) was handed to the operator
+# to paste into a live cluster, with `hostNetwork: true`, to run on a
+# control-plane node. Nothing in this repository would have objected. The image
+# is a popular community debugging tool and almost certainly harmless, which is
+# exactly the problem: "probably fine" is the reasoning this estate is supposed
+# to have replaced with something checkable.
+#
+# WHAT THIS DOES AND DOES NOT CATCH
+#
+# Read this before trusting it.
+#
+#   Catches:      an unapproved registry or an unpinned image COMMITTED to this
+#                 repository. tests/go/repo/suppliers_test.go fails the build.
+#   Catches:      a workflow inventing its own egress endpoint instead of
+#                 declaring it here.
+#   DOES NOT      a command pasted into a terminal. Nothing in CI can see that.
+#   CATCH:        Only cluster admission control can refuse it, which is a
+#                 separate piece of work - see the epoch record.
+#
+# So this is the first of two layers, not the whole guard. It is the layer that
+# makes the rule reviewable; the second layer is what makes it unbypassable.
+
+# Registries container images may be pulled from.
+#
+# An image must come from one of these AND be pinned by digest. A tag is a
+# mutable pointer: `:latest` today and `:latest` next month are different
+# software with the same name, and nothing in git records that it moved.
+registries:
+  - host: ghcr.io
+    reason: >-
+      GitHub's registry. Holds both this estate's own runner image, built from
+      a committed Dockerfile in this repository, and the upstream Flux and
+      Actions Runner Controller images.
+
+# Helm chart sources. Charts are as much a supply chain as images - a chart
+# decides what images get deployed, so an unapproved chart repository is an
+# unapproved registry one level up.
+charts:
+  - url: oci://ghcr.io/actions/actions-runner-controller-charts
+    reason: The runner controller and scale set, from the Actions team.
+  - url: https://cloudnative-pg.github.io/charts
+    reason: The operator running the state database.
+  - url: https://openebs.github.io/openebs
+    reason: The storage provisioner backing every volume in the cluster.
+
+# Network destinations a CI job may reach.
+#
+# harden-runner blocks egress by default and permits these. They were restated
+# across fifteen separate allowlists in nine workflows before this file existed,
+# which meant no single place answered "what can this repository call out to" -
+# and adding one endpoint to one workflow was invisible to every review that
+# was not already reading that file.
+#
+# Grouped by what the group is for, because a reason per host would be thirty
+# lines saying "GitHub".
+endpoints:
+  - group: source-control
+    reason: >-
+      Cloning, the API, artifact and release downloads. Reached by essentially
+      every job, since the code and the actions both come from here.
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - codeload.github.com:443
+      - objects.githubusercontent.com:443
+      - raw.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+      - uploads.github.com:443
+      - pkg-containers.githubusercontent.com:443
+      - ghcr.io:443
+
+  - group: language-toolchains
+    reason: >-
+      Downloading and verifying the pinned toolchains and their modules. Go's
+      proxy and checksum database are both required: the second is what makes
+      the first untrusted infrastructure rather than a supply chain.
+    hosts:
+      - go.dev:443
+      - proxy.golang.org:443
+      - sum.golang.org:443
+      - storage.googleapis.com:443
+      - dl.google.com:443
+      - nodejs.org:443
+      - registry.npmjs.org:443
+      - pypi.org:443
+      - files.pythonhosted.org:443
+
+  - group: infrastructure-tooling
+    reason: OpenTofu itself and its provider registry.
+    hosts:
+      - get.opentofu.org:443
+      - registry.opentofu.org:443
+
+  - group: container-mirrors
+    reason: Pulling the analysis images the pull request lanes run in.
+    hosts:
+      - mirror.gcr.io:443
+
+  - group: supply-chain-analysis
+    reason: >-
+      Scorecard and dependency review. These call vulnerability and provenance
+      services by design - the whole job is asking a third party what it knows
+      about this repository's dependencies.
+    hosts:
+      - api.deps.dev:443
+      - api.osv.dev:443
+      - api.scorecard.dev:443
+      - api.securityscorecards.dev:443
+      - www.bestpractices.dev:443
+      - oss-fuzz-build-logs.storage.googleapis.com:443
+      - fulcio.sigstore.dev:443
+      - rekor.sigstore.dev:443
+      - tuf-repo-cdn.sigstore.dev:443
+
+# Declared exemptions.
+#
+# A gap that is written down is a decision; a gap the guard quietly skips is a
+# hole. Anything here is a known failure of the rules above, kept visible with
+# the condition that should close it. The test refuses an exemption with no
+# reason, and refuses one that no longer matches anything - so a fixed gap
+# cannot leave its excuse behind.
+exemptions:
+  - path: clusters/management/flux-system/gotk-components.yaml
+    rule: digest-pinned-images
+    reason: >-
+      Generated by `flux bootstrap`, not written by hand, and regenerated
+      wholesale on every Flux upgrade - so a digest edited in would be
+      overwritten without warning the next time. The four controllers are tag
+      pinned (v1.9.4, v1.6.3, v1.9.3) rather than unpinned, and which tags
+      appear is decided by FLUX_VERSION in versions.env, which is the actual
+      control. This was found by the guard on its first run rather than known
+      about beforehand.
+    trigger: >-
+      Flux's CLI gaining digest output, or a render step in this repository
+      that rewrites the generated manifest to digests as part of the upgrade.
