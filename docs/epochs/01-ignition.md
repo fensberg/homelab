@@ -1972,6 +1972,54 @@ is restarted - while `systemctl status` reports `active (running)` and a
 `Status:` line that still says `Connected`. The restart is part of the fix, not
 a courtesy.
 
+### The overlay has no data path at all: UDP blocked and no reachable relay
+
+`netcheck` on the hypervisor, after the IPv6 fault was fixed and the daemon
+restarted:
+
+    * UDP: false
+    * IPv4: (no addr found)
+    * IPv6: no, unavailable in OS
+    * Nearest DERP: unknown (no response to latency probes)
+
+    # Health check:
+    #   - Tailscale could not connect to the 'Chicago' relay server.
+
+Read together, those lines say the overlay has **no transport of any kind**:
+
+- **`UDP: false`** - no direct peer-to-peer path is possible. Every peer pair
+  must fall back to a relay.
+- **`IPv4: (no addr found)`** - a consequence rather than a second fault.
+  Discovering one's own public address is done by STUN, which is UDP, so a
+  blocked-UDP network cannot answer that question.
+- **No reachable relay** - and this is the fatal one. Blocked UDP alone is
+  survivable and common; Tailscale is designed for it and relays over HTTPS
+  instead. A blocked-UDP network _and_ no reachable relay leaves nothing.
+- **`IPv6: no, unavailable in OS`** - the intended result of the fix above,
+  confirming it took effect cleanly rather than half-way.
+
+**This is why the nodes answer nothing, and the nodes were never the problem.**
+Everything on them is correct - the interface, the addressing, the per-peer
+routes, the control-plane session. They have a peer they agree with and no
+medium to reach it through. Every hypothesis this session that placed the fault
+inside the cluster was looking at the wrong end of the connection.
+
+It also explains the shape of the original fault rather than just its cause.
+The IPv6 problem broke the _control_ plane, which is what made the hypervisor
+show as offline. Fixing it restored control-plane connectivity over IPv4 and
+the host came back online in the console - which looked like a full recovery
+and was not. Registration and transport are separate, and the console reports
+only the first.
+
+**What is not yet known** is why the relay is unreachable. Reaching the
+coordination server over IPv4 works - a forced `curl -4` returned in 0.36s -
+and a relay is the same kind of connection to a different hostname, so "TCP 443
+is blocked" does not obviously fit. Whether a relay answers on TCP at all is
+one command and has not been run. The failure could be egress filtering
+specific to those hosts, something local to the daemon, or a consequence of
+the blocked UDP that is not yet understood; guessing between them is what this
+epoch has repeatedly paid for.
+
 ### A node's tailnet address does not survive a reboot
 
 The cluster nodes join as **ephemeral** devices, which is what the auth key
