@@ -186,3 +186,52 @@ func TestUnkeyedAddressesAreUntouched(t *testing.T) {
 		t.Errorf("redactKeys mangled an unkeyed address: %s", got)
 	}
 }
+
+// The comment is deliberately plain: a heading naming the site, the change,
+// and nothing else.
+//
+// The copy it replaced greeted the reader, signed itself, and restated what
+// the output was - "Addresses and actions only, never a value" - which the
+// artefact then contradicted by containing both a value and the whole run. A
+// reader can see what the output is; the comment's job is to carry the change.
+func TestTheCommentIsJustTheChange(t *testing.T) {
+	body := commentBody("site0", "  replace  tailscale_tailnet_key.hypervisor")
+
+	for _, unwanted := range []string{
+		"contractor checking in", // a signature
+		"never a value",          // a claim the body cannot keep on its own
+		"This is how the estate", // a restatement of what the reader can see
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("the comment still carries %q", unwanted)
+		}
+	}
+
+	if !strings.Contains(body, "## Plan — site0") {
+		t.Error("the comment does not say which site it is about, which matters " +
+			"the moment a pull request plans more than one")
+	}
+	if !strings.Contains(body, "tailscale_tailnet_key.hypervisor") {
+		t.Error("the comment does not contain the change, which is its only job")
+	}
+}
+
+// A later run must be able to find and replace this comment rather than adding
+// another. The workflow posted a new one every time, so a pull request that
+// planned three times carried three comments and the reader had to work out
+// which was current.
+func TestTheCommentCarriesAMarkerPerSite(t *testing.T) {
+	a := commentBody("site0", "x")
+	b := commentBody("site10", "x")
+
+	if !strings.HasPrefix(a, commentMarker("site0")) {
+		t.Error("the comment has no marker, so a later run cannot find it to update")
+	}
+	if commentMarker("site0") == commentMarker("site10") {
+		t.Error("two sites share a marker, so planning both on one pull request " +
+			"would have each overwrite the other")
+	}
+	if strings.Contains(b, commentMarker("site0")) {
+		t.Error("a site's comment carries another site's marker")
+	}
+}

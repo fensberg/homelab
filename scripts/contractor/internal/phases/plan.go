@@ -88,7 +88,36 @@ func Plan(ctx *run.Context) error {
 	}
 	fmt.Println()
 	fmt.Println(summary)
+
+	if ctx.CommentOut != "" {
+		if err := os.WriteFile(ctx.CommentOut, []byte(commentBody(ctx.Site, summary)), 0o644); err != nil {
+			return fmt.Errorf("writing the comment body: %w", err)
+		}
+	}
 	return nil
+}
+
+// commentBody renders the pull request comment.
+//
+// Written here rather than assembled in the workflow, for the reason
+// sensitive-paths.yml already records about its own comment: copy that needs a
+// workflow edit to fix is copy that stays wrong, because the agent cannot edit
+// workflows and the human should not have to for a wording change.
+//
+// It is deliberately plain. A heading naming the site, the change, and nothing
+// else - no greeting, no signature, and no restatement of what the output is,
+// because a reader can see what it is. The marker is what lets a later run
+// update this comment instead of adding another one.
+func commentBody(site, summary string) string {
+	return fmt.Sprintf("%s\n## Plan — %s\n\n```text\n%s\n```\n",
+		commentMarker(site), site, strings.TrimRight(summary, "\n"))
+}
+
+// commentMarker identifies this comment so a later run can find and replace
+// it. Per site, because a repository with two sites plans both on one pull
+// request and one must not overwrite the other.
+func commentMarker(site string) string {
+	return "<!-- plan:" + site + " -->"
 }
 
 type planChange struct {
