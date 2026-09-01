@@ -2322,12 +2322,26 @@ moved. The overlay needs its marks. They are only incompatible in combination,
 and only for traffic the host originates itself - which is the smallest and
 least-tested slice of what either was set up to handle.
 
-**The test that confirms or refutes it** is to let marked packets consult the
-local table before the overlay's rules, by inserting one rule ahead of 5210 and
-watching whether the daemon connects. It is reversible in one command and
-changes nothing else. If it is right, the permanent form belongs in the
-hypervisor playbook alongside the VRF configuration, because the next ignition
-would otherwise rebuild the same collision.
+**Confirmed.** One rule, inserted ahead of the overlay's, letting marked packets
+consult the local table first:
+
+    ip rule add pref 5200 from all fwmark 0x80000/0xff0000 lookup local
+
+Fifteen seconds later, on a host that had had no transport for hours:
+
+    * UDP: true
+    * IPv4: yes, <public address>:43628
+
+    site0-cp-101  tagged-devices  linux  active; relay "ord", tx 828 rx 2388
+
+`UDP: false` became `true`, the host discovered its own public address for the
+first time, and a peer went from silence to an active relayed session with
+traffic counted in both directions. Nothing else was changed.
+
+That is the whole fault. Everything else this session chased - the CNI, pod
+egress, node membership, userspace networking, the socket bind - was a
+consequence of a marked reply packet being routed to a table that could not
+deliver it locally.
 
 ### A node's tailnet address does not survive a reboot
 
