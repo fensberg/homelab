@@ -129,6 +129,8 @@ func report(w *os.File, v Verdict) {
 		switch f.Kind {
 		case "new-device":
 			fmt.Fprintf(w, "[NEW]  %-28s %s\n", f.Name, f.Detail)
+		case "no-expectation":
+			fmt.Fprintf(w, "[??]   %-28s %s\n", f.Name, f.Detail)
 		case "missing-member":
 			fmt.Fprintf(w, "[GONE] %-28s %s\n", f.Name, f.Detail)
 		default:

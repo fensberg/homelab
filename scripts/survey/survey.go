@@ -122,11 +122,21 @@ type Expectation struct {
 	// other is worth a human looking at it the same day.
 	Known []string
 
-	// TrackUntagged turns baseline comparison on. Explicit rather than
-	// inferred from Known being empty, because an empty baseline is a
-	// meaningful state - a first run, where every device is new - and must
-	// not be indistinguishable from the feature being switched off.
-	TrackUntagged bool
+	// Declared records whether an expectation was supplied at all.
+	//
+	// There is deliberately no switch for turning either comparison off. Both
+	// inversions matter and they matter for different reasons - an undeclared
+	// *tagged* device means an estate credential was used by something nobody
+	// built, and an unrecognised *untagged* device means a machine joined a
+	// mesh whose policy currently lets every device reach every other. Making
+	// either one opt-in would leave a blind spot exactly where a blind spot is
+	// least acceptable, so the only thing this field controls is whether
+	// survey knows enough to answer at all.
+	//
+	// When it is false, survey does not fall silent. It says that it cannot
+	// answer, which is a different and much louder thing than reporting
+	// nothing wrong.
+	Declared bool
 }
 
 // result is one cell of the matrix: this host's view of one peer.
@@ -289,8 +299,17 @@ func firstLine(s string) string {
 // reports every personal device as an intruder gets switched off within a week
 // and takes the real finding with it.
 func classify(peers []*peerStatus, want Expectation) []finding {
-	if want.TagPrefix == "" && !want.TrackUntagged {
-		return nil
+	// No expectation supplied. Report the blind spot rather than returning a
+	// clean result: "I was not told what belongs here" and "nothing is wrong"
+	// look identical to whoever reads the exit code, and only one of them is
+	// true.
+	if !want.Declared {
+		return []finding{{
+			Kind: "no-expectation",
+			Name: "(none supplied)",
+			Detail: "survey was given nothing to compare against, so it cannot say " +
+				"whether any of these devices belong here",
+		}}
 	}
 
 	declared := map[string]bool{}
@@ -310,40 +329,46 @@ func classify(peers []*peerStatus, want Expectation) []finding {
 	seen := map[string]bool{}
 
 	for _, p := range peers {
-		if !hasEstateTag(p, want.TagPrefix) {
-			if want.TrackUntagged && !known[strings.ToLower(displayName(p))] {
+		name := displayName(p)
+		lower := strings.ToLower(name)
+
+		// A device wearing this estate's tag. Something authenticated with an
+		// estate credential, so it has to be one the estate declared.
+		if want.TagPrefix != "" && hasEstateTag(p, want.TagPrefix) {
+			seen[lower] = true
+			if !declared[lower] {
 				out = append(out, finding{
-					Kind: "new-device",
-					Name: displayName(p),
-					Detail: "not tagged as estate infrastructure and not in the " +
-						"accepted baseline - somebody enrolled a machine",
+					Kind: "unexpected-member",
+					Name: name,
+					Detail: "carries an estate tag and is not declared - something " +
+						"authenticated with an estate credential",
 				})
 			}
-			continue
-		}
-		name := strings.ToLower(displayName(p))
-		seen[name] = true
-
-		if len(declared) > 0 && !declared[name] {
+		} else if !known[lower] {
+			// Anything else: a laptop, a phone, a games machine, or a device
+			// wearing a tag this estate does not issue. Not an error, and not
+			// something a configuration can predict - which is why it is
+			// compared against a baseline of what was accepted rather than
+			// against a declaration of what should exist.
 			out = append(out, finding{
-				Kind: "unexpected-member",
-				Name: displayName(p),
-				Detail: "carries an estate tag and is not declared - something " +
-					"authenticated with an estate credential",
+				Kind: "new-device",
+				Name: name,
+				Detail: "not estate infrastructure and not in the accepted baseline - " +
+					"a machine joined the mesh",
 			})
 		}
 
-		// Routes are checked whether or not the device itself was expected.
-		// An undeclared device advertising a declared route is two findings,
-		// and the second is the one that moves traffic.
+		// Routes are checked for every device, tagged or not. An undeclared
+		// machine advertising a subnet is two findings, and the second is the
+		// one that moves other people's traffic.
 		for _, r := range p.PrimaryRoutes {
 			if isHostRoute(r) {
 				continue // a peer's own address, not a subnet it carries
 			}
-			if len(allowed) > 0 && !allowed[r] {
+			if !allowed[r] {
 				out = append(out, finding{
 					Kind:   "unexpected-route",
-					Name:   displayName(p),
+					Name:   name,
 					Detail: "advertises " + r + ", which the estate did not declare",
 				})
 			}

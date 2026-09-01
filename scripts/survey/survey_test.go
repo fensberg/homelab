@@ -165,7 +165,7 @@ func TestAnUndeclaredEstateDeviceIsReported(t *testing.T) {
 		{HostName: "site0-cp-100", Tags: []string{"tag:homelab-node"}},
 		{HostName: "stranger", Tags: []string{"tag:homelab-node"}},
 	}
-	want := Expectation{Members: []string{"site0-cp-100"}, TagPrefix: "tag:homelab-"}
+	want := Expectation{Declared: true, Members: []string{"site0-cp-100"}, TagPrefix: "tag:homelab-"}
 
 	got := classify(peers, want)
 	if len(got) != 1 || got[0].Kind != "unexpected-member" || got[0].Name != "stranger" {
@@ -178,6 +178,7 @@ func TestAnUndeclaredEstateDeviceIsReported(t *testing.T) {
 func TestADeclaredMemberThatNeverAppearedIsReported(t *testing.T) {
 	peers := []*peerStatus{{HostName: "site0-cp-100", Tags: []string{"tag:homelab-node"}}}
 	want := Expectation{
+		Declared:  true,
 		Members:   []string{"site0-cp-100", "site0-cp-101"},
 		TagPrefix: "tag:homelab-",
 	}
@@ -197,6 +198,7 @@ func TestAnUndeclaredRouteIsReported(t *testing.T) {
 		PrimaryRoutes: []string{"10.10.0.0/16", "10.99.0.0/16"},
 	}}
 	want := Expectation{
+		Declared:  true,
 		Members:   []string{"hypervisor"},
 		Routes:    []string{"10.10.0.0/16"},
 		TagPrefix: "tag:homelab-",
@@ -218,7 +220,7 @@ func TestAPeersOwnAddressIsNotAnAdvertisedSubnet(t *testing.T) {
 		Tags:          []string{"tag:homelab-node"},
 		PrimaryRoutes: []string{"100.64.0.10/32", "fd7a:115c:a1e0::aaaa/128"},
 	}}
-	want := Expectation{Members: []string{"site0-cp-100"}, Routes: []string{"10.10.0.0/16"}, TagPrefix: "tag:homelab-"}
+	want := Expectation{Declared: true, Members: []string{"site0-cp-100"}, Routes: []string{"10.10.0.0/16"}, TagPrefix: "tag:homelab-"}
 	if got := classify(peers, want); len(got) != 0 {
 		t.Errorf("a peer's own address was reported as an advertised subnet: %+v", got)
 	}
@@ -227,7 +229,7 @@ func TestAPeersOwnAddressIsNotAnAdvertisedSubnet(t *testing.T) {
 // An untagged device that somebody already accepted is not news.
 func TestAKnownPersonalDeviceIsNotReported(t *testing.T) {
 	peers := []*peerStatus{{HostName: "laptop"}}
-	want := Expectation{TagPrefix: "tag:homelab-", TrackUntagged: true, Known: []string{"laptop"}}
+	want := Expectation{Declared: true, TagPrefix: "tag:homelab-", Known: []string{"laptop"}}
 	if got := classify(peers, want); len(got) != 0 {
 		t.Errorf("an already-accepted personal device was reported: %+v", got)
 	}
@@ -241,7 +243,7 @@ func TestANewPersonalDeviceIsReported(t *testing.T) {
 		{HostName: "laptop"},
 		{HostName: "cousins-pc"},
 	}
-	want := Expectation{TagPrefix: "tag:homelab-", TrackUntagged: true, Known: []string{"laptop"}}
+	want := Expectation{Declared: true, TagPrefix: "tag:homelab-", Known: []string{"laptop"}}
 
 	got := classify(peers, want)
 	if len(got) != 1 || got[0].Kind != "new-device" || got[0].Name != "cousins-pc" {
@@ -249,19 +251,60 @@ func TestANewPersonalDeviceIsReported(t *testing.T) {
 	}
 }
 
-// Untagged devices are ignored unless tracking is asked for, and an empty
-// baseline must mean "nothing accepted yet" rather than "feature off" - a
-// first run should report every device, not silently none.
-func TestUntaggedTrackingIsExplicitRatherThanInferred(t *testing.T) {
-	peers := []*peerStatus{{HostName: "laptop"}}
-
-	off := Expectation{TagPrefix: "tag:homelab-"}
-	if got := classify(peers, off); len(got) != 0 {
-		t.Errorf("untagged devices were reported without tracking being asked for: %+v", got)
+// Both inversions are watched, always. Neither can be switched off, because
+// they cover different failures - an undeclared *tagged* device means an
+// estate credential was used by something nobody built, and an unrecognised
+// *untagged* device means a machine joined a mesh whose policy lets every
+// device reach every other. Making either opt-in would put a blind spot
+// exactly where one is least acceptable.
+func TestBothInversionsAreWatchedInOneRun(t *testing.T) {
+	peers := []*peerStatus{
+		{HostName: "site0-cp-100", Tags: []string{"tag:homelab-node"}},
+		{HostName: "stranger", Tags: []string{"tag:homelab-node"}},
+		{HostName: "cousins-pc"},
+	}
+	want := Expectation{
+		Declared:  true,
+		Members:   []string{"site0-cp-100"},
+		Known:     []string{"laptop"},
+		TagPrefix: "tag:homelab-",
 	}
 
-	firstRun := Expectation{TagPrefix: "tag:homelab-", TrackUntagged: true}
-	if got := classify(peers, firstRun); len(got) != 1 {
-		t.Errorf("an empty baseline behaved as though tracking were off: %+v", got)
+	kinds := map[string]bool{}
+	for _, f := range classify(peers, want) {
+		kinds[f.Kind] = true
+	}
+	if !kinds["unexpected-member"] {
+		t.Error("an undeclared estate-tagged device was not reported")
+	}
+	if !kinds["new-device"] {
+		t.Error("an unrecognised untagged device was not reported - this is the " +
+			"blind spot, and it is the one that matters if humans are ever " +
+			"enrolled onto this mesh")
+	}
+}
+
+// Running with nothing to compare against must not look like a clean result.
+// "I was not told what belongs here" and "nothing is wrong" are different
+// answers, and only one of them is true.
+func TestNoExpectationIsReportedRatherThanPassing(t *testing.T) {
+	peers := []*peerStatus{{HostName: "anything", Tags: []string{"tag:homelab-node"}}}
+
+	got := classify(peers, Expectation{})
+	if len(got) != 1 || got[0].Kind != "no-expectation" {
+		t.Fatalf("survey fell silent instead of reporting that it could not answer: %+v", got)
+	}
+}
+
+// A device wearing a tag this estate does not issue is not estate
+// infrastructure, so it is judged against the baseline like any other machine
+// rather than being quietly skipped for having a tag at all.
+func TestAForeignTagIsNotTreatedAsEstateInfrastructure(t *testing.T) {
+	peers := []*peerStatus{{HostName: "someone-elses-server", Tags: []string{"tag:not-ours"}}}
+	want := Expectation{Declared: true, TagPrefix: "tag:homelab-"}
+
+	got := classify(peers, want)
+	if len(got) != 1 || got[0].Kind != "new-device" {
+		t.Fatalf("a device with a foreign tag was not reported: %+v", got)
 	}
 }
