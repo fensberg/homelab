@@ -363,17 +363,28 @@ func kubectl(ctx *run.Context, kubeconfig string, args ...string) ([]byte, error
 // lifetime of a single check and removes itself. This one persists, which is
 // the whole point, and is therefore a workspace file that Sterilize owns.
 func WriteKubeconfigTo(ctx *run.Context, dest string) error {
+	return writeRenderedCredential(ctx, dest, "kubeconfig", looksLikeKubeconfig)
+}
+
+// writeRenderedCredential reads one sensitive tofu output and writes it to
+// dest, then removes everything it needed to get there except the file it was
+// asked for.
+func writeRenderedCredential(
+	ctx *run.Context,
+	dest string,
+	output string,
+	looksRight func(string) bool,
+) error {
 	// Reach the state before reading an output out of it.
 	//
 	// This used to go straight to `tofu output`, which worked only while a run
 	// was in flight. Every other time - which is every time anybody actually
-	// wants a kubeconfig - Sterilize has already removed backend_pg.tf and
-	// tofu's backend record, so there is no state to read and the output comes
-	// back as something that is not a kubeconfig.
+	// wants a credential - Sterilize has already removed backend_pg.tf and
+	// tofu's backend record, so there is no state to read.
 	//
 	// Local state means a run is mid-flight and already holds the
 	// authoritative copy, so leave it alone; otherwise the state is where the
-	// successful path put it. Same reasoning, and the same shape, as destroy.
+	// successful path put it.
 	if _, err := os.Stat(ctx.LocalState); err != nil {
 		if err := Render(ctx); err != nil {
 			return fmt.Errorf("could not render the config, so there is nothing to authenticate with: %w", err)
@@ -383,22 +394,22 @@ func WriteKubeconfigTo(ctx *run.Context, dest string) error {
 		}
 	}
 
-	raw, err := run.TofuOutputRaw(ctx, "kubeconfig")
+	raw, err := run.TofuOutputRaw(ctx, output)
 	if err != nil {
-		return fmt.Errorf("could not read the kubeconfig output. Has the Cluster phase run? (%w)", err)
+		return fmt.Errorf("could not read the %s output. Has the Cluster phase run? (%w)", output, err)
 	}
 
-	// A kubeconfig is YAML. Anything else means the output was not what was
-	// asked for - a diagnostic, an empty backend, a truncated read - and
-	// writing it produces a file that fails much later, inside kubectl, with
-	// an error about control characters that names nothing useful.
-	if !looksLikeKubeconfig(raw) {
-		return fmt.Errorf(`the kubeconfig output did not come back as a kubeconfig.
+	// Anything of the wrong shape means the output was not what was asked for
+	// - a diagnostic, an empty backend, a truncated read - and writing it
+	// produces a file that fails much later, inside the tool, with an error
+	// naming nothing useful.
+	if !looksRight(raw) {
+		return fmt.Errorf(`the %s output did not come back as a %s.
 
 What arrived was %d byte(s) that do not parse as one. That usually means the
 state could not be reached, so tofu answered with something other than the
 value asked for. Check that the cluster is up and that this site's state
-database is reachable`, len(raw))
+database is reachable`, output, output, len(raw))
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return err
@@ -407,16 +418,10 @@ database is reachable`, len(raw))
 		return err
 	}
 	// Clean up everything this needed except the thing it was asked for.
-	//
-	// Attaching to read the output writes backend_pg.tf and tofu's backend
-	// record, and Render writes the config - and this verb returns before the
-	// sterilize that a phase sequence would end with. Left behind, the backend
-	// record makes the next `tofu init -backend=false` fail on encrypted
-	// state, which breaks `task validate` and the pre-push hook on a machine
-	// that has done nothing but look at its own cluster.
-	//
-	// The warning below only ever promised to leave the kubeconfig. This makes
-	// that true.
+	// Attaching writes backend_pg.tf and tofu's backend record, and this verb
+	// returns before the sterilize a phase sequence would end with. Left
+	// behind, that record makes the next `tofu init -backend=false` fail on
+	// encrypted state, which breaks `task validate` and the pre-push hook.
 	for _, t := range sterilizeTargets(ctx) {
 		if t == dest {
 			continue
@@ -425,9 +430,6 @@ database is reachable`, len(raw))
 			return err
 		}
 	}
-
-	run.Ok("kubeconfig written to " + dest)
-	run.Warn("It is a credential and it is gitignored, but it is still on this disk. 'task clean-secrets' removes it.")
 	return nil
 }
 
@@ -465,13 +467,58 @@ func looksLikeKubeconfig(raw string) bool {
 // It returns the command's exit code so the caller can pass it on, because a
 // wrapper that swallows a non-zero exit is a wrapper that hides failures.
 func WithKubeconfig(ctx *run.Context, argv []string) (int, error) {
+	return withRenderedCredential(ctx, argv, "KUBECONFIG", "kubeconfig", WriteKubeconfigTo)
+}
+
+// WithTalosconfig runs a command with a talosconfig that exists only for as
+// long as the command does.
+//
+// The same reasoning as WithKubeconfig and, if anything, a stronger case for
+// it. A talosconfig authenticates to Talos rather than to Kubernetes - the
+// layer below - where it can read machine configuration and reboot or reset a
+// node. It is the more dangerous of the two credentials this estate renders,
+// so it gets the handling that never leaves it on a disk.
+//
+// Unlike kubeconfig there is deliberately no form that writes into the
+// workspace and returns. That form exists for kubeconfig because tools expect
+// a file and somebody has to be able to export KUBECONFIG; it is also the form
+// that leaves a live credential lying around waiting for `task clean-secrets`.
+// Nothing needs that here, so the only way to use this credential is to hand
+// it a command, and its lifetime is that command's.
+//
+// It exists because the node is the one place in this estate nobody can see.
+// Talos has no shell, so every question about a node's own network - whether
+// an interface exists, what the extension is doing - is unanswerable without
+// it. The alternative reached for instead was a privileged pod with host
+// networking, which Pod Security Admission correctly refused.
+func WithTalosconfig(ctx *run.Context, argv []string) (int, error) {
+	return withRenderedCredential(ctx, argv, "TALOSCONFIG", "talosconfig", writeTalosconfigTo)
+}
+
+// withRenderedCredential runs a command with a rendered credential that exists
+// only for as long as the command does.
+//
+// Shared by both credential verbs because the handling *is* the point and must
+// not drift between them: one of the two quietly losing the signal handler,
+// the 0600, or the removal is exactly the difference nobody notices until a
+// credential is sitting on a disk.
+//
+// It returns the command's exit code so the caller can pass it on, because a
+// wrapper that swallows a non-zero exit hides failures.
+func withRenderedCredential(
+	ctx *run.Context,
+	argv []string,
+	envVar string,
+	label string,
+	write func(*run.Context, string) error,
+) (int, error) {
 	if len(argv) == 0 {
 		return 0, errors.New("no command given after --")
 	}
 
-	f, err := os.CreateTemp("", "kubeconfig-*")
+	f, err := os.CreateTemp("", label+"-*")
 	if err != nil {
-		return 0, fmt.Errorf("creating a temporary kubeconfig: %w", err)
+		return 0, fmt.Errorf("creating a temporary %s: %w", label, err)
 	}
 	path := f.Name()
 	// Close before writing through the phase, and remove no matter how this
@@ -479,11 +526,11 @@ func WithKubeconfig(ctx *run.Context, argv []string) (int, error) {
 	f.Close()
 	defer os.Remove(path)
 	if err := os.Chmod(path, 0o600); err != nil {
-		return 0, fmt.Errorf("restricting the temporary kubeconfig: %w", err)
+		return 0, fmt.Errorf("restricting the temporary %s: %w", label, err)
 	}
 
 	// A signal has to remove it too. Without this, Ctrl-C during a long
-	// kubectl leaves the credential behind, which is the exact failure this
+	// command leaves the credential behind, which is the exact failure this
 	// exists to prevent.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -494,13 +541,13 @@ func WithKubeconfig(ctx *run.Context, argv []string) (int, error) {
 		os.Exit(130)
 	}()
 
-	if err := WriteKubeconfigTo(ctx, path); err != nil {
+	if err := write(ctx, path); err != nil {
 		return 0, err
 	}
 
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(argv[0], argv[1:]...)
-	c.Env = append(os.Environ(), "KUBECONFIG="+path)
+	c.Env = append(os.Environ(), envVar+"="+path)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	err = c.Run()
 	var exit *exec.ExitError
@@ -511,4 +558,28 @@ func WithKubeconfig(ctx *run.Context, argv []string) (int, error) {
 		return 0, fmt.Errorf("running %q: %w", argv[0], err)
 	}
 	return 0, nil
+}
+
+// looksLikeTalosconfig is the same shape check as looksLikeKubeconfig, for the
+// other credential. A talosconfig is YAML with a selected context and a map of
+// them, and shares none of a kubeconfig's markers.
+func looksLikeTalosconfig(raw string) bool {
+	if strings.TrimSpace(raw) == "" {
+		return false
+	}
+	for _, marker := range []string{"context:", "contexts:"} {
+		if !strings.Contains(raw, marker) {
+			return false
+		}
+	}
+	for _, r := range raw {
+		if r < 0x20 && r != '\n' && r != '\r' && r != '\t' {
+			return false
+		}
+	}
+	return true
+}
+
+func writeTalosconfigTo(ctx *run.Context, dest string) error {
+	return writeRenderedCredential(ctx, dest, "talosconfig", looksLikeTalosconfig)
 }
