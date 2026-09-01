@@ -68,6 +68,51 @@ The part that makes it awkward is unchanged too: Cilium must be in place before
 nodes go Ready, so it cannot arrive through Flux the way everything else does,
 which means a cluster rebuild rather than a converge.
 
+### The overlay grants everything to everyone, which is why enrolling players is not an option
+
+Recorded here because it is the strongest argument for the port-forward
+decision below, and because it is true of the estate **today** rather than only
+in the hypothetical.
+
+The tailnet's access policy is the default one:
+
+```json
+{ "src": ["*"], "dst": ["*:*"], "ip": ["*"] }
+```
+
+Every device on the overlay may reach every other device, on every port. There
+is no rule distinguishing a hypervisor from a laptop, and none distinguishing
+either from a games console. So a device on this tailnet can reach the Proxmox
+API, the Kubernetes API, and the state database, because nothing says
+otherwise.
+
+**That is what settles the Zero Trust option for the game server.** Enrolling
+every player was already rejected as too heavy an ask - installing a client to
+join a game is a real cost - but the heavier objection is this one: under the
+current policy, enrolling a player would give that player's machine the same
+reach into the estate as the hypervisor has. The ask is not "install a VPN
+client", it is "join a network where you can reach my database".
+
+The policy could of course be narrowed, and would have to be before any human
+outside the household joined. Worth stating plainly so the option is rejected
+for the right reason: the objection is not that Zero Trust cannot express this,
+it is that the estate has not expressed it, and the amount of policy work
+required to make enrolment safe is larger than the port forward it would
+replace.
+
+**It also changes what a new device on the mesh means.** With an allow-all
+policy there is no such thing as a device with limited reach, so any machine
+appearing on the overlay - a cousin's computer, a rebuilt laptop, anything -
+has full access from the moment it joins. `scripts/survey` reports untagged
+devices against a baseline for exactly this reason, and the reason it treats a
+new one as worth stopping for rather than logging is that there is currently no
+weaker position for such a device to be in.
+
+Narrowing the policy is not this epoch's work, but it is a prerequisite of the
+epoch that puts anything on the internet, and it belongs on the same list as
+NetworkPolicy enforcement: both are the difference between isolation that is
+believed and isolation that exists.
+
 ### Why the game server decides the network design
 
 Cloudflare Tunnel's public hostname routing is HTTP and TCP; it cannot carry
