@@ -2216,6 +2216,55 @@ all. If SYNs go out and nothing returns, something on the path is dropping
 them selectively. If nothing leaves, the failure is inside the process and no
 amount of network work will find it.
 
+### The handshake is never completed: SYN out, SYN-ACK in, no ACK
+
+A capture on the hypervisor while the daemon retried, filtered to the relay
+node's address on port 443. Reading one of its attempts in order:
+
+    07:38:10.217  vmbr0 Out  192.168.50.10.48136 > 209.177.158.246.443  [S]
+    07:38:10.223  nic0  In   209.177.158.246.443 > 192.168.50.10.48136  [S.]
+    07:38:11.220  vmbr0 Out  192.168.50.10.48136 > 209.177.158.246.443  [S]   <- retransmit
+    07:38:11.225  nic0  In   209.177.158.246.443 > 192.168.50.10.48136  [S.]
+    07:38:12.260  nic0  In   209.177.158.246.443 > 192.168.50.10.48136  [S.]
+
+**The SYN leaves. The SYN-ACK comes back. The ACK is never sent.** The host
+retransmits its SYN instead, as though the reply had never arrived, and the
+relay retransmits its SYN-ACK until it gives up. The same pattern repeats on
+five separate source ports in twenty-five seconds.
+
+That is decisive about _where_ the fault is. The packets are on the wire in
+both directions, so this is not routing, not the relay, not the network and not
+the daemon failing to try. **The SYN-ACK is being dropped between the network
+interface and the socket** - inside this host's own input path.
+
+**And forwarded traffic to the same relay, at the same moment, works
+perfectly.** The capture is full of established flows belonging to the cluster
+nodes, translated to the hypervisor's address:
+
+    07:38:13.860  vmbr0 Out  192.168.50.10.50430 > 209.177.158.246.443  [.] ack ...
+    07:38:13.866  nic0  In   209.177.158.246.443 > 192.168.50.10.50430  [.] ack ...
+    07:38:13.866  vrf_internal Out  209.177.158.246.443 > 10.10.10.102.50430
+
+Those are the nodes' own relay connections, crossing this host through the VRF
+and out, exchanging data normally. So the host forwards to that relay while
+being unable to complete its own connection to it. **Locally originated and
+forwarded traffic are being treated differently**, which is what makes this a
+filtering or connection-tracking problem rather than a routing one.
+
+It also explains the earlier contradiction cleanly. `curl` completes its
+handshake; the daemon does not. Both send from the same address to the same
+destination, and the one difference between them is that `tailscaled` marks its
+own packets with a firewall mark so they bypass the tunnel. A rule that treats
+marked traffic differently on the way in would produce exactly this.
+
+**Candidates, none tested:** the host firewall backend and the rules
+`tailscale` programs disagreeing - this is a hypervisor whose own firewalling
+uses a different mechanism, and both write rules; connection tracking failing
+to create or associate an entry so the reply is classed invalid and dropped;
+or a policy or reverse-path check applying to input. What they have in common
+is that all three live in netfilter, and none of them is visible from anywhere
+except this host.
+
 ### A node's tailnet address does not survive a reboot
 
 The cluster nodes join as **ephemeral** devices, which is what the auth key
