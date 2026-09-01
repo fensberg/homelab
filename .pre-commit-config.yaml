@@ -87,9 +87,13 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-push]
-        # First among the pre-push hooks on purpose: a push that is going to
-        # be refused should cost milliseconds, not the full validate+test
-        # suite that follows.
+        fail_fast: true
+        # First among the pre-push hooks, and fail_fast, on purpose: a push
+        # that is going to be refused should cost milliseconds, not the full
+        # validate+test suite that follows. Ordering alone does not achieve
+        # that - pre-commit runs every hook and reports at the end - so the
+        # two go together. Measured: without fail_fast, a refused push still
+        # ran the whole Go and OpenTofu corpus first.
         #
         # A GitHub App cannot hold a signing key, so `task push` has GitHub
         # sign on its behalf through the Git Data API. A plain `git push`

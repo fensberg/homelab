@@ -30,9 +30,10 @@ type preCommitConfig struct {
 	Repos []struct {
 		Repo  string `yaml:"repo"`
 		Hooks []struct {
-			ID     string   `yaml:"id"`
-			Entry  string   `yaml:"entry"`
-			Stages []string `yaml:"stages"`
+			ID       string   `yaml:"id"`
+			Entry    string   `yaml:"entry"`
+			Stages   []string `yaml:"stages"`
+			FailFast bool     `yaml:"fail_fast"`
 		} `yaml:"hooks"`
 	} `yaml:"repos"`
 }
@@ -52,7 +53,7 @@ func TestPlainGitPushIsRefusedByAHook(t *testing.T) {
 		t.Fatalf("parsing .pre-commit-config.yaml: %v", err)
 	}
 
-	var found bool
+	var found, failFast bool
 	var stages []string
 	var order []string
 	for _, repo := range cfg.Repos {
@@ -65,6 +66,7 @@ func TestPlainGitPushIsRefusedByAHook(t *testing.T) {
 			if hook.ID == pushGuardHookID {
 				found = true
 				stages = hook.Stages
+				failFast = hook.FailFast
 			}
 		}
 	}
@@ -82,10 +84,15 @@ func TestPlainGitPushIsRefusedByAHook(t *testing.T) {
 			pushGuardHookID, stages)
 	}
 
-	// Ordered first among the pre-push hooks: a push that is going to be
-	// refused should cost milliseconds rather than the full validate+test
-	// suite. This is a real cost, not tidiness - those two run the whole Go
-	// and OpenTofu test corpus.
+	// Ordering alone does not short-circuit anything: pre-commit runs every
+	// hook and reports at the end. Without fail_fast a refused push still
+	// paid for the whole Go and OpenTofu corpus first, which was measured
+	// rather than assumed. Both are needed, so both are checked.
+	if !failFast {
+		t.Errorf("%s is not fail_fast, so a refused push still runs validate "+
+			"and test before printing the refusal", pushGuardHookID)
+	}
+
 	if len(order) > 0 && order[0] != pushGuardHookID {
 		t.Errorf("pre-push hooks run in order %v; %s should be first so a "+
 			"doomed push fails fast instead of after validate and test",
