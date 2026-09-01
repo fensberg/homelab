@@ -150,4 +150,9 @@ endpoints:
 # section is most likely to be used for again, so: before adding an entry here,
 # establish that the rule genuinely cannot be met, rather than that meeting it
 # looked inconvenient.
+#
+# Every entry therefore needs `issue:` as well as a reason and a trigger. An
+# exemption is deferred work, and deferred work that is not on the tracker is
+# just a check somebody turned off - so adding one costs the same as filing the
+# work, which is the point. The test refuses an entry without all three.
 exemptions: []

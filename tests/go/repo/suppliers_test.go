@@ -41,6 +41,7 @@ type suppliers struct {
 		Rule    string `yaml:"rule"`
 		Reason  string `yaml:"reason"`
 		Trigger string `yaml:"trigger"`
+		Issue   int    `yaml:"issue"`
 	} `yaml:"exemptions"`
 }
 
@@ -90,6 +91,15 @@ func TestEverySupplierGivesAReason(t *testing.T) {
 		}
 		if strings.TrimSpace(e.Trigger) == "" {
 			t.Errorf("exemption for %q gives no trigger, so nothing says when it ends", e.Path)
+		}
+		// An exemption is deferred work. Deferred work that is not on the
+		// tracker is a check somebody turned off, so adding one has to cost
+		// the same as filing the work it defers.
+		if e.Issue <= 0 {
+			t.Errorf("exemption for %q names no issue.\n"+
+				"File the work it defers and put the number in issue:, or fix the "+
+				"thing instead - a red check is not on its own a reason to write an excuse.",
+				e.Path)
 		}
 	}
 }
