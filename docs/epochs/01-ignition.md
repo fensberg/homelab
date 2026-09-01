@@ -2126,6 +2126,54 @@ own marked packets are routed differently from everything else; or something
 in its own resolution path. Each is a command, and this epoch's record is
 mostly the cost of preferring the most plausible-sounding one.
 
+### Correction: the shell and the daemon were not dialling the same host
+
+The "shell reaches the relay, daemon cannot" contradiction recorded above was
+never established. It compared two different destinations.
+
+The shell test used `derp12.tailscale.com`. The daemon connects to the actual
+relay nodes in that region, which are `derp12d`, `derp12e` and `derp12f`. A 200
+from the first says nothing about the second, and the comparison was mine to
+get right.
+
+`tailscale debug derp 12` shows what it really tries:
+
+    Warnings:
+      Node "derp12d.tailscale.com" did not return a IPv4 STUN response
+      Node "derp12e.tailscale.com" did not return a IPv4 STUN response
+      Node "derp12f.tailscale.com" did not return a IPv4 STUN response
+    Errors:
+      Error connecting to node "derp12d..." @ "[2607:f740:e::811]:443" over
+        IPv6: dial tcp6 ...: connect: cannot assign requested address
+      Error connecting to node "derp12d..." @ try 0: ... context deadline exceeded
+      Error connecting to node "derp12d..." @ try 3: dial tcp6 [2607:f740:e::811]:443:
+        connect: cannot assign requested address
+
+Two things there matter more than the contradiction that dissolved.
+
+**Disabling IPv6 at the stack did not stop the daemon dialling IPv6.** It is
+still attempting literal IPv6 addresses and still failing with
+`cannot assign requested address`. That is not a contradiction of the earlier
+fix, it is the limit of it, and the distinction is worth keeping:
+
+- The **control plane** is reached by resolving a hostname. Disabling IPv6
+  made the resolver return IPv4 only, so that path was repaired - which is why
+  the host came back online in the console.
+- The **relays** are reached from a DERP map that carries literal addresses of
+  both families. No resolver is involved, so nothing about the resolver
+  changed them, and the daemon goes on dialling IPv6 addresses this host can
+  never source from.
+
+That is the honest account of what the earlier fix did and did not do. It
+repaired registration and left the data plane exactly where it was.
+
+**And the IPv4 attempts fail too**, by timeout rather than instantly, along
+with no STUN response over IPv4 from any of the three relay nodes. So both
+families fail for different reasons, and only one of them has been explained.
+
+Which leaves one unmeasured thing: whether this network can reach a real relay
+node at all. Everything else is now ruled out.
+
 ### A node's tailnet address does not survive a reboot
 
 The cluster nodes join as **ephemeral** devices, which is what the auth key
