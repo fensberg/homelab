@@ -573,6 +573,64 @@ question had been unanswerable all session; the answer took one command once
 the credential could be rendered. Two hypotheses had been built on top of the
 unanswerable version of it, and both were wrong.
 
+### Addressing and routing are correct: the failure is in the data path
+
+With the node finally inspectable, everything below the WireGuard transport
+checks out. Recorded as ruled out, because each of these was a candidate:
+
+```text
+AddressStatus   tailscale0/100.120.140.65/32                100.120.140.65/32
+AddressStatus   tailscale0/fd7a:115c:a1e0::ce2e:8c42/128    (the tailnet ULA)
+
+RouteStatus     52/inet4//100.70.14.95/32/0     -> tailscale0     (the hypervisor)
+RouteStatus     52/inet4//100.107.20.78/32/0    -> tailscale0     (a sibling node)
+RouteStatus     52/inet4//100.106.41.79/32/0    -> tailscale0     (a sibling node)
+RouteStatus     52/inet4//100.100.100.100/32/0  -> tailscale0     (MagicDNS)
+```
+
+- **The interface is addressed.** `tailscale0` carries the tailnet address the
+  admin console lists for this node, and the ULA. An unaddressed tunnel would
+  have explained everything; it is not that.
+- **The routes exist**, one per peer, in Tailscale's own table 52 - including a
+  route to the hypervisor specifically.
+- **The control plane is live.** The log shows a peer's disco key changing at
+  the moment the hypervisor's daemon was restarted, followed by
+  `wgengine: Reconfig: configuring userspace WireGuard config (with 3 peers)`.
+  The node learned about that restart within seconds, so it is talking to the
+  coordination server continuously.
+
+Note that "userspace WireGuard" in that line is not the userspace-networking
+mode ruled out above - `tailscaled` always runs the WireGuard implementation in
+userspace. The TUN device is what distinguishes the two, and it is present.
+
+**So the remaining suspect is the transport.** Registration, configuration,
+addressing and routing are all correct, and two peers that agree about each
+other still exchange nothing. The open question is whether either end has a
+working path at all: `netcheck` on the hypervisor reported **UDP is blocked**,
+which forces every peer pair onto a DERP relay, and the hypervisor's relay
+connections were broken for hours by the IPv6 fault recorded in
+[`01-ignition.md`](01-ignition.md). Whether the nodes ever established relay
+paths of their own has not been looked at.
+
+### The extension's log is unreadable without filtering
+
+An operational finding rather than a defect, and it cost time. `ext-tailscale`
+logs a line every fifteen seconds, indefinitely:
+
+```text
+localapi: [POST] /localapi/v0/debug
+```
+
+Something polls that endpoint on a timer, and the result is that the log is
+almost entirely that one line. The three lines that mattered - a disco key
+change and the WireGuard reconfiguration - were buried in hundreds of them.
+
+The hypervisor's journal named its own fault four times a minute and was read
+in seconds; this one hides its content in noise. Anything reading these logs
+should filter for `derp`, `magicsock`, `netcheck`, `peer` or `endpoint` rather
+than tailing them, and a health check that reads this log needs to know that
+volume is not liveness.
+
 ### A test must prove its own preconditions
 
 The durable lesson from the hours this cost. The test used was:
