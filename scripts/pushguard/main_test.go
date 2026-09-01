@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -105,5 +106,113 @@ func TestAnUnreadableRangeFailsClosed(t *testing.T) {
 	if _, err := unsignedCommits("not-a-ref", "also-not-a-ref"); err == nil {
 		t.Fatal("an unreadable range reported no unsigned commits, which would " +
 			"wave a push through because the guard could not look")
+	}
+}
+
+// git runs a command in dir and returns its trimmed output, failing the test
+// on error. Enough git for a fixture repository and no more.
+func git(t *testing.T, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// fixtureRepo builds a repository with one unsigned commit and one carrying a
+// signature header, and returns their hashes.
+//
+// The signed commit is written directly with `git hash-object` rather than by
+// signing, so the test needs no key, no ssh-keygen and no crypto - it is
+// checking that a signature header is *noticed*, which is exactly what the
+// guard checks. That also keeps this hermetic: git and nothing else.
+func fixtureRepo(t *testing.T) (base, unsigned, signed string) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+
+	git(t, "init", "-q", "-b", "main", ".")
+	git(t, "config", "user.email", "fixture@example.invalid")
+	git(t, "config", "user.name", "Fixture")
+	git(t, "commit", "-q", "--allow-empty", "-m", "base")
+	base = git(t, "rev-parse", "HEAD")
+	git(t, "commit", "-q", "--allow-empty", "-m", "unsigned")
+	unsigned = git(t, "rev-parse", "HEAD")
+
+	tree := git(t, "rev-parse", "HEAD^{tree}")
+	raw := "tree " + tree + "\n" +
+		"parent " + unsigned + "\n" +
+		"author Fixture <fixture@example.invalid> 0 +0000\n" +
+		"committer Fixture <fixture@example.invalid> 0 +0000\n" +
+		"gpgsig placeholder-header-value\n" +
+		"\nsigned\n"
+
+	cmd := exec.Command("git", "hash-object", "-t", "commit", "-w", "--stdin")
+	cmd.Stdin = strings.NewReader(raw)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("writing the signed fixture commit: %v\n%s", err, out)
+	}
+	signed = strings.TrimSpace(string(out))
+	git(t, "update-ref", "refs/heads/main", signed)
+	return base, unsigned, signed
+}
+
+// The behaviour the guard exists for, against real commit objects rather than
+// against an unreadable range: an unsigned commit in the push is refused, and
+// a signed one is not.
+//
+// This was verified by hand when the guard was rewritten and not committed,
+// which left the one behaviour that actually changed with no regression cover
+// at all. The ref-prefix tests above would all still pass if the signature
+// check were deleted outright.
+func TestAnUnsignedCommitIsRefusedAndASignedOneIsNot(t *testing.T) {
+	base, unsigned, signed := fixtureRepo(t)
+
+	// A push that adds the unsigned commit.
+	got, err := unsignedCommits(base, unsigned)
+	if err != nil {
+		t.Fatalf("reading a range containing an unsigned commit failed: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("got %v, want exactly the one unsigned commit in the push", got)
+	}
+
+	// The signed commit alone must come back clean.
+	clean, err := unsignedCommits(unsigned, signed)
+	if err != nil {
+		t.Fatalf("reading a range of one signed commit failed: %v", err)
+	}
+	if len(clean) != 0 {
+		t.Errorf("a commit carrying a signature header was reported unsigned: %v\n"+
+			"That refuses exactly the commits somebody went to the trouble of signing.", clean)
+	}
+}
+
+// The trap this guard fell into once and must not fall into again.
+//
+// `git log --format=%G?` reports N for a signed commit whenever it cannot
+// verify the signature - which for SSH signing is any repository without
+// gpg.ssh.allowedSignersFile. Presence and trust are different questions, and
+// only presence is this hook's business.
+func TestSignatureDetectionDoesNotDependOnVerifiability(t *testing.T) {
+	_, _, signed := fixtureRepo(t)
+
+	// Nothing here can verify that header. git may report N, or refuse to
+	// parse it at all - both are "cannot verify", and neither is "unsigned".
+	// Run tolerantly, because the failure is the demonstration.
+	out, err := exec.Command("git", "log", "-1", "--format=%G?", signed).CombinedOutput()
+	t.Logf("git's own verdict: %q (err: %v) - not usable as a signedness test",
+		strings.TrimSpace(string(out)), err)
+
+	has, err := hasSignature(signed)
+	if err != nil {
+		t.Fatalf("reading the commit object failed: %v", err)
+	}
+	if !has {
+		t.Error("a commit with a signature header was read as unsigned.\n" +
+			"Verification is GitHub's question and it holds the keys; presence is " +
+			"this hook's question and the commit object answers it unconditionally.")
 	}
 }
