@@ -429,11 +429,11 @@ Measured from the hypervisor, which is itself a tailnet peer, so no privileged
 workload was needed and Pod Security Admission was not in the way:
 
 ```text
-root@martha:~# tailscale ping sheridan-cp-100
-ping "100.120.140.65" timed out            (x10)
+root@hypervisor:~# tailscale ping site0-cp-100
+ping "100.64.0.10" timed out            (x10)
 no reply
-root@martha:~# tailscale ping sheridan-cp-101
-ping "100.107.20.78" timed out             (x10)
+root@hypervisor:~# tailscale ping site0-cp-101
+ping "100.64.0.11" timed out             (x10)
 no reply
 ```
 
@@ -468,7 +468,7 @@ The controlled probe, run from a pod with two subjects and two controls in the
 same run:
 
 ```text
-FAIL  hypervisor-via-tailnet     100.70.14.95:8006
+FAIL  hypervisor-via-tailnet     100.64.0.1:8006
 FAIL  hypervisor-via-lan         <hypervisor local address>:8006
 OK    public-internet            1.1.1.1:443
 OK    cluster-api-on-sdn         10.10.10.100:6443
@@ -579,12 +579,12 @@ With the node finally inspectable, everything below the WireGuard transport
 checks out. Recorded as ruled out, because each of these was a candidate:
 
 ```text
-AddressStatus   tailscale0/100.120.140.65/32                100.120.140.65/32
-AddressStatus   tailscale0/fd7a:115c:a1e0::ce2e:8c42/128    (the tailnet ULA)
+AddressStatus   tailscale0/100.64.0.10/32                100.64.0.10/32
+AddressStatus   tailscale0/fd7a:115c:a1e0::aaaa/128    (the tailnet ULA)
 
-RouteStatus     52/inet4//100.70.14.95/32/0     -> tailscale0     (the hypervisor)
-RouteStatus     52/inet4//100.107.20.78/32/0    -> tailscale0     (a sibling node)
-RouteStatus     52/inet4//100.106.41.79/32/0    -> tailscale0     (a sibling node)
+RouteStatus     52/inet4//100.64.0.1/32/0     -> tailscale0     (the hypervisor)
+RouteStatus     52/inet4//100.64.0.11/32/0    -> tailscale0     (a sibling node)
+RouteStatus     52/inet4//100.64.0.12/32/0    -> tailscale0     (a sibling node)
 RouteStatus     52/inet4//100.100.100.100/32/0  -> tailscale0     (MagicDNS)
 ```
 

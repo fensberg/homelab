@@ -1835,7 +1835,7 @@ tailscaled` reported `active (running)` with a `Status:` line reading
 goes stale. Only `tailscale status` admitted it, in a health note rather than
 in the status column:
 
-    100.70.14.95  martha  martha.<tailnet>.ts.net  linux  offline
+    100.64.0.1  the hypervisor  <hypervisor>.<tailnet>.ts.net  linux  offline
 
     # Health check:
     #   - Unable to connect to the Tailscale coordination server to
@@ -1845,9 +1845,9 @@ The journal then names the cause four times a minute:
 
     control: controlhttp: failed dialing using DialPlan, falling back to DNS;
       errs=all connection attempts failed (HTTP: TLS forced: no port 80
-      dialed, HTTPS: dial tcp [2606:b740:49::102]:443: connect: cannot assign
+      dialed, HTTPS: dial tcp [2001:db8::102]:443: connect: cannot assign
       requested address)
-    derp.Recv(derp-12): dial tcp6 [2607:f740:e::811]:443: connect: cannot
+    derp.Recv(derp-12): dial tcp6 [2001:db8::811]:443: connect: cannot
       assign requested address
     netcheck: UDP is blocked, trying HTTPS
     netcheck: UDP is blocked, trying ICMP
@@ -1855,8 +1855,8 @@ The journal then names the cause four times a minute:
 `cannot assign requested address` on an IPv6 dial means the host has no global
 IPv6 source address to dial from. Confirmed in one line:
 
-    root@martha:~# ip -6 route show default
-    root@martha:~#
+    root@hypervisor:~# ip -6 route show default
+    root@hypervisor:~#
 
 Empty. This is the failure already recorded above under "Enabling IPv6
 forwarding silently destroys IPv6 connectivity on a SLAAC host" - the entry
@@ -1905,8 +1905,8 @@ The entry above pointed at the recorded cause - IPv6 forwarding breaking
     net.ipv6.conf.all.forwarding = 0
     net.ipv6.conf.default.accept_ra = 1
 
-    root@martha:~# ip -o -6 addr show scope global
-    root@martha:~#
+    root@hypervisor:~# ip -o -6 addr show scope global
+    root@hypervisor:~#
 
 Forwarding is off, so nothing suppressed the router advertisements, and yet
 there is no global IPv6 address and no default route. The recorded mechanism
@@ -1942,8 +1942,8 @@ moment the address family was forced.
 The state of the stack was the whole story, and it was more extreme than
 "missing default route":
 
-    root@martha:~# ip -6 addr show
-    root@martha:~#
+    root@hypervisor:~# ip -6 addr show
+    root@hypervisor:~#
 
 Empty. Not one address on the host, not even a link-local - while
 `net.ipv6.conf.all.disable_ipv6` was still `0`. That combination is what
@@ -1955,8 +1955,8 @@ Turning the stack off resolved it in one step, confirmed both ways:
 
     sysctl -w net.ipv6.conf.all.disable_ipv6=1 && systemctl restart tailscaled
 
-    # before: martha ... offline, plus a coordination-server health warning
-    # after:  martha ... (no offline marker, health check clear)
+    # before: the hypervisor ... offline, plus a coordination-server health warning
+    # after:  the hypervisor ... (no offline marker, health check clear)
 
     # and resolution changed with it
     getent ahosts controlplane.tailscale.com
@@ -2027,10 +2027,10 @@ everything assumed about it:
 
     magicsock: 2 active derp conns: derp-12=cr2m0s,wr255ms derp-21=cr898ms,wr897ms
     post-rebind ping of DERP region 12 okay
-    magicsock: endpoints changed: 136.30.177.42:41322 (stun), 10.10.10.100:41322 (local)
+    magicsock: endpoints changed: 203.0.113.42:41322 (stun), 10.10.10.100:41322 (local)
     magicsock: disco: node [07B/u] d:dbdb... now using 10.10.10.102:36013 mtu=1360
 
-    open-conn-track: flow TCP (TCP 100.120.140.65:47130 => 100.106.41.79:6443)
+    open-conn-track: flow TCP (TCP 100.64.0.10:47130 => 100.64.0.12:6443)
       got RST by peer
 
 Line by line, that is a healthy overlay member:
@@ -2139,14 +2139,14 @@ get right.
 `tailscale debug derp 12` shows what it really tries:
 
     Warnings:
-      Node "derp12d.tailscale.com" did not return a IPv4 STUN response
-      Node "derp12e.tailscale.com" did not return a IPv4 STUN response
-      Node "derp12f.tailscale.com" did not return a IPv4 STUN response
+      Node "derp12x.tailscale.com" did not return a IPv4 STUN response
+      Node "derp12x.tailscale.com" did not return a IPv4 STUN response
+      Node "derp12x.tailscale.com" did not return a IPv4 STUN response
     Errors:
-      Error connecting to node "derp12d..." @ "[2607:f740:e::811]:443" over
+      Error connecting to node "derp12d..." @ "[2001:db8::811]:443" over
         IPv6: dial tcp6 ...: connect: cannot assign requested address
       Error connecting to node "derp12d..." @ try 0: ... context deadline exceeded
-      Error connecting to node "derp12d..." @ try 3: dial tcp6 [2607:f740:e::811]:443:
+      Error connecting to node "derp12d..." @ try 3: dial tcp6 [2001:db8::811]:443:
         connect: cannot assign requested address
 
 Two things there matter more than the contradiction that dissolved.
@@ -2178,7 +2178,7 @@ node at all. Everything else is now ruled out.
 
 Re-run against the hostname the daemon actually dials:
 
-    curl -4 https://derp12d.tailscale.com/     derp12d: 200 in 0.029s
+    curl -4 https://derp12x.tailscale.com/     derp12d: 200 in 0.029s
 
 Twenty-nine milliseconds to a completed TLS handshake with the exact relay
 node `tailscaled` reports it cannot reach, from a shell on the same machine, at
@@ -2221,11 +2221,11 @@ amount of network work will find it.
 A capture on the hypervisor while the daemon retried, filtered to the relay
 node's address on port 443. Reading one of its attempts in order:
 
-    07:38:10.217  vmbr0 Out  192.168.50.10.48136 > 209.177.158.246.443  [S]
-    07:38:10.223  nic0  In   209.177.158.246.443 > 192.168.50.10.48136  [S.]
-    07:38:11.220  vmbr0 Out  192.168.50.10.48136 > 209.177.158.246.443  [S]   <- retransmit
-    07:38:11.225  nic0  In   209.177.158.246.443 > 192.168.50.10.48136  [S.]
-    07:38:12.260  nic0  In   209.177.158.246.443 > 192.168.50.10.48136  [S.]
+    07:38:10.217  vmbr0 Out  198.51.100.10.48136 > 198.51.100.246.443  [S]
+    07:38:10.223  nic0  In   198.51.100.246.443 > 198.51.100.10.48136  [S.]
+    07:38:11.220  vmbr0 Out  198.51.100.10.48136 > 198.51.100.246.443  [S]   <- retransmit
+    07:38:11.225  nic0  In   198.51.100.246.443 > 198.51.100.10.48136  [S.]
+    07:38:12.260  nic0  In   198.51.100.246.443 > 198.51.100.10.48136  [S.]
 
 **The SYN leaves. The SYN-ACK comes back. The ACK is never sent.** The host
 retransmits its SYN instead, as though the reply had never arrived, and the
@@ -2241,9 +2241,9 @@ interface and the socket** - inside this host's own input path.
 perfectly.** The capture is full of established flows belonging to the cluster
 nodes, translated to the hypervisor's address:
 
-    07:38:13.860  vmbr0 Out  192.168.50.10.50430 > 209.177.158.246.443  [.] ack ...
-    07:38:13.866  nic0  In   209.177.158.246.443 > 192.168.50.10.50430  [.] ack ...
-    07:38:13.866  vrf_internal Out  209.177.158.246.443 > 10.10.10.102.50430
+    07:38:13.860  vmbr0 Out  198.51.100.10.50430 > 198.51.100.246.443  [.] ack ...
+    07:38:13.866  nic0  In   198.51.100.246.443 > 198.51.100.10.50430  [.] ack ...
+    07:38:13.866  vrf_internal Out  198.51.100.246.443 > 10.10.10.102.50430
 
 Those are the nodes' own relay connections, crossing this host through the VRF
 and out, exchanging data normally. So the host forwards to that relay while
