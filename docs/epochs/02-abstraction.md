@@ -631,6 +631,50 @@ should filter for `derp`, `magicsock`, `netcheck`, `peer` or `endpoint` rather
 than tailing them, and a health check that reads this log needs to know that
 volume is not liveness.
 
+### Resolved: pods reach the hypervisor, and the CNI was never involved
+
+Re-run after the hypervisor's routing rule was fixed, from an ordinary pod with
+no host networking and no special placement:
+
+```text
+pod -> <hypervisor tailnet address>:8006     REACHABLE
+```
+
+The same probe that returned `UNREACHABLE` all session now succeeds, and
+nothing about the cluster changed between the two runs. One `ip rule` on the
+hypervisor was the entire difference.
+
+**So every finding in this section that pointed at pod networking is closed,
+and none of them were true.** Not Flannel, not the CNI, not pods failing to
+inherit node membership, not the extension. The chain was:
+
+1. The hypervisor's IPv6 stack was enabled with no addresses on it, so the
+   daemon dialled a family it could not send from and lost its control-plane
+   session. The host left the overlay.
+2. Disabling IPv6 at the stack restored registration, and the console showed
+   the host online - which looked like recovery and was not, because the relay
+   addresses come from a map of literal addresses rather than from a resolver.
+3. The data plane stayed dead because a marked reply for the host's own address
+   was routed by rules that could not deliver it locally - the collision
+   between the SDN's VRF moving the `local` table and the overlay's own rules
+   landing before it.
+4. With that fixed, the hypervisor has transport, and everything downstream of
+   it works: peer to peer, and from inside a pod.
+
+**The consequence for this file's original finding is that it is withdrawn
+entirely rather than merely re-evidenced.** Node tailnet membership does give
+pods a path. It never did not.
+
+**And the consequence for epoch 01 is that its acceptance test is unblocked.**
+The converge halted at Verify because it could not reach the hypervisor on the
+Proxmox API port; a pod can now do exactly that. Nothing else was in the way.
+
+The Cilium requirement recorded in [`03-workload.md`](03-workload.md) is
+untouched by this, for the reason recorded there: Flannel does not enforce
+NetworkPolicy, which is a property of Flannel and has nothing to do with
+reachability. It stopped being urgent last night and it has not stopped being
+required.
+
 ### A test must prove its own preconditions
 
 The durable lesson from the hours this cost. The test used was:
