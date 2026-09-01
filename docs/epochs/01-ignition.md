@@ -1408,6 +1408,62 @@ not "never change the count deliberately".
   moment a second hypervisor exists, which is exactly why that entry says
   adding a hypervisor to a running site has no safe meaning yet.
 
+## The runbook for proving this epoch from near-zero
+
+Written down because it existed only in a conversation, and the ordering
+constraints in it were each learned by being bitten.
+
+**Step 0 - land the hypervisor fixes first.** Ignition re-runs the Hypervisor
+phase, so a rebuild on a playbook without the IPv6-disable and the local-table
+routing rule recreates the exact fault that cost a night. Merge those, then
+`task configure-hypervisor SITE=<site>` to persist them on the running host -
+they were applied by hand and do not survive a reboot until the playbook has
+run. Confirm with `ip rule list | grep 5200` and `tailscale netcheck`, wanting
+`UDP: true` and a relay.
+
+**Step 1 - match the config to reality before destroying.** `demolish`
+evaluates `data.talos_cluster_health` against the _config's_
+`control_plane_count`. If the config says five and three machines are running,
+it asks whether a three-node cluster is a healthy five-node cluster, which can
+never be true, and spins the full ten-minute read timeout before failing. Set
+the count to what is actually running first.
+
+**Step 2 - know what the teardown takes with it.** `demolish` empties the
+object storage bucket, because the vendor will not delete a non-empty one, so
+the age-encrypted state backups go too. Acceptable when starting fresh
+deliberately; not something to discover afterwards.
+
+**Step 3 - tear down, directly rather than through the task runner.**
+
+    ./scripts/contractor/contractor demolish -site <site> -confirm <site>
+
+`-confirm` names the site a second time on purpose. Run it directly because the
+task runner intercepts Ctrl-C without proxying the signal, and an interrupted
+teardown is how VMs get orphaned.
+
+**Step 4 - ignite, also directly, for the same reason.**
+
+    task start SITE=<site>
+    ./scripts/contractor/contractor break-ground -site <site>
+
+`-from <phase>` resumes rather than restarting if a phase fails.
+
+**Step 5 - prove it came up healthy rather than merely finished.** The Health
+phase gates this internally; check independently that every node is Ready, that
+every Flux Kustomization and HelmRelease has reconciled, and - the check nothing
+had before - that the overlay carries traffic rather than merely showing
+members online. `scripts/survey` on the hypervisor answers the last one.
+
+**Step 6 - the acceptance test.** Everything above is setup. Change
+`control_plane_count` from three to five and **merge it**; two more machines
+must exist and join with nobody having run anything.
+
+**What this does and does not prove.** It proves the second acceptance test and
+the "nothing to three" half of the first, from a hypervisor that keeps its SDN,
+tailnet membership, API token and disk-import account. It does **not** close the
+factory-fresh gap recorded in Deferred below, which waits for a second
+hypervisor, and a successful run should not be written up as though it had.
+
 ## Outcome
 
 **Not yet signed off.** The acceptance test above is the gate. It has now been
@@ -1819,3 +1875,539 @@ reason recorded above under "the change that lets the estate reach outward
 cannot be applied from inside it" - the repair has to arrive from outside.
 And a converge that halts at Verify is the good failure: it stops before
 touching anything, so the cost of being wrong here is one job, not an estate.
+
+### The hypervisor was off the tailnet, and every test aimed at it was void
+
+The single most expensive hour of this epoch was spent diagnosing why a pod
+could not reach the hypervisor. The answer was that the hypervisor was not on
+the tailnet at the time, so the destination did not exist. Recorded at length
+because the cost was not the bug, it was everything that got built on top of a
+measurement nobody checked the preconditions of.
+
+**The signature, because it does not look like what it is.** The admin console
+showed the host offline. The host itself disagreed - `systemctl status
+tailscaled` reported `active (running)` with a `Status:` line reading
+`Connected;` and the correct addresses, because that line is written once and
+goes stale. Only `tailscale status` admitted it, in a health note rather than
+in the status column:
+
+    100.64.0.1  the hypervisor  <hypervisor>.<tailnet>.ts.net  linux  offline
+
+    # Health check:
+    #   - Unable to connect to the Tailscale coordination server to
+    #     synchronize the state of your tailnet.
+
+The journal then names the cause four times a minute:
+
+    control: controlhttp: failed dialing using DialPlan, falling back to DNS;
+      errs=all connection attempts failed (HTTP: TLS forced: no port 80
+      dialed, HTTPS: dial tcp [2001:db8::102]:443: connect: cannot assign
+      requested address)
+    derp.Recv(derp-12): dial tcp6 [2001:db8::811]:443: connect: cannot
+      assign requested address
+    netcheck: UDP is blocked, trying HTTPS
+    netcheck: UDP is blocked, trying ICMP
+
+`cannot assign requested address` on an IPv6 dial means the host has no global
+IPv6 source address to dial from. Confirmed in one line:
+
+    root@hypervisor:~# ip -6 route show default
+    root@hypervisor:~#
+
+Empty. This is the failure already recorded above under "Enabling IPv6
+forwarding silently destroys IPv6 connectivity on a SLAAC host" - the entry
+that says the symptom does not look like IPv6 and that `ip -6 route show
+default` is the first thing to check. It was recorded, and it still cost an
+hour, because nobody checked the recorded thing first.
+
+Two aggravating factors made it total rather than degraded. `tailscaled`
+resolves the coordination server and the DERP relays to IPv6 first and fails
+instantly there; and `netcheck` reports **UDP is blocked**, so there is no
+direct path either and everything depends on a DERP relay that is only being
+dialled over the broken family.
+
+**What this invalidates.** Every reachability test aimed at that address during
+the outage answered a question about a machine that was not there:
+
+- The converge that halted at Verify with "cannot reach site site0's
+  hypervisor on the Proxmox API port". Correct message, and it was read as a
+  statement about pod networking. It was a statement about the host being
+  offline.
+- The pod-versus-host comparison run to decide whether pods have a path to the
+  tailnet. Both halves are void; one of them was refused by Pod Security
+  Admission before it ran at all.
+- The finding recorded in [`02-abstraction.md`](02-abstraction.md) that node
+  tailnet membership does not give pods a path. See the correction there.
+
+**The estate could not see this about itself.** The canary watches whether
+GitHub Actions is running jobs; nothing watches whether the site's own
+hypervisor is a member of the overlay that every other component depends on.
+The host was off the tailnet for hours and the only thing that noticed was a
+human looking at a vendor's web console. That belongs to
+[`04-observability.md`](04-observability.md), and it is a better argument for
+that epoch than anything written in it so far.
+
+**Verify should say which of the two it is.** "Cannot reach the hypervisor on
+the Proxmox API port" is true whether the API is down, the host is off the
+overlay, or the address is wrong, and those have entirely different remedies.
+Checking tailnet membership before the port, and saying which failed, would
+have ended this in seconds.
+
+### The same symptom, a second cause: IPv6 half-off is worse than either end
+
+The entry above pointed at the recorded cause - IPv6 forwarding breaking
+`accept_ra` on a SLAAC host. Measured, it is not that:
+
+    net.ipv6.conf.all.forwarding = 0
+    net.ipv6.conf.default.accept_ra = 1
+
+    root@hypervisor:~# ip -o -6 addr show scope global
+    root@hypervisor:~#
+
+Forwarding is off, so nothing suppressed the router advertisements, and yet
+there is no global IPv6 address and no default route. The recorded mechanism
+produces this state; it is not the only thing that does, and the record should
+not be read as if it were.
+
+**What the error actually tells us.** `cannot assign requested address` is
+`EADDRNOTAVAIL`: the socket was created, so the kernel's IPv6 stack is up, and
+then there was no source address to send from. That is a different failure from
+IPv6 being disabled, which yields `EAFNOSUPPORT` and makes a client skip the
+family. The distinction decides the remedy, because it says the host is in
+neither of the two working states:
+
+- **IPv6 fully working:** clients use it and it succeeds.
+- **IPv6 fully disabled:** clients see no IPv6 and use IPv4 immediately.
+- **What this host is:** clients believe IPv6 is available, prefer it, dial it,
+  and fail - spending every attempt on a family that cannot work.
+
+`tailscaled` resolves the coordination server and the DERP relays to IPv6
+first, so it lands in the third state on every single connection attempt. Half
+a stack is worse than no stack, and it is the state nothing warns about.
+
+**Established, and then fixed.** IPv4 was never the problem:
+
+    ping -4 -c2 1.1.1.1           0% loss, 7ms
+    curl -4 https://controlplane.tailscale.com/health
+                                  control: 404 in 0.36s
+
+A 404 is a completed TLS handshake with the coordination server. DNS resolved
+an A record, TCP connected, the certificate verified. Every layer worked the
+moment the address family was forced.
+
+The state of the stack was the whole story, and it was more extreme than
+"missing default route":
+
+    root@hypervisor:~# ip -6 addr show
+    root@hypervisor:~#
+
+Empty. Not one address on the host, not even a link-local - while
+`net.ipv6.conf.all.disable_ipv6` was still `0`. That combination is what
+produces `EADDRNOTAVAIL` rather than `EAFNOSUPPORT`: the kernel offers the
+family, `getaddrinfo` returns AAAA records for it, a client prefers them, and
+the socket then has no source address in existence to send from.
+
+Turning the stack off resolved it in one step, confirmed both ways:
+
+    sysctl -w net.ipv6.conf.all.disable_ipv6=1 && systemctl restart tailscaled
+
+    # before: the hypervisor ... offline, plus a coordination-server health warning
+    # after:  the hypervisor ... (no offline marker, health check clear)
+
+    # and resolution changed with it
+    getent ahosts controlplane.tailscale.com
+    192.200.0.102   STREAM controlplane.tailscale.com
+
+The same name that answered with sixteen AAAA records and no A records now
+answers with IPv4. Nothing about DNS was broken; the resolver was correctly
+reporting what a host claiming IPv6 capability should be told.
+
+**A running tailscaled does not recover on its own.** It keeps the address
+family it chose at startup, so the host stays off the tailnet until the daemon
+is restarted - while `systemctl status` reports `active (running)` and a
+`Status:` line that still says `Connected`. The restart is part of the fix, not
+a courtesy.
+
+### The overlay has no data path at all: UDP blocked and no reachable relay
+
+`netcheck` on the hypervisor, after the IPv6 fault was fixed and the daemon
+restarted:
+
+    * UDP: false
+    * IPv4: (no addr found)
+    * IPv6: no, unavailable in OS
+    * Nearest DERP: unknown (no response to latency probes)
+
+    # Health check:
+    #   - Tailscale could not connect to the 'Chicago' relay server.
+
+Read together, those lines say the overlay has **no transport of any kind**:
+
+- **`UDP: false`** - no direct peer-to-peer path is possible. Every peer pair
+  must fall back to a relay.
+- **`IPv4: (no addr found)`** - a consequence rather than a second fault.
+  Discovering one's own public address is done by STUN, which is UDP, so a
+  blocked-UDP network cannot answer that question.
+- **No reachable relay** - and this is the fatal one. Blocked UDP alone is
+  survivable and common; Tailscale is designed for it and relays over HTTPS
+  instead. A blocked-UDP network _and_ no reachable relay leaves nothing.
+- **`IPv6: no, unavailable in OS`** - the intended result of the fix above,
+  confirming it took effect cleanly rather than half-way.
+
+**This is why the nodes answer nothing, and the nodes were never the problem.**
+Everything on them is correct - the interface, the addressing, the per-peer
+routes, the control-plane session. They have a peer they agree with and no
+medium to reach it through. Every hypothesis this session that placed the fault
+inside the cluster was looking at the wrong end of the connection.
+
+It also explains the shape of the original fault rather than just its cause.
+The IPv6 problem broke the _control_ plane, which is what made the hypervisor
+show as offline. Fixing it restored control-plane connectivity over IPv4 and
+the host came back online in the console - which looked like a full recovery
+and was not. Registration and transport are separate, and the console reports
+only the first.
+
+**What is not yet known** is why the relay is unreachable. Reaching the
+coordination server over IPv4 works - a forced `curl -4` returned in 0.36s -
+and a relay is the same kind of connection to a different hostname, so "TCP 443
+is blocked" does not obviously fit. Whether a relay answers on TCP at all is
+one command and has not been run. The failure could be egress filtering
+specific to those hosts, something local to the daemon, or a consequence of
+the blocked UDP that is not yet understood; guessing between them is what this
+epoch has repeatedly paid for.
+
+### Correction: the nodes' overlay works. Only the hypervisor has no transport
+
+The node's own log, read once it could be filtered, says the opposite of
+everything assumed about it:
+
+    magicsock: 2 active derp conns: derp-12=cr2m0s,wr255ms derp-21=cr898ms,wr897ms
+    post-rebind ping of DERP region 12 okay
+    magicsock: endpoints changed: 203.0.113.42:41322 (stun), 10.10.10.100:41322 (local)
+    magicsock: disco: node [07B/u] d:dbdb... now using 10.10.10.102:36013 mtu=1360
+
+    open-conn-track: flow TCP (TCP 100.64.0.10:47130 => 100.64.0.12:6443)
+      got RST by peer
+
+Line by line, that is a healthy overlay member:
+
+- **Two live relay connections.** The nodes reach the relays the hypervisor
+  cannot.
+- **STUN worked.** The node discovered its own public address, which means UDP
+  leaves the site network successfully - from inside the cluster, through the
+  hypervisor, to the internet and back.
+- **Direct peer paths.** Nodes negotiated direct disco paths to each other on
+  the site network rather than relaying.
+- **`got RST by peer` is the strongest evidence of all.** A reset is a reply.
+  Those packets crossed the tailnet between two nodes, arrived, and were
+  refused by a closed port. Node-to-node overlay traffic _works_.
+
+**So the fault is not in the cluster, not in the CNI, and not in the extension.
+It is the hypervisor, and only the hypervisor.** It is the one peer with no
+transport, which is why every peer pair involving it fails and every pair not
+involving it succeeds.
+
+That inverts the framing this whole investigation ran on. "The nodes are not
+really on the overlay" was wrong in the same way "pods do not inherit node
+membership" was wrong: both placed the fault at the end that was working.
+
+### The hypervisor reaches the relay from a shell but not from the daemon
+
+Measured on the hypervisor after the IPv6 fix:
+
+    curl -4 https://derp12.tailscale.com/     derp tcp: 200 in 0.138s
+    pvesh get /nodes/<host>/firewall/options  (empty - nothing set)
+
+A relay answers over TCP in 138 milliseconds, and no firewall policy is
+configured. Meanwhile `tailscale netcheck` on the same host at the same time
+reports `UDP: false`, no public address found, and no relay answering probes.
+
+**The shell can reach the relay and the daemon cannot.** That rules out egress
+filtering and the host firewall, which were the two leading candidates, and
+moves the question inside `tailscaled` or its sockets.
+
+A specific suspicion follows and is recorded as a suspicion. The fix applied
+earlier disabled IPv6 at the stack, and `tailscaled` binds its UDP listener on
+the IPv6 wildcard by default in order to serve both families from one socket.
+If that bind now fails, the daemon has no UDP at all - which is exactly
+`UDP: false`, no STUN result, and no relay latency probes, while TCP-based
+control-plane traffic continues to work. That would mean the earlier fix
+resolved the control plane and broke the data plane in the same step, and the
+host's apparent recovery in the admin console was the misleading half of it.
+
+It is untested. `nc -u -z` reporting success proves nothing here, because UDP
+is connectionless and that check returns success without a reply.
+
+### The daemon cannot reach a relay the same host reaches in 138ms
+
+The socket hypothesis above is disproved. `tailscaled` holds both UDP
+listeners, and the host's UDP egress works:
+
+    UNCONN  0.0.0.0:41641   users:(("tailscaled",pid=...,fd=29))
+    UNCONN     [::]:41641   users:(("tailscaled",pid=...,fd=20))
+
+    dig +short @1.1.1.1 example.com     104.20.23.154
+                                        172.66.147.243
+
+So disabling IPv6 did not break the bind, and UDP leaves this host
+successfully on port 53. What remains is a contradiction on one machine, at
+one moment, to one destination:
+
+    # from a shell
+    curl -4 https://derp12.tailscale.com/          200 in 0.138s
+
+    # from the daemon, continuously
+    derphttp.Client.Recv: connecting to derp-12 (ord)
+    derp.Recv(derp-12): ... connect to region 12 (ord): context deadline exceeded
+    netcheck: UDP is blocked, trying HTTPS
+    netcheck: UDP is blocked, trying ICMP
+
+Same host, same destination, same protocol and port. The shell completes a TLS
+handshake in 138 milliseconds; the daemon times out, every ten seconds,
+indefinitely. Note also that the error has _changed_: before the IPv6 fix these
+failed instantly with `cannot assign requested address`, and now they time out.
+That is a different failure, not the same one persisting.
+
+**What this rules out.** Not the network - a shell on this host reaches the
+relay. Not egress filtering or the host firewall - same reason, and no firewall
+policy is configured. Not the UDP stack - `dig` proves otherwise. Not the
+socket bind - both listeners are present. Not the nodes - their relay
+connections work.
+
+**What is left is between the daemon and the wire on this host**, and the
+candidates worth testing rather than choosing between are: a proxy environment
+variable applied to the service but not to an interactive shell; policy routing
+or firewall marks installed by `tailscaled` itself having gone stale, so its
+own marked packets are routed differently from everything else; or something
+in its own resolution path. Each is a command, and this epoch's record is
+mostly the cost of preferring the most plausible-sounding one.
+
+### Correction: the shell and the daemon were not dialling the same host
+
+The "shell reaches the relay, daemon cannot" contradiction recorded above was
+never established. It compared two different destinations.
+
+The shell test used `derp12.tailscale.com`. The daemon connects to the actual
+relay nodes in that region, which are `derp12d`, `derp12e` and `derp12f`. A 200
+from the first says nothing about the second, and the comparison was mine to
+get right.
+
+`tailscale debug derp 12` shows what it really tries:
+
+    Warnings:
+      Node "derp12x.tailscale.com" did not return a IPv4 STUN response
+      Node "derp12x.tailscale.com" did not return a IPv4 STUN response
+      Node "derp12x.tailscale.com" did not return a IPv4 STUN response
+    Errors:
+      Error connecting to node "derp12d..." @ "[2001:db8::811]:443" over
+        IPv6: dial tcp6 ...: connect: cannot assign requested address
+      Error connecting to node "derp12d..." @ try 0: ... context deadline exceeded
+      Error connecting to node "derp12d..." @ try 3: dial tcp6 [2001:db8::811]:443:
+        connect: cannot assign requested address
+
+Two things there matter more than the contradiction that dissolved.
+
+**Disabling IPv6 at the stack did not stop the daemon dialling IPv6.** It is
+still attempting literal IPv6 addresses and still failing with
+`cannot assign requested address`. That is not a contradiction of the earlier
+fix, it is the limit of it, and the distinction is worth keeping:
+
+- The **control plane** is reached by resolving a hostname. Disabling IPv6
+  made the resolver return IPv4 only, so that path was repaired - which is why
+  the host came back online in the console.
+- The **relays** are reached from a DERP map that carries literal addresses of
+  both families. No resolver is involved, so nothing about the resolver
+  changed them, and the daemon goes on dialling IPv6 addresses this host can
+  never source from.
+
+That is the honest account of what the earlier fix did and did not do. It
+repaired registration and left the data plane exactly where it was.
+
+**And the IPv4 attempts fail too**, by timeout rather than instantly, along
+with no STUN response over IPv4 from any of the three relay nodes. So both
+families fail for different reasons, and only one of them has been explained.
+
+Which leaves one unmeasured thing: whether this network can reach a real relay
+node at all. Everything else is now ruled out.
+
+### Established: the network reaches the relay; the daemon on that host does not
+
+Re-run against the hostname the daemon actually dials:
+
+    curl -4 https://derp12x.tailscale.com/     derp12d: 200 in 0.029s
+
+Twenty-nine milliseconds to a completed TLS handshake with the exact relay
+node `tailscaled` reports it cannot reach, from a shell on the same machine, at
+the same time, over the same protocol, port and address family.
+
+So the contradiction is real this time, and it is now a small one. Everything
+between this host and that relay works. What does not work is one process on
+it.
+
+**The full elimination, for whoever picks this up.** Each of these was a
+hypothesis, and each is now closed by a measurement rather than an argument:
+
+| Suspected                             | Ruled out by                                            |
+| ------------------------------------- | ------------------------------------------------------- |
+| The CNI / Flannel                     | a pod reached the public internet                       |
+| Pods not inheriting node membership   | peer-to-peer ping failed with no pod involved           |
+| The nodes' overlay                    | two live relay connections, STUN, and node-to-node RSTs |
+| Userspace networking on the nodes     | `tailscale0` exists and is a `tun`                      |
+| Node addressing or routing            | the address and per-peer routes are present             |
+| The local (non-overlay) path          | a VRF cannot deliver to the host's own address          |
+| Egress filtering or the host firewall | a shell reaches the relay; no firewall policy set       |
+| The UDP stack                         | `dig` over UDP answers                                  |
+| The socket bind                       | both UDP listeners are present                          |
+| The network path to the relay         | 200 in 29ms to the exact node                           |
+
+**What is left is between `tailscaled` and the wire on the hypervisor**, with
+the network, the kernel and the peers all cleared. Two candidates fit and
+neither has been tested: packet filtering that treats the daemon's traffic
+differently from a shell's - this host runs a hypervisor whose own firewalling
+uses a different backend from the one `tailscale` may be programming, which is
+a known class of conflict - or something internal to the daemon's dialling.
+
+The measurement that separates them is whether its packets leave the host at
+all. If SYNs go out and nothing returns, something on the path is dropping
+them selectively. If nothing leaves, the failure is inside the process and no
+amount of network work will find it.
+
+### The handshake is never completed: SYN out, SYN-ACK in, no ACK
+
+A capture on the hypervisor while the daemon retried, filtered to the relay
+node's address on port 443. Reading one of its attempts in order:
+
+    07:38:10.217  vmbr0 Out  198.51.100.10.48136 > 198.51.100.246.443  [S]
+    07:38:10.223  nic0  In   198.51.100.246.443 > 198.51.100.10.48136  [S.]
+    07:38:11.220  vmbr0 Out  198.51.100.10.48136 > 198.51.100.246.443  [S]   <- retransmit
+    07:38:11.225  nic0  In   198.51.100.246.443 > 198.51.100.10.48136  [S.]
+    07:38:12.260  nic0  In   198.51.100.246.443 > 198.51.100.10.48136  [S.]
+
+**The SYN leaves. The SYN-ACK comes back. The ACK is never sent.** The host
+retransmits its SYN instead, as though the reply had never arrived, and the
+relay retransmits its SYN-ACK until it gives up. The same pattern repeats on
+five separate source ports in twenty-five seconds.
+
+That is decisive about _where_ the fault is. The packets are on the wire in
+both directions, so this is not routing, not the relay, not the network and not
+the daemon failing to try. **The SYN-ACK is being dropped between the network
+interface and the socket** - inside this host's own input path.
+
+**And forwarded traffic to the same relay, at the same moment, works
+perfectly.** The capture is full of established flows belonging to the cluster
+nodes, translated to the hypervisor's address:
+
+    07:38:13.860  vmbr0 Out  198.51.100.10.50430 > 198.51.100.246.443  [.] ack ...
+    07:38:13.866  nic0  In   198.51.100.246.443 > 198.51.100.10.50430  [.] ack ...
+    07:38:13.866  vrf_internal Out  198.51.100.246.443 > 10.10.10.102.50430
+
+Those are the nodes' own relay connections, crossing this host through the VRF
+and out, exchanging data normally. So the host forwards to that relay while
+being unable to complete its own connection to it. **Locally originated and
+forwarded traffic are being treated differently**, which is what makes this a
+filtering or connection-tracking problem rather than a routing one.
+
+It also explains the earlier contradiction cleanly. `curl` completes its
+handshake; the daemon does not. Both send from the same address to the same
+destination, and the one difference between them is that `tailscaled` marks its
+own packets with a firewall mark so they bypass the tunnel. A rule that treats
+marked traffic differently on the way in would produce exactly this.
+
+**Candidates, none tested:** the host firewall backend and the rules
+`tailscale` programs disagreeing - this is a hypervisor whose own firewalling
+uses a different mechanism, and both write rules; connection tracking failing
+to create or associate an entry so the reply is classed invalid and dropped;
+or a policy or reverse-path check applying to input. What they have in common
+is that all three live in netfilter, and none of them is visible from anywhere
+except this host.
+
+### The SDN's VRF moved the local routing table, and the overlay's marks now miss it
+
+The mechanism, and it is an interaction between two things this estate does
+deliberately rather than a defect in either.
+
+**What the overlay installs.** A mangle rule pair that carries a firewall mark
+across a connection:
+
+    PREROUTING  -m conntrack --ctstate RELATED,ESTABLISHED
+                -m connmark ! --mark 0x0/0xff0000
+                -j CONNMARK --restore-mark
+    OUTPUT      -m conntrack --ctstate NEW -m mark ! --mark 0x0/0xff0000
+                -j CONNMARK --save-mark
+
+The daemon marks its own outbound packets so they bypass the tunnel. OUTPUT
+saves that mark onto the connection; PREROUTING restores it onto every reply
+that comes back. So **an inbound reply to a connection the daemon opened
+arrives carrying the mark.**
+
+**What the routing rules then do with it.** Note the priorities:
+
+    1000:   from all lookup [l3mdev-table]
+    5210:   from all fwmark 0x80000/0xff0000 lookup main
+    5230:   from all fwmark 0x80000/0xff0000 lookup default
+    5250:   from all fwmark 0x80000/0xff0000 unreachable
+    5270:   from all lookup 52
+    32765:  from all lookup local
+    32766:  from all lookup main
+
+**The `local` table is at 32765, not at 0 where it normally sits.** Moving it is
+the standard recipe for VRF support - the `l3mdev` rule at 1000 has to be
+consulted before local delivery, so the local rule is deleted from priority 0
+and re-added high. This host runs an EVPN VRF for the site network, which is
+this repository's own design decision, so that move is ours.
+
+The overlay's rules were then inserted at 5210-5250, which is **before** 32765.
+
+So a marked packet destined for this host's own address is matched by rule 5210
+and looked up in `main` - which has no local route for it - and then 5230, and
+then 5250, which is `unreachable`. It never reaches the `local` table at all,
+and is therefore never delivered to the socket waiting for it.
+
+**Every observation follows from that.** The SYN leaves normally, because the
+output path is unaffected. The SYN-ACK arrives at the interface, gets the mark
+restored in PREROUTING, and is routed by rules that cannot deliver locally - so
+the socket never sees it and the daemon retransmits its SYN. `curl` is
+untouched because it sets no mark. The nodes' relay connections through this
+host are untouched because they are _forwarded_, which is the case the mark was
+designed for and which never needs the local table. And connection tracking
+reports a steady count of invalid packets across every CPU, which is what a
+reply that cannot be associated looks like from that side.
+
+**Neither component is misconfigured on its own.** The VRF needs the local rule
+moved. The overlay needs its marks. They are only incompatible in combination,
+and only for traffic the host originates itself - which is the smallest and
+least-tested slice of what either was set up to handle.
+
+**Confirmed.** One rule, inserted ahead of the overlay's, letting marked packets
+consult the local table first:
+
+    ip rule add pref 5200 from all fwmark 0x80000/0xff0000 lookup local
+
+Fifteen seconds later, on a host that had had no transport for hours:
+
+    * UDP: true
+    * IPv4: yes, <public address>:43628
+
+    site0-cp-101  tagged-devices  linux  active; relay "ord", tx 828 rx 2388
+
+`UDP: false` became `true`, the host discovered its own public address for the
+first time, and a peer went from silence to an active relayed session with
+traffic counted in both directions. Nothing else was changed.
+
+That is the whole fault. Everything else this session chased - the CNI, pod
+egress, node membership, userspace networking, the socket bind - was a
+consequence of a marked reply packet being routed to a table that could not
+deliver it locally.
+
+### A node's tailnet address does not survive a reboot
+
+The cluster nodes join as **ephemeral** devices, which is what the auth key
+mints. An ephemeral device is deregistered when it goes offline, so a node that
+reboots comes back as a new device with a **different tailnet address**.
+
+That is the right default - it stops dead nodes accumulating in the tailnet -
+but it means no tailnet address of a node may be written down, pinned in
+config, or referenced by anything that outlives a reboot. The hypervisor is
+the opposite case: it is not ephemeral, and its address is stable enough that
+the config holds it today. Noticed while reading the device list for another
+reason, not by anything failing yet.

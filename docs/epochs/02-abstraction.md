@@ -375,6 +375,348 @@ was rejected is the one that actually delivers pod egress.
 The deciding constraint was never the endpoint. It was whether pod traffic can
 reach the tailnet at all, and that was assumed rather than tested.
 
+### Correction: this was measured against a host that was offline
+
+**The finding above is not established, and the reasoning built on it does not
+stand.** It is left in place rather than deleted because the correction is the
+more useful record.
+
+The evidence was `nc` from inside a pod to the hypervisor's tailnet address,
+timing out on both 8006 and 22, read as "both ports, so it is not about the
+Proxmox API". That inference is sound only if the destination was reachable at
+all. It was not: the hypervisor had dropped off the tailnet, for reasons
+recorded in [`01-ignition.md`](01-ignition.md). Both ports time out identically
+when the host is not there, which is exactly what "both ports" was taken to
+rule out.
+
+So the Flannel masquerade mechanism is a hypothesis with no evidence behind it,
+not a measured result. It may still be true - a pod reaching a tailnet address
+is a real question and the answer is not obviously yes - but it has not been
+tested, and the test is only valid while the hypervisor is a live tailnet peer.
+That is now the first precondition of running it.
+
+The decision reasoning above is affected in proportion. The argument that the
+Tailscale operator should be reconsidered rested on node extensions having been
+shown not to deliver pod egress. Nothing has been shown. The separate point
+that the original objection dissolves once the config holds a name resolved by
+split-horizon DNS still stands on its own, because it was never about this
+measurement.
+
+### Re-measured against a live peer: still unreachable
+
+The test was re-run once the hypervisor was back on the tailnet, and it gives
+the same answer it gave before: a pod cannot open 8006 on the hypervisor's
+tailnet address. This time the destination was a live peer, so the result means
+something.
+
+That does not restore the original finding wholesale - the reasoning in it
+("both ports, so it is not about the Proxmox API") was invalid and stays
+retracted - but the headline claim now has one valid measurement behind it
+rather than none.
+
+**What is still unmeasured, and must not be assumed again.** Whether the
+_node_ can reach the hypervisor over the tailnet has never been tested. Pod
+Security Admission refuses the host-network pod that would answer it, correctly,
+so the measurement has to come from somewhere else - `tailscale ping` from the
+hypervisor to a node exercises the same path from the other end and needs no
+privileged workload. Until that is run, "pods do not inherit node membership"
+and "the nodes are not really on the tailnet" both fit the evidence equally,
+and they have completely different fixes.
+
+### Settled: the nodes do not carry tailnet traffic, and the CNI was never the subject
+
+Measured from the hypervisor, which is itself a tailnet peer, so no privileged
+workload was needed and Pod Security Admission was not in the way:
+
+```text
+root@hypervisor:~# tailscale ping site0-cp-100
+ping "100.64.0.10" timed out            (x10)
+no reply
+root@hypervisor:~# tailscale ping site0-cp-101
+ping "100.64.0.11" timed out             (x10)
+no reply
+```
+
+**Peer to peer, and no reply.** No pod, no CNI, no Flannel anywhere in that
+path. The nodes appear in the admin console as online, tagged devices - so
+they authenticate and hold a control-plane session - and then answer nothing on
+the data plane.
+
+That resolves the question this section has been circling. It is not that pods
+fail to inherit node membership. **The membership itself is registration
+without reachability.** Every conclusion that pointed at the CNI, this file's
+original finding included, pointed at a layer that was never involved.
+
+**Cilium is not the fix for this, and nothing here justifies rebuilding the
+cluster.** Cilium remains required for NetworkPolicy enforcement, which is a
+separate argument recorded in [`03-workload.md`](03-workload.md) and untouched
+by this - but the urgency that came from believing it fixed the converge is
+gone, and the rebuild that was being planned to deliver it has no basis.
+
+**The leading hypothesis, recorded as a hypothesis.** A tailscale container
+that runs in userspace-networking mode registers with the coordination server
+and creates no TUN device, which presents exactly this way: online in the
+console, unreachable on the wire. The extension is configured in `talos.tf`
+with an auth key, tags and an empty route list, and says nothing either way
+about userspace mode. That is worth checking first because it is cheap and it
+fits, but it is not established, and this epoch has already paid for the habit
+of building on the most plausible-sounding explanation.
+
+### The local path does not work either, and the VRF claim survives testing
+
+The controlled probe, run from a pod with two subjects and two controls in the
+same run:
+
+```text
+FAIL  hypervisor-via-tailnet     100.64.0.1:8006
+FAIL  hypervisor-via-lan         <hypervisor local address>:8006
+OK    public-internet            1.1.1.1:443
+OK    cluster-api-on-sdn         10.10.10.100:6443
+```
+
+The controls are what make this readable. **Pods have working egress** - a pod
+opened a socket to the public internet, which means Flannel is doing its job
+and every version of "the CNI cannot get traffic out" is wrong. The SDN path
+works too. Only the hypervisor is unreachable, and it is unreachable by _both_
+of its addresses.
+
+**That confirms the assertion in `talos.tf`**, which is worth stating plainly
+because most of tonight's assertions did not survive contact:
+
+> the node subnet lives in an EVPN VRF, and a VRF cannot deliver to a local
+> address in another VRF ... so no amount of routing makes it reachable from a
+> pod
+
+Traffic from a pod transits the hypervisor perfectly well - that is what the
+public-internet control proves - and still cannot be delivered to the
+hypervisor's own management address, because the listening socket is in a
+different VRF from the arriving packet. Transit and delivery are different
+things, and this is the case that separates them.
+
+**So the overlay is not an accident of history in this path; it is the only
+path there is.** The previous section asked whether the cluster needs the
+overlay to reach the hypervisor at all, on the grounds that the workstation is
+no longer remote. The answer is yes for anything running _inside_ the cluster:
+the local address is not merely inconvenient from there, it is unreachable by
+construction. The overlay data plane has to be repaired rather than routed
+around.
+
+That does not apply to the workstation, which is not in the cluster and reaches
+the local address directly - and this is precisely the "one host, two
+endpoints" problem this file already records. The endpoint that works depends
+on where the caller is standing: a pod must use the overlay, the workstation
+must use the local address, and neither can use the other's. A single address
+in the site configuration cannot be right for both, which is the argument for
+the field holding a **name** resolved by split-horizon DNS rather than an
+address, made here by measurement rather than by preference.
+
+### The overlay may not need to be in this path at all
+
+The stronger question, and it is a design question rather than a bug.
+
+This epoch already records that "the overlay network is load-bearing for
+ignition only because the workstation is remote", and that running from a
+machine on the hypervisor's own network "removes that dependency and leaves the
+overlay network for remote access, which is what it is actually for". That
+condition has quietly become true: the workstation is now a virtual machine
+beside the estate on the site network, not a remote laptop, and it is not a
+tailnet member.
+
+The site configuration holds the hypervisor's **tailnet** address where it
+could hold the address it answers on locally. Everything that has failed
+tonight failed on the tailnet path; nothing has yet been shown to fail on the
+local one, because nothing has tried it.
+
+So before repairing the overlay data plane, it is worth measuring whether the
+cluster needs the overlay to reach the hypervisor at all. `talos.tf` asserts it
+does - that an EVPN VRF cannot deliver to a local address in another VRF, so
+"no amount of routing makes it reachable from a pod" - and that assertion has
+never been tested. If a pod can open the API on the local address, the overlay
+comes out of this path entirely, and with it the whole class of failure that
+consumed this session.
+
+### Not userspace networking: the TUN device exists and the service is running
+
+The first thing the new `talosconfig` verb was used for, and it disproved the
+leading explanation rather than confirming it:
+
+```text
+NODE           TYPE         ID           TYPE   KIND   OPER STATE   LINK STATE
+10.10.10.100   LinkStatus   tailscale0   nohdr  tun    unknown      true
+
+ID       ext-tailscale
+STATE    Running
+HEALTH   ?
+EVENTS   [Running]: Started task ext-tailscale (PID 2377) ... (5h31m ago)
+```
+
+`tailscale0` exists, is a `tun`, and its link state is up. A userspace-mode
+tailscaled creates no TUN device at all, so that hypothesis is dead. The
+extension service has been running for five and a half hours without
+restarting, so it is not crash-looping either.
+
+Which leaves a node that has a control-plane session, a tagged registration
+visible in the admin console, and a working tunnel interface - and still
+answers nothing from another peer. The interface existing is not the same as
+the interface being addressed and routed, and neither of those has been looked
+at yet.
+
+Worth noting `HEALTH ?` rather than a healthy marker. Talos reports unknown
+health for an extension service that declares no health check, so this is
+probably not a signal in itself - but it does mean the estate has no health
+signal at all for the component the whole overlay depends on, which is the same
+observability gap recorded against the hypervisor in
+[`01-ignition.md`](01-ignition.md).
+
+**The verb earned itself immediately, and that is the wider point.** This
+question had been unanswerable all session; the answer took one command once
+the credential could be rendered. Two hypotheses had been built on top of the
+unanswerable version of it, and both were wrong.
+
+### Addressing and routing are correct: the failure is in the data path
+
+With the node finally inspectable, everything below the WireGuard transport
+checks out. Recorded as ruled out, because each of these was a candidate:
+
+```text
+AddressStatus   tailscale0/100.64.0.10/32                100.64.0.10/32
+AddressStatus   tailscale0/fd7a:115c:a1e0::aaaa/128    (the tailnet ULA)
+
+RouteStatus     52/inet4//100.64.0.1/32/0     -> tailscale0     (the hypervisor)
+RouteStatus     52/inet4//100.64.0.11/32/0    -> tailscale0     (a sibling node)
+RouteStatus     52/inet4//100.64.0.12/32/0    -> tailscale0     (a sibling node)
+RouteStatus     52/inet4//100.100.100.100/32/0  -> tailscale0     (MagicDNS)
+```
+
+- **The interface is addressed.** `tailscale0` carries the tailnet address the
+  admin console lists for this node, and the ULA. An unaddressed tunnel would
+  have explained everything; it is not that.
+- **The routes exist**, one per peer, in Tailscale's own table 52 - including a
+  route to the hypervisor specifically.
+- **The control plane is live.** The log shows a peer's disco key changing at
+  the moment the hypervisor's daemon was restarted, followed by
+  `wgengine: Reconfig: configuring userspace WireGuard config (with 3 peers)`.
+  The node learned about that restart within seconds, so it is talking to the
+  coordination server continuously.
+
+Note that "userspace WireGuard" in that line is not the userspace-networking
+mode ruled out above - `tailscaled` always runs the WireGuard implementation in
+userspace. The TUN device is what distinguishes the two, and it is present.
+
+**So the remaining suspect is the transport.** Registration, configuration,
+addressing and routing are all correct, and two peers that agree about each
+other still exchange nothing. The open question is whether either end has a
+working path at all: `netcheck` on the hypervisor reported **UDP is blocked**,
+which forces every peer pair onto a DERP relay, and the hypervisor's relay
+connections were broken for hours by the IPv6 fault recorded in
+[`01-ignition.md`](01-ignition.md). Whether the nodes ever established relay
+paths of their own has not been looked at.
+
+### The extension's log is unreadable without filtering
+
+An operational finding rather than a defect, and it cost time. `ext-tailscale`
+logs a line every fifteen seconds, indefinitely:
+
+```text
+localapi: [POST] /localapi/v0/debug
+```
+
+Something polls that endpoint on a timer, and the result is that the log is
+almost entirely that one line. The three lines that mattered - a disco key
+change and the WireGuard reconfiguration - were buried in hundreds of them.
+
+The hypervisor's journal named its own fault four times a minute and was read
+in seconds; this one hides its content in noise. Anything reading these logs
+should filter for `derp`, `magicsock`, `netcheck`, `peer` or `endpoint` rather
+than tailing them, and a health check that reads this log needs to know that
+volume is not liveness.
+
+### Resolved: pods reach the hypervisor, and the CNI was never involved
+
+Re-run after the hypervisor's routing rule was fixed, from an ordinary pod with
+no host networking and no special placement:
+
+```text
+pod -> <hypervisor tailnet address>:8006     REACHABLE
+```
+
+The same probe that returned `UNREACHABLE` all session now succeeds, and
+nothing about the cluster changed between the two runs. One `ip rule` on the
+hypervisor was the entire difference.
+
+**So every finding in this section that pointed at pod networking is closed,
+and none of them were true.** Not Flannel, not the CNI, not pods failing to
+inherit node membership, not the extension. The chain was:
+
+1. The hypervisor's IPv6 stack was enabled with no addresses on it, so the
+   daemon dialled a family it could not send from and lost its control-plane
+   session. The host left the overlay.
+2. Disabling IPv6 at the stack restored registration, and the console showed
+   the host online - which looked like recovery and was not, because the relay
+   addresses come from a map of literal addresses rather than from a resolver.
+3. The data plane stayed dead because a marked reply for the host's own address
+   was routed by rules that could not deliver it locally - the collision
+   between the SDN's VRF moving the `local` table and the overlay's own rules
+   landing before it.
+4. With that fixed, the hypervisor has transport, and everything downstream of
+   it works: peer to peer, and from inside a pod.
+
+**The consequence for this file's original finding is that it is withdrawn
+entirely rather than merely re-evidenced.** Node tailnet membership does give
+pods a path. It never did not.
+
+**And the consequence for epoch 01 is that its acceptance test is unblocked.**
+The converge halted at Verify because it could not reach the hypervisor on the
+Proxmox API port; a pod can now do exactly that. Nothing else was in the way.
+
+The Cilium requirement recorded in [`03-workload.md`](03-workload.md) is
+untouched by this, for the reason recorded there: Flannel does not enforce
+NetworkPolicy, which is a property of Flannel and has nothing to do with
+reachability. It stopped being urgent last night and it has not stopped being
+required.
+
+### A test must prove its own preconditions
+
+The durable lesson from the hours this cost. The test used was:
+
+```text
+pod -> <hypervisor tailnet address>:8006   ->  timed out
+```
+
+It cannot distinguish "there is no path" from "there is nothing there", and it
+was read as the first while the second was true. Every subsequent design
+decision inherited that.
+
+A reachability test in this estate should therefore carry a control in the same
+run: something known to be reachable from the same place, so a failure of the
+subject is visible against a success of the control. A pod probing a tailnet
+address should also probe a public address and a cluster-local one. If all
+three fail, the pod has no egress at all and the tailnet is not the subject; if
+only the tailnet one fails, the result means what it appears to mean.
+
+This is the same rule as "measure from where the traffic starts", extended to
+the other end: establish that the destination is answering before drawing
+conclusions from it not answering.
+
+### Topology note: the workstation is not on the tailnet
+
+Worth recording because it is easy to assume otherwise and it changes what a
+test from there proves. The development workstation is a virtual machine beside
+the estate rather than a member of the overlay - it reaches the cluster API and
+the state database over the site network directly. Only the hypervisor and the
+cluster nodes are tailnet members.
+
+So a successful `task kubectl` from the workstation says nothing about the
+overlay, and the workstation cannot be used to test tailnet reachability at
+all. The two machines that can are the hypervisor and the nodes.
+
+**The process finding is the durable half, and it is the same one as before,
+one level up.** The earlier entry says: measure from where the traffic starts
+before designing what carries it. This adds: establish that the destination is
+answering before drawing conclusions from it not answering. Four confident
+wrong diagnoses became five, and the fifth was built on a test whose
+preconditions nobody checked.
+
 ### What remains open
 
 - **A forwarder on the hypervisor**, bound inside `vrf_internal`, forwarding one

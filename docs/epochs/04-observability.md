@@ -41,6 +41,54 @@ Explicitly out of scope:
   deserves its own decision rather than arriving as a free extra.
 - Distributed tracing. There is nothing here yet that would benefit.
 
+## Known driver: nothing watches whether the estate is on its own network
+
+The strongest argument for this epoch, and it arrived by costing a night rather
+than by being reasoned about.
+
+The site's hypervisor left the overlay network and stayed off it for hours.
+Nothing noticed. The scope above lists CPU, memory, disk pressure, etcd latency
+and pod evictions - every one of which would have been perfectly healthy
+throughout, because the cluster was fine. What was broken was the network the
+estate uses to reach itself, and there is no signal for it anywhere.
+
+**What the existing signals could and could not see:**
+
+- The **Health phase** is a converge-time gate. It had passed, and by the time
+  this mattered it no longer existed.
+- The **estate canary** watches whether GitHub Actions is running jobs. It
+  correctly reported a failed converge and could say nothing about why.
+- The **vendor's admin console** showed the host as online for the entire
+  outage. It reports registration with the coordination server, not whether any
+  traffic can pass.
+
+That last one is the finding worth carrying into this epoch's design.
+**Registration is not reachability**, and every cheap way to check a mesh -
+querying the vendor's API, reading a device list, watching a daemon's own
+`active (running)` status - reports the first while the question is always the
+second. A monitor built on any of them would have been green throughout.
+
+**What the shape of the fault implies for the check.** Every peer pair
+involving the hypervisor failed and every pair not involving it succeeded. That
+signature localises the fault immediately, and it is only visible **pairwise**:
+a star check against one hub would have reported the mesh broken and pointed at
+nothing. As sites and hypervisors are added the pairs grow quadratically, so
+the set has to be derived from the site configuration rather than listed, and
+each vantage point has to report its own row.
+
+**Where it can run.** Only a member of the overlay can measure it, which means
+the hypervisors rather than the workstation - the workstation is not a member.
+But a monitor inside the estate cannot report that the estate is down, which is
+precisely what the canary already exists to do from outside without holding any
+credential that reaches in. So the division is: peers measure and report, and
+the canary notices when reports stop arriving.
+
+`scripts/survey` is the first increment of this. It runs on a peer, probes
+every peer it can see rather than trusting their status, and reports one row of
+the matrix; run on each hypervisor, the rows assemble into the whole. This
+epoch owns making it periodic, making its output land somewhere durable, and
+deciding what a hole in the mesh should page for.
+
 ## Decisions
 
 _Recorded as they are made._

@@ -1023,6 +1023,155 @@
       when: ipv6_fwd.changed
       tags: [routing]
 
+    # Turn IPv6 off at the stack, not just at the interfaces.
+    #
+    # The task above assumed the default route would return on the next router
+    # advertisement. On a network that carries no IPv6 at all, it never does,
+    # and the host is left in a state that is worse than either end:
+    #
+    #   net.ipv6.conf.all.disable_ipv6 = 0   the stack is up, AF_INET6
+    #                                        sockets can be created
+    #   ip -6 addr show                      completely empty - no global
+    #                                        address, not even a link-local
+    #
+    # A program therefore sees an IPv6-capable host, resolves AAAA records,
+    # prefers them, dials, and gets EADDRNOTAVAIL - "cannot assign requested
+    # address" - because the socket exists and has nothing to send from. That
+    # is a different error from IPv6 being absent, which yields EAFNOSUPPORT
+    # and makes a client skip the family and use IPv4 immediately.
+    #
+    # It cost this estate its overlay network. tailscaled resolves the
+    # coordination server and the DERP relays to IPv6 first, so every single
+    # connection attempt landed there and failed; the hypervisor dropped off
+    # the tailnet, and every reachability test aimed at it for hours afterwards
+    # answered a question about a machine that was not present. See
+    # docs/epochs/01-ignition.md.
+    #
+    # Setting this to 1 makes the absence honest: getaddrinfo stops returning
+    # AAAA, clients use IPv4, and the overlay comes back. Confirmed on the
+    # hypervisor before this was written, rather than assumed.
+    #
+    # The intent this encodes is the operator's: the WAN is not to carry IPv6.
+    # Nothing in this estate requires IPv6 internally either - the SDN, the
+    # advertised subnets and the cluster are IPv4 throughout - so there is
+    # nothing to trade away. If IPv6 is ever wanted, it has to be wanted
+    # properly: a working global address and default route, not a stack with
+    # no addresses on it.
+    - name: Disable IPv6 at the stack
+      ansible.posix.sysctl:
+        name: "{{ item }}"
+        value: "1"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        - net.ipv6.conf.all.disable_ipv6
+        - net.ipv6.conf.default.disable_ipv6
+      register: ipv6_off
+      tags: [routing]
+
+    # A running tailscaled does not re-evaluate this on its own: it keeps the
+    # address family it decided on at startup, so the host stays off the
+    # tailnet until it is restarted. Doing it here rather than telling the
+    # operator to, because the failure it prevents is invisible - the daemon
+    # reports "active (running)" and a stale "Connected" status line while
+    # being unreachable.
+    - name: Restart tailscaled so it stops preferring an address family that cannot work
+      ansible.builtin.systemd_service:
+        name: tailscaled
+        state: restarted
+      when: ipv6_off.changed
+      tags: [routing]
+
+    # Let the host's own marked replies reach the local routing table.
+    #
+    # This is the collision between two things this estate does deliberately,
+    # and it cost a night to find. Written at length because nothing about the
+    # symptom points at it.
+    #
+    # The overlay marks packets the daemon originates so they bypass the
+    # tunnel, saves that mark onto the connection at OUTPUT, and restores it
+    # onto every reply at PREROUTING. So a reply to a connection the daemon
+    # opened arrives carrying the mark.
+    #
+    # Separately, VRF support requires the `local` routing table to be moved
+    # off priority 0 - deleted there and re-added high - so that the l3mdev
+    # rule is consulted before local delivery. This host runs an EVPN VRF for
+    # the site network, so `local` sits at 32765.
+    #
+    # The overlay's own rules land at 5210-5250, which is *before* 32765:
+    #
+    #   5210  fwmark 0x80000  lookup main         (no local route)
+    #   5230  fwmark 0x80000  lookup default      (empty)
+    #   5250  fwmark 0x80000  unreachable         <- reply dies here
+    #   32765 lookup local                        <- never reached
+    #
+    # A marked reply for this host's own address is therefore routed to a
+    # table that cannot deliver it, and the socket waiting for it never sees
+    # it. The daemon retransmits its SYN forever while the peer retransmits a
+    # SYN-ACK that arrives on the wire and is discarded on the way in.
+    #
+    # Neither component is wrong alone. The VRF needs `local` moved; the
+    # overlay needs its marks. They are incompatible only for traffic the host
+    # originates itself, which is why forwarded traffic - every cluster node's
+    # own overlay connection through this host - kept working throughout, and
+    # why the fault looked like it was in the cluster.
+    #
+    # One rule ahead of the overlay's fixes it: consult `local` first for
+    # marked packets. Confirmed on a live host - `UDP: false` became `true`,
+    # the host discovered its public address, and a peer went from silence to
+    # an active session with traffic in both directions.
+    #
+    # THIS APPLIES TO EVERY HYPERVISOR IN EVERY SITE. Any host running the SDN
+    # has the VRF, so any host running the overlay has this collision. It is
+    # per-host by construction, which is why it lives here rather than
+    # anywhere site-scoped.
+    #
+    # Added by a drop-in rather than a boot script so it is re-applied every
+    # time the daemon starts, including after a crash. `ip rule add` is not
+    # idempotent - it appends duplicates - so it is guarded.
+    # copy does not create intermediate directories, and this one does not
+    # exist on a host where nothing has ever dropped in a unit override.
+    - name: Ensure the overlay daemon's drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/tailscaled.service.d
+        state: directory
+        mode: "0755"
+      when: configure_overlay | bool
+      tags: [routing]
+
+    - name: Ensure the overlay daemon's own replies can reach the local table
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/tailscaled.service.d/10-local-table-rule.conf
+        mode: "0644"
+        content: |
+          # Managed by hypervisor-prep.yml. See the comment there for why.
+          [Service]
+          ExecStartPost=/bin/sh -c 'ip rule list | grep -q "^5200:" || ip rule add pref 5200 from all fwmark 0x80000/0xff0000 lookup local'
+      register: local_table_rule
+      when: configure_overlay | bool
+      tags: [routing]
+
+    - name: Reload systemd so the drop-in is picked up
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when:
+        - configure_overlay | bool
+        - local_table_rule.changed
+      tags: [routing]
+
+    # Applied now as well as on the next start, because the drop-in alone does
+    # nothing until something restarts the daemon - and the host is unreachable
+    # over the overlay until then.
+    - name: Apply the rule to the running host
+      ansible.builtin.command:
+        cmd: ip rule add pref 5200 from all fwmark 0x80000/0xff0000 lookup local
+      register: rule_now
+      changed_when: rule_now.rc == 0
+      failed_when: rule_now.rc != 0 and 'File exists' not in rule_now.stderr
+      when: configure_overlay | bool
+      tags: [routing]
+
     - name: Advertise the SDN subnet over Tailscale
       ansible.builtin.command: tailscale set --advertise-routes={{ advertise_routes }}
       when:
