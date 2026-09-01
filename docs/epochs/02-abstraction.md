@@ -535,6 +535,44 @@ never been tested. If a pod can open the API on the local address, the overlay
 comes out of this path entirely, and with it the whole class of failure that
 consumed this session.
 
+### Not userspace networking: the TUN device exists and the service is running
+
+The first thing the new `talosconfig` verb was used for, and it disproved the
+leading explanation rather than confirming it:
+
+```text
+NODE           TYPE         ID           TYPE   KIND   OPER STATE   LINK STATE
+10.10.10.100   LinkStatus   tailscale0   nohdr  tun    unknown      true
+
+ID       ext-tailscale
+STATE    Running
+HEALTH   ?
+EVENTS   [Running]: Started task ext-tailscale (PID 2377) ... (5h31m ago)
+```
+
+`tailscale0` exists, is a `tun`, and its link state is up. A userspace-mode
+tailscaled creates no TUN device at all, so that hypothesis is dead. The
+extension service has been running for five and a half hours without
+restarting, so it is not crash-looping either.
+
+Which leaves a node that has a control-plane session, a tagged registration
+visible in the admin console, and a working tunnel interface - and still
+answers nothing from another peer. The interface existing is not the same as
+the interface being addressed and routed, and neither of those has been looked
+at yet.
+
+Worth noting `HEALTH ?` rather than a healthy marker. Talos reports unknown
+health for an extension service that declares no health check, so this is
+probably not a signal in itself - but it does mean the estate has no health
+signal at all for the component the whole overlay depends on, which is the same
+observability gap recorded against the hypervisor in
+[`01-ignition.md`](01-ignition.md).
+
+**The verb earned itself immediately, and that is the wider point.** This
+question had been unanswerable all session; the answer took one command once
+the credential could be rendered. Two hypotheses had been built on top of the
+unanswerable version of it, and both were wrong.
+
 ### A test must prove its own preconditions
 
 The durable lesson from the hours this cost. The test used was:
