@@ -2020,6 +2020,68 @@ specific to those hosts, something local to the daemon, or a consequence of
 the blocked UDP that is not yet understood; guessing between them is what this
 epoch has repeatedly paid for.
 
+### Correction: the nodes' overlay works. Only the hypervisor has no transport
+
+The node's own log, read once it could be filtered, says the opposite of
+everything assumed about it:
+
+    magicsock: 2 active derp conns: derp-12=cr2m0s,wr255ms derp-21=cr898ms,wr897ms
+    post-rebind ping of DERP region 12 okay
+    magicsock: endpoints changed: 136.30.177.42:41322 (stun), 10.10.10.100:41322 (local)
+    magicsock: disco: node [07B/u] d:dbdb... now using 10.10.10.102:36013 mtu=1360
+
+    open-conn-track: flow TCP (TCP 100.120.140.65:47130 => 100.106.41.79:6443)
+      got RST by peer
+
+Line by line, that is a healthy overlay member:
+
+- **Two live relay connections.** The nodes reach the relays the hypervisor
+  cannot.
+- **STUN worked.** The node discovered its own public address, which means UDP
+  leaves the site network successfully - from inside the cluster, through the
+  hypervisor, to the internet and back.
+- **Direct peer paths.** Nodes negotiated direct disco paths to each other on
+  the site network rather than relaying.
+- **`got RST by peer` is the strongest evidence of all.** A reset is a reply.
+  Those packets crossed the tailnet between two nodes, arrived, and were
+  refused by a closed port. Node-to-node overlay traffic _works_.
+
+**So the fault is not in the cluster, not in the CNI, and not in the extension.
+It is the hypervisor, and only the hypervisor.** It is the one peer with no
+transport, which is why every peer pair involving it fails and every pair not
+involving it succeeds.
+
+That inverts the framing this whole investigation ran on. "The nodes are not
+really on the overlay" was wrong in the same way "pods do not inherit node
+membership" was wrong: both placed the fault at the end that was working.
+
+### The hypervisor reaches the relay from a shell but not from the daemon
+
+Measured on the hypervisor after the IPv6 fix:
+
+    curl -4 https://derp12.tailscale.com/     derp tcp: 200 in 0.138s
+    pvesh get /nodes/<host>/firewall/options  (empty - nothing set)
+
+A relay answers over TCP in 138 milliseconds, and no firewall policy is
+configured. Meanwhile `tailscale netcheck` on the same host at the same time
+reports `UDP: false`, no public address found, and no relay answering probes.
+
+**The shell can reach the relay and the daemon cannot.** That rules out egress
+filtering and the host firewall, which were the two leading candidates, and
+moves the question inside `tailscaled` or its sockets.
+
+A specific suspicion follows and is recorded as a suspicion. The fix applied
+earlier disabled IPv6 at the stack, and `tailscaled` binds its UDP listener on
+the IPv6 wildcard by default in order to serve both families from one socket.
+If that bind now fails, the daemon has no UDP at all - which is exactly
+`UDP: false`, no STUN result, and no relay latency probes, while TCP-based
+control-plane traffic continues to work. That would mean the earlier fix
+resolved the control plane and broke the data plane in the same step, and the
+host's apparent recovery in the admin console was the misleading half of it.
+
+It is untested. `nc -u -z` reporting success proves nothing here, because UDP
+is connectionless and that check returns success without a reply.
+
 ### A node's tailnet address does not survive a reboot
 
 The cluster nodes join as **ephemeral** devices, which is what the auth key
