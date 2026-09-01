@@ -1,4 +1,4 @@
-// Command ignite is the start button. It ignites the homelab management
+// Command contractor is the start button. It builds the homelab management
 // cluster from nothing, running ten phases in order:
 //
 //	 1 render     - pull secrets out of 1Password into gitignored files
@@ -65,13 +65,13 @@ const usage = `contractor manages the lifecycle of a site.
 usage: contractor <verb> [flags]
 
 verbs:
-  ignite       Build a site that does not exist yet. Local-only: it creates
+  break-ground Build a site that does not exist yet. Local-only: it creates
                the cluster that later converges run inside.
   converge     Apply the config to a site that already exists, attaching to
                the state in its cluster. Never destroys on failure.
   plan         Show what a converge would change, and change nothing. Reports
                addresses and actions only, never a value.
-  destroy      Tear a site down, then wipe the workspace. Requires -confirm.
+  demolish     Tear a site down, then wipe the workspace. Requires -confirm.
   restore      Bring the age-encrypted state back from object storage.
   kubeconfig   Write this site's kubeconfig into the workspace and exit.
   talosconfig  Run a command against this site's machines with a talosconfig
