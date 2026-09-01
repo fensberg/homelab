@@ -345,7 +345,7 @@ that led there was wrong in a way worth keeping.
 The cluster nodes carry the tailscale extension and appear in the tailnet as
 tagged devices. A pod on those nodes still cannot reach a tailnet address:
 
-```
+```text
 nc -zv -w5 <hypervisor tailnet address> 8006   Connection timed out
 nc -zv -w5 <hypervisor tailnet address> 22     Connection timed out
 ```

@@ -29,8 +29,8 @@ if the estate cannot host these, the tier has not done its job.
 - **A website**, reachable on the LAN and probably the WAN. HTTP, so it is the
   easy half and Cloudflare Tunnel can carry it.
 - **A Valheim dedicated server**
-  (https://www.valheimgame.com/support/a-guide-to-dedicated-servers/). This one
-  sets the constraints, because it needs inbound **UDP 2456-2458**.
+  ([a guide to dedicated servers](https://www.valheimgame.com/support/a-guide-to-dedicated-servers/)).
+  This one sets the constraints, because it needs inbound **UDP 2456-2458**.
 
 ### Why the game server decides the network design
 
