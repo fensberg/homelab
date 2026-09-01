@@ -1819,3 +1819,93 @@ reason recorded above under "the change that lets the estate reach outward
 cannot be applied from inside it" - the repair has to arrive from outside.
 And a converge that halts at Verify is the good failure: it stops before
 touching anything, so the cost of being wrong here is one job, not an estate.
+
+### The hypervisor was off the tailnet, and every test aimed at it was void
+
+The single most expensive hour of this epoch was spent diagnosing why a pod
+could not reach the hypervisor. The answer was that the hypervisor was not on
+the tailnet at the time, so the destination did not exist. Recorded at length
+because the cost was not the bug, it was everything that got built on top of a
+measurement nobody checked the preconditions of.
+
+**The signature, because it does not look like what it is.** The admin console
+showed the host offline. The host itself disagreed - `systemctl status
+tailscaled` reported `active (running)` with a `Status:` line reading
+`Connected;` and the correct addresses, because that line is written once and
+goes stale. Only `tailscale status` admitted it, in a health note rather than
+in the status column:
+
+    100.70.14.95  martha  martha.<tailnet>.ts.net  linux  offline
+
+    # Health check:
+    #   - Unable to connect to the Tailscale coordination server to
+    #     synchronize the state of your tailnet.
+
+The journal then names the cause four times a minute:
+
+    control: controlhttp: failed dialing using DialPlan, falling back to DNS;
+      errs=all connection attempts failed (HTTP: TLS forced: no port 80
+      dialed, HTTPS: dial tcp [2606:b740:49::102]:443: connect: cannot assign
+      requested address)
+    derp.Recv(derp-12): dial tcp6 [2607:f740:e::811]:443: connect: cannot
+      assign requested address
+    netcheck: UDP is blocked, trying HTTPS
+    netcheck: UDP is blocked, trying ICMP
+
+`cannot assign requested address` on an IPv6 dial means the host has no global
+IPv6 source address to dial from. Confirmed in one line:
+
+    root@martha:~# ip -6 route show default
+    root@martha:~#
+
+Empty. This is the failure already recorded above under "Enabling IPv6
+forwarding silently destroys IPv6 connectivity on a SLAAC host" - the entry
+that says the symptom does not look like IPv6 and that `ip -6 route show
+default` is the first thing to check. It was recorded, and it still cost an
+hour, because nobody checked the recorded thing first.
+
+Two aggravating factors made it total rather than degraded. `tailscaled`
+resolves the coordination server and the DERP relays to IPv6 first and fails
+instantly there; and `netcheck` reports **UDP is blocked**, so there is no
+direct path either and everything depends on a DERP relay that is only being
+dialled over the broken family.
+
+**What this invalidates.** Every reachability test aimed at that address during
+the outage answered a question about a machine that was not there:
+
+- The converge that halted at Verify with "cannot reach site site0's
+  hypervisor on the Proxmox API port". Correct message, and it was read as a
+  statement about pod networking. It was a statement about the host being
+  offline.
+- The pod-versus-host comparison run to decide whether pods have a path to the
+  tailnet. Both halves are void; one of them was refused by Pod Security
+  Admission before it ran at all.
+- The finding recorded in [`02-abstraction.md`](02-abstraction.md) that node
+  tailnet membership does not give pods a path. See the correction there.
+
+**The estate could not see this about itself.** The canary watches whether
+GitHub Actions is running jobs; nothing watches whether the site's own
+hypervisor is a member of the overlay that every other component depends on.
+The host was off the tailnet for hours and the only thing that noticed was a
+human looking at a vendor's web console. That belongs to
+[`04-observability.md`](04-observability.md), and it is a better argument for
+that epoch than anything written in it so far.
+
+**Verify should say which of the two it is.** "Cannot reach the hypervisor on
+the Proxmox API port" is true whether the API is down, the host is off the
+overlay, or the address is wrong, and those have entirely different remedies.
+Checking tailnet membership before the port, and saying which failed, would
+have ended this in seconds.
+
+### A node's tailnet address does not survive a reboot
+
+The cluster nodes join as **ephemeral** devices, which is what the auth key
+mints. An ephemeral device is deregistered when it goes offline, so a node that
+reboots comes back as a new device with a **different tailnet address**.
+
+That is the right default - it stops dead nodes accumulating in the tailnet -
+but it means no tailnet address of a node may be written down, pinned in
+config, or referenced by anything that outlives a reboot. The hypervisor is
+the opposite case: it is not ephemeral, and its address is stable enough that
+the config holds it today. Noticed while reading the device list for another
+reason, not by anything failing yet.

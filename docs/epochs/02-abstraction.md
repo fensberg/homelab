@@ -375,6 +375,40 @@ was rejected is the one that actually delivers pod egress.
 The deciding constraint was never the endpoint. It was whether pod traffic can
 reach the tailnet at all, and that was assumed rather than tested.
 
+### Correction: this was measured against a host that was offline
+
+**The finding above is not established, and the reasoning built on it does not
+stand.** It is left in place rather than deleted because the correction is the
+more useful record.
+
+The evidence was `nc` from inside a pod to the hypervisor's tailnet address,
+timing out on both 8006 and 22, read as "both ports, so it is not about the
+Proxmox API". That inference is sound only if the destination was reachable at
+all. It was not: the hypervisor had dropped off the tailnet, for reasons
+recorded in [`01-ignition.md`](01-ignition.md). Both ports time out identically
+when the host is not there, which is exactly what "both ports" was taken to
+rule out.
+
+So the Flannel masquerade mechanism is a hypothesis with no evidence behind it,
+not a measured result. It may still be true - a pod reaching a tailnet address
+is a real question and the answer is not obviously yes - but it has not been
+tested, and the test is only valid while the hypervisor is a live tailnet peer.
+That is now the first precondition of running it.
+
+The decision reasoning above is affected in proportion. The argument that the
+Tailscale operator should be reconsidered rested on node extensions having been
+shown not to deliver pod egress. Nothing has been shown. The separate point
+that the original objection dissolves once the config holds a name resolved by
+split-horizon DNS still stands on its own, because it was never about this
+measurement.
+
+**The process finding is the durable half, and it is the same one as before,
+one level up.** The earlier entry says: measure from where the traffic starts
+before designing what carries it. This adds: establish that the destination is
+answering before drawing conclusions from it not answering. Four confident
+wrong diagnoses became five, and the fifth was built on a test whose
+preconditions nobody checked.
+
 ### What remains open
 
 - **A forwarder on the hypervisor**, bound inside `vrf_internal`, forwarding one

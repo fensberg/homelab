@@ -32,6 +32,42 @@ if the estate cannot host these, the tier has not done its job.
   ([a guide to dedicated servers](https://www.valheimgame.com/support/a-guide-to-dedicated-servers/)).
   This one sets the constraints, because it needs inbound **UDP 2456-2458**.
 
+### Cilium is still required, for one of the two reasons given
+
+Worth stating precisely, because one of the two arguments for Cilium was
+withdrawn and the other was nearly withdrawn with it.
+
+**Withdrawn:** that Cilium is needed so pods can reach the tailnet. That rested
+on a measurement taken while the hypervisor was off the tailnet, and nothing
+about pod egress has actually been established. See the correction in
+[`02-abstraction.md`](02-abstraction.md). It is not an argument for anything
+until the test is re-run against a live peer.
+
+**Standing, and untouched by that:** Flannel does not implement NetworkPolicy.
+This is a property of Flannel rather than an observation about this estate -
+it provides pod networking and no policy controller at all - so a
+NetworkPolicy object here is accepted by the API server, stored, and never
+evaluated by anything. A policy that appears to isolate the game server and
+does not is worse than having none, because it is isolation somebody will
+believe in.
+
+That matters here specifically because the game server is the first workload
+this estate will run that is genuinely untrusted. It takes inbound UDP from the
+public internet through a port forward, by the decision below, and it shares a
+cluster with the Kubernetes API and the state database. Isolating it is not a
+nicety; it is the condition on it being allowed to run at all.
+
+**So the sequencing changed, not the requirement.** Cilium was briefly thought
+to be blocking epoch 01's converge, which would have made it urgent and would
+have justified rebuilding the cluster to get it. It is not. It is a
+prerequisite of this epoch, and it can be planned rather than rushed - but it
+is still a prerequisite, and no amount of the other argument collapsing changes
+that.
+
+The part that makes it awkward is unchanged too: Cilium must be in place before
+nodes go Ready, so it cannot arrive through Flux the way everything else does,
+which means a cluster rebuild rather than a converge.
+
 ### Why the game server decides the network design
 
 Cloudflare Tunnel's public hostname routing is HTTP and TCP; it cannot carry
