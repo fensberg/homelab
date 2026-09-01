@@ -73,6 +73,9 @@ scripts/contractor/contractor
 # Same, for the signed-push tool.
 scripts/signedpush/signedpush
 
+# Same, for the pre-push guard that refuses an unsigned push.
+scripts/pushguard/pushguard
+
 # --- test artefacts ---------------------------------------------------------
 # Coverage output. The committed part of coverage is tests/coverage-baseline.json,
 # which is the floor; the measurements themselves are per-run and disposable.

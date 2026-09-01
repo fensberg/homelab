@@ -19,8 +19,9 @@
 //	DELETE the scratch ref
 //
 // Local workflow is untouched: commit as normal, hooks and commitlint included.
-// Only the push changes. A plain `git push` still works and produces unsigned
-// commits, which is a visible failure rather than a silent one.
+// Only the push changes. A plain `git push` is refused by the pre-push hook -
+// see scripts/pushguard, which allows the scratch ref below and nothing that
+// would update refs/heads directly.
 package main
 
 import (

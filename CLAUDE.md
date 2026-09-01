@@ -354,8 +354,14 @@ A GitHub App cannot hold a signing key — SSH and GPG signing keys are
 user-account resources, and the agent deliberately has no user account. What
 an App can do is have GitHub sign for it: a commit created through the Git
 Data API with an installation token comes back signed with GitHub's own key.
-`git push` still works and produces unsigned commits, which is a visible
-failure rather than a silent one — hence a separate verb rather than an alias.
+A plain `git push` is refused by the `pre-push` hook (`scripts/pushguard`),
+because it produces unsigned commits attributed to whatever local git config
+says. That used to be documented and left to discipline, and discipline was not
+enough — a session pushed twice with plain git before anyone noticed, and
+`non_fast_forward` meant the commits could not be repaired by anybody
+afterwards. The guard is structural rather than a flag: signedpush pushes to
+`refs/signing/<tmp>`, a plain push updates `refs/heads/<branch>`, and only the
+latter is refused.
 
 The naive form uploads a blob per changed file. This does not: `git push`
 moves the objects as one packfile to a ref outside `refs/heads/`, and since
