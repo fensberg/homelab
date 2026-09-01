@@ -352,6 +352,18 @@ tasks:
       - task: build
       - ./scripts/contractor/contractor kubeconfig -site {{.SITE}} -- {{.CLI_ARGS}}
 
+  talosctl:
+    desc: "Run talosctl against this site with a talosconfig that lives only that long"
+    # Talos has no shell, so this is the only way to see what a node's own
+    # network is doing - an interface list, an extension service's state, the
+    # routing table. The credential authenticates to Talos rather than to
+    # Kubernetes and can reboot or reset a machine, so there is deliberately no
+    # form that leaves it on disk.
+    #   task talosctl SITE=site0 -- talosctl -n 10.10.10.100 get links
+    cmds:
+      - task: build
+      - ./scripts/contractor/contractor talosconfig -site {{.SITE}} -- {{.CLI_ARGS}}
+
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
     cmds:

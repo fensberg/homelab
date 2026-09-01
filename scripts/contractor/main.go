@@ -58,7 +58,7 @@ func repoRoot() string {
 // of merely refused: each verb registers only the flags that mean something
 // for it, so `contractor restore -phase compute` fails on an undefined flag
 // before any of this code runs.
-var knownVerbs = []string{"break-ground", "converge", "plan", "demolish", "restore", "kubeconfig", "check-inventory"}
+var knownVerbs = []string{"break-ground", "converge", "plan", "demolish", "restore", "kubeconfig", "talosconfig", "check-inventory"}
 
 const usage = `contractor manages the lifecycle of a site.
 
@@ -74,6 +74,8 @@ verbs:
   destroy      Tear a site down, then wipe the workspace. Requires -confirm.
   restore      Bring the age-encrypted state back from object storage.
   kubeconfig   Write this site's kubeconfig into the workspace and exit.
+  talosconfig  Run a command against this site's machines with a talosconfig
+               that lives only as long as the command.
   check-inventory  Prove every op:// reference in the config template resolves.
 
 Run 'contractor <verb> -h' for the flags a verb accepts.
@@ -234,6 +236,8 @@ Nothing has been touched. Re-run without -whatif to do it.
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
+		run.Ok("kubeconfig written to " + ctx.Kubeconfig)
+		run.Warn("It is a credential and it is gitignored, but it is still on this disk. 'task clean-secrets' removes it.")
 		fmt.Println()
 		fmt.Println("    export KUBECONFIG=" + ctx.Kubeconfig)
 		fmt.Println()
@@ -241,6 +245,44 @@ Nothing has been touched. Re-run without -whatif to do it.
 		run.Warn("prefer: contractor kubeconfig -site " + ctx.Site + " -- kubectl get nodes")
 		fmt.Println()
 		return
+	}
+
+	// Not a phase, for the same reasons as kubeconfig, and deliberately
+	// narrower than it: there is no form that writes the file into the
+	// workspace and returns.
+	//
+	// A talosconfig authenticates to Talos rather than to Kubernetes - the
+	// layer below, where machine configuration is read and a node can be
+	// rebooted or reset - so it is the more dangerous of the two credentials
+	// this program renders. kubeconfig has a bare form because tools expect a
+	// file and somebody has to be able to export KUBECONFIG; that form is also
+	// the one that leaves a live credential waiting for `task clean-secrets`.
+	// Nothing needs that here, so this verb only ever hands the credential to
+	// a command and its lifetime is that command's.
+	//
+	// It exists because Talos has no shell, which makes a node the one place
+	// in this estate nobody can look at: whether an interface exists, what an
+	// extension service is doing, what the routing table says. The alternative
+	// reached for instead was a privileged pod with host networking, refused
+	// by Pod Security Admission - correctly, and the reason this verb is the
+	// supported way to ask rather than the way that needs a guard turned off.
+	if verb == "talosconfig" {
+		cmd := commandAfterDoubleDash()
+		if len(cmd) == 0 {
+			fmt.Fprintln(os.Stderr, "error: talosconfig needs a command after --")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "    contractor talosconfig -site "+ctx.Site+" -- talosctl -n <node> get links")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "There is no form that writes the file and exits: this credential can reboot")
+			fmt.Fprintln(os.Stderr, "a node, so it is never left on a disk for something else to pick up.")
+			os.Exit(2)
+		}
+		code, err := phases.WithTalosconfig(ctx, cmd)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		os.Exit(code)
 	}
 
 	runErr := runInterruptibly(ctx, toRun)
