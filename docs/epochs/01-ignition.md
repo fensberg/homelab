@@ -2265,6 +2265,70 @@ or a policy or reverse-path check applying to input. What they have in common
 is that all three live in netfilter, and none of them is visible from anywhere
 except this host.
 
+### The SDN's VRF moved the local routing table, and the overlay's marks now miss it
+
+The mechanism, and it is an interaction between two things this estate does
+deliberately rather than a defect in either.
+
+**What the overlay installs.** A mangle rule pair that carries a firewall mark
+across a connection:
+
+    PREROUTING  -m conntrack --ctstate RELATED,ESTABLISHED
+                -m connmark ! --mark 0x0/0xff0000
+                -j CONNMARK --restore-mark
+    OUTPUT      -m conntrack --ctstate NEW -m mark ! --mark 0x0/0xff0000
+                -j CONNMARK --save-mark
+
+The daemon marks its own outbound packets so they bypass the tunnel. OUTPUT
+saves that mark onto the connection; PREROUTING restores it onto every reply
+that comes back. So **an inbound reply to a connection the daemon opened
+arrives carrying the mark.**
+
+**What the routing rules then do with it.** Note the priorities:
+
+    1000:   from all lookup [l3mdev-table]
+    5210:   from all fwmark 0x80000/0xff0000 lookup main
+    5230:   from all fwmark 0x80000/0xff0000 lookup default
+    5250:   from all fwmark 0x80000/0xff0000 unreachable
+    5270:   from all lookup 52
+    32765:  from all lookup local
+    32766:  from all lookup main
+
+**The `local` table is at 32765, not at 0 where it normally sits.** Moving it is
+the standard recipe for VRF support - the `l3mdev` rule at 1000 has to be
+consulted before local delivery, so the local rule is deleted from priority 0
+and re-added high. This host runs an EVPN VRF for the site network, which is
+this repository's own design decision, so that move is ours.
+
+The overlay's rules were then inserted at 5210-5250, which is **before** 32765.
+
+So a marked packet destined for this host's own address is matched by rule 5210
+and looked up in `main` - which has no local route for it - and then 5230, and
+then 5250, which is `unreachable`. It never reaches the `local` table at all,
+and is therefore never delivered to the socket waiting for it.
+
+**Every observation follows from that.** The SYN leaves normally, because the
+output path is unaffected. The SYN-ACK arrives at the interface, gets the mark
+restored in PREROUTING, and is routed by rules that cannot deliver locally - so
+the socket never sees it and the daemon retransmits its SYN. `curl` is
+untouched because it sets no mark. The nodes' relay connections through this
+host are untouched because they are _forwarded_, which is the case the mark was
+designed for and which never needs the local table. And connection tracking
+reports a steady count of invalid packets across every CPU, which is what a
+reply that cannot be associated looks like from that side.
+
+**Neither component is misconfigured on its own.** The VRF needs the local rule
+moved. The overlay needs its marks. They are only incompatible in combination,
+and only for traffic the host originates itself - which is the smallest and
+least-tested slice of what either was set up to handle.
+
+**The test that confirms or refutes it** is to let marked packets consult the
+local table before the overlay's rules, by inserting one rule ahead of 5210 and
+watching whether the daemon connects. It is reversible in one command and
+changes nothing else. If it is right, the permanent form belongs in the
+hypervisor playbook alongside the VRF configuration, because the next ignition
+would otherwise rebuild the same collision.
+
 ### A node's tailnet address does not survive a reboot
 
 The cluster nodes join as **ephemeral** devices, which is what the auth key
