@@ -76,6 +76,9 @@ scripts/signedpush/signedpush
 # Same, for the pre-push guard that refuses an unsigned push.
 scripts/pushguard/pushguard
 
+# Same, for the overlay reachability survey.
+scripts/survey/survey
+
 # --- test artefacts ---------------------------------------------------------
 # Coverage output. The committed part of coverage is tests/coverage-baseline.json,
 # which is the floor; the measurements themselves are per-run and disposable.
