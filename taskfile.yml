@@ -89,12 +89,25 @@ tasks:
     # a commit created through the Git Data API with an installation token
     # comes back signed with GitHub's own key. See scripts/signedpush.
     #
-    # `git push` still works and produces unsigned commits - a visible
-    # failure rather than a silent one, which is why this is a separate verb
-    # rather than a git alias.
+    # A plain `git push` is refused by the pre-push hook (scripts/pushguard),
+    # because it produces unsigned commits. It used to merely be documented,
+    # which was not enough - see that command's header.
     cmds:
       - go build -C scripts/signedpush -o signedpush .
       - ./scripts/signedpush/signedpush {{.CLI_ARGS}}
+
+  push-guard:
+    desc: "Refuse a plain git push that would update a branch (pre-push hook)"
+    # Wired into the pre-push hook rather than offered as advice. `git push`
+    # producing unsigned commits was documented and it was not enough - a
+    # session did it twice before anyone noticed, and non_fast_forward means
+    # such a commit cannot be repaired afterwards by anybody.
+    #
+    # Not internal: pre-commit invokes it as a command, so `task` must be
+    # willing to run it from the CLI.
+    cmds:
+      - go build -C scripts/pushguard -o pushguard .
+      - ./scripts/pushguard/pushguard
 
   gh-token:
     desc: "Mint a 1-hour GitHub App installation token (for gh auth login --with-token)"
@@ -163,6 +176,8 @@ tasks:
       - go build -C scripts/contractor -o /dev/null .
       - go vet -C scripts/signedpush ./...
       - go build -C scripts/signedpush -o /dev/null .
+      - go vet -C scripts/pushguard ./...
+      - go build -C scripts/pushguard -o /dev/null .
       # Every tier, not just the untagged one. The integration, api and e2e
       # tiers are build-tagged, so a bare `go vet ./...` does not compile them
       # at all - a change to a shared struct can break them and still pass
@@ -190,10 +205,11 @@ tasks:
       - task: test:js
 
   test:go:
-    desc: "Go unit and contract tests for the ignition button and the push tool"
+    desc: "Go unit and contract tests for the ignition button and the push tools"
     cmds:
       - go test -C scripts/contractor ./...
       - go test -C scripts/signedpush ./...
+      - go test -C scripts/pushguard ./...
 
   test:tofu:
     desc: "OpenTofu unit tests: registry.tf's invariants against fixture configs"
