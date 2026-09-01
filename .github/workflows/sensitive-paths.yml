@@ -81,9 +81,6 @@ jobs:
               await github.rest.issues.createComment({...args, issue_number: context.issue.number});
             }
 
-      # Not just "does the label exist" - who applied it. The agent's App holds
-      # issues: write, needed to comment at all, and the same permission lets it
-      # label a pull request. Demonstrated on #49 before this was written.
       - name: Require an explicit acknowledgement
         if: steps.sensor.outputs.tripped == 'true'
         env:
@@ -91,11 +88,20 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          who=$(gh api "repos/${REPO}/issues/${PR}/timeline" \
+          # The label must be on the pull request NOW. Reading only the
+          # timeline lets a label that was applied and then removed still
+          # satisfy this, because an "unlabeled" event is not a "labeled" one.
+          if ! gh pr view "$PR" --repo "$REPO" --json labels \
+               --jq '.labels[].name' | grep -qx 'sensitive-reviewed'; then
+            echo "::error::This pull request changes a safety property. Read the comment, then apply the 'sensitive-reviewed' label."
+            exit 1
+          fi
+
+          who=$(gh api --paginate "repos/${REPO}/issues/${PR}/timeline" \
             --jq '[.[]|select(.event=="labeled" and .label.name=="sensitive-reviewed")]|last|.actor.login // empty')
           case "$who" in
             "")
-              echo "::error::This pull request changes a safety property. Read the comment, then apply the 'sensitive-reviewed' label."
+              echo "::error::'sensitive-reviewed' is applied but no labelling event was found. That should not happen; check the timeline."
               exit 1 ;;
             *"[bot]")
               echo "::error::'sensitive-reviewed' was applied by ${who}, which is a bot. The acknowledgement has to come from a human - that is the entire point of it. Remove the label and re-apply it yourself."
