@@ -423,6 +423,70 @@ privileged workload. Until that is run, "pods do not inherit node membership"
 and "the nodes are not really on the tailnet" both fit the evidence equally,
 and they have completely different fixes.
 
+### Settled: the nodes do not carry tailnet traffic, and the CNI was never the subject
+
+Measured from the hypervisor, which is itself a tailnet peer, so no privileged
+workload was needed and Pod Security Admission was not in the way:
+
+```text
+root@martha:~# tailscale ping sheridan-cp-100
+ping "100.120.140.65" timed out            (x10)
+no reply
+root@martha:~# tailscale ping sheridan-cp-101
+ping "100.107.20.78" timed out             (x10)
+no reply
+```
+
+**Peer to peer, and no reply.** No pod, no CNI, no Flannel anywhere in that
+path. The nodes appear in the admin console as online, tagged devices - so
+they authenticate and hold a control-plane session - and then answer nothing on
+the data plane.
+
+That resolves the question this section has been circling. It is not that pods
+fail to inherit node membership. **The membership itself is registration
+without reachability.** Every conclusion that pointed at the CNI, this file's
+original finding included, pointed at a layer that was never involved.
+
+**Cilium is not the fix for this, and nothing here justifies rebuilding the
+cluster.** Cilium remains required for NetworkPolicy enforcement, which is a
+separate argument recorded in [`03-workload.md`](03-workload.md) and untouched
+by this - but the urgency that came from believing it fixed the converge is
+gone, and the rebuild that was being planned to deliver it has no basis.
+
+**The leading hypothesis, recorded as a hypothesis.** A tailscale container
+that runs in userspace-networking mode registers with the coordination server
+and creates no TUN device, which presents exactly this way: online in the
+console, unreachable on the wire. The extension is configured in `talos.tf`
+with an auth key, tags and an empty route list, and says nothing either way
+about userspace mode. That is worth checking first because it is cheap and it
+fits, but it is not established, and this epoch has already paid for the habit
+of building on the most plausible-sounding explanation.
+
+### The overlay may not need to be in this path at all
+
+The stronger question, and it is a design question rather than a bug.
+
+This epoch already records that "the overlay network is load-bearing for
+ignition only because the workstation is remote", and that running from a
+machine on the hypervisor's own network "removes that dependency and leaves the
+overlay network for remote access, which is what it is actually for". That
+condition has quietly become true: the workstation is now a virtual machine
+beside the estate on the site network, not a remote laptop, and it is not a
+tailnet member.
+
+The site configuration holds the hypervisor's **tailnet** address where it
+could hold the address it answers on locally. Everything that has failed
+tonight failed on the tailnet path; nothing has yet been shown to fail on the
+local one, because nothing has tried it.
+
+So before repairing the overlay data plane, it is worth measuring whether the
+cluster needs the overlay to reach the hypervisor at all. `talos.tf` asserts it
+does - that an EVPN VRF cannot deliver to a local address in another VRF, so
+"no amount of routing makes it reachable from a pod" - and that assertion has
+never been tested. If a pod can open the API on the local address, the overlay
+comes out of this path entirely, and with it the whole class of failure that
+consumed this session.
+
 ### A test must prove its own preconditions
 
 The durable lesson from the hours this cost. The test used was:
