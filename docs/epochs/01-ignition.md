@@ -2082,6 +2082,50 @@ host's apparent recovery in the admin console was the misleading half of it.
 It is untested. `nc -u -z` reporting success proves nothing here, because UDP
 is connectionless and that check returns success without a reply.
 
+### The daemon cannot reach a relay the same host reaches in 138ms
+
+The socket hypothesis above is disproved. `tailscaled` holds both UDP
+listeners, and the host's UDP egress works:
+
+    UNCONN  0.0.0.0:41641   users:(("tailscaled",pid=...,fd=29))
+    UNCONN     [::]:41641   users:(("tailscaled",pid=...,fd=20))
+
+    dig +short @1.1.1.1 example.com     104.20.23.154
+                                        172.66.147.243
+
+So disabling IPv6 did not break the bind, and UDP leaves this host
+successfully on port 53. What remains is a contradiction on one machine, at
+one moment, to one destination:
+
+    # from a shell
+    curl -4 https://derp12.tailscale.com/          200 in 0.138s
+
+    # from the daemon, continuously
+    derphttp.Client.Recv: connecting to derp-12 (ord)
+    derp.Recv(derp-12): ... connect to region 12 (ord): context deadline exceeded
+    netcheck: UDP is blocked, trying HTTPS
+    netcheck: UDP is blocked, trying ICMP
+
+Same host, same destination, same protocol and port. The shell completes a TLS
+handshake in 138 milliseconds; the daemon times out, every ten seconds,
+indefinitely. Note also that the error has _changed_: before the IPv6 fix these
+failed instantly with `cannot assign requested address`, and now they time out.
+That is a different failure, not the same one persisting.
+
+**What this rules out.** Not the network - a shell on this host reaches the
+relay. Not egress filtering or the host firewall - same reason, and no firewall
+policy is configured. Not the UDP stack - `dig` proves otherwise. Not the
+socket bind - both listeners are present. Not the nodes - their relay
+connections work.
+
+**What is left is between the daemon and the wire on this host**, and the
+candidates worth testing rather than choosing between are: a proxy environment
+variable applied to the service but not to an interactive shell; policy routing
+or firewall marks installed by `tailscaled` itself having gone stale, so its
+own marked packets are routed differently from everything else; or something
+in its own resolution path. Each is a command, and this epoch's record is
+mostly the cost of preferring the most plausible-sounding one.
+
 ### A node's tailnet address does not survive a reboot
 
 The cluster nodes join as **ephemeral** devices, which is what the auth key
