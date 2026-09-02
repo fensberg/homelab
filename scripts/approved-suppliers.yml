@@ -1,5 +1,16 @@
 # The approved suppliers list.
 #
+# Adding an entry here is a pull request that does nothing else.
+#
+# The refusal is a speed bump with a named price, not a wall: an unapproved
+# tool is welcome, and adopting one costs a solo pull request saying what it
+# is, who publishes it, what it would run with, what it replaces, and why the
+# estate should take delivery from that party from now on. Bundled into a
+# larger change, that decision becomes the least visible thing in the diff -
+# which is the failure this file exists to prevent. So the answer to a refusal
+# is never to abandon a genuinely better tool, and never to slip it into a
+# pull request about something else.
+#
 # Every outside party this estate is permitted to take delivery from, declared
 # once. It sits beside versions.env deliberately, and the two answer halves of
 # one question: that file says WHAT VERSION of a thing we take, this one says
@@ -41,6 +52,7 @@
 # An image must come from one of these AND be pinned by digest. A tag is a
 # mutable pointer: `:latest` today and `:latest` next month are different
 # software with the same name, and nothing in git records that it moved.
+
 registries:
   - host: ghcr.io
     reason: >-
