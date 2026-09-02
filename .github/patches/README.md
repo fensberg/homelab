@@ -14,12 +14,18 @@ replaces. So the patch lives here as a file, and applying it is one command
 run from the repository root:
 
 ```sh
-git apply .github/patches/<name>.patch
+git apply .github/patches/<name>.patch && git rm .github/patches/<name>.patch
 ```
+
+One command, and it finishes the job. Applying and then remembering to delete
+is two steps where one will do, and the second is exactly the kind a computer
+should carry rather than a person.
 
 Every patch here is verified against a clean tree before it is committed:
 `git apply --check` passes, and where it changes a workflow, the result is
 confirmed to parse.
 
-Delete a patch in the same commit that applies it. One left behind is
-indistinguishable from one still outstanding.
+That removal is not tidiness. A patch left behind is indistinguishable from one
+still outstanding, so the next person reading this directory cannot tell what
+has been applied - which is why it is chained to the apply rather than
+mentioned underneath it.
