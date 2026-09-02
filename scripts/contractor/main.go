@@ -292,6 +292,35 @@ Nothing has been touched. Re-run without -whatif to do it.
 		os.Exit(code)
 	}
 
+	// Asked here rather than inside a phase, because the answer decides whether
+	// any of them should run at all. See phases.CheckConvergePreconditions:
+	// the runner lives inside the cluster it converges, so tearing the estate
+	// down leaves every converge queued - and a queued job that finally gets a
+	// runner applies the commit it was queued at, however old that has become.
+	// Survey the ground before building on it.
+	//
+	// Both checks answer the same question from opposite ends: is anything
+	// else about to touch this estate? A converge asks whether it is still the
+	// change somebody asked for; an ignition asks whether a queued converge is
+	// waiting to fire into the middle of it. The runner lives inside the
+	// cluster, so a torn-down estate leaves converges queued and an ignition is
+	// what hands them a runner.
+	if ctx.Converge {
+		if err := phases.CheckConvergePreconditions(); err != nil {
+			fmt.Println()
+			run.Fail("HALTED: " + err.Error())
+			os.Exit(exitUntouched)
+		}
+	}
+	if verb == "break-ground" {
+		run.Info("surveying the ground ...")
+		if err := phases.CheckBreakGroundPreconditions(ctx.Site); err != nil {
+			fmt.Println()
+			run.Fail("HALTED: " + err.Error())
+			os.Exit(exitUntouched)
+		}
+	}
+
 	runErr := runInterruptibly(ctx, toRun)
 	completed := runErr == nil
 
