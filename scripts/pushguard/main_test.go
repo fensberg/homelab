@@ -20,18 +20,26 @@ func TestScratchRefIsAllowed(t *testing.T) {
 	}
 }
 
-// The whole point: a direct branch update is what produces an unsigned commit.
-func TestBranchUpdateIsRefused(t *testing.T) {
-	// An unsigned commit on a branch is the thing being refused. The range is
-	// unreadable in this bare test environment, which fails closed - and
-	// failing closed is itself the property worth asserting.
-	for _, ref := range []string{
-		"refs/heads/main",
-		"refs/heads/docs/some-branch",
-	} {
-		if err := run(ref); err == nil {
-			t.Fatalf("run(%q) allowed a branch update it could not vet", ref)
-		}
+// A branch update is judged on its commits, not on being a branch update.
+//
+// This test used to assert that any branch push was refused, which was the
+// rule before the guard learned to check signatures. It kept passing
+// afterwards for the wrong reason: run from a bare shell, the ref environment
+// is empty, `git log` errors on the empty range, and the fail-closed path made
+// it look correct. Run from inside a real pre-push hook - where those
+// variables are set and the commits are signed - it failed, because the guard
+// was right and the test was stale.
+//
+// A test that passes because of what the environment happens to be is worse
+// than no test: it reports the machine, and it hides the moment the rule
+// underneath it changed.
+func TestARefWithNoRangeInformationIsRefused(t *testing.T) {
+	if _, err := unsignedCommits("", ""); err == nil {
+		t.Fatal("a push with no ref information was treated as having nothing " +
+			"unsigned in it. Being unable to tell is not the same as being clean.")
+	}
+	if _, err := unsignedCommits("abc123", ""); err == nil {
+		t.Fatal("a push with no destination ref was treated as clean")
 	}
 }
 
