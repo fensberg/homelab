@@ -53,6 +53,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 )
@@ -175,6 +176,49 @@ type Verdict struct {
 	Results  []result
 	Health   []string
 	Findings []finding
+}
+
+// Assemble builds the verdict from what was observed and what was declared.
+//
+// It exists so the classification is wired to the report by something a test
+// can call. `classify` was written, tested thoroughly, and called from
+// nowhere: survey's whole security half - the device nobody declared, the
+// route nobody approved - was dead, and every test passed. A survey run
+// reported a clean mesh because it never asked the question.
+//
+// So the pipeline's last step is a function rather than a few lines inside
+// run(), which shells out and cannot be exercised. Deleting the classify call
+// here fails TestAssembleClassifies; deleting it from inside run() failed
+// nothing at all. See tests/go/repo/change_detector_test.go.
+func Assemble(self string, health []string, results []result, peers []*peerStatus, want Expectation) Verdict {
+	return Verdict{
+		From:     self,
+		Health:   health,
+		Results:  results,
+		Findings: classify(peers, want),
+	}
+}
+
+// LoadExpectation reads the baseline the estate declares. An empty path is not
+// an error and not an absence of findings: classify turns it into a loud
+// "nothing was declared, so I cannot tell you whether any of this belongs",
+// which is the honest answer and the one a blind check would hide.
+func LoadExpectation(path string) (Expectation, error) {
+	if path == "" {
+		return Expectation{}, nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return Expectation{}, fmt.Errorf("reading the expectation at %s: %w", path, err)
+	}
+	var want Expectation
+	if err := json.Unmarshal(raw, &want); err != nil {
+		return Expectation{}, fmt.Errorf("parsing the expectation at %s: %w", path, err)
+	}
+	// Declared is set here rather than read from the file, so a baseline
+	// cannot claim to have declared something by carrying a field.
+	want.Declared = true
+	return want, nil
 }
 
 // unreachable returns the peers that are registered and do not answer. This is
