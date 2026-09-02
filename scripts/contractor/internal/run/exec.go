@@ -164,7 +164,8 @@ type tofuEvent struct {
 		Resource struct {
 			Addr string `json:"addr"`
 		} `json:"resource"`
-		Action string `json:"action"`
+		Action         string  `json:"action"`
+		ElapsedSeconds float64 `json:"elapsed_seconds"`
 	} `json:"hook"`
 	Diagnostic struct {
 		Severity string `json:"severity"`
@@ -189,7 +190,15 @@ func publicLog() bool {
 // separated from the process handling so it can be tested against a recorded
 // stream: the property that matters is that no attribute value survives, and
 // that is a property of this function alone.
-func summariseApply(r io.Reader) (lines []string, failed []string) {
+func summariseApply(r io.Reader, emit func(string)) (lines []string, failed []string) {
+	if emit == nil {
+		emit = func(string) {}
+	}
+	say := func(line string) {
+		lines = append(lines, line)
+		emit(line)
+	}
+
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for sc.Scan() {
@@ -200,12 +209,23 @@ func summariseApply(r io.Reader) (lines []string, failed []string) {
 			continue
 		}
 		switch ev.Type {
+		// tofu's own "Still destroying... [30s elapsed]". Dropping it left a
+		// long destroy silent from the first line to the last, on the one
+		// operation in this program that cannot be safely interrupted - and an
+		// operator with no output cannot tell a ten-minute data source read
+		// from a hang. It carries an address and a duration and no attribute
+		// values, so it is as safe to print as apply_start already is.
+		case "apply_progress":
+			if addr := ev.Hook.Resource.Addr; addr != "" {
+				say(fmt.Sprintf("%-9s %s (%ds elapsed)",
+					"still", addr, int(ev.Hook.ElapsedSeconds)))
+			}
 		case "apply_start", "apply_complete", "apply_errored":
 			if addr := ev.Hook.Resource.Addr; addr != "" {
-				lines = append(lines, fmt.Sprintf("%-9s %s", ev.Hook.Action, addr))
+				say(fmt.Sprintf("%-9s %s", ev.Hook.Action, addr))
 			}
 		case "change_summary":
-			lines = append(lines, fmt.Sprintf("%d added, %d changed, %d destroyed",
+			say(fmt.Sprintf("%d added, %d changed, %d destroyed",
 				ev.Changes.Add, ev.Changes.Change, ev.Changes.Remove))
 		case "diagnostic":
 			if ev.Diagnostic.Severity == "error" {
@@ -241,10 +261,15 @@ func tofuJSON(ctx *Context, what string, args []string) error {
 		return fmt.Errorf("%s: %w", what, err)
 	}
 
-	lines, failed := summariseApply(stdout)
-	for _, l := range lines {
-		Info(l)
-	}
+	// Printed as the stream is read, not collected and printed afterwards.
+	//
+	// summariseApply reads to EOF, which for a single long-running invocation
+	// is when tofu exits - so buffering meant a destroy of a whole estate
+	// printed its first line and its last line at the same moment, ten minutes
+	// in. The apply path hid it because ignition applies in short targeted
+	// steps; the destroy is one call that runs for as long as the estate takes
+	// to remove.
+	_, failed := summariseApply(stdout, Info)
 	waitErr := c.Wait()
 	if len(failed) > 0 {
 		return fmt.Errorf("%s: %s%s",
