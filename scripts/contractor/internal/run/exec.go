@@ -322,6 +322,20 @@ func summariseApply(r io.Reader, emit func(string)) (lines []string, failed []st
 		// that succeeded. A real teardown printed five VMs deleting, five VMs
 		// "deleting" again, and then said the destroy had failed - with
 		// nothing to say which five had actually gone.
+		// A refresh reads every targeted resource and, until now, emitted
+		// nothing this summary understood. So the step added to stop the
+		// teardown hanging was itself silent - the third time in two days a
+		// teardown step has worked without saying so. The events carry an
+		// address and an action, the same as an apply's, and no attribute
+		// values.
+		case "refresh_start":
+			if addr := ev.Hook.Resource.Addr; addr != "" {
+				say(fmt.Sprintf("%-9s %s", "reading", addr))
+			}
+		case "refresh_complete":
+			if addr := ev.Hook.Resource.Addr; addr != "" {
+				say(fmt.Sprintf("%-9s %s", "read", addr))
+			}
 		case "apply_start":
 			if addr := ev.Hook.Resource.Addr; addr != "" {
 				say(fmt.Sprintf("%-9s %s", ev.Hook.Action, addr))

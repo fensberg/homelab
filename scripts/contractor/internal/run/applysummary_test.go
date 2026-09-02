@@ -221,3 +221,39 @@ func TestAFailedResourceDoesNotLookLikeAFinishedOne(t *testing.T) {
 			strings.Fields(done)[0])
 	}
 }
+
+// The refresh must say it is refreshing.
+//
+// The targeted refresh added to stop the teardown hanging emitted refresh_start
+// and refresh_complete, neither of which this summary understood - so the fix
+// for a silent hang was itself silent, and the operator watching it had no way
+// to tell a working refresh from a stuck one. Third occurrence in two days of a
+// teardown step working without saying so.
+func TestARefreshReportsWhatItIsReading(t *testing.T) {
+	const stream = `{"@level":"info","type":"refresh_start","hook":{"resource":{"addr":"proxmox_virtual_environment_vm.talos_cp[0]"},"action":"read"}}
+{"@level":"info","type":"refresh_complete","hook":{"resource":{"addr":"proxmox_virtual_environment_vm.talos_cp[0]"},"action":"read"}}`
+
+	lines, _ := summariseApply(strings.NewReader(stream), nil)
+	if len(lines) < 2 {
+		t.Fatalf("got %v, want a line as each resource is read and another as it comes back: "+
+			"a refresh that prints nothing is indistinguishable from one that has hung", lines)
+	}
+	for _, l := range lines {
+		if !strings.Contains(l, "talos_cp[0]") {
+			t.Errorf("line %q does not name the resource being read", l)
+		}
+	}
+}
+
+// Refresh output is addresses and verbs, like everything else here. A refresh
+// reads attributes out of the provider, so this is the event type most likely
+// to start carrying values.
+func TestARefreshReportsNoValues(t *testing.T) {
+	const withAttributes = `{"@level":"info","type":"refresh_complete","hook":{"resource":{"addr":"talos_machine_secrets.this"},"action":"read"},"ca_certificate":"LS0tLS1CRUdJTiBD"}`
+	lines, _ := summariseApply(strings.NewReader(withAttributes), nil)
+	for _, l := range lines {
+		if strings.Contains(l, "LS0tLS1CRUdJTiBD") {
+			t.Fatalf("a value reached the summary: %q", l)
+		}
+	}
+}
