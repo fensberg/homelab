@@ -1,4 +1,4 @@
-// Command ignite is the start button. It ignites the homelab management
+// Command contractor is the start button. It builds the homelab management
 // cluster from nothing, running ten phases in order:
 //
 //	 1 render     - pull secrets out of 1Password into gitignored files
@@ -65,13 +65,13 @@ const usage = `contractor manages the lifecycle of a site.
 usage: contractor <verb> [flags]
 
 verbs:
-  ignite       Build a site that does not exist yet. Local-only: it creates
+  break-ground Build a site that does not exist yet. Local-only: it creates
                the cluster that later converges run inside.
   converge     Apply the config to a site that already exists, attaching to
                the state in its cluster. Never destroys on failure.
   plan         Show what a converge would change, and change nothing. Reports
                addresses and actions only, never a value.
-  destroy      Tear a site down, then wipe the workspace. Requires -confirm.
+  demolish     Tear a site down, then wipe the workspace. Requires -confirm.
   restore      Bring the age-encrypted state back from object storage.
   kubeconfig   Write this site's kubeconfig into the workspace and exit.
   talosconfig  Run a command against this site's machines with a talosconfig
@@ -101,6 +101,7 @@ func main() {
 	_ = o.fs.Parse(os.Args[2:])
 
 	site, phase, from, confirm := o.site, o.phase, o.from, o.confirm
+	commentOut := o.commentOut
 	upgrade, skipOverlay, skipUpgrade := o.upgrade, o.skipOverlay, o.skipUpgrade
 	keepOnFailure, whatIf := o.keepOnFailure, o.whatIf
 	converge := verb == "converge"
@@ -139,6 +140,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 	}
 
 	ctx := run.NewContext(repoRoot(), *site)
+	ctx.CommentOut = deref(commentOut)
 	ctx.Upgrade = on(upgrade)
 	ctx.SkipOverlay = on(skipOverlay)
 	ctx.SkipUpgrade = on(skipUpgrade)
@@ -524,7 +526,7 @@ type opts struct {
 	fs   *flag.FlagSet
 	site *string
 
-	phase, from, confirm              *string
+	phase, from, confirm, commentOut  *string
 	upgrade, skipOverlay, skipUpgrade *bool
 	keepOnFailure, whatIf             *bool
 }
@@ -550,6 +552,14 @@ func flagsFor(verb string) *opts {
 	// suggest the default is the other way round.
 	if verb == "break-ground" {
 		o.keepOnFailure = fs.Bool("keep-on-failure", false, "On error, skip the automatic destroy and keep local state for debugging.")
+	}
+
+	// The pull request comment's body is written by this program rather than
+	// assembled in a workflow, for the reason sensitive-paths.yml already
+	// records about its own comment: copy that needs a workflow edit to fix is
+	// copy that stays wrong, because the agent cannot edit workflows.
+	if verb == "plan" {
+		o.commentOut = fs.String("comment-out", "", "Write the pull request comment body to this file.")
 	}
 
 	if verb == "demolish" {

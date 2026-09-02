@@ -156,8 +156,39 @@ data "talos_client_configuration" "this" {
 # this configuration depends on this instead of talos_cluster_kubeconfig
 # directly, so they wait for a real, checked "the API answers" rather than
 # racing it and hitting connection refused.
+# The gate that stops Flux, the database and the runner being applied before
+# the cluster can carry them. Nothing reads a value from it: its whole job is
+# the four depends_on edges pointing at it from database.tf, gitops.tf and
+# runner.tf.
+#
+# The dependency on the VMs is what makes it usable rather than obstructive.
+#
+# control_plane_nodes is local.node_ips - the nodes the *config* asks for -
+# and that is fully known at plan time. Without a dependency on the machines
+# themselves, raising control_plane_count made this read against addresses
+# with no machine behind them, wait, and time out after ten minutes producing
+# no plan at all. The same scoping made a destroy ask whether a three-node
+# cluster was a healthy five-node one, which can never be true, and spend the
+# same ten minutes finding out.
+#
+# OpenTofu defers a data source read to apply time when something it depends
+# on has pending changes. Depending on the VMs therefore means:
+#
+#   scale change   VMs pending -> read deferred -> the plan completes and
+#                  shows the machines being added
+#   steady state   nothing pending -> read happens -> passes as before
+#   ignition       VMs pending -> deferred to apply -> the gate still fires
+#                  before Flux, which is the only moment it matters
+#   destroy        VMs pending deletion -> deferred -> no ten-minute wait
+#
+# The gate is preserved in every case that needs one, because deferring to
+# apply is precisely when it should run. It was never the plan's job to
+# answer whether a cluster is healthy.
 data "talos_cluster_health" "this" {
-  depends_on           = [talos_cluster_kubeconfig.this]
+  depends_on = [
+    talos_cluster_kubeconfig.this,
+    proxmox_virtual_environment_vm.talos_cp,
+  ]
   client_configuration = talos_machine_secrets.this.client_configuration
   control_plane_nodes  = local.node_ips
   endpoints            = local.node_ips

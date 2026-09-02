@@ -109,3 +109,34 @@ func readHypervisorPlaybook(t *testing.T) string {
 	}
 	return string(b)
 }
+
+// Signing has to be set up by the setup script, not by a chat message.
+//
+// The pre-push hook refuses unsigned commits, which is only reasonable if
+// signing works here. It did not: the human was told three git commands in
+// conversation and blocked by the hook twice in the meantime. A step a
+// computer can do is not a step to ask somebody for, and an instruction that
+// lives only in a reply is lost at the next context refresh.
+func TestSetupConfiguresCommitSigning(t *testing.T) {
+	body := readFile(t, filepath.Join(repoRoot(t), "scripts", "install-dependencies.sh"))
+
+	for _, want := range []string{
+		"commit.gpgsign",  // the setting the hook depends on
+		"gpg.format",      // ssh signing rather than gpg
+		"user.signingkey", // which key
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("install-dependencies.sh no longer configures %s.\n\n"+
+				"Without it a fresh checkout produces unsigned commits, the pre-push "+
+				"hook refuses them, and the editor's sync button fails with no visible "+
+				"reason - a GUI does not surface hook output.", want)
+		}
+	}
+
+	// Repository-scoped. Nothing here should quietly change how somebody's
+	// other checkouts behave.
+	if !strings.Contains(body, `git -C "$repo_root" config commit.gpgsign`) {
+		t.Error("commit signing is not being set for this repository only; setup " +
+			"must not reconfigure git globally on somebody's machine")
+	}
+}
