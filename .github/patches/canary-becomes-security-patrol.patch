@@ -1,0 +1,21 @@
+diff --git a/.github/workflows/estate-canary.yml b/.github/workflows/estate-canary.yml
+index b0ad4fe..1f8b04e 100644
+--- a/.github/workflows/estate-canary.yml
++++ b/.github/workflows/estate-canary.yml
+@@ -68,7 +68,7 @@ jobs:
+         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+         with:
+           go-version: ${{ env.GO_VERSION }}
+-          # scripts/canary has no dependencies, so there is nothing to cache.
++          # scripts/security has no dependencies, so there is nothing to cache.
+           cache: false
+ 
+       - name: Ask whether the estate is answering for itself
+@@ -78,5 +78,5 @@ jobs:
+           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+           GITHUB_REPOSITORY: ${{ github.repository }}
+         run: |
+-          go build -C scripts/canary -o canary .
+-          ./scripts/canary/canary | tee "$GITHUB_STEP_SUMMARY"
++          go build -C scripts/security -o ../../toolshed/security .
++          ./toolshed/security patrol | tee "$GITHUB_STEP_SUMMARY"

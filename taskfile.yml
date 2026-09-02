@@ -25,7 +25,7 @@ tasks:
   build:
     desc: "Build the break-ground binary"
     cmds:
-      - go build -C scripts/contractor -o contractor .
+      - go build -C scripts/contractor -o ../../toolshed/contractor .
 
   start:
     desc: "Builds break-ground, then tells you to run it directly - see comment"
@@ -44,7 +44,7 @@ tasks:
     cmds:
       - task: build
       - 'echo "Built. Run directly so Ctrl-C can safely destroy and sterilize:"'
-      - 'echo "  ./scripts/contractor/contractor break-ground -site {{.SITE}}"'
+      - 'echo "  ./toolshed/contractor break-ground -site {{.SITE}}"'
 
   plan:
     desc: "Show what a converge would change, without changing it"
@@ -53,7 +53,7 @@ tasks:
     # 'task clean-secrets'.
     cmds:
       - task: build
-      - ./scripts/contractor/contractor plan -site {{.SITE}}
+      - ./toolshed/contractor plan -site {{.SITE}}
 
   converge:
     desc: "Apply the config to an estate that already exists"
@@ -66,7 +66,7 @@ tasks:
     # running estate and a state file that still describes it.
     cmds:
       - task: build
-      - ./scripts/contractor/contractor converge -site {{.SITE}}
+      - ./toolshed/contractor converge -site {{.SITE}}
 
   phases:
     desc: "List the phases an ignition would run, without running them"
@@ -75,13 +75,13 @@ tasks:
     # estate". The second is the one anybody means by "plan".
     cmds:
       - task: build
-      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -whatif
+      - ./toolshed/contractor break-ground -site {{.SITE}} -whatif
 
   render-secrets:
     desc: "Hydrate templates from 1Password"
     cmds:
       - task: build
-      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -phase render
+      - ./toolshed/contractor break-ground -site {{.SITE}} -phase render
 
   push:
     desc: "Publish the current branch as GitHub-signed commits"
@@ -89,12 +89,12 @@ tasks:
     # a commit created through the Git Data API with an installation token
     # comes back signed with GitHub's own key. See scripts/signedpush.
     #
-    # A plain `git push` is refused by the pre-push hook (scripts/pushguard),
+    # A plain `git push` is refused by the pre-push hook (scripts/security),
     # because it produces unsigned commits. It used to merely be documented,
     # which was not enough - see that command's header.
     cmds:
-      - go build -C scripts/signedpush -o signedpush .
-      - ./scripts/signedpush/signedpush {{.CLI_ARGS}}
+      - go build -C scripts/signedpush -o ../../toolshed/signedpush .
+      - ./toolshed/signedpush {{.CLI_ARGS}}
 
   survey:
     desc: "Probe every overlay peer from here and report this host's row"
@@ -107,8 +107,8 @@ tasks:
     # the condition the vendor's console, the daemon's own service status and
     # this estate's health gate were all unable to report.
     cmds:
-      - go build -C scripts/survey -o survey .
-      - ./scripts/survey/survey {{.CLI_ARGS}}
+      - go build -C scripts/contractor -o ../../toolshed/contractor .
+      - ./toolshed/contractor survey {{.CLI_ARGS}}
 
   push-guard:
     desc: "Refuse a plain git push that would update a branch (pre-push hook)"
@@ -120,8 +120,8 @@ tasks:
     # Not internal: pre-commit invokes it as a command, so `task` must be
     # willing to run it from the CLI.
     cmds:
-      - go build -C scripts/pushguard -o pushguard .
-      - ./scripts/pushguard/pushguard
+      - go build -C scripts/security -o ../../toolshed/security .
+      - ./toolshed/security guard-push
 
   supplier-guard:
     desc: "Refuse a commit while an unapproved third-party hook is installed (pre-commit)"
@@ -139,14 +139,14 @@ tasks:
     #
     # Not internal: pre-commit invokes it as a command.
     cmds:
-      - go build -C scripts/supplierguard -o supplierguard .
-      - ./scripts/supplierguard/supplierguard
+      - go build -C scripts/security -o ../../toolshed/security .
+      - ./toolshed/security guard-suppliers
 
   gh-token:
     desc: "Mint a 1-hour GitHub App installation token (for gh auth login --with-token)"
     cmds:
-      - go build -C scripts/signedpush -o signedpush .
-      - ./scripts/signedpush/signedpush -token
+      - go build -C scripts/signedpush -o ../../toolshed/signedpush .
+      - ./toolshed/signedpush -token
 
   check-inventory:
     desc: "Prove every op:// reference in the config template resolves (no values read)"
@@ -156,19 +156,19 @@ tasks:
     # it. Run it after editing the template or the vault.
     cmds:
       - task: build
-      - ./scripts/contractor/contractor check-inventory -site {{.SITE}}
+      - ./toolshed/contractor check-inventory -site {{.SITE}}
 
   verify:
     desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:
       - task: build
-      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -phase verify
+      - ./toolshed/contractor break-ground -site {{.SITE}} -phase verify
 
   configure-hypervisor:
     desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
     cmds:
       - task: build
-      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -phase hypervisor
+      - ./toolshed/contractor break-ground -site {{.SITE}} -phase hypervisor
 
   check-hypervisor:
     desc: "Dry-run the playbook: show what would change, change nothing"
@@ -180,7 +180,7 @@ tasks:
     desc: "Encrypt the current state and push it to Cloudflare R2"
     cmds:
       - task: build
-      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -phase backup
+      - ./toolshed/contractor break-ground -site {{.SITE}} -phase backup
 
   fix:
     desc: "Format everything. Seconds, no Docker. Run this before you push."
@@ -213,10 +213,8 @@ tasks:
       - go build -C scripts/contractor -o /dev/null .
       - go vet -C scripts/signedpush ./...
       - go build -C scripts/signedpush -o /dev/null .
-      - go vet -C scripts/pushguard ./...
-      - go build -C scripts/pushguard -o /dev/null .
-      - go vet -C scripts/survey ./...
-      - go build -C scripts/survey -o /dev/null .
+      - go vet -C scripts/security ./...
+      - go build -C scripts/security -o /dev/null .
       # Every tier, not just the untagged one. The integration, api and e2e
       # tiers are build-tagged, so a bare `go vet ./...` does not compile them
       # at all - a change to a shared struct can break them and still pass
@@ -248,8 +246,7 @@ tasks:
     cmds:
       - go test -C scripts/contractor ./...
       - go test -C scripts/signedpush ./...
-      - go test -C scripts/pushguard ./...
-      - go test -C scripts/survey ./...
+      - go test -C scripts/security ./...
 
   test:tofu:
     desc: "OpenTofu unit tests: registry.tf's invariants against fixture configs"
@@ -364,7 +361,7 @@ tasks:
     cmds:
       - task: build
       - 'echo "Built. Run directly so Ctrl-C can wait for tofu to release its lock:"'
-      - 'echo "  ./scripts/contractor/contractor demolish -site {{.SITE}} -confirm {{.SITE}}"'
+      - 'echo "  ./toolshed/contractor demolish -site {{.SITE}} -confirm {{.SITE}}"'
       - 'echo ""'
       - 'echo "Add -whatif first if you want to see what that would do."'
 
@@ -376,7 +373,7 @@ tasks:
     # on disk at worst, which `task clean-secrets` removes.
     cmds:
       - task: build
-      - ./scripts/contractor/contractor kubeconfig -site {{.SITE}}
+      - ./toolshed/contractor kubeconfig -site {{.SITE}}
 
   kubectl:
     desc: "Run a command against this site with a kubeconfig that lives only that long"
@@ -395,7 +392,7 @@ tasks:
     # one that leaves a credential lying around.
     cmds:
       - task: build
-      - ./scripts/contractor/contractor kubeconfig -site {{.SITE}} -- {{.CLI_ARGS}}
+      - ./toolshed/contractor kubeconfig -site {{.SITE}} -- {{.CLI_ARGS}}
 
   talosctl:
     desc: "Run talosctl against this site with a talosconfig that lives only that long"
@@ -410,10 +407,10 @@ tasks:
     # answer: put several questions in one call rather than paying for each.
     cmds:
       - task: build
-      - ./scripts/contractor/contractor talosconfig -site {{.SITE}} -- {{.CLI_ARGS}}
+      - ./toolshed/contractor talosconfig -site {{.SITE}} -- {{.CLI_ARGS}}
 
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
     cmds:
       - task: build
-      - ./scripts/contractor/contractor break-ground -site {{.SITE}} -phase sterilize
+      - ./toolshed/contractor break-ground -site {{.SITE}} -phase sterilize

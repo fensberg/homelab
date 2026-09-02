@@ -48,7 +48,7 @@
 // estate cannot report that the estate is down, which is what the external
 // canary already does without holding any credential that reaches in. Peers
 // measure; the canary notices when measurements stop arriving.
-package main
+package survey
 
 import (
 	"encoding/json"

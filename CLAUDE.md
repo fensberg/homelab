@@ -250,7 +250,7 @@ One entrypoint, a Go program, run from the Linux workstation:
 ```sh
 ./scripts/install-dependencies.sh   # once
 task start SITE=site0               # builds break-ground and prints the command to run it
-./scripts/contractor/contractor break-ground -site site0 # the actual run - always run this directly, never through task
+./toolshed/contractor break-ground -site site0 # the actual run - always run this directly, never through task
 ```
 
 **`task start` deliberately does not run break-ground itself.** `task` intercepts
@@ -362,7 +362,7 @@ A GitHub App cannot hold a signing key — SSH and GPG signing keys are
 user-account resources, and the agent deliberately has no user account. What
 an App can do is have GitHub sign for it: a commit created through the Git
 Data API with an installation token comes back signed with GitHub's own key.
-A plain `git push` is refused by the `pre-push` hook (`scripts/pushguard`),
+A plain `git push` is refused by the `pre-push` hook (`scripts/security`),
 because it produces unsigned commits attributed to whatever local git config
 says. That used to be documented and left to discipline, and discipline was not
 enough — a session pushed twice with plain git before anyone noticed, and
@@ -559,7 +559,7 @@ floor a pull request may not drop below and is free to leave alone.
 - **A test states every input it depends on.** Anything read from the machine
   rather than set by the test — git config, environment variables, the working
   directory, the clock, the network — is a bug waiting for a different machine.
-  This is not theoretical: two tests in `scripts/pushguard` were written this
+  This is not theoretical: two tests in `scripts/security` were written this
   way in consecutive changes. One built a deliberately _unsigned_ commit and
   inherited `commit.gpgsign` from the developer's global config, so on any
   machine following this repository's own setup the fixture was signed and the

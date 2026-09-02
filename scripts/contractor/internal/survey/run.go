@@ -1,4 +1,4 @@
-package main
+package survey
 
 import (
 	"context"
@@ -12,14 +12,20 @@ import (
 
 const defaultCLI = "tailscale"
 
-func main() {
+// Run is the survey verb.
+//
+// A surveyor walks the site before anybody builds on it. This one walks the
+// overlay: every peer probed rather than asked about, because registration is
+// not reachability.
+func Run(args []string) int {
+	fs := flag.NewFlagSet("survey", flag.ExitOnError)
 	var (
-		cli     = flag.String("cli", defaultCLI, "Path to the overlay CLI.")
-		timeout = flag.Duration("timeout", 5*time.Second, "How long to wait for one peer to answer.")
-		budget  = flag.Duration("budget", 2*time.Minute, "Upper bound on the whole survey.")
-		expect  = flag.String("expect", "", "Path to the JSON baseline of what the estate declares belongs on the overlay. Without one, survey reports that it was told nothing rather than reporting a clean mesh.")
+		cli     = fs.String("cli", defaultCLI, "Path to the overlay CLI.")
+		timeout = fs.Duration("timeout", 5*time.Second, "How long to wait for one peer to answer.")
+		budget  = fs.Duration("budget", 2*time.Minute, "Upper bound on the whole survey.")
+		expect  = fs.String("expect", "", "Path to the JSON baseline of what the estate declares belongs on the overlay. Without one, survey reports that it was told nothing rather than reporting a clean mesh.")
 	)
-	flag.Usage = func() {
+	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `survey - does the overlay actually carry traffic
 
 Reports this host's row of the reachability matrix: every peer it can see,
@@ -34,9 +40,9 @@ own health gate were all unable to report.
 Run it on a member of the overlay. The workstation is not one.
 
 `)
-		flag.PrintDefaults()
+		fs.PrintDefaults()
 	}
-	flag.Parse()
+	_ = fs.Parse(args)
 
 	ctx, cancel := context.WithTimeout(context.Background(), *budget)
 	defer cancel()
@@ -44,19 +50,20 @@ Run it on a member of the overlay. The workstation is not one.
 	want, err := LoadExpectation(*expect)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "survey: "+err.Error())
-		os.Exit(2)
+		return 2
 	}
 
 	v, err := run(ctx, *cli, *timeout, want)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "survey: "+err.Error())
-		os.Exit(2)
+		return 2
 	}
 
 	report(os.Stdout, v)
 	if len(v.unreachable()) > 0 || len(v.Findings) > 0 {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func run(ctx context.Context, cli string, per time.Duration, want Expectation) (Verdict, error) {
