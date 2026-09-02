@@ -240,9 +240,24 @@ func summariseApply(r io.Reader, emit func(string)) (lines []string, failed []st
 				say(fmt.Sprintf("%-9s %s (%ds elapsed)",
 					"still", addr, int(ev.Hook.ElapsedSeconds)))
 			}
-		case "apply_start", "apply_complete", "apply_errored":
+		// Started, finished and failed must not look the same.
+		//
+		// All three were printed as "<action> <address>", so every resource
+		// appeared twice and a resource that failed appeared exactly like one
+		// that succeeded. A real teardown printed five VMs deleting, five VMs
+		// "deleting" again, and then said the destroy had failed - with
+		// nothing to say which five had actually gone.
+		case "apply_start":
 			if addr := ev.Hook.Resource.Addr; addr != "" {
 				say(fmt.Sprintf("%-9s %s", ev.Hook.Action, addr))
+			}
+		case "apply_complete":
+			if addr := ev.Hook.Resource.Addr; addr != "" {
+				say(fmt.Sprintf("%-9s %s", "done", addr))
+			}
+		case "apply_errored":
+			if addr := ev.Hook.Resource.Addr; addr != "" {
+				say(fmt.Sprintf("%-9s %s", "FAILED", addr))
 			}
 		case "change_summary":
 			say(fmt.Sprintf("%d added, %d changed, %d destroyed",

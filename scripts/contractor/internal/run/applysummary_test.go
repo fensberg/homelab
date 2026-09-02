@@ -184,3 +184,40 @@ func TestLinesAreEmittedAsTheyArrive(t *testing.T) {
 	pw.Close()
 	<-done
 }
+
+// Started, finished and failed must not look the same.
+//
+// All three event types were rendered as "<action> <address>", so every
+// resource appeared twice and a failure was indistinguishable from a success.
+// A real teardown printed five VMs deleting, five VMs "deleting" again, and
+// then reported that the destroy had failed - with nothing anywhere to say
+// which five had actually gone. The operator was left to check Proxmox by hand
+// against a list the program already had.
+func TestAFailedResourceDoesNotLookLikeAFinishedOne(t *testing.T) {
+	const stream = `{"@level":"info","type":"apply_start","hook":{"resource":{"addr":"proxmox_virtual_environment_vm.talos_cp[0]"},"action":"delete"}}
+{"@level":"info","type":"apply_complete","hook":{"resource":{"addr":"proxmox_virtual_environment_vm.talos_cp[0]"},"action":"delete"}}
+{"@level":"info","type":"apply_start","hook":{"resource":{"addr":"proxmox_virtual_environment_vm.talos_cp[1]"},"action":"delete"}}
+{"@level":"info","type":"apply_errored","hook":{"resource":{"addr":"proxmox_virtual_environment_vm.talos_cp[1]"},"action":"delete"}}`
+
+	lines, _ := summariseApply(strings.NewReader(stream), nil)
+
+	var done, failed string
+	for _, l := range lines {
+		if strings.Contains(l, "talos_cp[0]") && strings.Contains(l, "done") {
+			done = l
+		}
+		if strings.Contains(l, "talos_cp[1]") && strings.Contains(l, "FAILED") {
+			failed = l
+		}
+	}
+	if done == "" {
+		t.Error("the resource that completed is not reported as done")
+	}
+	if failed == "" {
+		t.Fatalf("the resource that errored is not marked as failed; lines were %v", lines)
+	}
+	if strings.Fields(done)[0] == strings.Fields(failed)[0] {
+		t.Errorf("a finished resource and a failed one carry the same label %q, so a teardown that half worked reads as one that worked",
+			strings.Fields(done)[0])
+	}
+}
