@@ -81,7 +81,7 @@ const threadQuery = `query($owner:String!,$repo:String!,$number:Int!){
       author{login}
       reviewThreads(first:100){nodes{
         isResolved
-        resolvedBy{login}
+        resolvedBy{login __typename}
         comments(first:1){nodes{body}}
       }}
     }
@@ -113,7 +113,8 @@ func (c *client) threads(pr int) ([]Thread, string, error) {
 						Nodes []struct {
 							IsResolved bool `json:"isResolved"`
 							ResolvedBy *struct {
-								Login string `json:"login"`
+								Login    string `json:"login"`
+								TypeName string `json:"__typename"`
 							} `json:"resolvedBy"`
 							Comments struct {
 								Nodes []struct {
@@ -142,6 +143,7 @@ func (c *client) threads(pr int) ([]Thread, string, error) {
 		t := Thread{Resolved: n.IsResolved}
 		if n.ResolvedBy != nil {
 			t.ResolvedBy = n.ResolvedBy.Login
+			t.ResolvedByType = n.ResolvedBy.TypeName
 		}
 		if len(n.Comments.Nodes) > 0 {
 			t.FirstCommentBody = n.Comments.Nodes[0].Body

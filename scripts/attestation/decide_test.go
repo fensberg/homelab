@@ -47,14 +47,58 @@ func TestAnOpenThreadBlocks(t *testing.T) {
 }
 
 // The check that should never fire.
-func TestResolvedByTheAuthorIsRefused(t *testing.T) {
-	threads := []Thread{{FirstCommentBody: marker, Resolved: true, ResolvedBy: "author"}}
-	v := Decide(threads, marker, "author")
-	if !v.Blocked {
-		t.Fatal("the author acknowledged their own change and the merge was allowed")
+//
+// The rule is about machines rather than about the author. A human closing a
+// conversation on their own pull request is already covered elsewhere: GitHub
+// forbids approving your own pull request and the ruleset requires one
+// approval, so a human-authored change needs a second human before it can
+// merge at all. A machine closing one is what no other rule would notice.
+func TestResolvedByABotIsRefused(t *testing.T) {
+	for _, closer := range []Thread{
+		{FirstCommentBody: marker, Resolved: true, ResolvedBy: "github-actions[bot]"},
+		{FirstCommentBody: marker, Resolved: true, ResolvedBy: "fensberg-claude[bot]"},
+		{FirstCommentBody: marker, Resolved: true, ResolvedBy: "anything", ResolvedByType: "Bot"},
+	} {
+		v := Decide([]Thread{closer}, marker, "someone")
+		if !v.Blocked {
+			t.Errorf("%s closed the acknowledgement and the merge was allowed", closer.ResolvedBy)
+		}
+		if !strings.Contains(v.Reason, "human act") {
+			t.Errorf("the refusal does not say why a machine cannot acknowledge:\n%s", v.Reason)
+		}
 	}
-	if !strings.Contains(v.Reason, "two separate acts") {
-		t.Errorf("the refusal does not say why self-acknowledgement is not one:\n%s", v.Reason)
+}
+
+// Both signals, not either. GraphQL's __typename is authoritative and the
+// login suffix is the fallback for when it is absent, because the consequence
+// of reading a bot as a human is that the gate passes.
+func TestABotIsDetectedByEitherSignal(t *testing.T) {
+	if !isMachine("x", "Bot") {
+		t.Error("a Bot typename was read as human")
+	}
+	if !isMachine("dependabot[bot]", "") {
+		t.Error("a [bot] login with no typename was read as human")
+	}
+	if isMachine("jlemberg", "User") {
+		t.Error("a person was read as a machine, which would block every acknowledgement")
+	}
+	if isMachine("[bot]", "") {
+		t.Error("a login that is only the suffix was treated as a bot name")
+	}
+}
+
+// The author closing their own conversation is allowed, deliberately. Opening
+// one by accident and closing it again must not lock somebody out of their own
+// pull request, and the approval requirement already means a human-authored
+// change needs a second human.
+func TestTheAuthorMayCloseTheirOwnConversation(t *testing.T) {
+	threads := []Thread{{
+		FirstCommentBody: marker, Resolved: true,
+		ResolvedBy: "jlemberg", ResolvedByType: "User",
+	}}
+	if v := Decide(threads, marker, "jlemberg"); v.Blocked {
+		t.Fatalf("a person was blocked from closing a conversation on their own pull "+
+			"request: %s", v.Reason)
 	}
 }
 
@@ -69,7 +113,7 @@ func TestResolvedByNobodyIsRefused(t *testing.T) {
 }
 
 func TestResolvedBySomebodyElsePasses(t *testing.T) {
-	threads := []Thread{{FirstCommentBody: marker, Resolved: true, ResolvedBy: "reviewer"}}
+	threads := []Thread{{FirstCommentBody: marker, Resolved: true, ResolvedBy: "reviewer", ResolvedByType: "User"}}
 	v := Decide(threads, marker, "author")
 	if v.Blocked {
 		t.Fatalf("a genuine acknowledgement was refused: %s", v.Reason)

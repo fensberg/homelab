@@ -15,6 +15,10 @@ type Thread struct {
 	FirstCommentBody string
 	Resolved         bool
 	ResolvedBy       string
+	// ResolvedByType is GraphQL's __typename for the actor: "User" or "Bot".
+	// Empty when GitHub did not say, which is treated as unknown rather than
+	// as human.
+	ResolvedByType string
 }
 
 // Verdict is what to do about a pull request touching a sensitive path.
@@ -37,8 +41,18 @@ type Verdict struct {
 //   - one exists and is open - block
 //   - resolved, and by nobody GitHub will name - block, because "I cannot tell
 //     who acknowledged this" and "somebody did" are different answers
-//   - resolved by the author of the pull request - block, because approving
-//     and acknowledging have to be two separate acts by two people
+//   - resolved by a bot - block, because acknowledging is a human act
+//
+// The rule is about machines rather than about the author, and that is the
+// stronger version. A human closing a conversation on their own pull request
+// is already covered: GitHub forbids approving your own pull request and the
+// ruleset requires one approval, so a human-authored change needs a second
+// human before it can merge at all. What that does not cover is a machine
+// closing a conversation, which no other rule anywhere would notice.
+//
+// It is also the version that does not punish an honest mistake. Opening a
+// conversation and closing it again should not lock somebody out of their own
+// pull request.
 func Decide(threads []Thread, marker, prAuthor string) Verdict {
 	var found *Thread
 	for i := range threads {
@@ -70,16 +84,30 @@ func Decide(threads []Thread, marker, prAuthor string) Verdict {
 				"resolved it, so this cannot be shown to be a real acknowledgement."}
 	}
 
-	if found.ResolvedBy == prAuthor {
+	if isMachine(found.ResolvedBy, found.ResolvedByType) {
 		return Verdict{Blocked: true, Reason: fmt.Sprintf(
-			"The acknowledgement was closed by %s, who opened this pull request. "+
-				"Approving and acknowledging have to be two separate acts by two "+
-				"different people - otherwise the gate is a formality the author "+
-				"performs on themselves. Reopen the conversation and have somebody "+
-				"else read the change.", found.ResolvedBy)}
+			"The acknowledgement was closed by %s, which is a machine. Reading a "+
+				"change and deciding it is safe is a human act - a bot closing this "+
+				"conversation has acknowledged nothing, it has only made the page look "+
+				"like somebody did. Reopen it and have a person read the change.",
+			found.ResolvedBy)}
 	}
+	_ = prAuthor
 
 	return Verdict{Reason: fmt.Sprintf("Acknowledged by %s.", found.ResolvedBy)}
+}
+
+// isMachine reports whether an actor is a bot.
+//
+// GraphQL's __typename is the authoritative answer and the login suffix is the
+// fallback for when it is absent - both, rather than either, because the
+// consequence of reading a bot as a human is that the gate passes.
+func isMachine(login, typename string) bool {
+	if typename == "Bot" {
+		return true
+	}
+	const suffix = "[bot]"
+	return len(login) > len(suffix) && login[len(login)-len(suffix):] == suffix
 }
 
 // contains is strings.Contains, spelled out so this file has no imports beyond
