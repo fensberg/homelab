@@ -289,13 +289,21 @@ attaches to the estate's state, plans, and prints what would change - then
 sterilizes. It is the half of the review a pull request could not give:
 approving a diff of HCL used to mean finding out what it meant afterwards.
 
-**A plan cannot show a change to the control plane's size.**
-`data.talos_cluster_health` reads at plan time against every node the config
-declares, so raising `control_plane_count` makes it wait for machines that do
-not exist yet, time out, and produce nothing. An apply has no such problem -
-the graph creates the machines before reading their health - so `contractor plan`
-detects the mismatch up front and says to converge instead of waiting ten
-minutes to fail. That is the one question a plan here genuinely cannot answer.
+**A plan shows a change to the control plane's size, and it did not always.**
+`data.talos_cluster_health` is scoped to the nodes the config _asks for_, which
+is fully known at plan time, so raising `control_plane_count` once made it wait
+for machines that did not exist yet and time out producing nothing. The gate now
+depends on the VMs themselves, and OpenTofu defers a data source read to apply
+time when something it depends on has pending changes - so the read moves to
+where the machines exist and the plan completes.
+
+The stopgap was a check in `contractor plan` that compared the config's count
+against the state's and refused up front, on the stated ground that this was the
+one question a plan could not answer. That was never true of the tool, only of
+one line of scoping - and the claim outlived the defect. The refusal stayed after
+the fix landed, so the fix was never exercised and the estate's own acceptance
+test could not get a plan. Describe a limitation as current and name what would
+change it; `docs/epochs/01-ignition.md` records both halves.
 
 **It reports structure and never a value.** A plan holds every attribute of
 every resource it touches; this repository keeps hostnames, addresses and

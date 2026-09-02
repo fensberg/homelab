@@ -1489,13 +1489,32 @@ downstream of a Verify that never passed, so none of it has been exercised
 either. The test failed at the first hop, not at the thing it was written to
 measure.
 
-**So this epoch cannot close on its own.** The acceptance test as written -
-merge it, and two machines appear with nobody having run anything - requires
-that the thing doing the converging can reach the hypervisor. Today it cannot.
-That is a prerequisite this epoch does not own, and the honest statement is that
-**epoch 01 cannot sign off until pod egress to the tailnet exists**, whether
-that arrives as the Tailscale Kubernetes operator's egress proxy or as part of
-the Cilium move already recorded for epoch 03.
+**That was read as "this epoch cannot close on its own", and it was wrong.**
+The entry above concluded that epoch 01 could not sign off until pod egress to
+the tailnet existed, and named the Tailscale Kubernetes operator's egress proxy
+or the Cilium move in epoch 03 as the things that would deliver it. Neither has
+happened, and the prerequisite is met anyway.
+
+The pod could not reach the hypervisor because **the hypervisor was carrying no
+traffic at all** - the IPv6 half-stack and the VRF/mark routing collision
+recorded further down, both since fixed in `hypervisor-prep.yml`. The absence of
+a path was read as a property of pods on this cluster, when it was a property of
+one host. A second, smaller error sat on top of it: Verify proved the path with
+ICMP, which Pod Security Admission makes impossible from a pod regardless of
+reachability, so the pre-flight would have failed even once the overlay worked.
+The converge asks with TCP instead as of #114.
+
+Measured on 2026-09-02, from a job on the self-hosted runner - a pod on this
+cluster - during the plan lane of the scale-up pull request:
+
+    PHASE 3 : VERIFY
+      [ok] Proxmox API reachable
+      [ok] node subnet reachable - the path to this estate works
+    PHASE 4 : ATTACH
+      [ok] attached to existing state: 31 resource(s)
+
+**Epoch 01 does not need pod egress to the tailnet.** It needed the overlay to
+work and the pre-flight to ask a question a pod can answer.
 
 The alternative - run the converge from the workstation instead and call the
 epoch done - is not available. The wording of the test was deliberately
@@ -2411,3 +2430,37 @@ config, or referenced by anything that outlives a reboot. The hypervisor is
 the opposite case: it is not ephemeral, and its address is stable enough that
 the config holds it today. Noticed while reading the device list for another
 reason, not by anything failing yet.
+
+### A fix landed, and the workaround it replaced stayed in front of it
+
+The scale-up plan was blocked twice by the same defect, once genuinely and once
+by its own stopgap.
+
+`data.talos_cluster_health` was scoped to `local.node_ips` - the nodes the
+config _asks for_ - which is fully known at plan time, so raising
+`control_plane_count` made it read against two addresses with no machine behind
+them and spend the full ten-minute read timeout producing nothing. The stopgap
+was a check at the top of `contractor plan` that compared the config's count
+against the state's and refused immediately, so a wasted ten minutes became a
+fast, explanatory failure.
+
+That was the correct trade at the time. #118 then fixed the cause - the gate
+depends on the VMs, and OpenTofu defers a data source read to apply time when
+something it depends on has pending changes - and **the stopgap was not
+removed**. So `contractor plan` still refused before `tofu` was ever invoked,
+which meant the fix was never exercised: the first pull request that raised the
+count got the old refusal from a repository that could already answer.
+
+The refusal also carried a claim in its error text - that this was "the one case
+where a plan genuinely cannot answer the question" - which was repeated in
+`CLAUDE.md`. It was never a property of the tool, only of one line of scoping,
+and it is exactly the kind of confident sentence that discourages anyone from
+looking. Both are corrected.
+
+**The generalisation.** A workaround is written to be conspicuous and a fix is
+written to be invisible, so the fix is the half that gets landed and the
+workaround is the half that gets left. When something is added because a defect
+exists, the entry that records the defect should name the workaround too, so
+closing one is a prompt to delete the other. Nothing here catches it
+mechanically: the two lived in different files, both tested, both passing, and
+between them the estate had a capability it refused to use.

@@ -115,44 +115,6 @@ func TestSummarisePlan_RejectsGarbage(t *testing.T) {
 	}
 }
 
-// The plan hung for ten minutes and produced nothing, because
-// data.talos_cluster_health reads at plan time against every node the config
-// declares - and the config had just been raised from three to five. It waited
-// for two machines that did not exist yet.
-//
-// Counting what the state actually holds is what turns that into an immediate
-// answer. Only control-plane instances count: the template VM is a
-// proxmox_virtual_environment_vm too, and counting it would make a correct
-// estate look like it was one node short.
-func TestCountControlPlaneVMs(t *testing.T) {
-	const stateList = `cloudflare_r2_bucket.homelab
-data.talos_client_configuration.this
-proxmox_download_file.talos_disk_image["martha"]
-proxmox_virtual_environment_vm.talos_template["martha"]
-proxmox_virtual_environment_vm.talos_cp[0]
-proxmox_virtual_environment_vm.talos_cp[1]
-proxmox_virtual_environment_vm.talos_cp[2]
-talos_machine_bootstrap.this
-tailscale_tailnet_key.hypervisor`
-
-	if got := countControlPlaneVMs(stateList); got != 3 {
-		t.Fatalf("counted %d control-plane VMs, want 3", got)
-	}
-}
-
-func TestCountControlPlaneVMs_IgnoresTheTemplateAlone(t *testing.T) {
-	const onlyTemplate = `proxmox_virtual_environment_vm.talos_template["martha"]`
-	if got := countControlPlaneVMs(onlyTemplate); got != 0 {
-		t.Fatalf("the template VM was counted as a control-plane node; got %d, want 0", got)
-	}
-}
-
-func TestCountControlPlaneVMs_EmptyState(t *testing.T) {
-	if got := countControlPlaneVMs(""); got != 0 {
-		t.Fatalf("got %d for empty state, want 0", got)
-	}
-}
-
 // A resource address is not the safe half of a plan.
 //
 // `for_each` over the config's hypervisor map keys the resource by the
