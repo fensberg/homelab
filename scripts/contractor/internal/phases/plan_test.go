@@ -157,7 +157,7 @@ func TestUnkeyedAddressesAreUntouched(t *testing.T) {
 // artefact then contradicted by containing both a value and the whole run. A
 // reader can see what the output is; the comment's job is to carry the change.
 func TestTheCommentIsJustTheChange(t *testing.T) {
-	body := commentBody("site0", "  replace  tailscale_tailnet_key.hypervisor")
+	body := commentBody("site0", "  replace  tailscale_tailnet_key.hypervisor", "abc1234")
 
 	for _, unwanted := range []string{
 		"contractor checking in", // a signature
@@ -183,8 +183,8 @@ func TestTheCommentIsJustTheChange(t *testing.T) {
 // planned three times carried three comments and the reader had to work out
 // which was current.
 func TestTheCommentCarriesAMarkerPerSite(t *testing.T) {
-	a := commentBody("site0", "x")
-	b := commentBody("site10", "x")
+	a := commentBody("site0", "x", "abc1234")
+	b := commentBody("site10", "x", "abc1234")
 
 	if !strings.HasPrefix(a, commentMarker("site0")) {
 		t.Error("the comment has no marker, so a later run cannot find it to update")
@@ -195,5 +195,50 @@ func TestTheCommentCarriesAMarkerPerSite(t *testing.T) {
 	}
 	if strings.Contains(b, commentMarker("site0")) {
 		t.Error("a site's comment carries another site's marker")
+	}
+}
+
+// A plan comment must say which commit it describes.
+//
+// A later run replaces the comment in place, so its contents are only ever as
+// current as the last plan that succeeded. When the plan lane cannot run - no
+// runner, which is this estate's normal state while it is being rebuilt - the
+// previous comment stays, describing a change that is no longer the one being
+// proposed.
+//
+// Push 3 -> 5, then 5 -> 17, and with no plan in between a reviewer reads
+// "2 to add" and approves fourteen machines. Nothing distinguished a fresh
+// comment from a stale one: no commit, no timestamp, and GitHub dismisses
+// stale reviews on a push but never comments.
+func TestTheCommentSaysWhichCommitItDescribes(t *testing.T) {
+	body := commentBody("site0", "add  proxmox_virtual_environment_vm.talos_cp[3]", "abc1234")
+	if !strings.Contains(body, "abc1234") {
+		t.Fatalf("the comment does not name the commit it describes, so a stale one is "+
+			"indistinguishable from a current one:\n%s", body)
+	}
+}
+
+// The marker has to stay first. The workflow finds the comment to replace with
+// startsWith(marker), so anything printed before it turns every re-plan into a
+// new comment - which is the pile-up that made the reader work out which was
+// current, and would now leave several plans each claiming a different commit.
+func TestTheMarkerStaysTheFirstThingInTheComment(t *testing.T) {
+	body := commentBody("site0", "x", "abc1234")
+	if !strings.HasPrefix(body, commentMarker("site0")) {
+		t.Fatalf("the comment no longer starts with its marker, so the workflow cannot "+
+			"find and replace it:\n%s", body)
+	}
+}
+
+// A commit that cannot be determined is left out rather than guessed at. A
+// comment with no provenance is worse than one with it; a comment carrying the
+// wrong commit is worse than both, because it looks like evidence.
+func TestAnUnknownCommitIsOmittedRatherThanInvented(t *testing.T) {
+	body := commentBody("site0", "x", "")
+	if strings.Contains(body, "Planned against") {
+		t.Errorf("the comment claims provenance it does not have:\n%s", body)
+	}
+	if !strings.HasPrefix(body, commentMarker("site0")) {
+		t.Error("the marker moved when the commit was absent")
 	}
 }
