@@ -46,10 +46,56 @@
     username: dev
     state: present
 
+    # The overlay. A workstation that is not on it cannot reach the estate.
+    #
+    # This is not a convenience. The hypervisor is addressed by its overlay
+    # identity, because that is the only address that works from inside the
+    # cluster as well as outside it - see #99. A devbox on the LAN alone
+    # therefore cannot reach the hypervisor it sits on: it hands the overlay
+    # address to the LAN gateway, which black-holes it, and every provider call
+    # in `break-ground` and `demolish` waits forever without ever reporting an
+    # error. That cost a full day before anybody looked at a route table.
+    #
+    # Tagged rather than user-owned, and the reason is expiry. A device
+    # authenticated by a person carries a node key that expires - 180 days by
+    # default - and then silently leaves the tailnet, reproducing that same
+    # outage on a timer with nothing to connect the two events. A tagged device
+    # does not expire, which is why the hypervisor shows "Expiry disabled".
+    #
+    # A workstation is not a router and must not wear the router tag: that tag
+    # is what autoApprovers trusts to advertise subnet routes, and a laptop
+    # that can claim 10.0.0.0/8 is a laptop that can hijack a site.
+    overlay: true
+    overlay_tag: "tag:homelab-workstation"
+    # Minted in the Tailscale console, or by `tailscale login --auth-key`. It is
+    # a credential: pass it with -e rather than writing it into an inventory
+    # file, and it is consumed once at first boot.
+    overlay_auth_key: ""
+
     image_url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2"
     image_path: "/var/lib/vz/template/iso/debian-13-genericcloud-amd64.qcow2"
 
   tasks:
+    # Fail here rather than at first boot. `tailscale up --auth-key=''`
+    # exits zero having joined nothing, so a workstation provisioned without a
+    # key comes up looking healthy and cannot reach the estate - which is the
+    # defect this whole block exists to prevent, reintroduced by an empty
+    # string.
+    - name: Refuse to build a workstation that cannot reach the estate
+      ansible.builtin.assert:
+        that:
+          - overlay_auth_key | length > 0
+        fail_msg: >-
+          overlay is on and overlay_auth_key is empty. Mint a key in the
+          Tailscale console that may apply {{ overlay_tag }}, and pass it with
+          -e overlay_auth_key=... rather than writing it into an inventory
+          file. Set overlay=false only if this machine genuinely has another
+          route to the hypervisor's API - it will not have one by default,
+          because the hypervisor is addressed by its overlay identity.
+        success_msg: "an overlay key was supplied"
+      when: overlay and state == "present"
+      tags: [always]
+
     - name: Look for an existing workstation
       ansible.builtin.command: qm status {{ vmid }}
       register: existing
@@ -147,6 +193,25 @@
                 - python3-venv
               runcmd:
                 - [systemctl, enable, --now, qemu-guest-agent]
+              {% if overlay %}
+                # Tailscale from its own signed apt repository, the same source
+                # and the same method hypervisor-prep.yml uses. Deliberately
+                # not the install script: `curl | sh` is the shape this estate
+                # keeps an approved-suppliers list to prevent, and the package
+                # is signed where the script is merely fetched.
+                - [sh, -c, ". /etc/os-release && curl -fsSL -o /usr/share/keyrings/tailscale-archive-keyring.gpg https://pkgs.tailscale.com/stable/debian/$VERSION_CODENAME.noarmor.gpg"]
+                - [sh, -c, ". /etc/os-release && echo \"deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian $VERSION_CODENAME main\" > /etc/apt/sources.list.d/tailscale.list"]
+                - [apt-get, update]
+                - [apt-get, install, -y, tailscale]
+                - [systemctl, enable, --now, tailscaled]
+                # --accept-routes so the node subnet is reachable over the
+                # overlay rather than only from the hypervisor's own LAN. The
+                # workstation sits on vmbr0 on purpose (see `bridge` above), so
+                # without this it loses the estate the moment the SDN is
+                # rebuilt - which is exactly when somebody is running the
+                # button and needs to see it.
+                - [sh, -c, "tailscale up --auth-key='{{ overlay_auth_key }}' --advertise-tags='{{ overlay_tag }}' --accept-routes"]
+              {% endif %}
 
         - name: Create the virtual machine
           ansible.builtin.command: >-

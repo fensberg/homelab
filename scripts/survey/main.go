@@ -17,6 +17,7 @@ func main() {
 		cli     = flag.String("cli", defaultCLI, "Path to the overlay CLI.")
 		timeout = flag.Duration("timeout", 5*time.Second, "How long to wait for one peer to answer.")
 		budget  = flag.Duration("budget", 2*time.Minute, "Upper bound on the whole survey.")
+		expect  = flag.String("expect", "", "Path to the JSON baseline of what the estate declares belongs on the overlay. Without one, survey reports that it was told nothing rather than reporting a clean mesh.")
 	)
 	flag.Usage = func() {
 		fmt.Fprint(os.Stderr, `survey - does the overlay actually carry traffic
@@ -40,7 +41,13 @@ Run it on a member of the overlay. The workstation is not one.
 	ctx, cancel := context.WithTimeout(context.Background(), *budget)
 	defer cancel()
 
-	v, err := run(ctx, *cli, *timeout)
+	want, err := LoadExpectation(*expect)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "survey: "+err.Error())
+		os.Exit(2)
+	}
+
+	v, err := run(ctx, *cli, *timeout, want)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "survey: "+err.Error())
 		os.Exit(2)
@@ -52,7 +59,7 @@ Run it on a member of the overlay. The workstation is not one.
 	}
 }
 
-func run(ctx context.Context, cli string, per time.Duration) (Verdict, error) {
+func run(ctx context.Context, cli string, per time.Duration, want Expectation) (Verdict, error) {
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	raw, err := exec.CommandContext(ctx, cli, "status", "--json").Output()
 	if err != nil {
@@ -64,13 +71,13 @@ func run(ctx context.Context, cli string, per time.Duration) (Verdict, error) {
 		return Verdict{}, err
 	}
 
-	v := Verdict{From: self, Health: health}
+	var results []result
 	for _, p := range peers {
 		addr := probeAddr(p)
 		r := result{Name: displayName(p), IP: addr, Registered: p.Online}
 		if addr == "" {
 			r.Detail = "no address"
-			v.Results = append(v.Results, r)
+			results = append(results, r)
 			continue
 		}
 
@@ -82,9 +89,9 @@ func run(ctx context.Context, cli string, per time.Duration) (Verdict, error) {
 		out, _ := exec.CommandContext(ctx, cli,
 			"ping", "-c", "1", "--timeout", per.String(), addr).CombinedOutput()
 		r.Reachable, r.Via, r.Detail = interpretPing(string(out))
-		v.Results = append(v.Results, r)
+		results = append(results, r)
 	}
-	return v, nil
+	return Assemble(self, health, results, peers, want), nil
 }
 
 func report(w *os.File, v Verdict) {

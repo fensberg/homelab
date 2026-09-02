@@ -53,15 +53,6 @@ func appJWT(key *rsa.PrivateKey, appID string, now time.Time) (string, error) {
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-// verifyRS256 exists for the test that proves a produced JWT verifies against
-// its own public half. GitHub's rejection message for a bad signature is
-// indistinguishable from one for a wrong app id, so this is checked here
-// rather than discovered there.
-func verifyRS256(pub *rsa.PublicKey, signingInput string, sig []byte) error {
-	digest := sha256.Sum256([]byte(signingInput))
-	return rsa.VerifyPKCS1v15(pub, crypto.SHA256, digest[:], sig)
-}
-
 // loadKey reads the App private key. GitHub issues PKCS#1 ("BEGIN RSA PRIVATE
 // KEY"); PKCS#8 is accepted too so that a key converted by openssl still works.
 func loadKey(path string) (*rsa.PrivateKey, error) {
