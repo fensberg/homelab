@@ -113,6 +113,26 @@ resource "proxmox_virtual_environment_vm" "talos_template" {
     enabled = false
   }
 
+  # Stop, do not ask.
+  #
+  # The provider's default is a graceful ACPI shutdown with
+  # timeout_shutdown_vm at 1800 seconds, and its own documentation says that
+  # when the QEMU agent is disabled "the VM may not be able to shutdown
+  # properly, and may need to be forced off", recommending this setting. The
+  # agent is disabled here deliberately - Talos will not report ready without
+  # the extension in the Factory schematic - so this estate is precisely the
+  # configuration that recommendation is written for.
+  #
+  # Found by a real teardown: five VMs sat in "still destroying" while the
+  # provider waited politely for machines that were never going to answer.
+  # Thirty minutes each is the documented worst case.
+  #
+  # The verb decides the manners. A converge is surgical and would want a
+  # clean shutdown; a demolish is demolition, and the machines it is stopping
+  # are ones it is about to delete. There is nothing on them to lose - that is
+  # what makes the whole operation acceptable in the first place.
+  stop_on_destroy = true
+
   smbios {
     serial       = "${local.site_name}-talos-template"
     manufacturer = "Sidero Labs"
