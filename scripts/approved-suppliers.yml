@@ -155,4 +155,53 @@ endpoints:
 # exemption is deferred work, and deferred work that is not on the tracker is
 # just a check somebody turned off - so adding one costs the same as filing the
 # work, which is the point. The test refuses an entry without all three.
+# Repositories pre-commit clones and executes on a developer's machine.
+#
+# This is the delivery nobody was watching. Every commit runs seven third-party
+# repositories with the developer's own privileges - not in a container, not in
+# CI, on the machine that holds the vault session. That is a better position
+# than the container image which caused this file to exist, and until now none
+# of it was declared anywhere.
+#
+# It went unnoticed because pre-commit clones into ~/.cache/pre-commit under
+# generated names like `repornkulz89`, so the cache is unreadable by
+# inspection: an eighth repository appearing there would look exactly like the
+# seven that belong. Somebody noticing a strange directory and asking what it
+# was is what surfaced this.
+#
+# A hook must be listed here AND pinned by rev in .pre-commit-config.yaml.
+# tests/go/repo/suppliers_test.go fails the build when one is not.
+#
+# Audit the cache against this list with:
+#   for d in ~/.cache/pre-commit/repo*/; do git -C "$d" remote get-url origin; done
+# Several directories per repository is normal - pre-commit keeps one clone per
+# rev, so a repository whose pin has moved appears more than once.
+hooks:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    reason: >-
+      The maintainers of pre-commit itself. Supplies the checks that run before
+      anything else: merge-conflict markers, private keys, trailing whitespace.
+  - repo: https://github.com/rbubley/mirrors-prettier
+    reason: >-
+      Prettier, from the mirror that is still maintained - pre-commit's own is
+      archived at prettier 3.1. Formats JSON, YAML and Markdown.
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    reason: >-
+      markdownlint, by its author. The same tool the Super-Linter image bundles,
+      moved here so it can be run by a person rather than only in CI.
+  - repo: https://github.com/rhysd/actionlint
+    reason: >-
+      Workflow linting, by its author. Catches an expression or a runner label
+      that would otherwise fail after a push.
+  - repo: https://github.com/scop/pre-commit-shfmt
+    reason: The shfmt hook wrapper. Formats the few shell scripts this repository has.
+  - repo: https://github.com/gitleaks/gitleaks
+    reason: >-
+      Secret scanning before a commit exists, rather than after it is published.
+      The last line before something leaves this machine.
+  - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
+    reason: >-
+      The commit-msg hook that enforces conventional commits, and with them the
+      rule that refuses a Claude co-authorship trailer.
+
 exemptions: []

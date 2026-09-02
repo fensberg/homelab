@@ -43,6 +43,10 @@ type suppliers struct {
 		Trigger string `yaml:"trigger"`
 		Issue   int    `yaml:"issue"`
 	} `yaml:"exemptions"`
+	Hooks []struct {
+		Repo   string `yaml:"repo"`
+		Reason string `yaml:"reason"`
+	} `yaml:"hooks"`
 }
 
 func readSuppliers(t *testing.T) (suppliers, string) {
@@ -325,4 +329,124 @@ func TestWorkflowEgressIsDeclaredInTheSuppliersList(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("no allowed-endpoints entries found, so this test proves nothing")
 	}
+}
+
+// Every repository pre-commit clones is a supplier, and must be declared.
+//
+// This was the delivery nobody was watching. Seven third-party repositories
+// run on every commit with the developer's own privileges - not in a
+// container, not in CI, on the machine holding the vault session. That is a
+// better position than the container image which caused approved-suppliers.yml
+// to exist, and none of it was declared anywhere.
+//
+// It stayed invisible because pre-commit clones into ~/.cache/pre-commit under
+// generated names like `repornkulz89`. An eighth repository appearing there
+// would look exactly like the seven that belong; the only reason this was ever
+// looked at is that somebody saw a strange directory and asked.
+func TestEveryCommitHookIsAnApprovedSupplier(t *testing.T) {
+	declared := map[string]string{}
+	s, _ := readSuppliers(t)
+	for _, h := range s.Hooks {
+		declared[h.Repo] = h.Reason
+	}
+	if len(declared) == 0 {
+		t.Fatal("no commit hooks are declared as suppliers, so nothing checks what runs " +
+			"on every commit")
+	}
+
+	used := preCommitRepos(t)
+	if len(used) == 0 {
+		t.Fatal("no hook repositories were found in .pre-commit-config.yaml. Either the " +
+			"file changed shape or this check now guards nothing, and passing on an " +
+			"empty set is how a check stops mattering.")
+	}
+
+	for _, repo := range used {
+		reason, ok := declared[repo]
+		if !ok {
+			t.Errorf(".pre-commit-config.yaml runs %s and scripts/approved-suppliers.yml "+
+				"does not declare it.\n\n"+
+				"That repository executes on every commit with the developer's own "+
+				"privileges. Add it under `hooks:` with a reason, or remove the hook.",
+				repo)
+			continue
+		}
+		if strings.TrimSpace(reason) == "" {
+			t.Errorf("%s is declared with no reason. The reason is what a reviewer reads "+
+				"when deciding whether this supplier still belongs.", repo)
+		}
+	}
+
+	// The other direction: a declaration for a hook nobody runs is a supplier
+	// approved on paper, and the next person reads the list as current.
+	for repo := range declared {
+		if !containsString(used, repo) {
+			t.Errorf("scripts/approved-suppliers.yml declares %s and "+
+				".pre-commit-config.yaml does not use it. A supplier nobody takes "+
+				"delivery from makes the list look longer than the exposure is.", repo)
+		}
+	}
+}
+
+// Every hook must be pinned. `rev:` is the whole supply-chain control here:
+// a moving reference means the code that runs on the next commit is not the
+// code anybody reviewed.
+func TestEveryCommitHookIsPinned(t *testing.T) {
+	body := readPreCommitConfig(t)
+	var current string
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "- repo:") {
+			current = strings.TrimSpace(strings.TrimPrefix(trimmed, "- repo:"))
+			if current != "local" && !strings.Contains(body, "rev:") {
+				t.Errorf("%s has no rev at all", current)
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "rev:") && current != "" && current != "local" {
+			rev := strings.TrimSpace(strings.TrimPrefix(trimmed, "rev:"))
+			if rev == "" || rev == "main" || rev == "master" || rev == "HEAD" {
+				t.Errorf("%s is pinned to %q, which moves. The code that runs on the "+
+					"next commit would not be the code anybody reviewed.", current, rev)
+			}
+			current = ""
+		}
+	}
+}
+
+func preCommitRepos(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	for _, line := range strings.Split(readPreCommitConfig(t), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "- repo:") {
+			continue
+		}
+		repo := strings.TrimSpace(strings.TrimPrefix(trimmed, "- repo:"))
+		// `local` is this repository's own hooks - scripts already in the tree,
+		// reviewed like everything else, and not a delivery from anybody.
+		if repo == "local" || repo == "" {
+			continue
+		}
+		out = append(out, repo)
+	}
+	return out
+}
+
+func readPreCommitConfig(t *testing.T) string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), ".pre-commit-config.yaml"))
+	if err != nil {
+		t.Fatalf("reading .pre-commit-config.yaml: %v", err)
+	}
+	return string(body)
+}
+
+func containsString(haystack []string, needle string) bool {
+	for _, h := range haystack {
+		if h == needle {
+			return true
+		}
+	}
+	return false
 }
