@@ -13,4 +13,15 @@ cd "$root"
 go build -C scripts/supplierguard -o supplierguard .
 ./scripts/supplierguard/supplierguard
 
-exec pre-commit run --hook-stage pre-push
+# pre-commit's own entry point, with the arguments its generated hook uses.
+#
+# Not `pre-commit run --hook-stage pre-push`: that form does not receive the
+# ref information git passes on stdin and in argv, so PRE_COMMIT_REMOTE_BRANCH
+# and its siblings are unset - and the push guard, which fails closed when it
+# cannot tell which ref a push would update, refuses every push. Found by
+# breaking exactly that.
+exec pre-commit hook-impl \
+	--config=.pre-commit-config.yaml \
+	--hook-type=pre-push \
+	--hook-dir "$root/githooks" \
+	-- "$@"

@@ -79,6 +79,9 @@ scripts/pushguard/pushguard
 # Same, for the overlay reachability survey.
 scripts/survey/survey
 
+# Same, for the estate canary.
+scripts/canary/canary
+
 # Same, for the supplier guard. It is built by githooks/pre-commit on every
 # commit, so an untracked binary here would make every commit report "files
 # were modified by this hook" and refuse - the guard blocking work by existing.
