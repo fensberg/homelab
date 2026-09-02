@@ -78,6 +78,32 @@ repos:
 
   - repo: local
     hooks:
+      # First, and fail_fast, on purpose.
+      #
+      # Default deny: every hook below this line is third-party code that runs
+      # on this machine with your privileges, on every commit - not in a
+      # container and not in CI. Nothing arrives here without somebody deciding
+      # it should, and this is what enforces that rather than trusting it.
+      #
+      # It is ordered first because a commit that is going to be refused should
+      # cost milliseconds, and because a guard that runs after the thing it
+      # guards has already run is a report. Ordering alone does not achieve
+      # that - pre-commit runs every hook and reports at the end - so fail_fast
+      # goes with it, the same pairing push-guard uses.
+      #
+      # The honest limit: pre-commit installs a hook's environment before
+      # running it, and installation can execute setup code. This gates
+      # execution, not download. Closing that too would mean a wrapper around
+      # pre-commit itself, which is a bigger piece and is recorded rather than
+      # pretended.
+      - id: supplier-guard
+        name: refuse an unapproved third-party commit hook
+        entry: task supplier-guard
+        language: system
+        pass_filenames: false
+        always_run: true
+        fail_fast: true
+
       - id: tofu-fmt
         name: tofu fmt
         entry: tofu fmt
