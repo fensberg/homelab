@@ -1,0 +1,28 @@
+# The repository's own markdownlint rules, so the answer does not depend on
+# whichever configuration a linter image happens to ship.
+#
+# Chosen to match what already passes rather than to impose a new standard: the
+# point of moving this check local is to find the same defects sooner, not to
+# reformat every record in the repository on the way. Tighten it deliberately,
+# in its own change, if it is ever worth doing.
+config:
+  # Line length. Both CLAUDE.md and docs/epochs/01-ignition.md carry forty-odd
+  # lines over eighty characters on main, so this is already effectively off -
+  # saying so here is honest, where inheriting it silently was not.
+  MD013: false
+
+  # Inline HTML. The epoch records and pull request templates use it.
+  MD033: false
+
+  # First line in a file must be a top-level heading. Several records open with
+  # a metadata block instead.
+  MD041: false
+
+# No `globs` key on purpose. pre-commit passes the tracked files it is checking,
+# and cli2 honours those arguments; declaring globs here overrode that list and
+# pulled in vendored provider documentation under .terraform, which is gitignored
+# and not ours to lint. `ignores` is belt and braces for anyone running the CLI
+# directly.
+ignores:
+  - "**/.terraform/**"
+  - "**/node_modules/**"

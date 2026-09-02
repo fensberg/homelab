@@ -365,6 +365,15 @@ tasks:
     # workspace until `task clean-secrets` removes it; this one never writes
     # into the repository and removes the file on every exit path.
     #   task kubectl SITE=site0 -- kubectl -n arc-runners get pods
+    #
+    # THE SETUP COST IS PER INVOCATION, NOT PER COMMAND. Each run renders the
+    # config from the vault, waits for the state database, initialises the
+    # backend, reads one output and wipes all of it again - ten seconds or so,
+    # for a command that takes under one. Several questions belong in one call:
+    #   task kubectl SITE=site0 -- bash -c 'kubectl get nodes -o wide; kubectl get ds -A'
+    # Repeating the single-command form is what makes the safe path tedious, and
+    # a tedious safe path is pressure towards `task kubeconfig`, which is the
+    # one that leaves a credential lying around.
     cmds:
       - task: build
       - ./scripts/contractor/contractor kubeconfig -site {{.SITE}} -- {{.CLI_ARGS}}
@@ -377,6 +386,9 @@ tasks:
     # Kubernetes and can reboot or reset a machine, so there is deliberately no
     # form that leaves it on disk.
     #   task talosctl SITE=site0 -- talosctl -n 10.10.10.100 get links
+    #
+    # Same per-invocation setup cost as `task kubectl` above, and the same
+    # answer: put several questions in one call rather than paying for each.
     cmds:
       - task: build
       - ./scripts/contractor/contractor talosconfig -site {{.SITE}} -- {{.CLI_ARGS}}
