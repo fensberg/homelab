@@ -91,10 +91,17 @@ own privileges - not in a container and not in CI. That is a better position
 than most software gets, and it is why nothing arrives here without somebody
 deciding it should.
 
-If it belongs, declare it under 'hooks:' in scripts/approved-suppliers.yml with
-a reason somebody can read later. If it does not, remove the hook - and if it is
-in the cache but not the configuration, it is left over from a hook that used to
-be here, which 'pre-commit gc' removes.
+This is a speed bump with a named price, not a wall. An unapproved tool is
+welcome here; adopting one costs a pull request that does nothing else, saying
+what it is, who publishes it, what it would run with, what it replaces, and why
+this estate should take delivery from that party from now on. On its own,
+because bundled into a larger change the supply-chain decision becomes the
+least visible thing in the diff - which is the failure this list exists to
+prevent. Then declare it under 'hooks:' in scripts/approved-suppliers.yml.
+
+If it does not belong, remove the hook - and if it is in the cache but not the
+configuration, it is left over from a hook that used to be here, which
+'pre-commit gc' removes.
 `)
 	return b.String()
 }
