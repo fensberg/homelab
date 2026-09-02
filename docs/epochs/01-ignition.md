@@ -1421,6 +1421,19 @@ they were applied by hand and do not survive a reboot until the playbook has
 run. Confirm with `ip rule list | grep 5200` and `tailscale netcheck`, wanting
 `UDP: true` and a relay.
 
+**Step 0.5 - never reduce the count by merging while the estate is up.**
+Merging a lower `control_plane_count` fires a converge, and that converge is an
+uncontrolled scale-down: `tofu apply` destroys the surplus VMs with no cordon,
+no drain honouring PodDisruptionBudgets, and no etcd member removal. The
+destroyed members stay registered in etcd, and the machine being destroyed
+might be the one running the job doing the destroying. That is the operation
+epoch 05 exists to build and this estate does not have.
+
+It became a live hazard only once a converge actually worked end to end, which
+is why it is not in the older notes below. The safe order is always **destroy
+first, then lower the count** - a merge against an estate that no longer exists
+fails at Attach, which costs a red run and touches nothing.
+
 **Step 1 - match the config to reality before destroying.** `demolish`
 evaluates `data.talos_cluster_health` against the _config's_
 `control_plane_count`. If the config says five and three machines are running,
