@@ -295,10 +295,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 		run.Fail("HALTED: " + runErr.Error())
 
 		if ctx.PreexistingEstate {
-			run.Warn(verb + " failed. The estate is untouched by this failure - it was running before this")
-			run.Warn("started and its state still describes it. Nothing has been destroyed and nothing will be.")
-			run.Warn("Run 'task clean-secrets' to remove what this run rendered, then fix and re-run.")
-			os.Exit(1)
+			os.Exit(reportPreexistingFailure(ctx, verb))
 		}
 
 		if ctx.KeepOnFailure {
@@ -393,6 +390,52 @@ func runDestroy(ctx *run.Context, confirm string) int {
 // The full claim requires the full sequence, starting at the first phase. A
 // run beginning at `-from migrate` reaches the end without ever having built
 // the cluster it would be describing.
+// Exit codes for a failure against an estate that already existed. A caller
+// automating recovery needs to know whether reverting is exact or a guess, and
+// an exit code is the only channel a workflow can read without parsing prose.
+//
+//	exitUntouched  nothing was written; reverting the change is exact
+//	exitMayHaveChanged  something was written, or it could not be determined
+const (
+	exitMayHaveChanged = 1
+	exitUntouched      = 2
+)
+
+// reportPreexistingFailure says what is actually known about the estate after
+// a failed converge, and returns the exit code that says the same thing.
+//
+// It replaces an unconditional reassurance. The old text promised "the estate
+// is untouched by this failure - nothing has been destroyed and nothing will
+// be" on every converge failure whatever had happened, which was true when the
+// run died at Attach and false when it died partway through an apply. A
+// reassurance's whole function is to stop somebody looking, so the one case it
+// was wrong in was the one case where looking mattered.
+func reportPreexistingFailure(ctx *run.Context, verb string) int {
+	changed, certain := phases.EstateChanged(ctx)
+
+	switch {
+	case !certain:
+		run.Warn(verb + " failed, and this run cannot tell whether the estate changed.")
+		run.Warn("Reading the state did not work - an interrupted apply may still hold the lock.")
+		run.Warn("Treat the estate as changed until you have looked: 'task plan SITE=" + ctx.Site + "'")
+		run.Warn("compares what is running against what the config asks for.")
+	case changed:
+		run.Warn(verb + " failed after it had already written to the estate's state.")
+		run.Warn("Something was applied before this failed, so the estate no longer matches")
+		run.Warn("either the old config or the new one. Do not assume a revert undoes it:")
+		run.Warn("'task plan SITE=" + ctx.Site + "' shows what is actually there.")
+	default:
+		run.Warn(verb + " failed before anything was applied. The estate is untouched - its")
+		run.Warn("state serial is unchanged, so nothing was written and nothing will be.")
+	}
+	run.Warn("Run 'task clean-secrets' to remove what this run rendered, then fix and re-run.")
+
+	if !changed && certain {
+		return exitUntouched
+	}
+	return exitMayHaveChanged
+}
+
 func completionMessage(toRun []string) string {
 	if slices.Equal(toRun, phases.AllPhases) {
 		return "Ignition complete. The cluster is now self-sustaining."

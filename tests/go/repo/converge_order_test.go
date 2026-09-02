@@ -40,26 +40,28 @@ func TestNothingRunsTofuBeforeAttach(t *testing.T) {
 	}
 }
 
-// `run.Tofu` may only run `init`.
+// A tofu subcommand that can print resource attributes must not be run
+// through a helper that streams.
 //
-// It streams whatever tofu prints, straight through. For `init` that is
-// provider downloads and backend configuration - no resource attributes, so
-// nothing that came out of the vault. For anything else it is the planned
-// change in full, every non-sensitive attribute of everything touched.
+// Two helpers stream what the command prints: `run.Tofu`, and `run.Cmd` called
+// with "tofu" directly. For `init` that is provider downloads and backend
+// configuration, and for `state`/`validate`/`fmt` it is addresses or nothing -
+// none of which came out of the vault. For `apply`, `destroy`, `plan`, `show`
+// and `refresh` it is the resources themselves, every attribute the provider
+// did not mark sensitive.
 //
-// The overlay phase applied through it and published
-// `description = "<site> subnet router"` - the site's name, a vault value -
-// into a public repository's Actions log. Values had been guarded for a while
-// by then; this was the third distinct path by which a name reached that log
-// without a single attribute being printed on purpose.
+// The first version of this check only knew about `run.Tofu`, and asserted it
+// could only run `init`. That passed while `tofu destroy` sat one function
+// away going through `run.Cmd` - printing `talos_machine_secrets` in full, the
+// etcd, Kubernetes, aggregator and OS certificate authorities and the cluster
+// id, none marked sensitive by the provider. A guard that names one helper
+// tests the helper; what needed guarding was the subcommand.
 //
-// `run.TofuApply` and `run.TofuApplyArgs` read tofu's -json stream instead and
-// report an address and a verb per resource. The rule is an allowlist rather
-// than a search for the word "apply" because the argument list is often built
-// elsewhere: the first version of this check looked for a literal "apply" in
-// the call, and the very call that caused the leak passed `args...` and slipped
-// straight through it.
-func TestTheStreamingTofuHelperOnlyEverRunsInit(t *testing.T) {
+// So the allowlist is of subcommands, and it applies to every way of reaching
+// tofu. `run.TofuApply`, `run.TofuApplyArgs` and `run.TofuDestroy` are the
+// ways to run the rest: they read tofu's -json stream and report an address
+// and a verb per resource.
+func TestOnlyQuietTofuSubcommandsAreStreamed(t *testing.T) {
 	dir := filepath.Join(repoRoot(t), "scripts", "contractor", "internal", "phases")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -69,23 +71,58 @@ func TestTheStreamingTofuHelperOnlyEverRunsInit(t *testing.T) {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
 			t.Fatalf("reading %s: %v", e.Name(), err)
 		}
-		for _, at := range streamingTofuCall.FindAllStringIndex(string(body), -1) {
-			call := string(body)[at[0]:min(at[0]+240, len(body))]
-			if strings.Contains(call, `"init"`) {
-				continue
+		body := string(raw)
+		for _, at := range streamingTofuCall.FindAllStringIndex(body, -1) {
+			call := body[at[0]:min(at[0]+300, len(body))]
+			sub, found := firstSubcommand(call)
+			switch {
+			case !found:
+				t.Errorf("%s streams tofu with no literal subcommand in the call:\n\n  %s\n\n"+
+					"This check cannot tell what will run, and an argument list built "+
+					"elsewhere is exactly how `tofu apply` slipped past the version of "+
+					"this test that searched for the word. Pass the subcommand here, or "+
+					"use run.TofuApply / run.TofuApplyArgs / run.TofuDestroy.",
+					e.Name(), strings.TrimSpace(firstLine(call)))
+			case !quietSubcommands[sub]:
+				t.Errorf("%s streams `tofu %s`, which prints resource attributes:\n\n  %s\n\n"+
+					"A converge runs in a public Actions log and a destroy prints the "+
+					"estate's own certificate authorities. Use run.TofuApply, "+
+					"run.TofuApplyArgs or run.TofuDestroy, which report an address and a "+
+					"verb and no values.", e.Name(), sub, strings.TrimSpace(firstLine(call)))
 			}
-			t.Errorf("%s calls run.Tofu with something other than init:\n\n  %s\n\n"+
-				"run.Tofu streams what tofu prints, and anything but init prints resource "+
-				"attributes - a converge runs in a public Actions log. Use run.TofuApply "+
-				"or run.TofuApplyArgs, which report an address and a verb and no values.",
-				e.Name(), strings.TrimSpace(firstLine(call)))
 		}
 	}
 }
+
+// Subcommands that cannot print a resource attribute. Everything absent from
+// this list is refused rather than allowed, so a subcommand nobody considered
+// fails closed.
+var quietSubcommands = map[string]bool{
+	"init": true, "state": true, "validate": true,
+	"fmt": true, "version": true, "providers": true, "workspace": true,
+}
+
+// firstSubcommand returns the first quoted argument in a call that looks like
+// a tofu subcommand - a bare lower-case word, not a flag and not a label.
+func firstSubcommand(call string) (string, bool) {
+	for _, m := range quotedArg.FindAllStringSubmatch(call, -1) {
+		arg := m[1]
+		if strings.HasPrefix(arg, "-") || strings.ContainsAny(arg, " ./=") {
+			continue
+		}
+		if arg == "tofu" {
+			continue // the command name, not its subcommand
+		}
+		return arg, true
+	}
+	return "", false
+}
+
+var quotedArg = regexp.MustCompile(`"([^"]*)"`)
 
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
@@ -110,9 +147,11 @@ func TestEveryPhaseHasASourceFileNamedAfterIt(t *testing.T) {
 	}
 }
 
-// The streaming helper, exactly - not TofuApply, TofuInit or TofuOutputRaw,
-// whose names all begin the same way.
-var streamingTofuCall = regexp.MustCompile(`run\.Tofu\(`)
+// Every way of reaching tofu that streams its output: the thin wrapper, and
+// the general command runner called with tofu directly. Deliberately not
+// run.TofuApply / TofuApplyArgs / TofuDestroy, which summarise, nor the
+// CmdOutput family, which capture.
+var streamingTofuCall = regexp.MustCompile(`run\.Tofu\(|run\.Cmd\((?:[^,]*,\s*)?"tofu"`)
 
 // Anything that shells out to tofu. Deliberately broad: the question is not
 // which subcommand runs, it is whether the cluster directory acquires a local

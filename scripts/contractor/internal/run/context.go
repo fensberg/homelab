@@ -45,6 +45,15 @@ type Context struct {
 	// than build from scratch, and never destroy on failure.
 	Converge bool
 
+	// StateSerialAtAttach is the state's serial number as Attach found it,
+	// and AttachedOK says whether it was ever read. Together they are how a
+	// failed run answers "did anything actually change" with a measurement
+	// instead of a promise. Nothing before Attach can run tofu - the building
+	// code in tests/go/repo enforces it - so an unset AttachedOK proves the
+	// estate is untouched rather than merely suggesting it.
+	StateSerialAtAttach int64
+	AttachedOK          bool
+
 	// PreexistingEstate means this run did not create what it is looking at,
 	// so it must never tear it down. True for every verb except ignite.
 	//
