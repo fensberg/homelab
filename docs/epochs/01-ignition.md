@@ -1557,6 +1557,14 @@ bring it back.
 ## Deferred
 
 - **`insecure = true` on the Proxmox provider** — trigger: a trusted cert.
+- **Recovering a converge that failed after it began applying.** Epoch 01 ships
+  the narrow half: destroy the machines the failed run created that never
+  joined the cluster, which needs no drain, no etcd member removal and cannot
+  touch the node the runner is on. Anything that did join is refused, because
+  removing it is a scale-down and this estate has no way to do one. Trigger:
+  epoch 05, whose acceptance criterion is exactly that operation. See #130 and
+  the decision "A failed converge does not get to pull this epoch forward" in
+  [`05-node-lifecycle.md`](05-node-lifecycle.md).
 - **QEMU guest agent** is off deliberately; Talos will not report ready
   without the extension in the Factory schematic.
 - **The total-loss drill: restore, then ignite, on a wiped host.** The

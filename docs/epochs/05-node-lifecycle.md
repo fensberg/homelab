@@ -94,6 +94,53 @@ worse version of a thing that already exists, and would then need maintaining.
 **Rejected:** a bespoke roll driver, which is what the first draft of this
 record proposed.
 
+### A failed converge does not get to pull this epoch forward
+
+A converge that fails partway through applying leaves machines the config no
+longer describes, and the obvious recovery - revert the change and converge
+onto the revert - is a **scale-down**. So the rollback path is a second customer
+for this epoch, and the question was asked directly: build cordon, drain,
+PodDisruptionBudgets and etcd member removal now, so a failure can recover
+itself?
+
+**Chose:** no. A failed converge destroys only the machines it created that
+never joined the cluster, and anything that did join is refused with a pointer
+to this epoch.
+**Rejected:** building the removal machinery inside epoch 01 to serve the
+rollback case.
+**Because:** three reasons, in increasing order of how much they matter.
+
+The pieces named in the question are not the work. `kubectl cordon`, a drain
+that respects PodDisruptionBudgets, and `talosctl etcd remove-member` are all
+one-liners over tools already here. The work is making a config change _mean_
+that sequence, in order, before OpenTofu destroys the VM - which is what a
+machine controller is, and why the decision above is to adopt one rather than
+write it.
+
+An unattended rollback is the worst possible debut for a destructive
+capability. It would first execute during a failure, on an estate already in a
+state nobody has looked at, with no human watching. The first exercise of node
+removal should be the deliberate, watched `5 -> 3` that is this epoch's
+acceptance criterion.
+
+And the rollback is the _lesser_ customer. #97 - a Talos image or schematic
+change cannot reach a running estate - needs the same machinery, is a permanent
+functional gap rather than a rare recovery, and is what should shape the
+design. Building lifecycle to serve the rollback case would shape it around the
+rarer requirement and then need reshaping for the real one.
+
+**The tie is fail-closed rather than documentary.** The narrow destroy refuses
+any machine that joined the cluster, and the refusal names this epoch. A note
+saying "revisit in epoch 05" can be forgotten; a refusal announces itself the
+first time somebody needs more than the narrow version does.
+
+**What is and is not tech debt here**, stated honestly rather than
+generously. Destroying a machine that never joined is permanently correct -
+Cluster API would do the same, and adopting it does not make that wrong. The
+debt is the hand-rolled answer to "did this machine join", which a machine
+controller owns as a first-class fact rather than something inferred by asking
+etcd.
+
 ### Several operations turn out not to need replacement at all
 
 Written down because the first draft listed them as rebuilds and they are not.
