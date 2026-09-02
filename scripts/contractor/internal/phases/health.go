@@ -534,6 +534,22 @@ func writeRenderedCredential(
 	// Local state means a run is mid-flight and already holds the
 	// authoritative copy, so leave it alone; otherwise the state is where the
 	// successful path put it.
+	//
+	// What already exists is recorded here, and the cleanup below removes only
+	// what this call created. Reusing sterilizeTargets wholesale was wrong in
+	// one specific and expensive way: that list contains the local state file,
+	// which this function never creates and which - by the test three lines
+	// above - means another run is mid-flight and holds the authoritative
+	// copy. So reading a kubeconfig during a teardown deleted the state that
+	// teardown was working from. The read path already knew not to touch it;
+	// the cleanup path did not know it existed.
+	preexisting := map[string]bool{}
+	for _, t := range sterilizeTargets(ctx) {
+		if _, err := os.Stat(t); err == nil {
+			preexisting[t] = true
+		}
+	}
+
 	if _, err := os.Stat(ctx.LocalState); err != nil {
 		if err := Render(ctx); err != nil {
 			return fmt.Errorf("could not render the config, so there is nothing to authenticate with: %w", err)
@@ -572,7 +588,7 @@ database is reachable`, output, output, len(raw))
 	// behind, that record makes the next `tofu init -backend=false` fail on
 	// encrypted state, which breaks `task validate` and the pre-push hook.
 	for _, t := range sterilizeTargets(ctx) {
-		if t == dest {
+		if t == dest || preexisting[t] {
 			continue
 		}
 		if err := run.RemoveIfExists(t); err != nil {
