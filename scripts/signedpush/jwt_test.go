@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"strings"
@@ -96,4 +98,19 @@ func TestAppJWTVerifiesAgainstThePublicKey(t *testing.T) {
 	if err := verifyRS256(&key.PublicKey, parts[0]+"."+parts[1], sig); err != nil {
 		t.Errorf("signature does not verify against its own public key: %v", err)
 	}
+}
+
+// verifyRS256 proves a produced JWT verifies against its own public half.
+//
+// It lives here rather than beside signRS256 because it exists only for this
+// test - and a helper that production code does not call is a helper that
+// makes the production file look like it has coverage it does not.
+// tests/go/repo/change_detector_test.go is what noticed.
+//
+// The check earns its place: GitHub's rejection message for a bad signature is
+// indistinguishable from one for a wrong app id, so a signing bug found here
+// is a signing bug that would otherwise be diagnosed as a configuration one.
+func verifyRS256(pub *rsa.PublicKey, signingInput string, sig []byte) error {
+	digest := sha256.Sum256([]byte(signingInput))
+	return rsa.VerifyPKCS1v15(pub, crypto.SHA256, digest[:], sig)
 }

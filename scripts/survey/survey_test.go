@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -306,5 +308,75 @@ func TestAForeignTagIsNotTreatedAsEstateInfrastructure(t *testing.T) {
 	got := classify(peers, want)
 	if len(got) != 1 || got[0].Kind != "new-device" {
 		t.Fatalf("a device with a foreign tag was not reported: %+v", got)
+	}
+}
+
+// --- the wiring, not just the classifier ------------------------------------
+//
+// classify was written, tested across nine cases, and called from nowhere.
+// survey's entire security half - the device nobody declared, the route nobody
+// approved - was dead, and every one of those nine tests passed. A run
+// reported a clean mesh because it never asked the question.
+//
+// The tests above assert the classifier is right. These assert something is
+// using it, which is the half that was missing.
+
+func TestAssembleClassifies(t *testing.T) {
+	peers := []*peerStatus{{
+		HostName:     "somebody-elses-laptop",
+		TailscaleIPs: []string{"100.64.0.9"},
+		Online:       true,
+		Tags:         []string{"tag:homelab-node"},
+	}}
+	want := Expectation{
+		Declared:  true,
+		Members:   []string{"site0-cp-100"},
+		TagPrefix: "tag:homelab-",
+	}
+
+	v := Assemble("site0-cp-100", nil, nil, peers, want)
+	if len(v.Findings) == 0 {
+		t.Fatal("a device wearing an estate tag that nobody declared produced no finding.\n\n" +
+			"Assemble is what connects the classifier to the report. Without that call " +
+			"survey reports a clean mesh however many strangers are on it, which is " +
+			"exactly the state this program shipped in.")
+	}
+}
+
+// Being told nothing is not the same as finding nothing, and the exit code has
+// to be able to tell them apart.
+func TestAssembleReportsAnAbsentBaselineAsAFinding(t *testing.T) {
+	v := Assemble("site0-cp-100", nil, nil, nil, Expectation{})
+	if len(v.Findings) != 1 || v.Findings[0].Kind != "no-expectation" {
+		t.Fatalf("got %v, want a single no-expectation finding: a survey given no "+
+			"baseline must say so rather than exiting clean", v.Findings)
+	}
+}
+
+func TestLoadExpectationTreatsAnEmptyPathAsUndeclared(t *testing.T) {
+	want, err := LoadExpectation("")
+	if err != nil {
+		t.Fatalf("an absent baseline is not an error: %v", err)
+	}
+	if want.Declared {
+		t.Error("an absent baseline was marked as declared, so the blind spot would be reported as a clean result")
+	}
+}
+
+func TestLoadExpectationMarksAFileAsDeclared(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "expect.json")
+	body := `{"Members":["site0-cp-100"],"TagPrefix":"tag:homelab-"}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want, err := LoadExpectation(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !want.Declared {
+		t.Error("a supplied baseline was not marked as declared, so every comparison against it would be skipped")
+	}
+	if len(want.Members) != 1 {
+		t.Errorf("got members %v, want the one the file declared", want.Members)
 	}
 }
