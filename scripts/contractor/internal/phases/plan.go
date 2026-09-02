@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"homelab/contractor/internal/config"
 	"homelab/contractor/internal/run"
 )
 
@@ -40,18 +39,6 @@ func Plan(ctx *run.Context) error {
 	// it never outlives the phase that made it. Sterilize lists it too, for
 	// the run that dies before reaching this line.
 	defer func() { _ = os.Remove(ctx.TofuPlanFile) }()
-
-	// Refuse fast when the estate is mid-scale, rather than waiting ten
-	// minutes to fail.
-	//
-	// data.talos_cluster_health is configured with every node IP the config
-	// declares, and reads at plan time. Raise control_plane_count and it waits
-	// for nodes that do not exist yet, times out, and produces no plan at all.
-	// An apply does not have that problem - the graph creates the VMs before
-	// the health read - so the answer is a converge rather than a longer wait.
-	if err := assertNodeCountMatchesState(ctx); err != nil {
-		return err
-	}
 
 	run.Info("planning")
 	// tofu's own plan output is captured and discarded rather than streamed.
@@ -210,56 +197,6 @@ func classify(actions []string) string {
 	default:
 		return ""
 	}
-}
-
-// assertNodeCountMatchesState compares the control plane the config asks for
-// against the one the state describes.
-func assertNodeCountMatchesState(ctx *run.Context) error {
-	cfg, err := config.LoadRendered(ctx.ConfigRendered)
-	if err != nil {
-		return err
-	}
-	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
-	if err != nil {
-		return err
-	}
-
-	out, err := run.CmdOutput(ctx.ClusterDir, "tofu", "state", "list")
-	if err != nil {
-		return fmt.Errorf("listing state to compare the node count: %w", err)
-	}
-
-	want := len(net.VMNames)
-	got := countControlPlaneVMs(out)
-	if got == want {
-		return nil
-	}
-	return fmt.Errorf(`this change alters the control plane's size, and a plan cannot show it.
-
-The config asks for %d control-plane node(s); the state describes %d. The
-cluster-health data source reads at plan time against every node the config
-declares, so it would wait for nodes that do not exist yet and time out
-without producing anything.
-
-An apply does not have that problem - it creates the machines before reading
-their health - so the way to see this change is to make it:
-
-    task converge SITE=%s
-
-That is not a workaround for a missing feature; it is the one case where a
-plan genuinely cannot answer the question`, want, got, ctx.Site)
-}
-
-// countControlPlaneVMs counts control-plane VM instances in `tofu state list`
-// output, ignoring the template VM and every other resource.
-func countControlPlaneVMs(stateList string) int {
-	n := 0
-	for _, line := range strings.Split(stateList, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "proxmox_virtual_environment_vm.talos_cp[") {
-			n++
-		}
-	}
-	return n
 }
 
 // forEachKey matches the bracketed key in a resource address.
