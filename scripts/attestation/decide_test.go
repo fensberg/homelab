@@ -7,17 +7,21 @@ import (
 
 const marker = "<!-- sensitive-attestation:abc123 -->"
 
-// No acknowledgement exists for this content.
+// No acknowledgement exists for this content, so one is opened - and opening
+// it is what blocks the merge, through GitHub's conversation-resolution rule.
 //
-// The request and the refusal are the same event on purpose. Opening a
-// conversation that nobody has to answer is how a gate becomes decoration.
-func TestNoThreadOpensOneAndBlocks(t *testing.T) {
+// This must NOT also refuse. Resolving a conversation emits no event a workflow
+// can trigger on, so a check that went red here could never be turned green
+// again: the reviewer would resolve the thread, nothing would re-run, and the
+// merge would stay blocked forever. A gate that cannot open is a deadlock.
+func TestNoThreadOpensOneAndDoesNotDeadlock(t *testing.T) {
 	v := Decide(nil, marker, "author")
 	if !v.OpenThread {
 		t.Error("no conversation was opened, so nothing tells the reviewer what to do")
 	}
-	if !v.Blocked {
-		t.Error("the merge was not blocked, so the conversation is decoration")
+	if v.Blocked {
+		t.Error("the check refused as well as opening the conversation. Nothing re-runs " +
+			"it when the thread is resolved, so this would be red forever.")
 	}
 }
 
@@ -30,16 +34,21 @@ func TestAThreadForOtherContentDoesNotCount(t *testing.T) {
 		Resolved:         true, ResolvedBy: "reviewer",
 	}}
 	v := Decide(threads, marker, "author")
-	if !v.OpenThread || !v.Blocked {
-		t.Fatalf("a resolved acknowledgement of different content satisfied this one: %+v", v)
+	if !v.OpenThread {
+		t.Fatalf("a resolved acknowledgement of different content satisfied this one, so "+
+			"no new conversation was opened for the change actually being made: %+v", v)
 	}
 }
 
-func TestAnOpenThreadBlocks(t *testing.T) {
+// An open conversation is GitHub's to block, not this check's - and for the
+// same reason as above: nothing would re-run this once it was resolved.
+func TestAnOpenThreadIsLeftToGitHub(t *testing.T) {
 	threads := []Thread{{FirstCommentBody: marker, Resolved: false}}
 	v := Decide(threads, marker, "author")
-	if !v.Blocked {
-		t.Error("an unresolved acknowledgement allowed the merge")
+	if v.Blocked {
+		t.Error("the check refused an open conversation. GitHub already blocks the merge " +
+			"while one is open, and nothing re-runs this when it is resolved - so this " +
+			"would be red forever.")
 	}
 	if v.OpenThread {
 		t.Error("a second conversation would be opened for content that already has one")
@@ -127,7 +136,8 @@ func TestResolvedBySomebodyElsePasses(t *testing.T) {
 // otherwise match the first thread on the pull request and pass.
 func TestAnEmptyMarkerMatchesNothing(t *testing.T) {
 	threads := []Thread{{FirstCommentBody: "anything", Resolved: true, ResolvedBy: "reviewer"}}
-	if v := Decide(threads, "", "author"); !v.Blocked || !v.OpenThread {
-		t.Fatalf("an empty marker matched an unrelated thread: %+v", v)
+	if v := Decide(threads, "", "author"); !v.OpenThread {
+		t.Fatalf("an empty marker matched an unrelated thread, so a digest that failed to "+
+			"compute would be satisfied by whatever conversation happened to exist: %+v", v)
 	}
 }

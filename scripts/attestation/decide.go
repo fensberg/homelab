@@ -35,10 +35,22 @@ type Verdict struct {
 
 // Decide answers the question the workflow exists to ask.
 //
+// What this may refuse is constrained by an absence in GitHub: resolving a
+// conversation emits no event a workflow can trigger on. So a check that
+// blocked on an open conversation could never be turned green again - there
+// would be nothing to re-run it - and the gate would be a deadlock.
+//
+// GitHub's own "require conversation resolution before merging" already blocks
+// the merge while a thread is open, immediately and with no workflow involved.
+// That half needs nothing from here. What is left is the half GitHub will not
+// do, and it is the reason this exists at all: refusing a resolution by a
+// machine. Clearing that needs a push, which is the right cost for something
+// that should never happen.
+//
 // Four outcomes, and the last is the one that should never happen:
 //
-//   - no acknowledgement for this content - open one, block
-//   - one exists and is open - block
+//   - no acknowledgement for this content - open one, and pass
+//   - one exists and is open - pass
 //   - resolved, and by nobody GitHub will name - block, because "I cannot tell
 //     who acknowledged this" and "somebody did" are different answers
 //   - resolved by a bot - block, because acknowledging is a human act
@@ -63,19 +75,20 @@ func Decide(threads []Thread, marker, prAuthor string) Verdict {
 	}
 
 	if found == nil {
+		// Opened, not refused. The conversation itself is what blocks the
+		// merge, through GitHub's resolution rule - and refusing here as well
+		// would leave a red check that no event could ever turn green.
 		return Verdict{
 			OpenThread: true,
-			Blocked:    true,
-			Reason: "This change touches a sensitive path and has no acknowledgement. " +
-				"A review conversation has been opened on the file - read the change, " +
-				"then resolve it. Somebody other than the author has to.",
+			Reason: "This change touches a sensitive path. A review conversation has been " +
+				"opened on the file: read the change, then resolve it. The merge is " +
+				"blocked until somebody does.",
 		}
 	}
 
 	if !found.Resolved {
-		return Verdict{Blocked: true,
-			Reason: "The review conversation acknowledging this change is still open. " +
-				"Read the change and resolve it."}
+		return Verdict{Reason: "The review conversation acknowledging this change is " +
+			"still open, and the merge is blocked until it is resolved."}
 	}
 
 	if found.ResolvedBy == "" {
