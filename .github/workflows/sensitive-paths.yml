@@ -1,8 +1,46 @@
 name: Sensitive Paths
 
+# The acknowledgement is a review conversation, not a label.
+#
+# It used to be a label, and the label outlived the diff it acknowledged.
+# GitHub dismisses stale reviews when a branch moves and never touches labels,
+# so `sensitive-reviewed` survived every later commit: touch a sensitive path,
+# read the comment, apply the label, push a fixup, merge. The gate was
+# satisfied for a diff nobody had looked at, and a fixup is exactly where a
+# deleted assertion hides.
+#
+# A conversation fixes that by construction rather than by a rule bolted on
+# top. It is anchored to the file in the diff, so resolving it means somebody
+# was in the change rather than clicking a checkbox on the side of the page. It
+# is keyed to a digest of the sensitive part of the diff, so changing that part
+# opens a new one and leaves the old acknowledgement behind. And GitHub's own
+# "require conversation resolution before merging" enforces it, which is one
+# fewer thing for this workflow to be the only guarantee of.
+#
+# What is left for this workflow to check is the one thing GitHub will not:
+# **who** resolved it. An acknowledgement closed by whoever opened the pull
+# request is not an acknowledgement. That check should never fire.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
+
+# There is deliberately no trigger for a conversation being resolved.
+#
+# `pull_request_review_thread` is a webhook event that was never ported to
+# workflow triggers - actionlint refuses it, and GitHub's own community
+# discussions confirm it. So nothing re-runs this check when somebody resolves
+# a thread.
+#
+# That constrains what this check may refuse. It must never block on anything
+# only a human action can clear - an absent conversation, or an open one -
+# because there would be no event to turn it green again, and the gate would be
+# a deadlock rather than a gate. GitHub's "require conversation resolution
+# before merging" already blocks the merge while a thread is open, immediately
+# and with no workflow involved, so that half needs nothing from here.
+#
+# What is left is the half GitHub will not do: refusing a resolution by a
+# machine. Clearing that needs a push, which is the right cost for something
+# that should never happen.
 
 permissions:
   contents: read
@@ -11,12 +49,6 @@ permissions:
 # pipefail: in `a | b` only b's exit status counts, so a failing command
 # feeding a working one is a green step. Naming the shell explicitly gets
 # `bash --noprofile --norc -eo pipefail {0}` instead.
-#
-# Not theoretical here. `tofu plan | tee` reported success and posted an
-# empty pull request comment, and `rclone version | head -1` verified
-# nothing while passing - both silent, both green, both wrong answers
-# rather than errors. It is set on every workflow, including those with no
-# `run:` step today, so the one added tomorrow is already covered.
 #
 # tests/go/repo/pipefail_test.go asserts this is present.
 defaults:
@@ -48,6 +80,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Pinned, not whatever the image ships. scripts/attestation has zero
+      # external dependencies, so there is nothing to cache and nothing to
+      # fetch - which is also why the blocked egress policy above needs no
+      # module proxy in its allowlist.
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.7"
+          cache: false
+
       - name: Which sensitive paths were touched
         id: sensor
         env:
@@ -57,55 +99,43 @@ jobs:
           git diff --name-only "$BASE" "$HEAD" \
             | .github/scripts/sensitive-paths.sh >>"$GITHUB_OUTPUT"
 
-      # The comment body is built entirely by the script, so changing the
-      # wording never means touching this file. Copy that needs a workflow edit
-      # to fix is copy that stays wrong, and the agent cannot edit workflows.
-      - name: Say what is at risk
-        if: steps.sensor.outputs.tripped == 'true'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          REPORT: ${{ steps.sensor.outputs.report }}
-        with:
-          script: |
-            const body = process.env.REPORT;
-            const marker = '<!-- sensitive-paths -->';
-            const {data: comments} = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner, repo: context.repo.repo,
-            });
-            const existing = comments.find(c => c.body.includes(marker));
-            const args = {owner: context.repo.owner, repo: context.repo.repo, body};
-            if (existing) {
-              await github.rest.issues.updateComment({...args, comment_id: existing.id});
-            } else {
-              await github.rest.issues.createComment({...args, issue_number: context.issue.number});
-            }
-
-      - name: Require an explicit acknowledgement
+      # The digest is what binds an acknowledgement to content rather than to a
+      # moment. It covers only the sensitive files, so a push that reformats
+      # something unrelated does not invalidate a review somebody already did -
+      # and a push that changes one of these does, which is the whole point.
+      - name: Digest the sensitive part of the diff
+        id: digest
         if: steps.sensor.outputs.tripped == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          FILES: ${{ steps.sensor.outputs.files }}
         run: |
-          # The label must be on the pull request NOW. Reading only the
-          # timeline lets a label that was applied and then removed still
-          # satisfy this, because an "unlabeled" event is not a "labeled" one.
-          if ! gh pr view "$PR" --repo "$REPO" --json labels \
-               --jq '.labels[].name' | grep -qx 'sensitive-reviewed'; then
-            echo "::error::This pull request changes a safety property. Read the comment, then apply the 'sensitive-reviewed' label."
-            exit 1
-          fi
+          mapfile -t paths <<<"$FILES"
+          d=$(git diff "$BASE" "$HEAD" -- "${paths[@]}" | sha256sum | cut -c1-12)
+          echo "digest=$d" >>"$GITHUB_OUTPUT"
+          echo "anchor=${paths[0]}" >>"$GITHUB_OUTPUT"
 
-          who=$(gh api --paginate "repos/${REPO}/issues/${PR}/timeline" \
-            --jq '[.[]|select(.event=="labeled" and .label.name=="sensitive-reviewed")]|last|.actor.login // empty')
-          case "$who" in
-            "")
-              echo "::error::'sensitive-reviewed' is applied but no labelling event was found. That should not happen; check the timeline."
-              exit 1 ;;
-            *"[bot]")
-              echo "::error::'sensitive-reviewed' was applied by ${who}, which is a bot. The acknowledgement has to come from a human - that is the entire point of it. Remove the label and re-apply it yourself."
-              exit 1 ;;
-            *)
-              echo "acknowledged by ${who}" ;;
-          esac
+      # The decision is not written here. It is scripts/attestation, a Go
+      # program with a test for every branch, for the reason
+      # sensitive-paths.sh already gives about itself: a script is reviewable,
+      # is linted, and can be run against known input. Behaviour that exists
+      # only as YAML inside a workflow is a convention somebody remembered to
+      # write, and a convention fails.
+      #
+      # tests/go/repo/tripwire_ack_test.go asserts this step exists and that
+      # nothing here has gone back to labels.
+      - name: Require an acknowledgement nobody gave themselves
+        if: steps.sensor.outputs.tripped == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT: ${{ steps.sensor.outputs.report }}
+        run: |
+          printf '%s' "$REPORT" >/tmp/sensitive-report.md
+          go run ./scripts/attestation \
+            -repo "${{ github.repository }}" \
+            -pr "${{ github.event.pull_request.number }}" \
+            -digest "${{ steps.digest.outputs.digest }}" \
+            -anchor "${{ steps.digest.outputs.anchor }}" \
+            -head "${{ github.event.pull_request.head.sha }}" \
+            -report /tmp/sensitive-report.md
