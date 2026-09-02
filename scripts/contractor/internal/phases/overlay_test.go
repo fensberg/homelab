@@ -16,7 +16,7 @@ import (
 func TestOverlayApplyArgs_ForcesReplacementWhenTheKeyIsInState(t *testing.T) {
 	got := overlayApplyArgs(true)
 	want := []string{
-		"apply", "-input=false", "-auto-approve",
+		"apply", "-input=false", "-auto-approve", "-json",
 		"-replace=" + overlayKeyAddress,
 		"-target=" + overlayKeyAddress,
 	}
@@ -31,7 +31,7 @@ func TestOverlayApplyArgs_ForcesReplacementWhenTheKeyIsInState(t *testing.T) {
 func TestOverlayApplyArgs_OmitsReplaceOnAFirstRun(t *testing.T) {
 	got := overlayApplyArgs(false)
 	want := []string{
-		"apply", "-input=false", "-auto-approve",
+		"apply", "-input=false", "-auto-approve", "-json",
 		"-target=" + overlayKeyAddress,
 	}
 	if !reflect.DeepEqual(got, want) {

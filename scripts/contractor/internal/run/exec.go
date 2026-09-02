@@ -99,6 +99,21 @@ func TofuApply(ctx *Context, what string, targets ...string) error {
 	return tofuJSON(ctx, what, args)
 }
 
+// TofuApplyArgs runs an apply whose flags the caller builds, through the same
+// JSON summary TofuApply produces.
+//
+// It exists because `run.Tofu` streams whatever tofu prints, and an apply
+// prints every non-sensitive attribute of everything it touches. The overlay
+// phase used it and published the site's real name in a resource description
+// to a public Actions log. There is no reason for two ways to run an apply
+// when only one of them is safe to run where anyone can read it.
+//
+// The caller passes the whole argument list, including -json, because the one
+// caller needs -replace and -target computed from state.
+func TofuApplyArgs(ctx *Context, what string, args ...string) error {
+	return tofuJSON(ctx, what, args)
+}
+
 // tofuEvent is the subset of tofu's -json stream this reports on. Every other
 // field is ignored rather than filtered, so a new field in a future version
 // cannot start leaking by default.
