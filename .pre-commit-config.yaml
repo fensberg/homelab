@@ -97,9 +97,9 @@ repos:
       # `pre-commit run` directly, where the shim is not in the path - it runs
       # after installation and so cannot prevent a download, but a second place
       # that refuses costs nothing and the two fail the same way.
-      - id: supplier-guard
-        name: refuse an unapproved third-party commit hook
-        entry: task supplier-guard
+      - id: delivery-guard
+        name: refuse a delivery from an unapproved supplier
+        entry: task delivery-guard
         language: system
         pass_filenames: false
         always_run: true

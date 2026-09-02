@@ -25,11 +25,11 @@ func TestTheHookShimRunsTheGuardBeforePreCommit(t *testing.T) {
 	for _, hook := range []string{"pre-commit", "pre-push"} {
 		body := readShim(t, hook)
 
-		guard := strings.Index(body, "security guard-suppliers")
+		guard := strings.Index(body, "gatehouse guard-deliveries")
 		precommit := strings.Index(body, "exec pre-commit")
 
 		if guard < 0 {
-			t.Errorf("githooks/%s does not run `security guard-suppliers`, so an unapproved "+
+			t.Errorf("githooks/%s does not run `gatehouse guard-deliveries`, so an unapproved "+
 				"repository would be cloned and installed before anything checked it", hook)
 			continue
 		}
@@ -107,7 +107,7 @@ func readShim(t *testing.T, hook string) string {
 // has nothing to shell out to there, and fails with "executable not found".
 //
 // That is a red check saying nothing about the repository, and it happened:
-// supplier-guard's entry is `task supplier-guard`, the lane has no `task`, and
+// delivery-guard's entry is `task delivery-guard`, the lane has no `task`, and
 // the whole lane failed on a hook that could never have run in it.
 //
 // The rule is that every system hook is skipped in that lane and owned by a
@@ -201,7 +201,7 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 func TestTheFormatLaneRefusesASupplierBeforeInstallingAnything(t *testing.T) {
 	body := intendedWorkflow(t, "pr-validation.yml")
 
-	gate := strings.Index(body, "guard-suppliers -before-install")
+	gate := strings.Index(body, "guard-deliveries -before-install")
 	if gate < 0 {
 		t.Fatal("the Format lane does not run the supplier gate before installing.\n\n" +
 			"Without it, `pre-commit run` clones and installs every third-party hook " +

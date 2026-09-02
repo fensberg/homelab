@@ -10,8 +10,8 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
-go build -C scripts/security -o ../../toolshed/security .
-./toolshed/security guard-suppliers
+go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
+./toolshed/gatehouse guard-deliveries
 
 # pre-commit's own entry point, with the arguments its generated hook uses.
 #

@@ -227,6 +227,6 @@ func envOr(key, fallback string) string {
 }
 
 func fatal(msg string) {
-	fmt.Fprintln(os.Stderr, "security patrol: "+msg)
+	fmt.Fprintln(os.Stderr, "gatehouse patrol: "+msg)
 	os.Exit(2)
 }
