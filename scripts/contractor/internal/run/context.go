@@ -21,6 +21,10 @@ type Context struct {
 	// The saved plan. It holds every attribute of every resource it touches,
 	// so it is sterilized like a secret rather than treated as a build artifact.
 	TofuPlanFile string
+
+	// CommentOut, when set, is where the plan writes the pull request comment
+	// body. Empty means write nothing, which is every case but CI.
+	CommentOut   string
 	BackendPgOff string
 	BackendPgOn  string
 	LocalState   string
