@@ -37,6 +37,32 @@ deliberately blunt, and "it works" is not an answer to any of them.
 
 In scope:
 
+- **Retire "ignition" and finish the construction naming.** The verbs were
+  renamed - `break-ground` replaced `ignite`, `demolish` replaced `destroy` -
+  and the noun was left behind. "Ignition" still names the tier in `CLAUDE.md`,
+  the title of epoch 01, and roughly 200 occurrences across 40 files including
+  phase comments, workflow names and test names. One concept currently has two
+  names, which is exactly what this epoch exists to remove.
+
+  **Proposed replacement: `groundwork`.** It is a real construction term for
+  site preparation and foundations, it pairs with the verb that already exists
+  (`break-ground` does the groundwork), and it obscures no term of art -
+  unlike `converge` and `kubeconfig`, which were deliberately kept because
+  practitioners already know them.
+
+  Deliberately not folded into other work. A rename touching forty files makes
+  every unrelated diff unreviewable, and this repository's own rule is that
+  renaming an established component is its own piece of work. It also has to
+  wait for epoch 01 to close, because renaming an epoch while it is being
+  signed off is churn at the worst possible moment.
+
+  One instance was **not** deferred, because it was a defect rather than a
+  name: `contractor -h` listed `ignite` and `destroy`, verbs the program
+  rejects. Following the program's own help produced an error from the program
+  itself. Fixed, with a test comparing the help against the verb list, so the
+  two cannot drift again - that check is the cheap half of a rename, and it is
+  worth having before the expensive half rather than after.
+
 - **Migrate the Semgrep lane's container onto the runner-image flow.** Today
   there are two ways a container enters this repository: `.github/runner-image/`
   builds and publishes one to ghcr, pinned by digest and tracked by Renovate;
