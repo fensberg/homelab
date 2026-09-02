@@ -34,11 +34,18 @@ import (
 func TestTheTripwireOpensAConversation(t *testing.T) {
 	body := readSensitivePathsWorkflow(t)
 
-	// The invocation, not a mention of it. An earlier version of this matched
-	// the string anywhere in the file, so the comment above the step satisfied
-	// it and deleting the step itself passed - the test describing behaviour
-	// that had been removed.
-	if !strings.Contains(body, "go run ./scripts/attestation") {
+	// The invocation, not a mention of it. An earlier version matched the
+	// string anywhere in the file, so the comment above the step satisfied it
+	// and deleting the step itself passed - the test describing behaviour that
+	// had been removed. Matched at command indentation, which a comment line
+	// cannot reach.
+	//
+	// Even so this only asserts the program is CALLED. Whether the call can
+	// run is a different property and belongs to a different test: the first
+	// version of that fix wrote `go run ./scripts/attestation`, which cannot
+	// resolve from a repository with no root module, and this assertion was
+	// perfectly happy with it - see go_invocation_test.go.
+	if !attestationCall.MatchString(body) {
 		t.Fatal("the workflow does not run scripts/attestation.\n\n" +
 			"Then nothing opens the review conversation a sensitive change has to be " +
 			"acknowledged in, and the gate is a comment nobody has to answer.")
@@ -124,4 +131,6 @@ func readSensitivePathsWorkflow(t *testing.T) string {
 
 // `pull_request_review_thread:` as a workflow trigger - at the indentation
 // `on:` uses for an event, rather than anywhere in the file.
+var attestationCall = regexp.MustCompile(`(?m)^\s+go run -C scripts/attestation \.`)
+
 var reviewThreadTrigger = regexp.MustCompile(`(?m)^\s{2}pull_request_review_thread:`)
