@@ -122,7 +122,7 @@ func TestSummarisePlan_RejectsGarbage(t *testing.T) {
 // printing any attribute at all. That reached a public Actions log and a pull
 // request comment, because everything watching for leaks was watching values.
 func TestForEachKeysThatCanCarryANameAreRedacted(t *testing.T) {
-	got := redactKeys(`proxmox_download_file.talos_disk_image["some-hostname"]`)
+	got := redactKeys(`proxmox_download_file.talos_disk_image["node0"]`)
 	if strings.Contains(got, "some-hostname") {
 		t.Errorf("a name-shaped for_each key survived redaction: %s", got)
 	}

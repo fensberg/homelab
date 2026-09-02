@@ -1,8 +1,10 @@
 package run
 
 import (
+	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The guard that did not exist.
@@ -31,7 +33,7 @@ const recordedApplyStream = `{"@level":"info","@message":"Plan: 1 to add","type"
 const standInSiteName = "NORTHVALE"
 
 func TestApplySummaryNeverEmitsAnAttributeValue(t *testing.T) {
-	lines, failed := summariseApply(strings.NewReader(recordedApplyStream))
+	lines, failed := summariseApply(strings.NewReader(recordedApplyStream), nil)
 
 	joined := strings.Join(append(append([]string{}, lines...), failed...), "\n")
 	if strings.Contains(joined, standInSiteName) {
@@ -65,14 +67,14 @@ func TestApplySummaryWithholdsDiagnosticDetailOnlyInPublicLogs(t *testing.T) {
 	stream := `{"@level":"error","type":"diagnostic","diagnostic":{"severity":"error","summary":"Failed to create key","detail":"the OAuth client is not permitted to mint NORTHVALE keys"}}
 `
 	t.Setenv("GITHUB_ACTIONS", "true")
-	_, failed := summariseApply(strings.NewReader(stream))
+	_, failed := summariseApply(strings.NewReader(stream), nil)
 	if len(failed) != 1 || strings.Contains(failed[0], standInSiteName) {
 		t.Errorf("in a public log the detail must not appear: %v", failed)
 	}
 
 	t.Setenv("GITHUB_ACTIONS", "")
 	t.Setenv("CI", "")
-	_, failed = summariseApply(strings.NewReader(stream))
+	_, failed = summariseApply(strings.NewReader(stream), nil)
 	if len(failed) != 1 || !strings.Contains(failed[0], "OAuth client is not permitted") {
 		t.Errorf("on a workstation the detail must appear, or the error is undebuggable: %v", failed)
 	}
@@ -82,7 +84,7 @@ func TestApplySummaryReportsDiagnosticsWithoutTheirDetail(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "true")
 	stream := `{"@level":"error","type":"diagnostic","diagnostic":{"severity":"error","summary":"Invalid value for variable","detail":"the site NORTHVALE is not reachable at 10.0.0.1"}}
 `
-	lines, failed := summariseApply(strings.NewReader(stream))
+	lines, failed := summariseApply(strings.NewReader(stream), nil)
 	joined := strings.Join(append(append([]string{}, lines...), failed...), "\n")
 
 	if strings.Contains(joined, standInSiteName) || strings.Contains(joined, "10.0.0.1") {
@@ -98,9 +100,87 @@ func TestApplySummaryReportsDiagnosticsWithoutTheirDetail(t *testing.T) {
 func TestApplySummaryDropsWhatItDoesNotRecognise(t *testing.T) {
 	stream := "not json at all, containing NORTHVALE\n" +
 		`{"@level":"info","type":"some_future_event","payload":"NORTHVALE"}` + "\n"
-	lines, failed := summariseApply(strings.NewReader(stream))
+	lines, failed := summariseApply(strings.NewReader(stream), nil)
 	joined := strings.Join(append(append([]string{}, lines...), failed...), "\n")
 	if strings.Contains(joined, standInSiteName) {
 		t.Errorf("an unrecognised line was passed through: %s", joined)
 	}
+}
+
+// A long destroy must say what it is doing while it is doing it.
+//
+// Two defects met here, both introduced by routing `tofu destroy` through this
+// summary instead of streaming it. The summary dropped apply_progress - tofu's
+// "Still destroying... [30s elapsed]" - and the caller collected every line and
+// printed them after the scan finished, which for a single long invocation is
+// when tofu exits. Between them, a destroy of a whole estate printed nothing at
+// all until it was over.
+//
+// That matters more here than anywhere else in this program: a destroy is the
+// one operation that cannot be safely interrupted, and an operator with no
+// output cannot tell a ten-minute data source read from a hang.
+
+const recordedDestroyProgress = `{"@level":"info","type":"apply_start","hook":{"resource":{"addr":"proxmox_virtual_environment_vm.talos_cp[0]"},"action":"delete"}}
+{"@level":"info","type":"apply_progress","hook":{"resource":{"addr":"proxmox_virtual_environment_vm.talos_cp[0]"},"action":"delete","elapsed_seconds":30}}
+{"@level":"info","type":"apply_complete","hook":{"resource":{"addr":"proxmox_virtual_environment_vm.talos_cp[0]"},"action":"delete"}}
+{"@level":"info","type":"change_summary","changes":{"add":0,"change":0,"remove":1}}`
+
+func TestProgressIsReported(t *testing.T) {
+	lines, _ := summariseApply(strings.NewReader(recordedDestroyProgress), nil)
+	var progress string
+	for _, l := range lines {
+		if strings.HasPrefix(l, "still") {
+			progress = l
+		}
+	}
+	if progress == "" {
+		t.Fatal("no progress line: a destroy that takes ten minutes would print nothing between its first resource and its last")
+	}
+	if !strings.Contains(progress, "30s elapsed") {
+		t.Errorf("progress line %q does not say how long it has been waiting", progress)
+	}
+	if !strings.Contains(progress, "talos_cp[0]") {
+		t.Errorf("progress line %q does not say which resource it is waiting on", progress)
+	}
+}
+
+// Progress carries an address and a duration. It must not start carrying
+// anything else: this output reaches a public Actions log.
+func TestProgressReportsNoValues(t *testing.T) {
+	const withAttributes = `{"@level":"info","type":"apply_progress","hook":{"resource":{"addr":"talos_machine_secrets.this"},"action":"delete","elapsed_seconds":10},"cluster_id":"djDvN1ypnafQ","ca_certificate":"LS0tLS1CRUdJTiBD"}`
+	lines, _ := summariseApply(strings.NewReader(withAttributes), nil)
+	for _, l := range lines {
+		if strings.Contains(l, "djDvN1ypnafQ") || strings.Contains(l, "LS0tLS1CRUdJTiBD") {
+			t.Fatalf("a value reached the summary: %q", l)
+		}
+	}
+}
+
+// Every line must reach the caller as it is read, not in a batch at the end.
+// This is what the phase's output actually depends on, and it is invisible to
+// a test that only inspects the returned slice.
+func TestLinesAreEmittedAsTheyArrive(t *testing.T) {
+	var seen []string
+	done := make(chan struct{})
+	pr, pw := io.Pipe()
+
+	go func() {
+		summariseApply(pr, func(l string) { seen = append(seen, l) })
+		close(done)
+	}()
+
+	_, _ = pw.Write([]byte(`{"@level":"info","type":"apply_start","hook":{"resource":{"addr":"a.b"},"action":"delete"}}` + "\n"))
+	// The writer is deliberately still open: this is the state a long destroy
+	// spends its whole life in.
+	deadline := time.Now().Add(2 * time.Second)
+	for len(seen) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if len(seen) == 0 {
+		pw.Close()
+		<-done
+		t.Fatal("nothing was emitted while the stream was still open, so a long-running destroy prints its first line only once it has finished")
+	}
+	pw.Close()
+	<-done
 }

@@ -73,7 +73,12 @@ verbs:
                addresses and actions only, never a value.
   demolish     Tear a site down, then wipe the workspace. Requires -confirm.
   restore      Bring the age-encrypted state back from object storage.
-  kubeconfig   Write this site's kubeconfig into the workspace and exit.
+  kubeconfig   Write this site's kubeconfig into the workspace and exit, or
+               run a command with one that lives only that long: put the
+               command after --. Everything before it runs once per
+               invocation, so several checks belong in a single call:
+                 contractor kubeconfig -site site0 -- \
+                   bash -c 'kubectl get nodes; kubectl get ds -A'
   talosconfig  Run a command against this site's machines with a talosconfig
                that lives only as long as the command.
   check-inventory  Prove every op:// reference in the config template resolves.

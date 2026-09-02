@@ -49,6 +49,22 @@ repos:
       - id: prettier
         types_or: [json, yaml, markdown]
 
+  # markdownlint, moved here from Super-Linter.
+  #
+  # Not a new supplier: this is the same tool the Super-Linter image already
+  # bundles, run where a person can reach it. Super-Linter is a Docker image and
+  # the agent account is deliberately not in the `docker` group, so markdownlint
+  # was the one check in this repository that could only ever fail in CI - a
+  # missing space after a `#` cost a full push, wait and read cycle to find.
+  #
+  # VALIDATE_MARKDOWN is switched off in .github/super-linter.vars accordingly.
+  # One owner and one pinned version, which is what that file's own header asks
+  # for; the Format job runs this same file, so the CI backstop survives.
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.20.0
+    hooks:
+      - id: markdownlint-cli2
+
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.1
     hooks:
