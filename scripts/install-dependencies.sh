@@ -279,6 +279,55 @@ info "wiring pre-commit into git hooks"
 (cd "$(dirname "$0")/.." && pre-commit install)
 ok "pre-commit hook installed"
 
+# ---------------------------------------------------------------------------
+# Commit signing
+# ---------------------------------------------------------------------------
+#
+# The pre-push hook refuses to publish unsigned commits. That is deliberate,
+# but it is only reasonable if signing actually works here, and it did not:
+# the agent publishes through the GitHub App, which has no user account and so
+# no signing key, while a human has an account and can hold one. The human was
+# told the three commands in a chat message and blocked twice by the hook in
+# the meantime, which is the wrong way round - a step a computer can do is not
+# a step to ask somebody for.
+#
+# Configured for this repository only. Nothing here should quietly change how
+# somebody's other checkouts behave.
+#
+# Registering the key with GitHub is NOT required for a push to succeed. The
+# hook asks whether a signature exists, not whether GitHub can verify it, so
+# these three lines are enough to unblock `git push` and the editor's sync
+# button. Registering it only earns the "Verified" badge, which is why it is
+# printed as optional rather than as a blocker.
+step "commit signing"
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+
+if git -C "$repo_root" config --get commit.gpgsign | grep -qx true; then
+	skip "commit signing already configured"
+else
+	signing_key=""
+	for candidate in ~/.ssh/id_ed25519.pub ~/.ssh/id_rsa.pub; do
+		if [ -f "$candidate" ]; then
+			signing_key="$candidate"
+			break
+		fi
+	done
+
+	if [ -z "$signing_key" ]; then
+		info "no ssh key found; generating one for signing"
+		ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/id_ed25519
+		signing_key=~/.ssh/id_ed25519.pub
+	fi
+
+	git -C "$repo_root" config gpg.format ssh
+	git -C "$repo_root" config user.signingkey "$signing_key"
+	git -C "$repo_root" config commit.gpgsign true
+	ok "commits from this checkout are now signed with $signing_key"
+	info "optional: add that key to GitHub a second time, as a Signing key"
+	info "  (Settings > SSH and GPG keys > New SSH key > Key type: Signing)"
+	info "  Pushes work without it; it is what earns the Verified badge."
+fi
+
 echo
 ok "all dependencies present."
 info "Run 'task test' to check everything still behaves, then 'task start' to ignite."
