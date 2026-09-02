@@ -120,7 +120,14 @@ func tearDown(ctx *run.Context) teardownResult {
 	emptyObjectStorage(ctx)
 
 	if err := run.TofuDestroy(ctx, "tofu destroy"); err != nil {
-		run.Warn("tofu destroy failed. State and secrets are being left in place - sterilizing now would destroy your only way to retry the destroy or diagnose what's left running.")
+		// Say what went wrong before saying what it means. This used to
+		// discard err entirely and print only the advice, so a real teardown
+		// failed on five VMs and reported nothing about why - leaving the
+		// operator to guess at a destroy that had already stopped the
+		// machines. The diagnostics tofu produced were collected and thrown
+		// away one line above where they were needed.
+		run.Warn("tofu destroy failed: " + err.Error())
+		run.Warn("State and secrets are being left in place - sterilizing now would destroy your only way to retry the destroy or diagnose what's left running.")
 		run.Warn("Check Proxmox manually for " + vmIDHint(ctx) + ", then either re-run 'tofu destroy' in management/cluster yourself or run 'task clean-secrets' once you've confirmed nothing is orphaned.")
 		return teardownResult{}
 	}
