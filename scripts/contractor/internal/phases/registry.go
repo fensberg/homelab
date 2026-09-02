@@ -12,17 +12,6 @@ var AllPhases = []string{
 	"compute", "cluster", "health", "migrate", "backup", "sterilize",
 }
 
-// ConvergePhases applies a change to an estate that already exists.
-//
-// Two differences from AllPhases, and both are the point. It begins with
-// attach, which connects to the state already in the cluster instead of
-// starting from an empty workspace. And it has no migrate: state is already in
-// Postgres, and migrate's -force-copy would overwrite it with whatever this
-// workspace happened to hold.
-//
-// hypervisor is absent because it is slow, reboots-adjacent and unnecessary
-// for a change that does not add a hypervisor; run it on its own with
-// -phase hypervisor when one is added.
 // PlanPhases answers "what would a converge do" and changes nothing.
 //
 // It attaches to the estate's state like a converge does, because a plan
@@ -32,8 +21,32 @@ var PlanPhases = []string{
 	"render", "verify", "attach", "plan", "sterilize",
 }
 
+// ConvergePhases applies a change to an estate that already exists.
+//
+// Three differences from AllPhases, and each is the point.
+//
+// It reaches tofu through attach, which connects to the state already in the
+// cluster instead of starting from an empty workspace. Nothing before attach
+// may run tofu at all: `tofu init` in the cluster directory configures the
+// local backend and an apply then writes terraform.tfstate beside it, which is
+// precisely the "mid-ignition" condition attach refuses. render and verify are
+// safe there because neither touches tofu.
+//
+// It has no migrate: state is already in Postgres, and migrate's -force-copy
+// would overwrite it with whatever this workspace happened to hold.
+//
+// hypervisor is absent because it is slow, reboots-adjacent and unnecessary
+// for a change that does not add a hypervisor; run it on its own with
+// -phase hypervisor when one is added. overlay is absent for a consequence of
+// that: the tailnet key it mints is consumed by exactly one thing, the vars
+// file the hypervisor playbook reads, so a converge that mints one is
+// producing a live credential nothing will use. It went unnoticed because the
+// key landed in a local state file that attach then refused to touch, so every
+// converge reported the same resource as being created for the first time.
+//
+// tests/go/repo/converge_order_test.go holds the ordering rule.
 var ConvergePhases = []string{
-	"render", "overlay", "verify", "attach",
+	"render", "verify", "attach",
 	"compute", "cluster", "health", "backup", "sterilize",
 }
 
