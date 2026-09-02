@@ -104,3 +104,18 @@ test-results/
 # Written on demand by `task kubeconfig`. A credential, and deliberately
 # transient - the Sterilize phase removes it like everything else here.
 management/cluster/kubeconfig
+
+# Build artifacts from before the toolshed, kept ignored while any branch that
+# predates it is still open.
+#
+# Those branches build in place, so checking one out, building, and returning
+# leaves a binary at a path this file no longer covers - and `git add -A` takes
+# it. That is not hypothetical: it happened within an hour of the rule being
+# written down, and only the pre-push guard stopped a 9.4 MB blob reaching a
+# branch where non_fast_forward means nobody could remove it.
+#
+# Trigger to delete these three lines: every branch predating toolshed/ is
+# merged or closed. Tracked as #167.
+scripts/contractor/contractor
+scripts/signedpush/signedpush
+scripts/survey/survey

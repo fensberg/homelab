@@ -18,6 +18,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -109,7 +110,27 @@ const (
 )
 
 func guardSuppliers(args []string) int {
-	_ = args // no flags, deliberately
+	fs := flag.NewFlagSet("guard-suppliers", flag.ContinueOnError)
+	// The gate has to be able to stand in front of the delivery as well as
+	// behind it.
+	//
+	// pre-commit installs every hook repository - cloning it and building its
+	// environment, which runs setup code - BEFORE it runs any hook. So a guard
+	// that is itself a hook always reports after the download it exists to
+	// prevent. On a workstation that is solved by githooks/pre-commit, which
+	// git invokes first. On a runner there is no equivalent: the lane's first
+	// act is `pre-commit run`, and by the time anything could object, seven
+	// third-party repositories have been fetched and executed.
+	//
+	// This flag is the runner's version. It answers only the question that can
+	// be answered before an install - is every configured repository approved -
+	// and deliberately does not look at the cache, because the point is to run
+	// when there is not one yet.
+	beforeInstall := fs.Bool("before-install", false,
+		"check only what is configured, for use before anything has been downloaded")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
 
 	configured, err := reposIn(hookConfigPath)
 	if err != nil {
@@ -127,12 +148,16 @@ func guardSuppliers(args []string) int {
 			", so this cannot tell an approved repository from an unapproved one")
 	}
 
-	cached, err := cachedRepos()
-	if err != nil {
-		// Fail closed. Not being able to read the cache is not the same as the
-		// cache being clean, and the cache is the half nothing else can see.
-		return refuse("could not read the pre-commit cache, so this commit cannot be " +
-			"shown to be running only approved hooks: " + err.Error())
+	var cached []string
+	if !*beforeInstall {
+		cached, err = cachedRepos()
+		if err != nil {
+			// Fail closed. Not being able to read the cache is not the same as
+			// the cache being clean, and the cache is the half nothing else
+			// can see.
+			return refuse("could not read the pre-commit cache, so this commit cannot be " +
+				"shown to be running only approved hooks: " + err.Error())
+		}
 	}
 
 	findings := Check(configured, cached, approved)

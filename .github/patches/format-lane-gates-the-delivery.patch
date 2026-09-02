@@ -1,0 +1,70 @@
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index dd29609..4de229e 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -104,14 +104,59 @@ jobs:
+       # versions. That is the point: there is no second copy of prettier here
+       # to disagree with the one on your machine.
+       #
+-      # tofu-fmt and go-fmt are skipped because both are system hooks with no
+-      # pinned binary on this runner - ubuntu-latest ships some Go toolchain,
+-      # but not necessarily the one this repo pins. The Validate lane installs
+-      # a pinned tofu and runs `tofu fmt -check` itself; Go formatting is
+-      # enforced later too, by Super-Linter's Go analysis in the Analyze lane.
++      # The gate stands in front of the delivery, not behind it.
++      #
++      # `pre-commit run` installs every hook repository before it runs any
++      # hook - cloning it and building its environment, which executes setup
++      # code. So a guard that is itself a hook can only ever report after the
++      # download it exists to prevent, however early it is ordered and whatever
++      # fail_fast says. On a workstation githooks/pre-commit solves that,
++      # because git invokes it first. This lane had no equivalent: its first
++      # act was `pre-commit run`, and seven third-party repositories were
++      # fetched and executed on the runner before anything could object.
++      #
++      # So the same program runs here first, with -before-install: it answers
++      # only what can be answered with no cache - is every configured
++      # repository approved - and refuses before pipx is even installed.
++      #
++      # tests/go/repo/hookshim_test.go asserts this step comes before the one
++      # that installs anything. Ordering is the whole property; a gate after
++      # the delivery is a receipt.
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      - name: Setup Go
++        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
++        with:
++          go-version: ${{ env.GO_VERSION }}
++          cache: false
++
++      - name: Refuse an unapproved supplier before anything is downloaded
++        run: go run -C scripts/security . guard-suppliers -before-install
++
++      # Every `language: system` hook is skipped here, and each is owned by a
++      # lane that has what it needs. This one installs pre-commit and nothing
++      # else, on purpose - it is the fast lane - so a system hook naming a
++      # binary it does not have fails with "executable not found", which is a
++      # red check that says nothing about the repository.
++      #
++      # tofu-fmt and go-fmt: no pinned binary here. ubuntu-latest ships some Go
++      # toolchain, not necessarily the one this repo pins. The Validate lane
++      # installs a pinned tofu and runs `tofu fmt -check`; Go formatting is
++      # enforced by Super-Linter's Go analysis in the Analyze lane.
++      #
++      # supplier-guard: already ran, above, somewhere it could still refuse.
++      # As a hook it would answer nothing new - this runner's cache was built
++      # moments earlier from the committed config, so what is installed and
++      # what is configured are equal by construction, and both were checked
++      # before either existed. The cache half of the guard is a workstation
++      # question, where a cache can outlive the config that filled it.
++      #
++      # tests/go/repo/hookshim_test.go asserts this list and the set of system
++      # hooks stay equal, so a new one cannot quietly turn this lane red.
+       - name: Run pre-commit
+         env:
+-          SKIP: tofu-fmt,go-fmt
++          SKIP: tofu-fmt,go-fmt,supplier-guard
+         run: |
+           pipx install pre-commit==4.6.2
+           pre-commit run --all-files --show-diff-on-failure --color always

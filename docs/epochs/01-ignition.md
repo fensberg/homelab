@@ -2620,3 +2620,30 @@ for a literal `"apply"` argument - and the call that caused the leak passes
 `args...`, built elsewhere, so the check passed against the unfixed code. It was
 only caught by breaking the fix and watching for red, which is the whole reason
 that step is not optional.
+
+### The gate stood behind the delivery, in the one place nothing else guards
+
+`pre-commit` installs a hook repository - clones it and builds its environment,
+which executes setup code - **before it runs any hook**. So a guard implemented
+as a hook always reports after the download it exists to prevent, however early
+it is ordered and whatever `fail_fast` says. That is why the guard moved to
+`githooks/pre-commit`, which git invokes before pre-commit exists in the
+picture at all.
+
+The CI half was missed. The Format lane's first act was `pre-commit run
+--all-files`, so seven third-party repositories were fetched and their setup
+code executed on the runner before anything could object - and the only thing
+that could have objected was a hook, which by then was too late by
+construction. A pull request adding an unapproved supplier would have run it
+before any check said no.
+
+The lane now runs `security guard-suppliers -before-install` first, which
+answers only the question that can be answered with no cache - is every
+configured repository approved - and refuses before `pipx` is installed.
+
+Two things worth keeping from this. **Ordering was the whole property**, and a
+test asserting the step exists would not have noticed it moving; the committed
+test asserts it comes before everything that fetches or executes. And the guard
+was correct on a workstation and absent in CI for the same reason it was
+written - the reasoning was about one machine, and nobody asked the same
+question about the other.
