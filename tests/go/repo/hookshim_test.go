@@ -24,11 +24,11 @@ func TestTheHookShimRunsTheGuardBeforePreCommit(t *testing.T) {
 	for _, hook := range []string{"pre-commit", "pre-push"} {
 		body := readShim(t, hook)
 
-		guard := strings.Index(body, "supplierguard")
+		guard := strings.Index(body, "security guard-suppliers")
 		precommit := strings.Index(body, "exec pre-commit")
 
 		if guard < 0 {
-			t.Errorf("githooks/%s does not run the supplier guard, so an unapproved "+
+			t.Errorf("githooks/%s does not run `security guard-suppliers`, so an unapproved "+
 				"repository would be cloned and installed before anything checked it", hook)
 			continue
 		}

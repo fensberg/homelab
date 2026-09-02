@@ -103,7 +103,7 @@ replace.
 **It also changes what a new device on the mesh means.** With an allow-all
 policy there is no such thing as a device with limited reach, so any machine
 appearing on the overlay - a cousin's computer, a rebuilt laptop, anything -
-has full access from the moment it joins. `scripts/survey` reports untagged
+has full access from the moment it joins. `scripts/contractor/internal/survey` reports untagged
 devices against a baseline for exactly this reason, and the reason it treats a
 new one as worth stopping for rather than logging is that there is currently no
 weaker position for such a device to be in.

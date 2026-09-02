@@ -111,7 +111,7 @@ render.
 ### `task start` builds ignite but does not run it
 
 **Chose:** `task start` runs `go build` and then prints the command to run
-`./scripts/contractor/contractor` directly. Every other ignite-invoking task
+`./toolshed/contractor` directly. Every other ignite-invoking task
 (`render-secrets`, `verify`, `configure-hypervisor`, `backup-state`,
 `clean-secrets`) still execs the binary through `task` as normal.
 **Rejected:** the original design, where `task start` ran ignite directly,
@@ -1448,7 +1448,7 @@ deliberately; not something to discover afterwards.
 
 **Step 3 - tear down, directly rather than through the task runner.**
 
-    ./scripts/contractor/contractor demolish -site <site> -confirm <site>
+    ./toolshed/contractor demolish -site <site> -confirm <site>
 
 `-confirm` names the site a second time on purpose. Run it directly because the
 task runner intercepts Ctrl-C without proxying the signal, and an interrupted
@@ -1457,7 +1457,7 @@ teardown is how VMs get orphaned.
 **Step 4 - ignite, also directly, for the same reason.**
 
     task start SITE=<site>
-    ./scripts/contractor/contractor break-ground -site <site>
+    ./toolshed/contractor break-ground -site <site>
 
 `-from <phase>` resumes rather than restarting if a phase fails.
 
@@ -1465,7 +1465,7 @@ teardown is how VMs get orphaned.
 phase gates this internally; check independently that every node is Ready, that
 every Flux Kustomization and HelmRelease has reconciled, and - the check nothing
 had before - that the overlay carries traffic rather than merely showing
-members online. `scripts/survey` on the hypervisor answers the last one.
+members online. `scripts/contractor/internal/survey` on the hypervisor answers the last one.
 
 **Step 6 - the acceptance test.** Everything above is setup. Change
 `control_plane_count` from three to five and **merge it**; two more machines
