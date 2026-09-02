@@ -21,8 +21,8 @@ cd "$root"
 
 # Built rather than `go run`: this is on the path of every commit, and the
 # binary is cached between them.
-go build -C scripts/security -o ../../toolshed/security .
-./toolshed/security guard-suppliers
+go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
+./toolshed/gatehouse guard-deliveries
 
 # Only now. Anything below this line may download and execute third-party code.
 # pre-commit's own entry point, with the arguments its generated hook uses.

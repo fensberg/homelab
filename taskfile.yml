@@ -89,7 +89,7 @@ tasks:
     # a commit created through the Git Data API with an installation token
     # comes back signed with GitHub's own key. See scripts/signedpush.
     #
-    # A plain `git push` is refused by the pre-push hook (scripts/security),
+    # A plain `git push` is refused by the pre-push hook (scripts/gatehouse),
     # because it produces unsigned commits. It used to merely be documented,
     # which was not enough - see that command's header.
     cmds:
@@ -120,10 +120,10 @@ tasks:
     # Not internal: pre-commit invokes it as a command, so `task` must be
     # willing to run it from the CLI.
     cmds:
-      - go build -C scripts/security -o ../../toolshed/security .
-      - ./toolshed/security guard-push
+      - go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
+      - ./toolshed/gatehouse guard-push
 
-  supplier-guard:
+  delivery-guard:
     desc: "Refuse a commit while an unapproved third-party hook is installed (pre-commit)"
     # Default deny, at the point of execution rather than in CI.
     #
@@ -139,8 +139,8 @@ tasks:
     #
     # Not internal: pre-commit invokes it as a command.
     cmds:
-      - go build -C scripts/security -o ../../toolshed/security .
-      - ./toolshed/security guard-suppliers
+      - go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
+      - ./toolshed/gatehouse guard-deliveries
 
   gh-token:
     desc: "Mint a 1-hour GitHub App installation token (for gh auth login --with-token)"
@@ -213,8 +213,8 @@ tasks:
       - go build -C scripts/contractor -o /dev/null .
       - go vet -C scripts/signedpush ./...
       - go build -C scripts/signedpush -o /dev/null .
-      - go vet -C scripts/security ./...
-      - go build -C scripts/security -o /dev/null .
+      - go vet -C scripts/gatehouse ./...
+      - go build -C scripts/gatehouse -o /dev/null .
       # Every tier, not just the untagged one. The integration, api and e2e
       # tiers are build-tagged, so a bare `go vet ./...` does not compile them
       # at all - a change to a shared struct can break them and still pass
@@ -246,7 +246,7 @@ tasks:
     cmds:
       - go test -C scripts/contractor ./...
       - go test -C scripts/signedpush ./...
-      - go test -C scripts/security ./...
+      - go test -C scripts/gatehouse ./...
 
   test:tofu:
     desc: "OpenTofu unit tests: registry.tf's invariants against fixture configs"

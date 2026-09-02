@@ -2637,7 +2637,7 @@ that could have objected was a hook, which by then was too late by
 construction. A pull request adding an unapproved supplier would have run it
 before any check said no.
 
-The lane now runs `security guard-suppliers -before-install` first, which
+The lane now runs `security guard-deliveries -before-install` first, which
 answers only the question that can be answered with no cache - is every
 configured repository approved - and refuses before `pipx` is installed.
 
@@ -2647,3 +2647,21 @@ test asserts it comes before everything that fetches or executes. And the guard
 was correct on a workstation and absent in CI for the same reason it was
 written - the reasoning was about one machine, and nobody asked the same
 question about the other.
+
+### The role was named after a department, not a place
+
+`security` was three programs collapsed into one role, and the name came from
+the org chart rather than from the site. It is `gatehouse` now: a place where
+things are checked in and out, which is what the program actually is.
+
+The verbs stayed verb phrases and the program became a noun, which is the
+distinction worth keeping - a gatehouse is somewhere, guarding a delivery is
+something done there. `guard-suppliers` became `guard-deliveries` for the same
+reason: a supplier is a party, a delivery is the thing that turns up at the
+gate and gets refused. The list of who may deliver keeps its name,
+`approved-suppliers.yml`, because that one really is about the parties.
+
+Renaming an established component is normally its own deliberate piece of work
+and never folded into unrelated changes. This one was folded in on purpose: the
+component had not been merged yet, so the cost was a `git mv` and a `sed`
+rather than a rename across the history of a thing people already reference.

@@ -1,4 +1,4 @@
-// guard-suppliers refuses to let a commit proceed while an undeclared
+// guard-deliveries refuses to let a commit proceed while an undeclared
 // third-party repository is installed as a commit hook.
 //
 // Default deny. Not "a test in CI notices afterwards" - by then the code has
@@ -110,7 +110,7 @@ const (
 )
 
 func guardSuppliers(args []string) int {
-	fs := flag.NewFlagSet("guard-suppliers", flag.ContinueOnError)
+	fs := flag.NewFlagSet("guard-deliveries", flag.ContinueOnError)
 	// The gate has to be able to stand in front of the delivery as well as
 	// behind it.
 	//
@@ -169,7 +169,7 @@ func guardSuppliers(args []string) int {
 }
 
 func refuse(msg string) int {
-	fmt.Fprintln(os.Stderr, "security guard-suppliers: "+msg)
+	fmt.Fprintln(os.Stderr, "gatehouse guard-deliveries: "+msg)
 	return 1
 }
 

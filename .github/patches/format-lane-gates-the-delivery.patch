@@ -39,7 +39,7 @@ index dd29609..4de229e 100644
 +          cache: false
 +
 +      - name: Refuse an unapproved supplier before anything is downloaded
-+        run: go run -C scripts/security . guard-suppliers -before-install
++        run: go run -C scripts/gatehouse . guard-deliveries -before-install
 +
 +      # Every `language: system` hook is skipped here, and each is owned by a
 +      # lane that has what it needs. This one installs pre-commit and nothing
@@ -52,7 +52,7 @@ index dd29609..4de229e 100644
 +      # installs a pinned tofu and runs `tofu fmt -check`; Go formatting is
 +      # enforced by Super-Linter's Go analysis in the Analyze lane.
 +      #
-+      # supplier-guard: already ran, above, somewhere it could still refuse.
++      # delivery-guard: already ran, above, somewhere it could still refuse.
 +      # As a hook it would answer nothing new - this runner's cache was built
 +      # moments earlier from the committed config, so what is installed and
 +      # what is configured are equal by construction, and both were checked
@@ -64,7 +64,7 @@ index dd29609..4de229e 100644
        - name: Run pre-commit
          env:
 -          SKIP: tofu-fmt,go-fmt
-+          SKIP: tofu-fmt,go-fmt,supplier-guard
++          SKIP: tofu-fmt,go-fmt,delivery-guard
          run: |
            pipx install pre-commit==4.6.2
            pre-commit run --all-files --show-diff-on-failure --color always

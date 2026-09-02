@@ -167,13 +167,13 @@ func TestEveryTaskAHookInvokesIsInvokable(t *testing.T) {
 // The guard allows signedpush's scratch ref and refuses branch refs. If
 // signedpush ever changes that namespace, the guard would start refusing the
 // one push it is supposed to permit - so the two are checked against each
-// other here as well as in scripts/security's own tests.
+// other here as well as in scripts/gatehouse's own tests.
 func TestGuardAndSignedpushAgreeOnTheScratchRef(t *testing.T) {
 	root := repoRoot(t)
 
-	guard, err := os.ReadFile(filepath.Join(root, "scripts", "security", "guard-push.go"))
+	guard, err := os.ReadFile(filepath.Join(root, "scripts", "gatehouse", "guard-push.go"))
 	if err != nil {
-		t.Fatalf("reading scripts/security/guard-push.go: %v", err)
+		t.Fatalf("reading scripts/gatehouse/guard-push.go: %v", err)
 	}
 	signed, err := os.ReadFile(filepath.Join(root, "scripts", "signedpush", "main.go"))
 	if err != nil {
