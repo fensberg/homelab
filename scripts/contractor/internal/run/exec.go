@@ -113,7 +113,27 @@ func TofuApply(ctx *Context, what string, targets ...string) error {
 // rule "run.Tofu may only run init" looked satisfied while the largest leak in
 // the program sat one function away from it.
 func TofuDestroy(ctx *Context, what string) error {
-	return tofuJSON(ctx, what, []string{"destroy", "-input=false", "-auto-approve", "-json"})
+	return tofuJSON(ctx, what, destroyArgs())
+}
+
+// destroyArgs builds the teardown's arguments. Split out from the call so the
+// one flag that is not obvious is testable without an estate to destroy.
+//
+// -refresh=false is the load-bearing one. A destroy plan refreshes before it
+// plans, and refreshing reads every data source in the configuration -
+// including data.talos_cluster_health, which asks whether the cluster is well.
+// A teardown does not care whether the cluster is well, and asking is actively
+// harmful: measured on a real teardown, the read sat for ninety minutes with
+// five healthy nodes still running and nothing destroyed. Its
+// `timeouts = { read = "10m" }` did not bound it, so this is not a slow
+// question, it is an unbounded one.
+//
+// Skipping the refresh is safe here in a way it would not be for an apply. A
+// destroy removes what state describes; it has no use for a fresher view of
+// what state describes. A resource already gone comes back not-found from its
+// provider and is treated as done.
+func destroyArgs() []string {
+	return []string{"destroy", "-input=false", "-auto-approve", "-json", "-refresh=false"}
 }
 
 // StateSerial reports the serial number of the state this workspace is
