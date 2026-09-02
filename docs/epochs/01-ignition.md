@@ -1502,7 +1502,7 @@ a path was read as a property of pods on this cluster, when it was a property of
 one host. A second, smaller error sat on top of it: Verify proved the path with
 ICMP, which Pod Security Admission makes impossible from a pod regardless of
 reachability, so the pre-flight would have failed even once the overlay worked.
-#114 gave the converge a TCP probe instead.
+The converge asks with TCP instead as of #114.
 
 Measured on 2026-09-02, from a job on the self-hosted runner - a pod on this
 cluster - during the plan lane of the scale-up pull request:
