@@ -51,6 +51,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -92,6 +93,14 @@ const (
 // answer it. Whether one exists at all is this hook's question, and the commit
 // object's gpgsig header answers it with no configuration whatsoever.
 func unsignedCommits(from, to string) ([]string, error) {
+	// No ref information is not "nothing to check". Without it there is no
+	// range to read, and inferring one from whatever `git log` does with an
+	// empty argument makes the answer depend on the machine rather than on the
+	// push - which is exactly how a test came to pass for the wrong reason.
+	if to == "" {
+		return nil, errors.New("no ref information: cannot tell which commits this push would add")
+	}
+
 	rangeArg := from + ".." + to
 	args := []string{"log", "--format=%H", rangeArg}
 	// An all-zero from-ref means a new branch, where there is no range. Ask
