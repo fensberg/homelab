@@ -26,9 +26,20 @@ import (
 // was healthy, so nobody found out for days.
 //
 // A port that answers is the weakest evidence available - it is true from the
-// moment one instance is up. This phase asks the three questions that would
-// have caught it: are all the nodes Ready, did everything Flux manages
+// moment one instance is up. This phase asks the questions that would have
+// caught it: are all the nodes Ready and schedulable, is every per-node
+// workload actually running on every node, did everything Flux manages
 // reconcile, and does the database have the instances it was asked for.
+//
+// The per-node question was added after a scale-up. "The machines exist and
+// Kubernetes calls them Ready" and "the machines are usable" are different
+// claims, and every check here proved only the first: a node can be Ready,
+// cordoned, and running nothing at all. DaemonSets are the cheap way to tell
+// the difference, because adding a node raises every DaemonSet's desired count
+// - so a machine that cannot run the CNI, kube-proxy or the storage
+// provisioner shows up here as a shortfall rather than as a mystery weeks
+// later. Nothing else in this phase covers them: the Flux check reads
+// Kustomizations and HelmReleases, the database check reads CloudNativePG.
 //
 // It sits before Migrate deliberately. Moving state into a database is the
 // point of no return for this run; doing it into a degraded one is how the
@@ -42,22 +53,36 @@ func Health(ctx *run.Context) error {
 	}
 	defer cleanup()
 
-	if err := waitFor(ctx, kubeconfig, "nodes", 5*time.Minute, checkNodes); err != nil {
-		return err
-	}
-	if err := waitFor(ctx, kubeconfig, "Flux reconciliation", 15*time.Minute, checkFlux); err != nil {
-		return err
-	}
-	if err := waitFor(ctx, kubeconfig, "the state database", 15*time.Minute, checkDatabase); err != nil {
-		return err
+	for _, c := range healthChecks {
+		if err := waitFor(ctx, kubeconfig, c.name, c.timeout, c.check); err != nil {
+			return err
+		}
 	}
 
-	run.Ok("cluster is healthy: nodes ready, Flux reconciled, database at full instance count")
+	run.Ok("cluster is healthy: nodes ready and schedulable, per-node workloads running on every node, Flux reconciled, database at full instance count")
 	return nil
 }
 
 // A check returns nil when healthy, or an error describing what is not.
 type healthCheck func(ctx *run.Context, kubeconfig string) error
+
+// The checks, as data rather than as a run of if-statements.
+//
+// A deleted call in a sequence of near-identical blocks is three green lines
+// and a smaller file; a deleted entry here is a list that no longer matches
+// what health_checks_test.go says this phase asks. That test is the reason for
+// the shape - it is not possible to unit-test the phase itself, because every
+// check shells out to kubectl.
+var healthChecks = []struct {
+	name    string
+	timeout time.Duration
+	check   healthCheck
+}{
+	{"nodes", 5 * time.Minute, checkNodes},
+	{"Flux reconciliation", 15 * time.Minute, checkFlux},
+	{"the state database", 15 * time.Minute, checkDatabase},
+	{"per-node workloads", 10 * time.Minute, checkDaemonSets},
+}
 
 // waitFor polls until the check passes or the deadline expires, reporting what
 // is still outstanding as it goes. Flux takes minutes on a cold cluster -
@@ -131,6 +156,22 @@ func checkNodes(ctx *run.Context, kubeconfig string) error {
 	if err != nil {
 		return err
 	}
+	want, err := expectedNodeCount(ctx)
+	if err != nil {
+		return err
+	}
+	return nodeVerdict(out, want)
+}
+
+// nodeVerdict is every question this phase asks of the node list, in one pure
+// function.
+//
+// Separated from the fetch on purpose. When these lived inline in checkNodes,
+// deleting the cordon check broke nothing: the parser it called still had its
+// own passing tests, so the assertion could be removed and every test stayed
+// green. A pure function that returns the verdict is one a test can hold to
+// all three answers at once.
+func nodeVerdict(out []byte, want int) error {
 	unready, err := notReady(out)
 	if err != nil {
 		return err
@@ -148,12 +189,47 @@ func checkNodes(ctx *run.Context, kubeconfig string) error {
 	if err := json.Unmarshal(out, &list); err != nil {
 		return err
 	}
-	want, err := expectedNodeCount(ctx)
+	if len(list.Items) != want {
+		return fmt.Errorf("%d node(s) joined, expected %d", len(list.Items), want)
+	}
+
+	// Ready and unschedulable at the same time is an ordinary state - it is
+	// what a cordon produces - and it is invisible to the Ready condition,
+	// which stays True throughout. A scale-up that lands two cordoned nodes
+	// adds two machines the cluster will never place anything on, and reports
+	// five healthy nodes while doing it.
+	cordoned, err := unschedulable(out)
 	if err != nil {
 		return err
 	}
-	if len(list.Items) != want {
-		return fmt.Errorf("%d node(s) joined, expected %d", len(list.Items), want)
+	if len(cordoned) > 0 {
+		return fmt.Errorf("%d node(s) Ready but not schedulable:\n  %s", len(cordoned), strings.Join(cordoned, "\n  "))
+	}
+	return nil
+}
+
+// checkDaemonSets asks whether every per-node workload is running on every
+// node it is wanted on.
+//
+// This is the closest cheap answer to "is that machine usable". A DaemonSet's
+// desiredNumberScheduled is what the scheduler wants after taints, tolerations
+// and node selectors are taken into account, so comparing it against
+// numberReady is meaningful whatever the DaemonSet targets - and it moves the
+// moment a node is added. The CNI, kube-proxy and the storage provisioner all
+// arrive this way, so a new machine that cannot run them is a new machine
+// nothing can use.
+func checkDaemonSets(ctx *run.Context, kubeconfig string) error {
+	out, err := kubectl(ctx, kubeconfig, "get", "daemonsets", "-A", "-o", "json")
+	if err != nil {
+		return err
+	}
+	short, err := daemonSetShortfalls(out)
+	if err != nil {
+		return err
+	}
+	if len(short) > 0 {
+		return fmt.Errorf("%d per-node workload(s) not running everywhere they are wanted:\n  %s",
+			len(short), strings.Join(short, "\n  "))
 	}
 	return nil
 }
@@ -277,6 +353,70 @@ func notReady(body []byte) ([]string, error) {
 		}
 		if !found {
 			out = append(out, name+": no Ready condition yet")
+		}
+	}
+	return out, nil
+}
+
+// unschedulable names every node carrying spec.unschedulable, which is what a
+// cordon sets and what nothing else in this phase reads.
+func unschedulable(body []byte) ([]string, error) {
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+			Spec struct {
+				Unschedulable bool `json:"unschedulable"`
+			} `json:"spec"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil, fmt.Errorf("parsing kubectl output: %w", err)
+	}
+	var out []string
+	for _, n := range list.Items {
+		if n.Spec.Unschedulable {
+			out = append(out, n.Metadata.Name+": cordoned, so nothing will be scheduled on it")
+		}
+	}
+	return out, nil
+}
+
+// daemonSetShortfalls names every DaemonSet with fewer pods ready than the
+// scheduler wants placed.
+//
+// Absent status fields are zero rather than "as many as we wanted", so a
+// DaemonSet whose status has not been written yet reads as a shortfall - which
+// is correct, because it has not been shown to be running anywhere. An empty
+// list is an error for the same reason the Flux check treats one that way:
+// this cluster runs a CNI and a kube-proxy as DaemonSets, so none at all means
+// the query was wrong or the cluster is not up, and neither is health.
+func daemonSetShortfalls(body []byte) ([]string, error) {
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Name      string `json:"name"`
+				Namespace string `json:"namespace"`
+			} `json:"metadata"`
+			Status struct {
+				DesiredNumberScheduled int `json:"desiredNumberScheduled"`
+				NumberReady            int `json:"numberReady"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil, fmt.Errorf("parsing kubectl output: %w", err)
+	}
+	if len(list.Items) == 0 {
+		return nil, fmt.Errorf("no DaemonSets exist at all - this cluster runs its CNI and kube-proxy that way, so an empty list is a wrong answer rather than a healthy one")
+	}
+	var out []string
+	for _, d := range list.Items {
+		if d.Status.NumberReady < d.Status.DesiredNumberScheduled {
+			out = append(out, fmt.Sprintf("%s/%s: %d of %d ready",
+				d.Metadata.Namespace, d.Metadata.Name,
+				d.Status.NumberReady, d.Status.DesiredNumberScheduled))
 		}
 	}
 	return out, nil
