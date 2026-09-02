@@ -27,11 +27,13 @@ import (
 // hook wired. Deleting the hook to make a push go through is exactly the
 // shortcut this exists to catch.
 type preCommitConfig struct {
-	Repos []struct {
+	DefaultStages []string `yaml:"default_stages"`
+	Repos         []struct {
 		Repo  string `yaml:"repo"`
 		Hooks []struct {
 			ID       string   `yaml:"id"`
 			Entry    string   `yaml:"entry"`
+			Language string   `yaml:"language"`
 			Stages   []string `yaml:"stages"`
 			FailFast bool     `yaml:"fail_fast"`
 		} `yaml:"hooks"`
@@ -40,18 +42,24 @@ type preCommitConfig struct {
 
 const pushGuardHookID = "push-guard"
 
-func TestPlainGitPushIsRefusedByAHook(t *testing.T) {
-	root := repoRoot(t)
-
-	body, err := os.ReadFile(filepath.Join(root, ".pre-commit-config.yaml"))
+func parsePreCommitConfig(t *testing.T) preCommitConfig {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), ".pre-commit-config.yaml"))
 	if err != nil {
 		t.Fatalf("reading .pre-commit-config.yaml: %v", err)
 	}
-
 	var cfg preCommitConfig
 	if err := yaml.Unmarshal(body, &cfg); err != nil {
 		t.Fatalf("parsing .pre-commit-config.yaml: %v", err)
 	}
+	if len(cfg.Repos) == 0 {
+		t.Fatal("the hook configuration parsed to nothing, so every test reading it proves nothing")
+	}
+	return cfg
+}
+
+func TestPlainGitPushIsRefusedByAHook(t *testing.T) {
+	cfg := parsePreCommitConfig(t)
 
 	var found, failFast bool
 	var stages []string
@@ -100,18 +108,23 @@ func TestPlainGitPushIsRefusedByAHook(t *testing.T) {
 	}
 }
 
-// The hook shells out to `task push-guard`, so that task has to exist and has
-// to be callable from outside. It was briefly marked `internal: true`, which
-// task refuses to run from the CLI - the hook failed with a task error rather
-// than a verdict, which is a guard that is broken in the direction of noise.
-func TestPushGuardTaskIsInvokable(t *testing.T) {
+// Every `task` a hook invokes has to exist and be callable from outside.
+//
+// This named push-guard alone, which is how it stayed green while a second
+// hook called a task at all: the assertion was about one hook rather than
+// about the property, so the property went unenforced the moment a second
+// case appeared. `internal: true` is the specific failure - task refuses to
+// run those from the CLI, so the hook fails with a task error rather than a
+// verdict, which is a guard broken in the direction of noise.
+func TestEveryTaskAHookInvokesIsInvokable(t *testing.T) {
 	root := repoRoot(t)
+
+	cfg := parsePreCommitConfig(t)
 
 	body, err := os.ReadFile(filepath.Join(root, "taskfile.yml"))
 	if err != nil {
 		t.Fatalf("reading taskfile.yml: %v", err)
 	}
-
 	var tf struct {
 		Tasks map[string]struct {
 			Internal bool `yaml:"internal"`
@@ -121,14 +134,33 @@ func TestPushGuardTaskIsInvokable(t *testing.T) {
 		t.Fatalf("parsing taskfile.yml: %v", err)
 	}
 
-	task, ok := tf.Tasks[pushGuardHookID]
-	if !ok {
-		t.Fatalf("taskfile.yml has no %q task, but .pre-commit-config.yaml "+
-			"invokes `task %s`", pushGuardHookID, pushGuardHookID)
+	checked := 0
+	for _, repo := range cfg.Repos {
+		for _, hook := range repo.Hooks {
+			fields := strings.Fields(hook.Entry)
+			if len(fields) < 2 || fields[0] != "task" {
+				continue
+			}
+			name := fields[1]
+			checked++
+
+			task, ok := tf.Tasks[name]
+			if !ok {
+				t.Errorf("hook %q runs `task %s`, and taskfile.yml has no such task",
+					hook.ID, name)
+				continue
+			}
+			if task.Internal {
+				t.Errorf("hook %q runs `task %s`, which is marked internal - task "+
+					"refuses to run an internal task from the CLI, so the hook fails "+
+					"with a task error instead of a verdict", hook.ID, name)
+			}
+		}
 	}
-	if task.Internal {
-		t.Errorf("the %s task is marked internal, so `task %s` fails from the "+
-			"CLI and the pre-push hook cannot run it", pushGuardHookID, pushGuardHookID)
+
+	if checked == 0 {
+		t.Fatal("no hook invokes a task, so this checked nothing. Either the hooks " +
+			"stopped using task or the entry is no longer written as `task <name>`.")
 	}
 }
 
