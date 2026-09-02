@@ -548,6 +548,31 @@ floor a pull request may not drop below and is free to leave alone.
   `validate` and `test` are separate on purpose - "does it resolve" and
   "does it do the right thing" are different questions, and one owner per
   check is the rule everywhere else here too.
+- **A test states every input it depends on.** Anything read from the machine
+  rather than set by the test — git config, environment variables, the working
+  directory, the clock, the network — is a bug waiting for a different machine.
+  This is not theoretical: two tests in `scripts/pushguard` were written this
+  way in consecutive changes. One built a deliberately _unsigned_ commit and
+  inherited `commit.gpgsign` from the developer's global config, so on any
+  machine following this repository's own setup the fixture was signed and the
+  test failed while the code was correct. The other relied on the pre-push
+  environment variables being _absent_, so it passed in a shell and failed
+  inside the hook it exists to protect — on a workstation, mid-push.
+
+  Both reported the machine rather than the code. Where a test shells out to a
+  tool that reads user configuration, neutralise that configuration rather than
+  hoping it is absent; `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` pointed at
+  `/dev/null` do it for git, and `tests/go/repo` asserts any test package
+  invoking git does so.
+
+- **Prove a test fails for the reason it claims.** Breaking the code and
+  watching something go red is not enough — check that _this_ assertion is what
+  caught it. The second failure above passed for years' worth of runs through an
+  unrelated error path, so deleting the behaviour it named would not have
+  failed it. A test that passes by accident is worse than none: it reports
+  coverage that does not exist, and it hides the moment the rule underneath it
+  changed.
+
 - **Tests are written before the code they test, in every language this
   project uses one for.** The same shift-left reasoning as formatting, one
   step further left: a defect caught while writing the test is cheaper than

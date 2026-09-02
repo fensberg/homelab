@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -53,10 +54,27 @@ func Plan(ctx *run.Context) error {
 	}
 
 	run.Info("planning")
-	if err := run.Tofu(ctx, "tofu plan",
+	// tofu's own plan output is captured and discarded rather than streamed.
+	//
+	// It is redundant - the summary below is built from `tofu show -json` of
+	// the same plan file - and it is a leak. Resource addresses are not the
+	// safe half they were assumed to be: `for_each` keys come from the config,
+	// so a plan prints things like the hypervisor's name as a map key and the
+	// cluster's name as a data source id, both of which are vault values. A
+	// converge runs in a public repository's Actions log and its output is
+	// pasted into a pull request comment.
+	//
+	// TofuApply already had this discipline, and its comment records a
+	// converge printing the site's real name inside a resource description.
+	// Plan never got it, so the same class of leak went out through the
+	// quieter path.
+	//
+	// Errors are unaffected: tofu writes diagnostics to stderr, which is not
+	// captured here, so a failing plan still says why.
+	if _, err := run.CmdOutput(ctx.ClusterDir, "tofu",
 		"plan", "-input=false", "-out="+ctx.TofuPlanFile,
 	); err != nil {
-		return err
+		return fmt.Errorf("tofu plan: %w", err)
 	}
 
 	raw, err := run.CmdOutput(ctx.ClusterDir, "tofu", "show", "-json", ctx.TofuPlanFile)
@@ -70,7 +88,36 @@ func Plan(ctx *run.Context) error {
 	}
 	fmt.Println()
 	fmt.Println(summary)
+
+	if ctx.CommentOut != "" {
+		if err := os.WriteFile(ctx.CommentOut, []byte(commentBody(ctx.Site, summary)), 0o644); err != nil {
+			return fmt.Errorf("writing the comment body: %w", err)
+		}
+	}
 	return nil
+}
+
+// commentBody renders the pull request comment.
+//
+// Written here rather than assembled in the workflow, for the reason
+// sensitive-paths.yml already records about its own comment: copy that needs a
+// workflow edit to fix is copy that stays wrong, because the agent cannot edit
+// workflows and the human should not have to for a wording change.
+//
+// It is deliberately plain. A heading naming the site, the change, and nothing
+// else - no greeting, no signature, and no restatement of what the output is,
+// because a reader can see what it is. The marker is what lets a later run
+// update this comment instead of adding another one.
+func commentBody(site, summary string) string {
+	return fmt.Sprintf("%s\n## Plan — %s\n\n```text\n%s\n```\n",
+		commentMarker(site), site, strings.TrimRight(summary, "\n"))
+}
+
+// commentMarker identifies this comment so a later run can find and replace
+// it. Per site, because a repository with two sites plans both on one pull
+// request and one must not overwrite the other.
+func commentMarker(site string) string {
+	return "<!-- plan:" + site + " -->"
 }
 
 type planChange struct {
@@ -104,7 +151,7 @@ func summarisePlan(raw []byte) (string, error) {
 		if verb == "" {
 			continue // no-op: noise in a review, not information
 		}
-		rows = append(rows, row{c.Address, verb})
+		rows = append(rows, row{redactKeys(c.Address), verb})
 		counts[verb]++
 	}
 
@@ -213,4 +260,33 @@ func countControlPlaneVMs(stateList string) int {
 		}
 	}
 	return n
+}
+
+// forEachKey matches the bracketed key in a resource address.
+var forEachKey = regexp.MustCompile(`\["([^"]*)"\]`)
+
+// numericKey is a key that cannot carry a proper noun.
+var numericKey = regexp.MustCompile(`^[0-9]+$`)
+
+// redactKeys removes `for_each` keys that can carry a vault value.
+//
+// Resource addresses were treated as the safe half of a plan - "addresses and
+// verbs, never a value" - and they are not. A `for_each` over the config's
+// hypervisor map keys the resource by the hypervisor's real name, so a plan
+// prints it in an address without printing any attribute at all. That reached
+// a public Actions log and a pull request comment before anybody noticed,
+// because everything watching for leaks was watching the values.
+//
+// Numeric keys are kept. They come from octets and node numbering, carry no
+// proper noun, and are the difference between "a control-plane VM is being
+// replaced" and knowing which one - which is exactly what a reviewer needs
+// when the plan says something is being destroyed.
+func redactKeys(address string) string {
+	return forEachKey.ReplaceAllStringFunc(address, func(m string) string {
+		key := forEachKey.FindStringSubmatch(m)[1]
+		if numericKey.MatchString(key) {
+			return m
+		}
+		return `["<redacted>"]`
+	})
 }

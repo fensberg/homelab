@@ -101,6 +101,7 @@ func main() {
 	_ = o.fs.Parse(os.Args[2:])
 
 	site, phase, from, confirm := o.site, o.phase, o.from, o.confirm
+	commentOut := o.commentOut
 	upgrade, skipOverlay, skipUpgrade := o.upgrade, o.skipOverlay, o.skipUpgrade
 	keepOnFailure, whatIf := o.keepOnFailure, o.whatIf
 	converge := verb == "converge"
@@ -139,6 +140,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 	}
 
 	ctx := run.NewContext(repoRoot(), *site)
+	ctx.CommentOut = deref(commentOut)
 	ctx.Upgrade = on(upgrade)
 	ctx.SkipOverlay = on(skipOverlay)
 	ctx.SkipUpgrade = on(skipUpgrade)
@@ -524,7 +526,7 @@ type opts struct {
 	fs   *flag.FlagSet
 	site *string
 
-	phase, from, confirm              *string
+	phase, from, confirm, commentOut  *string
 	upgrade, skipOverlay, skipUpgrade *bool
 	keepOnFailure, whatIf             *bool
 }
@@ -550,6 +552,14 @@ func flagsFor(verb string) *opts {
 	// suggest the default is the other way round.
 	if verb == "break-ground" {
 		o.keepOnFailure = fs.Bool("keep-on-failure", false, "On error, skip the automatic destroy and keep local state for debugging.")
+	}
+
+	// The pull request comment's body is written by this program rather than
+	// assembled in a workflow, for the reason sensitive-paths.yml already
+	// records about its own comment: copy that needs a workflow edit to fix is
+	// copy that stays wrong, because the agent cannot edit workflows.
+	if verb == "plan" {
+		o.commentOut = fs.String("comment-out", "", "Write the pull request comment body to this file.")
 	}
 
 	if verb == "demolish" {
