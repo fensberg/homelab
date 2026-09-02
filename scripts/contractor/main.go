@@ -314,7 +314,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 	}
 	if verb == "break-ground" {
 		run.Info("surveying the ground ...")
-		if err := phases.CheckBreakGroundPreconditions(); err != nil {
+		if err := phases.CheckBreakGroundPreconditions(ctx.Site); err != nil {
 			fmt.Println()
 			run.Fail("HALTED: " + err.Error())
 			os.Exit(exitUntouched)
