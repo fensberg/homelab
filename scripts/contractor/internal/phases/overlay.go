@@ -29,7 +29,7 @@ func Overlay(ctx *run.Context) error {
 	run.Info("minting a tagged auth key")
 	list, _ := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list")
 	args := overlayApplyArgs(stateListContains(list, overlayKeyAddress))
-	if err := run.Tofu(ctx, "tofu apply (overlay network)", args...); err != nil {
+	if err := run.TofuApplyArgs(ctx, "tofu apply (overlay network)", args...); err != nil {
 		return err
 	}
 
@@ -64,8 +64,12 @@ const overlayKeyAddress = "tailscale_tailnet_key.hypervisor"
 // -replace is only added when the address is already in state. tofu refuses it
 // otherwise, which would turn the first run of a brand new estate into an
 // error.
+//
+// -json is not optional. Without it the apply streams every non-sensitive
+// attribute it touches, and this resource's description is built from the
+// site's name - which is how a vault value reached a public Actions log.
 func overlayApplyArgs(keyInState bool) []string {
-	args := []string{"apply", "-input=false", "-auto-approve"}
+	args := []string{"apply", "-input=false", "-auto-approve", "-json"}
 	if keyInState {
 		args = append(args, "-replace="+overlayKeyAddress)
 	}
