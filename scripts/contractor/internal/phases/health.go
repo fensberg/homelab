@@ -215,9 +215,18 @@ func nodeVerdict(out []byte, want int) error {
 // desiredNumberScheduled is what the scheduler wants after taints, tolerations
 // and node selectors are taken into account, so comparing it against
 // numberReady is meaningful whatever the DaemonSet targets - and it moves the
-// moment a node is added. The CNI, kube-proxy and the storage provisioner all
-// arrive this way, so a new machine that cannot run them is a new machine
-// nothing can use.
+// moment a node is added.
+//
+// On this estate that is `kube-system/kube-flannel` and
+// `kube-system/kube-proxy`, both of which read 5 of 5 after the scale-up to
+// five nodes - measured, not assumed. The storage provisioner is deliberately
+// not in that list: OpenEBS Local PV ships its provisioner as a Deployment
+// rather than a DaemonSet, so this check says nothing about whether a new node
+// can serve a volume. An earlier version of this comment claimed it did.
+//
+// A new machine that cannot run the CNI or kube-proxy is a new machine nothing
+// can use, which is what makes this the cheap answer worth having. It is not
+// the complete one.
 func checkDaemonSets(ctx *run.Context, kubeconfig string) error {
 	out, err := kubectl(ctx, kubeconfig, "get", "daemonsets", "-A", "-o", "json")
 	if err != nil {
