@@ -2464,3 +2464,76 @@ exists, the entry that records the defect should name the workaround too, so
 closing one is a prompt to delete the other. Nothing here catches it
 mechanically: the two lived in different files, both tested, both passing, and
 between them the estate had a capability it refused to use.
+
+### Converge could not attach, because its own second phase wrote local state
+
+The scale-up was merged and the converge fired on the merge, which is the half
+of the acceptance test this tier exists to prove. It reached Attach and halted:
+
+    PHASE 2 : OVERLAY
+      [ok] auth key minted; the tailnet policy auto-approves this subnet
+    PHASE 3 : VERIFY
+      [ok] Proxmox API reachable
+      [ok] node subnet reachable - the path to this estate works
+    PHASE 4 : ATTACH
+      [FAIL] HALTED: local state already exists at .../terraform.tfstate,
+             so this workspace is mid-ignition rather than detached.
+
+The state file was written thirty seconds earlier by the Overlay phase in the
+same run. `tofu init` in the cluster directory configures the local backend,
+the apply writes `terraform.tfstate` beside it, and Attach then refuses -
+correctly, since local state normally means an ignition that never reached
+Migrate and attaching on top of it would leave two states describing one
+estate. **Nothing before Attach may touch tofu at all**, and `ConvergePhases`
+ran Overlay second.
+
+Three things kept this invisible.
+
+**Converge had never reached Attach.** Every previous attempt failed at Verify,
+for the unrelated overlay-transport reasons recorded above. The ordering was
+wrong from the moment Attach was introduced and no run had ever got far enough
+to find out.
+
+**Each phase was correct alone.** Overlay works, Attach works, and their tests
+pass. The defect existed only in the order, which nothing asserted.
+
+**The comment describing `ConvergePhases` had drifted onto `PlanPhases`.** It
+said, accurately, that a converge "begins with attach". It sat above the wrong
+variable, and the variable it described had no comment of its own, so the
+sequence and its stated contract disagreed in plain sight.
+
+**Overlay does not belong in a converge at all**, which is the fix rather than
+a reordering. The tailnet key it mints is consumed by exactly one thing - the
+vars file the hypervisor playbook reads - and a converge deliberately does not
+run the hypervisor phase. So every converge minted a live credential nothing
+would use. `PlanPhases` already omitted it, with the reason written down:
+minting a key is a side effect, and that sequence has none.
+
+**That is also the answer to a plan reporting `1 to add` every single time.**
+The key was created in a local state file that Attach then refused to touch and
+Sterilize deleted, so it was never recorded anywhere that outlived the run.
+Every converge saw an empty state and planned to create it for the first time.
+It looked like noise worth suppressing. It was the symptom, and suppressing it
+would have hidden a converge minting an orphan credential on every merge - the
+reason to keep reporting a thing that always happens is that the day it stops,
+or changes shape, is the day it matters.
+
+**And it leaked.** Overlay applied through `run.Tofu`, which streams whatever
+tofu prints; the resource's `description` is built from the site's name, so a
+vault value went into a public Actions log. `run.TofuApply` had the discipline
+already and this call did not use it. Third distinct path for the same class -
+after a resource description in a converge and `for_each` keys in a plan - and
+the first two fixes were both to the caller rather than to the helper that made
+the wrong thing possible.
+
+**The building code that follows from this**, in
+`tests/go/repo/converge_order_test.go`: nothing may run tofu before Attach in
+any sequence that contains one; `run.Tofu` may only ever run `init`; and every
+phase a sequence names must have a source file named after it, so no phase can
+be silently exempt from the first two.
+
+The second of those was written wrongly first. It searched each `run.Tofu` call
+for a literal `"apply"` argument - and the call that caused the leak passes
+`args...`, built elsewhere, so the check passed against the unfixed code. It was
+only caught by breaking the fix and watching for red, which is the whole reason
+that step is not optional.
