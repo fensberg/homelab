@@ -112,9 +112,84 @@ func TofuApply(ctx *Context, what string, targets ...string) error {
 // one that went through `run.Cmd` rather than either apply helper - so the
 // rule "run.Tofu may only run init" looked satisfied while the largest leak in
 // the program sat one function away from it.
-func TofuDestroy(ctx *Context, what string) error {
-	return tofuJSON(ctx, what, destroyArgs())
+// tofuStep is one command in a sequence, declared rather than called.
+//
+// The teardown is data for the same reason the Health phase's checks are: a
+// deleted call in a run of similar-looking statements is a few green lines and
+// a smaller file, while a deleted entry in a list is a list that no longer
+// matches what the test says the teardown does. That distinction is not
+// theoretical here - the first version of this refresh was a bare call, and
+// removing it (which is exactly the regression being fixed) failed no test at
+// all.
+type tofuStep struct {
+	label string
+	args  []string
+	// bestEffort steps report their failure and carry on. A teardown that
+	// cannot refresh should still try to destroy: the refresh improves the
+	// destroy's information, it is not a precondition for it.
+	bestEffort bool
 }
+
+// TeardownSteps is the destroy, in order.
+//
+// Two steps, and neither works alone. -refresh=false on the destroy stops it
+// reading every data source in the configuration - including the cluster-health
+// gate, which does not come back (#92). But on its own it leaves the destroy
+// acting on whatever state last recorded, which said "running" for five VMs
+// that had since been stopped, and the provider then waited for a transition
+// that had already happened (#146).
+//
+// Targeting is what separates them. A refresh scoped to the machines walks only
+// those resources and their dependencies; the health gate depends on the VMs
+// rather than the other way round, so it is not in that closure and is never
+// read.
+func TeardownSteps() []tofuStep {
+	return []tofuStep{
+		{label: "refreshing the machines", args: refreshMachinesArgs(), bestEffort: true},
+		{label: "", args: destroyArgs()},
+	}
+}
+
+// TofuDestroy runs the teardown through the same JSON summary an apply uses.
+//
+// A destroy prints more than an apply, not less: every attribute of every
+// resource being removed, read straight out of state. `talos_machine_secrets`
+// alone carries the etcd, Kubernetes, aggregator and OS certificate
+// authorities plus the cluster id, and the provider marks none of them
+// sensitive - so a plain destroy publishes the estate's own PKI to whatever is
+// reading the output.
+func TofuDestroy(ctx *Context, what string) error {
+	for _, step := range TeardownSteps() {
+		label := what
+		if step.label != "" {
+			label = what + " (" + step.label + ")"
+		}
+		err := tofuJSON(ctx, label, step.args)
+		if err == nil {
+			continue
+		}
+		if step.bestEffort {
+			Warn("could not finish " + step.label + ": " + err.Error())
+			continue
+		}
+		return err
+	}
+	return nil
+}
+
+// refreshMachinesArgs updates state for the machines about to be destroyed,
+// and nothing else. -refresh-only writes what it learns back without proposing
+// a change; -target confines the walk.
+func refreshMachinesArgs() []string {
+	return []string{
+		"apply", "-refresh-only", "-auto-approve", "-input=false", "-json",
+		"-target=" + machinesAddress,
+	}
+}
+
+// The control-plane VMs, as one address. A destroy that cannot see their real
+// power state is the one that hangs.
+const machinesAddress = "proxmox_virtual_environment_vm.talos_cp"
 
 // destroyArgs builds the teardown's arguments. Split out from the call so the
 // one flag that is not obvious is testable without an estate to destroy.
@@ -240,9 +315,24 @@ func summariseApply(r io.Reader, emit func(string)) (lines []string, failed []st
 				say(fmt.Sprintf("%-9s %s (%ds elapsed)",
 					"still", addr, int(ev.Hook.ElapsedSeconds)))
 			}
-		case "apply_start", "apply_complete", "apply_errored":
+		// Started, finished and failed must not look the same.
+		//
+		// All three were printed as "<action> <address>", so every resource
+		// appeared twice and a resource that failed appeared exactly like one
+		// that succeeded. A real teardown printed five VMs deleting, five VMs
+		// "deleting" again, and then said the destroy had failed - with
+		// nothing to say which five had actually gone.
+		case "apply_start":
 			if addr := ev.Hook.Resource.Addr; addr != "" {
 				say(fmt.Sprintf("%-9s %s", ev.Hook.Action, addr))
+			}
+		case "apply_complete":
+			if addr := ev.Hook.Resource.Addr; addr != "" {
+				say(fmt.Sprintf("%-9s %s", "done", addr))
+			}
+		case "apply_errored":
+			if addr := ev.Hook.Resource.Addr; addr != "" {
+				say(fmt.Sprintf("%-9s %s", "FAILED", addr))
 			}
 		case "change_summary":
 			say(fmt.Sprintf("%d added, %d changed, %d destroyed",
