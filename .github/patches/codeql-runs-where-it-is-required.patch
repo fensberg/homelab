@@ -1,0 +1,26 @@
+diff --git a/.github/workflows/codeql.yml b/.github/workflows/codeql.yml
+index b704511..64b9cd6 100644
+--- a/.github/workflows/codeql.yml
++++ b/.github/workflows/codeql.yml
+@@ -13,9 +13,21 @@ name: "CodeQL"
+ # only proves the workflow ran; the ruleset is what refuses a merge because of
+ # what the workflow found.
+ on:
++  # The same branches the "protected branches" ruleset covers.
++  #
++  # `Analyze (actions)` is a required status check there, and that ruleset
++  # covers `main` and `epoch/**` - but this workflow only ran for pull requests
++  # into `main`. So every pull request into an epoch branch waited forever on a
++  # check that could not report, with no failure to read and nothing to re-run.
++  # A required check that cannot run is not a strict gate, it is a stuck one.
++  #
++  # tests/go/api/required_checks_report_test.go asserts that every check a
++  # ruleset requires is one some workflow can actually report on those
++  # branches.
+   pull_request:
+     branches:
+       - main
++      - epoch/**
+   push:
+     branches:
+       - main
