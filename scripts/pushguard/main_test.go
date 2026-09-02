@@ -135,6 +135,14 @@ func fixtureRepo(t *testing.T) (base, unsigned, signed string) {
 	git(t, "init", "-q", "-b", "main", ".")
 	git(t, "config", "user.email", "fixture@example.invalid")
 	git(t, "config", "user.name", "Fixture")
+	// The unsigned commit below has to actually be unsigned.
+	//
+	// A machine with commit.gpgsign set globally - which anyone following this
+	// repository's own setup will have - signs every commit including this
+	// fixture's, so the test finds nothing unsigned and fails while the code is
+	// perfectly correct. It passed only on a machine with signing switched off,
+	// which is the one configuration this repository tells people not to have.
+	git(t, "config", "commit.gpgsign", "false")
 	git(t, "commit", "-q", "--allow-empty", "-m", "base")
 	base = git(t, "rev-parse", "HEAD")
 	git(t, "commit", "-q", "--allow-empty", "-m", "unsigned")
