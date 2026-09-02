@@ -19,7 +19,32 @@
 // Matched on the vendor domain as well as the name, so renaming the model
 // does not quietly reopen it. Scoped to the trailer: this repository writes
 // the word "Claude" in prose constantly, and only the attribution is wrong.
-const selfCoAuthorship = /^\s*co-authored-by:[^\n]*(claude|anthropic\.com)/im;
+//
+// A `[bot]` account is exempt, because that trailer is not self-attribution.
+// GitHub writes it itself when squash-merging a pull request whose commits
+// have more than one author: the squash is authored by whoever merged, and
+// every other contributor is recorded as a co-author. `fensberg-claude[bot]`
+// appearing there is the App being credited for commits the App really did
+// write, on a commit it did not author - which is exactly what the trailer is
+// for.
+//
+// This is not a loophole. The harness's default trailer names a user-shaped
+// identity (`Claude <noreply@anthropic.com>`), never a `[bot]` account,
+// because the harness assumes a human is committing the model's work. The two
+// cases are distinguishable, and only one of them is wrong.
+//
+// It surfaced the expensive way: the squash of #163 carried the trailer, the
+// commit cannot be rewritten because non_fast_forward applies to every branch
+// here, and every later branch containing it failed this rule.
+const coAuthorTrailer = /^[ \t]*co-authored-by:[^\n]*/gim;
+const namesTheModel = /claude|anthropic\.com/i;
+const isMachineAccount = /\[bot\]/i;
+
+function creditsItselfAsCoAuthor(raw) {
+  return (raw.match(coAuthorTrailer) ?? []).some(
+    (trailer) => namesTheModel.test(trailer) && !isMachineAccount.test(trailer),
+  );
+}
 
 module.exports = {
   extends: ["@commitlint/config-conventional"],
@@ -31,7 +56,7 @@ module.exports = {
     {
       rules: {
         "no-self-co-authorship": ({ raw }) => [
-          !selfCoAuthorship.test(raw ?? ""),
+          !creditsItselfAsCoAuthor(raw ?? ""),
           "Drop the `Co-Authored-By: Claude` trailer. Claude is the author of " +
             "this commit, not a co-author, and the trailer makes GitHub show " +
             "the same party twice. A trailer naming a human co-author is fine.",

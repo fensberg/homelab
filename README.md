@@ -62,3 +62,4 @@ homelab/
 │ └── foo.tf
 └── applications/
 └── kustomization.yaml # Flux/Kustomize overlay for Production bump
+x
