@@ -1554,6 +1554,68 @@ abstraction and workload tiers - are epochs 02 and 03. Everything else this
 epoch chose not to do is in Deferred below, each with the trigger that should
 bring it back.
 
+## Acceptance test 2: passed, 2026-09-02
+
+> Change `control_plane_count` from `3` to `5` in the config. **Merge it.** Two
+> more machines exist, joined to the cluster - with nobody having run anything.
+
+Merged as #134. The converge fired on the merge and completed all eight phases.
+Two machines were created, took their Talos configuration, joined etcd and were
+Ready, and the run backed up the state and sterilized itself. **Nobody ran
+anything.**
+
+What made it possible, after the first attempt failed at Verify:
+
+- The overlay's data path was repaired - the IPv6 half-stack and the VRF/mark
+  routing collision, both now in the playbook with tests.
+- #114 taught Verify who is calling it, so a converge proves the path to the
+  node subnet with TCP rather than ICMP, which Pod Security Admission makes
+  impossible from a pod.
+- #124 removed a stopgap that refused to plan a scale change, left in front of
+  the #118 fix that made the plan possible.
+- #129 removed the Overlay phase from the converge sequence. It ran `tofu init`
+  in the cluster directory, which writes local state, which is precisely the
+  condition Attach refuses - so the first converge ever to get past Verify
+  halted on a state file its own second phase had written.
+
+### What was measured afterwards, rather than inferred
+
+"The machines exist and Kubernetes calls them Ready" and "the machines are
+usable" are different claims. The second was checked by hand and is recorded
+here because it is the evidence the sign-off rests on.
+
+Five nodes Ready, the two new ones nineteen minutes old, all on the same Talos
+and Kubernetes versions as the original three.
+
+    NAME             STATUS   ROLES           AGE   VERSION
+    site0-cp-100     Ready    control-plane   39h   v1.31.1
+    ...
+    site0-cp-103     Ready    control-plane   19m   v1.31.1
+    site0-cp-104     Ready    control-plane   19m   v1.31.1
+
+Every per-node workload spread to them. This is the answer to "usable": a node
+that cannot run the CNI is Ready and carries nothing.
+
+    NAMESPACE     NAME           DESIRED   CURRENT   READY   AVAILABLE
+    kube-system   kube-flannel   5         5         5       5
+    kube-system   kube-proxy     5         5         5       5
+
+And both new machines are full voting members of etcd - `LEARNER` false on all
+five, so quorum genuinely moved from 2-of-3 to 3-of-5 and the cluster gained
+fault tolerance rather than losing it. That distinction matters: two members
+that had joined and were unhealthy would leave three good members against a
+quorum of three, which is _less_ fault-tolerant than the three-node cluster was,
+and every other signal in the run would still have been green.
+
+Only two DaemonSets exist, which is worth writing down because it bounds what
+that check proves. OpenEBS Local PV ships its provisioner as a Deployment, so
+nothing above says a new node can serve a volume.
+
+**Epoch 01 is still not signed off.** This is one of the two acceptance tests.
+"Nothing to three" - a bare hypervisor becoming a three-node cluster from one
+local run - has not been re-proven since, and the factory-fresh gap in Deferred
+below is unchanged.
+
 ## Deferred
 
 - **`insecure = true` on the Proxmox provider** — trigger: a trusted cert.
