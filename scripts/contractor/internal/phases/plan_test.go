@@ -152,3 +152,86 @@ func TestCountControlPlaneVMs_EmptyState(t *testing.T) {
 		t.Fatalf("got %d for empty state, want 0", got)
 	}
 }
+
+// A resource address is not the safe half of a plan.
+//
+// `for_each` over the config's hypervisor map keys the resource by the
+// hypervisor's real name, so a plan prints a vault value in an address without
+// printing any attribute at all. That reached a public Actions log and a pull
+// request comment, because everything watching for leaks was watching values.
+func TestForEachKeysThatCanCarryANameAreRedacted(t *testing.T) {
+	got := redactKeys(`proxmox_download_file.talos_disk_image["some-hostname"]`)
+	if strings.Contains(got, "some-hostname") {
+		t.Errorf("a name-shaped for_each key survived redaction: %s", got)
+	}
+	if !strings.Contains(got, "proxmox_download_file.talos_disk_image") {
+		t.Errorf("redaction destroyed the address as well as the key: %s", got)
+	}
+}
+
+// Numeric keys stay. They come from octets and node numbering, carry no proper
+// noun, and are the difference between "a control-plane VM is being replaced"
+// and knowing which one - which is what a reviewer needs when a plan destroys.
+func TestNumericKeysAreKept(t *testing.T) {
+	got := redactKeys(`proxmox_virtual_environment_vm.talos_cp["100"]`)
+	if got != `proxmox_virtual_environment_vm.talos_cp["100"]` {
+		t.Errorf("a numeric key was redacted, losing which resource changed: %s", got)
+	}
+}
+
+// An address with no key is untouched.
+func TestUnkeyedAddressesAreUntouched(t *testing.T) {
+	const addr = "tailscale_tailnet_key.hypervisor"
+	if got := redactKeys(addr); got != addr {
+		t.Errorf("redactKeys mangled an unkeyed address: %s", got)
+	}
+}
+
+// The comment is deliberately plain: a heading naming the site, the change,
+// and nothing else.
+//
+// The copy it replaced greeted the reader, signed itself, and restated what
+// the output was - "Addresses and actions only, never a value" - which the
+// artefact then contradicted by containing both a value and the whole run. A
+// reader can see what the output is; the comment's job is to carry the change.
+func TestTheCommentIsJustTheChange(t *testing.T) {
+	body := commentBody("site0", "  replace  tailscale_tailnet_key.hypervisor")
+
+	for _, unwanted := range []string{
+		"contractor checking in", // a signature
+		"never a value",          // a claim the body cannot keep on its own
+		"This is how the estate", // a restatement of what the reader can see
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("the comment still carries %q", unwanted)
+		}
+	}
+
+	if !strings.Contains(body, "## Plan — site0") {
+		t.Error("the comment does not say which site it is about, which matters " +
+			"the moment a pull request plans more than one")
+	}
+	if !strings.Contains(body, "tailscale_tailnet_key.hypervisor") {
+		t.Error("the comment does not contain the change, which is its only job")
+	}
+}
+
+// A later run must be able to find and replace this comment rather than adding
+// another. The workflow posted a new one every time, so a pull request that
+// planned three times carried three comments and the reader had to work out
+// which was current.
+func TestTheCommentCarriesAMarkerPerSite(t *testing.T) {
+	a := commentBody("site0", "x")
+	b := commentBody("site10", "x")
+
+	if !strings.HasPrefix(a, commentMarker("site0")) {
+		t.Error("the comment has no marker, so a later run cannot find it to update")
+	}
+	if commentMarker("site0") == commentMarker("site10") {
+		t.Error("two sites share a marker, so planning both on one pull request " +
+			"would have each overwrite the other")
+	}
+	if strings.Contains(b, commentMarker("site0")) {
+		t.Error("a site's comment carries another site's marker")
+	}
+}
