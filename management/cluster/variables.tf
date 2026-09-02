@@ -186,7 +186,22 @@ locals {
 
   # --- platform ------------------------------------------------------------
   # renovate: datasource=github-releases depName=siderolabs/talos
-  talos_version = "v1.13.8"
+  #
+  # This line, not schematic_id, is what selects extension versions. The image
+  # URL in compute.tf is factory.talos.dev/image/<schematic>/<talos_version>/…,
+  # and the Factory resolves each extension to the build matching that Talos
+  # release. The schematic pins *which* extensions; this pins *their versions*.
+  #
+  # v1.13.8 resolved siderolabs/tailscale to 1.98.9, which the Tailscale console
+  # flags as carrying a known vulnerability on every device in the estate,
+  # hypervisor included (#100). v1.13.9 resolves it to 1.102.2. The schematic id
+  # is unchanged by this - it did not need re-minting, which the issue assumed.
+  #
+  # Bumped here rather than later because #97: a Talos image change cannot reach
+  # a running estate, so a rebuild is the only delivery mechanism there is. This
+  # branch is merged between a demolish and a break-ground, which is the only
+  # window in which this costs nothing.
+  talos_version = "v1.13.9"
   # Two system extensions, generated via factory.talos.dev's schematic API:
   # siderolabs/iscsi-tools and siderolabs/util-linux-tools. Talos ships
   # neither by default.
