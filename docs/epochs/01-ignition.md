@@ -111,7 +111,7 @@ render.
 ### `task start` builds ignite but does not run it
 
 **Chose:** `task start` runs `go build` and then prints the command to run
-`./scripts/contractor/contractor` directly. Every other ignite-invoking task
+`./toolshed/contractor` directly. Every other ignite-invoking task
 (`render-secrets`, `verify`, `configure-hypervisor`, `backup-state`,
 `clean-secrets`) still execs the binary through `task` as normal.
 **Rejected:** the original design, where `task start` ran ignite directly,
@@ -1448,7 +1448,7 @@ deliberately; not something to discover afterwards.
 
 **Step 3 - tear down, directly rather than through the task runner.**
 
-    ./scripts/contractor/contractor demolish -site <site> -confirm <site>
+    ./toolshed/contractor demolish -site <site> -confirm <site>
 
 `-confirm` names the site a second time on purpose. Run it directly because the
 task runner intercepts Ctrl-C without proxying the signal, and an interrupted
@@ -1457,7 +1457,7 @@ teardown is how VMs get orphaned.
 **Step 4 - ignite, also directly, for the same reason.**
 
     task start SITE=<site>
-    ./scripts/contractor/contractor break-ground -site <site>
+    ./toolshed/contractor break-ground -site <site>
 
 `-from <phase>` resumes rather than restarting if a phase fails.
 
@@ -1465,7 +1465,7 @@ teardown is how VMs get orphaned.
 phase gates this internally; check independently that every node is Ready, that
 every Flux Kustomization and HelmRelease has reconciled, and - the check nothing
 had before - that the overlay carries traffic rather than merely showing
-members online. `scripts/survey` on the hypervisor answers the last one.
+members online. `scripts/contractor/internal/survey` on the hypervisor answers the last one.
 
 **Step 6 - the acceptance test.** Everything above is setup. Change
 `control_plane_count` from three to five and **merge it**; two more machines
@@ -2620,3 +2620,89 @@ for a literal `"apply"` argument - and the call that caused the leak passes
 `args...`, built elsewhere, so the check passed against the unfixed code. It was
 only caught by breaking the fix and watching for red, which is the whole reason
 that step is not optional.
+
+### The gate stood behind the delivery, in the one place nothing else guards
+
+`pre-commit` installs a hook repository - clones it and builds its environment,
+which executes setup code - **before it runs any hook**. So a guard implemented
+as a hook always reports after the download it exists to prevent, however early
+it is ordered and whatever `fail_fast` says. That is why the guard moved to
+`githooks/pre-commit`, which git invokes before pre-commit exists in the
+picture at all.
+
+The CI half was missed. The Format lane's first act was `pre-commit run
+--all-files`, so seven third-party repositories were fetched and their setup
+code executed on the runner before anything could object - and the only thing
+that could have objected was a hook, which by then was too late by
+construction. A pull request adding an unapproved supplier would have run it
+before any check said no.
+
+The lane now runs `security guard-deliveries -before-install` first, which
+answers only the question that can be answered with no cache - is every
+configured repository approved - and refuses before `pipx` is installed.
+
+Two things worth keeping from this. **Ordering was the whole property**, and a
+test asserting the step exists would not have noticed it moving; the committed
+test asserts it comes before everything that fetches or executes. And the guard
+was correct on a workstation and absent in CI for the same reason it was
+written - the reasoning was about one machine, and nobody asked the same
+question about the other.
+
+### The role was named after a department, not a place
+
+`security` was three programs collapsed into one role, and the name came from
+the org chart rather than from the site. It is `gatehouse` now: a place where
+things are checked in and out, which is what the program actually is.
+
+The verbs stayed verb phrases and the program became a noun, which is the
+distinction worth keeping - a gatehouse is somewhere, guarding a delivery is
+something done there. `guard-suppliers` became `guard-deliveries` for the same
+reason: a supplier is a party, a delivery is the thing that turns up at the
+gate and gets refused. The list of who may deliver keeps its name,
+`approved-suppliers.yml`, because that one really is about the parties.
+
+Renaming an established component is normally its own deliberate piece of work
+and never folded into unrelated changes. This one was folded in on purpose: the
+component had not been merged yet, so the cost was a `git mv` and a `sed`
+rather than a rename across the history of a thing people already reference.
+
+### The gate only worked from one directory, and the test said it was fine
+
+The delivery gate reads `.pre-commit-config.yaml` and
+`scripts/approved-suppliers.yml` by relative path. The git hook runs it from
+the repository root, so that worked and nothing recorded that the working
+directory was an input.
+
+CI runs it as `go run -C scripts/gatehouse .` - each program is its own module,
+so there is nothing at the root to resolve a package path against - which puts
+the working directory inside the module. The gate failed with "no such file or
+directory" instead of a verdict, on the pull request that introduced it.
+
+The test written to keep that step wired asserted the step exists and comes
+before anything that downloads. Both were true. Neither says the command can
+run, which is the third time in a week that distinction has cost something. The
+guard now finds the checkout itself and stops caring where it was invoked from,
+and the test for that is in the program's own package, where a counterexample -
+running outside a checkout at all - is an ordinary case.
+
+### GitHub's squash trailer tripped the rule against self-attribution
+
+`no-self-co-authorship` refuses a `Co-Authored-By` trailer naming the model,
+because the harness adds one by default and Claude is the author here rather
+than a co-author.
+
+Squash-merging a pull request whose commits have more than one author makes
+GitHub author the squash as whoever merged and record every other contributor
+as a co-author. So the squash of #163 carried
+`Co-authored-by: fensberg-claude[bot]`, which the rule read as
+self-attribution. It is not: the App is being credited for commits it really
+did write, on a commit it did not author, which is what the trailer is for.
+
+The cost is what makes it worth recording. `non_fast_forward` applies to every
+branch here, so that commit cannot be rewritten by anybody - the rule failed on
+every branch containing it, with no way to fix the commit. A rule that can be
+tripped by something nobody can edit has to be right the first time.
+
+A `[bot]` account is exempt now. That does not reopen what the rule is for: the
+harness's trailer names a user-shaped identity, never a `[bot]` account, and
+the test suite asserts both directions.
