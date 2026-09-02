@@ -119,7 +119,7 @@ func tearDown(ctx *run.Context) teardownResult {
 	forgetClusterInternalResources(ctx)
 	emptyObjectStorage(ctx)
 
-	if err := run.Cmd(ctx.ClusterDir, "tofu", "destroy", "-input=false", "-auto-approve"); err != nil {
+	if err := run.TofuDestroy(ctx, "tofu destroy"); err != nil {
 		run.Warn("tofu destroy failed. State and secrets are being left in place - sterilizing now would destroy your only way to retry the destroy or diagnose what's left running.")
 		run.Warn("Check Proxmox manually for " + vmIDHint(ctx) + ", then either re-run 'tofu destroy' in management/cluster yourself or run 'task clean-secrets' once you've confirmed nothing is orphaned.")
 		return teardownResult{}

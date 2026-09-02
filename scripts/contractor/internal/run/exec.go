@@ -99,6 +99,45 @@ func TofuApply(ctx *Context, what string, targets ...string) error {
 	return tofuJSON(ctx, what, args)
 }
 
+// TofuDestroy runs a destroy through the same JSON summary an apply uses.
+//
+// A destroy prints more than an apply, not less: every attribute of every
+// resource being removed, read straight out of state. `talos_machine_secrets`
+// alone carries the etcd, Kubernetes, aggregator and OS certificate
+// authorities plus the cluster id, and the provider marks none of them
+// sensitive - so a plain destroy publishes the estate's own PKI to whatever is
+// reading the output.
+//
+// This was the one verb the -json discipline never reached, because it is the
+// one that went through `run.Cmd` rather than either apply helper - so the
+// rule "run.Tofu may only run init" looked satisfied while the largest leak in
+// the program sat one function away from it.
+func TofuDestroy(ctx *Context, what string) error {
+	return tofuJSON(ctx, what, []string{"destroy", "-input=false", "-auto-approve", "-json"})
+}
+
+// StateSerial reports the serial number of the state this workspace is
+// attached to.
+//
+// OpenTofu increments it on every write, so comparing it across a run answers
+// "did anything actually change" as a fact rather than as an inference from
+// which phase was running. Returns ok=false when it cannot be read at all -
+// a locked state after an interrupted apply, most likely - which is a third
+// answer and must not be collapsed into either of the other two.
+func StateSerial(ctx *Context) (serial int64, ok bool) {
+	out, err := CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "pull")
+	if err != nil {
+		return 0, false
+	}
+	var st struct {
+		Serial *int64 `json:"serial"`
+	}
+	if err := json.Unmarshal([]byte(out), &st); err != nil || st.Serial == nil {
+		return 0, false
+	}
+	return *st.Serial, true
+}
+
 // TofuApplyArgs runs an apply whose flags the caller builds, through the same
 // JSON summary TofuApply produces.
 //
