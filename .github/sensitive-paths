@@ -20,6 +20,7 @@
 # every path must carry a reason, and every building code must be covered.
 
 tests/go/repo/                              # The building code. Deleting one assertion is a smaller file and a green build.
+tests/mutations.yml                         # The proof each guard catches anything. Deleting a line makes a red check vanish and takes the proof with it.
 .github/sensitive-paths                     # This list. Removing a line turns the alarm off for that path, silently.
 .github/workflows/                          # Runs with a token. The agent cannot write here, so a human meant this.
 .pre-commit-config.yaml                     # Owns formatting and the commit-msg hook, pinned exactly. Unpinning resolves to whatever is latest.
@@ -34,4 +35,5 @@ scripts/contractor/internal/phases/restore.go   # The only place that reads the 
 scripts/contractor/internal/phases/encryption.go# Sets TF_ENCRYPTION. Wrong here writes plaintext state to a database that ships off-site.
 scripts/contractor/internal/phases/sterilize.go # Wipes every secret on exit. Skipping a file leaves secrets on disk and still reports success.
 scripts/contractor/internal/phases/teardown.go  # Destroys real infrastructure. The ordering stops state being wiped before the VMs it describes.
+scripts/gatehouse/                          # Refuses unapproved deliveries and unsigned pushes. Weakening either looks like an ordinary edit.
 scripts/signedpush/                         # Reads the GitHub App private key. Reaching this mints tokens for this repository.
