@@ -1,0 +1,425 @@
+diff --git a/.github/scripts/sensitive-paths.sh b/.github/scripts/sensitive-paths.sh
+index 58ce649..1f42387 100755
+--- a/.github/scripts/sensitive-paths.sh
++++ b/.github/scripts/sensitive-paths.sh
+@@ -29,6 +29,7 @@ fi
+ 
+ changed=$(cat)
+ hits=""
++matched=""
+ rules=0
+ 
+ while IFS= read -r line || [ -n "$line" ]; do
+@@ -74,6 +75,12 @@ EOF
+ 		hits="${hits}**\`${path}\`** — ${why}
+ 
+ ${listed}
++"
++		# The matched files, one per line, for the caller. The attestation is a
++		# review thread and a review thread has to hang off a file that is
++		# actually in the diff - and the same list is what gets digested, so
++		# the acknowledgement is bound to this content rather than to a moment.
++		matched="${matched}${match}
+ "
+ 	fi
+ done <"$LIST"
+@@ -94,6 +101,13 @@ else
+ fi
+ 
+ echo "tripped=true"
++
++# Deduplicated: one file can match two rules, and anchoring twice to the same
++# file would open two threads asking for the same acknowledgement.
++echo "files<<SENSITIVE_FILES_EOF"
++printf '%s\n' "$matched" | grep -v '^$' | sort -u
++echo "SENSITIVE_FILES_EOF"
++
+ echo "report<<SENSITIVE_PATHS_EOF"
+ cat <<EOF
+ <!-- sensitive-paths -->
+@@ -103,8 +117,13 @@ ${summary} Each line below says what breaks if this change is wrong.
+ 
+ ${hits}---
+ 
+-**To merge:** apply the \`sensitive-reviewed\` label. A bot cannot apply it — the
+-check reads who did, and refuses a machine. That is the point: approving and
+-acknowledging have to be two separate acts.
++**To merge:** resolve the review conversation opened on the file below. It is
++anchored to the change itself, so resolving it means somebody was looking at the
++diff rather than at a checkbox on the side of the page.
++
++Whoever opened this pull request cannot resolve it. Approving and acknowledging
++have to be two separate acts, by two different people - and a new conversation
++opens whenever the sensitive part of this diff changes, so an acknowledgement
++never outlives what it acknowledged.
+ EOF
+ echo "SENSITIVE_PATHS_EOF"
+diff --git a/.github/workflows/sensitive-paths.yml b/.github/workflows/sensitive-paths.yml
+index b10aa17..0612b82 100644
+--- a/.github/workflows/sensitive-paths.yml
++++ b/.github/workflows/sensitive-paths.yml
+@@ -1,8 +1,33 @@
+ name: Sensitive Paths
+ 
++# The acknowledgement is a review conversation, not a label.
++#
++# It used to be a label, and the label outlived the diff it acknowledged.
++# GitHub dismisses stale reviews when a branch moves and never touches labels,
++# so `sensitive-reviewed` survived every later commit: touch a sensitive path,
++# read the comment, apply the label, push a fixup, merge. The gate was
++# satisfied for a diff nobody had looked at, and a fixup is exactly where a
++# deleted assertion hides.
++#
++# A conversation fixes that by construction rather than by a rule bolted on
++# top. It is anchored to the file in the diff, so resolving it means somebody
++# was in the change rather than clicking a checkbox on the side of the page. It
++# is keyed to a digest of the sensitive part of the diff, so changing that part
++# opens a new one and leaves the old acknowledgement behind. And GitHub's own
++# "require conversation resolution before merging" enforces it, which is one
++# fewer thing for this workflow to be the only guarantee of.
++#
++# What is left for this workflow to check is the one thing GitHub will not:
++# **who** resolved it. An acknowledgement closed by whoever opened the pull
++# request is not an acknowledgement. That check should never fire.
+ on:
+   pull_request:
+-    types: [opened, synchronize, reopened, labeled, unlabeled]
++    types: [opened, synchronize, reopened]
++  # Resolution emits no `pull_request` event, so without this the check would
++  # be evaluated against a thread that was unresolved when it ran and stay red
++  # after somebody resolved it - a deadlock rather than a gate.
++  pull_request_review_thread:
++    types: [resolved, unresolved]
+ 
+ permissions:
+   contents: read
+@@ -12,12 +37,6 @@ permissions:
+ # feeding a working one is a green step. Naming the shell explicitly gets
+ # `bash --noprofile --norc -eo pipefail {0}` instead.
+ #
+-# Not theoretical here. `tofu plan | tee` reported success and posted an
+-# empty pull request comment, and `rclone version | head -1` verified
+-# nothing while passing - both silent, both green, both wrong answers
+-# rather than errors. It is set on every workflow, including those with no
+-# `run:` step today, so the one added tomorrow is already covered.
+-#
+ # tests/go/repo/pipefail_test.go asserts this is present.
+ defaults:
+   run:
+@@ -48,6 +67,16 @@ jobs:
+           fetch-depth: 0
+           persist-credentials: false
+ 
++      # Pinned, not whatever the image ships. scripts/attestation has zero
++      # external dependencies, so there is nothing to cache and nothing to
++      # fetch - which is also why the blocked egress policy above needs no
++      # module proxy in its allowlist.
++      - name: Setup Go
++        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
++        with:
++          go-version: "1.26.7"
++          cache: false
++
+       - name: Which sensitive paths were touched
+         id: sensor
+         env:
+@@ -57,55 +86,43 @@ jobs:
+           git diff --name-only "$BASE" "$HEAD" \
+             | .github/scripts/sensitive-paths.sh >>"$GITHUB_OUTPUT"
+ 
+-      # The comment body is built entirely by the script, so changing the
+-      # wording never means touching this file. Copy that needs a workflow edit
+-      # to fix is copy that stays wrong, and the agent cannot edit workflows.
+-      - name: Say what is at risk
++      # The digest is what binds an acknowledgement to content rather than to a
++      # moment. It covers only the sensitive files, so a push that reformats
++      # something unrelated does not invalidate a review somebody already did -
++      # and a push that changes one of these does, which is the whole point.
++      - name: Digest the sensitive part of the diff
++        id: digest
+         if: steps.sensor.outputs.tripped == 'true'
+-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+         env:
+-          REPORT: ${{ steps.sensor.outputs.report }}
+-        with:
+-          script: |
+-            const body = process.env.REPORT;
+-            const marker = '<!-- sensitive-paths -->';
+-            const {data: comments} = await github.rest.issues.listComments({
+-              issue_number: context.issue.number,
+-              owner: context.repo.owner, repo: context.repo.repo,
+-            });
+-            const existing = comments.find(c => c.body.includes(marker));
+-            const args = {owner: context.repo.owner, repo: context.repo.repo, body};
+-            if (existing) {
+-              await github.rest.issues.updateComment({...args, comment_id: existing.id});
+-            } else {
+-              await github.rest.issues.createComment({...args, issue_number: context.issue.number});
+-            }
++          BASE: ${{ github.event.pull_request.base.sha }}
++          HEAD: ${{ github.event.pull_request.head.sha }}
++          FILES: ${{ steps.sensor.outputs.files }}
++        run: |
++          mapfile -t paths <<<"$FILES"
++          d=$(git diff "$BASE" "$HEAD" -- "${paths[@]}" | sha256sum | cut -c1-12)
++          echo "digest=$d" >>"$GITHUB_OUTPUT"
++          echo "anchor=${paths[0]}" >>"$GITHUB_OUTPUT"
+ 
+-      - name: Require an explicit acknowledgement
++      # The decision is not written here. It is scripts/attestation, a Go
++      # program with a test for every branch, for the reason
++      # sensitive-paths.sh already gives about itself: a script is reviewable,
++      # is linted, and can be run against known input. Behaviour that exists
++      # only as YAML inside a workflow is a convention somebody remembered to
++      # write, and a convention fails.
++      #
++      # tests/go/repo/tripwire_ack_test.go asserts this step exists and that
++      # nothing here has gone back to labels.
++      - name: Require an acknowledgement nobody gave themselves
+         if: steps.sensor.outputs.tripped == 'true'
+         env:
+-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+-          REPO: ${{ github.repository }}
+-          PR: ${{ github.event.pull_request.number }}
++          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          REPORT: ${{ steps.sensor.outputs.report }}
+         run: |
+-          # The label must be on the pull request NOW. Reading only the
+-          # timeline lets a label that was applied and then removed still
+-          # satisfy this, because an "unlabeled" event is not a "labeled" one.
+-          if ! gh pr view "$PR" --repo "$REPO" --json labels \
+-               --jq '.labels[].name' | grep -qx 'sensitive-reviewed'; then
+-            echo "::error::This pull request changes a safety property. Read the comment, then apply the 'sensitive-reviewed' label."
+-            exit 1
+-          fi
+-
+-          who=$(gh api --paginate "repos/${REPO}/issues/${PR}/timeline" \
+-            --jq '[.[]|select(.event=="labeled" and .label.name=="sensitive-reviewed")]|last|.actor.login // empty')
+-          case "$who" in
+-            "")
+-              echo "::error::'sensitive-reviewed' is applied but no labelling event was found. That should not happen; check the timeline."
+-              exit 1 ;;
+-            *"[bot]")
+-              echo "::error::'sensitive-reviewed' was applied by ${who}, which is a bot. The acknowledgement has to come from a human - that is the entire point of it. Remove the label and re-apply it yourself."
+-              exit 1 ;;
+-            *)
+-              echo "acknowledged by ${who}" ;;
+-          esac
++          printf '%s' "$REPORT" >/tmp/sensitive-report.md
++          go run ./scripts/attestation \
++            -repo "${{ github.repository }}" \
++            -pr "${{ github.event.pull_request.number }}" \
++            -digest "${{ steps.digest.outputs.digest }}" \
++            -anchor "${{ steps.digest.outputs.anchor }}" \
++            -head "${{ github.event.pull_request.head.sha }}" \
++            -report /tmp/sensitive-report.md
+diff --git a/tests/go/repo/tripwire_ack_test.go b/tests/go/repo/tripwire_ack_test.go
+index 3a4dd9d..598ed80 100644
+--- a/tests/go/repo/tripwire_ack_test.go
++++ b/tests/go/repo/tripwire_ack_test.go
+@@ -3,120 +3,109 @@ package repo
+ import (
+ 	"os"
+ 	"path/filepath"
+-	"regexp"
+ 	"strings"
+ 	"testing"
+ )
+ 
+-// The sensitive-path tripwire's acknowledgement step, guarded against two
+-// defects that let it report an acknowledgement nobody gave. Both were found
+-// on a live pull request and are recorded in #108.
++// The sensitive-path acknowledgement, and the law that it happens at all.
+ //
+-// A third defect is deliberately not covered here, because it cannot be: a
+-// label survives new commits, since the workflow re-runs on `synchronize` and
+-// GitHub dismisses stale reviews on a push but never removes labels. Label a
+-// pull request, push anything, and the gate is satisfied for content nobody
+-// looked at. That is the mechanism working as designed and is why the
+-// acknowledgement is moving to an attestation bound to the content reviewed -
+-// see docs/sensitive-path-tripwire.md. No assertion on this file can fix it.
+-func acknowledgementStep(t *testing.T) string {
+-	t.Helper()
+-	path := filepath.Join(repoRoot(t), ".github", "workflows", "sensitive-paths.yml")
+-	b, err := os.ReadFile(path)
+-	if err != nil {
+-		t.Fatalf("reading the tripwire workflow: %v", err)
+-	}
+-	body := string(b)
+-
+-	const marker = "Require an explicit acknowledgement"
+-	i := strings.Index(body, marker)
+-	if i < 0 {
+-		t.Fatalf("the tripwire has no %q step. That step is the entire gate: "+
+-			"without it a change to a sensitive path merges with no human "+
+-			"acknowledgement at all.", marker)
+-	}
+-	return body[i:]
+-}
+-
+-// The timeline pages at thirty events, so on a long pull request the labelling
+-// event is not on the first page and an unpaginated query silently finds
+-// nobody. Measured on #105: the same query returned zero labelling events
+-// without --paginate and two with it, and the check refused a pull request
+-// that was correctly labelled.
++// It used to be a label, and the label outlived the diff it acknowledged.
++// GitHub dismisses stale reviews when a branch moves and never touches labels,
++// so `sensitive-reviewed` survived every later commit: touch a sensitive path,
++// read the comment, apply the label, push a fixup, merge. The gate was
++// satisfied for a diff nobody had looked at, and a fixup is exactly where a
++// deleted assertion hides. Recorded as the third defect in #108.
+ //
+-// It fails closed, so the damage is a blocked merge rather than an admitted
+-// one - but the workaround is an admin override, which is the gate being
+-// stepped around rather than satisfied, and it bites precisely the long-lived
+-// pull requests most likely to touch something sensitive.
+-func TestTheAcknowledgementQueryPaginatesTheTimeline(t *testing.T) {
+-	step := acknowledgementStep(t)
++// It is a review conversation now, keyed to a digest of the sensitive part of
++// the diff. Change one of those files and the marker changes, no thread
++// matches it, and a new conversation opens - so an acknowledgement cannot
++// outlive what it acknowledged, by construction rather than by a rule bolted
++// on afterwards.
++//
++// These tests are the half a unit test cannot see. scripts/attestation has a
++// test for every branch of the decision; nothing there says the workflow calls
++// it, or that the thing it replaced is really gone.
+ 
+-	timeline := regexp.MustCompile(`gh api[^\n]*\bissues/\$\{?PR\}?/timeline`)
+-	loc := timeline.FindStringIndex(step)
+-	if loc == nil {
+-		return // no timeline query at all; nothing to paginate
+-	}
++// The behaviour could have lived as JavaScript inside the workflow, where
++// nothing lints it, nothing runs it against known input, and it exists only
++// because somebody remembered to write it. That is a convention, and a
++// convention fails.
++func TestTheTripwireOpensAConversation(t *testing.T) {
++	body := readSensitivePathsWorkflow(t)
+ 
+-	// Look at the invocation itself rather than the whole step, so an unrelated
+-	// --paginate elsewhere cannot satisfy this.
+-	line := step[loc[0]:]
+-	if i := strings.IndexByte(line, '\n'); i >= 0 {
+-		line = line[:i]
++	// The invocation, not a mention of it. An earlier version of this matched
++	// the string anywhere in the file, so the comment above the step satisfied
++	// it and deleting the step itself passed - the test describing behaviour
++	// that had been removed.
++	if !strings.Contains(body, "go run ./scripts/attestation") {
++		t.Fatal("the workflow does not run scripts/attestation.\n\n" +
++			"Then nothing opens the review conversation a sensitive change has to be " +
++			"acknowledged in, and the gate is a comment nobody has to answer.")
++	}
++	if !strings.Contains(body, "-digest") {
++		t.Error("the attestation is not keyed to a digest of the sensitive diff, so an " +
++			"acknowledgement would outlive the change it acknowledged - which is the " +
++			"exact defect the label had")
+ 	}
+-	if !strings.Contains(line, "--paginate") {
+-		t.Errorf("the timeline query does not use --paginate:\n    %s\n\n"+
+-			"gh returns the first page only, so on a pull request with more than "+
+-			"about thirty timeline events the labelling event is invisible and the "+
+-			"check reports that nobody applied the label. See #108.", strings.TrimSpace(line))
++	if !strings.Contains(body, "pull_request_review_thread") {
++		t.Error("the workflow does not re-run when a conversation is resolved.\n\n" +
++			"Resolution emits no pull_request event, so the check would stay red after " +
++			"somebody resolved the thread - a deadlock rather than a gate.")
+ 	}
+ }
+ 
+-// The acknowledgement has to reflect the pull request as it is now, not a
+-// moment in its history. Reading only `labeled` events and taking the last one
+-// means a label that was applied and then removed still satisfies the check -
+-// which fails open, and is trivial to do deliberately.
+-//
+-// The fix is to consult the current label set. This asserts that something in
+-// the step does so, rather than asserting one particular spelling, because
+-// several are reasonable - `gh pr view --json labels`, or the event payload's
+-// own label list.
+-func TestTheAcknowledgementChecksTheCurrentLabelNotOnlyHistory(t *testing.T) {
+-	step := acknowledgementStep(t)
+-
+-	// Any of these reads the label set as it stands rather than the timeline.
+-	current := []string{
+-		"--json labels",
+-		"pull_request.labels",
+-		"github.event.pull_request.labels",
++// The digest must cover the sensitive files and not the whole diff. Digesting
++// everything means every push invalidates the acknowledgement, which trains
++// people to resolve without reading - the same end state as a label they click
++// without looking, arrived at from the opposite direction.
++func TestTheDigestCoversOnlyTheSensitiveFiles(t *testing.T) {
++	body := readSensitivePathsWorkflow(t)
++	i := strings.Index(body, "Digest the sensitive part of the diff")
++	if i < 0 {
++		t.Fatal("nothing digests the sensitive part of the diff, so the acknowledgement " +
++			"is bound to a moment rather than to content")
+ 	}
+-	for _, c := range current {
+-		if strings.Contains(step, c) {
+-			return
+-		}
++	step := body[i:min(i+900, len(body))]
++	if !strings.Contains(step, "outputs.files") {
++		t.Error("the digest does not read the sensor's file list, so it is not scoped to " +
++			"the sensitive files")
+ 	}
++}
+ 
+-	if !strings.Contains(step, "timeline") {
+-		return // not timeline-based at all; this defect does not apply
++// Two mechanisms for one acknowledgement is two things to keep in step, and
++// the weaker one becomes the one people use.
++func TestTheLabelMechanismIsGone(t *testing.T) {
++	body := readSensitivePathsWorkflow(t)
++	for _, dead := range []string{"removeLabel", "addLabels", "--json labels", "labeled"} {
++		if strings.Contains(body, dead) {
++			t.Errorf("the workflow still manipulates or reads labels (%q). The "+
++				"acknowledgement is a conversation now; a label alongside it is a "+
++				"second, weaker gate that will drift from this one.", dead)
++		}
+ 	}
++}
+ 
+-	t.Errorf("the acknowledgement is decided from the timeline alone.\n\n" +
+-		"It selects `labeled` events and ignores `unlabeled`, so a label that was " +
+-		"applied and then removed still satisfies it - the check reflects a moment " +
+-		"in the pull request's history rather than its current state. Read the " +
+-		"current label set as well as the timeline: the timeline says who " +
+-		"acknowledged, the label set says whether the acknowledgement still " +
+-		"stands. See #108.")
++// The gate has to be able to refuse. A workflow that opens a conversation and
++// exits zero is decoration: GitHub's own conversation-resolution rule would
++// still block the merge, but nothing would check *who* resolved it, which is
++// the one thing this exists to check.
++func TestTheTripwireCanRefuse(t *testing.T) {
++	body := readSensitivePathsWorkflow(t)
++	if strings.Contains(body, "continue-on-error: true") {
++		t.Error("a step is allowed to fail without failing the job, so the gate cannot refuse")
++	}
++	if !strings.Contains(body, "steps.sensor.outputs.tripped == 'true'") {
++		t.Error("the acknowledgement step is not conditioned on the tripwire firing, so it " +
++			"either runs on every pull request or on none")
++	}
+ }
+ 
+-// A bot must not be able to acknowledge on the human's behalf. This is the
+-// property the whole gate rests on, and it was already correct - asserted here
+-// so a rewrite of the step cannot quietly drop it.
+-func TestABotCannotAcknowledge(t *testing.T) {
+-	step := acknowledgementStep(t)
+-	if !strings.Contains(step, "[bot]") {
+-		t.Error("the acknowledgement step no longer rejects an actor whose name ends " +
+-			"in [bot].\n\nThe gate exists so a human looks at a dangerous change; an " +
+-			"agent that can label its own pull request satisfies the check without " +
+-			"anybody having looked at anything.")
++func readSensitivePathsWorkflow(t *testing.T) string {
++	t.Helper()
++	path := filepath.Join(repoRoot(t), ".github", "workflows", "sensitive-paths.yml")
++	body, err := os.ReadFile(path)
++	if err != nil {
++		t.Fatalf("reading %s: %v", path, err)
+ 	}
++	return string(body)
+ }
