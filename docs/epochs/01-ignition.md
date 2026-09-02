@@ -2411,3 +2411,37 @@ config, or referenced by anything that outlives a reboot. The hypervisor is
 the opposite case: it is not ephemeral, and its address is stable enough that
 the config holds it today. Noticed while reading the device list for another
 reason, not by anything failing yet.
+
+### A fix landed, and the workaround it replaced stayed in front of it
+
+The scale-up plan was blocked twice by the same defect, once genuinely and once
+by its own stopgap.
+
+`data.talos_cluster_health` was scoped to `local.node_ips` - the nodes the
+config _asks for_ - which is fully known at plan time, so raising
+`control_plane_count` made it read against two addresses with no machine behind
+them and spend the full ten-minute read timeout producing nothing. The stopgap
+was a check at the top of `contractor plan` that compared the config's count
+against the state's and refused immediately, so a wasted ten minutes became a
+fast, explanatory failure.
+
+That was the correct trade at the time. #118 then fixed the cause - the gate
+depends on the VMs, and OpenTofu defers a data source read to apply time when
+something it depends on has pending changes - and **the stopgap was not
+removed**. So `contractor plan` still refused before `tofu` was ever invoked,
+which meant the fix was never exercised: the first pull request that raised the
+count got the old refusal from a repository that could already answer.
+
+The refusal also carried a claim in its error text - that this was "the one case
+where a plan genuinely cannot answer the question" - which was repeated in
+`CLAUDE.md`. It was never a property of the tool, only of one line of scoping,
+and it is exactly the kind of confident sentence that discourages anyone from
+looking. Both are corrected.
+
+**The generalisation.** A workaround is written to be conspicuous and a fix is
+written to be invisible, so the fix is the half that gets landed and the
+workaround is the half that gets left. When something is added because a defect
+exists, the entry that records the defect should name the workaround too, so
+closing one is a prompt to delete the other. Nothing here catches it
+mechanically: the two lived in different files, both tested, both passing, and
+between them the estate had a capability it refused to use.
