@@ -24,6 +24,18 @@ existing rules do.
   // tailnet has operators who should not be able to route subnets.
   "tagOwners": {
     "tag:homelab-router": ["autogroup:admin"],
+
+    // The development workstation. Tagged rather than left owned by whoever
+    // enrolled it, because a user-owned device's node key expires - 180 days
+    // by default - and it then leaves the tailnet silently. A workstation that
+    // drops off cannot reach the hypervisor, and every local `break-ground` or
+    // `demolish` hangs on a provider call with no error, which is a failure
+    // that has already cost a day once.
+    //
+    // Deliberately not the router tag. That tag is what autoApprovers trusts
+    // to advertise subnet routes; a workstation wearing it could claim
+    // 10.0.0.0/8 and hijack a site.
+    "tag:homelab-workstation": ["autogroup:admin"],
   },
 
   // Routes advertised by a node carrying the router tag are approved with no
