@@ -91,11 +91,12 @@ repos:
       # that - pre-commit runs every hook and reports at the end - so fail_fast
       # goes with it, the same pairing push-guard uses.
       #
-      # The honest limit: pre-commit installs a hook's environment before
-      # running it, and installation can execute setup code. This gates
-      # execution, not download. Closing that too would mean a wrapper around
-      # pre-commit itself, which is a bigger piece and is recorded rather than
-      # pretended.
+      # Kept here as well as in githooks/pre-commit, which is the one that
+      # actually closes the hole: git invokes that shim before pre-commit has
+      # cloned or installed anything. This copy catches somebody running
+      # `pre-commit run` directly, where the shim is not in the path - it runs
+      # after installation and so cannot prevent a download, but a second place
+      # that refuses costs nothing and the two fail the same way.
       - id: supplier-guard
         name: refuse an unapproved third-party commit hook
         entry: task supplier-guard

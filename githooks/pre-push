@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Same interception point, for the push hooks.
+#
+# The supplier guard runs here too rather than only on commit: a clone can
+# arrive between a commit and a push - a rebase, a config change pulled from a
+# branch, `pre-commit install-hooks` run by hand - and a push is the last
+# moment before code leaves this machine.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+go build -C scripts/supplierguard -o supplierguard .
+./scripts/supplierguard/supplierguard
+
+exec pre-commit run --hook-stage pre-push

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# The interception point.
+#
+# pre-commit clones a hook repository and installs its environment BEFORE it
+# runs any hook, and installing runs setup code - npm install, pip install, a
+# Go build. A guard that is itself a pre-commit hook therefore runs after the
+# thing it is guarding against has already executed. That is the limit the
+# earlier version admitted to and this closes.
+#
+# git invokes this file. Nothing third-party has run yet. So the guard runs
+# here, and pre-commit is only reached if it passes.
+#
+# Wired up by `git config core.hooksPath githooks`, which
+# scripts/install-dependencies.sh sets. Versioned in the repository on purpose:
+# a hook that lives only in .git/hooks is a hook nobody can review, and
+# `pre-commit install` overwrites it anyway.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+# Built rather than `go run`: this is on the path of every commit, and the
+# binary is cached between them.
+go build -C scripts/supplierguard -o supplierguard .
+./scripts/supplierguard/supplierguard
+
+# Only now. Anything below this line may download and execute third-party code.
+exec pre-commit run --hook-stage pre-commit
