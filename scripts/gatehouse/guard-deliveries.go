@@ -116,7 +116,28 @@ const (
 	suppliersPath  = "scripts/approved-suppliers.yml"
 )
 
-func guardSuppliers(args []string) int {
+// repositoryRoot walks up from the working directory to the checkout that
+// contains it. `.git` is the marker, and it is a file in a worktree and a
+// directory in a normal clone - os.Stat does not care which.
+func repositoryRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("could not determine the working directory: %w", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("ran from %s, which is not inside a git checkout, "+
+				"so there is no hook configuration to check", dir)
+		}
+		dir = parent
+	}
+}
+
+func guardDeliveries(args []string) int {
 	fs := flag.NewFlagSet("guard-deliveries", flag.ContinueOnError)
 	// The gate has to be able to stand in front of the delivery as well as
 	// behind it.
@@ -139,11 +160,27 @@ func guardSuppliers(args []string) int {
 		return 2
 	}
 
-	configured, err := reposIn(hookConfigPath)
+	// Resolved from the repository root rather than the working directory.
+	//
+	// The hook runs this from the root, so relative paths worked and nothing
+	// said they were load-bearing. CI runs it as
+	// `go run -C scripts/gatehouse .` - because each program is its own
+	// module and there is nothing at the root to resolve a package path
+	// against - which puts the working directory inside the module, and the
+	// gate failed with "no such file or directory" instead of a verdict.
+	//
+	// A guard that only works from one directory is a guard with an
+	// undeclared input. Find the root and stop caring.
+	root, err := repositoryRoot()
+	if err != nil {
+		return refuse(err.Error())
+	}
+
+	configured, err := reposIn(filepath.Join(root, hookConfigPath))
 	if err != nil {
 		return refuse("reading " + hookConfigPath + ": " + err.Error())
 	}
-	approved, err := reposIn(suppliersPath)
+	approved, err := reposIn(filepath.Join(root, suppliersPath))
 	if err != nil {
 		return refuse("reading " + suppliersPath + ": " + err.Error())
 	}

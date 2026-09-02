@@ -40,7 +40,7 @@ type verb struct {
 
 func verbs() []verb {
 	return []verb{
-		{"guard-deliveries", "refuse an unapproved third-party commit hook", guardSuppliers},
+		{"guard-deliveries", "refuse a delivery from an unapproved supplier", guardDeliveries},
 		{"guard-push", "refuse a plain git push that would update a branch", guardPush},
 		{"patrol", "check from outside that the estate is still answering", patrol},
 	}

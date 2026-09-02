@@ -2665,3 +2665,44 @@ Renaming an established component is normally its own deliberate piece of work
 and never folded into unrelated changes. This one was folded in on purpose: the
 component had not been merged yet, so the cost was a `git mv` and a `sed`
 rather than a rename across the history of a thing people already reference.
+
+### The gate only worked from one directory, and the test said it was fine
+
+The delivery gate reads `.pre-commit-config.yaml` and
+`scripts/approved-suppliers.yml` by relative path. The git hook runs it from
+the repository root, so that worked and nothing recorded that the working
+directory was an input.
+
+CI runs it as `go run -C scripts/gatehouse .` - each program is its own module,
+so there is nothing at the root to resolve a package path against - which puts
+the working directory inside the module. The gate failed with "no such file or
+directory" instead of a verdict, on the pull request that introduced it.
+
+The test written to keep that step wired asserted the step exists and comes
+before anything that downloads. Both were true. Neither says the command can
+run, which is the third time in a week that distinction has cost something. The
+guard now finds the checkout itself and stops caring where it was invoked from,
+and the test for that is in the program's own package, where a counterexample -
+running outside a checkout at all - is an ordinary case.
+
+### GitHub's squash trailer tripped the rule against self-attribution
+
+`no-self-co-authorship` refuses a `Co-Authored-By` trailer naming the model,
+because the harness adds one by default and Claude is the author here rather
+than a co-author.
+
+Squash-merging a pull request whose commits have more than one author makes
+GitHub author the squash as whoever merged and record every other contributor
+as a co-author. So the squash of #163 carried
+`Co-authored-by: fensberg-claude[bot]`, which the rule read as
+self-attribution. It is not: the App is being credited for commits it really
+did write, on a commit it did not author, which is what the trailer is for.
+
+The cost is what makes it worth recording. `non_fast_forward` applies to every
+branch here, so that commit cannot be rewritten by anybody - the rule failed on
+every branch containing it, with no way to fix the commit. A rule that can be
+tripped by something nobody can edit has to be right the first time.
+
+A `[bot]` account is exempt now. That does not reopen what the rule is for: the
+harness's trailer names a user-shaped identity, never a `[bot]` account, and
+the test suite asserts both directions.
