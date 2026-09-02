@@ -1,122 +1,133 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 )
 
-// The sensitive-path tripwire's acknowledgement step, guarded against two
-// defects that let it report an acknowledgement nobody gave. Both were found
-// on a live pull request and are recorded in #108.
+// The sensitive-path acknowledgement, and the law that it happens at all.
 //
-// A third defect is deliberately not covered here, because it cannot be: a
-// label survives new commits, since the workflow re-runs on `synchronize` and
-// GitHub dismisses stale reviews on a push but never removes labels. Label a
-// pull request, push anything, and the gate is satisfied for content nobody
-// looked at. That is the mechanism working as designed and is why the
-// acknowledgement is moving to an attestation bound to the content reviewed -
-// see docs/sensitive-path-tripwire.md. No assertion on this file can fix it.
-func acknowledgementStep(t *testing.T) string {
-	t.Helper()
-	path := filepath.Join(repoRoot(t), ".github", "workflows", "sensitive-paths.yml")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading the tripwire workflow: %v", err)
-	}
-	body := string(b)
+// It used to be a label, and the label outlived the diff it acknowledged.
+// GitHub dismisses stale reviews when a branch moves and never touches labels,
+// so `sensitive-reviewed` survived every later commit: touch a sensitive path,
+// read the comment, apply the label, push a fixup, merge. The gate was
+// satisfied for a diff nobody had looked at, and a fixup is exactly where a
+// deleted assertion hides. Recorded as the third defect in #108.
+//
+// It is a review conversation now, keyed to a digest of the sensitive part of
+// the diff. Change one of those files and the marker changes, no thread
+// matches it, and a new conversation opens - so an acknowledgement cannot
+// outlive what it acknowledged, by construction rather than by a rule bolted
+// on afterwards.
+//
+// These tests are the half a unit test cannot see. scripts/attestation has a
+// test for every branch of the decision; nothing there says the workflow calls
+// it, or that the thing it replaced is really gone.
 
-	const marker = "Require an explicit acknowledgement"
-	i := strings.Index(body, marker)
+// The behaviour could have lived as JavaScript inside the workflow, where
+// nothing lints it, nothing runs it against known input, and it exists only
+// because somebody remembered to write it. That is a convention, and a
+// convention fails.
+func TestTheTripwireOpensAConversation(t *testing.T) {
+	body := readSensitivePathsWorkflow(t)
+
+	// The invocation, not a mention of it. An earlier version matched the
+	// string anywhere in the file, so the comment above the step satisfied it
+	// and deleting the step itself passed - the test describing behaviour that
+	// had been removed. Matched at command indentation, which a comment line
+	// cannot reach.
+	//
+	// Even so this only asserts the program is CALLED. Whether the call can
+	// run is a different property and belongs to a different test: the first
+	// version of that fix wrote `go run ./scripts/attestation`, which cannot
+	// resolve from a repository with no root module, and this assertion was
+	// perfectly happy with it - see go_invocation_test.go.
+	if !attestationCall.MatchString(body) {
+		t.Fatal("the workflow does not run scripts/attestation.\n\n" +
+			"Then nothing opens the review conversation a sensitive change has to be " +
+			"acknowledged in, and the gate is a comment nobody has to answer.")
+	}
+	if !strings.Contains(body, "-digest") {
+		t.Error("the attestation is not keyed to a digest of the sensitive diff, so an " +
+			"acknowledgement would outlive the change it acknowledged - which is the " +
+			"exact defect the label had")
+	}
+	// Deliberately NOT a trigger on conversation resolution.
+	//
+	// `pull_request_review_thread` is a webhook event that was never ported to
+	// workflow triggers - actionlint refuses it, and it was in this workflow
+	// until actionlint said so. A check that blocked on an open conversation
+	// could then never be turned green, because nothing would re-run it.
+	// Matched as a trigger key, not as a string. Written the loose way first,
+	// it was satisfied by the comment above the triggers explaining why the
+	// event is absent - the third time this week a check has matched prose
+	// describing behaviour rather than the behaviour.
+	if reviewThreadTrigger.MatchString(body) {
+		t.Error("the workflow triggers on pull_request_review_thread, which is not a " +
+			"workflow trigger. It is a webhook event only, so this workflow would " +
+			"never run - and anything relying on it to re-run after a resolution is a " +
+			"deadlock.")
+	}
+}
+
+// The digest must cover the sensitive files and not the whole diff. Digesting
+// everything means every push invalidates the acknowledgement, which trains
+// people to resolve without reading - the same end state as a label they click
+// without looking, arrived at from the opposite direction.
+func TestTheDigestCoversOnlyTheSensitiveFiles(t *testing.T) {
+	body := readSensitivePathsWorkflow(t)
+	i := strings.Index(body, "Digest the sensitive part of the diff")
 	if i < 0 {
-		t.Fatalf("the tripwire has no %q step. That step is the entire gate: "+
-			"without it a change to a sensitive path merges with no human "+
-			"acknowledgement at all.", marker)
+		t.Fatal("nothing digests the sensitive part of the diff, so the acknowledgement " +
+			"is bound to a moment rather than to content")
 	}
-	return body[i:]
-}
-
-// The timeline pages at thirty events, so on a long pull request the labelling
-// event is not on the first page and an unpaginated query silently finds
-// nobody. Measured on #105: the same query returned zero labelling events
-// without --paginate and two with it, and the check refused a pull request
-// that was correctly labelled.
-//
-// It fails closed, so the damage is a blocked merge rather than an admitted
-// one - but the workaround is an admin override, which is the gate being
-// stepped around rather than satisfied, and it bites precisely the long-lived
-// pull requests most likely to touch something sensitive.
-func TestTheAcknowledgementQueryPaginatesTheTimeline(t *testing.T) {
-	step := acknowledgementStep(t)
-
-	timeline := regexp.MustCompile(`gh api[^\n]*\bissues/\$\{?PR\}?/timeline`)
-	loc := timeline.FindStringIndex(step)
-	if loc == nil {
-		return // no timeline query at all; nothing to paginate
-	}
-
-	// Look at the invocation itself rather than the whole step, so an unrelated
-	// --paginate elsewhere cannot satisfy this.
-	line := step[loc[0]:]
-	if i := strings.IndexByte(line, '\n'); i >= 0 {
-		line = line[:i]
-	}
-	if !strings.Contains(line, "--paginate") {
-		t.Errorf("the timeline query does not use --paginate:\n    %s\n\n"+
-			"gh returns the first page only, so on a pull request with more than "+
-			"about thirty timeline events the labelling event is invisible and the "+
-			"check reports that nobody applied the label. See #108.", strings.TrimSpace(line))
+	step := body[i:min(i+900, len(body))]
+	if !strings.Contains(step, "outputs.files") {
+		t.Error("the digest does not read the sensor's file list, so it is not scoped to " +
+			"the sensitive files")
 	}
 }
 
-// The acknowledgement has to reflect the pull request as it is now, not a
-// moment in its history. Reading only `labeled` events and taking the last one
-// means a label that was applied and then removed still satisfies the check -
-// which fails open, and is trivial to do deliberately.
-//
-// The fix is to consult the current label set. This asserts that something in
-// the step does so, rather than asserting one particular spelling, because
-// several are reasonable - `gh pr view --json labels`, or the event payload's
-// own label list.
-func TestTheAcknowledgementChecksTheCurrentLabelNotOnlyHistory(t *testing.T) {
-	step := acknowledgementStep(t)
-
-	// Any of these reads the label set as it stands rather than the timeline.
-	current := []string{
-		"--json labels",
-		"pull_request.labels",
-		"github.event.pull_request.labels",
-	}
-	for _, c := range current {
-		if strings.Contains(step, c) {
-			return
+// Two mechanisms for one acknowledgement is two things to keep in step, and
+// the weaker one becomes the one people use.
+func TestTheLabelMechanismIsGone(t *testing.T) {
+	body := readSensitivePathsWorkflow(t)
+	for _, dead := range []string{"removeLabel", "addLabels", "--json labels", "labeled"} {
+		if strings.Contains(body, dead) {
+			t.Errorf("the workflow still manipulates or reads labels (%q). The "+
+				"acknowledgement is a conversation now; a label alongside it is a "+
+				"second, weaker gate that will drift from this one.", dead)
 		}
 	}
-
-	if !strings.Contains(step, "timeline") {
-		return // not timeline-based at all; this defect does not apply
-	}
-
-	t.Errorf("the acknowledgement is decided from the timeline alone.\n\n" +
-		"It selects `labeled` events and ignores `unlabeled`, so a label that was " +
-		"applied and then removed still satisfies it - the check reflects a moment " +
-		"in the pull request's history rather than its current state. Read the " +
-		"current label set as well as the timeline: the timeline says who " +
-		"acknowledged, the label set says whether the acknowledgement still " +
-		"stands. See #108.")
 }
 
-// A bot must not be able to acknowledge on the human's behalf. This is the
-// property the whole gate rests on, and it was already correct - asserted here
-// so a rewrite of the step cannot quietly drop it.
-func TestABotCannotAcknowledge(t *testing.T) {
-	step := acknowledgementStep(t)
-	if !strings.Contains(step, "[bot]") {
-		t.Error("the acknowledgement step no longer rejects an actor whose name ends " +
-			"in [bot].\n\nThe gate exists so a human looks at a dangerous change; an " +
-			"agent that can label its own pull request satisfies the check without " +
-			"anybody having looked at anything.")
+// The gate has to be able to refuse. A workflow that opens a conversation and
+// exits zero is decoration: GitHub's own conversation-resolution rule would
+// still block the merge, but nothing would check *who* resolved it, which is
+// the one thing this exists to check.
+func TestTheTripwireCanRefuse(t *testing.T) {
+	body := readSensitivePathsWorkflow(t)
+	if strings.Contains(body, "continue-on-error: true") {
+		t.Error("a step is allowed to fail without failing the job, so the gate cannot refuse")
+	}
+	if !strings.Contains(body, "steps.sensor.outputs.tripped == 'true'") {
+		t.Error("the acknowledgement step is not conditioned on the tripwire firing, so it " +
+			"either runs on every pull request or on none")
 	}
 }
+
+// As the workflow will be once any outstanding patch is applied - see
+// patches_test.go. The agent cannot write a workflow, so a fix to one arrives
+// as a patch, and a test red for the whole of that window blocks the hand-over
+// it is part of.
+func readSensitivePathsWorkflow(t *testing.T) string {
+	t.Helper()
+	return intendedWorkflow(t, "sensitive-paths.yml")
+}
+
+// `pull_request_review_thread:` as a workflow trigger - at the indentation
+// `on:` uses for an event, rather than anywhere in the file.
+var attestationCall = regexp.MustCompile(`(?m)^\s+go run -C scripts/attestation \.`)
+
+var reviewThreadTrigger = regexp.MustCompile(`(?m)^\s{2}pull_request_review_thread:`)
