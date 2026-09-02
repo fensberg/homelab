@@ -1489,13 +1489,32 @@ downstream of a Verify that never passed, so none of it has been exercised
 either. The test failed at the first hop, not at the thing it was written to
 measure.
 
-**So this epoch cannot close on its own.** The acceptance test as written -
-merge it, and two machines appear with nobody having run anything - requires
-that the thing doing the converging can reach the hypervisor. Today it cannot.
-That is a prerequisite this epoch does not own, and the honest statement is that
-**epoch 01 cannot sign off until pod egress to the tailnet exists**, whether
-that arrives as the Tailscale Kubernetes operator's egress proxy or as part of
-the Cilium move already recorded for epoch 03.
+**That was read as "this epoch cannot close on its own", and it was wrong.**
+The entry above concluded that epoch 01 could not sign off until pod egress to
+the tailnet existed, and named the Tailscale Kubernetes operator's egress proxy
+or the Cilium move in epoch 03 as the things that would deliver it. Neither has
+happened, and the prerequisite is met anyway.
+
+The pod could not reach the hypervisor because **the hypervisor was carrying no
+traffic at all** - the IPv6 half-stack and the VRF/mark routing collision
+recorded further down, both since fixed in `hypervisor-prep.yml`. The absence of
+a path was read as a property of pods on this cluster, when it was a property of
+one host. A second, smaller error sat on top of it: Verify proved the path with
+ICMP, which Pod Security Admission makes impossible from a pod regardless of
+reachability, so the pre-flight would have failed even once the overlay worked.
+#114 gave the converge a TCP probe instead.
+
+Measured on 2026-09-02, from a job on the self-hosted runner - a pod on this
+cluster - during the plan lane of the scale-up pull request:
+
+    PHASE 3 : VERIFY
+      [ok] Proxmox API reachable
+      [ok] node subnet reachable - the path to this estate works
+    PHASE 4 : ATTACH
+      [ok] attached to existing state: 31 resource(s)
+
+**Epoch 01 does not need pod egress to the tailnet.** It needed the overlay to
+work and the pre-flight to ask a question a pod can answer.
 
 The alternative - run the converge from the workstation instead and call the
 epoch done - is not available. The wording of the test was deliberately
