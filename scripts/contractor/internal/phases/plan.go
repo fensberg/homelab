@@ -77,7 +77,7 @@ func Plan(ctx *run.Context) error {
 	fmt.Println(summary)
 
 	if ctx.CommentOut != "" {
-		if err := os.WriteFile(ctx.CommentOut, []byte(commentBody(ctx.Site, summary)), 0o644); err != nil {
+		if err := os.WriteFile(ctx.CommentOut, []byte(commentBody(ctx.Site, summary, plannedCommit())), 0o644); err != nil {
 			return fmt.Errorf("writing the comment body: %w", err)
 		}
 	}
@@ -95,9 +95,46 @@ func Plan(ctx *run.Context) error {
 // else - no greeting, no signature, and no restatement of what the output is,
 // because a reader can see what it is. The marker is what lets a later run
 // update this comment instead of adding another one.
-func commentBody(site, summary string) string {
-	return fmt.Sprintf("%s\n## Plan — %s\n\n```text\n%s\n```\n",
-		commentMarker(site), site, strings.TrimRight(summary, "\n"))
+func commentBody(site, summary, commit string) string {
+	// The commit is what makes a stale comment visible.
+	//
+	// A later run replaces this comment in place, so its contents are only ever
+	// as current as the last plan that succeeded. When the plan lane cannot run
+	// - no runner, which is the estate's normal state while it is being rebuilt
+	// - the previous comment simply stays, describing a change that is no
+	// longer the one being proposed. Push 3 -> 5, then 5 -> 17, and a reviewer
+	// reads "2 to add" and approves fourteen machines.
+	//
+	// Nothing in the body distinguished a fresh comment from a stale one: no
+	// commit, no timestamp, and GitHub dismisses stale reviews on a push but
+	// never comments. So it says which commit it describes, and a reader can
+	// compare that against the pull request in one glance.
+	provenance := ""
+	if commit != "" {
+		provenance = fmt.Sprintf("\nPlanned against `%s`.\n", commit)
+	}
+	return fmt.Sprintf("%s\n## Plan — %s\n%s\n```text\n%s\n```\n",
+		commentMarker(site), site, provenance, strings.TrimRight(summary, "\n"))
+}
+
+// plannedCommit is the commit this plan describes, as a reader would recognise
+// it.
+//
+// On a pull request the workspace is a merge commit that appears nowhere in the
+// pull request's own list, so its second parent - the branch head - is the one
+// worth printing. Everywhere else HEAD is already that commit. An empty string
+// when neither can be read: a comment without provenance is worse than one with
+// it and far better than one carrying a commit that is wrong.
+func plannedCommit() string {
+	if head, err := run.CmdOutputQuiet(".", "git", "rev-parse", "--short", "HEAD^2"); err == nil {
+		if s := strings.TrimSpace(head); s != "" {
+			return s
+		}
+	}
+	if head, err := run.CmdOutputQuiet(".", "git", "rev-parse", "--short", "HEAD"); err == nil {
+		return strings.TrimSpace(head)
+	}
+	return ""
 }
 
 // commentMarker identifies this comment so a later run can find and replace
