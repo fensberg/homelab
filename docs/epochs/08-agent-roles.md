@@ -56,6 +56,49 @@ In scope, in the order they earn their place:
     and it catches a description that oversells or describes an earlier
     version. Pull request bodies in this repository are long and confident,
     which makes the failure mode plausible rather than theoretical.
+- **The inspector — a conversation per file, not a summary of what tripped.**
+  The sensitive-path gate opens a review conversation anchored to a file in the
+  diff, and today it posts one comment listing which rules fired and which
+  files matched. That listing exists because the comment is anchored to one
+  file and has to account for the others: it is a workaround for having only
+  one place to speak.
+
+  A conversation on each affected file removes the need for it. Anchored to the
+  file, "what triggered this" is self-evident from where the comment is, and
+  the space that the rule listing occupies becomes available for something
+  worth reading.
+
+  That is what makes this epoch's work rather than epoch 01's. The gate can
+  already open a conversation; what it cannot do is say anything a reviewer
+  did not already know. An agent with the diff can say **what changed in this
+  file, why it appears to have changed, and how it could go wrong** - which is
+  the whole purpose of the pause, and is currently supplied by a static
+  sentence written months earlier in `.github/sensitive-paths`.
+
+  Constraints inherited from the mechanism, all of them already established
+  and none of them up for renegotiation here:
+
+  - **A machine may not resolve the conversation.** `scripts/attestation`
+    refuses a resolution by a bot or by the pull request's author, and an
+    agent explaining a change is emphatically not the party who signs it off.
+    The inspector writes; a human resolves.
+  - **The conversation is keyed to a digest of the sensitive part of the
+    diff**, so an acknowledgement cannot outlive what it acknowledged. Per-file
+    conversations mean per-file digests, so changing one file must not
+    invalidate the acknowledgement given for another.
+  - **No trigger fires on a conversation being resolved.**
+    `pull_request_review_thread` is a webhook event that was never ported to
+    workflow triggers, so nothing re-runs a check when somebody resolves a
+    thread. Anything built here must never block on a state only a human
+    action can clear.
+  - **The output is structure, never a value.** A pull request comment on a
+    public repository is world-readable, and the estate keeps hostnames,
+    addresses and credentials out of git deliberately.
+
+  Raised while looking at a real comment on #163: the rule listing is doing the
+  work an anchor should be doing, and the reason it cannot be dropped yet is
+  that nothing else would be there.
+
 - **The record itself**, naming the division and what was rejected.
 
 Explicitly out of scope:
