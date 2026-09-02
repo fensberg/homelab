@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"homelab/contractor/internal/config"
 	"homelab/contractor/internal/run"
@@ -68,6 +69,24 @@ func Destroy(ctx *run.Context, confirm string) error {
 	}
 	run.Warn("  network   " + net.SiteCIDR)
 	fmt.Println()
+
+	// Prove the hypervisor answers before handing anything to a provider.
+	//
+	// Before the state, before init, before anything irreversible. A provider
+	// asked to read or delete a resource on an unreachable API does not fail -
+	// it waits, and OpenTofu waits with it. Observed as a teardown that sat for
+	// ninety minutes and, when interrupted, reported "Plugin did not respond:
+	// the plugin failed to respond to the plugin6.(*GRPCProvider).ReadResource
+	// call", which is what a stuck outbound call looks like from the far side.
+	//
+	// This matters more here than on any other path. A converge that cannot
+	// reach the estate stops before it applies. A teardown that cannot reach it
+	// stops partway through removing things, having already emptied the object
+	// storage and forgotten resources out of state - the same explosive with
+	// the fuse half burnt.
+	if err := checkDestroyPreconditions(net); err != nil {
+		return err
+	}
 
 	// Reach the state before trying to destroy what it describes.
 	//
@@ -167,3 +186,73 @@ down: the operator is looking at one site and thinking about another`, confirm, 
 	}
 	return nil
 }
+
+// destroyPrecondition is something that must be true before a provider is
+// asked to touch real infrastructure.
+//
+// Declared as data rather than written inline, for the reason the teardown's
+// own steps are: a deleted call in a run of statements is a few green lines,
+// and a deleted entry in a list is a list that no longer matches what the test
+// says the teardown checks.
+type destroyPrecondition struct {
+	name  string
+	check func(*config.SiteNetwork) error
+}
+
+// DestroyPreconditions is what must answer before the teardown begins.
+//
+// Before, not during. A demolish that starts and stops partway has already
+// emptied the object storage and forgotten resources out of state, and left
+// machines running that nothing tracks - which is worse than one that refuses
+// to begin, because it is the same explosive with the fuse half burnt.
+func DestroyPreconditions(probe time.Duration) []destroyPrecondition {
+	return []destroyPrecondition{
+		{
+			name: "the hypervisor's API",
+			check: func(net *config.SiteNetwork) error {
+				if len(net.Hypervisors) == 0 {
+					return fmt.Errorf("this site declares no hypervisor, so there is nothing to destroy against")
+				}
+				if run.TestPort(net.Hypervisors[0].IP, proxmoxAPIPort, probe) {
+					return nil
+				}
+				// The address is deliberately absent: it comes from the vault
+				// like every other value here, and this output gets pasted into
+				// issues. It is in config/management.rendered.json, which this
+				// run has just written.
+				return fmt.Errorf(`cannot reach this site's hypervisor on the Proxmox API port.
+
+Nothing has been destroyed, and nothing will be. This is checked before the
+teardown starts because a provider asked to work against an unreachable API
+does not fail - it waits, and everything behind it waits too. A teardown that
+hangs partway through is how machines are left that nothing tracks.
+
+The address is in config/management.rendered.json. If it is an overlay address,
+check the overlay carries traffic rather than merely showing the device online:
+'tailscale status' names the peer, and scripts/survey probes it`)
+			},
+		},
+	}
+}
+
+func checkDestroyPreconditions(net *config.SiteNetwork) error {
+	for _, p := range DestroyPreconditions(hypervisorProbeTimeout) {
+		run.Info("checking " + p.name + " ...")
+		if err := p.check(net); err != nil {
+			return err
+		}
+		run.Ok(p.name + " answers")
+	}
+	return nil
+}
+
+const (
+	proxmoxAPIPort = 8006
+
+	// Long enough for a hypervisor over an overlay, short enough that a
+	// teardown against an unreachable one fails in seconds rather than
+	// hanging. Passed in rather than read here so a test can exercise the
+	// unreachable path without spending it: a probe that cannot be exercised
+	// quickly is a probe nobody exercises.
+	hypervisorProbeTimeout = 10 * time.Second
+)

@@ -34,13 +34,21 @@ import (
 // think hard about the one variety that has actually hurt here.
 func TestNoFunctionIsReachableOnlyFromItsTests(t *testing.T) {
 	for _, pkg := range goPackages(t) {
-		orphans := testOnlyFunctions(t, pkg)
-		for _, name := range orphans {
+		testOnly, dead := unwiredFunctions(t, pkg)
+		for _, name := range testOnly {
 			t.Errorf("%s: %s is called from its tests and from nowhere else.\n\n"+
 				"Either it is dead code with a test attached, or the code that used to "+
 				"call it has been removed and every test still passed - which is how a "+
 				"guard gets switched off without anybody noticing. Delete it, or assert "+
 				"the behaviour at the level that calls it.",
+				rel(t, pkg), name)
+		}
+		for _, name := range dead {
+			t.Errorf("%s: %s is called from nowhere at all.\n\n"+
+				"Not even its tests reach it. That is either code that was never wired "+
+				"up, or a call site that was deleted - and the second is indistinguishable "+
+				"from the first once it has happened, which is why this is checked rather "+
+				"than noticed.",
 				rel(t, pkg), name)
 		}
 	}
@@ -84,14 +92,21 @@ func goPackages(t *testing.T) []string {
 	return dirs
 }
 
-// testOnlyFunctions names every unexported function in a package that appears
-// in its test files and in none of its production ones.
+// unwiredFunctions names every unexported function in a package that nothing
+// in that package's production code calls, split by whether its tests do.
+//
+// The two are different findings and both matter. Test-only is the shape that
+// has bitten repeatedly: the helper is covered, the wiring is not. Called from
+// nowhere at all is the same defect one step further along - it caught a
+// precondition check whose call site was deleted while every test stayed green,
+// because the tests exercised the list of checks rather than the function that
+// ran them.
 //
 // Unexported only, deliberately. An exported function may legitimately have no
 // caller inside its own package - the caller is elsewhere - and chasing that
 // across packages would turn a sharp check into a noisy one. Every case this
 // has caught was unexported.
-func testOnlyFunctions(t *testing.T, dir string) []string {
+func unwiredFunctions(t *testing.T, dir string) (testOnly, dead []string) {
 	t.Helper()
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, dir, nil, 0)
@@ -142,14 +157,19 @@ func testOnlyFunctions(t *testing.T, dir string) []string {
 		}
 	}
 
-	var out []string
 	for name := range declared {
-		if usedInTest[name] && !usedInProd[name] {
-			out = append(out, name)
+		if usedInProd[name] {
+			continue
 		}
+		if usedInTest[name] {
+			testOnly = append(testOnly, name)
+			continue
+		}
+		dead = append(dead, name)
 	}
-	sort.Strings(out)
-	return out
+	sort.Strings(testOnly)
+	sort.Strings(dead)
+	return testOnly, dead
 }
 
 func mark(prod, test map[string]bool, name string, isTest bool) {
