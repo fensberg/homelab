@@ -183,3 +183,57 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 		}
 	}
 }
+
+// The gate has to stand in front of the delivery in CI too.
+//
+// `pre-commit run` installs every hook repository before it runs any hook,
+// cloning it and building its environment - which executes setup code. So a
+// guard that is itself a hook reports after the download it exists to prevent,
+// however early it is ordered and whatever fail_fast says. That is why
+// githooks/pre-commit exists on a workstation, and the Format lane had no
+// equivalent: its first act was `pre-commit run`, and seven third-party
+// repositories were fetched and executed on the runner before anything could
+// object.
+//
+// The lane now runs the same program first, with -before-install. Ordering is
+// the entire property - a gate after the delivery is a receipt - and ordering
+// is exactly what a test asserting "the step exists" would not notice.
+func TestTheFormatLaneRefusesASupplierBeforeInstallingAnything(t *testing.T) {
+	body := intendedWorkflow(t, "pr-validation.yml")
+
+	gate := strings.Index(body, "guard-suppliers -before-install")
+	if gate < 0 {
+		t.Fatal("the Format lane does not run the supplier gate before installing.\n\n" +
+			"Without it, `pre-commit run` clones and installs every third-party hook " +
+			"repository on the runner before anything can refuse one - so an " +
+			"unapproved supplier added in a pull request executes its setup code " +
+			"before any check says no.")
+	}
+
+	// Everything that fetches or executes third-party code, in the order the
+	// lane would reach it.
+	for _, later := range []string{
+		"pipx install pre-commit",
+		"pre-commit run --all-files",
+	} {
+		at := strings.Index(body, later)
+		if at < 0 {
+			continue
+		}
+		if at < gate {
+			t.Errorf("the Format lane runs %q before the supplier gate.\n\n"+
+				"The gate then reports on code that has already been downloaded and "+
+				"had its setup executed, which is a receipt rather than a refusal.",
+				later)
+		}
+	}
+
+	// The gate needs a toolchain, and the toolchain has to be the pinned one.
+	// A lane that installs its own Go version is the restatement this
+	// repository has already been bitten by once - see scripts/versions.env.
+	if !strings.Contains(body, "${{ env.GO_VERSION }}") {
+		t.Error("the Format lane sets up Go without reading GO_VERSION from " +
+			"scripts/versions.env, so it can validate on a different toolchain " +
+			"than the one the estate pins")
+	}
+}

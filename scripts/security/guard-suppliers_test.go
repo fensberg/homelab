@@ -84,3 +84,25 @@ func TestTheRefusalSaysWhatToDo(t *testing.T) {
 		}
 	}
 }
+
+// With no cache at all - the runner's situation, before anything has been
+// downloaded - the configured half still has to be judged.
+//
+// This is the case -before-install exists for. On a workstation the cache is
+// the half nothing else can see, and an unreadable one fails closed; on a
+// runner there is deliberately no cache yet, because the whole point is to
+// refuse before one can exist. Checking nothing would be the natural way to
+// get that wrong, and it would look exactly like approval.
+func TestAnUnapprovedSupplierIsFoundWithNoCacheAtAll(t *testing.T) {
+	findings := Check(
+		[]string{"https://github.com/example/approved", "https://github.com/example/not-approved"},
+		nil,
+		[]string{"https://github.com/example/approved"},
+	)
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Where != "the hook configuration" {
+		t.Errorf("found in %q, want the hook configuration", findings[0].Where)
+	}
+}
