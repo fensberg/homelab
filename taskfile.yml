@@ -123,6 +123,25 @@ tasks:
       - go build -C scripts/pushguard -o pushguard .
       - ./scripts/pushguard/pushguard
 
+  supplier-guard:
+    desc: "Refuse a commit while an unapproved third-party hook is installed (pre-commit)"
+    # Default deny, at the point of execution rather than in CI.
+    #
+    # A test that notices an undeclared hook afterwards is archaeology: by then
+    # the code has run on the machine holding the vault session. This runs
+    # first, before any hook does its work, and stops the commit.
+    #
+    # It also answers the question the test cannot. Nothing in the repository
+    # can see what is actually installed - pre-commit clones into
+    # ~/.cache/pre-commit under generated names, so an eighth repository there
+    # looks exactly like the seven that belong, and finding out meant somebody
+    # noticing a strange directory and knowing how pre-commit names things.
+    #
+    # Not internal: pre-commit invokes it as a command.
+    cmds:
+      - go build -C scripts/supplierguard -o supplierguard .
+      - ./scripts/supplierguard/supplierguard
+
   gh-token:
     desc: "Mint a 1-hour GitHub App installation token (for gh auth login --with-token)"
     cmds:
