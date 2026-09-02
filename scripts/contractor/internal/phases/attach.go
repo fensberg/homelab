@@ -94,6 +94,44 @@ If this really is a new estate, run ignition rather than converge. If it is not,
 the state has been lost and belongs in 'contractor restore'`)
 	}
 
+	// Record what the state looked like before this run could change it.
+	//
+	// If this run later fails, comparing serials answers whether anything was
+	// actually written - which is the difference between a failure that can be
+	// reverted automatically and one where reverting would make the config
+	// wrong in the other direction. Recorded here rather than in each applying
+	// phase because this is the last point at which nothing can have changed
+	// yet.
+	if serial, ok := run.StateSerial(ctx); ok {
+		ctx.StateSerialAtAttach = serial
+		ctx.AttachedOK = true
+	}
+
 	run.Ok(fmt.Sprintf("attached to existing state: %d resource(s)", n))
 	return nil
+}
+
+// EstateChanged reports whether this run wrote anything to the estate's state.
+//
+// Three answers, and collapsing any two of them is the bug this exists to
+// prevent. The banner it feeds used to assert "the estate is untouched by this
+// failure" on every converge failure with no condition at all - true when the
+// run died at Attach, and a confident falsehood when it died halfway through
+// creating machines, which is precisely when somebody most needs to look.
+//
+//	changed=false, certain=true   nothing was written; a revert is exact
+//	changed=true,  certain=true   something was written; a revert is a guess
+//	certain=false                 the state could not be read; say so
+func EstateChanged(ctx *run.Context) (changed, certain bool) {
+	// Never attached, so nothing in this run could have reached tofu at all.
+	// tests/go/repo/converge_order_test.go is what makes this sound: no phase
+	// before attach may invoke tofu, so there is no path to a write.
+	if !ctx.AttachedOK {
+		return false, true
+	}
+	serial, ok := run.StateSerial(ctx)
+	if !ok {
+		return false, false
+	}
+	return serial != ctx.StateSerialAtAttach, true
 }

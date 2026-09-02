@@ -63,8 +63,15 @@ func forgetClusterInternalResources(ctx *run.Context) {
 	}
 
 	run.Info(fmt.Sprintf("forgetting %d resource(s) that live inside the VMs about to be deleted", len(addrs)))
+
+	// Captured rather than streamed. `tofu state rm` echoes "Removed <address>"
+	// for each one, and an address is not the safe half of anything here: a
+	// `for_each` key comes from the config, so a resource keyed by the
+	// hypervisor's name prints a vault value without any attribute being
+	// printed at all. The count above is what a reader needs; the addresses
+	// are in the error if this fails.
 	args := append([]string{"state", "rm"}, addrs...)
-	if err := run.Cmd(ctx.ClusterDir, "tofu", args...); err != nil {
+	if _, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", args...); err != nil {
 		run.Warn("could not forget them: " + err.Error())
 		run.Warn("The destroy will try to delete them through the Kubernetes API instead, which is what deadlocks on Flux's finalizers. If it hangs, that is why.")
 		return
