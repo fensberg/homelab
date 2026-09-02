@@ -147,11 +147,12 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 			"comparing an empty set against the skip list and proving nothing")
 	}
 
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), ".github", "workflows", "pr-validation.yml"))
-	if err != nil {
-		t.Fatalf("reading .github/workflows/pr-validation.yml: %v", err)
-	}
-	m := regexp.MustCompile(`(?m)^\s+SKIP:\s*(\S+)`).FindStringSubmatch(string(body))
+	// As it will be once any outstanding patch is applied - see
+	// patches_test.go. The agent cannot write a workflow, so the fix to one
+	// arrives as a patch, and a test red for the whole of that window blocks
+	// the hand-over it is part of.
+	body := intendedWorkflow(t, "pr-validation.yml")
+	m := regexp.MustCompile(`(?m)^\s+SKIP:\s*(\S+)`).FindStringSubmatch(body)
 	if m == nil {
 		t.Fatal("the Format lane no longer sets SKIP, so every system hook now runs " +
 			"there - each will fail on a binary that lane does not install")
