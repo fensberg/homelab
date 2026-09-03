@@ -1,18 +1,33 @@
-name: "Estate Canary"
+name: "Gatehouse Patrol"
 
-# Watches the estate from outside it.
+# The gatehouse's third responsibility: the estate, watched from outside it.
 #
-# Everything else that reports on this estate runs inside it, and all of it was
-# blind to the failure that actually happened: the estate stopped being able to
-# run jobs at all, and nothing said so for three days. The nightly drift check
-# sat queued from 29 to 31 August without ever failing, because a job that never
-# starts cannot fail - timeout-minutes only counts once a job is running, and a
-# stale queued run is cancelled after about a day with no alarm.
+# Renamed from "Estate Canary" alongside the program it runs - scripts/canary
+# became scripts/gatehouse's `patrol` verb, on the reasoning that guarding
+# deliveries, guarding pushes and watching the perimeter are one role wearing
+# three names rather than three separate things. This file kept the old name
+# after that change landed, which is exactly the failure the construction
+# theme exists to catch: a name that no longer describes what runs.
 #
-# So this runs on a GitHub-hosted runner, where the estate cannot starve it. It
-# deliberately holds no credential that reaches the estate: the cluster's API is
-# on the overlay network, and getting to it from here would mean a tailnet key
-# stored outside the estate, which is a worse trade than the blindness it buys.
+# "Canary" stays as the word for the PATTERN, because it is a real term of
+# art and renaming it away would obscure rather than clarify - this still is
+# a dead-man's-switch, watched from outside, for the same reason a canary is
+# carried into a mine rather than tested at the entrance. What changed is
+# only which noun names the workflow: gatehouse patrol, not canary.
+#
+# Everything else that reports on this estate runs inside it, and all of it
+# was blind to the failure that actually happened: the estate stopped being
+# able to run jobs at all, and nothing said so for three days. The nightly
+# drift check sat queued from 29 to 31 August without ever failing, because a
+# job that never starts cannot fail - timeout-minutes only counts once a job
+# is running, and a stale queued run is cancelled after about a day with no
+# alarm.
+#
+# So this runs on a GitHub-hosted runner, where the estate cannot starve it.
+# It deliberately holds no credential that reaches the estate: the cluster's
+# API is on the overlay network, and getting to it from here would mean a
+# tailnet key stored outside the estate, which is a worse trade than the
+# blindness it buys.
 
 on:
   schedule:
@@ -27,7 +42,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: estate-canary
+  group: gatehouse-patrol
   # Safe to cancel, unlike a converge: this reads and changes nothing, so a
   # newer answer is strictly better than an older one still in flight.
   cancel-in-progress: true
@@ -37,8 +52,8 @@ defaults:
     shell: bash
 
 jobs:
-  canary:
-    name: "Estate Canary"
+  patrol:
+    name: "Gatehouse Patrol"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
