@@ -2666,6 +2666,26 @@ and never folded into unrelated changes. This one was folded in on purpose: the
 component had not been merged yet, so the cost was a `git mv` and a `sed`
 rather than a rename across the history of a thing people already reference.
 
+The rename missed one file: `.github/workflows/estate-canary.yml` kept its old
+name and job id (`canary:`) through the whole `security` -> `gatehouse` change,
+because the workflow content was updated by patch (the agent cannot write
+`.github/workflows/`) while the file's own identity was not part of that diff -
+nobody was looking at the filename, only at what it invoked. Caught by the
+user, not by anything automated, which is worth saying plainly rather than
+folding into the paragraph above: nothing here checks that a file's name still
+describes what it does after a rename, and this is the second time in one
+epoch that gap has let something through - the `signedpush`/`security`/
+`survey`/`contractor` split had the same shape with build artifacts instead of
+names.
+
+Renamed to `gatehouse-patrol.yml`, job id `patrol`, matching the verb the
+workflow actually invokes. "Canary" stays in the header comment as the name for
+the PATTERN - a dead-man's-switch watched from outside - because it is a real
+term of art and the rule that a theme must never obscure one cuts both ways:
+it protects "converge" and "kubeconfig" from being renamed away, and it
+equally means "canary" should not vanish from the prose just because the noun
+naming the workflow changed underneath it.
+
 ### The gate only worked from one directory, and the test said it was fine
 
 The delivery gate reads `.pre-commit-config.yaml` and
