@@ -8,7 +8,7 @@ data "talos_machine_configuration" "controlplane" {
   machine_type       = "controlplane"
   cluster_endpoint   = "https://${local.node_ips[0]}:6443"
   machine_secrets    = talos_machine_secrets.this.machine_secrets
-  kubernetes_version = "1.31.1"
+  kubernetes_version = local.kubernetes_version
 
   # Every network-related concern here uses the modern multi-document config
   # types (HostnameConfig / LinkConfig / ResolverConfig), not the monolithic

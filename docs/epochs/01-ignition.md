@@ -2752,3 +2752,43 @@ tripped by something nobody can edit has to be right the first time.
 A `[bot]` account is exempt now. That does not reopen what the rule is for: the
 harness's trailer names a user-shaped identity, never a `[bot]` account, and
 the test suite asserts both directions.
+
+### Three answers to "which Kubernetes is this", none of them agreeing
+
+`kubernetes_version` sat inline in `talos.tf` as a bare `"1.31.1"` - no
+comment, no `renovate:` annotation, not in `versions.env`. The line directly
+above it, `talos_version`, carries an essay and a renovate line, which is what
+made the omission look deliberate rather than forgotten.
+
+It was five minors stale. Talos v1.13.9 defaults to Kubernetes 1.36.3 and
+supports six minors back, so 1.31 was the oldest version the platform carrying
+it would install at all, and outside upstream Kubernetes' own patch window
+entirely - confirmed from `constants.go` at the pinned tag rather than assumed.
+
+Two more numbers disagreed with it. `versions.env` said `KUBECTL_VERSION=v1.34.11`,
+and `install-dependencies.sh` sourced that file and then threw the value away:
+
+    KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+
+So the workstation installed whatever upstream called stable that day, the
+runner image honoured the pin, and the cluster ran a third number. kubectl
+supports one minor of skew; no two of the three were within one. The block
+immediately below it is titled `talosctl (pinned)` and always did it correctly,
+which is the tell that this was an oversight rather than a decision. Recorded
+as #178.
+
+**The timing is the part worth keeping.** #97 means a Talos image change cannot
+reach a running estate, and changing a control plane's Kubernetes version is an
+upgrade rather than an apply - epoch 05's work, which does not exist. So the
+only cheap moment to move either number is between a demolish and a
+break-ground. That is exactly the window the Talos v1.13.8 -> v1.13.9 bump used,
+for the same reason, and this one follows it. Igniting on 1.31 would have meant
+the estate carried an out-of-support control plane until epoch 05 was built to
+move it - a cost measured in epochs, incurred to save one line.
+
+Three guards, each verified by reintroducing the defect: kubectl stays within a
+minor of the cluster, `kubernetes_version` has to be findable in the locals
+where versions are read, and no `*_VERSION` in the installer may be reassigned
+from a command substitution after `versions.env` has been sourced. The last one
+is the general form: sourcing a pin and then overwriting it is worse than not
+pinning, because the file still claims to be the single declaration.

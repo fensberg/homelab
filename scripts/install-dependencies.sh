@@ -143,11 +143,18 @@ else
 	ok "op installed"
 fi
 
-step "kubectl"
+step "kubectl (pinned)"
 if has kubectl; then
 	skip "kubectl already present ($(kubectl version --client -o yaml 2>/dev/null | grep gitVersion | head -1))"
 else
-	KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+	# KUBECTL_VERSION comes from versions.env, like every other pin.
+	#
+	# This line used to overwrite it with `curl .../stable.txt`, so the
+	# workstation took whatever upstream called stable that day while the
+	# runner image honoured the pin - two clients against one cluster, from
+	# the file whose whole job is stopping exactly that. The talosctl block
+	# directly below was always correct, which is what made it an oversight
+	# rather than a decision. #178.
 	info "installing kubectl ${KUBECTL_VERSION}"
 	curl -fsSL -o "$TMP/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${GOARCH}/kubectl"
 	chmod +x "$TMP/kubectl"
