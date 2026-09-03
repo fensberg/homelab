@@ -29,6 +29,7 @@ fi
 
 changed=$(cat)
 hits=""
+matched=""
 rules=0
 
 while IFS= read -r line || [ -n "$line" ]; do
@@ -75,6 +76,12 @@ EOF
 
 ${listed}
 "
+		# The matched files, one per line, for the caller. The attestation is a
+		# review thread and a review thread has to hang off a file that is
+		# actually in the diff - and the same list is what gets digested, so
+		# the acknowledgement is bound to this content rather than to a moment.
+		matched="${matched}${match}
+"
 	fi
 done <"$LIST"
 
@@ -94,6 +101,13 @@ else
 fi
 
 echo "tripped=true"
+
+# Deduplicated: one file can match two rules, and anchoring twice to the same
+# file would open two threads asking for the same acknowledgement.
+echo "files<<SENSITIVE_FILES_EOF"
+printf '%s\n' "$matched" | grep -v '^$' | sort -u
+echo "SENSITIVE_FILES_EOF"
+
 echo "report<<SENSITIVE_PATHS_EOF"
 cat <<EOF
 <!-- sensitive-paths -->
@@ -103,8 +117,13 @@ ${summary} Each line below says what breaks if this change is wrong.
 
 ${hits}---
 
-**To merge:** apply the \`sensitive-reviewed\` label. A bot cannot apply it — the
-check reads who did, and refuses a machine. That is the point: approving and
-acknowledging have to be two separate acts.
+**To merge:** resolve the review conversation opened on the file below. It is
+anchored to the change itself, so resolving it means somebody was looking at the
+diff rather than at a checkbox on the side of the page.
+
+Whoever opened this pull request cannot resolve it. Approving and acknowledging
+have to be two separate acts, by two different people - and a new conversation
+opens whenever the sensitive part of this diff changes, so an acknowledgement
+never outlives what it acknowledged.
 EOF
 echo "SENSITIVE_PATHS_EOF"
