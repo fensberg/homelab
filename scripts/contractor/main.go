@@ -35,6 +35,7 @@ import (
 
 	"homelab/contractor/internal/phases"
 	"homelab/contractor/internal/run"
+	"homelab/contractor/internal/survey"
 )
 
 // repoRoot is derived from this source file's own location rather than the
@@ -58,7 +59,7 @@ func repoRoot() string {
 // of merely refused: each verb registers only the flags that mean something
 // for it, so `contractor restore -phase compute` fails on an undefined flag
 // before any of this code runs.
-var knownVerbs = []string{"break-ground", "converge", "plan", "demolish", "restore", "kubeconfig", "talosconfig", "check-inventory"}
+var knownVerbs = []string{"break-ground", "converge", "plan", "demolish", "restore", "kubeconfig", "talosconfig", "check-inventory", "survey"}
 
 const usage = `contractor manages the lifecycle of a site.
 
@@ -82,6 +83,10 @@ verbs:
   talosconfig  Run a command against this site's machines with a talosconfig
                that lives only as long as the command.
   check-inventory  Prove every op:// reference in the config template resolves.
+  survey       Walk the overlay from here and report what answers. A surveyor
+               checks the ground before anybody builds on it; this one probes
+               every peer rather than asking whether it is registered, because
+               registration is not reachability. Run it on an overlay member.
 
 Run 'contractor <verb> -h' for the flags a verb accepts.
 `
@@ -99,6 +104,15 @@ func main() {
 	if !slices.Contains(knownVerbs, verb) {
 		fmt.Fprintf(os.Stderr, "unknown verb %q\n\n%s", verb, usage)
 		os.Exit(2)
+	}
+
+	// Dispatched before the shared flag set, because a survey shares none of
+	// it. It runs on a hypervisor, which deliberately holds no vault session,
+	// so it must not need -site or a rendered config - it reads nothing but the
+	// overlay in front of it. Parsing the common flags first would also eat its
+	// own, and -h would describe the wrong command.
+	if verb == "survey" {
+		os.Exit(survey.Run(os.Args[2:]))
 	}
 
 	o := flagsFor(verb)

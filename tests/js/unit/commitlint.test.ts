@@ -120,3 +120,39 @@ describe("the no-self-co-authorship rule", () => {
     expect(report.valid, JSON.stringify(report.errors)).toBe(true);
   });
 });
+
+// GitHub's own squash trailer is not self-attribution.
+//
+// Squash-merging a pull request whose commits have more than one author makes
+// GitHub author the squash as whoever merged and record every other
+// contributor as a co-author. The App appearing there is being credited for
+// commits it really did write, on a commit it did not author - which is what
+// the trailer is for.
+//
+// Found the expensive way. The squash of #163 carried it, the commit cannot be
+// rewritten because non_fast_forward applies to every branch here, and every
+// branch containing it failed this rule with no way to fix the commit.
+describe("the no-self-co-authorship rule and machine accounts", () => {
+  const subject = "fix: drop the redundant secret";
+
+  it("accepts GitHub's squash trailer naming the App's bot account", async () => {
+    const report = await check(
+      `${subject}\n\nA body.\n\n` +
+        "Co-authored-by: fensberg-claude[bot] " +
+        "<322229784+fensberg-claude[bot]@users.noreply.github.com>",
+    );
+    expect(report.valid, JSON.stringify(report.errors)).toBe(true);
+  });
+
+  // The narrowing must not reopen what the rule is for: the harness's default
+  // trailer names a user-shaped identity, never a [bot] account.
+  it("still rejects the harness trailer alongside a bot co-author", async () => {
+    const report = await check(
+      `${subject}\n\nA body.\n\n` +
+        "Co-authored-by: fensberg-claude[bot] <1+fensberg-claude[bot]@users.noreply.github.com>\n" +
+        "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>",
+    );
+    expect(report.valid, JSON.stringify(report.errors)).toBe(false);
+    expect(report.errors.map((e) => e.name)).toContain("no-self-co-authorship");
+  });
+});

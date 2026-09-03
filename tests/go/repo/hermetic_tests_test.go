@@ -10,7 +10,7 @@ import (
 // A test package that shells out to git must cut itself off from the
 // developer's git configuration.
 //
-// Two tests in scripts/pushguard were written without doing so, in consecutive
+// Two tests in scripts/gatehouse were written without doing so, in consecutive
 // changes. One built a deliberately unsigned commit and inherited
 // `commit.gpgsign` from a global config, so the fixture was signed and the test
 // failed on any machine set up the way this repository tells people to set one

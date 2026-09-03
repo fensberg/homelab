@@ -14,8 +14,8 @@ func TestScratchRefIsAllowed(t *testing.T) {
 		"refs/signing/0a1b2c3d",
 		"refs/signing/deadbeef",
 	} {
-		if err := run(ref); err != nil {
-			t.Errorf("run(%q) refused signedpush's own push: %v", ref, err)
+		if err := guardPushRun(ref); err != nil {
+			t.Errorf("guardPushRun(%q) refused signedpush's own push: %v", ref, err)
 		}
 	}
 }
@@ -46,7 +46,7 @@ func TestARefWithNoRangeInformationIsRefused(t *testing.T) {
 // A guard that fails open is not a guard. If the hook cannot tell what is
 // being pushed, it must refuse rather than assume the safe case.
 func TestUnknownRefIsRefused(t *testing.T) {
-	err := run("")
+	err := guardPushRun("")
 	if err == nil {
 		t.Fatal("an undetermined ref was allowed; the guard fails open")
 	}
@@ -58,7 +58,7 @@ func TestUnknownRefIsRefused(t *testing.T) {
 // Tags are not a route to an unsigned branch commit, and refusing them would
 // be friction with nothing behind it.
 func TestNonBranchRefsAreNotThisHooksBusiness(t *testing.T) {
-	if err := run("refs/tags/v1.0.0"); err != nil {
+	if err := guardPushRun("refs/tags/v1.0.0"); err != nil {
 		t.Errorf("a tag push was refused: %v", err)
 	}
 }
