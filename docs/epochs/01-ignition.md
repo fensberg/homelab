@@ -1654,12 +1654,38 @@ below is unchanged.
   and therefore for moving pull request lanes onto the self-hosted runner at
   all. Cilium or Calico; the choice is its own decision. Trigger: before any
   workload that should not reach the hypervisor runs on this cluster.
-- **Self-hosted Renovate**, to replace or complement Dependabot for the
-  ecosystems it can't cover at all: a Flux `HelmRelease`'s chart version
-  (Longhorn's is a manual bump today) and a digest-pinned container image
-  embedded in a workflow's `container:` block (Semgrep's is too). Trigger:
-  once the cluster is up and running, so it has somewhere to actually run -
-  **fired**: site0 is up, so this is now actionable rather than blocked.
+- **Self-hosted Renovate, replacing Dependabot rather than complementing
+  it.** Dependabot is a stopgap here and should be described as one: it is
+  what the estate uses until Renovate has somewhere to run, not a tool the
+  estate chose. Trigger: once the cluster is up and running - **fired**:
+  site0 is up, so this is actionable rather than blocked. Owned by epoch 06,
+  where it is an acceptance criterion.
+
+  Two things it cannot cover at all, which is why the replacement is needed
+  rather than merely tidier: a Flux `HelmRelease`'s chart version (Longhorn's
+  is a manual bump today) and a digest-pinned container image embedded in a
+  workflow's `container:` block (Semgrep's is too).
+
+  A third cost showed up later and is the one worth recording, because it is
+  the kind that accumulates rather than announcing itself. Dependabot commits
+  through GitHub's API and so never runs this repository's own hooks, which
+  means anything the hooks normalise, it un-normalises. `pnpm-lock.yaml` was
+  the concrete case: prettier and pnpm each rewrite that file in their own
+  style, every human commit hid the disagreement by running prettier last,
+  and Dependabot's pull requests were the only place it was visible - as a
+  1700-line reformat on top of a one-line version bump, red on the Format
+  lane every time until somebody ran `task fix` by hand.
+
+  The fix was a `.prettierignore` entry, which is correct on its own terms
+  (a lockfile's format belongs to the package manager, not to a code
+  formatter) and would still be correct with Renovate in place. But it is
+  also the shape to watch: a tool that cannot run our checks produces
+  exceptions to our checks, and exceptions are cheaper to add than to
+  remove. Renovate self-hosted runs where we can make it run the same hooks
+  a human does, which removes the reason for that whole class of entry.
+  Recorded as a de-bloat driver in
+  [`02-abstraction.md`](02-abstraction.md).
+
 - **A persistent tool-cache on a self-hosted runner**, so pinned binaries
   this repo already downloads-and-verifies fresh every run (tofu,
   kubeconform, the trufflehog CLI) don't repeat that fetch on every job -

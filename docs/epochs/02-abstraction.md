@@ -972,6 +972,32 @@ And shellcheck coverage is a real benefit of a script over an inline block, but
 it is not worth a whole file for a handful of lines - the question is what the
 coverage is buying, not whether it exists.
 
+### Ignore lists are the same problem, one line at a time
+
+A file count is the visible half. The other half is the entries that
+accumulate inside `.gitignore`, `.prettierignore`, `.github/super-linter.vars`
+and `scripts/approved-suppliers.yml`'s exemptions - each one added for a real
+reason, none ever removed, and collectively a description of the repository
+nobody has read end to end.
+
+They are worse than an extra file, because an extra file is at least obvious.
+An ignore entry silently narrows what a check covers, and the narrowing
+outlives the reason: three `.gitignore` lines for pre-toolshed build paths are
+already dead the day the last such branch closes, and nothing will notice.
+
+**So every entry has to carry the condition that would remove it**, and the
+audit asks that of each one: what has to become true for this line to go? If
+there is no answer, the entry is not an exception, it is a decision nobody
+wrote down. Known entries with their conditions already recorded:
+
+| Entry                                                         | Removed when                                                  |
+| ------------------------------------------------------------- | ------------------------------------------------------------- |
+| `.gitignore`: `scripts/{contractor,signedpush,survey}/<name>` | every branch predating `toolshed/` is merged or closed (#167) |
+| `.prettierignore`: `pnpm-lock.yaml`                           | never - a lockfile's format belongs to its package manager    |
+
+The second is there to make the point that "never" is a legitimate answer.
+What is not legitimate is silence.
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying
