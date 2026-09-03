@@ -2936,6 +2936,58 @@ assertion added in the same change reads `/proc` for exactly this reason and
 passed correctly on this run. The IPv6 tasks beside it were still trusting a
 module's opinion of its own file.
 
+### Three laws, and what each one can see that the others cannot
+
+Asked how to stop "stupid tests", the honest starting point was that the
+existing checks were all sound and still left a hole. Each catches a specific
+shape - a helper tested while its wiring is deleted, an assertion satisfied by
+prose, a test reading machine state - and nothing asked whether a new test had
+been examined at all. That is how six guards went in unproven.
+
+**Law 1, `tests/coverage-exemptions.yml`.** Every uncovered function is
+declared, per file, with the count exact rather than a ceiling, and naming the
+tier that reaches it. The coverage baseline is one number over a growing
+program: it catches a collapse and misses drift, which is how it came to sit at
+24.5 while the real figure was 34.1.
+
+**Law 2, ledger completeness.** Every guard in `tests/go/repo` is either proved
+by `tests/mutations.yml` or declared unprovable with a reason. The ledger
+worked and was useless, because nothing required anything to be in it.
+
+**Law 3, `tests/logic-mutations.yml`.** Break a decision in the shipped
+program; something must go red, and it must be the named test.
+
+The third is the one that is not redundant, and the reason is worth stating
+precisely. **Coverage proves a line ran. It proves nothing about whether
+anything looked at the result.** A test that calls a function, ignores what it
+returns and asserts nothing gives full coverage and no protection, and every
+other check here is blind to it: the baseline sees an unchanged total, the
+exemptions file sees a covered function - which it is - the repository-file
+ledger covers guards over files rather than Go logic, and the change detector
+sees a function reachable from non-test code.
+
+Demonstrated rather than argued. `TestJudgeEtcdRefusesALearner` was replaced
+with a version that parses the members, calls `judgeEtcd`, and asserts nothing:
+
+    _ = judgeEtcd(members, 5)
+
+It passes on its own. Coverage is unchanged, so Law 1 is satisfied. Law 3
+fails, naming the decision and what breaks in the estate if nothing notices -
+a member that joined and does not vote, reported as a successful scale-up.
+
+Two things deliberately left out as redundant. Per-line or per-diff coverage is
+finer than Law 1 but has the same blind spot at higher resolution: it still
+only proves execution. And "every test must contain an assertion" is real but
+near-zero yield, because a test with no assertion survives every mutation and
+Law 3 already catches it.
+
+Scoped to the decisions rather than the whole program. Most of
+`scripts/contractor` shells out to tofu, ansible and kubectl - plumbing, mapped
+to the e2e and integration tiers by Law 1, and mutating it would prove nothing
+a real run does not. What Law 3 covers is the logic that was extracted so it
+_could_ be tested hermetically, which makes it the check that confirms the
+extraction was worth doing.
+
 ### The audit: proofs that lived in a terminal, and a floor ten points low
 
 Asked at the end of the epoch whether the work had actually been test-first,
