@@ -3,6 +3,8 @@ package phases
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,11 +58,17 @@ func Destroy(ctx *run.Context, confirm string) error {
 		return err
 	}
 
-	// Say what is about to go, by name. An operator who is about to destroy
+	// Say which estate is about to go. An operator who is about to destroy
 	// the wrong estate is usually looking at the right site key and the
 	// wrong estate - the hostnames are what break that.
+	//
+	// This half is from the config, and says so, because it is printed before
+	// the state is reachable. The config is the right source for "which
+	// estate": it is what names the hypervisor and the network. It is the
+	// wrong source for "how many machines", which is why the count is
+	// re-stated from state further down, before anything irreversible.
 	fmt.Println()
-	run.Warn(fmt.Sprintf("About to destroy site %q (%s):", ctx.Site, net.Label))
+	run.Warn(fmt.Sprintf("About to destroy site %q (%s), as described by the config:", ctx.Site, net.Label))
 	for _, vm := range net.VMNames {
 		run.Warn("  VM        " + vm)
 	}
@@ -131,6 +139,20 @@ underlying error: %w`, err)
 			return err
 		}
 	}
+
+	// What is actually going to be destroyed, from state, at the last moment
+	// before it is.
+	//
+	// `tofu destroy` works from state; the banner above is built from the
+	// rendered config. When the two disagree the banner under-reports, and it
+	// under-reports in the reassuring direction at the exact moment somebody
+	// is deciding whether to proceed with something irreversible (#93). Set
+	// the count to three against a running five and the banner names three.
+	//
+	// Config and state disagreeing is not an edge case here - it is precisely
+	// the situation a teardown is most often reached for, and the runbook's
+	// own step 1 exists because of it.
+	reportMachinesInState(ctx, len(net.VMNames))
 
 	res := tearDown(ctx)
 	if !res.SafeToSterilize {
@@ -256,3 +278,57 @@ const (
 	// quickly is a probe nobody exercises.
 	hypervisorProbeTimeout = 10 * time.Second
 )
+
+// vmInstance matches an instance of the control-plane VM resource in
+// `tofu state list` output, capturing the for_each key.
+//
+// The key rather than the name attribute, deliberately. Reading the name would
+// mean `tofu state show` or `tofu show -json`, which print every attribute the
+// provider did not mark sensitive - the same output that leaked the cluster's
+// certificate authorities once already. `state list` prints addresses and
+// nothing else, which is why it is on the quiet allowlist.
+var vmInstance = regexp.MustCompile(`^proxmox_virtual_environment_vm\.talos_cp\["([^"]+)"\]$`)
+
+// machinesInState returns the for_each keys of the control-plane machines
+// Terraform is tracking.
+func machinesInState(out string) []string {
+	var keys []string
+	for _, line := range strings.Split(out, "\n") {
+		if m := vmInstance.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			keys = append(keys, m[1])
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// reportMachinesInState prints what the teardown will actually remove, and
+// says so loudly when that is not what the config described.
+//
+// Deliberately non-fatal. This is the last thing printed before an operation
+// the operator has already confirmed, and refusing here would strand an estate
+// that is mid-teardown for a reason that is informational. Being wrong about
+// the count is the thing to report; it is not a thing to stop for.
+func reportMachinesInState(ctx *run.Context, fromConfig int) {
+	out, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list")
+	if err != nil {
+		run.Warn("  could not read the machine list from state, so the list above is " +
+			"the config's and may under-report. The teardown works from state regardless.")
+		return
+	}
+
+	keys := machinesInState(out)
+	if len(keys) == fromConfig {
+		return
+	}
+
+	fmt.Println()
+	run.Warn(fmt.Sprintf(
+		"the config describes %d machine(s); state holds %d, and the teardown works from state:",
+		fromConfig, len(keys)))
+	for _, k := range keys {
+		run.Warn("  VM        " + k)
+	}
+	run.Warn("  Everything above goes. The shorter list is the stale one.")
+	fmt.Println()
+}

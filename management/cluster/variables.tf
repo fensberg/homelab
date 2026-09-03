@@ -22,6 +22,35 @@ variable "site" {
   }
 }
 
+variable "overlay_key_wanted" {
+  type    = bool
+  default = false
+
+  description = <<-EOT
+    Whether the hypervisor's tagged auth key should exist right now.
+
+    False by default, which means the key does not exist unless something is
+    about to use it. Only the Overlay phase sets it true, and only the
+    hypervisor playbook consumes what that mints - minutes later, once.
+
+    This is what stops the key being reconciled by every other apply. The
+    Cluster phase ends with an untargeted apply, so with a plain unconditional
+    resource the key was in the graph on every run: the one-hour expiry made
+    the provider see it as gone, and the apply replaced it. A converge does not
+    run the hypervisor phase, so every converge minted a route-approving,
+    pre-authorized, reusable key that nothing would ever read, and dropped it
+    (#138).
+
+    Conditional rather than long-lived on purpose. Lengthening the expiry would
+    also stop the churn, and would do it by keeping a valid subnet-router
+    credential alive for months - trading away the property that makes a leak
+    survivable, which is the wrong direction for this estate. With `count` the
+    key exists across the window that needs it and the next untargeted apply
+    revokes it, which is better than letting it expire: revoked is a state
+    Tailscale enforces, expired is one it merely records.
+  EOT
+}
+
 variable "config_path" {
   type        = string
   default     = "../../config/management.rendered.json"

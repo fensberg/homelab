@@ -52,14 +52,35 @@ func intendedWorkflow(t *testing.T, name string) string {
 		return string(body)
 	}
 
-	// A scratch tree holding just this file at its repository path, so `git
+	// A scratch tree holding EVERY workflow at its repository path, so `git
 	// apply` sees the paths the patch names.
+	//
+	// Every workflow rather than just this one, because a patch may touch
+	// several - one change can need a job added here and a build argument
+	// passed there. The first version of this copied only the file being
+	// asked about, and a patch spanning two workflows failed with "No such
+	// file or directory" for the other one: reported as a stale patch, when
+	// the patch was fine and the scratch tree was incomplete. A helper that
+	// blames the thing it is checking is worse than no helper.
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(rel)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755); err != nil {
 		t.Fatalf("preparing a scratch tree: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, rel), body, 0o644); err != nil {
-		t.Fatalf("preparing a scratch tree: %v", err)
+	entries, err := os.ReadDir(filepath.Join(root, ".github", "workflows"))
+	if err != nil {
+		t.Fatalf("listing the workflows: %v", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		src, err := os.ReadFile(filepath.Join(root, ".github", "workflows", e.Name()))
+		if err != nil {
+			t.Fatalf("reading %s: %v", e.Name(), err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".github", "workflows", e.Name()), src, 0o644); err != nil {
+			t.Fatalf("preparing a scratch tree: %v", err)
+		}
 	}
 
 	for _, p := range patches {

@@ -101,10 +101,23 @@ RUN curl -fsSL -o /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl \
     && kubectl version --client=true --output=yaml | head -3
 
+# talosctl, for the Health phase's etcd membership check.
+#
+# The converge runs here, and until now this image had no way to reach the
+# Talos API at all - so the one question that would have caught a scale-up
+# where a new member joined and did not vote could not be asked on the path
+# that performs scale-ups (#137). Same pinned version the workstation
+# installs, from scripts/versions.env, for the reason versions.env exists.
+ARG TALOSCTL_VERSION
+RUN curl -fsSL -o /usr/local/bin/talosctl \
+        "https://github.com/siderolabs/talos/releases/download/${TALOSCTL_VERSION}/talosctl-linux-${TARGETARCH}" \
+    && chmod +x /usr/local/bin/talosctl \
+    && talosctl version --client --short
+
 # Prove the toolchain is complete before the image is ever published. A missing
 # binary here surfaces as a job that fails at Render, on the runner, minutes
 # into a converge - which is exactly how this image came to exist.
-RUN for b in op tofu age rclone kubectl jq; do \
+RUN for b in op tofu age rclone kubectl talosctl jq; do \
         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done
 

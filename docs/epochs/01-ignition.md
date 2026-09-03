@@ -2792,3 +2792,104 @@ where versions are read, and no `*_VERSION` in the installer may be reassigned
 from a command substitution after `versions.env` has been sourced. The last one
 is the general form: sourcing a pin and then overwriting it is worse than not
 pinning, because the file still claims to be the single declaration.
+
+### The epoch-01 defect batch, and what each one taught
+
+Seven issues closed together before the ignition acceptance test, on the
+reasoning that a rebuild is the only free moment for anything that cannot reach
+a running estate. What follows is what each cost to find, not what each was -
+the issues carry that.
+
+**The banner read the config; the teardown reads state (#93).** `demolish`
+named three machines while five would have gone, because the banner was built
+from the rendered config and `tofu destroy` works from state. It under-reported
+in the reassuring direction, at the moment somebody decides whether to proceed
+with something irreversible - and config and state disagreeing is not an edge
+case here, it is the situation a teardown is most often reached for. The banner
+now says which source it is from, and the machine list is re-stated from
+`tofu state list` immediately before anything is destroyed. Deliberately
+non-fatal: being wrong about the count is worth reporting, not worth stranding
+an estate mid-teardown for.
+
+**Proxmox appends its own SNAT rule on every apply (#96).** There is no
+iptables task in the playbook - `--snat 1` on the subnet is what installs the
+rule, and applying the SDN configuration again adds another copy. Ten runs, ten
+identical rules. The fix is a task that collapses them to one rather than a
+conditional apply, because the apply has to stay unconditional and a rule set
+that converges is true regardless of which layer appended the copies.
+
+**Setting a sysctl and never checking it held (#151).** The playbook set
+`net.ipv4.ip_forward=1` and the estate advertised a subnet route it could not
+serve. Only Tailscale's own health output knew. The value now goes to a
+playbook-owned file under `/etc/sysctl.d/` rather than the shared
+`/etc/sysctl.conf`, and - the part that actually closes it - the playbook reads
+`/proc/sys/net/ipv4/ip_forward` afterwards and fails if it is not 1. Which file
+wins stops being a question worth reasoning about once the answer is checked.
+
+**A converge minted a route-approving key nothing would read (#138).** The
+hypervisor's tailnet key expires in an hour, which is what makes a leak
+survivable; the consequence was that every untargeted apply saw it as gone and
+replaced it. A converge never runs the hypervisor phase, so every converge
+created a reusable, pre-authorized, `tag:homelab-router` key and dropped it.
+It is conditional now - `count` driven by a variable only the Overlay phase
+sets - so it exists across the window that needs it and the next untargeted
+apply **revokes** it. Revoked is a state Tailscale enforces; expired is one it
+merely records. Lengthening the expiry would also have stopped the churn, by
+trading away the property that made the leak survivable, which is the wrong
+direction.
+
+**The Health phase never asked etcd anything (#137).** The three-to-five
+scale-up passed every check it has while nothing asked whether the two new
+members voted. Three to five moves quorum from 2-of-3 to 3-of-5, which is a
+gain in fault tolerance only if all five are healthy voting members - two that
+are registered and unwell leave three good members against a quorum of three,
+so the next single failure loses quorum permanently. A cluster _less_
+fault-tolerant than the one it replaced, reported as a successful scale-up.
+
+The converge had no way to ask: `talosctl` was pinned in `versions.env` and
+installed on a workstation, and the runner image carried op, tofu, age, rclone,
+kubectl and jq. It carries talosctl now, from the same pin.
+
+Two things worth keeping from writing the check. `talosctl etcd members` has no
+structured output mode, so the table is the interface - and the first parser
+counted whitespace-separated fields, which puts `LEARNER` at index 7 in a
+header containing `PEER URLS` and `CLIENT URLS` and at index 5 in every row. It
+matched nothing and reported "a header and no members" against perfectly good
+output: a check that fails a healthy cluster, which is a worse defect than the
+one it was written to fix. It parses by header offset now. And a missing
+`LEARNER` column is refused rather than read as "no learners", because not
+knowing and nothing being wrong must not look the same.
+
+**`main` stops being wrong after a failed converge (#130).** Branch protection
+cannot fix this - required checks run before a merge and the converge runs
+after it - so the answer is not to prevent the merge but to stop `main` being
+wrong afterwards. The contractor already knew which case it was in and exits 2
+when the estate is provably untouched and 1 when something was written or it
+could not tell. That verdict is now recorded per site and read by a separate
+`aftermath` job: exit 2 everywhere opens a revert as a pull request, anything
+else opens a P1 issue and reverts nothing.
+
+The asymmetry is the point. A blind revert is a machine that destroys
+infrastructure in response to a flaky failure: fail while creating the fourth
+of five machines and reality is four, so reverting the config to three makes
+`main` wrong in the other direction and the next converge plans a destroy. A
+missing verdict counts as "not known" for the same reason.
+
+The job is separate and GitHub-hosted deliberately. The converge job holds the
+vault token and reaches real infrastructure; it stays at `contents: read`. The
+job that can write a branch cannot reach the estate.
+
+**A change can merge with no plan, and now says so (#156).** Making `Plan
+site0` required would deadlock this estate: the runner is a pod inside the
+cluster, so no plan can be produced precisely when the pull request rebuilding
+it needs to merge. That is the same circularity epoch 01 is built around,
+applied to the gate rather than the tooling. So this is visibility - a comment
+when the plan job ended as anything other than success - because an absent
+comment currently looks identical to a change nobody thought needed one.
+
+**One more, found by the guard rather than by looking.** `intendedWorkflow` in
+`tests/go/repo/patches_test.go` built its scratch tree from the single workflow
+being asked about, so a patch touching two workflows failed with "No such file
+or directory" for the other and was reported as stale. The patch was fine; the
+helper was incomplete. A helper that blames the thing it is checking is worse
+than no helper.
