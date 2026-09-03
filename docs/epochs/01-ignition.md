@@ -2935,3 +2935,56 @@ mechanism that reports on itself rather than on the world. The `#151`
 assertion added in the same change reads `/proc` for exactly this reason and
 passed correctly on this run. The IPv6 tasks beside it were still trusting a
 module's opinion of its own file.
+
+### The workstation took a door into a sealed room
+
+Three ignition attempts halted at Verify on an unreachable SDN gateway, with
+the SDN provably fine: `vnetint` UP with the gateway address, and the
+playbook's own check confirming the gateway answered on the hypervisor itself.
+
+The cause was `--accept-routes` on the workstation, added with this reasoning:
+
+> so the node subnet is reachable over the overlay rather than only from the
+> hypervisor's own LAN
+
+**That premise is false.** The node subnet lives in an EVPN VRF - a separate
+routing table - and it has no route back to the tailnet. Three measurements,
+each one settling a hypothesis the previous one had failed to:
+
+    ip route get 10.10.10.1 from <workstation> iif tailscale0
+      -> dev vrf_internal        not "local ... dev lo": handed into the VRF,
+                                 never offered to the local table at 32765
+
+    ping -I 10.10.10.1 <workstation tailnet address>
+      -> bind: Cannot assign requested address
+                                 the address cannot be a source outside the VRF
+
+    ip vrf exec vrf_internal ping -I 10.10.10.1 <workstation tailnet address>
+      -> binds, 0 received       inside the VRF there is no route to the tailnet
+
+So traffic sent over the overlay arrives at the hypervisor, is handed into the
+VRF, and nothing comes back. The advertised route is a door into a sealed room.
+
+Accepting it did not add a path, it **replaced** the working one. tailscaled's
+table is consulted at rule 5270, ahead of the main table at 32766, so the
+overlay route won over the LAN route this workstation already had by sitting on
+`vmbr0`. Turning `--accept-routes` off restored a 0.1ms LAN path immediately -
+the workstation is a VM on the hypervisor's own bridge, so the door was next
+door the whole time.
+
+The record already contained the right instinct, one section away, and nobody
+joined it up: "Running the button from a machine on the hypervisor's own LAN
+removes that dependency and leaves the overlay network for remote access, which
+is what it is actually for."
+
+**Three wrong diagnoses preceded the right one**, and the pattern in them is
+worth more than the answer. Each was reasoning from what the code implied
+rather than from what the machine reported: that a queued CI run was harmless
+because its steps were gated; that a `tailscaled` restart had caused it; that
+the devbox had never accepted the route. The three commands above took a minute
+and settled what an hour of inference had not. When the question is "what is
+the network doing", ask the network.
+
+The workstation still joins the tailnet. That is what makes the hypervisor's
+API reachable when the LAN is not, and a direct peer address is not a subnet
+route, so none of the above applies to it.
