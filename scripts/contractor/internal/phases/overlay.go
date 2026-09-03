@@ -55,7 +55,12 @@ func Overlay(ctx *run.Context) error {
 }
 
 // overlayKeyAddress is the one resource this phase owns.
-const overlayKeyAddress = "tailscale_tailnet_key.hypervisor"
+//
+// Indexed, because the resource is now conditional on var.overlay_key_wanted -
+// see the variable for why. `count` produces an indexed address even at
+// count = 1, and -target/-replace both need the instance rather than the
+// resource.
+const overlayKeyAddress = "tailscale_tailnet_key.hypervisor[0]"
 
 // overlayApplyArgs builds the apply. Split out from the phase so the decision
 // that matters - whether to ask for a replacement - is testable without a
@@ -69,7 +74,14 @@ const overlayKeyAddress = "tailscale_tailnet_key.hypervisor"
 // attribute it touches, and this resource's description is built from the
 // site's name - which is how a vault value reached a public Actions log.
 func overlayApplyArgs(keyInState bool) []string {
-	args := []string{"apply", "-input=false", "-auto-approve", "-json"}
+	// -var is what brings the key into existence at all. It defaults to false
+	// so that every other apply in the run revokes it rather than reconciling
+	// it, which is the whole point of #138: this is the only phase that wants
+	// the key, so it is the only one that asks.
+	args := []string{
+		"apply", "-input=false", "-auto-approve", "-json",
+		"-var", "overlay_key_wanted=true",
+	}
 	if keyInState {
 		args = append(args, "-replace="+overlayKeyAddress)
 	}

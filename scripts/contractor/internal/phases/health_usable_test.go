@@ -151,11 +151,16 @@ func TestNodeVerdictRefusesACordonedNodeEvenWhenReadyAndCounted(t *testing.T) {
 	}
 }
 
-// The phase must actually ask all four questions. Every check shells out to
-// kubectl, so the phase cannot be exercised here - but the list it runs can,
-// and a deleted entry is otherwise three green lines and a smaller file.
+// The phase must actually ask all five questions. Every check shells out to
+// kubectl or talosctl, so the phase cannot be exercised here - but the list it
+// runs can, and a deleted entry is otherwise three green lines and a smaller
+// file.
+//
+// etcd membership was the fifth, and it was added because its absence was
+// invisible: the three-to-five scale-up passed all four of the others while
+// nothing had asked etcd whether the two new members voted (#137).
 func TestHealthAsksEveryQuestionItClaimsTo(t *testing.T) {
-	want := []string{"nodes", "Flux reconciliation", "the state database", "per-node workloads"}
+	want := []string{"nodes", "Flux reconciliation", "the state database", "per-node workloads", "etcd membership"}
 	if len(healthChecks) != len(want) {
 		t.Fatalf("the phase runs %d checks, want %d: %v", len(healthChecks), len(want), want)
 	}

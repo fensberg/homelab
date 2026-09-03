@@ -59,7 +59,7 @@ func Health(ctx *run.Context) error {
 		}
 	}
 
-	run.Ok("cluster is healthy: nodes ready and schedulable, per-node workloads running on every node, Flux reconciled, database at full instance count")
+	run.Ok("cluster is healthy: nodes ready and schedulable, per-node workloads running on every node, Flux reconciled, database at full instance count, every etcd member voting")
 	return nil
 }
 
@@ -82,6 +82,12 @@ var healthChecks = []struct {
 	{"Flux reconciliation", 15 * time.Minute, checkFlux},
 	{"the state database", 15 * time.Minute, checkDatabase},
 	{"per-node workloads", 10 * time.Minute, checkDaemonSets},
+	// Last, and with a short timeout relative to the rest. By the time the
+	// nodes are Ready and Flux has reconciled, etcd has long since settled -
+	// a member that is still a learner minutes later is a defect rather than
+	// a cluster still starting. See health_etcd.go for why this is asked at
+	// all when data.talos_cluster_health already gates the apply.
+	{"etcd membership", 5 * time.Minute, checkEtcd},
 }
 
 // waitFor polls until the check passes or the deadline expires, reporting what

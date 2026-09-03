@@ -58,6 +58,12 @@ locals {
 }
 
 resource "tailscale_tailnet_key" "hypervisor" {
+  # Exists only while something is about to use it. See
+  # var.overlay_key_wanted for why this is conditional rather than
+  # long-lived: an unconditional key was replaced by every untargeted apply,
+  # so a converge minted one nothing would read and dropped it (#138).
+  count = var.overlay_key_wanted ? 1 : 0
+
   reusable      = true  # the playbook is re-run; a single-use key would break that
   ephemeral     = false # the hypervisor is not a throwaway node
   preauthorized = true  # no device-approval step, same no-ClickOps reasoning
@@ -104,8 +110,11 @@ resource "tailscale_tailnet_key" "nodes" {
   expiry = local.overlay_node_key_expiry_seconds
 }
 
+# Null whenever the key does not exist, which is every run except the Overlay
+# phase. `one()` over the count list rather than [0], so an apply that has
+# revoked the key produces an empty output instead of an index error.
 output "overlay_network_auth_key" {
-  value     = tailscale_tailnet_key.hypervisor.key
+  value     = one(tailscale_tailnet_key.hypervisor[*].key)
   sensitive = true
 }
 
@@ -119,5 +128,5 @@ output "overlay_network_auth_key" {
 # local depends on nothing and is never written to state, so `tofu output`
 # cannot find it.
 output "overlay_router_tag" {
-  value = one(tailscale_tailnet_key.hypervisor.tags)
+  value = try(one(one(tailscale_tailnet_key.hypervisor[*].tags)), null)
 }
