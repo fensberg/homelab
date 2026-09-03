@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 12
+floor: 16
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -214,6 +214,229 @@ mutations:
       Sourcing versions.env and then overwriting the value is worse than not
       pinning: the file still claims to be the single declaration while the
       workstation and the runner image quietly install different versions.
+
+  # --- Proved during the epoch-01 close-out ---------------------------------
+
+  - guard: TestTalosctlPinTracksTheClusterVersion
+    file: scripts/versions.env
+    find: "TALOSCTL_VERSION=v1.13.8"
+    replace: "TALOSCTL_VERSION=v1.9.0"
+    mentions: "within one minor of the cluster"
+    why: >
+      talosctl two minors from the cluster is where commands start behaving
+      differently from their documentation - a bad thing to discover while
+      running `talosctl rotate-ca` during an incident.
+
+  - guard: TestPlainGitPushIsRefusedByAHook
+    file: .pre-commit-config.yaml
+    find: "        stages: [pre-push]\n        fail_fast: true"
+    replace: "        stages: [pre-push]\n        fail_fast: false"
+    mentions: "fail_fast"
+    why: >
+      Without it a refused push still pays for the whole Go and OpenTofu corpus
+      before printing the refusal, which was measured rather than assumed and
+      is how a guard gets switched off.
+
+  - guard: TestAWorkstationOnTheHypervisorBridgeDoesNotAcceptRoutes
+    file: workstation/provision.yml
+    find: '--advertise-tags=''{{ overlay_tag }}''"]'
+    replace: '--advertise-tags=''{{ overlay_tag }}'' --accept-routes"]'
+    mentions: "incompatible"
+    why: >
+      The node subnet is in an EVPN VRF with no route back to the tailnet, so
+      accepting the advertised route replaces a working LAN path with one that
+      carries requests and returns nothing. Three ignitions halted at Verify
+      before this was understood.
+
+  - guard: TestNothingIsBuiltOutsideTheToolshed
+    file: taskfile.yml
+    find: "      - go build -C scripts/signedpush -o ../../toolshed/signedpush .\n      - ./toolshed/signedpush -token"
+    replace: "      - go build -C scripts/signedpush -o signedpush .\n      - ./signedpush -token"
+    mentions: "toolshed"
+    why: >
+      One ignore rule per program is one per program to forget, and two were
+      forgotten - a 9.4MB binary reached main and a 3.6MB one sat there
+      unnoticed. Building anywhere else reopens that.
+
+# Guards that cannot be proved by mutation, and why.
+#
+# Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
+# tests/go/repo must appear either as a `guard:` above or here. That is what
+# was missing when six guards were added in one session and none of their
+# proofs was committed - the ledger held only what somebody remembered to put
+# in it, which is the failure mode of the rule it replaced.
+#
+# An entry may name a `test:` or a whole `path:`.
+#
+# The number of `owed: true` entries may not exceed this, and it may only go
+# down. That is what makes the debt bounded rather than a shrug: a new guard
+# cannot be added to the owed list without another one leaving it.
+owed_ceiling: 55
+
+unprovable:
+  # --- cannot be proved by mutation ----------------------------------------
+  #
+  # A check on the checks. Mutating what it reads means mutating another guard,
+  # and requiring THAT to fail is what the other guard's own ledger entry
+  # already does - so an entry here would prove the same thing twice and
+  # break whenever the other one moved.
+  - path: tests/go/repo/change_detector_test.go
+    reason: meta
+  - path: tests/go/repo/coverage_exemptions_test.go
+    reason: meta
+  - path: tests/go/repo/failures_are_reported_test.go
+    reason: meta
+  - path: tests/go/repo/hermetic_tests_test.go
+    reason: meta
+  - path: tests/go/repo/ledger_completeness_test.go
+    reason: meta
+  - path: tests/go/repo/logic_mutations_test.go
+    reason: meta
+  - path: tests/go/repo/mutation_ledger_test.go
+    reason: meta
+  - path: tests/go/repo/preconditions_are_called_test.go
+    reason: meta
+  #
+  # A pure function whose test table already contains the failing case. The
+  # counterexample is the proof, and it is read where the function is rather
+  # than in a ledger a file away.
+  - path: tests/go/repo/duplicates_test.go
+    reason: table
+  - path: tests/go/repo/forkable_test.go
+    reason: table
+  - path: tests/go/repo/vaultcheck_test.go
+    reason: table
+  #
+  # Already a mutation proof in the stronger form: it extracts the task's own
+  # cmd from the playbook and runs it against a stub, so it tests what ships
+  # rather than a copy.
+  - path: tests/go/repo/snat_dedupe_test.go
+    reason: shipped-shell
+  #
+  # Asserts a file's executable bit. There is no text to substitute, and a mode
+  # is not something a find/replace ledger can express.
+  - test: TestTheHookShimsAreExecutable
+    reason: file-mode
+
+  # --- owed: provable, not yet proved --------------------------------------
+  #
+  # Each reads a repository file and a mutation entry could be written for
+  # it. Marked rather than quietly exempted, so the debt is countable and
+  # capped by owed_ceiling above - which may only go down. A new guard
+  # cannot join this list without something else leaving it.
+  #
+  # Tracked as an epoch 06 issue; burning it down is a sitting, not a
+  # sprint, and doing it badly would produce entries that prove nothing.
+  - test: TestAWorkstationWithNoOverlayKeyIsRefused
+    owed: true
+  - test: TestAuditWorkflowCatchesTheWaysInAndIgnoresTheOthers
+    owed: true
+  - test: TestBreakGlassIdentityIsNeverReferencedByOpenTofu
+    owed: true
+  - test: TestBreakGlassIdentityIsNotInTheConfigTemplate
+    owed: true
+  - test: TestBreakGlassIdentityIsReadOnlyByTheRestorePath
+    owed: true
+  - test: TestChartSourcesAreApproved
+    owed: true
+  - test: TestClusterImagesComeFromApprovedRegistriesAndArePinned
+    owed: true
+  - test: TestEveryCheckoutRefusesToPersistCredentials
+    owed: true
+  - test: TestEveryCommitHookIsPinned
+    owed: true
+  - test: TestEveryJobHardensTheRunnerFirst
+    owed: true
+  - test: TestEveryJobIsBounded
+    owed: true
+  - test: TestEveryPhaseHasASourceFileNamedAfterIt
+    owed: true
+  - test: TestEveryPinnedVersionCanActuallyBeExported
+    owed: true
+  - test: TestEverySensitivePathExists
+    owed: true
+  - test: TestEverySensitivePathExplainsItself
+    owed: true
+  - test: TestEveryVaultReferenceInTheTemplateIsWrapped
+    owed: true
+  - test: TestEveryWorkflowDefaultsToAPipefailShell
+    owed: true
+  - test: TestFluxSyncsAnonymously
+    owed: true
+  - test: TestGuardAndSignedpushAgreeOnTheScratchRef
+    owed: true
+  - test: TestIPv6IsDisabledAtTheStack
+    owed: true
+  - test: TestMarkedRepliesReachTheLocalTable
+    owed: true
+  - test: TestNoCompiledBinaryIsTracked
+    owed: true
+  - test: TestNoGitCredentialIsCreatedForFlux
+    owed: true
+  - test: TestNoPullRequestJobReachesTheSelfHostedRunnerUnguarded
+    owed: true
+  - test: TestNoSourceControlTokenInTheConfigTemplate
+    owed: true
+  - test: TestNoWorkflowDeclaresAVersionThatVersionsEnvOwns
+    owed: true
+  - test: TestNothingReadsAValueFromTheHealthGate
+    owed: true
+  - test: TestNothingRunsTofuBeforeAttach
+    owed: true
+  - test: TestOnlyQuietTofuSubcommandsAreStreamed
+    owed: true
+  - test: TestParseSensitivePaths
+    owed: true
+  - test: TestReachableFromPullRequest
+    owed: true
+  - test: TestRunnerImageCannotReceiveASecret
+    owed: true
+  - test: TestRunnerImageCarriesEveryBinaryTheContractorInvokes
+    owed: true
+  - test: TestRunnerManifestsAgreeWithOpenTofu
+    owed: true
+  - test: TestRunnerScaleSetNameMatchesRunsOn
+    owed: true
+  - test: TestRunnerScaleSetPinsItsImageByDigest
+    owed: true
+  - test: TestSensorAndParserAgreeOnEveryPath
+    owed: true
+  - test: TestSensorDoesNotMatchAPathPrefixedElsewhere
+    owed: true
+  - test: TestSensorFileEntryMatchesOnlyItself
+    owed: true
+  - test: TestSensorIsQuietOnAnInnocuousChange
+    owed: true
+  - test: TestSensorTripsOnAGuardedPath
+    owed: true
+  - test: TestSetupConfiguresCommitSigning
+    owed: true
+  - test: TestTheCodeLawsAreCoveredBySensitivePaths
+    owed: true
+  - test: TestTheDigestCoversOnlyTheSensitiveFiles
+    owed: true
+  - test: TestTheHealthGateDependsOnTheMachines
+    owed: true
+  - test: TestTheLabelMechanismIsGone
+    owed: true
+  - test: TestTheRoutingFixIsAppliedPerHostNotPerSite
+    owed: true
+  - test: TestTheToolshedIsIgnored
+    owed: true
+  - test: TestTheTripwireCanRefuse
+    owed: true
+  - test: TestTheTripwireOpensAConversation
+    owed: true
+  - test: TestTheWorkstationDoesNotWearTheRouterTag
+    owed: true
+  - test: TestTheWorkstationIsProvisionedOntoTheOverlay
+    owed: true
+  - test: TestTheWorkstationTagIsDocumentedInThePolicy
+    owed: true
+  - test: TestVersionsAreDeclaredOnceAndSharedByBoth
+    owed: true
+  - test: TestWorkflowEgressIsDeclaredInTheSuppliersList
+    owed: true
 
 # Tests that legitimately read a comment.
 #

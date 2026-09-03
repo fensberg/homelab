@@ -3,7 +3,7 @@
 - **Tier / path:** `management/`
 - **Branch:** `epoch/01-ignition`
 - **PR:** #9 and successors (pre-dates this log; recorded retroactively)
-- **Status:** In progress
+- **Status:** Signed off, 2026-09-03
 
 ## Goal
 
@@ -1477,11 +1477,14 @@ tailnet membership, API token and disk-import account. It does **not** close the
 factory-fresh gap recorded in Deferred below, which waits for a second
 hypervisor, and a successful run should not be written up as though it had.
 
-## Outcome
+## The first attempt at acceptance test 2, and the retraction it produced
 
-**Not yet signed off.** The acceptance test above is the gate. It has now been
-_run_ rather than merely written, and it failed - which is a better position
-than not having run it, because it names the thing in the way.
+Kept as written rather than tidied away, because a hypothesis that was measured
+and disproved is worth as much as one confirmed - and this one was used to
+argue that the epoch could not close at all.
+
+**It failed.** Which was a better position than not having run it, because it
+named the thing in the way.
 
 `control_plane_count` moved from 3 to 5 and was merged (#98). The converge
 fired on the merge, with nobody running anything, which is the half of the test
@@ -1624,10 +1627,79 @@ Only two DaemonSets exist, which is worth writing down because it bounds what
 that check proves. OpenEBS Local PV ships its provisioner as a Deployment, so
 nothing above says a new node can serve a volume.
 
-**Epoch 01 is still not signed off.** This is one of the two acceptance tests.
-"Nothing to three" - a bare hypervisor becoming a three-node cluster from one
-local run - has not been re-proven since, and the factory-fresh gap in Deferred
-below is unchanged.
+This was one of the two acceptance tests. The other is below.
+
+## Acceptance test 1: passed, 2026-09-03
+
+> **Nothing to three.** A bare hypervisor becomes a three-node cluster from one
+> local run of the button.
+
+`./toolshed/contractor break-ground -site site0`, from the workstation, ten
+phases, no manual step in the middle. Three control-plane nodes on Kubernetes
+**1.36.3** and Talos **v1.13.9**, state migrated into cluster Postgres and
+backed up encrypted to object storage, workspace sterilized on the way out.
+
+Checked independently rather than taken from the banner, because the first
+ignition of this project reported success over a two-of-three database:
+
+    NAME              STATUS   ROLES           VERSION   INTERNAL-IP
+    site0-cp-100      Ready    control-plane   v1.36.3   10.10.10.100
+    site0-cp-101      Ready    control-plane   v1.36.3   10.10.10.101
+    site0-cp-102      Ready    control-plane   v1.36.3   10.10.10.102
+
+No pod outside Running. All three Flux Kustomizations and all four HelmReleases
+reconciled. Three PVCs bound on `openebs-hostpath`. Every warning in the events
+stream older than the nodes themselves - scheduling failures from before the
+nodes registered, and Flux controllers' readiness probes during their own
+startup.
+
+**Three attempts, and the first two are the useful part.** Both halted at
+Verify on an unreachable SDN gateway with the SDN provably healthy. The first
+was a queued CI run the survey refused to start beside - correctly, and after I
+had twice called it harmless. The second was a `tailscaled` restart this
+playbook had triggered on a false `changed`, which is recorded above. The third
+was the real one: `--accept-routes` on a workstation sitting on the
+hypervisor's own bridge, sending traffic into a VRF that cannot answer.
+
+Each was found by measuring rather than by reasoning, and each of my three
+preceding diagnoses was wrong. That is the entry worth keeping from this test.
+
+## Outcome
+
+**Signed off, 2026-09-03.** Both acceptance tests pass.
+
+|                           |                                                        |
+| ------------------------- | ------------------------------------------------------ |
+| Nothing to three          | passed 2026-09-03, from a local run, evidence above    |
+| Three to five, by merging | passed 2026-09-02, nobody ran anything, evidence above |
+
+**What exists.** A phased Go entrypoint that renders secrets from 1Password,
+prepares a Proxmox host with an idempotent playbook, provisions a Talos control
+plane, bootstraps Flux, migrates its own state into cluster Postgres, backs that
+state up encrypted to object storage, and wipes the workstation on the way out.
+A converge applies a merged change to the running estate with nobody at a
+terminal. A demolish takes it down. A survey refuses to start beside work that
+would collide with it.
+
+**What is honest about it.** Ignition has still never run against a
+factory-fresh Proxmox host - every run has met a hypervisor that already
+carried the SDN, the tailnet membership, the API token and the disk-import
+account. The playbook is idempotent so those runs pass, but the epoch's promise
+is "install Proxmox, run the button, get a cluster" and what is demonstrated is
+"start from an almost-fresh Proxmox". That gap closes when a second hypervisor
+exists, and it should not be quietly upgraded at sign-off. It is in Deferred
+with that trigger.
+
+**Every epoch-01 issue is closed.** Fifteen were opened against this tier and
+all fifteen are resolved; what remains open carries a later epoch's label and a
+reason on the issue for why it belongs there.
+
+**What this epoch learned about itself**, in one line each, because the
+findings above are long: a status surface that reports on itself rather than
+on the world will lie; a guard nothing requires you to use is a rule, not a
+law; a version pinned where nothing watches it goes five minors stale; and
+three of my four network diagnoses this epoch were wrong until somebody ran a
+command.
 
 ## Deferred
 
