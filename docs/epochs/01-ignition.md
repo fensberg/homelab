@@ -2893,3 +2893,45 @@ being asked about, so a patch touching two workflows failed with "No such file
 or directory" for the other and was reported as stale. The patch was fine; the
 helper was incomplete. A helper that blames the thing it is checking is worse
 than no helper.
+
+### A changed file is not a changed kernel, and the difference bounced the overlay
+
+The first ignition attempt after the defect batch halted at Verify on an
+unreachable SDN gateway. The SDN was fine - `ip -br addr show vnetint` showed
+it UP with the gateway address, and the playbook's own check three tasks
+earlier had confirmed the gateway answered on the host itself. The path over
+the overlay was what had gone.
+
+The cause was the sysctl change made in the same batch. `ansible.posix.sysctl`
+reports `changed` when it writes an entry to `sysctl_file`, whether or not the
+live value moved - and moving these entries to a playbook-owned file under
+`/etc/sysctl.d/` meant the first run on any host wrote three entries into a
+file that did not exist yet. All three reported changed, on a host whose kernel
+was already exactly right.
+
+Two things were keyed off that:
+
+- the report **"IPv6 forwarding was on and has been turned off"**, which was
+  simply untrue, and
+- a **`tailscaled` restart**, which withdrew the advertised subnet route
+  seconds before Verify probed across it with two ICMP packets and no
+  patience.
+
+So the playbook bounced the overlay for no reason and the next phase failed on
+the consequence. The estate was never in a bad state; the run tore down cleanly
+and sterilized, which is the failure path working.
+
+**Two fixes, and the second is the more general one.** The live value is read
+from `/proc` before anything is set, and the report and the restart are keyed
+off that rather than off the module's `changed` - so the file is just where the
+value is persisted, and only a kernel that was actually wrong triggers
+anything. And when a restart genuinely is warranted, the playbook now waits for
+`tailscaled` to report `Running` before finishing, bounded at a minute. That
+sentence already existed in the report's own text - "restart tailscaled ...
+before expecting the overlay network to recover" - and nothing enforced it.
+
+The shape is worth naming, because it is the second time in one batch: a
+mechanism that reports on itself rather than on the world. The `#151`
+assertion added in the same change reads `/proc` for exactly this reason and
+passed correctly on this run. The IPv6 tasks beside it were still trusting a
+module's opinion of its own file.

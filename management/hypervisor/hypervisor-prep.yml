@@ -1063,6 +1063,45 @@
     # Nothing here needs it. The subnets advertised over the overlay network
     # are IPv4 only. If IPv6 subnet routing is ever added, this must become
     # forwarding=1 AND accept_ra=2, not forwarding alone.
+    # Read the kernel before changing it, because the module's `changed` no
+    # longer means what these tasks assumed it meant.
+    #
+    # ansible.posix.sysctl reports changed when it writes the entry to
+    # sysctl_file, whether or not the live value moved. Once these moved to a
+    # playbook-owned file under /etc/sysctl.d/, the first run on any host wrote
+    # three entries into a file that did not exist yet - so all three reported
+    # changed, on a host whose kernel was already exactly right.
+    #
+    # That was not cosmetic. It fired the "IPv6 forwarding was on and has been
+    # turned off" report, which was untrue, and it restarted tailscaled, which
+    # withdrew the advertised subnet route seconds before the Verify phase
+    # probed it. The ignition halted on an unreachable gateway that was
+    # unreachable because this playbook had just bounced the overlay for no
+    # reason.
+    #
+    # So the live value decides, and the file is just where it is persisted.
+    - name: Read the live IPv6 state before changing it
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          fwd=$(cat /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null || echo unknown)
+          off=$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || echo unknown)
+          printf '%s %s' "$fwd" "$off"
+      register: ipv6_before
+      changed_when: false
+      check_mode: false
+      tags: [routing]
+
+    # "unknown" - no /proc entry, so the stack is not there to be wrong -
+    # counts as already correct. Guessing the other way would restart
+    # tailscaled on every run of a host with IPv6 compiled out.
+    - name: Note what the kernel was actually doing
+      ansible.builtin.set_fact:
+        ipv6_forwarding_was_on: "{{ (ipv6_before.stdout.split() | first | default('unknown')) == '1' }}"
+        ipv6_stack_was_enabled: "{{ (ipv6_before.stdout.split() | last | default('unknown')) == '0' }}"
+      tags: [routing]
+
     - name: Ensure IPv6 forwarding is off
       ansible.posix.sysctl:
         name: net.ipv6.conf.all.forwarding
@@ -1071,7 +1110,6 @@
         sysctl_set: true
         state: present
         reload: true
-      register: ipv6_fwd
       tags: [routing]
 
     - name: Report that IPv6 routing was repaired
@@ -1082,7 +1120,7 @@
           is not restored retroactively - restart tailscaled, or wait for the
           next router advertisement, before expecting the overlay network to
           recover.
-      when: ipv6_fwd.changed
+      when: ipv6_forwarding_was_on
       tags: [routing]
 
     # Turn IPv6 off at the stack, not just at the interfaces.
@@ -1130,7 +1168,6 @@
       loop:
         - net.ipv6.conf.all.disable_ipv6
         - net.ipv6.conf.default.disable_ipv6
-      register: ipv6_off
       tags: [routing]
 
     # A running tailscaled does not re-evaluate this on its own: it keeps the
@@ -1176,7 +1213,32 @@
       ansible.builtin.systemd_service:
         name: tailscaled
         state: restarted
-      when: ipv6_off.changed
+      when: ipv6_forwarding_was_on or ipv6_stack_was_enabled
+      tags: [routing]
+
+    # A restart withdraws every advertised route until the daemon is back and
+    # has re-established. The next phase probes the SDN gateway across exactly
+    # that route, with two ICMP packets and no patience, so handing it a
+    # half-settled overlay is handing it a false negative.
+    #
+    # The task above already said so in its own message - "restart tailscaled
+    # ... before expecting the overlay network to recover" - and then nothing
+    # waited. This is that sentence, enforced.
+    #
+    # Bounded at a minute: long enough for a daemon restart, short enough that
+    # a genuinely broken overlay still fails the playbook rather than hanging
+    # it.
+    - name: Wait for the overlay to come back before anything depends on it
+      ansible.builtin.command: tailscale status --json
+      register: overlay_back
+      changed_when: false
+      check_mode: false
+      until: >-
+        overlay_back.rc == 0 and
+        (overlay_back.stdout | from_json).BackendState == "Running"
+      retries: 12
+      delay: 5
+      when: ipv6_forwarding_was_on or ipv6_stack_was_enabled
       tags: [routing]
 
     # Let the host's own marked replies reach the local routing table.
