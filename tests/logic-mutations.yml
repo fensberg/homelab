@@ -1,0 +1,132 @@
+# Law 3: proof that the program's decisions are actually asserted on.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  IF A CHECK POINTED YOU HERE, THE TEST IS THE PROBLEM, NOT THIS FILE.
+#
+#  An entry failing means a decision was changed and every test still passed.
+#  The fix is a test that notices, not a smaller entry here.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Why this exists, given everything else already in place.
+#
+# Coverage proves a line RAN. It proves nothing about whether anything looked
+# at the result. A test that calls a function, ignores what it returns and
+# asserts nothing gives 100% coverage and no protection at all - and none of
+# the other checks here can see it:
+#
+#   the coverage baseline     sees the total, which is unchanged
+#   coverage-exemptions.yml   sees a covered function, which it is
+#   mutations.yml             covers guards over repository files, not Go logic
+#   the change detector       sees a function reachable from non-test code
+#
+# So this asks the only question that distinguishes a test from a decoration:
+# break the decision, and does anything go red?
+#
+# Scoped to the decisions rather than the whole program. Most of
+# scripts/contractor shells out to tofu, ansible and kubectl - that is plumbing,
+# it is mapped to the e2e and integration tiers in coverage-exemptions.yml, and
+# mutating it would prove nothing a real run does not already prove. What is
+# listed here is the logic that was deliberately extracted so it COULD be
+# tested hermetically. This file is what confirms the extraction was worth
+# doing.
+#
+# How it runs: scripts/contractor is copied to a scratch directory, the
+# substitution is applied, and `go test ./...` runs there. The suite must fail,
+# and `must_fail` must be among the tests that failed - because red for the
+# wrong reason is not proof, which is the same rule mutations.yml already
+# carries as `mentions`.
+#
+# Fields:
+#   decision   the function whose logic is being broken, for the reader.
+#   file       path under scripts/contractor.
+#   find       text to replace. Must appear EXACTLY ONCE.
+#   replace    the broken version.
+#   must_fail  the test that has to notice.
+#   why        what goes wrong in the estate if nothing notices.
+
+# The number of entries may not fall below this.
+floor: 8
+
+logic:
+  - decision: judgeEtcd, on the member count
+    file: internal/phases/health_etcd.go
+    find: "case len(members) != want:"
+    replace: "case len(members) > want:"
+    must_fail: TestJudgeEtcdRefusesAShortMemberList
+    why: >
+      Three members against a five-node config would pass. That is the exact
+      scale-up failure this check exists for: quorum moved to 3-of-5 while only
+      three machines vote, so the next single failure loses quorum permanently -
+      and every other signal in the run stays green.
+
+  - decision: judgeEtcd, on learners
+    file: internal/phases/health_etcd.go
+    find: "\t\tif m.Learner {"
+    replace: "\t\tif false {"
+    must_fail: TestJudgeEtcdRefusesALearner
+    why: >
+      A member that joined and does not vote would be reported as healthy. Five
+      members with one learner is four votes against a quorum of three - less
+      fault-tolerant than the three-node cluster it replaced, reported as a
+      successful scale-up.
+
+  - decision: parseEtcdMembers, on a missing LEARNER column
+    file: internal/phases/health_etcd.go
+    find: "\tif learnerAt < 0 {"
+    replace: "\tif false {"
+    must_fail: TestParseEtcdMembersRefusesOutputWithNoLearnerColumn
+    why: >
+      If talosctl ever renames that column, every member would be read as a
+      voter and the check would go green precisely because it had stopped being
+      able to see. Not knowing and nothing being wrong must not look the same.
+
+  - decision: machinesInState, on which resources are control-plane machines
+    file: internal/phases/destroy.go
+    find: "regexp.MustCompile(`^proxmox_virtual_environment_vm"
+    replace: "regexp.MustCompile(`proxmox_virtual_environment_vm"
+    must_fail: TestMachinesInStateIgnoresTheTemplateAndEverythingElse
+    why: >
+      The template is a VM too. Counting it overstates the machine count by one
+      on every estate, in a banner printed immediately before an irreversible
+      teardown.
+
+  - decision: ConfirmDestroy, on the two names matching
+    file: internal/phases/destroy.go
+    find: "\tif confirm != site {"
+    replace: "\tif false {"
+    must_fail: TestConfirmDestroy_MismatchIsRefused
+    why: >
+      -confirm exists to catch an operator who is looking at one site and
+      thinking about another. Accepting a mismatch removes the only guard
+      between a typo and the wrong estate being destroyed.
+
+  - decision: nodeVerdict, on the node count
+    file: internal/phases/health.go
+    find: "\tif len(list.Items) != want {"
+    replace: "\tif len(list.Items) > want {"
+    must_fail: TestNodeVerdictCatchesNodesThatNeverJoined
+    why: >
+      Three Ready nodes would satisfy a five-node config. Health gates Migrate,
+      which is the point of no return, so a short cluster would have its state
+      moved into a database it cannot keep quorum for.
+
+  - decision: overlayApplyArgs, on forcing a replacement
+    file: internal/phases/overlay.go
+    find: "\tif keyInState {"
+    replace: "\tif false {"
+    must_fail: TestOverlayApplyArgs_ForcesReplacementWhenTheKeyIsInState
+    why: >
+      The tailnet key expires in an hour, and an expired key is still a current
+      resource as far as state is concerned. Without -replace the playbook is
+      handed a credential Tailscale has already retired, and the hypervisor
+      never joins the overlay.
+
+  - decision: stateListContains, on whole-address matching
+    file: internal/phases/overlay.go
+    find: "\t\tif strings.TrimSpace(line) == address {"
+    replace: "\t\tif strings.HasPrefix(strings.TrimSpace(line), address) {"
+    must_fail: TestStateListContains
+    why: >
+      A prefix match answers yes for talos_cp when asked about talos_cp[0].
+      Those are different objects, and the answer decides whether a replacement
+      is forced.

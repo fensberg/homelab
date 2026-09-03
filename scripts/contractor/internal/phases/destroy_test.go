@@ -60,3 +60,54 @@ func TestConfirmDestroy_EmptySiteIsRefusedEvenWhenConfirmMatches(t *testing.T) {
 		t.Fatal("expected an error for an empty site name; an empty confirmation must never satisfy the guard")
 	}
 }
+
+// The teardown works from state; the banner used to be built from the rendered
+// config. When the two disagree the banner under-reports, and it under-reports
+// in the reassuring direction at the moment somebody is deciding whether to
+// proceed with something irreversible (#93).
+//
+// Parsing is tested here rather than the printing, because the parsing is the
+// part that can be wrong in a way nobody sees: a pattern that matches nothing
+// reports zero machines, which reads exactly like an estate that is already
+// gone.
+func TestMachinesInStateReadsTheControlPlaneInstances(t *testing.T) {
+	const out = `data.talos_cluster_health.this
+proxmox_virtual_environment_download_file.talos_image["node0"]
+proxmox_virtual_environment_vm.talos_template["node0"]
+proxmox_virtual_environment_vm.talos_cp["node2"]
+proxmox_virtual_environment_vm.talos_cp["node0"]
+proxmox_virtual_environment_vm.talos_cp["node1"]
+talos_machine_secrets.this
+tailscale_tailnet_key.hypervisor`
+
+	got := machinesInState(out)
+	want := []string{"node0", "node1", "node2"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v (sorted)", got, want)
+		}
+	}
+}
+
+// The template is a VM too, and counting it would overstate by one on every
+// estate. Overstating is the safer direction but it is still wrong, and a
+// banner nobody trusts is a banner nobody reads.
+func TestMachinesInStateIgnoresTheTemplateAndEverythingElse(t *testing.T) {
+	const out = `proxmox_virtual_environment_vm.talos_template["node0"]
+proxmox_virtual_environment_file.cloud_init["node0"]
+module.something.proxmox_virtual_environment_vm.talos_cp["node9"]`
+
+	if got := machinesInState(out); len(got) != 0 {
+		t.Errorf("got %v, want none - the template, an unrelated resource and a "+
+			"module-nested address are all not this cluster's control plane", got)
+	}
+}
+
+func TestMachinesInStateOnEmptyStateReportsNone(t *testing.T) {
+	if got := machinesInState(""); len(got) != 0 {
+		t.Errorf("got %v from empty output, want none", got)
+	}
+}

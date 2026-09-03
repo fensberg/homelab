@@ -13,11 +13,18 @@
     "go: scripts/contractor, the shipped program. tests/go is excluded - it is",
     "test code, and measuring how thoroughly the tests test themselves is a",
     "number with no meaning.",
+    "",
+    "Raised 24.5 -> 34 when epoch 01 closed. It had sat at 24.5 while the",
+    "measured figure was 34.1, which is ten points of slack: a third of the",
+    "coverage could have disappeared without the gate saying anything. A floor",
+    "that far below the floor you are standing on is not a ratchet, it is a",
+    "number. Set at 34 rather than 34.1 so ordinary run-to-run wobble does not",
+    "fail a change that added nothing.",
     "js: measured by vitest over any application code. There is none yet, so",
     "the floor is 0 until there is."
   ],
   "baselines": {
-    "go": 24.5,
+    "go": 34,
     "js": 0
   }
 }

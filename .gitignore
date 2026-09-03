@@ -65,23 +65,29 @@ state-backup.key
 # Points at a real hypervisor; not for git
 workstation/inventory.yml
 
-# The contractor binary. taskfile.yml builds it here on purpose rather than using
-# `go run`, whose wrapper process has no signal handler of its own - see the
-# comment at the top of taskfile.yml.
-scripts/contractor/contractor
 
 # Same, for the signed-push tool.
-scripts/signedpush/signedpush
 
 # Same, for the pre-push guard that refuses an unsigned push.
-scripts/pushguard/pushguard
 
-# Same, for the overlay reachability survey.
-scripts/survey/survey
+
+
 
 # --- test artefacts ---------------------------------------------------------
 # Coverage output. The committed part of coverage is tests/coverage-baseline.json,
 # which is the floor; the measurements themselves are per-run and disposable.
+# Where every program is built.
+#
+# One directory rather than a binary beside each program's source. The taskfile
+# builds rather than using `go run` on purpose - `go run`'s wrapper swallows
+# SIGINT, which orphaned real infrastructure once - and the cost of that choice
+# used to be one ignore rule per program, individually forgettable. Two were
+# forgotten: the canary never had one, and survey's was added after the binary
+# was already tracked, so it never took effect and a 3.6MB binary sat on main.
+#
+# One line cannot be forgotten for a program nobody thought about.
+toolshed/
+
 scripts/contractor/coverage-go.out
 coverage/
 
@@ -98,3 +104,18 @@ test-results/
 # Written on demand by `task kubeconfig`. A credential, and deliberately
 # transient - the Sterilize phase removes it like everything else here.
 management/cluster/kubeconfig
+
+# Build artifacts from before the toolshed, kept ignored while any branch that
+# predates it is still open.
+#
+# Those branches build in place, so checking one out, building, and returning
+# leaves a binary at a path this file no longer covers - and `git add -A` takes
+# it. That is not hypothetical: it happened within an hour of the rule being
+# written down, and only the pre-push guard stopped a 9.4 MB blob reaching a
+# branch where non_fast_forward means nobody could remove it.
+#
+# Trigger to delete these three lines: every branch predating toolshed/ is
+# merged or closed. Tracked as #167.
+scripts/contractor/contractor
+scripts/signedpush/signedpush
+scripts/survey/survey

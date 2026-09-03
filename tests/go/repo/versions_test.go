@@ -83,3 +83,95 @@ func atoi(t *testing.T, b []byte) int {
 	}
 	return n
 }
+
+// kubectl is a client for a specific Kubernetes version, and the project
+// supports it within one minor of the cluster in either direction. Same shape
+// as the talosctl contract above, same reason: the two numbers live in
+// different files and drift without anything failing.
+//
+// It had drifted, in both directions at once. The cluster ran 1.31.1 pinned
+// inline in talos.tf where nothing watched it, versions.env said 1.34.11, and
+// the workstation installer ignored the pin and fetched whatever upstream
+// called stable - three numbers, no two of them within a minor of each other.
+var (
+	kubectlPin        = regexp.MustCompile(`(?m)^KUBECTL_VERSION=v(\d+)\.(\d+)\.(\d+)`)
+	kubernetesVersion = regexp.MustCompile(`(?m)^\s*kubernetes_version\s*=\s*"(\d+)\.(\d+)\.(\d+)"`)
+)
+
+func TestKubectlPinTracksTheClusterVersion(t *testing.T) {
+	root := repoRoot(t)
+
+	env, err := os.ReadFile(filepath.Join(root, "scripts", "versions.env"))
+	if err != nil {
+		t.Fatalf("reading versions.env: %v", err)
+	}
+	vars, err := os.ReadFile(filepath.Join(root, "management", "cluster", "variables.tf"))
+	if err != nil {
+		t.Fatalf("reading variables.tf: %v", err)
+	}
+
+	cli := kubectlPin.FindSubmatch(env)
+	if cli == nil {
+		t.Fatal(`could not find KUBECTL_VERSION=vX.Y.Z in scripts/versions.env.
+
+If the pin was restructured, this contract needs re-examining rather than
+re-pointing: something still has to keep the client in step with the cluster.`)
+	}
+	cluster := kubernetesVersion.FindSubmatch(vars)
+	if cluster == nil {
+		t.Fatal(`could not find kubernetes_version = "X.Y.Z" in management/cluster/variables.tf.
+
+It was inline in talos.tf once, which is how it went five minors stale without
+anything noticing. It belongs in the locals beside talos_version, because Talos
+decides which Kubernetes versions are installable at all.`)
+	}
+
+	cliMajor, cliMinor := atoi(t, cli[1]), atoi(t, cli[2])
+	clMajor, clMinor := atoi(t, cluster[1]), atoi(t, cluster[2])
+
+	if cliMajor != clMajor {
+		t.Fatalf("kubectl is pinned to v%d.%d but the cluster runs %d.%d - different major versions",
+			cliMajor, cliMinor, clMajor, clMinor)
+	}
+	if diff := cliMinor - clMinor; diff > 1 || diff < -1 {
+		t.Errorf(`kubectl is pinned to v%d.%d.%s but the cluster runs %d.%d.%s.
+
+Kubernetes supports a client within one minor of the API server. Further apart
+and commands start failing or behaving differently from their documentation,
+which is a bad thing to discover while draining a node during an incident.`,
+			cliMajor, cliMinor, cli[3], clMajor, clMinor, cluster[3])
+	}
+}
+
+// The pin is only a pin if the thing installing it reads it.
+//
+// install-dependencies.sh sourced versions.env and then overwrote
+// KUBECTL_VERSION with `curl https://dl.k8s.io/release/stable.txt`, so the
+// workstation installed whatever upstream called stable that day while the
+// runner image honoured the pin. The file whose entire job is making those two
+// agree was the one being ignored, and the test above would have been checking
+// a number nothing used. #178.
+func TestTheInstallerDoesNotOverrideAPinnedVersion(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts", "install-dependencies.sh"))
+	if err != nil {
+		t.Fatalf("reading install-dependencies.sh: %v", err)
+	}
+
+	// A pinned variable being assigned from a command substitution is the
+	// shape of the defect: sourced from versions.env, then replaced.
+	reassign := regexp.MustCompile(`(?m)^\s*([A-Z_]+_VERSION)\s*=\s*"?\$\(`)
+	found := reassign.FindAllSubmatch(body, -1)
+	if len(found) == 0 {
+		return
+	}
+	for _, m := range found {
+		t.Errorf(`install-dependencies.sh assigns %s from a command, overriding the pin
+in versions.env.
+
+Sourcing the pin and then replacing it is worse than not pinning at all: the
+file still claims to be the one place a version is declared, the runner image
+still honours it, and the two quietly install different versions of the same
+tool. Read the pin, or take the version out of versions.env and say why.`,
+			m[1])
+	}
+}

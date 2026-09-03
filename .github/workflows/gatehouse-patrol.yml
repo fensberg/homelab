@@ -1,0 +1,97 @@
+name: "Gatehouse Patrol"
+
+# The gatehouse's third responsibility: the estate, watched from outside it.
+#
+# Renamed from "Estate Canary" alongside the program it runs - scripts/canary
+# became scripts/gatehouse's `patrol` verb, on the reasoning that guarding
+# deliveries, guarding pushes and watching the perimeter are one role wearing
+# three names rather than three separate things. This file kept the old name
+# after that change landed, which is exactly the failure the construction
+# theme exists to catch: a name that no longer describes what runs.
+#
+# "Canary" stays as the word for the PATTERN, because it is a real term of
+# art and renaming it away would obscure rather than clarify - this still is
+# a dead-man's-switch, watched from outside, for the same reason a canary is
+# carried into a mine rather than tested at the entrance. What changed is
+# only which noun names the workflow: gatehouse patrol, not canary.
+#
+# Everything else that reports on this estate runs inside it, and all of it
+# was blind to the failure that actually happened: the estate stopped being
+# able to run jobs at all, and nothing said so for three days. The nightly
+# drift check sat queued from 29 to 31 August without ever failing, because a
+# job that never starts cannot fail - timeout-minutes only counts once a job
+# is running, and a stale queued run is cancelled after about a day with no
+# alarm.
+#
+# So this runs on a GitHub-hosted runner, where the estate cannot starve it.
+# It deliberately holds no credential that reaches the estate: the cluster's
+# API is on the overlay network, and getting to it from here would mean a
+# tailnet key stored outside the estate, which is a worse trade than the
+# blindness it buys.
+
+on:
+  schedule:
+    # Hourly. The threshold for a stuck queue is thirty minutes, so this notices
+    # within the hour - and no more often than that, because a canary that runs
+    # constantly is itself a thing that costs money and makes noise.
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: gatehouse-patrol
+  # Safe to cancel, unlike a converge: this reads and changes nothing, so a
+  # newer answer is strictly better than an older one still in flight.
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  patrol:
+    name: "Gatehouse Patrol"
+    runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours,
+    # which is what GitHub's default timeout allows.
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # scripts/gatehouse has no dependencies, so there is nothing to cache.
+          cache: false
+
+      - name: Ask whether the estate is answering for itself
+        env:
+          # Read-only, and scoped to this repository by GitHub. The canary
+          # needs no estate credential at all, which is the point.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
+          ./toolshed/gatehouse patrol | tee "$GITHUB_STEP_SUMMARY"

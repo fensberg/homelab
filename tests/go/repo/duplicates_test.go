@@ -129,8 +129,30 @@ kind: Secret
 
 // --- the repository is clean ------------------------------------------------
 
+// repoRootEnv redirects every test in this package at a different copy of the
+// repository.
+//
+// It exists for the mutation ledger, which proves each guard fails when the
+// thing it guards is broken. Proving that means running a guard against a
+// deliberately broken repository, and breaking the real working tree to do it
+// is not acceptable - a crashed run would leave the developer's checkout
+// mutated. So the ledger copies the tracked files into a scratch directory,
+// breaks the copy, and points the test binary at it with this.
+//
+// Nothing else sets it, and it is not an escape hatch: pointing a test run at
+// a different tree does not make any assertion weaker, it just makes it about
+// a different tree.
+const repoRootEnv = "HOMELAB_REPO_ROOT"
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
+	if override := os.Getenv(repoRootEnv); override != "" {
+		if _, err := os.Stat(filepath.Join(override, "CLAUDE.md")); err != nil {
+			t.Fatalf("%s is set to %s, which does not look like the repository: %v",
+				repoRootEnv, override, err)
+		}
+		return override
+	}
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("could not determine this source file's location")

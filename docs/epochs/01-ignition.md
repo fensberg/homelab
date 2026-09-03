@@ -3,7 +3,7 @@
 - **Tier / path:** `management/`
 - **Branch:** `epoch/01-ignition`
 - **PR:** #9 and successors (pre-dates this log; recorded retroactively)
-- **Status:** In progress
+- **Status:** Signed off, 2026-09-03
 
 ## Goal
 
@@ -111,7 +111,7 @@ render.
 ### `task start` builds ignite but does not run it
 
 **Chose:** `task start` runs `go build` and then prints the command to run
-`./scripts/contractor/contractor` directly. Every other ignite-invoking task
+`./toolshed/contractor` directly. Every other ignite-invoking task
 (`render-secrets`, `verify`, `configure-hypervisor`, `backup-state`,
 `clean-secrets`) still execs the binary through `task` as normal.
 **Rejected:** the original design, where `task start` ran ignite directly,
@@ -1448,7 +1448,7 @@ deliberately; not something to discover afterwards.
 
 **Step 3 - tear down, directly rather than through the task runner.**
 
-    ./scripts/contractor/contractor demolish -site <site> -confirm <site>
+    ./toolshed/contractor demolish -site <site> -confirm <site>
 
 `-confirm` names the site a second time on purpose. Run it directly because the
 task runner intercepts Ctrl-C without proxying the signal, and an interrupted
@@ -1457,7 +1457,7 @@ teardown is how VMs get orphaned.
 **Step 4 - ignite, also directly, for the same reason.**
 
     task start SITE=<site>
-    ./scripts/contractor/contractor break-ground -site <site>
+    ./toolshed/contractor break-ground -site <site>
 
 `-from <phase>` resumes rather than restarting if a phase fails.
 
@@ -1465,7 +1465,7 @@ teardown is how VMs get orphaned.
 phase gates this internally; check independently that every node is Ready, that
 every Flux Kustomization and HelmRelease has reconciled, and - the check nothing
 had before - that the overlay carries traffic rather than merely showing
-members online. `scripts/survey` on the hypervisor answers the last one.
+members online. `scripts/contractor/internal/survey` on the hypervisor answers the last one.
 
 **Step 6 - the acceptance test.** Everything above is setup. Change
 `control_plane_count` from three to five and **merge it**; two more machines
@@ -1477,11 +1477,14 @@ tailnet membership, API token and disk-import account. It does **not** close the
 factory-fresh gap recorded in Deferred below, which waits for a second
 hypervisor, and a successful run should not be written up as though it had.
 
-## Outcome
+## The first attempt at acceptance test 2, and the retraction it produced
 
-**Not yet signed off.** The acceptance test above is the gate. It has now been
-_run_ rather than merely written, and it failed - which is a better position
-than not having run it, because it names the thing in the way.
+Kept as written rather than tidied away, because a hypothesis that was measured
+and disproved is worth as much as one confirmed - and this one was used to
+argue that the epoch could not close at all.
+
+**It failed.** Which was a better position than not having run it, because it
+named the thing in the way.
 
 `control_plane_count` moved from 3 to 5 and was merged (#98). The converge
 fired on the merge, with nobody running anything, which is the half of the test
@@ -1624,10 +1627,79 @@ Only two DaemonSets exist, which is worth writing down because it bounds what
 that check proves. OpenEBS Local PV ships its provisioner as a Deployment, so
 nothing above says a new node can serve a volume.
 
-**Epoch 01 is still not signed off.** This is one of the two acceptance tests.
-"Nothing to three" - a bare hypervisor becoming a three-node cluster from one
-local run - has not been re-proven since, and the factory-fresh gap in Deferred
-below is unchanged.
+This was one of the two acceptance tests. The other is below.
+
+## Acceptance test 1: passed, 2026-09-03
+
+> **Nothing to three.** A bare hypervisor becomes a three-node cluster from one
+> local run of the button.
+
+`./toolshed/contractor break-ground -site site0`, from the workstation, ten
+phases, no manual step in the middle. Three control-plane nodes on Kubernetes
+**1.36.3** and Talos **v1.13.9**, state migrated into cluster Postgres and
+backed up encrypted to object storage, workspace sterilized on the way out.
+
+Checked independently rather than taken from the banner, because the first
+ignition of this project reported success over a two-of-three database:
+
+    NAME              STATUS   ROLES           VERSION   INTERNAL-IP
+    site0-cp-100      Ready    control-plane   v1.36.3   10.10.10.100
+    site0-cp-101      Ready    control-plane   v1.36.3   10.10.10.101
+    site0-cp-102      Ready    control-plane   v1.36.3   10.10.10.102
+
+No pod outside Running. All three Flux Kustomizations and all four HelmReleases
+reconciled. Three PVCs bound on `openebs-hostpath`. Every warning in the events
+stream older than the nodes themselves - scheduling failures from before the
+nodes registered, and Flux controllers' readiness probes during their own
+startup.
+
+**Three attempts, and the first two are the useful part.** Both halted at
+Verify on an unreachable SDN gateway with the SDN provably healthy. The first
+was a queued CI run the survey refused to start beside - correctly, and after I
+had twice called it harmless. The second was a `tailscaled` restart this
+playbook had triggered on a false `changed`, which is recorded above. The third
+was the real one: `--accept-routes` on a workstation sitting on the
+hypervisor's own bridge, sending traffic into a VRF that cannot answer.
+
+Each was found by measuring rather than by reasoning, and each of my three
+preceding diagnoses was wrong. That is the entry worth keeping from this test.
+
+## Outcome
+
+**Signed off, 2026-09-03.** Both acceptance tests pass.
+
+|                           |                                                        |
+| ------------------------- | ------------------------------------------------------ |
+| Nothing to three          | passed 2026-09-03, from a local run, evidence above    |
+| Three to five, by merging | passed 2026-09-02, nobody ran anything, evidence above |
+
+**What exists.** A phased Go entrypoint that renders secrets from 1Password,
+prepares a Proxmox host with an idempotent playbook, provisions a Talos control
+plane, bootstraps Flux, migrates its own state into cluster Postgres, backs that
+state up encrypted to object storage, and wipes the workstation on the way out.
+A converge applies a merged change to the running estate with nobody at a
+terminal. A demolish takes it down. A survey refuses to start beside work that
+would collide with it.
+
+**What is honest about it.** Ignition has still never run against a
+factory-fresh Proxmox host - every run has met a hypervisor that already
+carried the SDN, the tailnet membership, the API token and the disk-import
+account. The playbook is idempotent so those runs pass, but the epoch's promise
+is "install Proxmox, run the button, get a cluster" and what is demonstrated is
+"start from an almost-fresh Proxmox". That gap closes when a second hypervisor
+exists, and it should not be quietly upgraded at sign-off. It is in Deferred
+with that trigger.
+
+**Every epoch-01 issue is closed.** Fifteen were opened against this tier and
+all fifteen are resolved; what remains open carries a later epoch's label and a
+reason on the issue for why it belongs there.
+
+**What this epoch learned about itself**, in one line each, because the
+findings above are long: a status surface that reports on itself rather than
+on the world will lie; a guard nothing requires you to use is a rule, not a
+law; a version pinned where nothing watches it goes five minors stale; and
+three of my four network diagnoses this epoch were wrong until somebody ran a
+command.
 
 ## Deferred
 
@@ -1654,12 +1726,38 @@ below is unchanged.
   and therefore for moving pull request lanes onto the self-hosted runner at
   all. Cilium or Calico; the choice is its own decision. Trigger: before any
   workload that should not reach the hypervisor runs on this cluster.
-- **Self-hosted Renovate**, to replace or complement Dependabot for the
-  ecosystems it can't cover at all: a Flux `HelmRelease`'s chart version
-  (Longhorn's is a manual bump today) and a digest-pinned container image
-  embedded in a workflow's `container:` block (Semgrep's is too). Trigger:
-  once the cluster is up and running, so it has somewhere to actually run -
-  **fired**: site0 is up, so this is now actionable rather than blocked.
+- **Self-hosted Renovate, replacing Dependabot rather than complementing
+  it.** Dependabot is a stopgap here and should be described as one: it is
+  what the estate uses until Renovate has somewhere to run, not a tool the
+  estate chose. Trigger: once the cluster is up and running - **fired**:
+  site0 is up, so this is actionable rather than blocked. Owned by epoch 06,
+  where it is an acceptance criterion.
+
+  Two things it cannot cover at all, which is why the replacement is needed
+  rather than merely tidier: a Flux `HelmRelease`'s chart version (Longhorn's
+  is a manual bump today) and a digest-pinned container image embedded in a
+  workflow's `container:` block (Semgrep's is too).
+
+  A third cost showed up later and is the one worth recording, because it is
+  the kind that accumulates rather than announcing itself. Dependabot commits
+  through GitHub's API and so never runs this repository's own hooks, which
+  means anything the hooks normalise, it un-normalises. `pnpm-lock.yaml` was
+  the concrete case: prettier and pnpm each rewrite that file in their own
+  style, every human commit hid the disagreement by running prettier last,
+  and Dependabot's pull requests were the only place it was visible - as a
+  1700-line reformat on top of a one-line version bump, red on the Format
+  lane every time until somebody ran `task fix` by hand.
+
+  The fix was a `.prettierignore` entry, which is correct on its own terms
+  (a lockfile's format belongs to the package manager, not to a code
+  formatter) and would still be correct with Renovate in place. But it is
+  also the shape to watch: a tool that cannot run our checks produces
+  exceptions to our checks, and exceptions are cheaper to add than to
+  remove. Renovate self-hosted runs where we can make it run the same hooks
+  a human does, which removes the reason for that whole class of entry.
+  Recorded as a de-bloat driver in
+  [`02-abstraction.md`](02-abstraction.md).
+
 - **A persistent tool-cache on a self-hosted runner**, so pinned binaries
   this repo already downloads-and-verifies fresh every run (tofu,
   kubeconform, the trufflehog CLI) don't repeat that fetch on every job -
@@ -2620,3 +2718,440 @@ for a literal `"apply"` argument - and the call that caused the leak passes
 `args...`, built elsewhere, so the check passed against the unfixed code. It was
 only caught by breaking the fix and watching for red, which is the whole reason
 that step is not optional.
+
+### The gate stood behind the delivery, in the one place nothing else guards
+
+`pre-commit` installs a hook repository - clones it and builds its environment,
+which executes setup code - **before it runs any hook**. So a guard implemented
+as a hook always reports after the download it exists to prevent, however early
+it is ordered and whatever `fail_fast` says. That is why the guard moved to
+`githooks/pre-commit`, which git invokes before pre-commit exists in the
+picture at all.
+
+The CI half was missed. The Format lane's first act was `pre-commit run
+--all-files`, so seven third-party repositories were fetched and their setup
+code executed on the runner before anything could object - and the only thing
+that could have objected was a hook, which by then was too late by
+construction. A pull request adding an unapproved supplier would have run it
+before any check said no.
+
+The lane now runs `security guard-deliveries -before-install` first, which
+answers only the question that can be answered with no cache - is every
+configured repository approved - and refuses before `pipx` is installed.
+
+Two things worth keeping from this. **Ordering was the whole property**, and a
+test asserting the step exists would not have noticed it moving; the committed
+test asserts it comes before everything that fetches or executes. And the guard
+was correct on a workstation and absent in CI for the same reason it was
+written - the reasoning was about one machine, and nobody asked the same
+question about the other.
+
+### The role was named after a department, not a place
+
+`security` was three programs collapsed into one role, and the name came from
+the org chart rather than from the site. It is `gatehouse` now: a place where
+things are checked in and out, which is what the program actually is.
+
+The verbs stayed verb phrases and the program became a noun, which is the
+distinction worth keeping - a gatehouse is somewhere, guarding a delivery is
+something done there. `guard-suppliers` became `guard-deliveries` for the same
+reason: a supplier is a party, a delivery is the thing that turns up at the
+gate and gets refused. The list of who may deliver keeps its name,
+`approved-suppliers.yml`, because that one really is about the parties.
+
+Renaming an established component is normally its own deliberate piece of work
+and never folded into unrelated changes. This one was folded in on purpose: the
+component had not been merged yet, so the cost was a `git mv` and a `sed`
+rather than a rename across the history of a thing people already reference.
+
+The rename missed one file: `.github/workflows/estate-canary.yml` kept its old
+name and job id (`canary:`) through the whole `security` -> `gatehouse` change,
+because the workflow content was updated by patch (the agent cannot write
+`.github/workflows/`) while the file's own identity was not part of that diff -
+nobody was looking at the filename, only at what it invoked. Caught by the
+user, not by anything automated, which is worth saying plainly rather than
+folding into the paragraph above: nothing here checks that a file's name still
+describes what it does after a rename, and this is the second time in one
+epoch that gap has let something through - the `signedpush`/`security`/
+`survey`/`contractor` split had the same shape with build artifacts instead of
+names.
+
+Renamed to `gatehouse-patrol.yml`, job id `patrol`, matching the verb the
+workflow actually invokes. "Canary" stays in the header comment as the name for
+the PATTERN - a dead-man's-switch watched from outside - because it is a real
+term of art and the rule that a theme must never obscure one cuts both ways:
+it protects "converge" and "kubeconfig" from being renamed away, and it
+equally means "canary" should not vanish from the prose just because the noun
+naming the workflow changed underneath it.
+
+### The gate only worked from one directory, and the test said it was fine
+
+The delivery gate reads `.pre-commit-config.yaml` and
+`scripts/approved-suppliers.yml` by relative path. The git hook runs it from
+the repository root, so that worked and nothing recorded that the working
+directory was an input.
+
+CI runs it as `go run -C scripts/gatehouse .` - each program is its own module,
+so there is nothing at the root to resolve a package path against - which puts
+the working directory inside the module. The gate failed with "no such file or
+directory" instead of a verdict, on the pull request that introduced it.
+
+The test written to keep that step wired asserted the step exists and comes
+before anything that downloads. Both were true. Neither says the command can
+run, which is the third time in a week that distinction has cost something. The
+guard now finds the checkout itself and stops caring where it was invoked from,
+and the test for that is in the program's own package, where a counterexample -
+running outside a checkout at all - is an ordinary case.
+
+### GitHub's squash trailer tripped the rule against self-attribution
+
+`no-self-co-authorship` refuses a `Co-Authored-By` trailer naming the model,
+because the harness adds one by default and Claude is the author here rather
+than a co-author.
+
+Squash-merging a pull request whose commits have more than one author makes
+GitHub author the squash as whoever merged and record every other contributor
+as a co-author. So the squash of #163 carried
+`Co-authored-by: fensberg-claude[bot]`, which the rule read as
+self-attribution. It is not: the App is being credited for commits it really
+did write, on a commit it did not author, which is what the trailer is for.
+
+The cost is what makes it worth recording. `non_fast_forward` applies to every
+branch here, so that commit cannot be rewritten by anybody - the rule failed on
+every branch containing it, with no way to fix the commit. A rule that can be
+tripped by something nobody can edit has to be right the first time.
+
+A `[bot]` account is exempt now. That does not reopen what the rule is for: the
+harness's trailer names a user-shaped identity, never a `[bot]` account, and
+the test suite asserts both directions.
+
+### Three answers to "which Kubernetes is this", none of them agreeing
+
+`kubernetes_version` sat inline in `talos.tf` as a bare `"1.31.1"` - no
+comment, no `renovate:` annotation, not in `versions.env`. The line directly
+above it, `talos_version`, carries an essay and a renovate line, which is what
+made the omission look deliberate rather than forgotten.
+
+It was five minors stale. Talos v1.13.9 defaults to Kubernetes 1.36.3 and
+supports six minors back, so 1.31 was the oldest version the platform carrying
+it would install at all, and outside upstream Kubernetes' own patch window
+entirely - confirmed from `constants.go` at the pinned tag rather than assumed.
+
+Two more numbers disagreed with it. `versions.env` said `KUBECTL_VERSION=v1.34.11`,
+and `install-dependencies.sh` sourced that file and then threw the value away:
+
+    KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+
+So the workstation installed whatever upstream called stable that day, the
+runner image honoured the pin, and the cluster ran a third number. kubectl
+supports one minor of skew; no two of the three were within one. The block
+immediately below it is titled `talosctl (pinned)` and always did it correctly,
+which is the tell that this was an oversight rather than a decision. Recorded
+as #178.
+
+**The timing is the part worth keeping.** #97 means a Talos image change cannot
+reach a running estate, and changing a control plane's Kubernetes version is an
+upgrade rather than an apply - epoch 05's work, which does not exist. So the
+only cheap moment to move either number is between a demolish and a
+break-ground. That is exactly the window the Talos v1.13.8 -> v1.13.9 bump used,
+for the same reason, and this one follows it. Igniting on 1.31 would have meant
+the estate carried an out-of-support control plane until epoch 05 was built to
+move it - a cost measured in epochs, incurred to save one line.
+
+Three guards, each verified by reintroducing the defect: kubectl stays within a
+minor of the cluster, `kubernetes_version` has to be findable in the locals
+where versions are read, and no `*_VERSION` in the installer may be reassigned
+from a command substitution after `versions.env` has been sourced. The last one
+is the general form: sourcing a pin and then overwriting it is worse than not
+pinning, because the file still claims to be the single declaration.
+
+### The epoch-01 defect batch, and what each one taught
+
+Seven issues closed together before the ignition acceptance test, on the
+reasoning that a rebuild is the only free moment for anything that cannot reach
+a running estate. What follows is what each cost to find, not what each was -
+the issues carry that.
+
+**The banner read the config; the teardown reads state (#93).** `demolish`
+named three machines while five would have gone, because the banner was built
+from the rendered config and `tofu destroy` works from state. It under-reported
+in the reassuring direction, at the moment somebody decides whether to proceed
+with something irreversible - and config and state disagreeing is not an edge
+case here, it is the situation a teardown is most often reached for. The banner
+now says which source it is from, and the machine list is re-stated from
+`tofu state list` immediately before anything is destroyed. Deliberately
+non-fatal: being wrong about the count is worth reporting, not worth stranding
+an estate mid-teardown for.
+
+**Proxmox appends its own SNAT rule on every apply (#96).** There is no
+iptables task in the playbook - `--snat 1` on the subnet is what installs the
+rule, and applying the SDN configuration again adds another copy. Ten runs, ten
+identical rules. The fix is a task that collapses them to one rather than a
+conditional apply, because the apply has to stay unconditional and a rule set
+that converges is true regardless of which layer appended the copies.
+
+**Setting a sysctl and never checking it held (#151).** The playbook set
+`net.ipv4.ip_forward=1` and the estate advertised a subnet route it could not
+serve. Only Tailscale's own health output knew. The value now goes to a
+playbook-owned file under `/etc/sysctl.d/` rather than the shared
+`/etc/sysctl.conf`, and - the part that actually closes it - the playbook reads
+`/proc/sys/net/ipv4/ip_forward` afterwards and fails if it is not 1. Which file
+wins stops being a question worth reasoning about once the answer is checked.
+
+**A converge minted a route-approving key nothing would read (#138).** The
+hypervisor's tailnet key expires in an hour, which is what makes a leak
+survivable; the consequence was that every untargeted apply saw it as gone and
+replaced it. A converge never runs the hypervisor phase, so every converge
+created a reusable, pre-authorized, `tag:homelab-router` key and dropped it.
+It is conditional now - `count` driven by a variable only the Overlay phase
+sets - so it exists across the window that needs it and the next untargeted
+apply **revokes** it. Revoked is a state Tailscale enforces; expired is one it
+merely records. Lengthening the expiry would also have stopped the churn, by
+trading away the property that made the leak survivable, which is the wrong
+direction.
+
+**The Health phase never asked etcd anything (#137).** The three-to-five
+scale-up passed every check it has while nothing asked whether the two new
+members voted. Three to five moves quorum from 2-of-3 to 3-of-5, which is a
+gain in fault tolerance only if all five are healthy voting members - two that
+are registered and unwell leave three good members against a quorum of three,
+so the next single failure loses quorum permanently. A cluster _less_
+fault-tolerant than the one it replaced, reported as a successful scale-up.
+
+The converge had no way to ask: `talosctl` was pinned in `versions.env` and
+installed on a workstation, and the runner image carried op, tofu, age, rclone,
+kubectl and jq. It carries talosctl now, from the same pin.
+
+Two things worth keeping from writing the check. `talosctl etcd members` has no
+structured output mode, so the table is the interface - and the first parser
+counted whitespace-separated fields, which puts `LEARNER` at index 7 in a
+header containing `PEER URLS` and `CLIENT URLS` and at index 5 in every row. It
+matched nothing and reported "a header and no members" against perfectly good
+output: a check that fails a healthy cluster, which is a worse defect than the
+one it was written to fix. It parses by header offset now. And a missing
+`LEARNER` column is refused rather than read as "no learners", because not
+knowing and nothing being wrong must not look the same.
+
+**`main` stops being wrong after a failed converge (#130).** Branch protection
+cannot fix this - required checks run before a merge and the converge runs
+after it - so the answer is not to prevent the merge but to stop `main` being
+wrong afterwards. The contractor already knew which case it was in and exits 2
+when the estate is provably untouched and 1 when something was written or it
+could not tell. That verdict is now recorded per site and read by a separate
+`aftermath` job: exit 2 everywhere opens a revert as a pull request, anything
+else opens a P1 issue and reverts nothing.
+
+The asymmetry is the point. A blind revert is a machine that destroys
+infrastructure in response to a flaky failure: fail while creating the fourth
+of five machines and reality is four, so reverting the config to three makes
+`main` wrong in the other direction and the next converge plans a destroy. A
+missing verdict counts as "not known" for the same reason.
+
+The job is separate and GitHub-hosted deliberately. The converge job holds the
+vault token and reaches real infrastructure; it stays at `contents: read`. The
+job that can write a branch cannot reach the estate.
+
+**A change can merge with no plan, and now says so (#156).** Making `Plan
+site0` required would deadlock this estate: the runner is a pod inside the
+cluster, so no plan can be produced precisely when the pull request rebuilding
+it needs to merge. That is the same circularity epoch 01 is built around,
+applied to the gate rather than the tooling. So this is visibility - a comment
+when the plan job ended as anything other than success - because an absent
+comment currently looks identical to a change nobody thought needed one.
+
+**One more, found by the guard rather than by looking.** `intendedWorkflow` in
+`tests/go/repo/patches_test.go` built its scratch tree from the single workflow
+being asked about, so a patch touching two workflows failed with "No such file
+or directory" for the other and was reported as stale. The patch was fine; the
+helper was incomplete. A helper that blames the thing it is checking is worse
+than no helper.
+
+### A changed file is not a changed kernel, and the difference bounced the overlay
+
+The first ignition attempt after the defect batch halted at Verify on an
+unreachable SDN gateway. The SDN was fine - `ip -br addr show vnetint` showed
+it UP with the gateway address, and the playbook's own check three tasks
+earlier had confirmed the gateway answered on the host itself. The path over
+the overlay was what had gone.
+
+The cause was the sysctl change made in the same batch. `ansible.posix.sysctl`
+reports `changed` when it writes an entry to `sysctl_file`, whether or not the
+live value moved - and moving these entries to a playbook-owned file under
+`/etc/sysctl.d/` meant the first run on any host wrote three entries into a
+file that did not exist yet. All three reported changed, on a host whose kernel
+was already exactly right.
+
+Two things were keyed off that:
+
+- the report **"IPv6 forwarding was on and has been turned off"**, which was
+  simply untrue, and
+- a **`tailscaled` restart**, which withdrew the advertised subnet route
+  seconds before Verify probed across it with two ICMP packets and no
+  patience.
+
+So the playbook bounced the overlay for no reason and the next phase failed on
+the consequence. The estate was never in a bad state; the run tore down cleanly
+and sterilized, which is the failure path working.
+
+**Two fixes, and the second is the more general one.** The live value is read
+from `/proc` before anything is set, and the report and the restart are keyed
+off that rather than off the module's `changed` - so the file is just where the
+value is persisted, and only a kernel that was actually wrong triggers
+anything. And when a restart genuinely is warranted, the playbook now waits for
+`tailscaled` to report `Running` before finishing, bounded at a minute. That
+sentence already existed in the report's own text - "restart tailscaled ...
+before expecting the overlay network to recover" - and nothing enforced it.
+
+The shape is worth naming, because it is the second time in one batch: a
+mechanism that reports on itself rather than on the world. The `#151`
+assertion added in the same change reads `/proc` for exactly this reason and
+passed correctly on this run. The IPv6 tasks beside it were still trusting a
+module's opinion of its own file.
+
+### Three laws, and what each one can see that the others cannot
+
+Asked how to stop "stupid tests", the honest starting point was that the
+existing checks were all sound and still left a hole. Each catches a specific
+shape - a helper tested while its wiring is deleted, an assertion satisfied by
+prose, a test reading machine state - and nothing asked whether a new test had
+been examined at all. That is how six guards went in unproven.
+
+**Law 1, `tests/coverage-exemptions.yml`.** Every uncovered function is
+declared, per file, with the count exact rather than a ceiling, and naming the
+tier that reaches it. The coverage baseline is one number over a growing
+program: it catches a collapse and misses drift, which is how it came to sit at
+24.5 while the real figure was 34.1.
+
+**Law 2, ledger completeness.** Every guard in `tests/go/repo` is either proved
+by `tests/mutations.yml` or declared unprovable with a reason. The ledger
+worked and was useless, because nothing required anything to be in it.
+
+**Law 3, `tests/logic-mutations.yml`.** Break a decision in the shipped
+program; something must go red, and it must be the named test.
+
+The third is the one that is not redundant, and the reason is worth stating
+precisely. **Coverage proves a line ran. It proves nothing about whether
+anything looked at the result.** A test that calls a function, ignores what it
+returns and asserts nothing gives full coverage and no protection, and every
+other check here is blind to it: the baseline sees an unchanged total, the
+exemptions file sees a covered function - which it is - the repository-file
+ledger covers guards over files rather than Go logic, and the change detector
+sees a function reachable from non-test code.
+
+Demonstrated rather than argued. `TestJudgeEtcdRefusesALearner` was replaced
+with a version that parses the members, calls `judgeEtcd`, and asserts nothing:
+
+    _ = judgeEtcd(members, 5)
+
+It passes on its own. Coverage is unchanged, so Law 1 is satisfied. Law 3
+fails, naming the decision and what breaks in the estate if nothing notices -
+a member that joined and does not vote, reported as a successful scale-up.
+
+Two things deliberately left out as redundant. Per-line or per-diff coverage is
+finer than Law 1 but has the same blind spot at higher resolution: it still
+only proves execution. And "every test must contain an assertion" is real but
+near-zero yield, because a test with no assertion survives every mutation and
+Law 3 already catches it.
+
+Scoped to the decisions rather than the whole program. Most of
+`scripts/contractor` shells out to tofu, ansible and kubectl - plumbing, mapped
+to the e2e and integration tiers by Law 1, and mutating it would prove nothing
+a real run does not. What Law 3 covers is the logic that was extracted so it
+_could_ be tested hermetically, which makes it the check that confirms the
+extraction was worth doing.
+
+### The audit: proofs that lived in a terminal, and a floor ten points low
+
+Asked at the end of the epoch whether the work had actually been test-first,
+the honest answer was no. Code first, every time. Three specific findings, and
+the second is the one worth keeping.
+
+**Where writing the test second cost something.** The `talosctl etcd members`
+parser was written counting whitespace-separated fields, which cannot work
+against a header containing `PEER URLS` and `CLIENT URLS`. The test caught it
+on the first run, so nothing shipped - but written from the real output shape
+first, that parser would never have existed at all. The cost was an iteration
+rather than a defect, which is the cheap end of this and not an argument that
+the ordering does not matter.
+
+**The mutation ledger was built in this epoch to stop proofs being lost, and
+then six were lost.** Six guards were verified by hand - written, then the
+thing they guard broken, the failure read, the break undone - and none of those
+proofs was committed. The ledger had seven entries and not one of them came
+from the session that built it. Five have been added retroactively; the sixth
+arrives with the branch that carries its guard.
+
+The lesson is not "remember to add ledger entries". It is that a mechanism
+which depends on the person who built it remembering to use it has the same
+failure mode as the rule it replaced. Recorded as such rather than as an
+oversight.
+
+**The SNAT dedupe had no committed test at all.** Its logic was proved against
+a stub `iptables` in a scratch directory - ten rules to one, idempotent on
+re-run, unrelated rules untouched - and thrown away. It now runs the task's own
+`cmd`, extracted from the playbook rather than copied, so a test that passes
+against a copy while the playbook ships something else is not possible.
+
+**The coverage floor was ten points below the measured figure**, 24.5 against
+34.1. A third of the coverage could have gone without the gate saying anything.
+Raised to 34. A floor that far below the floor you are standing on is not a
+ratchet, it is a number.
+
+**What none of this enforces is ordering.** Nothing observable distinguishes a
+test written before its code from one written after, once both are in the same
+commit. What is enforceable is that code arrives covered, or arrives with a
+declared reason why it cannot be - which is the property that actually prevents
+a regression, and the one the next epoch should make law rather than habit.
+
+### The workstation took a door into a sealed room
+
+Three ignition attempts halted at Verify on an unreachable SDN gateway, with
+the SDN provably fine: `vnetint` UP with the gateway address, and the
+playbook's own check confirming the gateway answered on the hypervisor itself.
+
+The cause was `--accept-routes` on the workstation, added with this reasoning:
+
+> so the node subnet is reachable over the overlay rather than only from the
+> hypervisor's own LAN
+
+**That premise is false.** The node subnet lives in an EVPN VRF - a separate
+routing table - and it has no route back to the tailnet. Three measurements,
+each one settling a hypothesis the previous one had failed to:
+
+    ip route get 10.10.10.1 from <workstation> iif tailscale0
+      -> dev vrf_internal        not "local ... dev lo": handed into the VRF,
+                                 never offered to the local table at 32765
+
+    ping -I 10.10.10.1 <workstation tailnet address>
+      -> bind: Cannot assign requested address
+                                 the address cannot be a source outside the VRF
+
+    ip vrf exec vrf_internal ping -I 10.10.10.1 <workstation tailnet address>
+      -> binds, 0 received       inside the VRF there is no route to the tailnet
+
+So traffic sent over the overlay arrives at the hypervisor, is handed into the
+VRF, and nothing comes back. The advertised route is a door into a sealed room.
+
+Accepting it did not add a path, it **replaced** the working one. tailscaled's
+table is consulted at rule 5270, ahead of the main table at 32766, so the
+overlay route won over the LAN route this workstation already had by sitting on
+`vmbr0`. Turning `--accept-routes` off restored a 0.1ms LAN path immediately -
+the workstation is a VM on the hypervisor's own bridge, so the door was next
+door the whole time.
+
+The record already contained the right instinct, one section away, and nobody
+joined it up: "Running the button from a machine on the hypervisor's own LAN
+removes that dependency and leaves the overlay network for remote access, which
+is what it is actually for."
+
+**Three wrong diagnoses preceded the right one**, and the pattern in them is
+worth more than the answer. Each was reasoning from what the code implied
+rather than from what the machine reported: that a queued CI run was harmless
+because its steps were gated; that a `tailscaled` restart had caused it; that
+the devbox had never accepted the route. The three commands above took a minute
+and settled what an hour of inference had not. When the question is "what is
+the network doing", ask the network.
+
+The workstation still joins the tailnet. That is what makes the hypervisor's
+API reachable when the LAN is not, and a direct peer address is not a subnet
+route, so none of the above applies to it.

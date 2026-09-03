@@ -1,0 +1,451 @@
+# The mutation ledger: proof that each guard fails when its guard fails.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  IF A CHECK POINTED YOU HERE, EDITING THIS FILE IS ALMOST CERTAINLY WRONG.
+#
+#  An entry failing means one of two things, and neither is fixed here:
+#
+#    the guard no longer catches what it says it catches - fix the guard;
+#    the thing being broken moved or was renamed  - update `find`, not `guard`.
+#
+#  Deleting an entry makes the red go away and takes the proof with it. That
+#  is the exact move this file exists to make visible: `floor` below will
+#  refuse it, and .github/sensitive-paths lists this file, so removing one
+#  opens a review conversation somebody else has to resolve.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Why this exists.
+#
+# A test written in the same commit as the change it guards, from the same
+# mental model, tends to assert that the change is PRESENT rather than that the
+# property HOLDS. It passes forever afterwards whatever the code does. This
+# repository has shipped several: a workflow test that matched the string
+# `go run ./scripts/attestation` and was green for the whole life of a command
+# that could never execute; a teardown test that asserted `-refresh=false` was
+# in an argument list while the property that actually broke - that a destroy
+# sees the real state of the machines - went unasserted.
+#
+# The reliable way to tell the difference is to break the thing and watch the
+# test go red. That was done by hand six times in one evening, and all six
+# proofs were gone the moment the terminal closed - which is the "we do not
+# hoard things locally" rule, broken by the person who wrote it down.
+#
+# So each entry is one of those proofs, committed. The runner
+# (tests/go/repo/mutation_ledger_test.go) copies the tracked files to a scratch
+# directory, checks the guard PASSES there, applies `find` -> `replace`, and
+# requires the guard to FAIL and to say `mentions`. Passing before as well as
+# failing after is what stops a guard that is broken in some other way from
+# counting as proof.
+#
+# Fields:
+#   guard     the test that must fail. Exactly that test, run on its own.
+#   file      repository-relative path to break.
+#   find      text to replace. Must appear EXACTLY ONCE, or the entry is
+#             ambiguous and the runner says so rather than guessing.
+#   replace   what to put there.
+#   create    instead of find/replace: the contents of a file to plant at
+#             `file`, which must not already exist. Some guards have nothing
+#             to say until something is PRESENT - the outstanding-patch check
+#             skips entirely when no patch is outstanding, which is the normal
+#             state - and a substitution cannot reach those, because there is
+#             nothing in the tree to substitute.
+#   mentions  substring the failure output must contain. This is what stops an
+#             entry passing through an unrelated error path - a test that dies
+#             on a nil map is red for the wrong reason, and red for the wrong
+#             reason is not proof of anything.
+#   why       what breaks in the estate if this guard stops working.
+#
+# What this cannot judge, said out loud because a guard whose edges nobody
+# knows is worse than none: Go source. The guards run from a binary compiled
+# once from the real tree, so editing a .go file in the scratch copy changes no
+# behaviour, and an entry doing that would pass or fail for reasons unrelated
+# to what it claims. The runner refuses such an entry rather than letting it
+# look like coverage. Guards over Go behaviour belong in that program's own
+# package tests, beside the code, where a counterexample is an ordinary table
+# entry - which is also where the comment check's own decision is proved, in
+# TestSatisfiedByProseOnlyNamesAPassToFailFlip.
+
+# The number of entries may not fall below this. Raise it when you add one.
+#
+# A ratchet rather than an exact count, because adding an entry should never
+# require editing two places, and removing one should always require a visible,
+# reviewable act rather than a quiet deletion. Same shape as
+# tests/coverage-baseline.json, for the same reason.
+floor: 16
+
+mutations:
+  - guard: TestTheHookShimRunsTheGuardBeforePreCommit
+    file: githooks/pre-commit
+    find: "./toolshed/gatehouse guard-deliveries"
+    replace: "true # the gatehouse used to run here"
+    mentions: "does not run"
+    why: >
+      The shim is the only thing that runs before pre-commit clones and
+      installs seven third-party repositories. Without it the check happens
+      after the code it exists to refuse has already executed, with the vault
+      session's privileges, on the developer's machine.
+
+  - guard: TestTheHookShimFailsOnAFailingGuard
+    file: githooks/pre-commit
+    find: "set -euo pipefail"
+    replace: "set -uo pipefail"
+    mentions: "set -e"
+    why: >
+      Without `set -e` the shim reports a failing guard and lets the commit
+      through anyway. A guard that reports rather than refuses is a log line.
+
+  - guard: TestSetupPointsGitAtTheShims
+    file: scripts/install-dependencies.sh
+    find: "git config core.hooksPath githooks"
+    replace: "true # core.hooksPath"
+    mentions: "point git at githooks"
+    why: >
+      Unset, git uses .git/hooks - which pre-commit owns and overwrites - so
+      the shim becomes a file nothing invokes. Everything above it is then
+      true in the repository and false on the machine.
+
+  - guard: TestEveryTaskAHookInvokesIsInvokable
+    file: taskfile.yml
+    find: "  delivery-guard:\n    desc:"
+    replace: "  delivery-guard:\n    internal: true\n    desc:"
+    mentions: "internal"
+    why: >
+      task refuses to run an internal task from the CLI, so the hook fails
+      with a task error rather than a verdict - a guard broken in the
+      direction of noise, which is the direction that gets guards switched
+      off.
+
+  - guard: TestEveryCommitHookIsAnApprovedSupplier
+    file: .pre-commit-config.yaml
+    find: "repos:"
+    replace: "repos:\n  - repo: https://github.com/example/undeclared\n    rev: v1.0.0\n    hooks:\n      - id: whatever"
+    mentions: "approved-suppliers"
+    why: >
+      This is the static half of the delivery gate - the half CI can answer
+      without cloning anything. If it stops noticing an undeclared repository,
+      an unapproved supplier reaches every developer's machine and the runner.
+
+  - guard: TestEverySupplierGivesAReason
+    file: scripts/approved-suppliers.yml
+    find: "    reason: The operator running the state database."
+    replace: '    reason: ""'
+    mentions: "no reason given"
+    why: >
+      An entry with no reason is the supply chain widened without anybody
+      saying why. The list stops being a decision and becomes a record of
+      whatever was convenient.
+
+  - guard: TestEveryOutstandingPatchStillApplies
+    file: .github/patches/a-patch-that-cannot-apply.patch
+    create: |
+      diff --git a/.github/workflows/codeql.yml b/.github/workflows/codeql.yml
+      index 1111111..2222222 100644
+      --- a/.github/workflows/codeql.yml
+      +++ b/.github/workflows/codeql.yml
+      @@ -1,3 +1,3 @@
+      -name: "A line this workflow has never contained"
+      +name: "Something else"
+       # context that does not exist either
+    mentions: "does not apply to the current tree"
+    why: >
+      A stale patch is indistinguishable from a live one to whoever has to
+      run it, and the person who has to run it is the only one who can - the
+      agent cannot write a workflow at all. Planted rather than substituted
+      because this guard has nothing to say until a patch is outstanding, and
+      the normal state of the repository is that none is.
+
+  # --- Added retroactively -------------------------------------------------
+  #
+  # Every entry below was proved by hand at the time - the guard was written,
+  # the thing it guards was broken, the failure was read, the break was undone
+  # - and none of those proofs was committed. Six guards went in that way in
+  # one session, by the same hand that built this file to stop exactly that.
+  #
+  # They are here now because a proof that lived in a terminal is a claim.
+
+  - guard: TestNoGoCommandResolvesAgainstTheRootlessRepository
+    file: .github/workflows/sensitive-paths.yml
+    find: "go run -C scripts/attestation ."
+    replace: "go run ./scripts/attestation"
+    mentions: "resolves that path from the repository root"
+    why: >
+      There is no module at the repository root, so this form fails with
+      "cannot find main module" every time it runs. It shipped once and the
+      sensitive-path gate failed on its first real pull request with a Go
+      error instead of a verdict.
+
+  - guard: TestEverySystemHookIsSkippedInTheFormatLane
+    file: .github/workflows/pr-validation.yml
+    find: "SKIP: tofu-fmt,go-fmt,delivery-guard"
+    replace: "SKIP: tofu-fmt,go-fmt"
+    mentions: "is not in the Format lane's SKIP list"
+    why: >
+      A system hook runs in the Format lane, which installs pre-commit and
+      nothing else, so it fails on a binary that lane does not have. The whole
+      lane went red on a hook that could never have run in it.
+
+  - guard: TestTheFormatLaneRefusesASupplierBeforeInstallingAnything
+    file: .github/workflows/pr-validation.yml
+    find: "guard-deliveries -before-install"
+    replace: "guard-deliveries"
+    mentions: "does not run the supplier gate before installing"
+    why: >
+      pre-commit installs every hook repository before running any hook, so a
+      guard that is itself a hook reports after the download it exists to
+      prevent. Without this step the runner fetches and executes seven
+      third-party repositories before anything can refuse one.
+
+  - guard: TestKubectlPinTracksTheClusterVersion
+    file: scripts/versions.env
+    find: "KUBECTL_VERSION=v1.36.4"
+    replace: "KUBECTL_VERSION=v1.31.1"
+    mentions: "Kubernetes supports a client within one minor"
+    why: >
+      kubectl supports one minor of skew from the API server. Three numbers
+      disagreed at once here - the cluster, the pin, and what the installer
+      actually fetched - and no two were within one.
+
+  - guard: TestTheInstallerDoesNotOverrideAPinnedVersion
+    file: scripts/install-dependencies.sh
+    find: "\tinfo \"installing kubectl ${KUBECTL_VERSION}\""
+    replace: "\tKUBECTL_VERSION=\"$(curl -fsSL https://dl.k8s.io/release/stable.txt)\"\n\tinfo \"installing kubectl ${KUBECTL_VERSION}\""
+    mentions: "overriding the pin"
+    why: >
+      Sourcing versions.env and then overwriting the value is worse than not
+      pinning: the file still claims to be the single declaration while the
+      workstation and the runner image quietly install different versions.
+
+  # --- Proved during the epoch-01 close-out ---------------------------------
+
+  - guard: TestTalosctlPinTracksTheClusterVersion
+    file: scripts/versions.env
+    find: "TALOSCTL_VERSION=v1.13.8"
+    replace: "TALOSCTL_VERSION=v1.9.0"
+    mentions: "within one minor of the cluster"
+    why: >
+      talosctl two minors from the cluster is where commands start behaving
+      differently from their documentation - a bad thing to discover while
+      running `talosctl rotate-ca` during an incident.
+
+  - guard: TestPlainGitPushIsRefusedByAHook
+    file: .pre-commit-config.yaml
+    find: "        stages: [pre-push]\n        fail_fast: true"
+    replace: "        stages: [pre-push]\n        fail_fast: false"
+    mentions: "fail_fast"
+    why: >
+      Without it a refused push still pays for the whole Go and OpenTofu corpus
+      before printing the refusal, which was measured rather than assumed and
+      is how a guard gets switched off.
+
+  - guard: TestAWorkstationOnTheHypervisorBridgeDoesNotAcceptRoutes
+    file: workstation/provision.yml
+    find: '--advertise-tags=''{{ overlay_tag }}''"]'
+    replace: '--advertise-tags=''{{ overlay_tag }}'' --accept-routes"]'
+    mentions: "incompatible"
+    why: >
+      The node subnet is in an EVPN VRF with no route back to the tailnet, so
+      accepting the advertised route replaces a working LAN path with one that
+      carries requests and returns nothing. Three ignitions halted at Verify
+      before this was understood.
+
+  - guard: TestNothingIsBuiltOutsideTheToolshed
+    file: taskfile.yml
+    find: "      - go build -C scripts/signedpush -o ../../toolshed/signedpush .\n      - ./toolshed/signedpush -token"
+    replace: "      - go build -C scripts/signedpush -o signedpush .\n      - ./signedpush -token"
+    mentions: "toolshed"
+    why: >
+      One ignore rule per program is one per program to forget, and two were
+      forgotten - a 9.4MB binary reached main and a 3.6MB one sat there
+      unnoticed. Building anywhere else reopens that.
+
+# Guards that cannot be proved by mutation, and why.
+#
+# Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
+# tests/go/repo must appear either as a `guard:` above or here. That is what
+# was missing when six guards were added in one session and none of their
+# proofs was committed - the ledger held only what somebody remembered to put
+# in it, which is the failure mode of the rule it replaced.
+#
+# An entry may name a `test:` or a whole `path:`.
+#
+# The number of `owed: true` entries may not exceed this, and it may only go
+# down. That is what makes the debt bounded rather than a shrug: a new guard
+# cannot be added to the owed list without another one leaving it.
+owed_ceiling: 55
+
+unprovable:
+  # --- cannot be proved by mutation ----------------------------------------
+  #
+  # A check on the checks. Mutating what it reads means mutating another guard,
+  # and requiring THAT to fail is what the other guard's own ledger entry
+  # already does - so an entry here would prove the same thing twice and
+  # break whenever the other one moved.
+  - path: tests/go/repo/change_detector_test.go
+    reason: meta
+  - path: tests/go/repo/coverage_exemptions_test.go
+    reason: meta
+  - path: tests/go/repo/failures_are_reported_test.go
+    reason: meta
+  - path: tests/go/repo/hermetic_tests_test.go
+    reason: meta
+  - path: tests/go/repo/ledger_completeness_test.go
+    reason: meta
+  - path: tests/go/repo/logic_mutations_test.go
+    reason: meta
+  - path: tests/go/repo/mutation_ledger_test.go
+    reason: meta
+  - path: tests/go/repo/preconditions_are_called_test.go
+    reason: meta
+  #
+  # A pure function whose test table already contains the failing case. The
+  # counterexample is the proof, and it is read where the function is rather
+  # than in a ledger a file away.
+  - path: tests/go/repo/duplicates_test.go
+    reason: table
+  - path: tests/go/repo/forkable_test.go
+    reason: table
+  - path: tests/go/repo/vaultcheck_test.go
+    reason: table
+  #
+  # Already a mutation proof in the stronger form: it extracts the task's own
+  # cmd from the playbook and runs it against a stub, so it tests what ships
+  # rather than a copy.
+  - path: tests/go/repo/snat_dedupe_test.go
+    reason: shipped-shell
+  #
+  # Asserts a file's executable bit. There is no text to substitute, and a mode
+  # is not something a find/replace ledger can express.
+  - test: TestTheHookShimsAreExecutable
+    reason: file-mode
+
+  # --- owed: provable, not yet proved --------------------------------------
+  #
+  # Each reads a repository file and a mutation entry could be written for
+  # it. Marked rather than quietly exempted, so the debt is countable and
+  # capped by owed_ceiling above - which may only go down. A new guard
+  # cannot join this list without something else leaving it.
+  #
+  # Tracked as an epoch 06 issue; burning it down is a sitting, not a
+  # sprint, and doing it badly would produce entries that prove nothing.
+  - test: TestAWorkstationWithNoOverlayKeyIsRefused
+    owed: true
+  - test: TestAuditWorkflowCatchesTheWaysInAndIgnoresTheOthers
+    owed: true
+  - test: TestBreakGlassIdentityIsNeverReferencedByOpenTofu
+    owed: true
+  - test: TestBreakGlassIdentityIsNotInTheConfigTemplate
+    owed: true
+  - test: TestBreakGlassIdentityIsReadOnlyByTheRestorePath
+    owed: true
+  - test: TestChartSourcesAreApproved
+    owed: true
+  - test: TestClusterImagesComeFromApprovedRegistriesAndArePinned
+    owed: true
+  - test: TestEveryCheckoutRefusesToPersistCredentials
+    owed: true
+  - test: TestEveryCommitHookIsPinned
+    owed: true
+  - test: TestEveryJobHardensTheRunnerFirst
+    owed: true
+  - test: TestEveryJobIsBounded
+    owed: true
+  - test: TestEveryPhaseHasASourceFileNamedAfterIt
+    owed: true
+  - test: TestEveryPinnedVersionCanActuallyBeExported
+    owed: true
+  - test: TestEverySensitivePathExists
+    owed: true
+  - test: TestEverySensitivePathExplainsItself
+    owed: true
+  - test: TestEveryVaultReferenceInTheTemplateIsWrapped
+    owed: true
+  - test: TestEveryWorkflowDefaultsToAPipefailShell
+    owed: true
+  - test: TestFluxSyncsAnonymously
+    owed: true
+  - test: TestGuardAndSignedpushAgreeOnTheScratchRef
+    owed: true
+  - test: TestIPv6IsDisabledAtTheStack
+    owed: true
+  - test: TestMarkedRepliesReachTheLocalTable
+    owed: true
+  - test: TestNoCompiledBinaryIsTracked
+    owed: true
+  - test: TestNoGitCredentialIsCreatedForFlux
+    owed: true
+  - test: TestNoPullRequestJobReachesTheSelfHostedRunnerUnguarded
+    owed: true
+  - test: TestNoSourceControlTokenInTheConfigTemplate
+    owed: true
+  - test: TestNoWorkflowDeclaresAVersionThatVersionsEnvOwns
+    owed: true
+  - test: TestNothingReadsAValueFromTheHealthGate
+    owed: true
+  - test: TestNothingRunsTofuBeforeAttach
+    owed: true
+  - test: TestOnlyQuietTofuSubcommandsAreStreamed
+    owed: true
+  - test: TestParseSensitivePaths
+    owed: true
+  - test: TestReachableFromPullRequest
+    owed: true
+  - test: TestRunnerImageCannotReceiveASecret
+    owed: true
+  - test: TestRunnerImageCarriesEveryBinaryTheContractorInvokes
+    owed: true
+  - test: TestRunnerManifestsAgreeWithOpenTofu
+    owed: true
+  - test: TestRunnerScaleSetNameMatchesRunsOn
+    owed: true
+  - test: TestRunnerScaleSetPinsItsImageByDigest
+    owed: true
+  - test: TestSensorAndParserAgreeOnEveryPath
+    owed: true
+  - test: TestSensorDoesNotMatchAPathPrefixedElsewhere
+    owed: true
+  - test: TestSensorFileEntryMatchesOnlyItself
+    owed: true
+  - test: TestSensorIsQuietOnAnInnocuousChange
+    owed: true
+  - test: TestSensorTripsOnAGuardedPath
+    owed: true
+  - test: TestSetupConfiguresCommitSigning
+    owed: true
+  - test: TestTheCodeLawsAreCoveredBySensitivePaths
+    owed: true
+  - test: TestTheDigestCoversOnlyTheSensitiveFiles
+    owed: true
+  - test: TestTheHealthGateDependsOnTheMachines
+    owed: true
+  - test: TestTheLabelMechanismIsGone
+    owed: true
+  - test: TestTheRoutingFixIsAppliedPerHostNotPerSite
+    owed: true
+  - test: TestTheToolshedIsIgnored
+    owed: true
+  - test: TestTheTripwireCanRefuse
+    owed: true
+  - test: TestTheTripwireOpensAConversation
+    owed: true
+  - test: TestTheWorkstationDoesNotWearTheRouterTag
+    owed: true
+  - test: TestTheWorkstationIsProvisionedOntoTheOverlay
+    owed: true
+  - test: TestTheWorkstationTagIsDocumentedInThePolicy
+    owed: true
+  - test: TestVersionsAreDeclaredOnceAndSharedByBoth
+    owed: true
+  - test: TestWorkflowEgressIsDeclaredInTheSuppliersList
+    owed: true
+
+# Tests that legitimately read a comment.
+#
+# TestNoTestIsSatisfiedByAComment runs the whole package against a copy with
+# every whole-line comment stripped out of the YAML it reads, and requires
+# every test that passed to still pass. A test that flips was being satisfied
+# by prose - which has happened twice here, most recently a tripwire check
+# satisfied by the comment ABOVE the step it was meant to be asserting.
+#
+# An entry here is an exemption, so it costs what an exemption costs: a reason
+# somebody can read later.
+comment_dependent: []

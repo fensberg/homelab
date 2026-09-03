@@ -81,6 +81,26 @@ In scope:
   runners. It runs on pull requests from forks, and moving it to the
   self-hosted runner would put fork-controlled code inside the estate.
 
+- **Retire Dependabot for self-hosted Renovate.** Dependabot is a stopgap,
+  not a choice: it was what the estate could use before it had a cluster to
+  run anything on. That trigger has fired, and the deferral in
+  [`01-ignition.md`](01-ignition.md) records it.
+
+  This is question 2 and question 3 in the same entry. Two dependency-update
+  mechanisms is two to keep in step, and the second one already exists - the
+  cluster, running Flux - so the cheapest new mechanism is the one already
+  running.
+
+  What Dependabot cannot do at all: a Flux `HelmRelease`'s chart version, and
+  a digest-pinned image inside a workflow's `container:` block. Both are
+  manual bumps today. What it does badly, which matters more here because it
+  accumulates: it commits through GitHub's API and so never runs this
+  repository's hooks, so every check a hook normalises becomes an exception
+  written to accommodate a bot. `.prettierignore` exists because of exactly
+  that. Renovate self-hosted runs somewhere we control, which means it can
+  run the same hooks a human does, which means that class of exception stops
+  being needed.
+
 - The workflow lanes, against question 1. Several exist because a tool was
   available rather than because a defect was found.
 - The `docs/` tree, which has grown a document per incident.
@@ -96,6 +116,26 @@ Explicitly out of scope (and which epoch owns it instead):
   confuse when the machinery is annoying.
 - Node lifecycle mechanisms — epoch 05.
 - Observability — epoch 04.
+
+## Acceptance tests
+
+1. **Dependabot is gone**, not merely joined. `.github/dependabot.yml` is
+   deleted, Renovate runs in-cluster, and it has opened and landed at least
+   one update in an ecosystem Dependabot could not reach at all - a
+   `HelmRelease` chart version or a workflow `container:` digest. Both
+   running at once is the state this epoch exists to end, so "Renovate is
+   configured" is not the test; "Dependabot is deleted" is.
+2. **A dependency bump raised by Renovate passes the Format lane without a
+   human running `task fix`.** This is the accumulation half, and it is what
+   distinguishes replacing the tool from re-hosting it: an update that
+   arrives having run the same hooks a human's commit runs needs no
+   exception written to accommodate it.
+3. **Every remaining ignore entry names the condition that removes it** -
+   `.gitignore`, `.prettierignore`, `.github/super-linter.vars`, and
+   `approved-suppliers.yml`'s exemptions. "Never, because a lockfile's format
+   belongs to its package manager" is a passing answer. Silence is not. The
+   audit driving this is in [`02-abstraction.md`](02-abstraction.md); this
+   epoch is where the answer has to exist for all of them.
 
 ## Decisions
 

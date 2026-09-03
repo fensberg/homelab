@@ -85,6 +85,10 @@
 
     sdn_zone: "internal"
     sdn_vnet: "vnetint"
+    # One file this playbook owns, rather than editing the shared
+    # /etc/sysctl.conf. Numbered 99 so it sorts after the fragments
+    # Proxmox ships under the same directory.
+    sysctl_owned_file: "/etc/sysctl.d/99-homelab-routing.conf"
     sdn_controller: "evpnctl"
 
     # EVPN, not simple.
@@ -914,6 +918,47 @@
       run_once: true
       tags: [sdn]
 
+    # Proxmox installs the subnet's SNAT rule itself, from `--snat 1` above,
+    # and does not check whether it is already there - so every apply appends
+    # another identical copy. Ten runs produced ten rules (#96). Traffic is
+    # unaffected because the first match wins, which is why this sat unnoticed;
+    # what it costs is a nat table that grows without bound and is the first
+    # thing read when something network-related is being debugged.
+    #
+    # Collapsed here rather than by making the apply conditional. The apply has
+    # to stay unconditional - it is what commits a pending SDN change, and
+    # skipping it on a run that did change something is a worse failure than an
+    # untidy rule set. Converging the rules to one is also true regardless of
+    # which layer appended them, which a conditional apply would not be.
+    #
+    # Scoped to this subnet by `-s`, so a NAT rule somebody else put on the
+    # hypervisor is not this task's business.
+    - name: Collapse duplicate SNAT rules for the node subnet to one
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          spec=$(iptables -t nat -S POSTROUTING \
+            | grep -F -- "-s {{ sdn_subnet }} " \
+            | grep -F -- "-j SNAT" | head -1 || true)
+          if [ -z "$spec" ]; then
+            echo "removed=0 (no rule present)"
+            exit 0
+          fi
+          removed=0
+          while [ "$(iptables -t nat -S POSTROUTING | grep -F -c -- "$spec")" -gt 1 ]; do
+            # Unquoted on purpose: the spec has to word-split into arguments.
+            # shellcheck disable=SC2086
+            iptables -t nat -D ${spec#-A }
+            removed=$((removed + 1))
+          done
+          echo "removed=$removed"
+      register: sdn_snat_dedupe
+      changed_when: >-
+        'removed=0' not in sdn_snat_dedupe.stdout
+      run_once: true
+      tags: [sdn]
+
     # FRR carries the BGP session that EVPN's control plane runs over. It is
     # not needed by a simple zone, so a host converted from one may never have
     # had it started.
@@ -979,10 +1024,26 @@
     # ========================================================================
     # 7. Subnet routing
     # ========================================================================
+    # Written to a playbook-owned file under /etc/sysctl.d/ rather than to
+    # /etc/sysctl.conf, which is where ansible.posix.sysctl puts things by
+    # default.
+    #
+    # The estate was found advertising 10.<octet>.10.0/24 to the tailnet with
+    # forwarding off - it advertised the route and dropped the traffic, which
+    # looks like a fault at the far end rather than a switch that is off (#151).
+    # This task had run and the value had not held. Proxmox ships its own
+    # fragments under /etc/sysctl.d/, and which file wins between there and
+    # /etc/sysctl.conf is distro- and ordering-dependent enough that it is not
+    # worth reasoning about: a numbered file in the same directory sorts last
+    # and is unambiguous.
+    #
+    # The assertion below is what actually closes this, because it does not
+    # depend on getting the precedence right.
     - name: Enable IPv4 forwarding
       ansible.posix.sysctl:
         name: net.ipv4.ip_forward
         value: "1"
+        sysctl_file: "{{ sysctl_owned_file }}"
         sysctl_set: true
         state: present
         reload: true
@@ -1002,14 +1063,53 @@
     # Nothing here needs it. The subnets advertised over the overlay network
     # are IPv4 only. If IPv6 subnet routing is ever added, this must become
     # forwarding=1 AND accept_ra=2, not forwarding alone.
+    # Read the kernel before changing it, because the module's `changed` no
+    # longer means what these tasks assumed it meant.
+    #
+    # ansible.posix.sysctl reports changed when it writes the entry to
+    # sysctl_file, whether or not the live value moved. Once these moved to a
+    # playbook-owned file under /etc/sysctl.d/, the first run on any host wrote
+    # three entries into a file that did not exist yet - so all three reported
+    # changed, on a host whose kernel was already exactly right.
+    #
+    # That was not cosmetic. It fired the "IPv6 forwarding was on and has been
+    # turned off" report, which was untrue, and it restarted tailscaled, which
+    # withdrew the advertised subnet route seconds before the Verify phase
+    # probed it. The ignition halted on an unreachable gateway that was
+    # unreachable because this playbook had just bounced the overlay for no
+    # reason.
+    #
+    # So the live value decides, and the file is just where it is persisted.
+    - name: Read the live IPv6 state before changing it
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          fwd=$(cat /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null || echo unknown)
+          off=$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || echo unknown)
+          printf '%s %s' "$fwd" "$off"
+      register: ipv6_before
+      changed_when: false
+      check_mode: false
+      tags: [routing]
+
+    # "unknown" - no /proc entry, so the stack is not there to be wrong -
+    # counts as already correct. Guessing the other way would restart
+    # tailscaled on every run of a host with IPv6 compiled out.
+    - name: Note what the kernel was actually doing
+      ansible.builtin.set_fact:
+        ipv6_forwarding_was_on: "{{ (ipv6_before.stdout.split() | first | default('unknown')) == '1' }}"
+        ipv6_stack_was_enabled: "{{ (ipv6_before.stdout.split() | last | default('unknown')) == '0' }}"
+      tags: [routing]
+
     - name: Ensure IPv6 forwarding is off
       ansible.posix.sysctl:
         name: net.ipv6.conf.all.forwarding
+        sysctl_file: "{{ sysctl_owned_file }}"
         value: "0"
         sysctl_set: true
         state: present
         reload: true
-      register: ipv6_fwd
       tags: [routing]
 
     - name: Report that IPv6 routing was repaired
@@ -1020,7 +1120,7 @@
           is not restored retroactively - restart tailscaled, or wait for the
           next router advertisement, before expecting the overlay network to
           recover.
-      when: ipv6_fwd.changed
+      when: ipv6_forwarding_was_on
       tags: [routing]
 
     # Turn IPv6 off at the stack, not just at the interfaces.
@@ -1061,13 +1161,13 @@
       ansible.posix.sysctl:
         name: "{{ item }}"
         value: "1"
+        sysctl_file: "{{ sysctl_owned_file }}"
         sysctl_set: true
         state: present
         reload: true
       loop:
         - net.ipv6.conf.all.disable_ipv6
         - net.ipv6.conf.default.disable_ipv6
-      register: ipv6_off
       tags: [routing]
 
     # A running tailscaled does not re-evaluate this on its own: it keeps the
@@ -1076,11 +1176,69 @@
     # operator to, because the failure it prevents is invisible - the daemon
     # reports "active (running)" and a stale "Connected" status line while
     # being unreachable.
+    # Setting a value and never checking it held is how #151 went unnoticed:
+    # the task ran, reported changed, and the estate advertised a subnet route
+    # it could not serve. Only Tailscale's own health output knew, and nothing
+    # here reads that.
+    #
+    # So the playbook asserts the live kernel value rather than trusting the
+    # write. This is the check that makes the sysctl_file question above stop
+    # mattering - whatever wins, whatever Proxmox ships, whatever a later
+    # reboot re-reads, either forwarding is on when this playbook finishes or
+    # the run fails saying so.
+    #
+    # Read from /proc rather than `sysctl -n`, because that is the value the
+    # kernel is actually routing with.
+    - name: Read the live forwarding state
+      ansible.builtin.slurp:
+        src: /proc/sys/net/ipv4/ip_forward
+      register: live_ip_forward
+      tags: [routing]
+
+    - name: Fail if the host advertises a subnet route it cannot serve
+      ansible.builtin.assert:
+        that: (live_ip_forward.content | b64decode | trim) == "1"
+        fail_msg: >-
+          net.ipv4.ip_forward is {{ live_ip_forward.content | b64decode | trim }}
+          after this playbook set it to 1. This host advertises
+          {{ sdn_subnet }} to the tailnet, so with forwarding off it accepts
+          that traffic and drops it - which presents as a fault at the far end
+          rather than as a switch that is off. Something is overriding
+          {{ sysctl_owned_file }}: check `grep -r ip_forward /etc/sysctl.conf
+          /etc/sysctl.d/` and `sysctl net.ipv4.ip_forward`.
+        success_msg: "IPv4 forwarding is on, so the advertised subnet route can be served"
+      tags: [routing]
+
     - name: Restart tailscaled so it stops preferring an address family that cannot work
       ansible.builtin.systemd_service:
         name: tailscaled
         state: restarted
-      when: ipv6_off.changed
+      when: ipv6_forwarding_was_on or ipv6_stack_was_enabled
+      tags: [routing]
+
+    # A restart withdraws every advertised route until the daemon is back and
+    # has re-established. The next phase probes the SDN gateway across exactly
+    # that route, with two ICMP packets and no patience, so handing it a
+    # half-settled overlay is handing it a false negative.
+    #
+    # The task above already said so in its own message - "restart tailscaled
+    # ... before expecting the overlay network to recover" - and then nothing
+    # waited. This is that sentence, enforced.
+    #
+    # Bounded at a minute: long enough for a daemon restart, short enough that
+    # a genuinely broken overlay still fails the playbook rather than hanging
+    # it.
+    - name: Wait for the overlay to come back before anything depends on it
+      ansible.builtin.command: tailscale status --json
+      register: overlay_back
+      changed_when: false
+      check_mode: false
+      until: >-
+        overlay_back.rc == 0 and
+        (overlay_back.stdout | from_json).BackendState == "Running"
+      retries: 12
+      delay: 5
+      when: ipv6_forwarding_was_on or ipv6_stack_was_enabled
       tags: [routing]
 
     # Let the host's own marked replies reach the local routing table.

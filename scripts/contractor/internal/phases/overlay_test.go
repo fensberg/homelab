@@ -2,6 +2,7 @@ package phases
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +18,7 @@ func TestOverlayApplyArgs_ForcesReplacementWhenTheKeyIsInState(t *testing.T) {
 	got := overlayApplyArgs(true)
 	want := []string{
 		"apply", "-input=false", "-auto-approve", "-json",
+		"-var", "overlay_key_wanted=true",
 		"-replace=" + overlayKeyAddress,
 		"-target=" + overlayKeyAddress,
 	}
@@ -32,6 +34,7 @@ func TestOverlayApplyArgs_OmitsReplaceOnAFirstRun(t *testing.T) {
 	got := overlayApplyArgs(false)
 	want := []string{
 		"apply", "-input=false", "-auto-approve", "-json",
+		"-var", "overlay_key_wanted=true",
 		"-target=" + overlayKeyAddress,
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -51,5 +54,40 @@ func TestStateListContains(t *testing.T) {
 	// and the two are different addresses.
 	if stateListContains(list, "proxmox_virtual_environment_vm.talos_cp") {
 		t.Error("matching must be on the whole address, not a prefix")
+	}
+}
+
+// The Overlay phase is the only thing that should ask for the key to exist.
+//
+// Every other apply in a run leaves var.overlay_key_wanted at its default of
+// false, which is what makes the untargeted apply at the end of the Cluster
+// phase revoke the key rather than reconcile it. Without the flag here the
+// key is never created at all and the playbook gets an empty auth key; with
+// it set anywhere else, the churn #138 describes comes back.
+func TestOverlayIsTheOnlyPhaseThatAsksForTheKey(t *testing.T) {
+	args := overlayApplyArgs(false)
+
+	var asked bool
+	for i, a := range args {
+		if a == "-var" && i+1 < len(args) && args[i+1] == "overlay_key_wanted=true" {
+			asked = true
+		}
+	}
+	if !asked {
+		t.Fatal("the overlay apply does not set overlay_key_wanted=true, so the key " +
+			"is never created and the hypervisor playbook is handed an empty auth key")
+	}
+}
+
+// The address carries an index because the resource is conditional. -target
+// and -replace both need the instance; the bare resource address matches
+// nothing once `count` is present, and tofu treats that as "no changes" rather
+// than as an error - so the phase would report success having minted nothing.
+func TestTheKeyAddressIsAnInstanceAddress(t *testing.T) {
+	if !strings.HasSuffix(overlayKeyAddress, "[0]") {
+		t.Errorf("overlayKeyAddress is %q, which is a resource address rather than an "+
+			"instance address. The key is conditional on var.overlay_key_wanted, so "+
+			"`count` indexes it even at one - and -target against the bare address "+
+			"silently matches nothing.", overlayKeyAddress)
 	}
 }

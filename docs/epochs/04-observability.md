@@ -83,7 +83,7 @@ precisely what the canary already exists to do from outside without holding any
 credential that reaches in. So the division is: peers measure and report, and
 the canary notices when reports stop arriving.
 
-`scripts/survey` is the first increment of this. It runs on a peer, probes
+`scripts/contractor/internal/survey` is the first increment of this. It runs on a peer, probes
 every peer it can see rather than trusting their status, and reports one row of
 the matrix; run on each hypervisor, the rows assemble into the whole. This
 epoch owns making it periodic, making its output land somewhere durable, and

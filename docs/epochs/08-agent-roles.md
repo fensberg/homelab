@@ -56,6 +56,49 @@ In scope, in the order they earn their place:
     and it catches a description that oversells or describes an earlier
     version. Pull request bodies in this repository are long and confident,
     which makes the failure mode plausible rather than theoretical.
+- **The inspector — a conversation per file, not a summary of what tripped.**
+  The sensitive-path gate opens a review conversation anchored to a file in the
+  diff, and today it posts one comment listing which rules fired and which
+  files matched. That listing exists because the comment is anchored to one
+  file and has to account for the others: it is a workaround for having only
+  one place to speak.
+
+  A conversation on each affected file removes the need for it. Anchored to the
+  file, "what triggered this" is self-evident from where the comment is, and
+  the space that the rule listing occupies becomes available for something
+  worth reading.
+
+  That is what makes this epoch's work rather than epoch 01's. The gate can
+  already open a conversation; what it cannot do is say anything a reviewer
+  did not already know. An agent with the diff can say **what changed in this
+  file, why it appears to have changed, and how it could go wrong** - which is
+  the whole purpose of the pause, and is currently supplied by a static
+  sentence written months earlier in `.github/sensitive-paths`.
+
+  Constraints inherited from the mechanism, all of them already established
+  and none of them up for renegotiation here:
+
+  - **A machine may not resolve the conversation.** `scripts/attestation`
+    refuses a resolution by a bot or by the pull request's author, and an
+    agent explaining a change is emphatically not the party who signs it off.
+    The inspector writes; a human resolves.
+  - **The conversation is keyed to a digest of the sensitive part of the
+    diff**, so an acknowledgement cannot outlive what it acknowledged. Per-file
+    conversations mean per-file digests, so changing one file must not
+    invalidate the acknowledgement given for another.
+  - **No trigger fires on a conversation being resolved.**
+    `pull_request_review_thread` is a webhook event that was never ported to
+    workflow triggers, so nothing re-runs a check when somebody resolves a
+    thread. Anything built here must never block on a state only a human
+    action can clear.
+  - **The output is structure, never a value.** A pull request comment on a
+    public repository is world-readable, and the estate keeps hostnames,
+    addresses and credentials out of git deliberately.
+
+  Raised while looking at a real comment on #163: the rule listing is doing the
+  work an anchor should be doing, and the reason it cannot be dropped yet is
+  that nothing else would be there.
+
 - **The record itself**, naming the division and what was rejected.
 
 Explicitly out of scope:
@@ -96,6 +139,44 @@ And a deterministic scanner that is wrong is wrong the same way every time, so
 it can be tuned or exempted; a model is wrong differently on each run, so no
 suppression list is possible and a change in its output cannot be
 distinguished from a change in the code.
+
+### The inspector is a role before it is an identity
+
+The sensitive-path gate has been called the inspector since the naming was
+settled - the party who signs off before work may be covered up. Today it is a
+step inside a workflow, posting as `github-actions[bot]`, and the question
+raised was whether it should become an agent of its own whose only job is to
+seek out sensitive changes and flag them.
+
+**Chose:** keep it a role for now, and record the trigger that would make it an
+identity.
+**Because:** the separation that matters already exists. The party that writes
+the code is `fensberg-claude[bot]`; the party that flags it is
+`github-actions[bot]`; and the party that acknowledges it must be a human,
+which `scripts/attestation` refuses to let any machine do. Three distinct
+parties, enforced rather than agreed. A dedicated App would make that legible
+and let its permissions be scoped to `pull-requests: write` and nothing else -
+which is worth having, and is not worth a second private key and a second
+credential to rotate while the gate has one job and does it.
+
+**The trigger is a second job.** An inspector that only opens attestation
+conversations is a workflow step with a nice name. An inspector that also
+answers "what changed in this diff that a human would want to know about" -
+reading the change rather than matching a path - is a different thing, needs a
+model, needs spend bounded like every other metered vendor, and should carry
+its own identity so its actions are attributable and its permissions are its
+own.
+
+That second job is what this epoch is for. Until it exists, giving the current
+gate an identity is ceremony: it would change who the comment appears to come
+from and nothing else.
+
+**One thing to carry across when it does happen.** The rule the attestation
+enforces is that no machine may close a conversation. An inspector agent must
+be held to it too - the agent that raises a concern must never be able to
+resolve it, or the whole gate becomes one party talking to itself. That is the
+same reasoning that stops Claude approving its own pull requests, applied one
+layer down.
 
 ### The reviewer is reserved for epoch pull requests
 

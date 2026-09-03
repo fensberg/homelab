@@ -204,13 +204,41 @@
                 - [apt-get, update]
                 - [apt-get, install, -y, tailscale]
                 - [systemctl, enable, --now, tailscaled]
-                # --accept-routes so the node subnet is reachable over the
-                # overlay rather than only from the hypervisor's own LAN. The
-                # workstation sits on vmbr0 on purpose (see `bridge` above), so
-                # without this it loses the estate the moment the SDN is
-                # rebuilt - which is exactly when somebody is running the
-                # button and needs to see it.
-                - [sh, -c, "tailscale up --auth-key='{{ overlay_auth_key }}' --advertise-tags='{{ overlay_tag }}' --accept-routes"]
+                # Deliberately NOT --accept-routes.
+                #
+                # It was here, with the reasoning that accepting the estate's
+                # advertised subnet route made the node subnet reachable "over
+                # the overlay rather than only from the hypervisor's own LAN".
+                # That premise is false, and it cost an ignition to find out.
+                #
+                # The node subnet lives in an EVPN VRF. A VRF is a separate
+                # routing table, and this one has no route back to the tailnet
+                # - measured directly: from inside it the hypervisor cannot
+                # reach a tailnet address at all, and a socket cannot even bind
+                # the SDN gateway address unless it is VRF-bound. So traffic
+                # sent over the overlay reaches the hypervisor, is handed into
+                # the VRF, and nothing comes back. The route is a door into a
+                # sealed room.
+                #
+                # Accepting it therefore does not add a path. It REPLACES the
+                # working one: tailscaled's table is consulted at rule 5270,
+                # ahead of the main table at 32766, so the overlay route wins
+                # over the LAN route this workstation already has by sitting on
+                # vmbr0. The Verify phase then halted on an unreachable SDN
+                # gateway for three runs.
+                #
+                # This workstation is on the hypervisor's own bridge on purpose
+                # (see `bridge` above), which is the arrangement the epoch
+                # record already recommends: "Running the button from a machine
+                # on the hypervisor's own LAN removes that dependency and
+                # leaves the overlay network for remote access, which is what
+                # it is actually for."
+                #
+                # It still joins the tailnet - that is what makes the
+                # hypervisor's API reachable if the LAN ever is not, and a
+                # direct peer address is not a subnet route, so none of the
+                # above applies to it.
+                - [sh, -c, "tailscale up --auth-key='{{ overlay_auth_key }}' --advertise-tags='{{ overlay_tag }}'"]
               {% endif %}
 
         - name: Create the virtual machine

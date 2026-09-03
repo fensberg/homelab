@@ -143,11 +143,18 @@ else
 	ok "op installed"
 fi
 
-step "kubectl"
+step "kubectl (pinned)"
 if has kubectl; then
 	skip "kubectl already present ($(kubectl version --client -o yaml 2>/dev/null | grep gitVersion | head -1))"
 else
-	KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+	# KUBECTL_VERSION comes from versions.env, like every other pin.
+	#
+	# This line used to overwrite it with `curl .../stable.txt`, so the
+	# workstation took whatever upstream called stable that day while the
+	# runner image honoured the pin - two clients against one cluster, from
+	# the file whose whole job is stopping exactly that. The talosctl block
+	# directly below was always correct, which is what made it an oversight
+	# rather than a decision. #178.
 	info "installing kubectl ${KUBECTL_VERSION}"
 	curl -fsSL -o "$TMP/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${GOARCH}/kubectl"
 	chmod +x "$TMP/kubectl"
@@ -275,9 +282,31 @@ fi
 # commit` - which is exactly how an unformatted file landed in a real commit
 # on this checkout. This writes .git/hooks/pre-commit so a commit cannot skip
 # it by simply forgetting to run `task fix` first.
-info "wiring pre-commit into git hooks"
-(cd "$(dirname "$0")/.." && pre-commit install)
-ok "pre-commit hook installed"
+# Point git at the versioned shims rather than at pre-commit's own generated
+# hook, and the reason is the ordering of one thing.
+#
+# pre-commit clones a hook repository and installs its environment BEFORE it
+# runs any hook, and installing runs setup code - npm install, pip install, a
+# Go build. So a supplier guard that is itself a pre-commit hook runs after the
+# code it exists to refuse has already executed on this machine.
+#
+# githooks/pre-commit is what git invokes. Nothing third-party has run at that
+# point. It runs the guard, and only reaches pre-commit if the guard passes.
+#
+# Versioned rather than written into .git/hooks: a hook that lives only there
+# is a hook nobody can review, and `pre-commit install` would overwrite it.
+info "wiring the git hooks"
+(
+	cd "$(dirname "$0")/.."
+	git config core.hooksPath githooks
+
+	# Still install pre-commit's own hook environments, so the first real
+	# commit is not also the first download. `install-hooks` clones and builds
+	# without running anything - and it happens here, once, where somebody is
+	# watching, rather than inside a commit.
+	pre-commit install-hooks
+)
+ok "git hooks wired to githooks/, with the supplier guard ahead of pre-commit"
 
 # ---------------------------------------------------------------------------
 # Commit signing
