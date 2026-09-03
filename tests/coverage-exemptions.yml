@@ -1,0 +1,167 @@
+# Which tier covers the code the unit tests do not, and where nothing does.
+#
+# 108 of this program's 201 functions report 0% in the unit coverage profile.
+# That number on its own says nothing useful: most of them run tofu, ansible,
+# talosctl, kubectl, op or rclone against a real estate, and the unit tier
+# cannot reach them by construction.
+#
+# What it does NOT mean is that they are untestable. This repository has three
+# tiers that need real infrastructure - integration, api and e2e - each behind
+# a build tag with its own taskfile verb, and they already cover the ignition
+# path end to end, node readiness, Flux reconciliation, backup freshness, WAL
+# archiving and drift against deployed state. An earlier draft of this file
+# described "a test suite that needs infrastructure to run" as one of the
+# alternatives nobody would want. That was wrong, and the estate had already
+# built it.
+#
+# So every entry names the tier that covers it, and `covered_by: nothing` is a
+# legitimate and deliberately uncomfortable answer. That turns this from a list
+# of excuses into a map of real gaps.
+#
+# THE RULE: `uncovered` must EXACTLY match what the unit coverage profile
+# reports for that file. Not "at most" - exactly.
+#
+# At most drifts, which is what happened to tests/coverage-baseline.json: it
+# sat at 24.5 while the real figure was 34.1, so a third of the coverage could
+# have gone without the gate noticing. Exact means adding an uncovered function
+# fails until somebody writes the new number down, AND covering one fails until
+# somebody lowers it - so this file tightens as the program gets better tested
+# rather than sagging. A file with no entry may have no uncovered functions.
+#
+# tests/go/repo/coverage_exemptions_test.go enforces the counts.
+
+files:
+  # --- covered_by: e2e -------------------------------------------------
+  #
+  # Exercised end to end by tests/go/e2e - TestIgnitionBuildsAndTearsDownAnEstate
+  # builds an estate and tears it down, and TestDemolishRemovesAnEstateWhose
+  # MachinesAreStopped covers the teardown path. Not visible in the unit
+  # coverage profile because that tier is build-tagged and needs a real
+  # hypervisor, which is the point of it rather than a shortcoming.
+  - path: internal/ansible/ansible.go
+    uncovered: 2
+    covered_by: e2e
+  - path: internal/phases/attach.go
+    uncovered: 1
+    covered_by: e2e
+  - path: internal/phases/cluster.go
+    uncovered: 3
+    covered_by: e2e
+  - path: internal/phases/compute.go
+    uncovered: 4
+    covered_by: e2e
+  - path: internal/phases/destroy.go
+    uncovered: 3
+    covered_by: e2e
+  - path: internal/phases/hypervisor.go
+    uncovered: 1
+    covered_by: e2e
+  - path: internal/phases/migrate.go
+    uncovered: 2
+    covered_by: e2e
+  - path: internal/phases/overlay.go
+    uncovered: 1
+    covered_by: e2e
+  - path: internal/phases/render.go
+    uncovered: 2
+    covered_by: e2e
+  - path: internal/phases/sterilize.go
+    uncovered: 6
+    covered_by: e2e
+  - path: internal/phases/teardown.go
+    uncovered: 3
+    covered_by: e2e
+  - path: internal/phases/verify.go
+    uncovered: 1
+    covered_by: e2e
+  - path: internal/run/adopt.go
+    uncovered: 2
+    covered_by: e2e
+  - path: internal/run/exec.go
+    uncovered: 15
+    covered_by: e2e
+  - path: internal/run/net.go
+    uncovered: 1
+    covered_by: e2e
+
+  # --- covered_by: integration -----------------------------------------
+  #
+  # Covered by tests/go/integration against a running estate: nodes Ready and
+  # the count odd, the Talos API answering, Flux reconciled, the newest
+  # backup fresh and well formed, backup generations bounded, WAL archiving
+  # healthy, and the deployed estate matching the code.
+  - path: internal/phases/backup.go
+    uncovered: 1
+    covered_by: integration
+  - path: internal/phases/health.go
+    uncovered: 13
+    covered_by: integration
+  - path: internal/phases/health_etcd.go
+    uncovered: 2
+    covered_by: integration
+  - path: internal/phases/plan.go
+    uncovered: 2
+    covered_by: integration
+  - path: internal/phases/prune.go
+    uncovered: 3
+    covered_by: integration
+  - path: internal/survey/run.go
+    uncovered: 3
+    covered_by: integration
+
+  # --- covered_by: nothing ---------------------------------------------
+  #
+  # NOT COVERED BY ANY TIER. This is the honest half of the file and the part
+  # worth reading: these run against a real vault or a real estate and no
+  # test of any kind exercises them today.
+  #
+  # restore.go is the sharpest - it is the only code that reads the
+  # break-glass private key, and the total-loss drill it belongs to is
+  # recorded in Deferred as never having been executed. encryption.go sets
+  # TF_ENCRYPTION, where being wrong writes plaintext state to a database
+  # that ships off-site.
+  - path: internal/onepassword/onepassword.go
+    uncovered: 6
+    covered_by: nothing
+  - path: internal/onepassword/probe.go
+    uncovered: 2
+    covered_by: nothing
+  - path: internal/onepassword/upsert.go
+    uncovered: 2
+    covered_by: nothing
+  - path: internal/phases/checkvault.go
+    uncovered: 1
+    covered_by: nothing
+  - path: internal/phases/converge_preconditions.go
+    uncovered: 1
+    covered_by: nothing
+  - path: internal/phases/encryption.go
+    uncovered: 1
+    covered_by: nothing
+  - path: internal/phases/restore.go
+    uncovered: 3
+    covered_by: nothing
+  - path: internal/phases/secrets.go
+    uncovered: 4
+    covered_by: nothing
+
+  # --- covered_by: not-worth-testing -----------------------------------
+  #
+  # Printing and process control. A test asserting that a banner prints a
+  # banner is the change detector this repository refuses; what matters
+  # about these is read by a person, and is asserted instead by
+  # failures_are_reported_test.go, which requires a failure to name its
+  # cause and not only its remedy. main.go's one real decision,
+  # selectPhases, is covered.
+  - path: internal/phases/registry.go
+    uncovered: 2
+    covered_by: not-worth-testing
+  - path: internal/run/context.go
+    uncovered: 1
+    covered_by: not-worth-testing
+  - path: internal/run/log.go
+    uncovered: 6
+    covered_by: not-worth-testing
+  - path: main.go
+    uncovered: 8
+    covered_by: not-worth-testing

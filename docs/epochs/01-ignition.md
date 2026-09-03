@@ -2935,3 +2935,50 @@ mechanism that reports on itself rather than on the world. The `#151`
 assertion added in the same change reads `/proc` for exactly this reason and
 passed correctly on this run. The IPv6 tasks beside it were still trusting a
 module's opinion of its own file.
+
+### A coverage number is not a coverage check
+
+The baseline is one figure over a growing program, so it catches a collapse and
+misses drift: forty uncovered lines added to `scripts/contractor` move the
+total by a fraction of a percent. That is not hypothetical - it sat at 24.5
+while the measured figure was 34.1, ten points of slack, long enough that
+nobody remembered setting it.
+
+`tests/coverage-exemptions.yml` is the per-function version, kept readable by
+counting per file. 33 files, 108 uncovered functions, each file declaring
+exactly how many and which tier reaches it. Exactly, not at most: adding an
+uncovered function fails until somebody writes the new number down, and
+covering one fails until somebody lowers it, so the file tightens as the
+program improves rather than sagging the way the single number did.
+
+**The first draft of it was wrong in a way worth recording.** It described the
+alternatives to extracting a decision as "either a fake for every tool or a
+test suite that needs infrastructure to run", and treated both as obviously
+unacceptable. The reply was one line: _"That's what I want."_
+
+The estate had already built it. `tests/go/` carries `integration`, `api` and
+`e2e` tiers behind build tags, each with a taskfile verb, and they already
+cover the ignition path end to end, node readiness, Flux reconciliation, backup
+freshness, WAL archiving and drift against deployed state. So "this function
+shells out to tofu against a real estate" is not a reason it cannot be tested -
+it is a statement about which tier tests it.
+
+Every entry therefore names its tier, and `covered_by: nothing` is spellable
+on purpose. That is what turns the file from a list of excuses into a map of
+gaps:
+
+    e2e                 15 files,  47 functions
+    integration          6 files,  24 functions
+    nothing              8 files,  20 functions
+    not-worth-testing    4 files,  17 functions
+
+Twenty functions nobody tests at all, now written down. The sharpest is
+`restore.go` - the only code that reads the break-glass private key, belonging
+to a total-loss drill that Deferred already records as never having been
+executed - and `encryption.go`, where being wrong writes plaintext state to a
+database that ships off-site.
+
+The general error is worth separating from the specific one: a whole category
+of work was declared out of reach without checking whether the project had
+already built it. Same shape as scoping a bespoke node-lifecycle driver while
+Cluster API sat named in the epoch record two documents away.
