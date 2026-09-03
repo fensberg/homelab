@@ -45,13 +45,14 @@ type result struct {
 	detail string
 }
 
-func main() {
+func patrol(args []string) int {
+	fs := flag.NewFlagSet("patrol", flag.ExitOnError)
 	var (
-		repo         = flag.String("repo", envOr("GITHUB_REPOSITORY", ""), "owner/name to inspect")
-		queuedFor    = flag.Duration("max-queued", 30*time.Minute, "how long a run may sit queued before that is a fault")
-		nightlyEvery = flag.Duration("nightly-within", 30*time.Hour, "the scheduled tier must have finished within this")
+		repo         = fs.String("repo", envOr("GITHUB_REPOSITORY", ""), "owner/name to inspect")
+		queuedFor    = fs.Duration("max-queued", 30*time.Minute, "how long a run may sit queued before that is a fault")
+		nightlyEvery = fs.Duration("nightly-within", 30*time.Hour, "the scheduled tier must have finished within this")
 	)
-	flag.Parse()
+	_ = fs.Parse(args)
 
 	if *repo == "" {
 		fatal("no repository given: pass -repo owner/name or set GITHUB_REPOSITORY")
@@ -82,9 +83,10 @@ func main() {
 
 	if failed > 0 {
 		fmt.Printf("\n%d check(s) failed. The estate is not answering for itself.\n", failed)
-		os.Exit(1)
+		return 1
 	}
 	fmt.Println("\nthe estate is answering for itself")
+	return 0
 }
 
 type client struct {
@@ -225,6 +227,6 @@ func envOr(key, fallback string) string {
 }
 
 func fatal(msg string) {
-	fmt.Fprintln(os.Stderr, "canary: "+msg)
+	fmt.Fprintln(os.Stderr, "gatehouse patrol: "+msg)
 	os.Exit(2)
 }

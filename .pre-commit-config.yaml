@@ -78,6 +78,33 @@ repos:
 
   - repo: local
     hooks:
+      # First, and fail_fast, on purpose.
+      #
+      # Default deny: every hook below this line is third-party code that runs
+      # on this machine with your privileges, on every commit - not in a
+      # container and not in CI. Nothing arrives here without somebody deciding
+      # it should, and this is what enforces that rather than trusting it.
+      #
+      # It is ordered first because a commit that is going to be refused should
+      # cost milliseconds, and because a guard that runs after the thing it
+      # guards has already run is a report. Ordering alone does not achieve
+      # that - pre-commit runs every hook and reports at the end - so fail_fast
+      # goes with it, the same pairing push-guard uses.
+      #
+      # Kept here as well as in githooks/pre-commit, which is the one that
+      # actually closes the hole: git invokes that shim before pre-commit has
+      # cloned or installed anything. This copy catches somebody running
+      # `pre-commit run` directly, where the shim is not in the path - it runs
+      # after installation and so cannot prevent a download, but a second place
+      # that refuses costs nothing and the two fail the same way.
+      - id: delivery-guard
+        name: refuse a delivery from an unapproved supplier
+        entry: task delivery-guard
+        language: system
+        pass_filenames: false
+        always_run: true
+        fail_fast: true
+
       - id: tofu-fmt
         name: tofu fmt
         entry: tofu fmt
