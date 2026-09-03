@@ -140,6 +140,20 @@ endpoints:
       - rekor.sigstore.dev:443
       - tuf-repo-cdn.sigstore.dev:443
 
+  - group: independent-review
+    reason: >-
+      Google's generative language API, reached by the two epoch-08 roles that
+      read this repository without its context: the clerk, which writes its own
+      account of a change or a record, and the inspector, which explains a
+      sensitive-path diff inside the attestation conversation. One endpoint
+      serves both, with two keys from two projects so neither role can exhaust
+      the other's quota, and neither project has a billing account attached -
+      so a runaway loop costs a rate limit rather than an invoice. The group is
+      named for the job rather than the vendor, so changing which model answers
+      is this line plus the pins in versions.env.
+    hosts:
+      - generativelanguage.googleapis.com:443
+
 # Declared exemptions.
 #
 # A gap that is written down is a decision; a gap the guard quietly skips is a
