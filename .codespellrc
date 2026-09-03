@@ -1,0 +1,19 @@
+# Words codespell gets wrong here, and why.
+#
+# Same rule as every other ignore list in this repository: an entry names the
+# condition that would remove it, so the file stays a set of decisions rather
+# than an accumulation nobody can audit. See the de-bloat driver in
+# docs/epochs/02-abstraction.md.
+#
+#   iif  - iproute2's "incoming interface" selector, as in
+#          `ip route get <addr> from <src> iif <iface>`. codespell reads it as
+#          a misspelling of "if". It is the flag's real name, it appears in the
+#          epoch record because that command is what diagnosed the VRF routing
+#          fault, and it will appear again in any nftables or policy-routing
+#          note. Removed when: never.
+#
+# Path exclusions live in .github/super-linter.vars with the rest of the
+# Super-Linter configuration; this file is only for words, so that codespell
+# behaves the same when run by hand as it does in CI.
+[codespell]
+ignore-words-list = iif
