@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 7
+floor: 12
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -153,6 +153,67 @@ mutations:
       agent cannot write a workflow at all. Planted rather than substituted
       because this guard has nothing to say until a patch is outstanding, and
       the normal state of the repository is that none is.
+
+  # --- Added retroactively -------------------------------------------------
+  #
+  # Every entry below was proved by hand at the time - the guard was written,
+  # the thing it guards was broken, the failure was read, the break was undone
+  # - and none of those proofs was committed. Six guards went in that way in
+  # one session, by the same hand that built this file to stop exactly that.
+  #
+  # They are here now because a proof that lived in a terminal is a claim.
+
+  - guard: TestNoGoCommandResolvesAgainstTheRootlessRepository
+    file: .github/workflows/sensitive-paths.yml
+    find: "go run -C scripts/attestation ."
+    replace: "go run ./scripts/attestation"
+    mentions: "resolves that path from the repository root"
+    why: >
+      There is no module at the repository root, so this form fails with
+      "cannot find main module" every time it runs. It shipped once and the
+      sensitive-path gate failed on its first real pull request with a Go
+      error instead of a verdict.
+
+  - guard: TestEverySystemHookIsSkippedInTheFormatLane
+    file: .github/workflows/pr-validation.yml
+    find: "SKIP: tofu-fmt,go-fmt,delivery-guard"
+    replace: "SKIP: tofu-fmt,go-fmt"
+    mentions: "is not in the Format lane's SKIP list"
+    why: >
+      A system hook runs in the Format lane, which installs pre-commit and
+      nothing else, so it fails on a binary that lane does not have. The whole
+      lane went red on a hook that could never have run in it.
+
+  - guard: TestTheFormatLaneRefusesASupplierBeforeInstallingAnything
+    file: .github/workflows/pr-validation.yml
+    find: "guard-deliveries -before-install"
+    replace: "guard-deliveries"
+    mentions: "does not run the supplier gate before installing"
+    why: >
+      pre-commit installs every hook repository before running any hook, so a
+      guard that is itself a hook reports after the download it exists to
+      prevent. Without this step the runner fetches and executes seven
+      third-party repositories before anything can refuse one.
+
+  - guard: TestKubectlPinTracksTheClusterVersion
+    file: scripts/versions.env
+    find: "KUBECTL_VERSION=v1.36.4"
+    replace: "KUBECTL_VERSION=v1.31.1"
+    mentions: "Kubernetes supports a client within one minor"
+    why: >
+      kubectl supports one minor of skew from the API server. Three numbers
+      disagreed at once here - the cluster, the pin, and what the installer
+      actually fetched - and no two were within one.
+
+  - guard: TestTheInstallerDoesNotOverrideAPinnedVersion
+    file: scripts/install-dependencies.sh
+    find: "\tinfo \"installing kubectl ${KUBECTL_VERSION}\""
+    replace: "\tKUBECTL_VERSION=\"$(curl -fsSL https://dl.k8s.io/release/stable.txt)\"\n\tinfo \"installing kubectl ${KUBECTL_VERSION}\""
+    mentions: "overriding the pin"
+    why: >
+      Sourcing versions.env and then overwriting the value is worse than not
+      pinning: the file still claims to be the single declaration while the
+      workstation and the runner image quietly install different versions.
 
 # Tests that legitimately read a comment.
 #

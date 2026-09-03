@@ -2935,3 +2935,46 @@ mechanism that reports on itself rather than on the world. The `#151`
 assertion added in the same change reads `/proc` for exactly this reason and
 passed correctly on this run. The IPv6 tasks beside it were still trusting a
 module's opinion of its own file.
+
+### The audit: proofs that lived in a terminal, and a floor ten points low
+
+Asked at the end of the epoch whether the work had actually been test-first,
+the honest answer was no. Code first, every time. Three specific findings, and
+the second is the one worth keeping.
+
+**Where writing the test second cost something.** The `talosctl etcd members`
+parser was written counting whitespace-separated fields, which cannot work
+against a header containing `PEER URLS` and `CLIENT URLS`. The test caught it
+on the first run, so nothing shipped - but written from the real output shape
+first, that parser would never have existed at all. The cost was an iteration
+rather than a defect, which is the cheap end of this and not an argument that
+the ordering does not matter.
+
+**The mutation ledger was built in this epoch to stop proofs being lost, and
+then six were lost.** Six guards were verified by hand - written, then the
+thing they guard broken, the failure read, the break undone - and none of those
+proofs was committed. The ledger had seven entries and not one of them came
+from the session that built it. Five have been added retroactively; the sixth
+arrives with the branch that carries its guard.
+
+The lesson is not "remember to add ledger entries". It is that a mechanism
+which depends on the person who built it remembering to use it has the same
+failure mode as the rule it replaced. Recorded as such rather than as an
+oversight.
+
+**The SNAT dedupe had no committed test at all.** Its logic was proved against
+a stub `iptables` in a scratch directory - ten rules to one, idempotent on
+re-run, unrelated rules untouched - and thrown away. It now runs the task's own
+`cmd`, extracted from the playbook rather than copied, so a test that passes
+against a copy while the playbook ships something else is not possible.
+
+**The coverage floor was ten points below the measured figure**, 24.5 against
+34.1. A third of the coverage could have gone without the gate saying anything.
+Raised to 34. A floor that far below the floor you are standing on is not a
+ratchet, it is a number.
+
+**What none of this enforces is ordering.** Nothing observable distinguishes a
+test written before its code from one written after, once both are in the same
+commit. What is enforceable is that code arrives covered, or arrives with a
+declared reason why it cannot be - which is the property that actually prevents
+a regression, and the one the next epoch should make law rather than habit.
