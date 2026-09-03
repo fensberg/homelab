@@ -71,6 +71,7 @@ jobs:
           docker build \
             --build-arg RUNNER_VERSION="$RUNNER_VERSION" \
             --build-arg KUBECTL_VERSION="$KUBECTL_VERSION" \
+            --build-arg TALOSCTL_VERSION="$TALOSCTL_VERSION" \
             --build-arg TOFU_VERSION="$TOFU_VERSION" \
             --build-arg RCLONE_DEB_VERSION="$RCLONE_VERSION" \
             -t "${IMAGE}:${SHA}" \

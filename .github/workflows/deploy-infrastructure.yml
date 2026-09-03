@@ -388,7 +388,197 @@ jobs:
           SITE: ${{ matrix.site }}
         run: |
           go build -C scripts/contractor -o contractor .
+          set +e
           ./scripts/contractor/contractor converge -site "$SITE"
+          code=$?
+          set -e
+          # The verdict, not just the failure. contractor exits 2 when the
+          # estate is provably untouched and 1 when something was written or
+          # it could not tell - see reportPreexistingFailure in main.go. The
+          # aftermath job below can only be exact about a revert if it knows
+          # which of those happened, and an exit code is the only channel that
+          # survives without parsing prose out of a log.
+          mkdir -p verdict
+          echo "$code" > "verdict/$SITE"
+          exit $code
+
+      # Written even on success, so a missing file means the job died rather
+      # than that everything was fine. Absent and "exit 0" must not look the
+      # same to the job that decides whether to revert.
+      - name: Record the verdict
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: converge-verdict-${{ matrix.site }}
+          path: verdict/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # AFTERMATH - make main stop being wrong after a failed converge.
+  #
+  # `main` is not a request. plan compares against it, demolish evaluates
+  # cluster health against it, and the next converge computes a diff from it.
+  # When a converge fails, the merge that caused it stays on main and every one
+  # of those reads a statement about real infrastructure that is not true
+  # (#130).
+  #
+  # Branch protection cannot fix this: required checks run before a merge and
+  # the converge runs after it. So the answer is not to prevent the merge, it
+  # is to stop main being wrong afterwards.
+  #
+  # Deliberately a separate job on a GitHub-hosted runner. The converge job
+  # holds the vault token and applies real infrastructure; it stays at
+  # contents: read. This one can write a branch and cannot reach the estate.
+  # ---------------------------------------------------------------------
+  aftermath:
+    name: Aftermath
+    needs: [changes, converge]
+    if: always() && needs.converge.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    timeout-minutes: 10
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
+      # persist-credentials: false, like every other checkout here. The push
+      # below carries the token on the remote URL for the one command that
+      # needs it, rather than leaving it in .git/config for the rest of the
+      # job - which is what zizmor's artipacked audit is about, and it is
+      # right: a credential in a file outlives the step that wanted it.
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Collect the verdicts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: converge-verdict-*
+          path: verdicts
+          merge-multiple: true
+
+      # Exact, or not at all.
+      #
+      # A blind revert is a machine that deletes infrastructure in response to
+      # a flaky failure: fail while creating the fourth of five machines and
+      # reality is four, so reverting the config to three makes main wrong in
+      # the other direction and the next converge plans a destroy.
+      #
+      # So reverting needs every site to have reported 2 - provably untouched.
+      # Anything else, including a missing verdict, is "not known" and gets an
+      # alarm instead. Not knowing and nothing being wrong must not look the
+      # same, which is this estate's standing rule about checks that can be off.
+      - name: Decide whether a revert is exact
+        id: verdict
+        env:
+          SITES: ${{ needs.changes.outputs.sites }}
+        run: |
+          exact=true
+          detail=""
+          for site in $(echo "$SITES" | tr -d '[]"' | tr ',' ' '); do
+            f="verdicts/$site"
+            if [ ! -f "$f" ]; then
+              exact=false
+              detail="${detail}- ${site}: no verdict recorded, so the job died before it could say\n"
+              continue
+            fi
+            code=$(tr -d '[:space:]' < "$f")
+            case "$code" in
+              0) detail="${detail}- ${site}: converged\n" ;;
+              2) detail="${detail}- ${site}: failed before anything was applied\n" ;;
+              *) exact=false
+                 detail="${detail}- ${site}: failed with exit ${code} - something may have been written\n" ;;
+            esac
+          done
+          echo "exact=$exact" >>"$GITHUB_OUTPUT"
+          {
+            echo "detail<<VERDICT_EOF"
+            printf '%b' "$detail"
+            echo "VERDICT_EOF"
+          } >>"$GITHUB_OUTPUT"
+
+      # The estate is provably untouched, so returning main to the last
+      # converged state is exact rather than a guess.
+      #
+      # A pull request rather than a push. It keeps the change visible and
+      # re-mergeable once the cause is fixed, and it does not put an automated
+      # commit on main - which is the thing this repository is careful about
+      # everywhere else.
+      - name: Revert the merge, as a pull request
+        if: steps.verdict.outputs.exact == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DETAIL: ${{ steps.verdict.outputs.detail }}
+        run: |
+          branch="revert/converge-failed-${SHA::8}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+
+          # -m 1 only for a merge commit. This repository squash-merges, so the
+          # commit on main usually has one parent and -m would be refused.
+          if [ "$(git rev-list --parents -n 1 "$SHA" | wc -w)" -gt 2 ]; then
+            git revert --no-edit -m 1 "$SHA"
+          else
+            git revert --no-edit "$SHA"
+          fi
+
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "revert: the converge for ${SHA::8} failed before it applied anything" \
+            --body "$(printf '%s\n' \
+              "The converge that should have applied ${SHA::8} failed, and \`main\` now describes an estate that does not exist." \
+              "" \
+              "Per site:" \
+              "$DETAIL" \
+              "Every site failed **before anything was applied**, so the estate is provably untouched and returning \`main\` to the previous state is exact rather than a guess. That is the only case this is opened automatically for." \
+              "" \
+              "Merging this makes the repository true again. The original change is not lost - re-open it once the cause is fixed." \
+              "" \
+              "Failed run: $RUN_URL")"
+
+      # Not knowing is the loud case.
+      #
+      # No revert here: something may have been written, so returning the
+      # config would make main wrong in the other direction. An issue rather
+      # than a passing mention, because this does not self-clear - it stays
+      # open until somebody converges or corrects the config.
+      - name: Alarm, because the estate's state is not known
+        if: steps.verdict.outputs.exact != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DETAIL: ${{ steps.verdict.outputs.detail }}
+        run: |
+          gh issue create \
+            --title "A converge failed after it may have applied something (${SHA::8})" \
+            --label "priority:P1,type:correctness,epoch:01" \
+            --body "$(printf '%s\n' \
+              "\`main\` says one thing and the estate may say another. This was **not** reverted, deliberately." \
+              "" \
+              "Per site:" \
+              "$DETAIL" \
+              "A converge that failed partway through applying leaves reality somewhere between the old config and the new one. Reverting would make \`main\` wrong in the other direction, and the next converge would compute a diff from a baseline nobody checked - which is how an automated revert becomes a machine that destroys infrastructure in response to a flaky failure." \
+              "" \
+              "**What to do:** run \`task plan SITE=<site>\` to see what is actually there, then either converge again or correct the config to match. This issue does not close itself." \
+              "" \
+              "Failed run: $RUN_URL")"
 
   # ---------------------------------------------------------------------
   # PLAN THE ESTATE - on a pull request touching management/.
@@ -453,6 +643,85 @@ jobs:
             // Replace this site's previous plan rather than adding another.
             // A pull request that planned three times carried three comments
             // and the reader had to work out which one was current.
+            const {data: comments} = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner, repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.startsWith(marker));
+            const args = {owner: context.repo.owner, repo: context.repo.repo, body};
+            if (existing) {
+              await github.rest.issues.updateComment({...args, comment_id: existing.id});
+            } else {
+              await github.rest.issues.createComment({...args, issue_number: context.issue.number});
+            }
+
+  # ---------------------------------------------------------------------
+  # NO PLAN, SAID OUT LOUD - #156.
+  #
+  # `Plan site0` is not a required status check, and making it one would
+  # deadlock this estate: the runner is a pod inside the cluster, so when the
+  # cluster is down no plan can be produced - precisely when the estate most
+  # needs the pull request that rebuilds it. That circularity is the one epoch
+  # 01 is built around, and it applies to the gate as much as to the tooling.
+  #
+  # So this is visibility, not enforcement. #140 changed the machine count,
+  # its plan job was cancelled against a runner that did not exist, and the
+  # pull request read "24 of 25 checks passed" and merged. Nothing anywhere
+  # said a change to real infrastructure had landed unplanned.
+  #
+  # An absent comment currently looks identical to a change nobody thought
+  # needed one. This makes those two different.
+  # ---------------------------------------------------------------------
+  plan-absence:
+    name: Plan absence
+    needs: [changes, plan-estate]
+    # always(), so this still runs when plan-estate was cancelled or skipped -
+    # which is the whole case it exists for.
+    if: >-
+      always() &&
+      github.event_name == 'pull_request' &&
+      needs.changes.outputs.management == 'true' &&
+      needs.plan-estate.result != 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
+      - name: Say that no plan was produced
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RESULT: ${{ needs.plan-estate.result }}
+        with:
+          script: |
+            const marker = '<!-- plan-absence -->';
+            const body = [
+              marker,
+              '## No plan was produced for this change',
+              '',
+              'This pull request changes `management/`, and the plan job ended as' +
+              ' **`' + process.env.RESULT + '`** rather than succeeding. Nothing here' +
+              ' compared the proposed configuration against the estate that exists.',
+              '',
+              'That is not a blocker and is not meant to be. The plan runs on a runner' +
+              ' inside the cluster, so when the cluster is down no plan can be produced -' +
+              ' which is exactly when the pull request rebuilding it needs to merge.' +
+              ' Requiring a plan would deadlock that.',
+              '',
+              'What it means for a reviewer: approving this is approving HCL rather than' +
+              ' its consequences. If the estate is up, re-running the plan job is worth' +
+              ' more than reading the diff again.',
+            ].join('\n');
+
+            // One comment per pull request, replaced rather than appended. The
+            // workload plan comment already does this; the estate plan comment
+            // does not, which is #160.
             const {data: comments} = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner, repo: context.repo.repo,
