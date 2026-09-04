@@ -511,6 +511,36 @@ floor a pull request may not drop below and is free to leave alone.
 
 ## Conventions
 
+- **Open every pull request as a draft, and let the operator elevate it.**
+  Draft is the working state. Checks run on drafts exactly as they do on ready
+  ones, so all the iterating happens there: a lane fails, it is fixed, it fails
+  again. Marking it ready is a deliberate act by the person who decides, and it
+  is what asks the clerk to read the change.
+
+  The reason it is not the agent's call is worth stating plainly, because the
+  agent will not notice it about itself. **It is a poor judge of when it has
+  finished, and it always believes it has.** Every pull request in this
+  repository has been opened in the belief that it was complete, and a fair
+  number have then been pushed to three or four more times. A signal that means
+  "done fussing" cannot come from the party that is doing the fussing.
+
+  So the sequence is: open a draft, iterate until every check but the human is
+  green, the operator elevates, the clerk reads it once and posts what it
+  found, the operator approves, the operator merges. The clerk sits between the
+  last push and the approval because that is the only point at which its
+  findings are still actionable.
+
+  Two things follow. **Re-requesting a review runs the clerk again**, so acting
+  on findings and asking for a fresh read costs one click and one call - which
+  is also the only way to re-run it, since a push does not. And **the clerk can
+  stop nothing**: its findings are code scanning alerts at note level, and that
+  check stays out of `main`'s required checks deliberately. A criticism that
+  blocks a merge is an outside party acquiring a power this design withholds.
+
+  The inspector's `tally` runs on every push regardless, because it costs
+  nothing and its value is being current. It says nothing unless the change
+  took something away.
+
 - **Branch per epoch, and work merges into the epoch rather than into `main`.**
   `epoch/<nn>-<slug>` targets `main` and stays open for the life of the epoch.
   Individual pieces open against **that branch as their base**, not against
