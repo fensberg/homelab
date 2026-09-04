@@ -96,57 +96,56 @@ func TestAskingForOnlyUntrackedPathsFails(t *testing.T) {
 	}
 }
 
-func TestGatherBuildsAPromptFromTheFiles(t *testing.T) {
+func TestReadNumbersLinesAndSeparatesTheCommentary(t *testing.T) {
 	root := repoWith(t, map[string]string{
-		"a.go": "package a // first\n",
-		"b.go": "package b // second\n",
+		"a.go": "package a\n\n// Retries three times.\nfunc try() {}\n",
 	}, nil)
 
-	prompt, included, err := gather(auditPrompt, root, []string{"a.go", "b.go"}, 1<<20)
+	b, err := read(root, []string{"a.go"}, 1<<20)
 	if err != nil {
-		t.Fatalf("gather: %v", err)
+		t.Fatalf("read: %v", err)
 	}
-	if len(included) != 2 {
-		t.Errorf("included %v, want both", included)
+	if strings.Contains(b.code, "Retries three times") {
+		t.Error("the claim reached the blind pass")
 	}
-	for _, want := range []string{"first", "second", "=== a.go ===", "path:line"} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("prompt is missing %q", want)
-		}
+	if !strings.Contains(b.prose, "Retries three times") {
+		t.Error("the claim was lost instead of set aside")
+	}
+	if !strings.Contains(b.code, "4| func try() {}") {
+		t.Errorf("func try() is on line 4 and was not numbered as such:\n%s", b.code)
+	}
+	if b.lines["a.go"] != 5 {
+		t.Errorf("line count is %d, want 5; a citation is checked against it", b.lines["a.go"])
 	}
 }
 
 // The budget stops before the limit rather than truncating through it.
 //
-// A prompt cut mid-function is worse than a prompt with fewer files: the
-// model describes something that does not exist, confidently.
-func TestGatherStopsAtTheBudgetRatherThanTruncating(t *testing.T) {
-	big := strings.Repeat("x", 4000)
+// A prompt cut mid-function makes the model describe something that does not
+// exist, confidently, and then cite a line for it.
+func TestReadStopsAtTheBudgetRatherThanTruncating(t *testing.T) {
+	big := strings.Repeat("x := 1\n", 600)
 	root := repoWith(t, map[string]string{
 		"a.go": "package a\n" + big,
 		"b.go": "package b\n" + big,
 	}, nil)
 
-	budget := len(auditPrompt) + 4200
-	prompt, included, err := gather(auditPrompt, root, []string{"a.go", "b.go"}, budget)
+	b, err := read(root, []string{"a.go", "b.go"}, 9000)
 	if err != nil {
-		t.Fatalf("gather: %v", err)
+		t.Fatalf("read: %v", err)
 	}
-	if len(included) != 1 {
-		t.Fatalf("included %v, want only the first to fit", included)
+	if len(b.included) != 1 {
+		t.Fatalf("included %v, want only the first to fit", b.included)
 	}
-	if strings.Contains(prompt, "package b") {
+	if strings.Contains(b.code, "package b") {
 		t.Error("the second file was partly included; a half file is worse than none")
-	}
-	if len(prompt) > budget {
-		t.Errorf("prompt is %d bytes, over the %d budget", len(prompt), budget)
 	}
 }
 
-func TestGatherRefusesWhenTheFirstFileAloneIsTooBig(t *testing.T) {
-	root := repoWith(t, map[string]string{"a.go": strings.Repeat("x", 5000)}, nil)
+func TestReadRefusesWhenTheFirstFileAloneIsTooBig(t *testing.T) {
+	root := repoWith(t, map[string]string{"a.go": "package a\n" + strings.Repeat("y := 1\n", 600)}, nil)
 
-	if _, _, err := gather(auditPrompt, root, []string{"a.go"}, len(auditPrompt)+10); err == nil {
+	if _, err := read(root, []string{"a.go"}, 200); err == nil {
 		t.Fatal("expected a refusal rather than an empty prompt")
 	}
 }

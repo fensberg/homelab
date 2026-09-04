@@ -53,9 +53,8 @@ type verb struct {
 
 func main() {
 	verbs := []verb{
-		{"audit", "write an account of what the given tracked files do", audit},
-		{"handover", "read it as a stranger who has just cloned it", handover},
-		{"preflight", "prove the credentials work and report what they carry", preflight},
+		{"snag", "walk the work and list what is unsound or does not match what was written about it", snagVerb},
+		{"handover", "read it as a stranger who has just cloned it, and list what would stop them", handoverVerb},
 	}
 
 	if len(os.Args) < 2 {
@@ -110,77 +109,24 @@ func newAsker(key, model string) *asker {
 	}
 }
 
-// preflight answers "would a real run work", and says nothing that is a value.
+// walk is one verb: read a slice of the repository, ask about it, and report
+// findings as SARIF.
 //
-// It reports the permissions the installation token actually carries, read
-// from the API rather than from a settings page - those are different facts,
-// and only one of them decides what this program can do. Its output is
-// structure, never a value, because it lands in a public repository's log.
-func preflight(args []string) int {
-	env, err := need("CLERK_BOT_APP_ID", "CLERK_BOT_PRIVATE_KEY", "CLERK_BOT_LLM_KEY", "CLERK_MODEL_VERSION", "GITHUB_REPOSITORY")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "clerk preflight:", err)
-		return 2
-	}
-
-	fmt.Println("## Clerk preflight")
-	fmt.Println()
-
-	key, err := parseAppKey(env["CLERK_BOT_PRIVATE_KEY"])
-	if err != nil {
-		fmt.Printf("- app key: FAILED - %v\n", err)
-		return 1
-	}
-	fmt.Println("- app key: parsed")
-
-	g, perms, err := exchange(githubAPI, env["GITHUB_REPOSITORY"], env["CLERK_BOT_APP_ID"], key, &http.Client{Timeout: 30 * time.Second}, time.Now())
-	if err != nil {
-		fmt.Printf("- installation token: FAILED - %v\n", err)
-		return 1
-	}
-	fmt.Printf("- installation token: issued for %s\n", g.repo)
-
-	names := make([]string, 0, len(perms))
-	for k := range perms {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	fmt.Println("- permissions the token actually carries:")
-	for _, n := range names {
-		fmt.Printf("    %s: %s\n", n, perms[n])
-	}
-	if perms["pull_requests"] != "write" {
-		fmt.Println("    NOTE: without pull_requests write the clerk cannot post a review at all.")
-	}
-
-	answer, err := newAsker(env["CLERK_BOT_LLM_KEY"], env["CLERK_MODEL_VERSION"]).ask("Reply with the single word: ok")
-	if err != nil {
-		fmt.Printf("- model %s: FAILED - %v\n", env["CLERK_MODEL_VERSION"], err)
-		return 1
-	}
-	fmt.Printf("- model %s: answered %d characters\n", env["CLERK_MODEL_VERSION"], len(strings.TrimSpace(answer)))
-
-	fmt.Println()
-	fmt.Println("Everything the clerk needs is present.")
-	return 0
-}
-
-// speak runs one verb: read the named tracked files, ask the question, and
-// either print the answer or post it on a pull request.
-//
-// Posting is a flag rather than a verb of its own. Where the account goes is
-// not a different job - a finding about one change belongs on that change and
-// should die with it, and a finding about the estate belongs in an issue and
-// should outlive it. Same reading either way.
-func speak(name, prompt string, args []string) int {
+// SARIF rather than prose in a comment. A snagging list is discrete items each
+// pinned to a place; prose in one comment cannot be dismissed item by item,
+// cannot close itself when the defect goes, and cannot be counted. The
+// dismissal reasons are what turn this epoch's acceptance test from a
+// judgement into a number: "false positive" against "won't fix" is exactly the
+// split between the clerk being wrong and the clerk being right and overruled.
+func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, error)) int {
 	fs := flag.NewFlagSet("clerk "+name, flag.ContinueOnError)
-	pr := fs.Int("pr", 0, "post on this pull request as a comment, instead of printing")
 	root := fs.String("root", ".", "repository root")
+	out := fs.String("out", "", "write the SARIF report here instead of stdout")
 	model := fs.String("model", "", "override the pinned model")
+	pr := fs.Int("pr", 0, "also post a short note on this pull request")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-
 	paths := fs.Args()
 	if len(paths) == 0 {
 		fmt.Fprintf(os.Stderr, "clerk %s: name at least one path to read\n", name)
@@ -207,31 +153,100 @@ func speak(name, prompt string, args []string) int {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 1
 	}
-	built, included, err := gather(prompt, *root, files, promptBudget)
+	b, err := read(*root, files, promptBudget)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "clerk %s: read %d of %d tracked files\n", name, len(included), len(files))
+	fmt.Fprintf(os.Stderr, "clerk %s: read %d of %d tracked files\n", name, len(b.included), len(files))
 
-	text, err := newAsker(env["CLERK_BOT_LLM_KEY"], chosen).ask(built)
+	found, err := ask(newAsker(env["CLERK_BOT_LLM_KEY"], chosen), b)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 1
 	}
 
-	if *pr == 0 {
-		fmt.Println(text)
-		return 0
+	kept, dropped := keep(found, b.lines)
+	// Said out loud, always. "Nothing found" and "eleven findings discarded
+	// because none of them could be checked" are different facts, and only one
+	// of them is reassuring.
+	fmt.Fprintf(os.Stderr, "clerk %s: %d snag(s), %d discarded as uncheckable\n", name, len(kept), len(dropped))
+	for _, d := range dropped {
+		fmt.Fprintf(os.Stderr, "  discarded: %s\n", d)
 	}
-	return post(*pr, name, text)
+
+	report, err := sarif(kept)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "clerk:", err)
+		return 1
+	}
+	if *out == "" {
+		fmt.Println(string(report))
+	} else if err := os.WriteFile(*out, report, 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "clerk:", err)
+		return 1
+	}
+
+	if *pr != 0 {
+		note := fmt.Sprintf("**clerk %s** — %d snag(s) raised, %d discarded as uncheckable.\n\n"+
+			"Each snag is an alert on the changed files, dismissable on its own. "+
+			"This is a second opinion from a reader with no context: it can approve nothing and block nothing.",
+			name, len(kept), len(dropped))
+		if code := post(*pr, note); code != 0 {
+			return code
+		}
+	}
+	return 0
 }
 
-func audit(args []string) int    { return speak("audit", auditPrompt, args) }
-func handover(args []string) int { return speak("handover", handoverPrompt, args) }
+// snagVerb walks the work twice, and the order is the whole point.
+//
+// The first pass sees the code with every comment blanked out, so it cannot be
+// told what the code is for while deciding whether it holds together. The
+// second pass sees only that pass's account and the commentary - never the
+// code - so it cannot read a claim and then go looking for it.
+func snagVerb(args []string) int {
+	return walk("snag", args, func(a *asker, b *bundle) ([]snag, error) {
+		blind, err := a.ask(blindPrompt + "\n" + b.code)
+		if err != nil {
+			return nil, err
+		}
+		account, unsound, err := parseBlind(blind)
+		if err != nil {
+			return nil, err
+		}
 
-// post puts the account on a pull request, as a comment and never more.
-func post(pr int, name, text string) int {
+		if strings.TrimSpace(b.prose) == "" {
+			fmt.Fprintln(os.Stderr, "clerk snag: nothing was written about these files, so there is nothing to compare")
+			return unsound, nil
+		}
+
+		compared, err := a.ask(comparePrompt + "\n=== the account ===\n" + account + "\n" + b.prose)
+		if err != nil {
+			return nil, err
+		}
+		disagrees, err := parse(compared)
+		if err != nil {
+			return nil, err
+		}
+		return append(unsound, disagrees...), nil
+	})
+}
+
+func handoverVerb(args []string) int {
+	return walk("handover", args, func(a *asker, b *bundle) ([]snag, error) {
+		// A stranger sees everything, commentary included - that is the point
+		// of the question. So this pass is given the file as written.
+		answer, err := a.ask(handoverPrompt + "\n" + b.code + "\n" + b.prose)
+		if err != nil {
+			return nil, err
+		}
+		return parse(answer)
+	})
+}
+
+// post puts a short note on a pull request, as a comment and never more.
+func post(pr int, body string) int {
 	env, err := need("CLERK_BOT_APP_ID", "CLERK_BOT_PRIVATE_KEY", "GITHUB_REPOSITORY")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
@@ -247,9 +262,6 @@ func post(pr int, name, text string) int {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 1
 	}
-
-	body := "**clerk " + name + "** - an account written by a reader with no context, who never saw what we claim this does. " +
-		"A second opinion, not a verdict: it can approve nothing and block nothing.\n\n---\n\n" + text
 	if err := g.say(pr, body); err != nil {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 1

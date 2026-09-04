@@ -22,8 +22,7 @@ import (
 // definition of what is public, and `git ls-files` is the definition of what
 // git has. An untracked file in the working tree - a rendered
 // site.auto.yml, a kubeconfig, a plan output - is exactly the class this
-// refuses, and it is also exactly the class that would otherwise be sitting
-// there during a real run.
+// refuses, and exactly the class that would be sitting there during a real run.
 func tracked(root string, paths []string) ([]string, error) {
 	args := append([]string{"-C", root, "ls-files", "-z", "--"}, paths...)
 	out, err := exec.Command("git", args...).Output()
@@ -44,33 +43,64 @@ func tracked(root string, paths []string) ([]string, error) {
 	return found, nil
 }
 
-// gather reads the tracked files into one prompt.
-//
-// Bounded, because the free tier allows 250,000 tokens a minute and a prompt
-// that exceeds it fails the whole call rather than the last file. The limit is
-// in bytes and deliberately conservative: it is better to describe a directory
-// in two passes than to have one silently truncated in the middle of a
-// function.
-func gather(prompt, root string, paths []string, budget int) (string, []string, error) {
-	var b strings.Builder
-	var included []string
+// A bundle is one slice of the repository, split into what runs and what was
+// claimed about it.
+type bundle struct {
+	code     string         // comments blanked, every line numbered
+	prose    string         // the commentary that was taken out
+	lines    map[string]int // path -> line count, for checking a citation
+	included []string
+}
 
-	b.WriteString(prompt)
+// read builds a bundle from tracked files, bounded by a byte budget.
+//
+// Bounded because the free tier allows 250,000 tokens a minute and a prompt
+// that exceeds it fails the whole call rather than the last file. It stops
+// before the limit rather than truncating through it: a prompt cut mid-function
+// makes the model describe something that does not exist, confidently.
+func read(root string, paths []string, budget int) (*bundle, error) {
+	b := &bundle{lines: map[string]int{}}
+	var code, prose strings.Builder
+
 	for _, p := range paths {
 		body, err := os.ReadFile(filepath.Join(root, p))
 		if err != nil {
-			return "", nil, fmt.Errorf("reading %s: %w", p, err)
+			return nil, fmt.Errorf("reading %s: %w", p, err)
 		}
-		chunk := "\n=== " + p + " ===\n" + string(body) + "\n"
-		if b.Len()+len(chunk) > budget {
+
+		blanked, claims, runs := split(p, string(body))
+		var chunk string
+		if runs {
+			chunk = "\n=== " + p + " ===\n" + number(blanked) + "\n"
+		}
+		claimChunk := ""
+		if strings.TrimSpace(claims) != "" {
+			claimChunk = "\n=== written about " + p + " ===\n" + claims + "\n"
+		}
+
+		if code.Len()+len(chunk)+prose.Len()+len(claimChunk) > budget {
 			break
 		}
-		b.WriteString(chunk)
-		included = append(included, p)
+		code.WriteString(chunk)
+		prose.WriteString(claimChunk)
+		b.lines[p] = strings.Count(string(body), "\n") + 1
+		b.included = append(b.included, p)
 	}
 
-	if len(included) == 0 {
-		return "", nil, fmt.Errorf("the first tracked file alone exceeds the %d byte budget; ask for a smaller slice", budget)
+	if len(b.included) == 0 {
+		return nil, fmt.Errorf("the first tracked file alone exceeds the %d byte budget; ask for a smaller slice", budget)
 	}
-	return b.String(), included, nil
+	b.code, b.prose = code.String(), prose.String()
+	return b, nil
+}
+
+// number prefixes every line, so a citation can be exact rather than
+// approximate. The numbers are the file's own, which is why split blanks the
+// commentary rather than deleting it.
+func number(body string) string {
+	var out strings.Builder
+	for i, line := range strings.Split(body, "\n") {
+		fmt.Fprintf(&out, "%d| %s\n", i+1, line)
+	}
+	return out.String()
 }
