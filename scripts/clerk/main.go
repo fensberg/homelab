@@ -188,11 +188,7 @@ func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, error))
 	}
 
 	if *pr != 0 {
-		note := fmt.Sprintf("**clerk %s** — %d snag(s) raised, %d discarded as uncheckable.\n\n"+
-			"Each snag is an alert on the changed files, dismissable on its own. "+
-			"This is a second opinion from a reader with no context: it can approve nothing and block nothing.",
-			name, len(kept), len(dropped))
-		if code := post(*pr, note); code != 0 {
+		if code := post(*pr, note(name, kept, dropped)); code != 0 {
 			return code
 		}
 	}
@@ -243,6 +239,43 @@ func handoverVerb(args []string) int {
 		}
 		return parse(answer)
 	})
+}
+
+// note is what the pull request is told, and it names every finding.
+//
+// The first version posted a count: "1 snag(s) raised, 0 discarded". The
+// operator's immediate question was "what is the snag, and where?" - and the
+// honest answer was two clicks away in the Security tab, which is not where
+// they were looking.
+//
+// That is the same objection they had raised about a ciphertext fingerprint an
+// hour earlier: something changed and I will not tell you what is an alarm
+// nobody can action. The findings are all in hand at this point - the SARIF was
+// written from them - so withholding them was nothing but a missing loop.
+//
+// The alerts stay as alerts. Each is still dismissable on its own with a
+// stated reason, and those reasons are what turn this epoch's acceptance test
+// into a count rather than a judgement. This is the readable copy, not a
+// replacement.
+func note(name string, kept []snag, dropped []string) string {
+	if len(kept) == 0 {
+		return fmt.Sprintf("**clerk %s** — nothing to raise. %d finding(s) discarded as uncheckable.\n\n"+
+			"A second opinion from a reader with no context: it can approve nothing and block nothing.",
+			name, len(dropped))
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "**clerk %s** — %d snag(s)\n\n", name, len(kept))
+	for _, s := range kept {
+		fmt.Fprintf(&b, "- `%s:%d` — %s\n", s.Path, s.Line, strings.TrimSpace(s.Message))
+	}
+
+	// Said out loud, always. "Nothing found" and "eleven findings none of which
+	// could be checked" are different facts, and only one is reassuring.
+	fmt.Fprintf(&b, "\n%d discarded as uncheckable.\n\n", len(dropped))
+	b.WriteString("Each is also an alert on the file, dismissable on its own with a reason. " +
+		"A second opinion from a reader with no context: it can approve nothing and block nothing.")
+	return b.String()
 }
 
 // post puts a short note on a pull request, as a comment and never more.

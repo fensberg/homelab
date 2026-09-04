@@ -47,6 +47,10 @@ type suppliers struct {
 		Repo   string `yaml:"repo"`
 		Reason string `yaml:"reason"`
 	} `yaml:"hooks"`
+	Providers []struct {
+		Source string `yaml:"source"`
+		Reason string `yaml:"reason"`
+	} `yaml:"providers"`
 }
 
 func readSuppliers(t *testing.T) (suppliers, string) {
@@ -449,4 +453,63 @@ func containsString(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// Every OpenTofu provider is a declared supplier, and every declared supplier
+// is actually used.
+//
+// Providers are the most privileged deliveries this estate accepts: binaries
+// downloaded at init time and executed locally, each handed a live credential -
+// the hypervisor API token, the cluster PKI, the object storage keys. The
+// hooks section of approved-suppliers.yml exists because seven repositories run
+// on a developer's machine with a developer's privileges; this is the same
+// shape at the estate's privilege, and it went undeclared until #230.
+//
+// Checked in both directions on purpose. One direction stops a provider being
+// added to the HCL without anybody deciding to take delivery from that party;
+// the other stops the list keeping an entry for a provider nobody uses, which
+// is how an approval outlives the thing it approved.
+func TestEveryProviderIsADeclaredSupplier(t *testing.T) {
+	s, root := readSuppliers(t)
+
+	approved := map[string]bool{}
+	for _, p := range s.Providers {
+		if strings.TrimSpace(p.Reason) == "" {
+			t.Errorf("provider %q is approved with no reason given", p.Source)
+		}
+		approved[p.Source] = true
+	}
+	if len(approved) == 0 {
+		t.Fatal("approved-suppliers.yml declares no providers, so this test proves nothing")
+	}
+
+	body, err := os.ReadFile(filepath.Join(root, "management", "cluster", "versions.tf"))
+	if err != nil {
+		t.Fatalf("reading versions.tf: %v", err)
+	}
+
+	// `name = { source = "owner/name", version = "~> x.y" }`
+	declared := map[string]bool{}
+	for _, m := range regexp.MustCompile(`source\s*=\s*"([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)"`).FindAllStringSubmatch(string(body), -1) {
+		declared[m[1]] = true
+	}
+	if len(declared) == 0 {
+		t.Fatal("no providers found in versions.tf, so this test proves nothing")
+	}
+
+	for source := range declared {
+		if !approved[source] {
+			t.Errorf("management/cluster/versions.tf requires the provider %q, which is not an approved supplier.\n\n"+
+				"A provider runs with this estate's credentials, so taking delivery from a new party is a "+
+				"decision rather than a line of HCL. Declare it in scripts/approved-suppliers.yml with a "+
+				"reason, in its own pull request.", source)
+		}
+	}
+	for source := range approved {
+		if !declared[source] {
+			t.Errorf("scripts/approved-suppliers.yml approves the provider %q and versions.tf does not require it.\n\n"+
+				"Remove the entry - an approval that outlives the thing it approved is how a supplier list "+
+				"stops describing what the estate actually takes.", source)
+		}
+	}
 }

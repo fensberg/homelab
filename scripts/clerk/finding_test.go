@@ -175,3 +175,38 @@ func TestEverySarifResultIsAdvisory(t *testing.T) {
 		}
 	}
 }
+
+// The comment names the findings, rather than counting them.
+//
+// The first live run posted "1 snag(s) raised, 0 discarded" and the operator
+// asked what the snag was and where. The answer was two clicks away in the
+// Security tab, which is not where they were looking - the same objection they
+// had made an hour earlier about an alarm that says something changed without
+// saying what.
+func TestTheCommentNamesEveryFinding(t *testing.T) {
+	got := note("snag", []snag{
+		{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"},
+		{ruleDisagrees, "docs/epochs/01.md", 7, "claims a retry that the account does not describe"},
+	}, []string{"names a file that was not read"})
+
+	for _, want := range []string{
+		"scripts/clerk/llm.go:42", "nothing reaches this branch",
+		"docs/epochs/01.md:7", "claims a retry",
+		"2 snag(s)", "1 discarded",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the comment does not carry %q:\n%s", want, got)
+		}
+	}
+}
+
+// Nothing found still says so, and still reports what was discarded.
+func TestTheCommentSaysWhenThereIsNothingToRaise(t *testing.T) {
+	got := note("handover", nil, []string{"a", "b"})
+	if !strings.Contains(got, "nothing to raise") {
+		t.Errorf("a clean reading does not say so: %s", got)
+	}
+	if !strings.Contains(got, "2 finding(s) discarded") {
+		t.Errorf("the discard count is missing, and it is the number that says whether the clerk is any good: %s", got)
+	}
+}

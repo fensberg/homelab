@@ -71,6 +71,53 @@ charts:
   - url: https://openebs.github.io/openebs
     reason: The storage provisioner backing every volume in the cluster.
 
+# OpenTofu providers. Third-party code that runs with the estate's credentials.
+#
+# These are the most privileged deliveries this estate accepts, and until now
+# the only thing this file said about them was that CI may reach
+# registry.opentofu.org - which permits talking to the shop, not taking code
+# from a particular supplier.
+#
+# A provider is not a library. It is a binary downloaded at init time and
+# executed locally, and each of these is handed a live credential: proxmox gets
+# the hypervisor API token, talos gets the machine secrets and the cluster PKI,
+# cloudflare gets the object storage keys. Compare the hooks section below,
+# which exists because seven repositories run on a developer's machine with a
+# developer's privileges - this is the same shape at the estate's privilege
+# rather than a person's.
+#
+# Versions are NOT here, deliberately, and that is not an inconsistency.
+# OpenTofu has to read them itself, so they live in
+# management/cluster/versions.tf as ranges and in the committed
+# .terraform.lock.hcl as exact versions with checksums - which is the same
+# arrangement as a container image pinned by digest at its point of use. This
+# file answers the other half: who the estate takes delivery from.
+#
+# tests/go/repo/suppliers_test.go asserts the two agree in both directions, so
+# a provider cannot be added in one place and be invisible in the other.
+providers:
+  - source: bpg/proxmox
+    reason: >-
+      The hypervisor. Creates and destroys the VMs, and holds the Proxmox API
+      token and the disk-import SSH credential while doing it.
+  - source: siderolabs/talos
+    reason: >-
+      The operating system, from the people who publish it. Generates the
+      machine secrets and the cluster PKI, which makes it the single most
+      privileged provider here.
+  - source: hashicorp/kubernetes
+    reason: >-
+      Namespaces and secrets - the small set of objects Flux cannot create for
+      itself because they have to exist before it reconciles anything.
+  - source: tailscale/tailscale
+    reason: >-
+      The overlay network. Mints the tagged auth keys the nodes and the
+      hypervisor join with.
+  - source: cloudflare/cloudflare
+    reason: >-
+      Object storage. Creates the bucket the encrypted state backups and the
+      database's WAL archive are written to.
+
 # Network destinations a CI job may reach.
 #
 # harden-runner blocks egress by default and permits these. They were restated
