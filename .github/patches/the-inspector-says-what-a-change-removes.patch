@@ -1,0 +1,98 @@
+diff --git a/.github/workflows/inspector.yml b/.github/workflows/inspector.yml
+new file mode 100644
+index 0000000..e0157b3
+--- /dev/null
++++ b/.github/workflows/inspector.yml
+@@ -0,0 +1,92 @@
++name: Inspector
++
++# What a change takes away, said out loud.
++#
++# Everything in tests/go/repo asserts a property of the repository AFTER a
++# change. Nothing asserted a property OF the change, and those catch different
++# things: a result-shaped check catches a known failure - the thing that should
++# be there is not - and cannot catch the novel one, because nobody has written
++# a rule for it yet.
++#
++# This counts removals, which is a class rather than an instance. "This pull
++# request removes four test functions" is true whether or not anybody had
++# registered those functions anywhere. It exists because a session overwrote a
++# building-code test file in place, destroying four guards, inside a diff of
++# 1,372 added lines - and was caught only because those four happened to be in
++# the mutation ledger. #188 records that most guards are not.
++#
++# It reports and never refuses. A removal is usually correct, so a check that
++# blocked one would be wrong more often than right, and a check that is usually
++# wrong gets ignored and then gets deleted. Keep it OUT of main's required
++# checks: its value is that somebody reads it, not that it stops anything.
++#
++# The program it runs holds no credential and calls no vendor, so this lane
++# cannot go red because a key expired or a quota ran out.
++
++on:
++  pull_request:
++    types: [opened, synchronize, reopened]
++
++permissions:
++  contents: read
++
++concurrency:
++  group: inspector-${{ github.event.pull_request.number }}
++  # Safe to cancel: this reads and changes nothing, so a newer answer is
++  # strictly better than an older one still in flight.
++  cancel-in-progress: true
++
++# GitHub's default shell for `run:` is `bash -e {0}`, which has no pipefail: in
++# `a | b` only b's exit status counts, so a failing command feeding a working
++# one is a green step. tests/go/repo/pipefail_test.go asserts this is present.
++defaults:
++  run:
++    shell: bash
++
++jobs:
++  tally:
++    name: What this change takes away
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - name: Harden the runner
++        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
++        with:
++          egress-policy: block
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++            objects.githubusercontent.com:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
++
++      # Full history: the tally compares two commits, and a shallow clone has
++      # neither of them in full.
++      - name: Checkout Code
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          fetch-depth: 0
++          persist-credentials: false
++
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      - name: Setup Go
++        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
++        with:
++          go-version: ${{ env.GO_VERSION }}
++          # scripts/inspector has no dependencies, so there is nothing to cache.
++          cache: false
++
++      # Every expansion is bound to an environment variable rather than
++      # interpolated into the script. A `${{ }}` inside `run:` is textual
++      # substitution into the shell source before bash sees it, so a value
++      # containing shell syntax becomes shell syntax; `$VAR` is a value whatever
++      # it holds. zizmor's template-injection audit is what enforces this.
++      - name: Say what this change removes
++        env:
++          BASE: ${{ github.event.pull_request.base.sha }}
++          HEAD: ${{ github.event.pull_request.head.sha }}
++        run: |
++          go build -C scripts/inspector -o ../../toolshed/inspector .
++          ./toolshed/inspector tally -base "$BASE" -head "$HEAD" | tee -a "$GITHUB_STEP_SUMMARY"
