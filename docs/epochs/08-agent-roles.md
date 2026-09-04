@@ -140,6 +140,42 @@ it can be tuned or exempted; a model is wrong differently on each run, so no
 suppression list is possible and a change in its output cannot be
 distinguished from a change in the code.
 
+### The inspector owns attestation, and `scripts/attestation` is deprecated
+
+**Chose:** the sensitive-path gate moves into `scripts/inspector` as a verb.
+`scripts/attestation` is deprecated and removed once it has.
+**Because:** they are one role in two programs, which is the bloat this estate
+refuses everywhere else. The decision below kept the gate "a role rather than
+an identity" and named the trigger that would change that: a second job. That
+job exists - `tally` reads a change and reports what it takes away, and has been
+running on every pull request since it landed. The trigger fired.
+
+The operator's framing settled it: "We're de-bloating and that includes
+redundant roles." Two zero-dependency Go programs, both acting on a pull
+request, both the internal party that inspects before work may be covered up,
+is eleven subprocess helpers wearing a different hat.
+
+**The constraint that makes this safe, and it is not incidental.** The
+attestation half must keep working when the vendor does not. So the inspector
+has verbs that need no model and no key at all - `tally` today, `attest` when it
+moves - and only `explain` reaches a vendor. Merging the gate into the inspector
+must not make the gate depend on anything metered, or a merge would wait on a
+quota. This is the same rule as "the vendor must never become a merge
+dependency", one layer down: it now constrains the program's shape rather than
+just the workflow's.
+
+**What does not change.** No machine may resolve a conversation, including this
+one - the inspector writes, a human resolves. The conversation stays keyed to a
+digest of the sensitive part of the diff. Nothing blocks on a state only a human
+action can clear. Those are the same four constraints the section below lists,
+and moving the code does not touch any of them.
+
+**The identity question follows the code, not the other way round.** Once the
+inspector owns the gate and `explain` gives it something to say that a reviewer
+did not already know, it wants its own App - scoped to `pull-requests: write`
+and nothing else - so its actions are attributable and its permissions are its
+own. Until then it posts as `github-actions[bot]`, which is what it does today.
+
 ### The inspector is a role before it is an identity
 
 The sensitive-path gate has been called the inspector since the naming was
@@ -147,6 +183,10 @@ settled - the party who signs off before work may be covered up. Today it is a
 step inside a workflow, posting as `github-actions[bot]`, and the question
 raised was whether it should become an agent of its own whose only job is to
 seek out sensitive changes and flag them.
+
+> **Superseded.** The trigger this decision names has since fired, and the
+> decision above replaces it. Kept because the reasoning is still the reason,
+> and because a decision that was reversed is worth as much as one that held.
 
 **Chose:** keep it a role for now, and record the trigger that would make it an
 identity.
