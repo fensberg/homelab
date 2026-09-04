@@ -3,6 +3,7 @@ package phases
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"homelab/contractor/internal/config"
@@ -188,6 +189,15 @@ func checkEtcd(ctx *run.Context, _ string) error {
 	if len(net.NodeIPs) == 0 {
 		return fmt.Errorf("the config describes no control-plane nodes, so there is " +
 			"nothing to ask about etcd membership")
+	}
+
+	// Asked before anything is attempted, because an absent binary cannot
+	// become present by waiting and must not be reported as a sick cluster.
+	if _, err := exec.LookPath("talosctl"); err != nil {
+		return &Unavailable{
+			Tool: "talosctl",
+			Why:  "not on PATH, so etcd membership was never measured",
+		}
 	}
 
 	talosconfig, cleanup, err := writeTalosconfig(ctx)
