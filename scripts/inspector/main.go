@@ -4,7 +4,7 @@
 // The inspector is the party who checks work before it may be covered up. It
 // has two halves and they fail differently, so they are separate verbs:
 //
-//	tally    what this change takes away - git only, no model, no credential
+//	tally    what this change takes away - git only, no model, no vendor
 //
 // tally holds nothing and calls nobody. It cannot fail because a vendor is
 // unreachable, a key expired or a quota ran out, which is what makes it the
@@ -18,19 +18,20 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 func main() {
 	if len(os.Args) < 2 || os.Args[1] != "tally" {
-		fmt.Fprint(os.Stderr, "inspector reads a change before it is covered up.\n\nusage: inspector tally -base <sha> -head <sha> [-root <dir>]\n")
+		fmt.Fprint(os.Stderr, "inspector reads a change before it is covered up.\n\nusage: inspector tally -base <sha> -head <sha> [-root <dir>] [-pr <n>]\n")
 		os.Exit(2)
 	}
 	os.Exit(tally(os.Args[2:]))
 }
 
 func tally(args []string) int {
-	var base, head, root string
+	var base, head, root, pr string
 	root = "."
 	for i := 0; i+1 < len(args); i += 2 {
 		switch args[i] {
@@ -40,6 +41,8 @@ func tally(args []string) int {
 			head = args[i+1]
 		case "-root":
 			root = args[i+1]
+		case "-pr":
+			pr = args[i+1]
 		}
 	}
 	if base == "" || head == "" {
@@ -58,12 +61,66 @@ func tally(args []string) int {
 		return 1
 	}
 
-	fmt.Print(render(r))
+	report := render(r)
+	fmt.Print(report)
+
+	if pr != "" {
+		if code := say(pr, report, worthSaying(r)); code != 0 {
+			return code
+		}
+	}
+
 	// Always zero when it ran. This reports; it does not refuse. A removal is
 	// usually correct, and a check that is usually wrong gets ignored and then
 	// gets deleted.
 	return 0
 }
+
+// worthSaying reports whether this change took anything away.
+//
+// The step summary always said something, including "Nothing." on every push.
+// A comment cannot do that: fifty a day restating what the diff already shows
+// is how a line stops being read, and it would take the one that matters with
+// it. Silence is the correct output for a change that removed nothing.
+func worthSaying(r *report) bool {
+	if len(r.files) > 0 || len(r.tests) > 0 || len(r.newTools) > 0 {
+		return true
+	}
+	for _, delta := range r.assertions {
+		if delta < 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// say puts the report on the pull request, or removes a stale one.
+func say(pr, body string, worth bool) int {
+	n, err := strconv.Atoi(pr)
+	if err != nil || n <= 0 {
+		fmt.Fprintf(os.Stderr, "inspector tally: -pr %q is not a pull request number\n", pr)
+		return 2
+	}
+	repo, token := env("GITHUB_REPOSITORY"), env("GITHUB_TOKEN")
+	if repo == "" || token == "" {
+		fmt.Fprintln(os.Stderr, "inspector tally: -pr needs GITHUB_REPOSITORY and GITHUB_TOKEN")
+		return 2
+	}
+	if err := newCommenter(githubAPI, repo, token).post(n, body, worth); err != nil {
+		fmt.Fprintln(os.Stderr, "inspector tally:", err)
+		return 1
+	}
+	if worth {
+		fmt.Fprintf(os.Stderr, "inspector tally: commented on #%d\n", n)
+	} else {
+		fmt.Fprintf(os.Stderr, "inspector tally: nothing was taken away, so #%d is left alone\n", n)
+	}
+	return 0
+}
+
+// githubAPI is a variable so a test can point it somewhere hermetic.
+// tests/go/repo/pinned_endpoints_test.go refuses one no test ever moves.
+var githubAPI = "https://api.github.com"
 
 func render(r *report) string {
 	var b strings.Builder

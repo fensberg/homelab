@@ -29,6 +29,11 @@ on:
 
 permissions:
   contents: read
+  # To say it where somebody is already looking. The first version wrote only
+  # to $GITHUB_STEP_SUMMARY, which is a page you reach by clicking into a run -
+  # so a pull request that removed four guards carried a green check and
+  # nothing to read.
+  pull-requests: write
 
 concurrency:
   group: inspector-${{ github.event.pull_request.number }}
@@ -83,10 +88,17 @@ jobs:
       # substitution into the shell source before bash sees it, so a value
       # containing shell syntax becomes shell syntax; `$VAR` is a value whatever
       # it holds. zizmor's template-injection audit is what enforces this.
+      # Comments only when something was taken away, and edits its own comment
+      # rather than adding one per push - #160 is exactly that bug. A change
+      # that removed nothing says nothing, because fifty "Nothing." comments a
+      # day is how the one that matters stops being read.
       - name: Say what this change removes
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           go build -C scripts/inspector -o ../../toolshed/inspector .
-          ./toolshed/inspector tally -base "$BASE" -head "$HEAD" | tee -a "$GITHUB_STEP_SUMMARY"
+          ./toolshed/inspector tally -base "$BASE" -head "$HEAD" -pr "$PR" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,273 @@
+name: Clerk
+
+# The outside party, asked once, at the moment its opinion is worth having.
+#
+# The clerk reads this repository without its context and can stop nothing.
+# Two jobs where having no context is the qualification rather than a
+# limitation: snag walks the work and lists what is unsound or does not match
+# what was written about it, and handover reads it as a stranger who has just
+# cloned it and lists what would stop them.
+#
+# WHY ready_for_review, AND NOT EVERY PUSH
+#
+# This spends a metered vendor and produces prose somebody reads once. On every
+# push it would be both waste and noise: a pull request iterates - a check
+# fails, it is fixed, it fails again - and the agent that opened it is a poor
+# judge of when that has finished. It always thinks it has.
+#
+# So the signal comes from the operator instead. Pull requests open as drafts,
+# every check runs and goes green while the fussing happens, and marking it
+# ready is the deliberate act that says the work is done and an opinion is now
+# wanted. It fires once, before approval, which is the only point at which the
+# findings are still actionable.
+#
+# Re-requesting is a review request, which fires this again - so acting on the
+# findings and asking for a fresh read costs one click and one call.
+#
+# WHAT IT MAY NOT DO
+#
+# Nothing. It has no lever by construction: findings are SARIF at note level,
+# and the code scanning results check MUST STAY OUT of main's required checks.
+# A removal or a criticism that blocks a merge is the outside party acquiring
+# exactly the power this design withholds.
+
+on:
+  pull_request:
+    # Elevation only. Never opened, never synchronize - those are the states
+    # where the work is still moving.
+    #
+    # review_requested is deliberately NOT here, and was removed after being
+    # tried. It fires on ANY reviewer request, and CODEOWNERS requests one
+    # automatically the moment a pull request is elevated - so a single
+    # elevation fired this twice, and the concurrency group below cancelled one
+    # of them by luck rather than by design, part-way through a metered call.
+    # The clerk cannot be requested as a reviewer either, so there was nothing
+    # to filter on.
+    types: [ready_for_review]
+
+  # Asked again, without changing the pull request's state.
+  #
+  #   @clerk snag       walk the work again
+  #   @clerk handover   read it again as a stranger
+  #
+  # The Dependabot shape, and it beats re-requesting a review: it is explicit,
+  # it works on a draft, it says which reading is wanted, and it leaves a record
+  # in the conversation of who asked for what.
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  # To upload SARIF. Alerts are attributed to the tool name in the report, so
+  # the clerk App keeps its own narrow grant and is not used here at all.
+  security-events: write
+  pull-requests: write
+
+concurrency:
+  # One read per pull request. A second request supersedes a first that is
+  # still running, because a newer answer is strictly better.
+  group: clerk-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  read:
+    name: An outside reading
+    # Two ways in, and the second needs a gate the first does not.
+    #
+    # issue_comment fires for anybody who can comment, and on a public
+    # repository that is the world. Without the association check below, a
+    # passer-by could spend this estate's metered quota by typing eight
+    # characters. That is the whole reason this condition is long.
+    #
+    # Note the platform is on our side here: a workflow triggered by
+    # issue_comment runs the file from the DEFAULT BRANCH, never the one in the
+    # pull request - so a change cannot alter the workflow that answers its own
+    # comments.
+    if: >
+      (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+      (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request != null
+        && startsWith(github.event.comment.body, '@clerk')
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    # Bounded so a hung call cannot bill a metered vendor for six hours, which
+    # is what GitHub's default timeout allows.
+    timeout-minutes: 15
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            generativelanguage.googleapis.com:443
+
+      # Heard you. Dependabot reacts rather than replying, and it is the right
+      # shape: an acknowledgement that costs no comment and no notification.
+      # Eyes now, thumbs up when it is done.
+      - name: Acknowledge the request
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          COMMENT: ${{ github.event.comment.id }}
+        run: |
+          gh api -X POST "repos/$REPO/issues/comments/$COMMENT/reactions" -f content=eyes --silent
+
+      # Which pull request, and which commits.
+      #
+      # A pull_request event carries them; an issue_comment carries only the
+      # issue number, because the comment is on the conversation rather than on
+      # the change. So they are resolved once here and every later step reads
+      # the same two values whichever way it was asked.
+      - name: Resolve the change
+        id: change
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          gh api "repos/$REPO/pulls/$NUMBER" \
+            --jq '"pr=\(.number)\nbase=\(.base.sha)\nhead=\(.head.sha)\nref=\(.head.ref)"' \
+            >>"$GITHUB_OUTPUT"
+
+      # What was asked for. Elevation asks for both readings; a comment asks
+      # for the one it names.
+      - name: What was asked
+        id: ask
+        env:
+          BODY: ${{ github.event.comment.body }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != "issue_comment" ]; then
+            echo "verbs=snag handover" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$(printf '%s' "$BODY" | tr -d '\r' | head -1)" in
+            "@clerk snag"*)     echo "verbs=snag" >>"$GITHUB_OUTPUT" ;;
+            "@clerk handover"*) echo "verbs=handover" >>"$GITHUB_OUTPUT" ;;
+            *)                  echo "verbs=" >>"$GITHUB_OUTPUT" ;;
+          esac
+
+      # Nothing recognised, so say so and stop. A reaction rather than a
+      # comment: not every action needs an explicit output, and a confused face
+      # says "seen, not understood" without adding to the conversation.
+      - name: Say the command was not understood
+        if: steps.ask.outputs.verbs == ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          COMMENT: ${{ github.event.comment.id }}
+        run: |
+          gh api -X POST "repos/$REPO/issues/comments/$COMMENT/reactions" -f content=confused --silent
+          echo "::notice::known commands are '@clerk snag' and '@clerk handover'"
+
+      # refs/pull/N/head rather than the head SHA, and that is what makes a
+      # RETROACTIVE reading possible.
+      #
+      # An issue_comment run starts on the default branch, so the change has to
+      # be fetched explicitly either way. But a merged pull request is the
+      # interesting case: this repository squash-merges, so the head commit is
+      # not an ancestor of main and its branch is deleted on merge - a checkout
+      # by SHA would find nothing. GitHub keeps refs/pull/N/head forever, so
+      # `@clerk snag` works on a pull request that landed months ago exactly as
+      # it does on one still open.
+      #
+      # That is worth having on purpose rather than by accident: it means the
+      # clerk can be pointed at work that was merged before it existed.
+      - name: Checkout Code
+        if: steps.ask.outputs.verbs != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/pull/${{ steps.change.outputs.pr }}/head
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # scripts/clerk has no dependencies, so there is nothing to cache.
+          cache: false
+
+      - name: Build the clerk
+        run: go build -C scripts/clerk -o ../../toolshed/clerk .
+
+      # Which files this change touched. The clerk reads the change, not the
+      # repository: a whole-tree read would cost more and say less.
+      - name: Which files this change touched
+        id: touched
+        if: steps.ask.outputs.verbs != ''
+        env:
+          BASE: ${{ steps.change.outputs.base }}
+          HEAD: ${{ steps.change.outputs.head }}
+        run: |
+          paths=$(git diff --name-only "$BASE" "$HEAD" | tr '\n' ' ')
+          echo "paths=$paths" >>"$GITHUB_OUTPUT"
+
+      # snag walks the work twice: blind first, so it cannot be told what the
+      # code is for while deciding whether it holds together, then the
+      # commentary compared against that account.
+      - name: Walk the work
+        if: steps.touched.outputs.paths != '' && contains(steps.ask.outputs.verbs, 'snag')
+        env:
+          CLERK_BOT_LLM_KEY: ${{ secrets.CLERK_BOT_LLM_KEY }}
+          CLERK_BOT_APP_ID: ${{ secrets.CLERK_BOT_APP_ID }}
+          CLERK_BOT_PRIVATE_KEY: ${{ secrets.CLERK_BOT_PRIVATE_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR: ${{ steps.change.outputs.pr }}
+          PATHS: ${{ steps.touched.outputs.paths }}
+        run: |
+          # shellcheck disable=SC2086 # PATHS is a space-separated path list
+          ./toolshed/clerk snag -pr "$PR" -out snag.sarif $PATHS
+
+      # handover asks the question tests/go/repo/forkable_test.go cannot: what
+      # would stop somebody who cloned this and pointed it at their own vault.
+      # No -pr: its findings are alerts, and a second comment saying the same
+      # count twice is noise. Not every action needs an explicit output.
+      - name: Read it as a stranger
+        if: steps.touched.outputs.paths != '' && contains(steps.ask.outputs.verbs, 'handover')
+        env:
+          CLERK_BOT_LLM_KEY: ${{ secrets.CLERK_BOT_LLM_KEY }}
+          PATHS: ${{ steps.touched.outputs.paths }}
+        run: |
+          # shellcheck disable=SC2086 # PATHS is a space-separated path list
+          ./toolshed/clerk handover -out handover.sarif $PATHS
+
+      # Uploaded separately so each carries its own tool name and its findings
+      # group under it, rather than one run pretending two readings were one.
+      - name: Upload the snagging list
+        if: always() && hashFiles('snag.sarif') != ''
+        uses: github/codeql-action/upload-sarif@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        with:
+          sarif_file: snag.sarif
+          category: clerk-snag
+
+      - name: Upload the handover reading
+        if: always() && hashFiles('handover.sarif') != ''
+        uses: github/codeql-action/upload-sarif@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        with:
+          sarif_file: handover.sarif
+          category: clerk-handover
+
+      # Done. The thumbs up Dependabot gives, and it means the same thing:
+      # what you asked for has happened, go and look.
+      - name: Say it is done
+        if: github.event_name == 'issue_comment' && steps.ask.outputs.verbs != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          COMMENT: ${{ github.event.comment.id }}
+        run: |
+          gh api -X POST "repos/$REPO/issues/comments/$COMMENT/reactions" -f content="+1" --silent
