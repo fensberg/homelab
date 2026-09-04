@@ -1,0 +1,27 @@
+diff --git a/.github/workflows/integration-tests.yml b/.github/workflows/integration-tests.yml
+index 83065f0..b6b2158 100644
+--- a/.github/workflows/integration-tests.yml
++++ b/.github/workflows/integration-tests.yml
+@@ -135,9 +135,22 @@ jobs:
+       #
+       # The alert is this workflow failing, which GitHub already emails about.
+       # That is one fewer moving part than any monitoring stack.
++      # The token, because this phase touches state.
++      #
++      # It was missing, and the first run to reach this step failed on "not
++      # signed in to 1Password". Backup pulls state, and state is encrypted at
++      # rest with a passphrase read from the vault - so EnsureStateEncryption
++      # needs a live session before the phase begins. That is not incidental:
++      # a bare tofu run without TF_ENCRYPTION cannot read state at all, which
++      # is the lock rather than a side effect.
++      #
++      # Sterilize below still gets no token, deliberately. Removing files needs
++      # no vault access, and the code enforces that now rather than the
++      # workflow hoping for it (#219). Least privilege per step, not per job.
+       - name: Take a fresh backup
+         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
+         env:
++          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+           SITE: ${{ inputs.site || 'site0' }}
+         run: ./scripts/contractor/contractor break-ground -site "$SITE" -phase backup -keep-on-failure
+ 
