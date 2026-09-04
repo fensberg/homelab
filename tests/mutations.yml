@@ -438,6 +438,23 @@ unprovable:
   - test: TestWorkflowEgressIsDeclaredInTheSuppliersList
     owed: true
 
+  # --- the ledger cannot mutate Go source ------------------------------------
+  #
+  # The guards run from a binary compiled once from the real tree, so an edit
+  # to Go source in the scratch copy never reaches them - an entry would pass
+  # or fail for reasons unrelated to what it claims. This guard reads Go source
+  # and nothing else, so it has no non-Go mutation available.
+  #
+  # Proved by hand instead: a twelfth subprocess helper was added to
+  # internal/run, the guard named it, and it was removed. Worth recording that
+  # the first attempt at that proof reported a PASS - go test had cached the
+  # previous result, because this guard reads the repository at runtime rather
+  # than depending on the package it lives in, so nothing invalidated the
+  # cache. Any repo-introspection guard proved by hand needs -count=1, or the
+  # proof is of nothing.
+  - path: tests/go/repo/toolbelt_test.go
+    reason: go-source
+
 # Tests that legitimately read a comment.
 #
 # TestNoTestIsSatisfiedByAComment runs the whole package against a copy with
