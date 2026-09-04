@@ -105,6 +105,24 @@ func waitFor(ctx *run.Context, kubeconfig, what string, timeout time.Duration, c
 			run.Ok(what + ": ready")
 			return nil
 		}
+
+		// Not everything is worth waiting on. A tool that is not installed is
+		// not installed on the third attempt either, and retrying it burns the
+		// whole timeout and then buries the cause under a message naming the
+		// subsystem it never reached. Report it as what it is - the question
+		// was not asked - and stop.
+		var missing *Unavailable
+		if errors.As(last, &missing) {
+			return fmt.Errorf(`%s could not be checked: %s is %s.
+
+This is NOT a verdict about the cluster. Nothing was measured, so nothing is
+known - the estate may be perfectly well. Install %s where this runs, then
+re-run from here:
+
+    ./scripts/contractor/contractor break-ground -site %s -from health`,
+				what, missing.Tool, missing.Why, missing.Tool, ctx.Site)
+		}
+
 		if time.Now().After(deadline) {
 			return fmt.Errorf(`%s did not become healthy within %s.
 
@@ -117,7 +135,18 @@ degraded cluster. Look at what is listed above, then re-run from here:
     ./scripts/contractor/contractor break-ground -site %s -from health`, what, timeout, last, ctx.Site)
 		}
 		run.Info("  still waiting: " + summariseWait(last))
-		time.Sleep(15 * time.Second)
+
+		// Never sleep past the deadline. Waiting fifteen seconds to discover
+		// that two remained is fifteen seconds of a metered runner spent
+		// learning nothing, and it makes a short timeout behave like a long
+		// one.
+		pause := 15 * time.Second
+		if left := time.Until(deadline); left < pause {
+			pause = left
+		}
+		if pause > 0 {
+			time.Sleep(pause)
+		}
 	}
 }
 

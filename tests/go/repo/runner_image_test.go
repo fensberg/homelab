@@ -203,7 +203,13 @@ func pinnedKeys(t *testing.T, root string) []string {
 func TestRunnerImageCarriesEveryBinaryTheContractorInvokes(t *testing.T) {
 	dockerfile := readFile(t, filepath.Join(repoRoot(t), ".github", "runner-image", "Dockerfile"))
 
-	for _, bin := range []string{"op", "tofu", "age", "rclone", "kubectl"} {
+	// Hand-maintained, and it drifted: the Health phase started shelling out
+	// to talosctl in the same merge that added talosctl to the Dockerfile, and
+	// this list - whose name promises EVERY binary - was not updated either
+	// time. It happened to be harmless because the Dockerfile was right; a
+	// list that has to be remembered will not stay right. Deriving it from the
+	// source is filed separately.
+	for _, bin := range []string{"op", "tofu", "age", "rclone", "kubectl", "talosctl"} {
 		if !strings.Contains(dockerfile, bin) {
 			t.Errorf("the runner image does not install %q, which contractor shells out to", bin)
 		}

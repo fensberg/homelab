@@ -113,7 +113,13 @@ spec:
             type: RuntimeDefault
         containers:
           - name: runner
-            image: ghcr.io/fensberg/homelab-runner@sha256:4f19cd1ab7275b37d1a37c851917b60f0c6d2f27502ec42abb84f49727d9a258
+            # Bumped because the converge that failed on 2026-09-03 ran on an
+            # image built on 31 August, three days before talosctl was added to
+            # the Dockerfile the Health phase had started depending on (#195).
+            # The digest pin was doing its job; nothing connected it to the
+            # Dockerfile changing underneath it. tests/go/repo asserts that
+            # link now, so a stale pin fails the build instead of a converge.
+            image: ghcr.io/fensberg/homelab-runner@sha256:15ade7051773012d42e85727198d0a3cc08495a0137dfe97b9bfe6ca30c1cdd2
             # Required whenever the template is overridden: the chart supplies
             # this only for its own default runner container.
             command: ["/home/runner/run.sh"]
