@@ -91,7 +91,7 @@ func TestNoErrorEverQuotesTheKey(t *testing.T) {
 		{"rate limited", func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "quota exceeded for "+testKey, http.StatusTooManyRequests)
 		}},
-		{"unparseable", ok(`{"candidates":`)},
+		{"unparsable", ok(`{"candidates":`)},
 		{"no candidates", ok(`{"candidates":[]}`)},
 	}
 

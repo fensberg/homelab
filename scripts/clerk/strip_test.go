@@ -112,7 +112,7 @@ func TestMarkdownIsAllProse(t *testing.T) {
 	}
 }
 
-// Unparseable Go still gets read, with a weaker separation rather than none.
+// Unparsable Go still gets read, with a weaker separation rather than none.
 func TestBrokenGoFallsBackRatherThanRefusing(t *testing.T) {
 	code, prose, ok := split("broken.go", "package x\n// a claim\nfunc (\n")
 	if !ok {

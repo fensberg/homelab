@@ -59,7 +59,7 @@ func splitGo(path, body string) (string, string, bool) {
 	fset := token.NewFileSet()
 	tree, err := parser.ParseFile(fset, path, body, parser.ParseComments)
 	if err != nil {
-		// Unparseable Go is still worth reading; fall back rather than
+		// Unparsable Go is still worth reading; fall back rather than
 		// refusing, and accept the weaker separation.
 		return blankLines(body, "//")
 	}
