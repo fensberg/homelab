@@ -459,6 +459,13 @@ unprovable:
   # breakground_preconditions.go makes it name the file.
   - path: tests/go/repo/no_gh_dependency_test.go
     reason: go-source
+  # Same again. Proved by hand with -count=1: adding an unpinned endpoint var
+  # to scripts/gatehouse made it name proveAPI, and removing it went green.
+  # Two earlier attempts at that proof did NOT fire, which was the guard being
+  # right - any test assigning the variable satisfies it, and pointAt's restore
+  # closure is an assignment too.
+  - path: tests/go/repo/pinned_endpoints_test.go
+    reason: go-source
 
 # Tests that legitimately read a comment.
 #
