@@ -223,7 +223,7 @@ tests, and nothing is left on disk that ignite would not have left there.
 > **A wrinkle worth knowing.** `contractor break-ground -phase render` sterilizes the workspace
 > on the way out, which deletes the config it just wrote. Pass
 > `-keep-on-failure` to stop it:
-> `./scripts/contractor/contractor break-ground -site site0 -phase render -keep-on-failure`.
+> `./toolshed/contractor break-ground -site site0 -phase render -keep-on-failure`.
 > The flag name describes the failure path rather than this one; see
 > `docs/ideas.md`.
 
@@ -237,8 +237,8 @@ hold the credentials.
 
 ```sh
 task destroy SITE=site0     # prints the command; does not run it
-./scripts/contractor/contractor break-ground -site site0 -destroy -whatif
-./scripts/contractor/contractor demolish -site site0 -confirm site0
+./toolshed/contractor break-ground -site site0 -destroy -whatif
+./toolshed/contractor demolish -site site0 -confirm site0
 ```
 
 ## The backup alarm

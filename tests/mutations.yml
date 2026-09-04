@@ -258,6 +258,20 @@ mutations:
       forgotten - a 9.4MB binary reached main and a 3.6MB one sat there
       unnoticed. Building anywhere else reopens that.
 
+  - guard: TestRecoveryInstructionsNameTheWorkstationBinary
+    file: docs/state-and-secret-rotation.md
+    find: "### Restoring\n\n```sh\n./toolshed/contractor restore -site site0"
+    replace: "### Restoring\n\n```sh\n./scripts/contractor/contractor restore -site site0"
+    mentions: "which only exists in CI"
+    why: >
+      The path this puts back is the one a real ignition printed on 2026-09-04,
+      in the message telling the operator how to recover from a total loss. It
+      names a binary that exists only in CI, because the workflows build to
+      scripts/contractor/contractor and task build writes toolshed/contractor.
+      A recovery instruction that names a file the reader does not have is
+      worse than none: it is read at the moment everything else has already
+      gone wrong.
+
 # Guards that cannot be proved by mutation, and why.
 #
 # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
