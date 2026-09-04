@@ -1,0 +1,129 @@
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 448fe35..27b6786 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -517,38 +517,110 @@ jobs:
+       # re-mergeable once the cause is fixed, and it does not put an automated
+       # commit on main - which is the thing this repository is careful about
+       # everywhere else.
+-      - name: Revert the merge, as a pull request
++      # Bounded, signed, and it does not pretend to reopen anything.
++      #
++      # Three defects, all found the first time this ever executed (#198).
++      #
++      # SCOPE. It ran `git revert` on the whole merge commit, so a converge
++      # failing because a binary was missing from a runner would have removed
++      # 83 files - the attestation gate, the push guard, the mutation ledger,
++      # the git hooks and eleven building-code assertions among them. Only
++      # `management/` drives the estate; nothing else here is applied by a
++      # converge, and nothing else should move because one failed. The estate
++      # rule is to enumerate what will be acted on by address, so a targeted
++      # action cannot become unbounded, and a whole-merge revert is the
++      # opposite construction.
++      #
++      # SIGNATURE. It used plain git, which produces unsigned commits, and
++      # `required_signatures` applies to every branch here - so this path could
++      # only ever fail, and its first real execution was its first test. The
++      # commit is built through the Git Data API instead: GITHUB_TOKEN is an
++      # installation token, and a commit created with one comes back signed
++      # with GitHub's own key. No new credential.
++      #
++      # REOPENING. GitHub cannot reopen a merged pull request, so the thing
++      # asked for is not available. The revert pull request carries the link
++      # instead, and reverting it restores the change - which is the same
++      # outcome by the only route that exists.
++      - name: Revert management/, as a signed pull request
+         if: steps.verdict.outputs.exact == 'true'
+         env:
+           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+           SHA: ${{ github.sha }}
++          REPO: ${{ github.repository }}
+           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+           DETAIL: ${{ steps.verdict.outputs.detail }}
+         run: |
++          # Nothing under management/ changed, so there is nothing a converge
++          # would have applied and nothing to return.
++          if git diff --quiet "$SHA^" "$SHA" -- management/; then
++            echo "::notice::the failed converge changed nothing under management/, so main already describes the estate"
++            exit 0
++          fi
++
++          before=$(git rev-parse "$SHA^:management")
++          root=$(git rev-parse "$SHA^{tree}")
++
++          # base_tree is the current tree with one subtree swapped back. Every
++          # object referenced already exists on the server, reachable from the
++          # parent commit, so nothing has to be uploaded.
++          tree=$(gh api "repos/$REPO/git/trees" \
++            -f base_tree="$root" \
++            -f "tree[][path]=management" \
++            -f "tree[][mode]=040000" \
++            -f "tree[][type]=tree" \
++            -f "tree[][sha]=$before" \
++            --jq .sha)
++
++          # No author, committer or signature field is sent, deliberately:
++          # GitHub then signs on the installation's behalf and attributes it
++          # correctly, which is the same reasoning scripts/signedpush documents.
++          message=$(printf '%s\n' \
++            "revert: return management/ to the last converged state" \
++            "" \
++            "The converge for ${SHA::8} failed before it applied anything, so" \
++            "main described an estate that does not exist. Only management/ is" \
++            "returned; nothing else here is applied by a converge.")
++
++          commit=$(gh api "repos/$REPO/git/commits" \
++            -f message="$message" \
++            -f tree="$tree" \
++            -f "parents[]=$SHA" \
++            --jq .sha)
++
+           branch="revert/converge-failed-${SHA::8}"
+-          git config user.name "github-actions[bot]"
+-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+-          git switch -c "$branch"
+-
+-          # -m 1 only for a merge commit. This repository squash-merges, so the
+-          # commit on main usually has one parent and -m would be refused.
+-          if [ "$(git rev-list --parents -n 1 "$SHA" | wc -w)" -gt 2 ]; then
+-            git revert --no-edit -m 1 "$SHA"
+-          else
+-            git revert --no-edit "$SHA"
++          gh api "repos/$REPO/git/refs" \
++            -f ref="refs/heads/$branch" \
++            -f sha="$commit" >/dev/null
++
++          # The pull request this merge came from, so the trail survives.
++          origin=$(gh pr list --state merged --search "$SHA" --limit 1 --json number --jq '.[0].number // empty')
++          trail="The original pull request could not be identified from the merge commit."
++          if [ -n "$origin" ]; then
++            trail="Original: #${origin}. GitHub cannot reopen a merged pull request, so that one stays closed - reverting THIS pull request restores the change once the cause is fixed."
++            gh pr comment "$origin" --body "The converge for \`${SHA::8}\` failed before applying anything, so \`management/\` has been returned to its previous state. See the revert, and the failed run: $RUN_URL"
+           fi
+ 
+-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+           gh pr create --base main --head "$branch" \
+             --title "revert: the converge for ${SHA::8} failed before it applied anything" \
+             --body "$(printf '%s\n' \
++              "## What you need to do" \
++              "" \
++              "Merge this. It makes the repository true again." \
++              "" \
++              "## Why" \
++              "" \
+               "The converge that should have applied ${SHA::8} failed, and \`main\` now describes an estate that does not exist." \
+               "" \
+               "Per site:" \
+               "$DETAIL" \
+-              "Every site failed **before anything was applied**, so the estate is provably untouched and returning \`main\` to the previous state is exact rather than a guess. That is the only case this is opened automatically for." \
++              "Every site failed **before anything was applied**, so the estate is provably untouched and returning \`main\` is exact rather than a guess. That is the only case this is opened automatically for." \
++              "" \
++              "## Scope" \
++              "" \
++              "**Only \`management/\`.** That is what a converge applies. Nothing else in the original change is touched - the first version of this reverted the whole merge commit, which would have removed 83 files including the guards (#198)." \
+               "" \
+-              "Merging this makes the repository true again. The original change is not lost - re-open it once the cause is fixed." \
++              "$trail" \
+               "" \
+               "Failed run: $RUN_URL")"
+ 
