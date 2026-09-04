@@ -3,7 +3,7 @@
 - **Tier / path:** `.github/`, `scripts/`
 - **Branch:** `epoch/08-agent-roles`
 - **PR:** #
-- **Status:** Not started — deliberately parked
+- **Status:** In progress — started 2026-09-04
 
 ## Goal
 
@@ -12,10 +12,10 @@ down why that division holds. At the end there are two automated roles with
 different information, different outputs and different owners, and a record
 that says what each is for — including what was tried and cut.
 
-Parked rather than started. It is the most immediately interesting thing on
-this list and the least load-bearing, which is exactly the combination that
-pulls attention off unfinished work. Epoch 01 has to close and the self-hosted
-runner has to carry a converge before any of this begins.
+This was parked on two conditions, and both have now fired: epoch 01 signed
+off on 2026-09-03, and acceptance test 2 — a merge-driven converge with nobody
+at a terminal — passed on 2026-09-02 from the self-hosted runner. Started
+2026-09-04 on that basis rather than by overriding the deferral.
 
 ## The division that makes it worth doing
 
@@ -45,7 +45,7 @@ In scope, in the order they earn their place:
   A clerk of works inspects on the client's behalf, separately from the
   contractor; the name is a real role rather than a label. Two jobs where
   having no context is a genuine advantage:
-  - **A forkability audit.** The repository is meant to be clonable by a
+  - **A handover audit.** The repository is meant to be clonable by a
     stranger who points it at their own vault. `tests/go/repo/forkable_test.go`
     enforces that by pattern and catches literal names; it cannot catch a step
     that assumes an account already exists, a runbook missing a prerequisite,
@@ -204,11 +204,186 @@ shape the building code already governs. The endpoint also has to be declared
 in `scripts/approved-suppliers.yml`, because egress is deny-by-default and one
 file answers what this repository may call out to.
 
+### Two programs, split where the lever is
+
+**Chose:** `scripts/clerk` and `scripts/inspector`, as separate modules.
+**Rejected:** one program with four verbs.
+**Because:** the two halves differ in the only way that matters here — whether
+they can stop anything. The inspector sits in the merge path and its output is
+attached to a gate. The clerk is an outside party with no lever at all. The
+operator's own framing settled it: an external reviewer "has no business
+stopping anything", and its value is "yeah I looked at it, these are some
+things I would do different, k bye".
+
+The first draft bundled them on the `gatehouse` precedent, which combines three
+responsibilities into one program. That precedent does not apply: gatehouse's
+three share a _subject_ — the perimeter of the estate — while these four share
+only a _technique_, which is how a utility library ends up wearing a role's
+name. And this repository already argues against it structurally, with no root
+module and one module per program, so that one program's dependency is not
+every program's. A defect in the clerk's issue-filing has no business shipping
+inside the binary standing in front of a merge gate.
+
+### A second opinion, not an audit
+
+**Chose:** the clerk reads the code and writes **its own account** of what it
+does, without ever seeing our prose.
+**Rejected:** giving it the claim and the code and asking where they disagree.
+**Because:** a contradiction-hunter is an accusation engine, and every
+accusation engine has false positives that cost real time to dismiss. This
+record already rejected persona reviewers for exactly that reason — wrong
+findings are expensive here specifically, because the operator relies on the
+lanes rather than adjudicating a code claim from a diff.
+
+Inverting it removes the failure mode structurally rather than filtering it. A
+stranger's description of what the code does cannot be "wrong" in the corrosive
+way a contradiction claim can, because it is not asserting that anything is
+broken. Where it misreads the code, the misreading _is_ the finding — a
+no-context reader getting it wrong is a signal about the code or its naming,
+which is most of what the handover audit exists for anyway.
+
+It also collapses two roles into one operation. The inspector's per-file
+explanation already is this, pointed at a diff; the drift account is the same
+thing pointed at a directory. One engine, two callers.
+
+Anchoring is why the ordering matters. Hand a model the claim and the code
+together and it will find agreement, because the claim primes it to look for
+agreement. The clerk never sees the claim.
+
+### Handover, not forkability, and not export
+
+**Chose:** the clerk's verb is `handover`.
+**Because:** `tests/go/repo/forkable_test.go` checks a _property_ by pattern —
+no real names in the tree — and names it accurately. The clerk's job is the
+_reading_: can the next party run this without us. The construction word for
+that is a handover, the pack of drawings, manuals and as-builts given to
+whoever was not there. "Export" was considered and reads like a data-export
+feature. The building code's test keeps its name; renaming an established
+component is its own piece of work.
+
+### The clerk posts a COMMENT review, and permission cannot express why
+
+**Chose:** the review event is hardcoded to `COMMENT`, with a building-code
+test that fails if `APPROVE` or `REQUEST_CHANGES` appears in the clerk's review
+path.
+**Because:** the obvious instinct — a defanged approval — is a trap. **An
+approval from a properly configured GitHub App counts toward branch
+protection.** It is the standard trick for auto-approving Dependabot. Only
+`github-actions[bot]` approvals are ignored, and building on "GitHub happens to
+ignore this identity" is exactly the kind of load-bearing implicit behaviour
+this estate has been burned by. `REQUEST_CHANGES` is worse: it blocks the merge
+until a human dismisses it, handing the outside party both a lever and a
+deadlock in one call.
+
+The second instinct was also wrong, and is worth recording because it looks
+right. A pull request is an issue, so `issues: write` ought to permit a comment
+on one while making approval impossible. **It does not.** GitHub does not split
+them: commenting on a pull request and reviewing one both sit under the Pull
+requests permission. There is no grant that says "may comment, may not
+approve", so the guarantee has to be code plus a test plus a repository rule,
+not a permission wall.
+
+The repository rule is the backstop and is now on: **Require review from Code
+Owners**. With `CODEOWNERS` naming one human, no App approval can satisfy
+`main` regardless of what any program does.
+
+### The vendor must never become a merge dependency
+
+**Chose:** when the model is unreachable, rate-limited or unkeyed, the
+attestation conversation still opens, carrying today's static reason from
+`.github/sensitive-paths`.
+**Because:** the inspector improves a gate that blocks merging. A metered
+third party sitting between the operator and a merge is precisely the deadlock
+`sensitive-paths.yml` already warns about in its own header, and it would be a
+self-inflicted one. The explanation is an enhancement to the gate, never a
+precondition of it.
+
+This is also what makes a free-tier rate limit a non-event: a 429 is
+indistinguishable from unreachable, and both degrade the same way.
+
+### Per-file conversations, and the defect they repair
+
+**Chose:** one attestation conversation per sensitive file, each carrying a
+plain-language explanation of what that file's change does, on pull requests
+targeting `main`.
+**Because:** this was asked for as readability and turns out to fix a real
+defect. Today `sensitive-paths.yml` takes **one** digest across every sensitive
+file and anchors it to `paths[0]`, so touching any one sensitive file
+invalidates the acknowledgement already given for all the others. Per-file
+digests make each acknowledgement stand or fall on its own file.
+
+The rule listing then disappears on its own. It exists only because one comment
+had to account for files it was not attached to — which this record already
+identified as an anchor's job being done by prose.
+
+Measured before scoping it: over the last twenty merge commits on `main`, nine
+of ten touched at least one sensitive path, between one and six files each. So
+this is a handful of conversations per pull request, not a wall. The digest
+doubles as the cache key, so a push that changes nothing sensitive regenerates
+nothing.
+
+Scoping to `main`-targeting pull requests carries a security argument as well
+as a cost one: a `pull_request` run from a fork receives no secrets, so a key
+in this workflow would either leak into fork-triggered runs or make the gate
+fail on them. In-repo branches only sidesteps that. It is narrower than it
+sounds in the other direction — most pull requests currently target `main`.
+
+### The free tier, and the rule that makes it free of cost as well as price
+
+**Chose:** two Google accounts, two projects, neither with a billing account
+attached; two keys at `op://homelab/source-control/{clerk,inspector}-bot/llm_key`.
+**Because:** the operator's constraint was "either free or it isn't happening",
+and free here is the better design rather than a concession. With no billing
+account the estate's rule about bounding metered spend becomes structurally
+true instead of enforced by `timeout-minutes` and a concurrency group — the
+worst case is a 429, not an invoice, which matters when a vendor elsewhere
+already holds the card.
+
+Rate limits are **per project**, not per key, so two keys in one project would
+let a clerk sweep silently eat the inspector's day on exactly the pull requests
+where the blurb was wanted. Separate projects mean the roles cannot starve each
+other; budgets are further per-model within a project, so the clerk's sweep
+cannot eat its own review budget either.
+
+The price of free is that content is used to improve Google's products, where
+a paid tier's is not. Here that costs nothing **because everything sent is
+already world-readable** — this is a public repository, and the estate keeps
+secrets out of git by construction with a test enforcing it. Same shape as the
+state-encryption argument: the material is worthless to whoever obtains it.
+
+**That holds only while the input is restricted to what is already public**, so
+it is building code rather than a caution. Both programs read from git and
+nothing else. The moment either reads a rendered config, a run log, `talosctl`
+output or anything off the Sterilize path, the data term becomes real. A test
+enforces it, because the whole "free costs us nothing" argument rests on it.
+
+### Under consideration: code scanning as the output surface
+
+Not decided. SARIF uploaded to code scanning renders findings inline with a
+dismiss control and three structured reasons, and dismissing resolves the
+conversation. Three things recommend it for the clerk: dismissal reasons turn
+this record's acceptance test from a judgement call into a count, because
+_false positive_ versus _won't fix_ is exactly the split between "the clerk was
+wrong" and "the clerk was right and we chose not to act"; alerts close
+themselves when a finding stops appearing and reopen by fingerprint if it
+returns, where an issue must be closed by hand; and the upload uses the
+workflow's own token with `security-events: write`, attributed to the tool name
+in the SARIF, so the clerk App keeps its narrow grant.
+
+Two costs. It puts prose-drift findings in the security tab beside CodeQL,
+Semgrep and Trivy — distinguishable by tool name and severity, but it dilutes a
+surface that currently means "security". And code scanning results must stay
+**out** of `main`'s required checks, or the outside party quietly acquires the
+lever this whole design removes. They are not in there today.
+
+Not for the inspector: its conversation is digest-keyed and deliberately
+refuses machine resolution, which dismissal semantics would collide with.
+
 ## Acceptance tests
 
 1. **The planner finds a trigger that has genuinely fired**, and the issue it
    opens is one somebody acts on rather than closes as noise.
-2. **The clerk finds a forkability failure that
+2. **The clerk's handover audit finds a failure that
    `tests/go/repo/forkable_test.go` cannot express** — a semantic assumption
    rather than a literal name.
 
@@ -216,9 +391,39 @@ If either role cannot pass its test, it is decorative and comes out. A
 mechanism whose output nobody acts on is worse than no mechanism, because it
 looks like coverage.
 
+## Gotchas
+
+- **`ListModels` reports the catalogue, not the entitlement.** `gemini-2.5-pro`
+  and `gemini-3.1-pro-preview` are both returned by the free-tier key, and both
+  show 0 RPM / 0 TPM / 0 RPD on the account's rate-limit dashboard. Only a
+  `generateContent` call settles whether a model is actually served. Pinning
+  from the model list alone produces something that 429s on first use.
+- **Free-tier budgets are not uniform across a generation.** Measured on the
+  account, 2026-09-03: every full Flash model — 2.5, 3, 3.5, 3.6, 3.7, 3.8 — is
+  capped at **20 requests/day** at 5 RPM. The Lite models `3.1-flash-lite` and
+  `3.5-flash-lite` get **500/day** at 15 RPM. Both bands share 250K TPM. That
+  constraint maps onto the roles rather than fighting them: the inspector sits
+  in the merge path and takes the plentiful Lite model, the clerk's sweep has no
+  deadline and can afford the scarcer, stronger one across days.
+- **`gemini-3.8-flash` spends thinking tokens by default.** Six prompt tokens
+  and one output token cost 88 thinking tokens on a "reply with one word"
+  probe; `3.5-flash-lite` used seven tokens total with no thoughts. Chunk sizing
+  has to budget thinking, not just input and output.
+- **`serviceTier: standard` in a response is the latency tier, not the billing
+  tier.** What actually guarantees free is that the project has no billing
+  account attached.
+- **An epoch branch cannot be deleted, force-updated, or moved by a ref write.**
+  Its ruleset carries `deletion`, `non_fast_forward` and `pull_request`
+  together, so a pull request into it is the only mechanism that exists. That
+  makes a stale epoch branch expensive: cutting one fresh from `main` costs a
+  single ref creation, and repairing one afterwards costs a pull request whose
+  head is the default branch — a degenerate shape that Super-Linter's commit
+  range computation does not handle. Cut the branch when the epoch starts, not
+  before.
+
 ## Outcome
 
-Not started.
+In progress.
 
 ## Deferred
 
