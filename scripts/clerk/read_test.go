@@ -102,7 +102,7 @@ func TestGatherBuildsAPromptFromTheFiles(t *testing.T) {
 		"b.go": "package b // second\n",
 	}, nil)
 
-	prompt, included, err := gather(root, []string{"a.go", "b.go"}, 1<<20)
+	prompt, included, err := gather(auditPrompt, root, []string{"a.go", "b.go"}, 1<<20)
 	if err != nil {
 		t.Fatalf("gather: %v", err)
 	}
@@ -127,8 +127,8 @@ func TestGatherStopsAtTheBudgetRatherThanTruncating(t *testing.T) {
 		"b.go": "package b\n" + big,
 	}, nil)
 
-	budget := len(accountPrompt) + 4200
-	prompt, included, err := gather(root, []string{"a.go", "b.go"}, budget)
+	budget := len(auditPrompt) + 4200
+	prompt, included, err := gather(auditPrompt, root, []string{"a.go", "b.go"}, budget)
 	if err != nil {
 		t.Fatalf("gather: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestGatherStopsAtTheBudgetRatherThanTruncating(t *testing.T) {
 func TestGatherRefusesWhenTheFirstFileAloneIsTooBig(t *testing.T) {
 	root := repoWith(t, map[string]string{"a.go": strings.Repeat("x", 5000)}, nil)
 
-	if _, _, err := gather(root, []string{"a.go"}, len(accountPrompt)+10); err == nil {
+	if _, _, err := gather(auditPrompt, root, []string{"a.go"}, len(auditPrompt)+10); err == nil {
 		t.Fatal("expected a refusal rather than an empty prompt")
 	}
 }

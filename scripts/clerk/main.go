@@ -53,9 +53,9 @@ type verb struct {
 
 func main() {
 	verbs := []verb{
+		{"audit", "write an account of what the given tracked files do", audit},
+		{"handover", "read it as a stranger who has just cloned it", handover},
 		{"preflight", "prove the credentials work and report what they carry", preflight},
-		{"account", "write an account of what the given tracked files do", account},
-		{"review", "post that account on a pull request, as a comment", review},
 	}
 
 	if len(os.Args) < 2 {
@@ -165,89 +165,93 @@ func preflight(args []string) int {
 	return 0
 }
 
-func write(args []string, needPR bool) (string, int, int) {
-	fs := flag.NewFlagSet("clerk", flag.ContinueOnError)
-	pr := fs.Int("pr", 0, "pull request to post on")
+// speak runs one verb: read the named tracked files, ask the question, and
+// either print the answer or post it on a pull request.
+//
+// Posting is a flag rather than a verb of its own. Where the account goes is
+// not a different job - a finding about one change belongs on that change and
+// should die with it, and a finding about the estate belongs in an issue and
+// should outlive it. Same reading either way.
+func speak(name, prompt string, args []string) int {
+	fs := flag.NewFlagSet("clerk "+name, flag.ContinueOnError)
+	pr := fs.Int("pr", 0, "post on this pull request as a comment, instead of printing")
 	root := fs.String("root", ".", "repository root")
 	model := fs.String("model", "", "override the pinned model")
 	if err := fs.Parse(args); err != nil {
-		return "", 0, 2
-	}
-	if needPR && *pr == 0 {
-		fmt.Fprintln(os.Stderr, "clerk review: -pr is required")
-		return "", 0, 2
-	}
-	paths := fs.Args()
-	if len(paths) == 0 {
-		fmt.Fprintln(os.Stderr, "clerk: name at least one path to read")
-		return "", 0, 2
+		return 2
 	}
 
-	vars := []string{"CLERK_BOT_LLM_KEY", "CLERK_MODEL_VERSION"}
-	env, err := need(vars...)
-	if err != nil && *model == "" {
+	paths := fs.Args()
+	if len(paths) == 0 {
+		fmt.Fprintf(os.Stderr, "clerk %s: name at least one path to read\n", name)
+		return 2
+	}
+
+	env, err := need("CLERK_BOT_LLM_KEY")
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
-		return "", 0, 2
+		return 2
 	}
 	chosen := *model
 	if chosen == "" {
-		chosen = env["CLERK_MODEL_VERSION"]
+		pinned, err := need("CLERK_MODEL_VERSION")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "clerk:", err)
+			return 2
+		}
+		chosen = pinned["CLERK_MODEL_VERSION"]
 	}
 
 	files, err := tracked(*root, paths)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
-		return "", 0, 1
+		return 1
 	}
-	prompt, included, err := gather(*root, files, promptBudget)
+	built, included, err := gather(prompt, *root, files, promptBudget)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
-		return "", 0, 1
+		return 1
 	}
-	fmt.Fprintf(os.Stderr, "clerk: read %d of %d tracked files\n", len(included), len(files))
+	fmt.Fprintf(os.Stderr, "clerk %s: read %d of %d tracked files\n", name, len(included), len(files))
 
-	text, err := newAsker(env["CLERK_BOT_LLM_KEY"], chosen).ask(prompt)
+	text, err := newAsker(env["CLERK_BOT_LLM_KEY"], chosen).ask(built)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
-		return "", 0, 1
+		return 1
 	}
-	return text, *pr, 0
+
+	if *pr == 0 {
+		fmt.Println(text)
+		return 0
+	}
+	return post(*pr, name, text)
 }
 
-func account(args []string) int {
-	text, _, code := write(args, false)
-	if code != 0 {
-		return code
-	}
-	fmt.Println(text)
-	return 0
-}
+func audit(args []string) int    { return speak("audit", auditPrompt, args) }
+func handover(args []string) int { return speak("handover", handoverPrompt, args) }
 
-func review(args []string) int {
-	text, pr, code := write(args, true)
-	if code != 0 {
-		return code
-	}
-
+// post puts the account on a pull request, as a comment and never more.
+func post(pr int, name, text string) int {
 	env, err := need("CLERK_BOT_APP_ID", "CLERK_BOT_PRIVATE_KEY", "GITHUB_REPOSITORY")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clerk review:", err)
+		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 2
 	}
 	key, err := parseAppKey(env["CLERK_BOT_PRIVATE_KEY"])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clerk review:", err)
+		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 1
 	}
 	g, _, err := exchange(githubAPI, env["GITHUB_REPOSITORY"], env["CLERK_BOT_APP_ID"], key, &http.Client{Timeout: 30 * time.Second}, time.Now())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clerk review:", err)
+		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 1
 	}
 
-	body := "**An account written without reading ours.** This is a second opinion from a reader with no context, not a verdict — it can approve nothing and block nothing.\n\n---\n\n" + text
+	body := "**clerk " + name + "** - an account written by a reader with no context, who never saw what we claim this does. " +
+		"A second opinion, not a verdict: it can approve nothing and block nothing.\n\n---\n\n" + text
 	if err := g.say(pr, body); err != nil {
-		fmt.Fprintln(os.Stderr, "clerk review:", err)
+		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 1
 	}
 	fmt.Fprintf(os.Stderr, "clerk: commented on #%d\n", pr)

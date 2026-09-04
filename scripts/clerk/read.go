@@ -9,28 +9,6 @@ import (
 	"strings"
 )
 
-// What the clerk is asked, and the one thing it is allowed to read.
-//
-// The question is deliberately not "where do the docs and the code disagree".
-// That builds an accusation engine, and this estate already rejected reviewers
-// whose wrong findings cost more than their right ones. The clerk is asked to
-// describe what the code does, having never seen what we claim it does. Where
-// its description and ours differ, the operator sees it. Where it misreads,
-// the misreading is itself the finding - a no-context reader getting it wrong
-// says something about the code or its naming.
-const accountPrompt = `You are reading part of a repository you have never seen before and know nothing about.
-
-Write a short, plain account of what this code does: what it is for, what it would do when it runs, and anything a stranger would need to know to use or change it safely.
-
-Rules:
-- Describe only what is in front of you. Do not guess at intent you cannot see.
-- Every claim must cite a file and a line, as path:line. A claim you cannot cite, do not make.
-- If something is unclear or looks wrong to you, say so plainly and cite it.
-- Do not praise, do not summarise your own answer, and do not offer to help further.
-
-The files follow.
-`
-
 // tracked returns the paths git knows about, and refuses everything else.
 //
 // This is the rule the whole free-tier argument rests on. The price of the
@@ -73,11 +51,11 @@ func tracked(root string, paths []string) ([]string, error) {
 // in bytes and deliberately conservative: it is better to describe a directory
 // in two passes than to have one silently truncated in the middle of a
 // function.
-func gather(root string, paths []string, budget int) (string, []string, error) {
+func gather(prompt, root string, paths []string, budget int) (string, []string, error) {
 	var b strings.Builder
 	var included []string
 
-	b.WriteString(accountPrompt)
+	b.WriteString(prompt)
 	for _, p := range paths {
 		body, err := os.ReadFile(filepath.Join(root, p))
 		if err != nil {
