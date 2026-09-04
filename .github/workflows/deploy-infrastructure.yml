@@ -551,6 +551,31 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           DETAIL: ${{ steps.verdict.outputs.detail }}
         run: |
+          # A revert returns main to the LAST CONVERGED STATE. If this merge
+          # was itself that revert, main already holds it - so there is nothing
+          # to return to, and reverting again would move main AWAY from the
+          # estate rather than toward it. Provable from where things are,
+          # rather than assumed about why they failed.
+          #
+          # Qualified on the source branch, not on the failure. Two converges
+          # failing is not evidence that they failed for the same reason, and a
+          # message claiming it was would be asserting something nobody
+          # measured (#212).
+          #
+          # Checked two ways because either can be unavailable. The API answers
+          # what branch the merge came from; the commit subject carries the
+          # revert pull request's title through a squash, and needs no network.
+          # Not knowing and nothing being wrong must not look the same, so a
+          # lookup that fails falls back rather than silently proceeding.
+          source=$(gh pr list --state merged --search "$SHA" --limit 1 --json headRefName --jq '.[0].headRefName // empty' || true)
+          subject=$(git log -1 --format=%s "$SHA")
+          case "$source$subject" in
+            revert/converge-failed-* | *"failed before it applied anything"*)
+              echo "::notice::this merge was itself a converge-failure revert, so main already describes the last converged state - there is nothing to return to, and this converge needs looking at on its own terms"
+              exit 0
+              ;;
+          esac
+
           # Nothing under management/ changed, so there is nothing a converge
           # would have applied and nothing to return.
           if git diff --quiet "$SHA^" "$SHA" -- management/; then
