@@ -212,9 +212,11 @@ Nothing has been touched. Re-run without -whatif to do it.
 	// tofu invocation without TF_ENCRYPTION cannot read it. Setting it per
 	// phase would leave `-from cluster` and the teardown unable to reach the
 	// state they exist to operate on.
-	if err := phases.EnsureStateEncryption(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+	if phases.NeedsStateEncryption(deref(phase)) {
+		if err := phases.EnsureStateEncryption(ctx); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
 	}
 
 	if verb == "demolish" {

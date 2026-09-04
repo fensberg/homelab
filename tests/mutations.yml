@@ -468,6 +468,18 @@ unprovable:
   # proof is of nothing.
   - path: tests/go/repo/toolbelt_test.go
     reason: go-source
+  # Same reason: it reads Go source and nothing else, so the ledger cannot
+  # reach it. Proved by hand with -count=1 - restoring the gh invocation in
+  # breakground_preconditions.go makes it name the file.
+  - path: tests/go/repo/no_gh_dependency_test.go
+    reason: go-source
+  # Same again. Proved by hand with -count=1: adding an unpinned endpoint var
+  # to scripts/gatehouse made it name proveAPI, and removing it went green.
+  # Two earlier attempts at that proof did NOT fire, which was the guard being
+  # right - any test assigning the variable satisfies it, and pointAt's restore
+  # closure is an assignment too.
+  - path: tests/go/repo/pinned_endpoints_test.go
+    reason: go-source
 
 # Tests that legitimately read a comment.
 #

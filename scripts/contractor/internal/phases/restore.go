@@ -85,7 +85,7 @@ is genuinely stale, move it aside first and decide deliberately:
 	listBackups(ctx, rcloneEnv, store.Bucket)
 
 	run.Info("fetching " + key)
-	cipher, err := run.CmdBytes(ctx.ClusterDir, rcloneEnv, nil, "rclone", "cat", key)
+	cipher, err := run.CmdBytes(ctx.ClusterDir, rcloneEnv, nil, "rclone", "--log-level", "ERROR", "cat", key)
 	if err != nil {
 		return fmt.Errorf(`could not fetch %s: %w
 
@@ -147,7 +147,7 @@ func backupObjectKey(bucket string) string {
 }
 
 func listBackups(ctx *run.Context, env []string, bucket string) {
-	out, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "lsl", "R2:"+bucket+"/management-cluster")
+	out, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "lsl", "R2:"+bucket+"/management-cluster")
 	if err != nil || strings.TrimSpace(out) == "" {
 		return
 	}

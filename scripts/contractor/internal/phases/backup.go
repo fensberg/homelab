@@ -127,11 +127,11 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 
 	dest := fmt.Sprintf("R2:%s/management-cluster", store.Bucket)
 	run.Info(fmt.Sprintf("uploading to %s/%s.tfstate.age", dest, stamp))
-	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "copyto", tmpCipher, fmt.Sprintf("%s/%s.tfstate.age", dest, stamp)); err != nil {
+	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, fmt.Sprintf("%s/%s.tfstate.age", dest, stamp)); err != nil {
 		return fmt.Errorf("rclone upload (timestamped): %w", err)
 	}
 	run.Info(fmt.Sprintf("updating %s/latest.tfstate.age", dest))
-	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "copyto", tmpCipher, dest+"/latest.tfstate.age"); err != nil {
+	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, dest+"/latest.tfstate.age"); err != nil {
 		return fmt.Errorf("rclone upload (latest): %w", err)
 	}
 

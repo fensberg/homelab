@@ -36,7 +36,10 @@ func TestIgnitionChecksForQueuedDeploys(t *testing.T) {
 // Being unable to ask is not the same as nothing being pending. The window
 // this guards is twenty minutes long and unattended in the middle.
 func TestIgnitionFailsClosedWhenItCannotAsk(t *testing.T) {
-	t.Setenv("PATH", t.TempDir()) // no gh on the path
+	// "Cannot ask" used to mean gh was not on PATH. The question goes over
+	// HTTP now, so it means an endpoint that does not answer - TestMain points
+	// the API at a closed port on the loopback, which refuses immediately.
+	t.Setenv("GITHUB_REPOSITORY", "fensberg/homelab")
 	err := CheckBreakGroundPreconditions("site0")
 	if err == nil {
 		t.Fatal("ignition proceeded without being able to check for queued deploys")
