@@ -65,7 +65,7 @@ func tally(args []string) int {
 	return 0
 }
 
-func render(r *removals) string {
+func render(r *report) string {
 	var b strings.Builder
 	b.WriteString("## What this change takes away\n\n")
 
@@ -79,7 +79,7 @@ func render(r *removals) string {
 		}
 	}
 
-	if len(r.files) == 0 && len(r.tests) == 0 && len(lost) == 0 {
+	if len(r.files) == 0 && len(r.tests) == 0 && len(lost) == 0 && len(r.newTools) == 0 {
 		b.WriteString("Nothing. No files removed under `tests/`, `.github/` or `scripts/`, " +
 			"no test functions removed, and no package lost assertions.\n")
 		return b.String()
@@ -115,8 +115,20 @@ func render(r *removals) string {
 			"and still reports coverage that is no longer there.\n\n")
 	}
 
+	if len(r.newTools) > 0 {
+		fmt.Fprintf(&b, "### %d new binary invocation(s) the runner image may not carry\n\n", len(r.newTools))
+		for _, t := range r.newTools {
+			fmt.Fprintf(&b, "- `%s` — invoked by this change, and `.github/runner-image/Dockerfile` does not mention it\n", t)
+		}
+		b.WriteString("\nA tool the code needs and the image lacks fails minutes into a converge, " +
+			"on the runner, with a message naming the subsystem it never reached rather than the tool. " +
+			"This is read off the change, so the thing introducing the dependency is the thing that raises it.\n\n")
+	}
+
 	b.WriteString("---\n\nThis is a statement, not an objection. " +
-		"Removals are usually deliberate; this exists so a deliberate one is visible " +
-		"rather than inferred from the size of the diff.\n")
+		"Removals and new dependencies are usually deliberate; this exists so a " +
+		"deliberate one is visible rather than inferred from the size of the diff. " +
+		"A binary named by a variable cannot be read off the source, so the tool list " +
+		"is what was found rather than everything there is.\n")
 	return b.String()
 }

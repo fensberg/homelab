@@ -228,3 +228,109 @@ func TestAnUncomparableRangeIsAnError(t *testing.T) {
 		t.Fatal("a range that could not be compared returned a clean report")
 	}
 }
+
+const usesTalosctl = `package phases
+
+import "os/exec"
+
+func check() {
+	_ = exec.Command("tofu", "plan")
+	_, _ = run.CmdOutputEnv(dir, []string{"TALOSCONFIG=" + p}, "talosctl", "--nodes", ip, "etcd", "members")
+}
+`
+
+const usesTofuOnly = `package phases
+
+import "os/exec"
+
+func check() {
+	_ = exec.Command("tofu", "plan")
+}
+`
+
+const dockerfileWithoutTalosctl = "FROM ubuntu\nARG TOFU_VERSION\nRUN curl -o tofu && tofu version\n"
+
+// The failure this exists for, from #206.
+//
+// A dependency on a new binary was added and the hand-written list in the
+// guard whose name promises EVERY binary was not updated. Read off the change,
+// the thing that introduces the dependency is the thing that raises it.
+func TestANewBinaryTheImageLacksIsNamed(t *testing.T) {
+	root, shas := fixture(t,
+		map[string]string{
+			"scripts/contractor/internal/phases/health.go": usesTofuOnly,
+			".github/runner-image/Dockerfile":              dockerfileWithoutTalosctl,
+		},
+		map[string]string{
+			"scripts/contractor/internal/phases/health.go": usesTalosctl,
+			".github/runner-image/Dockerfile":              dockerfileWithoutTalosctl,
+		},
+	)
+
+	r, err := take(root, shas[0], shas[1])
+	if err != nil {
+		t.Fatalf("take: %v", err)
+	}
+	if len(r.newTools) != 1 || r.newTools[0] != "talosctl" {
+		t.Fatalf("new tools are %v, want just talosctl", r.newTools)
+	}
+	if !strings.Contains(render(r), "talosctl") {
+		t.Error("the report does not name the new binary")
+	}
+}
+
+// Found through a helper that takes an env slice first.
+//
+// A naive scan of exec.Command misses run.CmdOutputEnv entirely, which is the
+// shape that actually failed - so this asserts the env entry's `=` does not
+// get mistaken for the command.
+func TestTheEnvSliceIsNotMistakenForTheCommand(t *testing.T) {
+	got := toolsIn(usesTalosctl)
+	want := map[string]bool{"tofu": true, "talosctl": true}
+	if len(got) != 2 {
+		t.Fatalf("found %v, want exactly tofu and talosctl", got)
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Errorf("found %q, which is not a command", g)
+		}
+	}
+}
+
+// A tool the image already installs is not a finding.
+func TestABinaryTheImageCarriesIsNotReported(t *testing.T) {
+	root, shas := fixture(t,
+		map[string]string{
+			"scripts/a.go":                    usesTofuOnly,
+			".github/runner-image/Dockerfile": dockerfileWithoutTalosctl,
+		},
+		map[string]string{
+			"scripts/a.go":                    usesTalosctl,
+			".github/runner-image/Dockerfile": dockerfileWithoutTalosctl + "RUN curl -o talosctl && talosctl version\n",
+		},
+	)
+
+	r, err := take(root, shas[0], shas[1])
+	if err != nil {
+		t.Fatalf("take: %v", err)
+	}
+	if len(r.newTools) != 0 {
+		t.Errorf("reported %v, but the image installs it in the same change", r.newTools)
+	}
+}
+
+// Moving an invocation between files introduces no dependency.
+func TestMovingAnInvocationIsNotANewDependency(t *testing.T) {
+	root, shas := fixture(t,
+		map[string]string{"scripts/a.go": usesTalosctl, ".github/runner-image/Dockerfile": dockerfileWithoutTalosctl},
+		map[string]string{"scripts/b.go": usesTalosctl, ".github/runner-image/Dockerfile": dockerfileWithoutTalosctl},
+	)
+
+	r, err := take(root, shas[0], shas[1])
+	if err != nil {
+		t.Fatalf("take: %v", err)
+	}
+	if len(r.newTools) != 0 {
+		t.Errorf("a moved invocation was reported as new: %v", r.newTools)
+	}
+}
