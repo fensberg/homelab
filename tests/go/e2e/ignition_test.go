@@ -153,7 +153,7 @@ State and secrets have been left in place on purpose - that is what the
 destroy path does when it cannot finish, because wiping them is how VMs get
 orphaned. Check Proxmox by hand, then re-run:
 
-    ./scripts/contractor/contractor demolish -site %s -confirm %s`, err, site, site)
+    ./toolshed/contractor demolish -site %s -confirm %s`, err, site, site)
 	}
 }
 

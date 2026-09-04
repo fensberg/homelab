@@ -150,7 +150,7 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
   To bring this back after a total loss, on a machine with vault access
   (an 'op signin' session, or OP_SERVICE_ACCOUNT_TOKEN exported):
 
-    ./scripts/contractor/contractor restore -site %s
+    ./toolshed/contractor restore -site %s
 
   It fetches the identity from %s, decrypts, checks that what
   came back is state describing something, and pushes it through the encrypted

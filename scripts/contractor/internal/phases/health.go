@@ -119,7 +119,7 @@ This is NOT a verdict about the cluster. Nothing was measured, so nothing is
 known - the estate may be perfectly well. Install %s where this runs, then
 re-run from here:
 
-    ./scripts/contractor/contractor break-ground -site %s -from health`,
+    ./toolshed/contractor break-ground -site %s -from health`,
 				what, missing.Tool, missing.Why, missing.Tool, ctx.Site)
 		}
 
@@ -132,7 +132,7 @@ The cluster is still running and its state is still local, so nothing has been
 lost - this phase refuses to continue rather than migrating state into a
 degraded cluster. Look at what is listed above, then re-run from here:
 
-    ./scripts/contractor/contractor break-ground -site %s -from health`, what, timeout, last, ctx.Site)
+    ./toolshed/contractor break-ground -site %s -from health`, what, timeout, last, ctx.Site)
 		}
 		run.Info("  still waiting: " + summariseWait(last))
 

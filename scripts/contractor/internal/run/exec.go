@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Cmd runs an external command with inherited stdio, in dir. Go already
@@ -286,19 +287,88 @@ func publicLog() bool {
 // stream: the property that matters is that no attribute value survives, and
 // that is a property of this function alone.
 func summariseApply(r io.Reader, emit func(string)) (lines []string, failed []string) {
+	t := time.NewTicker(heartbeat)
+	defer t.Stop()
+	return summariseStream(r, emit, t.C)
+}
+
+// heartbeat is how often a silent wait says it is still alive.
+//
+// Thirty seconds rather than tofu's ten: frequent enough to tell a long read
+// from a hang, sparse enough that the ten-minute ceiling on the cluster health
+// read produces twenty lines rather than sixty.
+const heartbeat = 30 * time.Second
+
+// slowReads carries what a wait is expected to cost, for the reads where the
+// honest answer is "minutes" and silence would otherwise read as trouble.
+//
+// A short list on purpose. A number here is a measurement, not a guess, and
+// one nobody has measured does not belong.
+var slowReads = map[string]string{
+	"data.talos_cluster_health.this": "a fresh cluster usually answers in about two minutes, and the read gives up at ten",
+}
+
+// summariseStream is summariseApply with its clock handed to it.
+//
+// The tick is a parameter because the alternative is a test that depends on
+// the wall clock, which this repository has been bitten by twice. A test drives
+// the beat itself and the behaviour is asserted rather than waited for.
+func summariseStream(r io.Reader, emit func(string), tick <-chan time.Time) (lines []string, failed []string) {
 	if emit == nil {
 		emit = func(string) {}
 	}
+	spoke := false
 	say := func(line string) {
 		lines = append(lines, line)
+		spoke = true
 		emit(line)
 	}
 
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for sc.Scan() {
+	// Scanned in a goroutine so the loop below can select between a line and a
+	// beat. A bufio.Scanner blocks, and a blocked read is exactly the state
+	// the heartbeat exists to report on.
+	events := make(chan []byte)
+	go func() {
+		defer close(events)
+		sc := bufio.NewScanner(r)
+		sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+		for sc.Scan() {
+			events <- append([]byte(nil), sc.Bytes()...)
+		}
+	}()
+
+	// The address most recently reported as outstanding, so a beat can name
+	// what is being waited on rather than saying only that something is.
+	var waiting string
+
+	for {
+		var raw []byte
+		select {
+		case <-tick:
+			// Only when the stream itself has gone quiet since the last beat.
+			// A beat beside a line tofu just printed is noise, and noise is
+			// how a progress line stops being read.
+			if !spoke {
+				line := "waiting   " + waiting
+				if waiting == "" {
+					line = "waiting   (tofu has printed nothing)"
+				}
+				if note, ok := slowReads[waiting]; ok {
+					line += " - " + note
+				}
+				say(line)
+			}
+			spoke = false
+			continue
+		case b, ok := <-events:
+			if !ok {
+				return lines, failed
+			}
+			raw = b
+		}
+
 		var ev tofuEvent
-		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+		if err := json.Unmarshal(raw, &ev); err != nil {
 			// Not JSON, so not something whose shape is known. Dropping it is
 			// the safe default: an unrecognised line could carry anything.
 			continue
@@ -312,6 +382,7 @@ func summariseApply(r io.Reader, emit func(string)) (lines []string, failed []st
 		// values, so it is as safe to print as apply_start already is.
 		case "apply_progress":
 			if addr := ev.Hook.Resource.Addr; addr != "" {
+				waiting = addr
 				say(fmt.Sprintf("%-9s %s (%ds elapsed)",
 					"still", addr, int(ev.Hook.ElapsedSeconds)))
 			}
@@ -367,7 +438,6 @@ func summariseApply(r io.Reader, emit func(string)) (lines []string, failed []st
 			}
 		}
 	}
-	return lines, failed
 }
 
 func tofuJSON(ctx *Context, what string, args []string) error {

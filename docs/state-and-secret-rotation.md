@@ -355,7 +355,7 @@ cannot, the run goes red.
 ### Restoring
 
 ```sh
-./scripts/contractor/contractor restore -site site0
+./toolshed/contractor restore -site site0
 ```
 
 This used to be three commands printed at the end of a run, which is not a
@@ -401,13 +401,13 @@ task check-inventory SITE=site0
 
 # 2. Bring the state back. This needs a sterilized workspace, which is the
 #    normal state of one after any successful run.
-./scripts/contractor/contractor restore -site site0
+./toolshed/contractor restore -site site0
 
 # 3. Ignite on top of the restored state, not converge. Converge attaches to
 #    state in a cluster; there is no cluster yet. Ignition finds the restored
 #    state locally, refreshes it, sees that the VMs it describes are gone, and
 #    plans to create them.
-./scripts/contractor/contractor break-ground -site site0
+./toolshed/contractor break-ground -site site0
 ```
 
 **Restoring first is what makes it the same estate rather than a new one.** A
