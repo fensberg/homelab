@@ -530,12 +530,27 @@ floor a pull request may not drop below and is free to leave alone.
   last push and the approval because that is the only point at which its
   findings are still actionable.
 
-  Two things follow. **Re-requesting a review runs the clerk again**, so acting
-  on findings and asking for a fresh read costs one click and one call - which
-  is also the only way to re-run it, since a push does not. And **the clerk can
-  stop nothing**: its findings are code scanning alerts at note level, and that
-  check stays out of `main`'s required checks deliberately. A criticism that
-  blocks a merge is an outside party acquiring a power this design withholds.
+  Asking again is a comment, in the Dependabot shape:
+
+  | Command           | What it does                                       |
+  | ----------------- | -------------------------------------------------- |
+  | `@clerk snag`     | walk the work again                                |
+  | `@clerk handover` | read it again as a stranger who has just cloned it |
+
+  It reacts with eyes when it starts and a thumbs up when it is done, and with
+  a confused face if the command is not one it knows. **This works on a pull
+  request that has already merged**, because `refs/pull/N/head` outlives the
+  branch - so the clerk can be pointed at work that landed before it existed.
+
+  Re-requesting a review deliberately does **not** trigger it. That was tried
+  and removed: `review_requested` fires on any reviewer request, `CODEOWNERS`
+  requests one automatically the moment a pull request is elevated, and a single
+  elevation therefore ran the clerk twice.
+
+  And **the clerk can stop nothing**: its findings are code scanning alerts at
+  note level, and that check stays out of `main`'s required checks deliberately.
+  A criticism that blocks a merge is an outside party acquiring a power this
+  design withholds.
 
   The inspector's `tally` runs on every push regardless, because it costs
   nothing and its value is being current. It says nothing unless the change
