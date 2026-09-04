@@ -210,6 +210,9 @@ func TestRunnerImageCarriesEveryBinaryTheContractorInvokes(t *testing.T) {
 	// list that has to be remembered will not stay right. Deriving it from the
 	// source is filed separately.
 	for _, bin := range []string{"op", "tofu", "age", "rclone", "kubectl", "talosctl"} {
+		// gh is deliberately absent: the contractor no longer invokes it, and
+		// tests/go/repo/no_gh_dependency_test.go keeps it that way. Adding it
+		// here would be adding a supplier to fix a dependency that is gone.
 		if !strings.Contains(dockerfile, bin) {
 			t.Errorf("the runner image does not install %q, which contractor shells out to", bin)
 		}

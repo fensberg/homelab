@@ -471,12 +471,40 @@ depends on it and uses them.
 - `scorecard.yml` — repository posture, weekly and on merges to `main`. It
   grades the repository rather than the diff, so a pull request cannot change
   its answer.
-- **Egress is deny-by-default.** Every job pins `harden-runner` to
-  `egress-policy: block` with an explicit allowlist, so a compromised action or
-  linter cannot exfiltrate quietly. The one exception is the TruffleHog lane,
-  which stays on `audit` and says why in a comment: verification works by
-  calling the API of whichever vendor issued a leaked key, and an allowlist
-  would silently downgrade verified findings to unverified rather than fail.
+- **Egress is deny-by-default, and eight jobs are not.** Every job pins
+  `harden-runner`; most are `egress-policy: block` with an explicit allowlist,
+  so a compromised action or linter cannot exfiltrate quietly. Eight are
+  `audit`, which blocks nothing and only records:
+
+  | Workflow                    | Job                                        |
+  | --------------------------- | ------------------------------------------ |
+  | `pr-validation.yml`         | `secrets`, `semgrep`                       |
+  | `deploy-infrastructure.yml` | `plan`, `apply`, `converge`, `plan-estate` |
+  | `integration-tests.yml`     | `test`                                     |
+  | `runner-image.yml`          | `build`                                    |
+
+  This paragraph used to claim there was exactly one exception, the TruffleHog
+  lane, and named the reason: verification works by calling the API of whichever
+  vendor issued a leaked key, so an allowlist would silently downgrade verified
+  findings to unverified rather than fail. That reason is still good and still
+  applies to `secrets`. The other seven had accumulated without it, and the
+  invariant went on asserting the opposite - which is worse than the setting,
+  because somebody deciding whether a new job needs an allowlist was being told
+  every job already has one.
+
+  The four in `deploy-infrastructure.yml` and the one in `integration-tests.yml`
+  are the ones worth arguing about: they run on the **self-hosted runner inside
+  the estate**, holding a vault token with read and write on the whole
+  `homelab` vault, while every pull request lane that holds nothing is blocked.
+  There is a real case for them - a converge reaches the hypervisor, Talos, the
+  overlay, object storage and 1Password, several at private addresses, and that
+  allowlist would be long and brittle - but a case nobody wrote down is not a
+  decision, it is a gap. See the epoch record.
+
+  **The rule is now: `block`, or `audit` with a comment on the job saying why.**
+  A guard whose exceptions are undocumented cannot be reviewed, and this one had
+  seven.
+
 - `integration-tests.yml` — the test tiers that need a real estate, on the
   self-hosted runner: nightly, plus manual dispatch. Not reachable from a
   pull request, deliberately. The nightly run exists mostly for one

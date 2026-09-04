@@ -115,3 +115,25 @@ func hclString(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 	return `"` + r.Replace(s) + `"`
 }
+
+// NeedsStateEncryption reports whether a single-phase run has to establish the
+// state-encryption passphrase, and therefore a vault session, before it starts.
+//
+// Almost every phase does: state is encrypted at rest, so a tofu invocation
+// without TF_ENCRYPTION cannot read it, and setting it per phase would leave
+// `-from cluster` and the teardown unable to reach the state they exist to
+// operate on.
+//
+// Sterilize is the exception, and it matters. Its whole job is deleting the
+// rendered secrets from a long-lived self-hosted runner, and it runs from a
+// cleanup step that deliberately carries no vault token - because removing
+// files should not need vault access. Requiring a session made the cleanup
+// fail exactly when it was most needed: a run that gets past Render and then
+// fails leaves secrets on disk, and the step that removes them could not
+// start (#219).
+//
+// The same reasoning keeps EmergencyDestroy unattended. A recovery path that
+// depends on a credential fails precisely when things have gone wrong.
+func NeedsStateEncryption(phase string) bool {
+	return phase != "sterilize"
+}

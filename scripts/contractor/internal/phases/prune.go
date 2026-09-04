@@ -63,7 +63,7 @@ are being left alone`, want)
 
 // rcloneList returns the object names directly under dest.
 func rcloneList(ctx *run.Context, env []string, dest string) ([]string, error) {
-	out, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "lsjson", dest)
+	out, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "lsjson", dest)
 	if err != nil {
 		return nil, fmt.Errorf("listing %s: %w", dest, err)
 	}
@@ -110,7 +110,7 @@ func pruneOldBackups(ctx *run.Context, env []string, dest, newStamp string) {
 
 	for _, t := range targets {
 		run.Info("pruning " + t)
-		if err := run.CmdEnv(ctx.ClusterDir, env, "rclone", "deletefile", dest+"/"+t); err != nil {
+		if err := run.CmdEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "deletefile", dest+"/"+t); err != nil {
 			run.Warn("could not delete " + t + ": " + err.Error())
 		}
 	}

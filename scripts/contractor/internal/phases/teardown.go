@@ -116,7 +116,7 @@ func emptyObjectStorage(ctx *run.Context) {
 	// Report before deleting. A bucket that is already empty, or was never
 	// created because the run failed early, is not an error - there is simply
 	// nothing to do, and the destroy carries on to the VMs either way.
-	size, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "size", remote)
+	size, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "size", remote)
 	if err != nil {
 		// The bucket is not there to be emptied. That is the normal case when a
 		// run failed before object storage was created, and it is not a problem:
@@ -140,7 +140,7 @@ func emptyObjectStorage(ctx *run.Context) {
 	}
 	run.Warn("emptying " + remote + " - " + summary)
 
-	if err := run.CmdEnv(ctx.ClusterDir, env, "rclone", "delete", remote); err != nil {
+	if err := run.CmdEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "delete", remote); err != nil {
 		run.Warn("could not empty " + remote + ": " + err.Error())
 		run.Warn("Cloudflare refuses to delete a bucket with objects in it, so the destroy will stop there. Empty it by hand and re-run.")
 		return
