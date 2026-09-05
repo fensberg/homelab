@@ -1132,21 +1132,98 @@ So preemption is the backstop that protects quorum, which is what it is for.
 The primary mechanism for CI against CI is **not admitting the job**, because a
 job that never started is cheaper than one killed near the end.
 
-### Two scale sets, for two independent reasons
+### Three lanes, sorted by what tolerates delay
 
-Today a 40-second lint lane and a thirteen-minute integration run are the same
-circuit, so the lint lane queues behind the water heater for no reason. The
-split:
+The operator's second model, and it supersedes the heavy/light split this
+section first proposed. That one sorted work by size on a security axis - jobs
+with estate access against jobs without - and let latency ride along with it.
+Sorting by **how much delay the work tolerates** is the property the scheduler
+actually acts on, and it produces three lanes rather than two:
 
-- **Heavy** - converge and integration. Large requests, a low `maxRunners`,
-  estate access.
-- **Light** - lint, format, test. Small requests, a high `maxRunners`, no route
-  to anything.
+1. **Emergency vehicles.** Everything yields, including traffic already moving;
+   pushing a car onto the shoulder is an acceptable price. etcd, the API server,
+   CoreDNS, the state database, Flux, and the runner listener.
+2. **Commuters.** In a hurry, and delay is the whole cost. The fast pull request
+   lanes - lint, format, test - where the job itself is 40 seconds and a
+   two-minute queue is the entire user-visible latency.
+3. **Logistics.** Important, and slow by nature. Deliveries and refuse
+   collection: integration runs, converges, image builds, state backups, the
+   clerk's sweep, dependency updates. They must arrive; they need not arrive
+   now.
 
-[`01-ignition.md`](01-ignition.md) already argues for exactly this structure on
-entirely different grounds - that pull request lanes need no estate access and
-should not have it. Two independent arguments arriving at the same structure is
-about as good a signal as this kind of design produces.
+The assignment is by tolerance, not by importance. A state backup is one of the
+more important things the estate does and it belongs in lane 3, because nothing
+observes its latency.
+
+#### Lane 2 jumps the queue but must not run anyone off the road
+
+The refinement that makes this implementable, and it is not obvious. Kubernetes
+priority does two things at once - it decides who gets the next free slot, and
+it decides who gets evicted to make one - and the three lanes want those
+answers to differ.
+
+A commuter should get the next gap ahead of a truck. A commuter should **not**
+be able to evict a truck that is already twelve minutes into a thirteen-minute
+run, which is exactly the trade the "eviction is not free" decision above
+refuses. Preempting a long job to admit a 40-second one destroys twelve minutes
+to save two.
+
+`PriorityClass` separates them. `preemptionPolicy: Never` places a pod ahead of
+lower-priority _pending_ pods while never evicting a _running_ one:
+
+| Lane        | Priority                    | `preemptionPolicy`     | Yields to   |
+| ----------- | --------------------------- | ---------------------- | ----------- |
+| 1 Emergency | `system-cluster-critical`   | `PreemptLowerPriority` | nobody      |
+| 2 Commuter  | mid                         | **`Never`**            | lane 1 only |
+| 3 Logistics | low, and it may be negative | `Never`                | lanes 1, 2  |
+
+So preemption exists in exactly one place - the emergency lane - which is the
+smallest surface that still protects quorum, and matches this record's
+preference for admission control over eviction everywhere else.
+
+#### What makes it a lane is the rule, not a wall
+
+Worth stating because the model invites the wrong reading. Road lanes are not
+partitions: an empty lane can be driven in, and what makes it a lane is a rule
+about yielding. Three dedicated node pools would be walls, and walls would strand
+capacity in whichever lane happens to be idle - which is the opposite of the
+goal that produced this whole section.
+
+**One pool of workers, three priority classes.** The one genuine partition is
+the one already designed: lane 1 lives on the control planes, lanes 2 and 3
+share the workers, and the `nodeSelector` above is what draws it.
+
+The security axis does not force a second partition either. Fork-run lanes must
+not be able to _reach_ the estate, which is a NetworkPolicy question and
+therefore waits on Cilium - see [`03-workload.md`](03-workload.md). It is not a
+question about which node they sit on. So the earlier claim that two independent
+arguments demanded the same structure was half right: they demand separate
+**credentials and network policy**, and separately a lane assignment. Those are
+different mechanisms and conflating them was the error in the first draft.
+
+#### Deliveries and refuse are not quite the same lane
+
+The operator's third lane names both, and they differ in one way worth keeping.
+A delivery must eventually complete - somebody is waiting on that integration
+run - so it wants bounded retries. Refuse collection is idempotent and
+catches up: a missed backup or dependency sweep is repaired by the next
+scheduled run doing the same work. The practical consequence is narrow but real:
+a killed truck carrying refuse needs no retry at all, and one carrying a
+delivery does.
+
+#### The model immediately finds a misassignment
+
+Applied to what is running today, the runner listener is the **dispatcher** -
+always on, tiny, and if it dies no CI runs at all - so it is unambiguously lane
+
+1. It is currently `BestEffort`, along with the ARC controller, the
+   CloudNativePG operator and the OpenEBS provisioner (#237). The eviction order in
+   force right now puts the dispatcher in the ditch first.
+
+That is the argument for #237 being a prerequisite rather than hygiene, in one
+line: the lanes do not exist until every vehicle has been assigned to one, and
+an unassigned vehicle is not in lane 3, it is on the hard shoulder waiting to be
+hit.
 
 ### Retraction: ZFS ARC was not the problem
 
@@ -1189,8 +1266,14 @@ In order, each additive and needing no cluster rebuild:
 3. **Requests on everything that matters**, which is #237 and #234. This is not
    hygiene, it is the load-bearing part: eviction order is driven by QoS class,
    and until it is designed rather than accidental, filling the box on purpose
-   is reckless.
-4. **`PriorityClass` for CI**, below the estate's own components.
+   is reckless. It is also what assigns each vehicle to a lane, and an
+   unassigned one is not in lane 3 - it is on the shoulder.
+4. **Three `PriorityClass` objects**, per the lane table above, with
+   `preemptionPolicy: Never` on lanes 2 and 3 so preemption exists only where it
+   protects quorum.
+5. **A second runner scale set**, so that a commuter lane and a logistics lane
+   have separate `maxRunners` interlocks and a lint job cannot queue behind an
+   integration run for a slot.
 
 Then epoch 04 measures it, and epoch 05 makes it elastic if that is ever worth
 anything - which [`05-node-lifecycle.md`](05-node-lifecycle.md) records that it
