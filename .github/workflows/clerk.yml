@@ -253,6 +253,13 @@ jobs:
         with:
           sarif_file: snag.sarif
           category: clerk-snag
+          # Told, not inferred. The checkout is refs/pull/N/head so that a
+          # merged pull request can be read retroactively, and the action
+          # otherwise looks for the merge ref and falls back to a commit it did
+          # not scan - two "git call failed" warnings per run, and an alert
+          # attributed to one tree with line numbers from another (#228).
+          ref: refs/pull/${{ steps.change.outputs.pr }}/head
+          sha: ${{ steps.change.outputs.head }}
 
       - name: Upload the handover reading
         if: always() && hashFiles('handover.sarif') != ''
@@ -260,6 +267,13 @@ jobs:
         with:
           sarif_file: handover.sarif
           category: clerk-handover
+          # Told, not inferred. The checkout is refs/pull/N/head so that a
+          # merged pull request can be read retroactively, and the action
+          # otherwise looks for the merge ref and falls back to a commit it did
+          # not scan - two "git call failed" warnings per run, and an alert
+          # attributed to one tree with line numbers from another (#228).
+          ref: refs/pull/${{ steps.change.outputs.pr }}/head
+          sha: ${{ steps.change.outputs.head }}
 
       # Done. The thumbs up Dependabot gives, and it means the same thing:
       # what you asked for has happened, go and look.
