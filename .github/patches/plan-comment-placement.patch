@@ -1,0 +1,56 @@
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 41276ae..398b1d9 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -745,12 +745,30 @@ jobs:
+               owner: context.repo.owner, repo: context.repo.repo,
+             });
+             const existing = comments.find(c => c.body.startsWith(marker));
+-            const args = {owner: context.repo.owner, repo: context.repo.repo, body};
++            const repo = {owner: context.repo.owner, repo: context.repo.repo};
++
++            // Deleted and recreated, not edited in place.
++            //
++            // An edited comment keeps its original position in the timeline, so
++            // a plan that changed with a later push stays anchored beside the
++            // commit that no longer produced it: the body reads "4 to add"
++            // while sitting above the push whose plan said 6. The provenance
++            // line inside the body was the first answer to this and it only
++            // solves half - it tells a reader the comment is current, not where
++            // the change it describes actually happened.
++            //
++            // Still exactly one comment per site. The delete is what keeps this
++            // from becoming the append-per-push behaviour #160 describes; the
++            // marker search above is what finds the one to remove.
++            //
++            // The cost, said out loud: a recreated comment loses any reactions
++            // and any reply thread, and it notifies subscribers again. Neither
++            // matters for a plan nobody replies to, and the second is arguably
++            // wanted - a plan that changed is worth being told about.
+             if (existing) {
+-              await github.rest.issues.updateComment({...args, comment_id: existing.id});
+-            } else {
+-              await github.rest.issues.createComment({...args, issue_number: context.issue.number});
++              await github.rest.issues.deleteComment({...repo, comment_id: existing.id});
+             }
++            await github.rest.issues.createComment({...repo, issue_number: context.issue.number, body});
+ 
+   # ---------------------------------------------------------------------
+   # NO PLAN, SAID OUT LOUD - #156.
+@@ -824,9 +842,12 @@ jobs:
+               owner: context.repo.owner, repo: context.repo.repo,
+             });
+             const existing = comments.find(c => c.body.startsWith(marker));
+-            const args = {owner: context.repo.owner, repo: context.repo.repo, body};
++            const repo = {owner: context.repo.owner, repo: context.repo.repo};
++
++            // Deleted and recreated, for the reason given on the plan comment
++            // above: an edited comment stays where it was first posted, which
++            // is not where the push it describes happened.
+             if (existing) {
+-              await github.rest.issues.updateComment({...args, comment_id: existing.id});
+-            } else {
+-              await github.rest.issues.createComment({...args, issue_number: context.issue.number});
++              await github.rest.issues.deleteComment({...repo, comment_id: existing.id});
+             }
++            await github.rest.issues.createComment({...repo, issue_number: context.issue.number, body});
