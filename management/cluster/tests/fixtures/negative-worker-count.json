@@ -22,7 +22,7 @@
       "name": "Fixture Site",
       "octet": 10,
       "control_plane_count": 3,
-      "worker_count": 1,
+      "worker_count": -1,
       "hypervisor": {
         "provider": "proxmox",
         "vault_provider": "proxmox",

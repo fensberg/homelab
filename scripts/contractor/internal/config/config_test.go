@@ -282,3 +282,81 @@ func TestResolveSiteNetwork_AddressNameAndIDShareOneNumber(t *testing.T) {
 		}
 	}
 }
+
+// A site with no worker_count is the estate epoch 01 shipped, and must stay
+// buildable. Absent means none rather than missing.
+func TestResolveSiteNetwork_NoWorkerCountMeansNoWorkers(t *testing.T) {
+	cfg := &Config{Sites: map[string]Site{"site0": validSite()}}
+
+	net, err := ResolveSiteNetwork(cfg, "site0")
+	if err != nil {
+		t.Fatalf("a config predating workers must still resolve: %v", err)
+	}
+	if len(net.WorkerIPs) != 0 || len(net.WorkerNames) != 0 {
+		t.Errorf("workers appeared from nowhere: %v %v", net.WorkerIPs, net.WorkerNames)
+	}
+}
+
+// Workers sit in the node subnet, in the 200+ band, and their name, address and
+// id end in the same octet - the property registry.tf asserts on the other side.
+func TestResolveSiteNetwork_WorkersUseTheirOwnBandInTheNodeSubnet(t *testing.T) {
+	site := validSite()
+	site.WorkerCount = 2
+	cfg := &Config{Sites: map[string]Site{"site0": site}}
+
+	net, err := ResolveSiteNetwork(cfg, "site0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wantIPs := []string{"10.10.10.200", "10.10.10.201"}
+	if strings.Join(net.WorkerIPs, ",") != strings.Join(wantIPs, ",") {
+		t.Errorf("WorkerIPs = %v, want %v", net.WorkerIPs, wantIPs)
+	}
+	wantNames := []string{"north-street-office-wk-200", "north-street-office-wk-201"}
+	if strings.Join(net.WorkerNames, ",") != strings.Join(wantNames, ",") {
+		t.Errorf("WorkerNames = %v, want %v", net.WorkerNames, wantNames)
+	}
+
+	// The control plane must be untouched by workers existing. This is the
+	// assertion that would have caught appending workers to NodeIPs, which
+	// would put a worker's address where the cluster endpoint and the etcd
+	// health check read from.
+	wantCP := []string{"10.10.10.100", "10.10.10.101", "10.10.10.102"}
+	if strings.Join(net.NodeIPs, ",") != strings.Join(wantCP, ",") {
+		t.Errorf("NodeIPs changed when workers were added: %v, want %v", net.NodeIPs, wantCP)
+	}
+}
+
+// The bands must not meet. talos.tf merges the control plane and the workers
+// into one map keyed by host octet, and a duplicate key there drops a machine
+// silently rather than failing, so this is the arithmetic that keeps that safe.
+func TestResolveSiteNetwork_TheBandsCannotCollide(t *testing.T) {
+	site := validSite()
+	site.ControlPlaneCount = WorkerBand - ControlPlaneBand
+	site.WorkerCount = 1
+	cfg := &Config{Sites: map[string]Site{"site0": site}}
+
+	net, err := ResolveSiteNetwork(cfg, "site0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	seen := map[string]bool{}
+	for _, ip := range append(append([]string{}, net.NodeIPs...), net.WorkerIPs...) {
+		if seen[ip] {
+			t.Fatalf("%s is used by two machines; the bands overlap", ip)
+		}
+		seen[ip] = true
+	}
+}
+
+func TestResolveSiteNetwork_NegativeWorkerCount(t *testing.T) {
+	site := validSite()
+	site.WorkerCount = -1
+	cfg := &Config{Sites: map[string]Site{"site0": site}}
+
+	if _, err := ResolveSiteNetwork(cfg, "site0"); err == nil {
+		t.Fatal("a negative worker_count was accepted")
+	}
+}

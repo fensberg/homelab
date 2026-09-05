@@ -159,3 +159,17 @@ run "aws_shaped_access_key_fails_on_a_cloudflare_site" {
 
   expect_failures = [terraform_data.invariants]
 }
+
+run "negative_worker_count_fails_its_precondition" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/negative-worker-count.json"
+  }
+
+  plan_options {
+    target = [terraform_data.invariants]
+  }
+
+  expect_failures = [terraform_data.invariants]
+}

@@ -92,6 +92,14 @@
       "valid": false,
       "go_error_contains": "AWS credential",
       "because": "Catches the careless swap, where credentials are pasted in without touching any declaration at all."
+    },
+    {
+      "name": "negative_worker_count_fails_its_precondition",
+      "fixture": "negative-worker-count.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "worker_count",
+      "because": "Zero workers is a real and common answer - it is the estate epoch 01 shipped - so the count cannot simply be required to be positive. Negative is the one value that is meaningless, and it would otherwise reach range() in variables.tf."
     }
   ]
 }
