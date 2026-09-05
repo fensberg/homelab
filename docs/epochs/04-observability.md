@@ -106,6 +106,34 @@ reviewable, arguable and testable in a way a feeling about a graph is not.
 **Rejected:** dashboards first, alerts later. That ordering is how monitoring
 becomes decoration.
 
+### The deliverable is a panel schedule, not a dashboard
+
+**Chose:** this epoch produces a written capacity budget in the shape an
+electrician's panel schedule takes - total allocatable per node, what is
+reserved, what may burst, and what the worst-case simultaneous draw is - and
+the scaling thresholds hang off it.
+**Because:** [`02-abstraction.md`](02-abstraction.md) adopts a domestic
+electrical panel as the estate's model for capacity, and the model comes with
+its own deliverable. The reason electrical code permits 60A of appliances on a
+40A feed is the **demand factor**: a claim that they will not all peak together.
+Requests set below limits is that same bet, and a bet has to be checked.
+
+**So this epoch is the precondition on filling the box on purpose.** You cannot
+safely overcommit what you cannot measure - the demand factor is unverified
+until something has watched the peaks for long enough to say whether the claim
+holds. That is a third independent argument arriving at this epoch, alongside
+the overlay outage above and the node-pressure gotcha below.
+
+Two things fall out of it that a graph does not give:
+
+- **A trip is distinguishable from a busy estate.** The panel model says the
+  fuse is memory alone - CPU degrades rather than fails - so an alert on CPU
+  saturation is noise and an alert on memory headroom is the one that means
+  act. Recording that here stops both being wired up as "resource usage".
+- **The thresholds have a denominator.** "Add a node when X" is arguable in a
+  way "the graph looks high" is not, and the schedule is what X is expressed
+  against.
+
 ## Deferred
 
 - **Log aggregation**, per Scope above. Trigger: the first incident where
