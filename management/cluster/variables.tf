@@ -353,5 +353,15 @@ output "site_network" {
     vm_names     = local.vm_names
     hypervisors  = [for h in local.hypervisors : h.hostname]
     vm_placement = local.vm_placement
+
+    # The workers belong here for the same reason the control plane does: this
+    # output is the estate's own account of what it built, and one that stops
+    # at the control plane describes an estate that no longer exists. Their
+    # absence was caught by tflint noticing worker_names had no consumer, which
+    # was the honest signal - a derived value nothing reads is either dead or
+    # missing from somewhere, and here it was the second.
+    worker_ips       = local.worker_ips
+    worker_names     = local.worker_names
+    worker_placement = local.worker_placement
   }
 }
