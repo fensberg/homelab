@@ -258,8 +258,21 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
 # Uniform on purpose. A pool whose members differ is a pool that cannot be
 # drained onto itself: the moment one worker is larger than the others, some
 # workload only fits there and the drain that epoch 05 exists to make ordinary
-# has nowhere to put it. Three of the same size costs a little memory and buys
-# fungibility, which is the property that makes a pool a pool.
+# has nowhere to put it. Sameness costs a little memory and buys fungibility,
+# which is the property that makes a pool a pool.
+#
+# Two, not three. The count was briefly three because the state database is
+# three CloudNativePG instances on node-pinned volumes and wanted one per
+# machine - and then the database stayed on the control planes, which removed
+# that reason without removing the third worker. Recorded because the second
+# reason survives and is worth stating on its own: two is the floor for
+# tainting the control planes later, since everything that reconciles the
+# estate has to land somewhere when a worker is lost.
+#
+# What a third would be for: a database that does move, or a maxRunners high
+# enough that two workers cannot hold the concurrent heavy jobs. Neither is
+# true, and the 8 GiB it would take is better left in the budget for the
+# untrusted node epoch 03 needs.
 resource "proxmox_virtual_environment_vm" "talos_worker" {
   for_each  = local.workers
   name      = each.value.name
