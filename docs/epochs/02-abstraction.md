@@ -1211,6 +1211,62 @@ scheduled run doing the same work. The practical consequence is narrow but real:
 a killed truck carrying refuse needs no retry at all, and one carrying a
 delivery does.
 
+#### The lanes govern infrastructure operations too, not only CI
+
+Creating a virtual machine is **lane 3**. It must complete - a worker that never
+appears is a failure - and nothing observes its latency, because nobody is
+waiting on the second one. The same is true of a converge, a state backup and an
+image build. That the model extends past CI jobs to the estate's own operations
+is worth stating, because it is what makes it a scheduling policy for the estate
+rather than a CI feature.
+
+The consequence is a pleasing inversion: **lane 3 work is what builds the
+capacity lanes 1 and 2 consume.** The slow lane lays the road.
+
+#### Lane by lane, what is actually short
+
+Measured rather than assumed, because the three lanes are not short in the same
+way and the remedies are different.
+
+**Lane 1 has capacity and no protection.** The control planes use about 1.2 GiB
+of 3.8 GiB each, so the emergency lane is not short of room. What it lacks is
+any claim on that room: `Taints: <none>`, no requests on the dispatcher or the
+operators (#237), and no `PriorityClass`. Its capacity is real and entirely
+unreserved, which means a heavy lane-3 job can take it and has. **The remedy is
+not more capacity, it is making the capacity it already has non-negotiable** -
+which is requests and priority, not machines.
+
+**Lane 2 does not exist.** Nineteen jobs across the workflows run on
+`ubuntu-latest` and five on the self-hosted scale set; every one of the eight
+pull request validation lanes is in the first group. So the commuter lane has
+no estate capacity at all today, and building it is a migration rather than a
+resize - with the prerequisites [`01-ignition.md`](01-ignition.md) already
+records, `harden-runner` not surviving the move being the substantive one.
+
+**Lane 3 is the one genuinely starved.** It is the only lane running in the
+estate today, and it is what #236 killed.
+
+So the workers being built serve lanes 2 and 3, and the lane 1 work is a
+configuration change on machines that already exist. Those are different
+efforts and only the first needs hardware.
+
+#### The stopped template is not costing what it appears to
+
+Recorded because `qm list` invites the misreading and it very nearly cost a
+useful thing.
+
+The per-hypervisor Talos template shows `4096` MB in `qm list` and is
+`stopped`. That column is the _configured_ allocation - what the guest would
+take if started - and a stopped guest consumes **no memory and no CPU**. It was
+never part of the 37 GiB; the four running `kvm` processes account for all of
+it. The template's real cost is 8 GB of disk on a pool at 3.42% used.
+
+And it is load-bearing: `talos_cp` clones from it, so it is precisely what makes
+creating a machine cheap. Deleting it would not free memory the estate is short
+of, and would make every future VM - including the workers - re-download and
+re-materialise the image first. **It makes lane 3 work slower for no memory
+back.** The right disposition is to leave it alone.
+
 #### The model immediately finds a misassignment
 
 Applied to what is running today, the runner listener is the **dispatcher** -
@@ -1244,14 +1300,61 @@ size       6.15 GiB
 
 ARC is capped at 6.23 GiB - about 10% of RAM, the newer Proxmox default rather
 than the older 50% - and is holding 6.15 GiB against a pool with 33 GB of data.
-It is correctly sized and there is nothing to reclaim there. **Roughly 19 GiB
-of the hypervisor's reported usage remains unaccounted for**, and worker sizing
-should not be written down until it is, because the difference decides whether
-32 GiB of worker memory fits.
+It is correctly sized and there is nothing to reclaim there.
+
+**The missing memory was a fourth virtual machine.** `ps -eo rss,comm` showed
+four `kvm` processes, not three: the three control planes at ~4.03 GiB each,
+matching `dedicated = 4096` with no ballooning exactly as designed, and a
+16 GiB build VM outside the site's id band. Legitimate, expected, and named in
+no epoch record until this one. With ARC and the Proxmox daemons the arithmetic
+then closes against the reported figure.
 
 The process lesson is the one already in this repository: an arithmetic
 inference about a live machine is a hypothesis, and the reading costs one
-command.
+command. It was made twice in one session - first that ARC held the memory,
+then that the host ran three guests - and both times the correction came from
+the operator running something rather than from a tool noticing. #239 is the
+structural fix: `survey` reports what should not be on a site and never what
+the site can carry.
+
+### The budget, and what it will become
+
+**24 GiB is genuinely free**, not the ~44 GiB an earlier draft of this section
+assumed. The host also runs **no swap**, so memory exhaustion there does not
+degrade, it kills a guest outright - which makes headroom worth more here than
+on a machine with somewhere to spill.
+
+That settles the sizing: **two workers at 6 vCPU and 8 GiB**, taking 16 GiB of
+the 24 and leaving 8 GiB of host headroom. After Talos's ~600 MiB of overhead
+each worker offers about 7.2 GiB allocatable, against the 1.9 GiB ceiling that
+killed the job in #236 - close to a four-fold improvement on the number that
+actually broke, which is the one worth optimising.
+
+**The build VM's 16 GiB returns eventually.** The operator's intent is that the
+estate ends with no development machine at all: it exists to facilitate the
+build, and that work may itself move into a worker. So the long-run budget is
+nearer 40 GiB, and the workers are expected to grow into it. Resizing a worker
+is cheap in a way resizing a control plane is not - a worker is not an etcd
+member, so it is a drain and a restart - which is one more argument for putting
+capacity into workers rather than into the control plane.
+
+Worth noting where that work would land in the lane model: a development
+environment is interactive, so delay is its whole cost, which makes it **lane 2**
+rather than a fourth lane of its own.
+
+### Where the utilisation actually is
+
+A correction to this section's own framing, made after the numbers closed. The
+hypervisor is already about 60% committed on memory, so "the estate runs at a
+few percent" is true of CPU and misleading about memory: 3.88% of 18 cores
+against roughly two thirds of the RAM already spoken for.
+
+That is not a coincidence, it is the one-fuse principle observed from the other
+side. **The resource with no breaker is the one with all the headroom, and the
+resource with the breaker is nearly committed.** So filling this box is
+overwhelmingly a CPU exercise - overcommit vCPU, pack the lanes, let contention
+degrade - while the memory side is about spending a small fixed budget well
+rather than filling a large empty one.
 
 ### What this epoch therefore builds
 
