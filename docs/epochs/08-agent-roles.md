@@ -458,6 +458,42 @@ mechanical false positive is not yet an answer to "is this decorative", and the
 honest way to reach one is to keep scoring both columns rather than only the
 one that confirms a prior.
 
+### A false positive is prompt feedback before it is a bug report
+
+**Chose:** every wrong finding gets read for what it says about the prompt, and
+the prompt is refined in the same change that records the miss.
+**Rejected:** filing a code fix and waiting.
+**Because:** the operator's instruction, and it is the better lever. The first
+response to #255 was an issue proposing that `strip.go` parse YAML properly.
+That is correct and it is slow, narrow, and leaves the model making the same
+class of mistake in shell heredocs and sample payloads meanwhile.
+
+Reading the finding instead showed something more useful: the prompt **already
+forbade** what the model did. "If the account is silent on something the
+commentary claims, that is not a disagreement" was the last sentence of a
+paragraph, and the finding it produced was "the commentary mentions X, but the
+account does not mention any such context" - the silence case restated as a
+report. A rule at the end of a paragraph is a rule a model skips.
+
+So the rule became numbered, capitalised, and given the exact sentence to
+delete; "does not support" became "CONTRADICTS", because the weaker verb
+invites the very finding the rule forbids; and a second rule was added for the
+thing the prompt had never mentioned at all - that what arrives labelled
+"commentary" was separated mechanically, so fixture data, sample diffs and
+quoted output arrive looking like prose. The model was asked to judge data as a
+claim and did so reasonably.
+
+**What this cannot be tested for, said plainly.** A prompt's effect is only
+observable by running the model, and this repository's tests are hermetic, so
+there is no unit test that proves this refinement works. The evidence is the
+next run over the same file, and it belongs in this section rather than in a
+green check. A test asserting the prompt contains the word "CONTRADICTS" would
+be a change detector wearing a guard's clothes.
+
+The parser fix in #255 stays open. Prompt and stripper are different layers and
+the durable answer is both - but the prompt is the one that generalises to
+every language the stripper handles badly, and it costs a paragraph.
+
 ## Acceptance tests
 
 1. **The planner finds a trigger that has genuinely fired**, and the issue it

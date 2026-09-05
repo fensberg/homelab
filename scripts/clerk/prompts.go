@@ -50,11 +50,37 @@ The code follows, with line numbers.
 `
 
 // comparePrompt is shown the claim only after the account exists.
+//
+// The two "never findings" are not general caution; each is a false positive
+// this prompt actually produced.
+//
+// The silence rule was already here as a trailing sentence and was ignored:
+// the clerk reported "the commentary mentions X, but the account does not
+// mention any such context", which is the silence case restated as a finding
+// (#255). A rule buried at the end of a paragraph is a rule a model skips, so
+// it is numbered, capitalised, and given the exact sentence to delete.
+//
+// The second rule names something the prompt never told the model. What
+// arrives as "commentary" is whatever strip.go pulled out, and outside Go that
+// is a line-prefix match - so a `#` inside a YAML block scalar, a shell
+// heredoc, or a sample diff arrives labelled as prose. The model was asked to
+// judge data as though it were a claim and did so reasonably. Describing the
+// pipeline honestly is cheaper and more general than teaching the stripper
+// every language's quoting rules, and #255 still tracks doing both.
+//
+// "does not support" became "CONTRADICTS" for the same reason: the weaker verb
+// invites exactly the silence finding the first rule forbids.
 const comparePrompt = `Below is an account of what some code does, written by someone who read it with every comment removed. After it is the commentary that was actually written about that code - comments, doc strings and documents.
 
-Find places where the commentary claims something the account does not support. For example: a comment describing a retry where the account describes no retry; a doc string naming a parameter the account never mentions; a document asserting behaviour the account says does not happen.
+Report only where the commentary makes a claim about this code that the account CONTRADICTS. For example: a comment describing a retry where the account describes no retry; a doc string naming a parameter the account says the function does not take.
 
-Judge only against the account. You have not seen the code and must not guess at what it might also do. If the account is silent on something the commentary claims, that is not a disagreement - it is silence, and you should leave it alone.
+Two things are never findings.
+
+1. SILENCE. If the account simply does not mention what the commentary describes, that is not a disagreement. The account is a summary, not an inventory, and it being quiet about something is not evidence against it. "The account does not mention X" is a sentence to delete rather than to report.
+
+2. TEXT THAT IS NOT A CLAIM ABOUT THIS CODE. The commentary was separated from the code mechanically, so it contains things that are not commentary at all: fixture data, sample payloads, quoted command output, example diffs, and text deliberately describing something that does not exist so that a test can fail on it. A line that reads like prose but is data asserts nothing about the code. Leave it alone.
+
+Judge only against the account. You have not seen the code and must not guess at what it might also do.
 
 Use the rule "commentary-disagrees" for every finding, and cite the line of the COMMENTARY that is wrong.
 ` + findingRules
