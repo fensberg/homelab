@@ -123,6 +123,27 @@ repos:
         # analysis (golangci-lint, unaffected by this) stays the owner of
         # everything beyond formatting.
 
+      # Refused where the mistake is made rather than where it is discovered.
+      #
+      # signedpush already refuses a merge commit at push time, correctly - it
+      # replays a branch linearly so GitHub can sign each commit, and a merge
+      # has two parents. But that refusal lands after the suite has run, and
+      # clearing it needs a rebase, which diverges the branch, which needs the
+      # ref recreated, which closes the pull request. Three were lost that way
+      # in one session (#260).
+      #
+      # commit-msg is the stage because git does not run pre-commit for merges.
+      # The guard refuses only an UNSIGNED merge, which is the same property
+      # question push-guard asks: somebody who signs locally publishes with
+      # plain git and needs no replay, so a merge from them is fine.
+      - id: merge-guard
+        name: refuse a merge commit signedpush cannot publish (commit-msg)
+        entry: task merge-guard
+        language: system
+        stages: [commit-msg]
+        pass_filenames: false
+        always_run: true
+
       - id: push-guard
         name: refuse a plain git push (pre-push)
         entry: task push-guard

@@ -48,7 +48,7 @@ func TestTheHookShimRunsTheGuardBeforePreCommit(t *testing.T) {
 // A shim that exits zero on a failing guard is a shim that reports rather than
 // refuses. `set -e` is what makes the guard's exit code stop the commit.
 func TestTheHookShimFailsOnAFailingGuard(t *testing.T) {
-	for _, hook := range []string{"pre-commit", "pre-push"} {
+	for _, hook := range []string{"pre-commit", "pre-push", "commit-msg"} {
 		body := readShim(t, hook)
 		if !strings.Contains(body, "set -euo pipefail") {
 			t.Errorf("githooks/%s does not set -e, so a failing guard would be reported "+
@@ -59,7 +59,7 @@ func TestTheHookShimFailsOnAFailingGuard(t *testing.T) {
 
 // git will not run a shim it cannot execute, and will not say so loudly.
 func TestTheHookShimsAreExecutable(t *testing.T) {
-	for _, hook := range []string{"pre-commit", "pre-push"} {
+	for _, hook := range []string{"pre-commit", "pre-push", "commit-msg"} {
 		info, err := os.Stat(filepath.Join(repoRoot(t), "githooks", hook))
 		if err != nil {
 			t.Fatalf("githooks/%s: %v", hook, err)
@@ -235,5 +235,47 @@ func TestTheFormatLaneRefusesASupplierBeforeInstallingAnything(t *testing.T) {
 		t.Error("the Format lane sets up Go without reading GO_VERSION from " +
 			"scripts/versions.env, so it can validate on a different toolchain " +
 			"than the one the estate pins")
+	}
+}
+
+// core.hooksPath REPLACES .git/hooks; it does not merge with it.
+//
+// That single fact is what made this necessary. `.pre-commit-config.yaml`
+// declares default_install_hook_types, `pre-commit install` writes a hook for
+// each into .git/hooks, and this repository then points git somewhere else
+// entirely. Any stage without a shim in githooks/ has a hook that exists, is
+// correct, and is never invoked.
+//
+// commit-msg spent that way silently. Two commitlint rules this repository
+// holds deliberately - no self co-authorship, and a lower-case subject - were
+// enforced only by CI, so each violation cost a push and a red Analyze rather
+// than a second at the terminal. The second cost a rewritten branch and a
+// replaced pull request, because a published commit subject cannot be amended.
+//
+// Asserted as a class rather than as "commit-msg exists", because the failure
+// is not that one hook was missing. It is that adding a stage to the config
+// looks complete and is not, and the next stage added would go the same way.
+func TestEveryInstalledHookTypeHasAShim(t *testing.T) {
+	cfg := readRepoFile(t, ".pre-commit-config.yaml")
+
+	m := regexp.MustCompile(`default_install_hook_types:\s*\[([^\]]*)\]`).FindStringSubmatch(cfg)
+	if m == nil {
+		t.Fatal("could not find default_install_hook_types in .pre-commit-config.yaml.\n\nIf it was restructured, this contract needs re-examining rather than re-pointing: the property is that every stage git is told to run has a shim to run.")
+	}
+
+	var stages []string
+	for _, raw := range strings.Split(m[1], ",") {
+		if s := strings.TrimSpace(raw); s != "" {
+			stages = append(stages, s)
+		}
+	}
+	if len(stages) == 0 {
+		t.Fatal("default_install_hook_types is empty, so this check is asserting nothing")
+	}
+
+	for _, stage := range stages {
+		if _, err := os.Stat(filepath.Join(repoRoot(t), "githooks", stage)); err != nil {
+			t.Errorf("%q is in default_install_hook_types but githooks/%s does not exist.\n\ncore.hooksPath replaces .git/hooks rather than merging with it, so the hook pre-commit installs for this stage is never invoked. It looks installed and does nothing.", stage, stage)
+		}
 	}
 }
