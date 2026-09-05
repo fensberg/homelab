@@ -7,6 +7,7 @@
 //
 //	guard-deliveries  what comes in - third-party code installed as a commit hook
 //	guard-push        what goes out - unsigned commits reaching a branch
+//	guard-merge       what cannot go out - a merge commit signedpush cannot replay
 //	patrol            the estate itself, watched from outside
 //
 // The verbs are verb phrases and the program is a noun, deliberately. A
@@ -42,6 +43,7 @@ func verbs() []verb {
 	return []verb{
 		{"guard-deliveries", "refuse a delivery from an unapproved supplier", guardDeliveries},
 		{"guard-push", "refuse a plain git push that would update a branch", guardPush},
+		{"guard-merge", "refuse a merge commit that signedpush could not publish", guardMerge},
 		{"patrol", "check from outside that the estate is still answering", patrol},
 	}
 }

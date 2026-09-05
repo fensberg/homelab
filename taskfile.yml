@@ -110,6 +110,20 @@ tasks:
       - go build -C scripts/contractor -o ../../toolshed/contractor .
       - ./toolshed/contractor survey {{.CLI_ARGS}}
 
+  merge-guard:
+    desc: "Refuse a merge commit signedpush could not publish (commit-msg hook)"
+    # Wired into commit-msg rather than offered as advice, for the same reason
+    # push-guard is: knowing the rule was not enough. signedpush already
+    # refuses a merge at push time and says to rebase, and that refusal arrives
+    # after the tests have run on the commit and when clearing it costs a
+    # rebase, a recreated ref and a closed pull request (#260).
+    #
+    # commit-msg, not pre-commit: git does not run pre-commit for a merge at
+    # all, so a guard there would miss the case entirely.
+    cmds:
+      - go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
+      - ./toolshed/gatehouse guard-merge
+
   push-guard:
     desc: "Refuse a plain git push that would update a branch (pre-push hook)"
     # Wired into the pre-push hook rather than offered as advice. `git push`
