@@ -28,6 +28,18 @@ const (
 	// overlapping them makes debugging confusing.
 	OctetMin = 1
 	OctetMax = 95
+
+	// ControlPlaneBand and WorkerBand are the host-octet bands a machine's
+	// address, name and VM id are all derived from. They must not overlap:
+	// talos.tf merges the two maps to share their config patches, and a
+	// duplicate key there drops a machine silently rather than failing.
+	//
+	// The same two numbers live in management/cluster/variables.tf as
+	// control_plane_band and worker_band. contract_test.go asserts they agree,
+	// because both gate a real deployment and a disagreement means the start
+	// button and `tofu plan` build different estates.
+	ControlPlaneBand = 100
+	WorkerBand       = 200
 )
 
 // RequiredProvidersByConcern is the one vendor this code implements per
@@ -63,13 +75,16 @@ type SourceControl struct {
 }
 
 type Site struct {
-	Name              string         `json:"name"`
-	Octet             int            `json:"octet"`
-	ControlPlaneCount int            `json:"control_plane_count"`
-	Hypervisor        Hypervisor     `json:"hypervisor"`
-	OverlayNetwork    OverlayNetwork `json:"overlay_network"`
-	ObjectStorage     ObjectStorage  `json:"object_storage"`
-	Database          Database       `json:"database"`
+	Name              string `json:"name"`
+	Octet             int    `json:"octet"`
+	ControlPlaneCount int    `json:"control_plane_count"`
+	// Absent means none, which is what every config described before workers
+	// existed. Zero is a meaningful value here rather than a missing one.
+	WorkerCount    int            `json:"worker_count"`
+	Hypervisor     Hypervisor     `json:"hypervisor"`
+	OverlayNetwork OverlayNetwork `json:"overlay_network"`
+	ObjectStorage  ObjectStorage  `json:"object_storage"`
+	Database       Database       `json:"database"`
 }
 
 type Hypervisor struct {
@@ -157,18 +172,25 @@ func LoadRendered(path string) (*Config, error) {
 // SiteNetwork is everything derived from a site's declared octet: its
 // addressing, EVPN identifiers, and the VM/hostnames that follow from it.
 type SiteNetwork struct {
-	Name        string // slug, used for VM/hostnames
-	Key         string // the key in sites{}, e.g. "site0"
-	Octet       int
-	Label       string
-	SiteCIDR    string
-	NodeCIDR    string
-	Gateway     string
-	ASN         int
-	VRFVNI      int
-	VNetVNI     int
-	NodeIPs     []string
-	VMNames     []string
+	Name     string // slug, used for VM/hostnames
+	Key      string // the key in sites{}, e.g. "site0"
+	Octet    int
+	Label    string
+	SiteCIDR string
+	NodeCIDR string
+	Gateway  string
+	ASN      int
+	VRFVNI   int
+	VNetVNI  int
+	NodeIPs  []string
+	VMNames  []string
+	// Workers are kept in their own lists rather than appended to NodeIPs.
+	// NodeIPs is what the etcd health check and the cluster endpoint are built
+	// from, and a worker is neither an etcd member nor a candidate endpoint -
+	// folding them together would put a worker's address in the two places it
+	// can only be wrong.
+	WorkerIPs   []string
+	WorkerNames []string
 	Hypervisors []Node
 }
 
@@ -270,6 +292,9 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	if site.ControlPlaneCount < 1 {
 		return nil, fmt.Errorf("site '%s' has control_plane_count %d; it must be at least 1", name, site.ControlPlaneCount)
 	}
+	if site.WorkerCount < 0 {
+		return nil, fmt.Errorf("site '%s' has worker_count %d; it cannot be negative", name, site.WorkerCount)
+	}
 
 	o := site.Octet
 
@@ -291,9 +316,23 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	for i := 0; i < site.ControlPlaneCount; i++ {
 		// One number, three uses. See the vm_names local in
 		// management/cluster/variables.tf for why they used to differ.
-		host := 100 + i
+		host := ControlPlaneBand + i
 		nodeIPs[i] = fmt.Sprintf("10.%d.10.%d", o, host)
 		vmNames[i] = fmt.Sprintf("%s-cp-%d", slug, host)
+	}
+
+	// Workers share the node subnet and sit in the 200+ host band. Same
+	// subnet because one Talos cluster needs its members on one network;
+	// different band because the band is what makes a machine's role readable
+	// off its address, its name and its id at once. This has to agree with the
+	// worker_octets local in management/cluster/variables.tf - the same
+	// contract nodeIPs above already implements twice.
+	workerIPs := make([]string, site.WorkerCount)
+	workerNames := make([]string, site.WorkerCount)
+	for i := 0; i < site.WorkerCount; i++ {
+		host := WorkerBand + i
+		workerIPs[i] = fmt.Sprintf("10.%d.10.%d", o, host)
+		workerNames[i] = fmt.Sprintf("%s-wk-%d", slug, host)
 	}
 
 	return &SiteNetwork{
@@ -309,6 +348,8 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		VNetVNI:     11000 + o,
 		NodeIPs:     nodeIPs,
 		VMNames:     vmNames,
+		WorkerIPs:   workerIPs,
+		WorkerNames: workerNames,
 		Hypervisors: nodes,
 	}, nil
 }

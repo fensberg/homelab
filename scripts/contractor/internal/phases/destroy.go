@@ -69,7 +69,7 @@ func Destroy(ctx *run.Context, confirm string) error {
 	// re-stated from state further down, before anything irreversible.
 	fmt.Println()
 	run.Warn(fmt.Sprintf("About to destroy site %q (%s), as described by the config:", ctx.Site, net.Label))
-	for _, vm := range net.VMNames {
+	for _, vm := range append(append([]string{}, net.VMNames...), net.WorkerNames...) {
 		run.Warn("  VM        " + vm)
 	}
 	for _, h := range net.Hypervisors {

@@ -98,11 +98,23 @@ func Compute(ctx *run.Context) error {
 	); err != nil {
 		return err
 	}
+	// Workers are applied in their own step rather than folded into the target
+	// above. A worker failing to clone should not be indistinguishable from a
+	// control plane failing to clone: one is a capacity problem and the other
+	// stops the cluster existing at all.
+	if len(net.WorkerIPs) > 0 {
+		run.Info(fmt.Sprintf("cloning %d worker VM(s)", len(net.WorkerIPs)))
+		if err := run.TofuApply(ctx, "tofu apply (compute: workers)",
+			"proxmox_virtual_environment_vm.talos_worker",
+		); err != nil {
+			return err
+		}
+	}
 	run.Ok("VMs created")
 
 	// The provider returns as soon as Proxmox defines the VM. Talos still
 	// has to boot. Poll its API port rather than guessing at a sleep.
-	for _, node := range net.NodeIPs {
+	for _, node := range append(append([]string{}, net.NodeIPs...), net.WorkerIPs...) {
 		run.Info(fmt.Sprintf("waiting for the Talos API on %s:50000 ...", node))
 		if !run.WaitForPort(node, 50000, 5*time.Minute, 10*time.Second) {
 			return fmt.Errorf(`Talos on %s never came up within 5 minutes.

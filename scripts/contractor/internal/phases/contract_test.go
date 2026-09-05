@@ -72,23 +72,21 @@ func TestContract_StateDatabaseLocalsMatchTheOpenTofuSource(t *testing.T) {
 // so, which is the correct outcome - the contract needs a human then, not a
 // cleverer regex.
 var (
-	// The offset moved out of node_ips and into host_octets when the id, name
-	// and address were aligned on one number. It is still a single literal in
-	// a single for-expression, which is what this contract needs.
-	nodeIPOffset       = regexp.MustCompile(`host_octets\s*=\s*\[for i in range\(local\.node_count\)\s*:\s*(\d+)\s*\+\s*i\]`)
+	// The offset is no longer a literal in the for-expression. When workers
+	// arrived it moved into a named local, control_plane_band, precisely so
+	// that a contract could read it - the worker band needed the same
+	// treatment and an inline `200 + i` is a number no test can reach. So this
+	// reads the local by name rather than pattern-matching the expression,
+	// which is both sturdier and the mechanism the other contracts here use.
 	nodeCIDRThirdOctet = regexp.MustCompile(`node_cidr\s*=\s*"10\.\$\{local\.octet\}\.(\d+)\.0/24"`)
 )
 
 func TestContract_FirstControlPlaneHostMatchesTheOpenTofuSource(t *testing.T) {
 	src := clusterFile(t, "variables.tf")
 
-	m := nodeIPOffset.FindStringSubmatch(src)
-	if m == nil {
-		t.Fatal("could not find the host_octets = [for i in range(local.node_count) : N + i] offset in variables.tf.\n\nnode_ips was restructured. sterilize.go hard-codes the first control-plane host to reach the state database during an emergency destroy; confirm by hand that it still matches, then update this test to the new shape.")
-	}
-	offset, err := strconv.Atoi(m[1])
+	offset, err := tfsource.Int(src, "control_plane_band")
 	if err != nil {
-		t.Fatalf("offset %q is not an integer: %v", m[1], err)
+		t.Fatalf("variables.tf: %v\n\nThe control-plane host band was renamed or restructured. sterilize.go hard-codes the first control-plane host to reach the state database during an emergency destroy; confirm by hand that it still matches, then update this test to the new shape.", err)
 	}
 	if offset != stateDBFirstNodeHost {
 		t.Errorf("first control-plane host offset: variables.tf says %d, sterilize.go says %d", offset, stateDBFirstNodeHost)
@@ -253,7 +251,19 @@ func TestContract_VMIDBandMatchesTheOpenTofuSource(t *testing.T) {
 	// The host octet the band starts at is the same number the addresses start
 	// at - that is the whole point of aligning them - so the existing offset
 	// constant is the right one to check against.
-	if !strings.Contains(src, "host_octets = [for i in range(local.node_count) : "+strconv.Itoa(stateDBFirstNodeHost)+" + i]") {
-		t.Errorf("host_octets no longer starts at %d, so the VM id band and the address range have come apart.", stateDBFirstNodeHost)
+	band, err := tfsource.Int(src, "control_plane_band")
+	if err != nil {
+		t.Fatalf("variables.tf: %v", err)
+	}
+	if band != stateDBFirstNodeHost {
+		t.Errorf("the control-plane band starts at %d rather than %d, so the VM id band and the address range have come apart.", band, stateDBFirstNodeHost)
+	}
+
+	// Workers derive their id the same way, from the same octet multiplier.
+	// A worker whose id was computed differently would still be created, and
+	// the failed-destroy hint would simply not name it - which is the exact
+	// failure this contract exists to prevent, one machine role over.
+	if !strings.Contains(src, "vm_id      = local.octet * "+strconv.Itoa(vmIDOctetMultiplier)+" + h") {
+		t.Error("the worker VM id is not derived from the same octet multiplier as the control plane's, so the hint printed after a failed destroy would not name workers.")
 	}
 }

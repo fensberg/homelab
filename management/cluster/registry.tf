@@ -87,6 +87,35 @@ resource "terraform_data" "invariants" {
       error_message = "control_plane_count must be at least 1. Use an odd number: etcd needs a quorum, and an even count adds a member without adding a tiebreaker."
     }
 
+    # Workers get the same three-ways-one-number check the control plane has,
+    # because the property is the point rather than the resource: a machine's
+    # name, id and address all end in its host octet so an incident needs no
+    # arithmetic to cross-reference them.
+    precondition {
+      condition = alltrue([
+        for k, v in local.workers :
+        endswith(v.name, "-wk-${k}") && endswith(tostring(v.vm_id), k) && endswith(v.ip, ".${k}")
+      ])
+      error_message = "A worker's name, VM id and address must all end in its host octet. They are meant to be one number read three ways."
+    }
+
+    # The bands must not meet.
+    #
+    # talos.tf merges the control plane and the workers into one map to share
+    # their config patches, and a duplicate key there would silently drop a
+    # machine rather than fail - the merge keeps the last value. This is what
+    # makes that merge safe, so it is a precondition rather than a comment.
+    # 100 control planes is already far past what etcd should ever run.
+    precondition {
+      condition     = length(setintersection(toset(keys(local.control_plane)), toset(keys(local.workers)))) == 0
+      error_message = "A control plane and a worker share a host octet. The bands are 100+ for control planes and 200+ for workers; they must not overlap."
+    }
+
+    precondition {
+      condition     = local.worker_count >= 0 && local.worker_count <= 55
+      error_message = "worker_count must be between 0 and 55. Zero is valid and means no workers; the ceiling keeps the 200+ band inside a single octet."
+    }
+
     # --- vendor lock, checked three ways -----------------------------------
     #
     # 1. The code implements one vendor per concern.
