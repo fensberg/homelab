@@ -1583,6 +1583,56 @@ where the privilege boundary is the thing most important to read correctly.
 
 ## Deferred
 
+### Where the worker pool got to, and what is left
+
+Written mid-flight rather than at close, because the ordering below is the part
+that would be expensive to reconstruct.
+
+**Landed or in flight.** Two workers at 6 vCPU and 8 GiB (#244), and CI pointed
+at them with requests and a required anti-control-plane affinity (#245). The
+count was briefly three, for a database that then did not move - the retraction
+and its trigger are recorded beside the count in `compute.tf`.
+
+**The order the rest has to happen in**, and each entry says what blocks it:
+
+1. **Move the operators off the control plane and give them requests** (#237).
+   Flux's four controllers, ARC's controller and listener, the CloudNativePG
+   operator, the OpenEBS provisioner. Blocked on reading each pinned chart's
+   own `values.yaml` first: placement and resources are set through Helm values,
+   and **a wrong values path is silently ignored rather than rejected**, which
+   is the worst failure mode available - it looks applied and is not. The
+   OpenEBS manifest already records this discipline for itself.
+2. **Taint the control planes.** `allowSchedulingOnControlPlanes = false`, with
+   tolerations for the two things that stay. It has to come after step 1, or
+   the operators become unschedulable at the moment nothing can reconcile them
+   back.
+3. **Three `PriorityClass` objects**, per the lane table above, with
+   `preemptionPolicy: Never` on lanes 2 and 3 so preemption exists only where
+   it protects quorum.
+4. **Proxmox pools by role**, as its own change - it edits every existing VM,
+   and the converges that create machines should not also be the ones that
+   modify them.
+
+**What stays on the control plane, and why it is not a compromise.**
+
+The **state database** stays. It is to the estate what etcd is to the cluster:
+both are the record of desired state, and nobody proposes moving etcd to a
+worker. Two things make it concrete rather than aesthetic. `converge` blocks on
+the database before it can do anything, so a database on the machine class
+epoch 05 exists to destroy routinely means the repair tool depends on the thing
+being repaired - and `worker_count` is a config value, so one character could
+destroy every instance in parallel. R2 makes that survivable rather than
+terminal, which is why this is a trade rather than a rule; the reason to
+decline it is that the prize is 256Mi of requests.
+
+**CoreDNS** stays too, and it is Talos-managed, so moving it is a Talos-level
+decision rather than a manifest edit.
+
+That leaves "lean" meaning **the control plane carries only control-plane
+work**, which is the property that protects quorum. The RAM number is a
+second-order optimisation and should not be taken before epoch 04 measures
+anything - see the gotcha below about what changing it would do.
+
 ## Gotchas
 
 ### Do not taint the control planes in the change that adds workers
@@ -1601,3 +1651,20 @@ So the safe first increment is a `nodeSelector` on the runner scale set: CI goes
 to the workers, nothing else reschedules, and nothing moves that has state
 underneath it. Tainting becomes a considered follow-up once the storage question
 has an answer, and that answer belongs to epoch 03.
+
+### Changing control-plane memory would restart all three at once
+
+Recorded before anybody tries it, because the obvious way to slim the control
+planes is a converge and the obvious way is wrong.
+
+`memory.dedicated` is not hot-pluggable here - the guest agent is disabled and
+there is no balloon device - so a change requires the machine to restart. The
+three control-plane VMs have no dependency on one another and OpenTofu's
+default parallelism is ten, so a converge that changed memory on all three
+would restart all three at roughly the same time. That is a quorum loss on a
+cluster that was healthy a moment earlier.
+
+Doing it safely is one machine at a time, waiting for health in between, which
+is exactly the machinery epoch 05 exists to build. Until then a control-plane
+resize is a deliberate, supervised operation rather than a config change, and
+it is worth confirming against a real plan before believing this note.
