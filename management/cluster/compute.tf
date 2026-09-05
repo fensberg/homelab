@@ -254,6 +254,12 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
 # (#236). 8 GiB leaves roughly 7.2 GiB allocatable after Talos's overhead - the
 # number that actually broke, improved about fourfold. See
 # docs/epochs/02-abstraction.md.
+#
+# Uniform on purpose. A pool whose members differ is a pool that cannot be
+# drained onto itself: the moment one worker is larger than the others, some
+# workload only fits there and the drain that epoch 05 exists to make ordinary
+# has nowhere to put it. Three of the same size costs a little memory and buys
+# fungibility, which is the property that makes a pool a pool.
 resource "proxmox_virtual_environment_vm" "talos_worker" {
   for_each  = local.workers
   name      = each.value.name
