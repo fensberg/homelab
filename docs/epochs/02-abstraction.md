@@ -1398,6 +1398,187 @@ currently is not.
 
 _Record as made._
 
+### The address carries site, zone and host, and nothing else
+
+**Chose:** `10.<site>.<zone>.<host>`, with the trust zone in the third octet.
+**Rejected:** the hypervisor in the third octet, and the environment anywhere in
+an address or a machine name.
+**Because:** the question that settles it is not "what would be useful to read
+off an address" - almost anything would - but **which dimensions carry a
+boundary something can enforce.** A subnet is a real boundary: a NetworkPolicy
+selects on it, a firewall rule references it, a route aggregates it. A label is
+not. So a dimension earns a place in the address when it is enforceable, and
+lives in configuration or in Kubernetes when it is not.
+
+| Octet | Carries        | Values                                                         |
+| ----- | -------------- | -------------------------------------------------------------- |
+| 1st   | private prefix | `10`, fixed                                                    |
+| 2nd   | **site**       | recorded per site as `octet`, e.g. `10`, `20`                  |
+| 3rd   | **trust zone** | `0` infra · `10` trusted nodes · `20` LB pool · `30` untrusted |
+| 4th   | **host**       | `100`+ control planes, `200`+ workers                          |
+
+```text
+site0-cp-100    10.10.10.100   vm 10100   trusted, control plane
+site0-wk-200    10.10.10.200   vm 10200   trusted, worker
+site0-dmz-100   10.10.30.100   vm 10300   untrusted, off the overlay
+```
+
+The VM id's hundreds digit mirrors the zone, so a stray id is legible on sight.
+
+#### The leading octet cannot move
+
+Recorded because "shift everything left to free a field" is the obvious idea and
+it fails immediately. RFC 1918 offers exactly three private ranges -
+`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` - and only the first has spare
+octets. The `10.` is not a wasted field, it is the ticket to using the space at
+all.
+
+The concrete failure is worth keeping: make the first octet the site number and
+site 1 becomes `1.x.x.x`, which is APNIC space, and `1.1.1.1` is the resolver
+this estate hands to every node in `compute.tf`. Site 1 would collide with the
+estate's own DNS on its first packet.
+
+`172.16/12` gives four usable bits in the second octet and `192.168/16` gives two
+octets in total, so `10/8` with 24 free bits is already the most generous private
+space available. Sub-dividing on non-octet boundaries would buy more dimensions
+and is rejected for the reason the scheme exists: `10.10.10.100` is readable at a
+glance and `10.10.148.100` is not.
+
+#### Where the scheme runs out, and which wall arrives first
+
+Asked directly: a very large machine appears in the closet and is carved into a
+truly large pool of guests - does the addressing constrain it? Two walls, both
+at about 254, and only one of them is the address scheme.
+
+**Wall one: a zone is a /24, so 254 hosts.** This is cheap to lift and the
+scheme was already spaced for it. Zone numbers step by ten - `0`, `10`, `20`,
+`30` - which was deliberate: a zone owns a **decade of third octets**, not one.
+So the trusted-node zone is `10.<site>.10.0` through `10.<site>.19.255`, which
+is 2,540 addresses, and the readable property survives because the third
+octet's tens digit is still the zone. The site's /16 is 65,534 addresses and
+four zones currently occupy four of 256 third-octet values, so the space is
+about 98% unused. There is a great deal of room and no redesign needed to reach
+it.
+
+Routing is unaffected: the overlay advertises the whole `/16` per site, so
+internal subdivision never has to be CIDR-aligned for reachability. It has to
+be expressible in a NetworkPolicy, which at worst means a zone listing several
+CIDRs.
+
+**Wall two: the pod CIDR, and this is the one that actually binds.** Talos
+defaults the pod network to `10.244.0.0/16` and hands each node a `/24`, so the
+cluster caps at **256 nodes** regardless of how much node address space exists.
+Confirmed on the live cluster, which shows `PodCIDR: 10.244.1.0/24`.
+
+**Neither the pod nor the service CIDR is declared anywhere.** `talos.tf` sets
+no `clusterNetwork` fields at all, so the estate's single largest address
+commitment is an undeclared upstream default. That is worth fixing on its own
+merits - a value nobody wrote down cannot be reviewed, and it is invisible to
+the addressing scheme this decision defines.
+
+**And changing it requires a cluster rebuild**, because it is fixed in the Talos
+cluster configuration at creation. So the moment to widen it is the rebuild
+epoch 03 already requires for Cilium, not afterwards - the estate's own rule
+that a rebuild should carry only what genuinely requires one cuts both ways,
+and this genuinely does.
+
+**One hazard to carry into that change.** Cilium's default cluster pool is
+`10.0.0.0/8`, which contains **every site subnet this scheme defines**. Adopting
+Cilium without setting the pod CIDR explicitly would collide the pod network
+with the node network on day one. The existing note above - stay below
+`10.96.0.0` because Kubernetes puts services at `10.96.0.0/12` and pods at
+`10.244.0.0/16` - is the same caution one CNI earlier, and it does not cover
+this.
+
+**Wall three, which is not really a wall: VM ids.** The five-digit form
+`<site octet><zone><host>` allows 100 hosts per zone. Six digits allow 1,000,
+and Proxmox permits ids far beyond that, so this follows the fourth octet
+rather than constraining it.
+
+**The honest framing, though.** A machine of that size is not carved into 250
+guests - it becomes a handful of very large nodes, because the entire point of
+the orchestrator is that workloads are pods rather than machines. So the
+constraint that binds at scale is pods per cluster, not nodes per subnet, which
+is precisely the one that is currently undeclared and needs a rebuild to
+change. The node addressing has an order of magnitude of headroom behind a mask
+change; the pod network has none behind anything cheap.
+
+#### Site belongs in the name and in the address, from one source
+
+The site appears twice - as `<site>-cp-100` and as the second octet - and that is
+not duplication to remove. **Names do not route.** Three things need the address
+specifically: the overlay advertises one route per site, which requires
+contiguous space; two sites must not collide, which was this epoch's original
+driver; and forwarding happens on the destination IP, so whatever resolved the
+name already needed it.
+
+It is safe duplication because both derive from **one** config entry -
+`sites.<site>.{name, octet}` - so the two cannot drift independently. That is the
+condition under which restating a value is acceptable anywhere in this
+repository.
+
+#### Why not the hypervisor in the third octet
+
+It reads well and costs three things, in increasing order.
+
+**The load-balancer pool loses its home**, and it is needed this epoch -
+`variables.tf` reserves `10.<site>.20.0/24` for it and the epoch 03 workloads
+need service addresses from it.
+
+**One cluster would span two subnets on one wire.** Both hypervisors' guests sit
+on the same bridge and are L2-adjacent; putting them in separate /24s invents a
+routing requirement that does not physically exist. This epoch already rejected
+it above: nodes in one Proxmox cluster must share a subnet.
+
+**It fights epoch 05's stated goal.** That epoch exists so that changing a node -
+"its image, its size, the hypervisor it sits on, or the fact that it died" - is
+ordinary. If the address encodes the hypervisor then moving a guest between boxes
+**renumbers it**, and a Talos control-plane node's address is load-bearing in
+five places: the machine config, the certificate SANs, the etcd peer URLs, the
+talosconfig endpoints, and Flannel's `public-ip` annotation. A live migration
+would become a rebuild.
+
+**The want behind it is legitimate and is met in the fourth octet.** Banding host
+octets by hypervisor - `100-119` for the first box's control planes, `120-139`
+for the second's, `200-219` and `220-239` for their workers - makes placement
+readable at a glance as a **convention rather than a contract**, so a guest that
+later moves keeps its identity. Legible without being load-bearing.
+
+And the hazard that actually bites when a hypervisor is added is placement rather
+than addressing: `vm_placement` recomputes `i % length(hypervisors)` and re-deals
+a running etcd member. The fix is the one this record already prescribes -
+placement recorded rather than recomputed - and it is the same principle as the
+site octet being a recorded field rather than a derived index.
+
+#### Why the environment appears nowhere
+
+There are three environments - management, production and staging - and none of
+them earns an address or a machine name.
+
+**They cannot be three clusters.** That is nine etcd members, and the capacity
+section above establishes 24 GiB free. So they are namespaces in one cluster,
+which answers the open question [`03-workload.md`](03-workload.md) records.
+
+**A namespace does not own machines.** A worker runs whatever the scheduler puts
+on it, so there is no such thing as a production VM unless nodes are deliberately
+partitioned by environment - which is the walls-not-lanes error the lane model
+above rejects, and it strands capacity in whichever environment is idle.
+
+**And an environment carries no enforceable guarantee.** `prod` and `stage` say
+nothing about containment: the game server is production and its staging
+counterpart is equally untrusted. The dimension that carries a security property
+is the trust zone, which is why that is what the third octet holds.
+
+If an environment ever does need real isolation, it is not a new dimension - **it
+is another site**, and the second octet already expresses that.
+
+**`staging` keeps its name.** `develop` was considered and rejected: the
+promotion path in `deploy-infrastructure.yml` already encodes `main` to staging
+and `v*` to production; `staging` is a term of art twice over, both the software
+term and the construction term for where materials are gathered before use; and
+`dev` collides with the name of the privileged user account, in a repository
+where the privilege boundary is the thing most important to read correctly.
+
 ## Outcome
 
 ## Deferred
