@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 16
+floor: 18
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -284,6 +284,34 @@ mutations:
       in an HCL block and would otherwise reach the estate with nobody deciding
       to take delivery from that party. The mutation is the exact shape of a
       typosquat.
+
+  - guard: TestRunnerPodsCannotScheduleOntoAControlPlane
+    file: clusters/management/infrastructure/configs/runner-scale-set.yaml
+    find: "operator: DoesNotExist"
+    replace: "operator: Exists"
+    mentions: "would schedule onto a control-plane node"
+    why: >
+      One character inverts it. With Exists a CI runner schedules ONLY onto
+      control planes, which is the precise arrangement the worker pool was
+      built to end - eight concurrent jobs pulling large images beside etcd is
+      how a control plane becomes intermittently unwell, and one integration
+      run was already killed for it. The guard evaluates the affinity against
+      a synthetic node rather than matching its text, because a check for the
+      string "DoesNotExist" passes just as happily once the operator has been
+      flipped.
+
+  - guard: TestRunnerPodsAreNotBestEffort
+    file: clusters/management/infrastructure/configs/runner-scale-set.yaml
+    find: "memory: 2Gi"
+    replace: "ephemeral-storage: 1Gi"
+    mentions: "requests no memory"
+    why: >
+      A runner with no memory request is BestEffort, which is the first cgroup
+      Talos's OOM controller reaches for, and is what killed a thirteen-minute
+      integration run. The mutation leaves a requests block behind rather than
+      deleting one, because the failure being guarded against is a request
+      quietly dropped from an otherwise healthy-looking spec, not a block
+      vanishing where a reader would notice it.
 
 # Guards that cannot be proved by mutation, and why.
 #
