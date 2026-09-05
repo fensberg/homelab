@@ -9,7 +9,8 @@ earlier epoch whose decisions you are about to touch.
 
 ## State of the world
 
-- **Current epoch:** 01 — Ignition
+- **Current epoch:** 02 — Abstraction, starting with the worker pool. Epoch 01
+  signed off 2026-09-03; epoch 08 is part-built and paused.
 - **Built:** the phased ignition button (`scripts/contractor`), an
   idempotent Proxmox playbook, Talos + Flux provisioning, codified overlay-network
   route auto-approval, and a two-layer state backup story.
@@ -18,7 +19,14 @@ earlier epoch whose decisions you are about to touch.
 - **Not yet built:** `modules/` and `environments/` — both referenced by
   `README.md` and by the path filters in `deploy-infrastructure.yml`.
 - **Not measured:** nothing watches the estate between runs. No metrics, no
-  alerts, no scaling thresholds — see epoch 04.
+  alerts, no scaling thresholds — see epoch 04. There is no metrics-server, so
+  `kubectl top` does not work and the demand factor the capacity plan rests on
+  is unverified.
+- **Not partitioned:** `Taints: <none>` on every node, so there is no workload
+  tier — CI runs on the machines holding etcd quorum, and the largest memory
+  request any pod can have accepted is about 1.9 GiB. This has cost one killed
+  job (#236). The measurements and the model are in
+  [02-abstraction.md](02-abstraction.md#known-driver-the-estate-runs-at-a-few-percent-and-the-fuse-is-memory).
 - **Not replaceable:** a control-plane node cannot be replaced on its own yet.
   Identity is keyed correctly as of epoch 01, so a single-node change is now
   expressible; nothing drives it in order. Epoch 05 adopts Cluster API and
@@ -34,14 +42,14 @@ earlier epoch whose decisions you are about to touch.
 
 | #   | Name           | Tier / path                           | Status      | Record                                       |
 | --- | -------------- | ------------------------------------- | ----------- | -------------------------------------------- |
-| 01  | Ignition       | `management/`                         | In progress | [01-ignition.md](01-ignition.md)             |
-| 02  | Abstraction    | `modules/`                            | Not started | [02-abstraction.md](02-abstraction.md)       |
+| 01  | Ignition       | `management/`                         | Complete    | [01-ignition.md](01-ignition.md)             |
+| 02  | Abstraction    | `modules/`                            | Next        | [02-abstraction.md](02-abstraction.md)       |
 | 03  | Workload       | `environments/`                       | Not started | [03-workload.md](03-workload.md)             |
 | 04  | Observability  | `clusters/management/infrastructure/` | Not started | [04-observability.md](04-observability.md)   |
 | 05  | Node Lifecycle | `management/`, `scripts/contractor/`  | Not started | [05-node-lifecycle.md](05-node-lifecycle.md) |
 | 06  | Consolidation  | repository-wide                       | Not started | [06-consolidation.md](06-consolidation.md)   |
 | 07  | Metered Egress | `clusters/management/`, `scripts/`    | Not started | [07-metered-egress.md](07-metered-egress.md) |
-| 08  | Agent Roles    | `.github/`, `scripts/`                | Not started | [08-agent-roles.md](08-agent-roles.md)       |
+| 08  | Agent Roles    | `.github/`, `scripts/`                | In progress | [08-agent-roles.md](08-agent-roles.md)       |
 
 ## Working an epoch
 

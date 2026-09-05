@@ -177,6 +177,114 @@ workloads has to answer that before anyone plays on it.
 
 _Record as made._
 
+### The untrusted zone is a node, the workload is a container, and the isolation is three layers
+
+**Chose:** the game server runs as an ordinary pod, reconciled by Flux, on a
+**dedicated Talos worker in the untrusted zone that does not join the overlay
+network**.
+**Rejected:** a pod on a shared worker with only NetworkPolicy; a plain virtual
+machine running the game server directly; and an LXC container on the
+hypervisor.
+**Because:** this was derived by working backwards from what a compromise
+reaches, which is the only way the layers can be justified individually.
+
+#### What a compromised pod reaches today
+
+Assume the process is taken. A game server accepting inbound UDP from strangers
+is a live category, not a hypothetical.
+
+- **The Kubernetes API**, by service address, from any pod.
+- **The state database**, holding this estate's own OpenTofu state.
+- **The hypervisor's API**, because the cluster reaches it over a flat network -
+  recorded in [`02-abstraction.md`](02-abstraction.md).
+- **The overlay network, which is the worst of the four.** Every node carries
+  the tailscale extension from the single shared schematic, and the tailnet
+  policy is the default `{"src": ["*"], "dst": ["*:*"]}`. A compromised pod on
+  an overlay-joined node therefore reaches the hypervisor, the workstation and
+  every other site.
+
+The API server is the obvious worry and it is the second worst. Overlay
+membership is the real exposure, because nothing narrows what the mesh grants.
+
+#### Three layers, each answering a different question
+
+**NetworkPolicy answers "what may it talk to."** Necessary, and insufficient
+alone: it says nothing about a container escape, because the escape does not
+traverse the network.
+
+**A dedicated node answers "what shares its kernel."** This is the layer that
+decides against a shared worker, and the reason is specific rather than
+general - the thing it would share a kernel with is the CI runner, which holds
+vault credentials and reaches the estate.
+
+**Omitting the overlay answers "what does the machine itself reach."** This is
+the layer that is not currently expressible, and it has a real cost: the
+tailscale extension is in the one shared schematic, so an untrusted node
+requires a **second Talos schematic without it** - a second image, a second
+`proxmox_download_file`, and #97 applying to both. Recorded as a cost rather
+than discovered later, because it is the least obvious consequence of the
+decision and the most likely to be dropped for convenience.
+
+#### Why not a plain virtual machine
+
+Stronger on paper - no kubelet, no cluster credentials, not a member at all -
+and it loses on everything else. Talos is a Kubernetes operating system and
+cannot do it, so this means adding a **second operating system** to the estate
+with its own image, patching and provisioning path. It also means managing the
+machine by hand or by Ansible, which makes it a pet and puts an interactive
+management path into the one machine that should be least reachable. The
+estate's rule applies directly: either the automation works or it does not, and
+a shortcut is not the answer.
+
+#### What an escape actually obtains, which is the test that matters
+
+The fail-closed principle is not "the attacker cannot get in", it is "what they
+obtain is worthless". Audited against the chosen design, an escape onto the
+untrusted node yields:
+
+- **No shell, no SSH, no package manager.** Talos has none.
+- **Kubelet credentials scoped by Node authorization and NodeRestriction**, so
+  the node may read secrets of pods bound to it - which, with only untrusted
+  workloads scheduled there, are that workload's own.
+- **No etcd membership**, because workers are not members.
+- **No overlay**, by the schematic.
+- **A zone subnet with policy on it.**
+- **The Talos API behind mTLS**, for which the container holds no certificate.
+
+A machine that reaches nothing and can read its own secrets. That is the
+property being bought, and each of the three layers above is load-bearing for
+one line of it.
+
+#### The dedication has to be enforced, not conventional
+
+The audit holds only while the node runs untrusted workloads **and nothing
+else**. If the scheduler places anything else there, the blast radius grows and
+nothing announces it.
+
+So it is a **taint with `NoSchedule`, and a toleration carried only by workloads
+in the untrusted zone** - not a `nodeSelector` convention and not a note in this
+record. This repository has already shipped one policy that applied cleanly and
+enforced nothing; the distinction between isolation that exists and isolation
+somebody believes in is the whole subject of this epoch.
+
+#### Consequences for naming, and for capacity
+
+The machine is `<site>-dmz-100` at `10.<site>.30.100`, per the addressing
+decision in [`02-abstraction.md`](02-abstraction.md). **The workload gets no
+machine name at all** - it is a namespace and a Deployment, named in Kubernetes.
+That separation is why the environment never needed to appear in a VM name.
+
+On capacity: a dedicated node wants roughly 4-6 GiB, and only about 8 GiB
+remains after epoch 02's two workers. That is tight until the build VM's 16 GiB
+returns, which is expected, and it sequences correctly - the workers are epoch
+02 and this is epoch 03.
+
+Two things this does **not** solve, both already named above. The world save is
+on OpenEBS Local PV Hostpath and therefore pinned to a node - now a node
+specifically chosen to be destroyable. And the tailnet's allow-all policy
+remains the reason any new device on the mesh has full reach; keeping this node
+off the overlay sidesteps it rather than fixing it.
+
 ## Outcome
 
 ## Deferred

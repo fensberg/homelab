@@ -998,6 +998,390 @@ wrote down. Known entries with their conditions already recorded:
 The second is there to make the point that "never" is a legitimate answer.
 What is not legitimate is silence.
 
+## Known driver: the estate runs at a few percent, and the fuse is memory
+
+The worker pool above is stated as a prerequisite for autoscaling. It is more
+urgent than that: without it every workload in the estate runs on the machines
+holding etcd quorum, and there is nowhere else for anything to go. This section
+records what that costs, measured, and the model that decides what to build.
+
+### What was measured, 2026-09-05
+
+Taken with `talosctl memory`, `talosctl stats` and `kubectl describe node`
+against the live cluster, 24 hours after it came up.
+
+| Node           | Used    | Available | Requests committed | CPU requests |
+| -------------- | ------- | --------- | ------------------ | ------------ |
+| `site0-cp-100` | 1136 MB | 2387 MB   | 1342 Mi (41%)      | 760m (19%)   |
+| `site0-cp-101` | 1276 MB | 2318 MB   | 1202 Mi (37%)      | 560m (14%)   |
+| `site0-cp-102` | 1271 MB | 2323 MB   | 1266 Mi (39%)      | 610m (15%)   |
+
+No `MemoryPressure`, `DiskPressure` or `PIDPressure` on any node. Talos's own
+services are a rounding error - `apid`, `trustd` and the tailscale extension
+together are about 133 MB and burned roughly 150 CPU-seconds across the whole
+day, which is 0.2% of one core. The hypervisor reported 3.88% CPU across its
+18 cores at rest.
+
+**So 4 cores and 4 GiB is a well-judged size for a control-plane node, and the
+control planes are not what is held back.** They were sized by guess and the
+guess was good. This is recorded because the obvious reading of the OOM kill
+below is "the nodes are too small", and that reading is wrong.
+
+### The ceiling, not the total, is what broke
+
+Summed, the three nodes have about 7 GiB free. But it is in three pieces and
+no piece exceeds ~2.3 GiB - and by scheduler accounting it is tighter still,
+because requests are already committed: **the largest memory request a new pod
+can have accepted on any node is about 1.9 GiB.**
+
+That is the whole of the OOM kill recorded in #236. A Go build compiling
+Terratest's dependency tree wanted more than 1.9 GiB, was `BestEffort` because
+it had requested nothing, and Talos's OOM controller selected exactly the
+cgroup it is designed to select:
+
+```text
+[talos] OOM controller triggered
+[talos] Sending SIGKILL to cgroup {"cgroup": "/sys/fs/cgroup/kubepods/besteffort/pod..."}
+```
+
+The guard worked. The estate gave it no better option.
+
+**`Taints: <none>` on all three nodes** is the line that matters most in that
+output. There is no workload tier - there is a quorum tier that also takes
+walk-ins.
+
+### The model: a domestic electrical panel
+
+The operator's framing, and it is better than an analogy, because electrical
+practice has already solved this problem and the vocabulary transfers almost
+term for term. It is adopted here as the estate's way of talking about
+capacity.
+
+| House                                                    | Estate                                     |
+| -------------------------------------------------------- | ------------------------------------------ |
+| Service capacity - the panel's rating                    | Node `Allocatable`                         |
+| **Connected load** - the sum of every nameplate          | Sum of `limits`                            |
+| **Demand load** - what is assumed to run together        | Sum of `requests`                          |
+| **Demand factor** - the bet that they will not all peak  | Setting requests deliberately below limits |
+| A breaker trips                                          | OOM kill, or kubelet eviction              |
+| **Load management** - shed the car charger under load    | `PriorityClass` and preemption             |
+| **An interlock** - two loads that may never run together | A queue depth or concurrency limit         |
+| Time-of-use scheduling                                   | A cron schedule into an overnight lull     |
+
+The goal it expresses: the hypervisor is paid for whether or not it is busy, so
+it should be close to fully committed and never tripping. Not "leave room to be
+safe" - be deliberate about what runs together.
+
+### There is only one fuse in this house, and it is memory
+
+The single most useful consequence. CPU has no breaker: over-draw it and work
+runs slower, which is degradation rather than failure. Memory has one, and it
+fires by killing a process.
+
+So there is not one utilisation target, there are two regimes:
+
+- **Pack CPU hard and deliberately.** 100% is the goal, not the hazard.
+- **Keep genuine headroom on memory.** 100% is an outage.
+
+Every decision below follows from that split, and conflating the two is how a
+plausible capacity plan produces an estate that trips.
+
+### Overcommit in exactly one place: inside Kubernetes
+
+**Hard-allocate memory at the hypervisor; overcommit it inside Kubernetes.**
+
+Specifically, **do not enable memory ballooning on these VMs.** It is the
+obvious hypervisor-level lever and it is a trap: the kubelet computes
+`Allocatable` from what it observes at boot and never revisits it. Balloon a
+node down afterwards and the kubelet keeps scheduling against memory that no
+longer exists, with no way to learn otherwise. The kubelet is the only party
+that knows what is running and can evict deliberately, so it has to be the
+layer that is told the truth.
+
+vCPU is the opposite and may be overcommitted freely at the hypervisor, because
+contention degrades rather than kills. Ordinary practice is 2-4x; the estate is
+currently at 0.67x, with 12 vCPU allocated across 18 cores.
+
+Proxmox `cpuunits` is the hypervisor-level counterpart to `PriorityClass`: a
+cgroup weight per VM, so CPU contention resolves in favour of quorum
+automatically. The same principle expressed at two layers.
+
+### Shedding and interlocking are different tools
+
+Worth separating, because the first draft of this reasoning treated them as one
+and they answer different questions.
+
+- **Load shedding is right when the loads differ in importance.** CI against
+  etcd. The estate wins, CI is dropped, and a `PriorityClass` expresses it.
+- **An interlock is right when they are equally important and must take
+  turns.** Two heavy integration runs have no claim over one another;
+  preempting either to run the other is pure churn. What is wanted is a queue.
+
+This changes what `maxRunners` is for. It reads as a cap to be raised as
+capacity grows, and it is not - **it is the interlock**, and its correct value
+is how many heavy jobs fit in the workers at once.
+
+### Eviction is not free here, so prefer admission control
+
+The one place the electrical model breaks, and it changes the design rather
+than decorating it. A shed load resumes: pausing a car charger costs time and
+nothing else. **An evicted job loses its work.** A CI job killed at minute
+twelve of thirteen throws away twelve minutes and starts over.
+
+So preemption is the backstop that protects quorum, which is what it is for.
+The primary mechanism for CI against CI is **not admitting the job**, because a
+job that never started is cheaper than one killed near the end.
+
+### Three lanes, sorted by what tolerates delay
+
+The operator's second model, and it supersedes the heavy/light split this
+section first proposed. That one sorted work by size on a security axis - jobs
+with estate access against jobs without - and let latency ride along with it.
+Sorting by **how much delay the work tolerates** is the property the scheduler
+actually acts on, and it produces three lanes rather than two:
+
+1. **Emergency vehicles.** Everything yields, including traffic already moving;
+   pushing a car onto the shoulder is an acceptable price. etcd, the API server,
+   CoreDNS, the state database, Flux, and the runner listener.
+2. **Commuters.** In a hurry, and delay is the whole cost. The fast pull request
+   lanes - lint, format, test - where the job itself is 40 seconds and a
+   two-minute queue is the entire user-visible latency.
+3. **Logistics.** Important, and slow by nature. Deliveries and refuse
+   collection: integration runs, converges, image builds, state backups, the
+   clerk's sweep, dependency updates. They must arrive; they need not arrive
+   now.
+
+The assignment is by tolerance, not by importance. A state backup is one of the
+more important things the estate does and it belongs in lane 3, because nothing
+observes its latency.
+
+#### Lane 2 jumps the queue but must not run anyone off the road
+
+The refinement that makes this implementable, and it is not obvious. Kubernetes
+priority does two things at once - it decides who gets the next free slot, and
+it decides who gets evicted to make one - and the three lanes want those
+answers to differ.
+
+A commuter should get the next gap ahead of a truck. A commuter should **not**
+be able to evict a truck that is already twelve minutes into a thirteen-minute
+run, which is exactly the trade the "eviction is not free" decision above
+refuses. Preempting a long job to admit a 40-second one destroys twelve minutes
+to save two.
+
+`PriorityClass` separates them. `preemptionPolicy: Never` places a pod ahead of
+lower-priority _pending_ pods while never evicting a _running_ one:
+
+| Lane        | Priority                    | `preemptionPolicy`     | Yields to   |
+| ----------- | --------------------------- | ---------------------- | ----------- |
+| 1 Emergency | `system-cluster-critical`   | `PreemptLowerPriority` | nobody      |
+| 2 Commuter  | mid                         | **`Never`**            | lane 1 only |
+| 3 Logistics | low, and it may be negative | `Never`                | lanes 1, 2  |
+
+So preemption exists in exactly one place - the emergency lane - which is the
+smallest surface that still protects quorum, and matches this record's
+preference for admission control over eviction everywhere else.
+
+#### What makes it a lane is the rule, not a wall
+
+Worth stating because the model invites the wrong reading. Road lanes are not
+partitions: an empty lane can be driven in, and what makes it a lane is a rule
+about yielding. Three dedicated node pools would be walls, and walls would strand
+capacity in whichever lane happens to be idle - which is the opposite of the
+goal that produced this whole section.
+
+**One pool of workers, three priority classes.** The one genuine partition is
+the one already designed: lane 1 lives on the control planes, lanes 2 and 3
+share the workers, and the `nodeSelector` above is what draws it.
+
+The security axis does not force a second partition either. Fork-run lanes must
+not be able to _reach_ the estate, which is a NetworkPolicy question and
+therefore waits on Cilium - see [`03-workload.md`](03-workload.md). It is not a
+question about which node they sit on. So the earlier claim that two independent
+arguments demanded the same structure was half right: they demand separate
+**credentials and network policy**, and separately a lane assignment. Those are
+different mechanisms and conflating them was the error in the first draft.
+
+#### Deliveries and refuse are not quite the same lane
+
+The operator's third lane names both, and they differ in one way worth keeping.
+A delivery must eventually complete - somebody is waiting on that integration
+run - so it wants bounded retries. Refuse collection is idempotent and
+catches up: a missed backup or dependency sweep is repaired by the next
+scheduled run doing the same work. The practical consequence is narrow but real:
+a killed truck carrying refuse needs no retry at all, and one carrying a
+delivery does.
+
+#### The lanes govern infrastructure operations too, not only CI
+
+Creating a virtual machine is **lane 3**. It must complete - a worker that never
+appears is a failure - and nothing observes its latency, because nobody is
+waiting on the second one. The same is true of a converge, a state backup and an
+image build. That the model extends past CI jobs to the estate's own operations
+is worth stating, because it is what makes it a scheduling policy for the estate
+rather than a CI feature.
+
+The consequence is a pleasing inversion: **lane 3 work is what builds the
+capacity lanes 1 and 2 consume.** The slow lane lays the road.
+
+#### Lane by lane, what is actually short
+
+Measured rather than assumed, because the three lanes are not short in the same
+way and the remedies are different.
+
+**Lane 1 has capacity and no protection.** The control planes use about 1.2 GiB
+of 3.8 GiB each, so the emergency lane is not short of room. What it lacks is
+any claim on that room: `Taints: <none>`, no requests on the dispatcher or the
+operators (#237), and no `PriorityClass`. Its capacity is real and entirely
+unreserved, which means a heavy lane-3 job can take it and has. **The remedy is
+not more capacity, it is making the capacity it already has non-negotiable** -
+which is requests and priority, not machines.
+
+**Lane 2 does not exist.** Nineteen jobs across the workflows run on
+`ubuntu-latest` and five on the self-hosted scale set; every one of the eight
+pull request validation lanes is in the first group. So the commuter lane has
+no estate capacity at all today, and building it is a migration rather than a
+resize - with the prerequisites [`01-ignition.md`](01-ignition.md) already
+records, `harden-runner` not surviving the move being the substantive one.
+
+**Lane 3 is the one genuinely starved.** It is the only lane running in the
+estate today, and it is what #236 killed.
+
+So the workers being built serve lanes 2 and 3, and the lane 1 work is a
+configuration change on machines that already exist. Those are different
+efforts and only the first needs hardware.
+
+#### The stopped template is not costing what it appears to
+
+Recorded because `qm list` invites the misreading and it very nearly cost a
+useful thing.
+
+The per-hypervisor Talos template shows `4096` MB in `qm list` and is
+`stopped`. That column is the _configured_ allocation - what the guest would
+take if started - and a stopped guest consumes **no memory and no CPU**. It was
+never part of the 37 GiB; the four running `kvm` processes account for all of
+it. The template's real cost is 8 GB of disk on a pool at 3.42% used.
+
+And it is load-bearing: `talos_cp` clones from it, so it is precisely what makes
+creating a machine cheap. Deleting it would not free memory the estate is short
+of, and would make every future VM - including the workers - re-download and
+re-materialise the image first. **It makes lane 3 work slower for no memory
+back.** The right disposition is to leave it alone.
+
+#### The model immediately finds a misassignment
+
+Applied to what is running today, the runner listener is the **dispatcher** -
+always on, tiny, and if it dies no CI runs at all - so it is unambiguously lane
+
+1. It is currently `BestEffort`, along with the ARC controller, the
+   CloudNativePG operator and the OpenEBS provisioner (#237). The eviction order in
+   force right now puts the dispatcher in the ditch first.
+
+That is the argument for #237 being a prerequisite rather than hygiene, in one
+line: the lanes do not exist until every vehicle has been assigned to one, and
+an unassigned vehicle is not in lane 3, it is on the hard shoulder waiting to be
+hit.
+
+### Retraction: ZFS ARC was not the problem
+
+Recorded because the hypothesis was confident, cheap to state, and wrong, and
+the next session would otherwise re-form it.
+
+The hypervisor reported 37.35 GiB of 62.29 GiB used while the three VMs account
+for only 12 GiB. The inference was that Proxmox's default ARC cap of half of
+RAM had let the cache grow to ~25 GiB, and that capping it would be the single
+cheapest large block of memory on the box. Measured instead:
+
+```text
+c          6.23 GiB
+c_min      1.95 GiB
+c_max      6.23 GiB
+size       6.15 GiB
+```
+
+ARC is capped at 6.23 GiB - about 10% of RAM, the newer Proxmox default rather
+than the older 50% - and is holding 6.15 GiB against a pool with 33 GB of data.
+It is correctly sized and there is nothing to reclaim there.
+
+**The missing memory was a fourth virtual machine.** `ps -eo rss,comm` showed
+four `kvm` processes, not three: the three control planes at ~4.03 GiB each,
+matching `dedicated = 4096` with no ballooning exactly as designed, and a
+16 GiB build VM outside the site's id band. Legitimate, expected, and named in
+no epoch record until this one. With ARC and the Proxmox daemons the arithmetic
+then closes against the reported figure.
+
+The process lesson is the one already in this repository: an arithmetic
+inference about a live machine is a hypothesis, and the reading costs one
+command. It was made twice in one session - first that ARC held the memory,
+then that the host ran three guests - and both times the correction came from
+the operator running something rather than from a tool noticing. #239 is the
+structural fix: `survey` reports what should not be on a site and never what
+the site can carry.
+
+### The budget, and what it will become
+
+**24 GiB is genuinely free**, not the ~44 GiB an earlier draft of this section
+assumed. The host also runs **no swap**, so memory exhaustion there does not
+degrade, it kills a guest outright - which makes headroom worth more here than
+on a machine with somewhere to spill.
+
+That settles the sizing: **two workers at 6 vCPU and 8 GiB**, taking 16 GiB of
+the 24 and leaving 8 GiB of host headroom. After Talos's ~600 MiB of overhead
+each worker offers about 7.2 GiB allocatable, against the 1.9 GiB ceiling that
+killed the job in #236 - close to a four-fold improvement on the number that
+actually broke, which is the one worth optimising.
+
+**The build VM's 16 GiB returns eventually.** The operator's intent is that the
+estate ends with no development machine at all: it exists to facilitate the
+build, and that work may itself move into a worker. So the long-run budget is
+nearer 40 GiB, and the workers are expected to grow into it. Resizing a worker
+is cheap in a way resizing a control plane is not - a worker is not an etcd
+member, so it is a drain and a restart - which is one more argument for putting
+capacity into workers rather than into the control plane.
+
+Worth noting where that work would land in the lane model: a development
+environment is interactive, so delay is its whole cost, which makes it **lane 2**
+rather than a fourth lane of its own.
+
+### Where the utilisation actually is
+
+A correction to this section's own framing, made after the numbers closed. The
+hypervisor is already about 60% committed on memory, so "the estate runs at a
+few percent" is true of CPU and misleading about memory: 3.88% of 18 cores
+against roughly two thirds of the RAM already spoken for.
+
+That is not a coincidence, it is the one-fuse principle observed from the other
+side. **The resource with no breaker is the one with all the headroom, and the
+resource with the breaker is nearly committed.** So filling this box is
+overwhelmingly a CPU exercise - overcommit vCPU, pack the lanes, let contention
+degrade - while the memory side is about spending a small fixed budget well
+rather than filling a large empty one.
+
+### What this epoch therefore builds
+
+In order, each additive and needing no cluster rebuild:
+
+1. **A worker machine set.** Sized so that a single node can offer a large
+   contiguous block, because the defect is a ceiling rather than a total. Two
+   workers rather than one, so the pool can be drained and so epoch 05 has
+   something to move work between.
+2. **A `nodeSelector` on the runner scale set**, pointing CI at the workers.
+   Deliberately not a taint on the control planes - see the gotcha below.
+3. **Requests on everything that matters**, which is #237 and #234. This is not
+   hygiene, it is the load-bearing part: eviction order is driven by QoS class,
+   and until it is designed rather than accidental, filling the box on purpose
+   is reckless. It is also what assigns each vehicle to a lane, and an
+   unassigned one is not in lane 3 - it is on the shoulder.
+4. **Three `PriorityClass` objects**, per the lane table above, with
+   `preemptionPolicy: Never` on lanes 2 and 3 so preemption exists only where it
+   protects quorum.
+5. **A second runner scale set**, so that a commuter lane and a logistics lane
+   have separate `maxRunners` interlocks and a lint job cannot queue behind an
+   integration run for a slot.
+
+Then epoch 04 measures it, and epoch 05 makes it elastic if that is ever worth
+anything - which [`05-node-lifecycle.md`](05-node-lifecycle.md) records that it
+currently is not.
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying
@@ -1014,8 +1398,206 @@ What is not legitimate is silence.
 
 _Record as made._
 
+### The address carries site, zone and host, and nothing else
+
+**Chose:** `10.<site>.<zone>.<host>`, with the trust zone in the third octet.
+**Rejected:** the hypervisor in the third octet, and the environment anywhere in
+an address or a machine name.
+**Because:** the question that settles it is not "what would be useful to read
+off an address" - almost anything would - but **which dimensions carry a
+boundary something can enforce.** A subnet is a real boundary: a NetworkPolicy
+selects on it, a firewall rule references it, a route aggregates it. A label is
+not. So a dimension earns a place in the address when it is enforceable, and
+lives in configuration or in Kubernetes when it is not.
+
+| Octet | Carries        | Values                                                         |
+| ----- | -------------- | -------------------------------------------------------------- |
+| 1st   | private prefix | `10`, fixed                                                    |
+| 2nd   | **site**       | recorded per site as `octet`, e.g. `10`, `20`                  |
+| 3rd   | **trust zone** | `0` infra · `10` trusted nodes · `20` LB pool · `30` untrusted |
+| 4th   | **host**       | `100`+ control planes, `200`+ workers                          |
+
+```text
+site0-cp-100    10.10.10.100   vm 10100   trusted, control plane
+site0-wk-200    10.10.10.200   vm 10200   trusted, worker
+site0-dmz-100   10.10.30.100   vm 10300   untrusted, off the overlay
+```
+
+The VM id's hundreds digit mirrors the zone, so a stray id is legible on sight.
+
+#### The leading octet cannot move
+
+Recorded because "shift everything left to free a field" is the obvious idea and
+it fails immediately. RFC 1918 offers exactly three private ranges -
+`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` - and only the first has spare
+octets. The `10.` is not a wasted field, it is the ticket to using the space at
+all.
+
+The concrete failure is worth keeping: make the first octet the site number and
+site 1 becomes `1.x.x.x`, which is APNIC space, and `1.1.1.1` is the resolver
+this estate hands to every node in `compute.tf`. Site 1 would collide with the
+estate's own DNS on its first packet.
+
+`172.16/12` gives four usable bits in the second octet and `192.168/16` gives two
+octets in total, so `10/8` with 24 free bits is already the most generous private
+space available. Sub-dividing on non-octet boundaries would buy more dimensions
+and is rejected for the reason the scheme exists: `10.10.10.100` is readable at a
+glance and `10.10.148.100` is not.
+
+#### Where the scheme runs out, and which wall arrives first
+
+Asked directly: a very large machine appears in the closet and is carved into a
+truly large pool of guests - does the addressing constrain it? Two walls, both
+at about 254, and only one of them is the address scheme.
+
+**Wall one: a zone is a /24, so 254 hosts.** This is cheap to lift and the
+scheme was already spaced for it. Zone numbers step by ten - `0`, `10`, `20`,
+`30` - which was deliberate: a zone owns a **decade of third octets**, not one.
+So the trusted-node zone is `10.<site>.10.0` through `10.<site>.19.255`, which
+is 2,540 addresses, and the readable property survives because the third
+octet's tens digit is still the zone. The site's /16 is 65,534 addresses and
+four zones currently occupy four of 256 third-octet values, so the space is
+about 98% unused. There is a great deal of room and no redesign needed to reach
+it.
+
+Routing is unaffected: the overlay advertises the whole `/16` per site, so
+internal subdivision never has to be CIDR-aligned for reachability. It has to
+be expressible in a NetworkPolicy, which at worst means a zone listing several
+CIDRs.
+
+**Wall two: the pod CIDR, and this is the one that actually binds.** Talos
+defaults the pod network to `10.244.0.0/16` and hands each node a `/24`, so the
+cluster caps at **256 nodes** regardless of how much node address space exists.
+Confirmed on the live cluster, which shows `PodCIDR: 10.244.1.0/24`.
+
+**Neither the pod nor the service CIDR is declared anywhere.** `talos.tf` sets
+no `clusterNetwork` fields at all, so the estate's single largest address
+commitment is an undeclared upstream default. That is worth fixing on its own
+merits - a value nobody wrote down cannot be reviewed, and it is invisible to
+the addressing scheme this decision defines.
+
+**And changing it requires a cluster rebuild**, because it is fixed in the Talos
+cluster configuration at creation. So the moment to widen it is the rebuild
+epoch 03 already requires for Cilium, not afterwards - the estate's own rule
+that a rebuild should carry only what genuinely requires one cuts both ways,
+and this genuinely does.
+
+**One hazard to carry into that change.** Cilium's default cluster pool is
+`10.0.0.0/8`, which contains **every site subnet this scheme defines**. Adopting
+Cilium without setting the pod CIDR explicitly would collide the pod network
+with the node network on day one. The existing note above - stay below
+`10.96.0.0` because Kubernetes puts services at `10.96.0.0/12` and pods at
+`10.244.0.0/16` - is the same caution one CNI earlier, and it does not cover
+this.
+
+**Wall three, which is not really a wall: VM ids.** The five-digit form
+`<site octet><zone><host>` allows 100 hosts per zone. Six digits allow 1,000,
+and Proxmox permits ids far beyond that, so this follows the fourth octet
+rather than constraining it.
+
+**The honest framing, though.** A machine of that size is not carved into 250
+guests - it becomes a handful of very large nodes, because the entire point of
+the orchestrator is that workloads are pods rather than machines. So the
+constraint that binds at scale is pods per cluster, not nodes per subnet, which
+is precisely the one that is currently undeclared and needs a rebuild to
+change. The node addressing has an order of magnitude of headroom behind a mask
+change; the pod network has none behind anything cheap.
+
+#### Site belongs in the name and in the address, from one source
+
+The site appears twice - as `<site>-cp-100` and as the second octet - and that is
+not duplication to remove. **Names do not route.** Three things need the address
+specifically: the overlay advertises one route per site, which requires
+contiguous space; two sites must not collide, which was this epoch's original
+driver; and forwarding happens on the destination IP, so whatever resolved the
+name already needed it.
+
+It is safe duplication because both derive from **one** config entry -
+`sites.<site>.{name, octet}` - so the two cannot drift independently. That is the
+condition under which restating a value is acceptable anywhere in this
+repository.
+
+#### Why not the hypervisor in the third octet
+
+It reads well and costs three things, in increasing order.
+
+**The load-balancer pool loses its home**, and it is needed this epoch -
+`variables.tf` reserves `10.<site>.20.0/24` for it and the epoch 03 workloads
+need service addresses from it.
+
+**One cluster would span two subnets on one wire.** Both hypervisors' guests sit
+on the same bridge and are L2-adjacent; putting them in separate /24s invents a
+routing requirement that does not physically exist. This epoch already rejected
+it above: nodes in one Proxmox cluster must share a subnet.
+
+**It fights epoch 05's stated goal.** That epoch exists so that changing a node -
+"its image, its size, the hypervisor it sits on, or the fact that it died" - is
+ordinary. If the address encodes the hypervisor then moving a guest between boxes
+**renumbers it**, and a Talos control-plane node's address is load-bearing in
+five places: the machine config, the certificate SANs, the etcd peer URLs, the
+talosconfig endpoints, and Flannel's `public-ip` annotation. A live migration
+would become a rebuild.
+
+**The want behind it is legitimate and is met in the fourth octet.** Banding host
+octets by hypervisor - `100-119` for the first box's control planes, `120-139`
+for the second's, `200-219` and `220-239` for their workers - makes placement
+readable at a glance as a **convention rather than a contract**, so a guest that
+later moves keeps its identity. Legible without being load-bearing.
+
+And the hazard that actually bites when a hypervisor is added is placement rather
+than addressing: `vm_placement` recomputes `i % length(hypervisors)` and re-deals
+a running etcd member. The fix is the one this record already prescribes -
+placement recorded rather than recomputed - and it is the same principle as the
+site octet being a recorded field rather than a derived index.
+
+#### Why the environment appears nowhere
+
+There are three environments - management, production and staging - and none of
+them earns an address or a machine name.
+
+**They cannot be three clusters.** That is nine etcd members, and the capacity
+section above establishes 24 GiB free. So they are namespaces in one cluster,
+which answers the open question [`03-workload.md`](03-workload.md) records.
+
+**A namespace does not own machines.** A worker runs whatever the scheduler puts
+on it, so there is no such thing as a production VM unless nodes are deliberately
+partitioned by environment - which is the walls-not-lanes error the lane model
+above rejects, and it strands capacity in whichever environment is idle.
+
+**And an environment carries no enforceable guarantee.** `prod` and `stage` say
+nothing about containment: the game server is production and its staging
+counterpart is equally untrusted. The dimension that carries a security property
+is the trust zone, which is why that is what the third octet holds.
+
+If an environment ever does need real isolation, it is not a new dimension - **it
+is another site**, and the second octet already expresses that.
+
+**`staging` keeps its name.** `develop` was considered and rejected: the
+promotion path in `deploy-infrastructure.yml` already encodes `main` to staging
+and `v*` to production; `staging` is a term of art twice over, both the software
+term and the construction term for where materials are gathered before use; and
+`dev` collides with the name of the privileged user account, in a repository
+where the privilege boundary is the thing most important to read correctly.
+
 ## Outcome
 
 ## Deferred
 
 ## Gotchas
+
+### Do not taint the control planes in the change that adds workers
+
+The instinct once workers exist is to taint the control planes so nothing lands
+there again, and it has to wait.
+
+`tofu-state-1`, `-2` and `-3` sit on OpenEBS Local PV Hostpath, which pins each
+volume to the node its directory was created on. Tainting the control planes
+would have CloudNativePG try to reschedule the state database onto workers, and
+the data would not follow it. That is the same trap
+[`03-workload.md`](03-workload.md) already records for a Valheim world, arriving
+earlier and against the database that holds the estate's own OpenTofu state.
+
+So the safe first increment is a `nodeSelector` on the runner scale set: CI goes
+to the workers, nothing else reschedules, and nothing moves that has state
+underneath it. Tainting becomes a considered follow-up once the storage question
+has an answer, and that answer belongs to epoch 03.

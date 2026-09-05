@@ -165,6 +165,59 @@ one node is deliberately being disturbed.
 expressible rather than being a renumbering of everything after it. That
 remains the precondition for any of this, whichever mechanism drives it.
 
+### Rejected for now: workers that scale to zero
+
+**Chose:** a permanent worker floor, with elasticity deferred until something
+would actually receive the capacity it frees.
+**Rejected:** Cluster Autoscaler scaling a worker `MachineDeployment` from zero,
+so that no workers exist until a job is queued.
+**Because:** the mechanism is real - CA supports scale-from-zero and CAPI with
+the Proxmox provider would create the machine - but on this estate nobody
+receives what it releases.
+
+In a cloud, scale-to-zero is a billing mechanism: the machine stops being
+rented. Here there is no bill. The hypervisor is single-tenant, its memory is
+paid for whether or not a VM holds it, and the power difference between an idle
+VM and no VM is inside the noise. [`02-abstraction.md`](02-abstraction.md)
+already makes half this point - "what autoscaling buys on bare metal is better
+packing and faster response to load, not elasticity" - and with one tenant even
+the packing argument is empty.
+
+**What it would cost is measured rather than assumed.** Epoch 01's merge-driven
+scale-up put two new nodes at nineteen minutes old and Ready. CAPI-driven
+creation would be considerably faster than a full converge, but it is still a
+Proxmox clone, a Talos boot, a config apply, a cluster join and then a cold
+containerd cache pulling the runner image with no layers on disk. Minutes, not
+seconds - paid by every lane in a cold burst, including the 40-second ones. CA's
+default scale-down delay is ten minutes, so a push arriving shortly after the
+previous one catches the pool mid-teardown and pays it again.
+
+**The layer that should scale to zero already does.** The runner scale set sets
+`minRunners: 0`: the listener watches the queue and creates ephemeral runner
+pods per job. "Spins up when work arrives" is already true where it costs
+seconds. The question was only whether the machine underneath also disappears,
+and that is the layer where it costs minutes and buys nothing.
+
+**Two honest qualifications**, so this is not read as the capability being hard.
+
+Worker removal is genuinely smaller than this epoch's acceptance test. Two of
+the three hard requirements above - etcd member removal, and not destroying the
+machine running the destroyer - are control-plane problems. **Workers are not
+etcd members.** Removing one is a cordon, a drain honouring
+PodDisruptionBudgets, and a destroy. Unbuilt rather than difficult.
+
+And the sequencing objection is this record's own: an unattended rollback was
+rejected as the worst possible debut for a destructive capability. Scale-to-zero
+makes node destruction the routine hot path, firing on CI's schedule dozens of
+times a day, before it has been performed once deliberately with somebody
+watching. Same objection, different trigger.
+
+**The trigger that would revisit this:** a second tenant genuinely competing for
+the hypervisor's memory - the epoch 03 workloads, or a second site sharing
+hardware - so that capacity released by a departing worker goes somewhere rather
+than back into an idle pool. Until then the worker floor stays warm, and the
+first worker holds the container and tool caches that make CI fast.
+
 ## Deferred
 
 - **Placement is still a re-deal.** `vm_placement` recomputes
