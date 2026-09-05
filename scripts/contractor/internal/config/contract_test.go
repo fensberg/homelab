@@ -301,3 +301,43 @@ func TestContract_ConfigTemplateDeclaresImplementedVendors(t *testing.T) {
 		}
 	}
 }
+
+// The host-octet bands are implemented twice and must agree.
+//
+// config.go derives a worker's address and name for the Ansible inventory, the
+// compute phase's wait loop and the teardown's warning list; variables.tf
+// derives the VM, its Talos configuration and its address for real. A
+// disagreement would have the start button waiting on 10.x.10.200 while
+// OpenTofu built a machine somewhere else, and nothing else in the tree would
+// notice - both sides would be internally consistent.
+//
+// This is the same shape as the octet bounds above, and it exists because the
+// bands were briefly written inline as `100 + i` and `200 + i`, which is a
+// number no test can read.
+func TestContract_HostOctetBandsMatchTheOpenTofuSource(t *testing.T) {
+	src := readTF(t, "variables.tf")
+
+	for _, tc := range []struct {
+		local string
+		go_   int
+	}{
+		{"control_plane_band", ControlPlaneBand},
+		{"worker_band", WorkerBand},
+	} {
+		hcl, err := tfsource.Int(src, tc.local)
+		if err != nil {
+			t.Fatalf("variables.tf: %v\n\nIf that local was renamed or restructured, this contract needs re-examining, not re-pointing.", err)
+		}
+		if hcl != tc.go_ {
+			t.Errorf("band %s: variables.tf says %d, config.go says %d.\n\nBoth derive a machine's address and name. Moving one and not the other means the contractor waits on a machine OpenTofu never built.", tc.local, hcl, tc.go_)
+		}
+	}
+
+	// The bands must also be far enough apart to hold a plausible control
+	// plane. This is the arithmetic that makes the overlap precondition in
+	// registry.tf a formality rather than the only thing standing between a
+	// large cluster and a silently dropped machine.
+	if WorkerBand-ControlPlaneBand < 50 {
+		t.Errorf("the bands are %d apart, which is not enough room for the control plane to grow into", WorkerBand-ControlPlaneBand)
+	}
+}

@@ -136,8 +136,27 @@ locals {
   # pool is reserved at .20.0/24 for epoch 02.
   node_cidr    = "10.${local.octet}.10.0/24"
   node_gateway = cidrhost(local.node_cidr, 1)
+  # The bands, named rather than inline, because config.go implements the same
+  # two numbers and a contract test can only compare values it can find. An
+  # inline `100 + i` is a number no test can read.
+  control_plane_band = 100
+  worker_band        = 200
+
   # The one number every other identifier is derived from.
-  host_octets = [for i in range(local.node_count) : 100 + i]
+  host_octets = [for i in range(local.node_count) : local.control_plane_band + i]
+
+  # Workers live in the same zone subnet as the control plane and in a
+  # different host-octet band. Same network because a single Talos cluster
+  # needs its members on one subnet; different band because the band is what
+  # makes a machine's role readable off its address, its name and its id at
+  # once. See docs/epochs/02-abstraction.md, "The address carries site, zone
+  # and host, and nothing else".
+  #
+  # Absent means none, which is what every config in this repository described
+  # before workers existed, and is a meaningful value rather than a missing
+  # one - an estate with no workers is the estate epoch 01 shipped.
+  worker_count  = try(local.site.worker_count, 0)
+  worker_octets = [for i in range(local.worker_count) : local.worker_band + i]
 
   # The control plane, keyed by host octet rather than by position.
   #
@@ -178,11 +197,41 @@ locals {
     }
   }
 
+  # Workers, keyed by host octet for exactly the reasons the control plane is.
+  #
+  # The stakes are lower here - a worker is not an etcd member, so replacing
+  # one is a cordon, a drain and a destroy rather than a quorum event - but the
+  # identity property is worth having for the same reason: removing wk-200
+  # should be one destroy, not a renumbering of every worker after it.
+  workers = {
+    for i, h in local.worker_octets : tostring(h) => {
+      host_octet = h
+      ip         = cidrhost(local.node_cidr, h)
+      name       = format("%s-wk-%d", local.site_name, h)
+      vm_id      = local.octet * 1000 + h
+
+      # Dealt round-robin like the control plane, and carrying the same
+      # re-deal hazard when a hypervisor is added - with one important
+      # difference. Re-placing a worker destroys and recreates a machine that
+      # holds no quorum and no etcd membership, so it is a disruption rather
+      # than the silent quorum damage the control-plane note describes.
+      # Growth is meant to land here for exactly that reason.
+      hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[i % length(local.hypervisors)].hostname : ""
+    }
+  }
+
   # Ordered views, for the places that genuinely need a list: the first node is
   # the cluster endpoint and the NodePort host, and the health data source takes
   # every address. Sorted by key, which for three-digit octets is numeric order.
   cp_keys  = sort(keys(local.control_plane))
   node_ips = [for k in local.cp_keys : local.control_plane[k].ip]
+
+  # Kept separate from node_ips rather than appended to it. node_ips is what
+  # the etcd health check and the cluster endpoint are built from, and a worker
+  # is neither an etcd member nor a candidate endpoint - folding the two lists
+  # together would put a worker's address somewhere it can only be wrong.
+  worker_keys = sort(keys(local.workers))
+  worker_ips  = [for k in local.worker_keys : local.workers[k].ip]
 
   # --- placement -----------------------------------------------------------
   # Control-plane VMs are dealt round-robin across whatever hypervisors the
@@ -190,7 +239,9 @@ locals {
   # which is what makes the cluster survive losing a box. Appending a node to
   # sites[].hypervisor.nodes is all it takes here - but a multi-node Proxmox
   # cluster also needs a vxlan or evpn SDN zone, see docs/epochs/01-ignition.md.
-  vm_placement = [for k in local.cp_keys : local.control_plane[k].hypervisor]
+  vm_placement       = [for k in local.cp_keys : local.control_plane[k].hypervisor]
+  worker_placement   = [for k in local.worker_keys : local.workers[k].hypervisor]
+  all_vm_hypervisors = distinct(concat(local.vm_placement, local.worker_placement))
 
   # --- identity ------------------------------------------------------------
   # Everything nameable carries the site, so two sites are distinguishable at
@@ -211,7 +262,8 @@ locals {
   # and it is the last octet of the address:
   #
   #     10.10.10.100   <site>-cp-100   vm 10100
-  vm_names = [for k in local.cp_keys : local.control_plane[k].name]
+  vm_names     = [for k in local.cp_keys : local.control_plane[k].name]
+  worker_names = [for k in local.worker_keys : local.workers[k].name]
 
   # --- platform ------------------------------------------------------------
   # renovate: datasource=github-releases depName=siderolabs/talos

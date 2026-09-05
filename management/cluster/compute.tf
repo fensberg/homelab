@@ -32,7 +32,7 @@
 # block here broke a completely ordinary fresh-create run the same day it
 # was added.
 resource "proxmox_download_file" "talos_disk_image" {
-  for_each = toset(local.vm_placement)
+  for_each = toset(local.all_vm_hypervisors)
 
   content_type = "iso"
   datastore_id = "local-iso"
@@ -72,7 +72,7 @@ resource "proxmox_download_file" "talos_disk_image" {
 # all, and the provider documents built-in retries for concurrent clones -
 # a resilience feature the file_id path simply has none of.
 resource "proxmox_virtual_environment_vm" "talos_template" {
-  for_each = toset(local.vm_placement)
+  for_each = toset(local.all_vm_hypervisors)
 
   name      = "${local.site_name}-talos-template"
   node_name = each.value
@@ -205,6 +205,100 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   # Talos grows disk 0 to fill with its own state and ephemeral partitions,
   # so a provisioner sharing it has no predictable capacity. talos.tf mounts
   # this one at /var/mnt/storage, which is where OpenEBS hands out volumes.
+  disk {
+    datastore_id = "local-zfs"
+    file_format  = "raw"
+    interface    = "virtio1"
+    size         = 32
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  smbios {
+    serial       = each.value.name
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
+  }
+
+  initialization {
+    datastore_id = "local-zfs"
+
+    dns {
+      servers = ["1.1.1.1", "1.0.0.1"]
+    }
+
+    ip_config {
+      ipv4 {
+        address = "${each.value.ip}/24"
+        gateway = local.node_gateway
+      }
+    }
+  }
+}
+
+# The worker pool.
+#
+# Deliberately a near-copy of talos_cp rather than a shared module: the two
+# differ in memory, in which machine configuration they receive, and in whether
+# they hold quorum, and the epoch that turns these into modules is the one this
+# is being written for. Sharing them now would mean parameterising a resource
+# that is about to move wholesale.
+#
+# Sized from a measurement rather than a guess. The three control planes use
+# about 1.2 GiB of 3.8 GiB each and the largest memory request the scheduler
+# could accept anywhere was ~1.9 GiB, which is what killed an integration run
+# (#236). 8 GiB leaves roughly 7.2 GiB allocatable after Talos's overhead - the
+# number that actually broke, improved about fourfold. See
+# docs/epochs/02-abstraction.md.
+resource "proxmox_virtual_environment_vm" "talos_worker" {
+  for_each  = local.workers
+  name      = each.value.name
+  node_name = each.value.hypervisor
+  vm_id     = each.value.vm_id
+
+  boot_order = ["virtio0"]
+
+  clone {
+    vm_id = proxmox_virtual_environment_vm.talos_template[each.value.hypervisor].vm_id
+    full  = true
+  }
+
+  cpu {
+    cores = 6
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    # No `floating`, so no balloon device, so this is a hard allocation.
+    #
+    # Ballooning a Kubernetes node is a trap worth naming here rather than in a
+    # record nobody reads while editing this file: the kubelet computes
+    # Allocatable from what it sees at boot and never revisits it, so a node
+    # deflated afterwards keeps scheduling against memory that no longer
+    # exists. Overcommit belongs inside Kubernetes, where requests and limits
+    # describe it and the kubelet can act on it.
+    dedicated = 8192
+  }
+
+  network_device {
+    bridge = "vnetint"
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = "local-zfs"
+    file_format  = "raw"
+    interface    = "virtio0"
+    size         = 64
+  }
+
+  # The provisioner's data path, same as the control plane's. This is also
+  # where a persistent CI tool cache would live - the reason epoch 01 wanted a
+  # worker before moving the pull request lanes here at all.
   disk {
     datastore_id = "local-zfs"
     file_format  = "raw"
