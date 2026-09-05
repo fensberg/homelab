@@ -16,9 +16,9 @@ ever grows becomes one nobody can hold in their head.
 At the end, every mechanism here should be one somebody could justify out loud,
 and there should be one way to do each thing rather than two that drifted apart.
 
-## The four questions
+## The five questions
 
-Every file, workflow, script and check gets asked the same four things. They are
+Every file, workflow, script and check gets asked the same five things. They are
 deliberately blunt, and "it works" is not an answer to any of them.
 
 1. **Does this help?** Not "is it correct" — does it catch, prevent or enable
@@ -32,6 +32,22 @@ deliberately blunt, and "it works" is not an answer to any of them.
    second way to publish an image — each is a new thing to learn and to maintain.
 4. **How can we reduce this while maintaining function?** The function is not
    negotiable; the amount of machinery delivering it is.
+5. **What does this silently replace?** An override is not wrong for being an
+   override - `core.hooksPath` buys the only interception point that runs before
+   pre-commit installs third-party code, and it earns its place. What is wrong is
+   an override that is total and silent, because the displaced thing then stays
+   present, correct and inert, and both halves look healthy to anyone inspecting
+   either one. That is how a `commit-msg` hook sat in `.git/hooks` enforcing
+   nothing while `.pre-commit-config.yaml` truthfully said it was installed.
+
+   The rule: **whatever takes a total override owns everything it displaced, and
+   something must enumerate what that was.** Note where the guard belongs - the
+   kustomize `images:` transformer is the estate's one well-guarded example, and
+   its check does not verify the transformer, it verifies the outcome the
+   transformer exists to produce. A tag reaching the cluster unpinned is a red
+   build whether the transformer was misspelled, mis-scoped or deleted.
+
+   The estate has four members of this class and guards one. See #258.
 
 ## Scope
 
@@ -101,6 +117,11 @@ In scope:
   run the same hooks a human does, which means that class of exception stops
   being needed.
 
+- **A register of every total override, against question 5.** The audit's own
+  output rather than a check: each override named, with what it displaces and
+  what asserts the outcome - or a declared reason it is unguarded. That is the
+  shape `tests/mutations.yml` and `scripts/approved-suppliers.yml` already use,
+  and it is what makes silence refusable. #258 has the four found so far.
 - The workflow lanes, against question 1. Several exist because a tool was
   available rather than because a defect was found.
 - The `docs/` tree, which has grown a document per incident.
