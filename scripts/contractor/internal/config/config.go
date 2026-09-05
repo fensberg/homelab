@@ -203,6 +203,32 @@ var slugInvalid = regexp.MustCompile(`[^A-Za-z0-9]+`)
 // Validation here mirrors registry.tf on purpose: two sites colliding on an
 // octet, or a vault item attesting the wrong vendor, should fail here in
 // milliseconds rather than after a provider round trip.
+// AllMachineIPs is every machine this site builds, whatever its role.
+//
+// It exists because the health gate counted control planes and compared the
+// total with strict equality, so adding workers made a healthy five-node
+// cluster fail a gate that expected three. That was not a wrong number, it was
+// a second place that had to be told machine classes exist - and the fix for
+// that is one list rather than a second number kept in step.
+//
+// So anything asking "how many machines should there be" or "which addresses
+// do we wait on" reads this. A future class - the untrusted node epoch 03
+// needs - is added here and every caller is correct by construction.
+func (n *SiteNetwork) AllMachineIPs() []string {
+	out := make([]string, 0, len(n.NodeIPs)+len(n.WorkerIPs))
+	out = append(out, n.NodeIPs...)
+	return append(out, n.WorkerIPs...)
+}
+
+// AllMachineNames is the same set, named rather than addressed. The teardown
+// warns with these, and under-reporting what is about to be destroyed is the
+// failure #213 is about.
+func (n *SiteNetwork) AllMachineNames() []string {
+	out := make([]string, 0, len(n.VMNames)+len(n.WorkerNames))
+	out = append(out, n.VMNames...)
+	return append(out, n.WorkerNames...)
+}
+
 func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	if len(cfg.Sites) == 0 {
 		return nil, fmt.Errorf("the config defines no sites")

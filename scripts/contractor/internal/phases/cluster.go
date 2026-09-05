@@ -18,6 +18,22 @@ func Cluster(ctx *run.Context) error {
 		return err
 	}
 
+	// Targeted, not left to the untargeted apply further down.
+	//
+	// It did work by accident: the final `tofu apply (flux)` has no target, so
+	// it swept the worker configuration up and the cluster came out right. But
+	// "correct incidentally" is the kind of thing that changes when somebody
+	// adds a target to that step, and the failure would be workers sitting in
+	// maintenance mode while the health gate waits for them.
+	//
+	// After the control plane and before bootstrap is safe: applying a worker's
+	// configuration only writes it to the machine, and the worker retries
+	// joining until the API server answers.
+	run.Info("applying the worker machine configuration")
+	if err := run.TofuApply(ctx, "tofu apply (worker config)", "talos_machine_configuration_apply.worker"); err != nil {
+		return err
+	}
+
 	run.Info("bootstrapping etcd")
 	if err := run.TofuApply(ctx, "tofu apply (bootstrap)", "talos_machine_bootstrap.this"); err != nil {
 		return err

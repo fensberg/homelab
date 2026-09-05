@@ -94,7 +94,7 @@ files:
     uncovered: 2
     covered_by: integration
   - path: internal/phases/health.go
-    uncovered: 12
+    uncovered: 11
     covered_by: integration
   - path: internal/phases/health_etcd.go
     uncovered: 2

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -358,5 +359,88 @@ func TestResolveSiteNetwork_NegativeWorkerCount(t *testing.T) {
 
 	if _, err := ResolveSiteNetwork(cfg, "site0"); err == nil {
 		t.Fatal("a negative worker_count was accepted")
+	}
+}
+
+// A machine class that is not in AllMachineIPs is a class the health gate
+// cannot see.
+//
+// The instance this guards against already happened once: workers were added,
+// the gate kept counting control planes, and a healthy five-node cluster
+// halted a converge on "5 node(s) joined, expected 3". Fixing that one number
+// fixes one class. This asserts the property, so the untrusted node epoch 03
+// adds cannot repeat it.
+//
+// Reflective, and honest about the limit: it finds address lists by the naming
+// convention every class here follows - a []string field whose name ends in
+// IPs. A class that named its field something else would slip past, so the
+// convention is doing real work and is worth keeping.
+func TestEveryMachineClassIsInAllMachineIPs(t *testing.T) {
+	site := validSite()
+	site.WorkerCount = 2
+	cfg := &Config{Sites: map[string]Site{"site0": site}}
+
+	net, err := ResolveSiteNetwork(cfg, "site0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	v := reflect.ValueOf(*net)
+	typ := v.Type()
+
+	total := 0
+	var classes []string
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		if !strings.HasSuffix(f.Name, "IPs") || f.Type != reflect.TypeOf([]string{}) {
+			continue
+		}
+		n := v.Field(i).Len()
+		if n == 0 {
+			t.Fatalf("%s is empty, so it would satisfy this check without proving anything - give the fixture some", f.Name)
+		}
+		classes = append(classes, f.Name)
+		total += n
+	}
+
+	if len(classes) < 2 {
+		t.Fatalf("found %d address list(s) %v; with fewer than two classes this cannot detect one being left out", len(classes), classes)
+	}
+	if got := len(net.AllMachineIPs()); got != total {
+		t.Errorf("AllMachineIPs returns %d addresses but the classes %v hold %d between them.\n\nA class missing from it is a class the health gate does not count, and that gate compares with strict equality - so it would halt a converge on a cluster that is entirely healthy.", got, classes, total)
+	}
+}
+
+// The teardown warns with these names before it destroys anything, so a class
+// missing here is a machine destroyed without having been listed - which is
+// the under-reporting #213 is about, and the worst moment to discover a gap.
+func TestAllMachineNamesCoversEveryClass(t *testing.T) {
+	site := validSite()
+	site.WorkerCount = 2
+	cfg := &Config{Sites: map[string]Site{"site0": site}}
+
+	net, err := ResolveSiteNetwork(cfg, "site0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := net.AllMachineNames()
+	if len(got) != len(net.VMNames)+len(net.WorkerNames) {
+		t.Fatalf("AllMachineNames returned %d names for %d control planes and %d workers", len(got), len(net.VMNames), len(net.WorkerNames))
+	}
+
+	// Named, not just counted. A concatenation that returned the control plane
+	// twice would have the right length and warn about the wrong machines.
+	seen := map[string]bool{}
+	for _, n := range got {
+		if seen[n] {
+			t.Errorf("%q appears twice, so the warning would name a machine that does not exist and omit one that does", n)
+		}
+		seen[n] = true
+	}
+	for _, want := range append(append([]string{}, net.VMNames...), net.WorkerNames...) {
+		if !seen[want] {
+			t.Errorf("%q would be destroyed without appearing in the warning", want)
+		}
 	}
 }

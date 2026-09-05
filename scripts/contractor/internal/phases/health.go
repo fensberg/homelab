@@ -283,11 +283,27 @@ func expectedNodeCount(ctx *run.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	site, ok := cfg.Sites[ctx.Site]
-	if !ok {
+	if _, ok := cfg.Sites[ctx.Site]; !ok {
 		return 0, fmt.Errorf("unknown site '%s'", ctx.Site)
 	}
-	return site.ControlPlaneCount, nil
+
+	// Every machine class, not just the control plane.
+	//
+	// This returned ControlPlaneCount, and the comparison at the call site is
+	// strict equality, so the first converge to build workers reported
+	// "5 node(s) joined, expected 3" and halted a cluster that was entirely
+	// healthy. The gate was not wrong to refuse - it is fail-closed and it
+	// correctly said the cluster did not match what it had been told to expect.
+	// It had simply been told something that stopped being true the moment a
+	// second machine class existed.
+	//
+	// Derived from the resolved network rather than by adding two config
+	// fields, so a third class cannot be added without this following.
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return 0, err
+	}
+	return len(net.AllMachineIPs()), nil
 }
 
 func checkFlux(ctx *run.Context, kubeconfig string) error {
