@@ -419,6 +419,45 @@ lever this whole design removes. They are not in there today.
 Not for the inspector: its conversation is digest-keyed and deliberately
 refuses machine resolution, which dismissal semantics would collide with.
 
+### Evidence on whether the clerk earns its place
+
+This record's acceptance tests decide whether either role stays, and the
+evidence has so far been recorded only when it went badly - #233 is a whole
+issue about the clerk's first real finding being wrong. Kept one-sided, that
+judgement would be made on a biased file. So both outcomes go here.
+
+**A hit, on #245.** The clerk read a comment on the runner scale set that said
+"CPU is a request only" and reported that the account described requests and no
+limits without singling CPU out. The statement was true and the finding was
+still right: nothing in that spec carries a limit, so naming CPU read as a
+contrast and implied memory did. A reader with the context skims that; a reader
+without it cannot, which is the whole argument for the role. Accepted and
+rewritten to say neither carries a limit and why the two reasons differ.
+
+That is the design working exactly as the "second opinion, not an audit"
+decision above describes: the clerk was not asserting a defect, it was
+describing what the code says, and the gap between that description and the
+prose was the finding.
+
+**A miss, on #254**, and a mechanical one rather than a judgement error. It
+flagged `tests/mutations.yml:148`, a line reading `# context that does not
+exist either`, as commentary unsupported by the account. That line is _data_ -
+one context line of a deliberately unappliable diff, carried inside a YAML
+block scalar as the payload of a `create:` entry.
+
+The cause is in `strip.go` and the file predicts it in its own words. YAML goes
+through `blankLines(body, "#")`, a line-prefix stripper, while `splitGo` exists
+because "a regular expression over `//` finds the comment and also finds the
+one inside a string literal and the one inside a URL. The parser cannot make
+that mistake." Every non-Go language took the weaker separation knowingly, and
+this is that trade arriving. Filed rather than dismissed, because a false
+positive in a role whose value rests on being trusted is the expensive kind.
+
+**The running count matters more than either.** One accepted finding and one
+mechanical false positive is not yet an answer to "is this decorative", and the
+honest way to reach one is to keep scoring both columns rather than only the
+one that confirms a prior.
+
 ## Acceptance tests
 
 1. **The planner finds a trigger that has genuinely fired**, and the issue it
