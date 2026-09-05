@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# The hook that was configured, installed, and never ran.
+#
+# `.pre-commit-config.yaml` lists commit-msg in default_install_hook_types, and
+# `pre-commit install` duly writes one into `.git/hooks/`. But this repository
+# sets `core.hooksPath=githooks`, and that setting does not merge the two
+# directories - it replaces `.git/hooks` entirely. So the installed hook sat
+# there, correct and unreachable, and commitlint only ever ran in CI.
+#
+# The cost was two round trips in one session: a `Co-Authored-By: Claude`
+# trailer this repository's own rule forbids, and a subject beginning with an
+# acronym, which subject-case reads as upper-case. Both are caught here in
+# under a second; both instead failed Analyze after a push, and the second cost
+# a rewritten branch and a replaced pull request, because a commit subject
+# cannot be amended once `signedpush` has published it.
+#
+# No gatehouse call, unlike the pre-commit shim. That guard exists because
+# pre-commit installs and executes third-party environments before running any
+# hook, and it must be intercepted first. Nothing new is installed at
+# commit-msg time - the environment pre-commit needs was built minutes earlier
+# by the pre-commit hook - so there is nothing here to intercept.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+# hook-impl rather than `pre-commit run`, matching the pre-commit shim: it is
+# the form that receives the arguments git passes, and here that matters
+# directly - $1 is the path to the message file, and without it commitlint has
+# nothing to read.
+exec pre-commit hook-impl \
+	--config=.pre-commit-config.yaml \
+	--hook-type=commit-msg \
+	--hook-dir "$root/githooks" \
+	-- "$@"
