@@ -998,6 +998,204 @@ wrote down. Known entries with their conditions already recorded:
 The second is there to make the point that "never" is a legitimate answer.
 What is not legitimate is silence.
 
+## Known driver: the estate runs at a few percent, and the fuse is memory
+
+The worker pool above is stated as a prerequisite for autoscaling. It is more
+urgent than that: without it every workload in the estate runs on the machines
+holding etcd quorum, and there is nowhere else for anything to go. This section
+records what that costs, measured, and the model that decides what to build.
+
+### What was measured, 2026-09-05
+
+Taken with `talosctl memory`, `talosctl stats` and `kubectl describe node`
+against the live cluster, 24 hours after it came up.
+
+| Node           | Used    | Available | Requests committed | CPU requests |
+| -------------- | ------- | --------- | ------------------ | ------------ |
+| `site0-cp-100` | 1136 MB | 2387 MB   | 1342 Mi (41%)      | 760m (19%)   |
+| `site0-cp-101` | 1276 MB | 2318 MB   | 1202 Mi (37%)      | 560m (14%)   |
+| `site0-cp-102` | 1271 MB | 2323 MB   | 1266 Mi (39%)      | 610m (15%)   |
+
+No `MemoryPressure`, `DiskPressure` or `PIDPressure` on any node. Talos's own
+services are a rounding error - `apid`, `trustd` and the tailscale extension
+together are about 133 MB and burned roughly 150 CPU-seconds across the whole
+day, which is 0.2% of one core. The hypervisor reported 3.88% CPU across its
+18 cores at rest.
+
+**So 4 cores and 4 GiB is a well-judged size for a control-plane node, and the
+control planes are not what is held back.** They were sized by guess and the
+guess was good. This is recorded because the obvious reading of the OOM kill
+below is "the nodes are too small", and that reading is wrong.
+
+### The ceiling, not the total, is what broke
+
+Summed, the three nodes have about 7 GiB free. But it is in three pieces and
+no piece exceeds ~2.3 GiB - and by scheduler accounting it is tighter still,
+because requests are already committed: **the largest memory request a new pod
+can have accepted on any node is about 1.9 GiB.**
+
+That is the whole of the OOM kill recorded in #236. A Go build compiling
+Terratest's dependency tree wanted more than 1.9 GiB, was `BestEffort` because
+it had requested nothing, and Talos's OOM controller selected exactly the
+cgroup it is designed to select:
+
+```text
+[talos] OOM controller triggered
+[talos] Sending SIGKILL to cgroup {"cgroup": "/sys/fs/cgroup/kubepods/besteffort/pod..."}
+```
+
+The guard worked. The estate gave it no better option.
+
+**`Taints: <none>` on all three nodes** is the line that matters most in that
+output. There is no workload tier - there is a quorum tier that also takes
+walk-ins.
+
+### The model: a domestic electrical panel
+
+The operator's framing, and it is better than an analogy, because electrical
+practice has already solved this problem and the vocabulary transfers almost
+term for term. It is adopted here as the estate's way of talking about
+capacity.
+
+| House                                                    | Estate                                     |
+| -------------------------------------------------------- | ------------------------------------------ |
+| Service capacity - the panel's rating                    | Node `Allocatable`                         |
+| **Connected load** - the sum of every nameplate          | Sum of `limits`                            |
+| **Demand load** - what is assumed to run together        | Sum of `requests`                          |
+| **Demand factor** - the bet that they will not all peak  | Setting requests deliberately below limits |
+| A breaker trips                                          | OOM kill, or kubelet eviction              |
+| **Load management** - shed the car charger under load    | `PriorityClass` and preemption             |
+| **An interlock** - two loads that may never run together | A queue depth or concurrency limit         |
+| Time-of-use scheduling                                   | A cron schedule into an overnight trough   |
+
+The goal it expresses: the hypervisor is paid for whether or not it is busy, so
+it should be close to fully committed and never tripping. Not "leave room to be
+safe" - be deliberate about what runs together.
+
+### There is only one fuse in this house, and it is memory
+
+The single most useful consequence. CPU has no breaker: over-draw it and work
+runs slower, which is degradation rather than failure. Memory has one, and it
+fires by killing a process.
+
+So there is not one utilisation target, there are two regimes:
+
+- **Pack CPU hard and deliberately.** 100% is the goal, not the hazard.
+- **Keep genuine headroom on memory.** 100% is an outage.
+
+Every decision below follows from that split, and conflating the two is how a
+plausible capacity plan produces an estate that trips.
+
+### Overcommit in exactly one place: inside Kubernetes
+
+**Hard-allocate memory at the hypervisor; overcommit it inside Kubernetes.**
+
+Specifically, **do not enable memory ballooning on these VMs.** It is the
+obvious hypervisor-level lever and it is a trap: the kubelet computes
+`Allocatable` from what it observes at boot and never revisits it. Balloon a
+node down afterwards and the kubelet keeps scheduling against memory that no
+longer exists, with no way to learn otherwise. The kubelet is the only party
+that knows what is running and can evict deliberately, so it has to be the
+layer that is told the truth.
+
+vCPU is the opposite and may be overcommitted freely at the hypervisor, because
+contention degrades rather than kills. Ordinary practice is 2-4x; the estate is
+currently at 0.67x, with 12 vCPU allocated across 18 cores.
+
+Proxmox `cpuunits` is the hypervisor-level counterpart to `PriorityClass`: a
+cgroup weight per VM, so CPU contention resolves in favour of quorum
+automatically. The same principle expressed at two layers.
+
+### Shedding and interlocking are different tools
+
+Worth separating, because the first draft of this reasoning treated them as one
+and they answer different questions.
+
+- **Load shedding is right when the loads differ in importance.** CI against
+  etcd. The estate wins, CI is dropped, and a `PriorityClass` expresses it.
+- **An interlock is right when they are equally important and must take
+  turns.** Two heavy integration runs have no claim over one another;
+  preempting either to run the other is pure churn. What is wanted is a queue.
+
+This changes what `maxRunners` is for. It reads as a cap to be raised as
+capacity grows, and it is not - **it is the interlock**, and its correct value
+is how many heavy jobs fit in the workers at once.
+
+### Eviction is not free here, so prefer admission control
+
+The one place the electrical model breaks, and it changes the design rather
+than decorating it. A shed load resumes: pausing a car charger costs time and
+nothing else. **An evicted job loses its work.** A CI job killed at minute
+twelve of thirteen throws away twelve minutes and starts over.
+
+So preemption is the backstop that protects quorum, which is what it is for.
+The primary mechanism for CI against CI is **not admitting the job**, because a
+job that never started is cheaper than one killed near the end.
+
+### Two scale sets, for two independent reasons
+
+Today a 40-second lint lane and a thirteen-minute integration run are the same
+circuit, so the lint lane queues behind the water heater for no reason. The
+split:
+
+- **Heavy** - converge and integration. Large requests, a low `maxRunners`,
+  estate access.
+- **Light** - lint, format, test. Small requests, a high `maxRunners`, no route
+  to anything.
+
+[`01-ignition.md`](01-ignition.md) already argues for exactly this structure on
+entirely different grounds - that pull request lanes need no estate access and
+should not have it. Two independent arguments arriving at the same structure is
+about as good a signal as this kind of design produces.
+
+### Retraction: ZFS ARC was not the problem
+
+Recorded because the hypothesis was confident, cheap to state, and wrong, and
+the next session would otherwise re-form it.
+
+The hypervisor reported 37.35 GiB of 62.29 GiB used while the three VMs account
+for only 12 GiB. The inference was that Proxmox's default ARC cap of half of
+RAM had let the cache grow to ~25 GiB, and that capping it would be the single
+cheapest large block of memory on the box. Measured instead:
+
+```text
+c          6.23 GiB
+c_min      1.95 GiB
+c_max      6.23 GiB
+size       6.15 GiB
+```
+
+ARC is capped at 6.23 GiB - about 10% of RAM, the newer Proxmox default rather
+than the older 50% - and is holding 6.15 GiB against a pool with 33 GB of data.
+It is correctly sized and there is nothing to reclaim there. **Roughly 19 GiB
+of the hypervisor's reported usage remains unaccounted for**, and worker sizing
+should not be written down until it is, because the difference decides whether
+32 GiB of worker memory fits.
+
+The process lesson is the one already in this repository: an arithmetic
+inference about a live machine is a hypothesis, and the reading costs one
+command.
+
+### What this epoch therefore builds
+
+In order, each additive and needing no cluster rebuild:
+
+1. **A worker machine set.** Sized so that a single node can offer a large
+   contiguous block, because the defect is a ceiling rather than a total. Two
+   workers rather than one, so the pool can be drained and so epoch 05 has
+   something to move work between.
+2. **A `nodeSelector` on the runner scale set**, pointing CI at the workers.
+   Deliberately not a taint on the control planes - see the gotcha below.
+3. **Requests on everything that matters**, which is #237 and #234. This is not
+   hygiene, it is the load-bearing part: eviction order is driven by QoS class,
+   and until it is designed rather than accidental, filling the box on purpose
+   is reckless.
+4. **`PriorityClass` for CI**, below the estate's own components.
+
+Then epoch 04 measures it, and epoch 05 makes it elastic if that is ever worth
+anything - which [`05-node-lifecycle.md`](05-node-lifecycle.md) records that it
+currently is not.
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying
@@ -1019,3 +1217,20 @@ _Record as made._
 ## Deferred
 
 ## Gotchas
+
+### Do not taint the control planes in the change that adds workers
+
+The instinct once workers exist is to taint the control planes so nothing lands
+there again, and it has to wait.
+
+`tofu-state-1`, `-2` and `-3` sit on OpenEBS Local PV Hostpath, which pins each
+volume to the node its directory was created on. Tainting the control planes
+would have CloudNativePG try to reschedule the state database onto workers, and
+the data would not follow it. That is the same trap
+[`03-workload.md`](03-workload.md) already records for a Valheim world, arriving
+earlier and against the database that holds the estate's own OpenTofu state.
+
+So the safe first increment is a `nodeSelector` on the runner scale set: CI goes
+to the workers, nothing else reschedules, and nothing moves that has state
+underneath it. Tainting becomes a considered follow-up once the storage question
+has an answer, and that answer belongs to epoch 03.
