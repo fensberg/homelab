@@ -118,7 +118,7 @@ func newAsker(key, model string) *asker {
 // dismissal reasons are what turn this epoch's acceptance test from a
 // judgement into a number: "false positive" against "won't fix" is exactly the
 // split between the clerk being wrong and the clerk being right and overruled.
-func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, error)) int {
+func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, string, error)) int {
 	fs := flag.NewFlagSet("clerk "+name, flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
 	out := fs.String("out", "", "write the SARIF report here instead of stdout")
@@ -160,10 +160,13 @@ func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, error))
 	}
 	fmt.Fprintf(os.Stderr, "clerk %s: read %d of %d tracked files\n", name, len(b.included), len(files))
 
-	found, err := ask(newAsker(env["CLERK_BOT_LLM_KEY"], chosen), b)
+	found, caveat, err := ask(newAsker(env["CLERK_BOT_LLM_KEY"], chosen), b)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 1
+	}
+	if caveat != "" {
+		fmt.Fprintf(os.Stderr, "clerk %s: %s\n", name, caveat)
 	}
 
 	kept, dropped := keep(found, b.lines)
@@ -188,7 +191,7 @@ func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, error))
 	}
 
 	if *pr != 0 {
-		if code := post(*pr, note(name, kept, dropped)); code != 0 {
+		if code := post(*pr, note(name, kept, dropped, caveat)); code != 0 {
 			return code
 		}
 	}
@@ -202,42 +205,65 @@ func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, error))
 // second pass sees only that pass's account and the commentary - never the
 // code - so it cannot read a claim and then go looking for it.
 func snagVerb(args []string) int {
-	return walk("snag", args, func(a *asker, b *bundle) ([]snag, error) {
-		blind, err := a.ask(blindPrompt + "\n" + b.code)
-		if err != nil {
-			return nil, err
-		}
-		account, unsound, err := parseBlind(blind)
-		if err != nil {
-			return nil, err
-		}
+	return walk("snag", args, snagPass)
+}
 
-		if strings.TrimSpace(b.prose) == "" {
-			fmt.Fprintln(os.Stderr, "clerk snag: nothing was written about these files, so there is nothing to compare")
-			return unsound, nil
-		}
+// snagPass is the two-pass walk itself, named rather than inline so a test can
+// drive it with a bundle and an asker that fails if it is reached.
+func snagPass(a *asker, b *bundle) ([]snag, string, error) {
+	// A change carrying no code has nothing to write an account of.
+	//
+	// This is the mirror of the prose guard below and it was missing, which
+	// #241 found: five epoch records and no code at all. `split` sends Markdown
+	// wholly to the prose side, so `b.code` was empty, the first pass was asked
+	// about nothing, and it answered - correctly - with no account. parseBlind
+	// then reported that as a failure, so a pull request there was never
+	// anything to read failed the lane rather than passing it.
+	//
+	// Returning before the ask also spends no request. The clerk's models are
+	// on a free tier measured in tens of calls a day, so a call that cannot
+	// produce an answer is a real cost rather than an untidiness.
+	if strings.TrimSpace(b.code) == "" {
+		return nil, "there is no code in this change, so nothing was reviewed", nil
+	}
 
-		compared, err := a.ask(comparePrompt + "\n=== the account ===\n" + account + "\n" + b.prose)
-		if err != nil {
-			return nil, err
-		}
-		disagrees, err := parse(compared)
-		if err != nil {
-			return nil, err
-		}
-		return append(unsound, disagrees...), nil
-	})
+	blind, err := a.ask(blindPrompt + "\n" + b.code)
+	if err != nil {
+		return nil, "", err
+	}
+	account, unsound, err := parseBlind(blind)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if strings.TrimSpace(b.prose) == "" {
+		return unsound, "nothing was written about these files, so only the soundness pass ran", nil
+	}
+
+	compared, err := a.ask(comparePrompt + "\n=== the account ===\n" + account + "\n" + b.prose)
+	if err != nil {
+		return nil, "", err
+	}
+	disagrees, err := parse(compared)
+	if err != nil {
+		return nil, "", err
+	}
+	return append(unsound, disagrees...), "", nil
 }
 
 func handoverVerb(args []string) int {
-	return walk("handover", args, func(a *asker, b *bundle) ([]snag, error) {
+	return walk("handover", args, func(a *asker, b *bundle) ([]snag, string, error) {
 		// A stranger sees everything, commentary included - that is the point
-		// of the question. So this pass is given the file as written.
+		// of the question. So this pass is given the file as written. There is
+		// no empty-input case here the way there is in snagPass: read() already
+		// refuses a bundle with no files, and prose alone is a perfectly good
+		// subject for "could somebody else run this".
 		answer, err := a.ask(handoverPrompt + "\n" + b.code + "\n" + b.prose)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return parse(answer)
+		found, err := parse(answer)
+		return found, "", err
 	})
 }
 
@@ -257,11 +283,22 @@ func handoverVerb(args []string) int {
 // stated reason, and those reasons are what turn this epoch's acceptance test
 // into a count rather than a judgement. This is the readable copy, not a
 // replacement.
-func note(name string, kept []snag, dropped []string) string {
+//
+// The caveat is why "nothing to raise" must not be the only thing zero findings
+// can say. A pull request that carried no code for the clerk to read produces
+// exactly the same count as one read closely and found sound, and only one of
+// those is reassuring. "I was not given anything to look at" and "I looked and
+// it is fine" are different facts, and the surface has to tell them apart - the
+// same rule the discarded count already follows.
+func note(name string, kept []snag, dropped []string, caveat string) string {
 	if len(kept) == 0 {
-		return fmt.Sprintf("**clerk %s** — nothing to raise. %d finding(s) discarded as uncheckable.\n\n"+
+		headline := "nothing to raise"
+		if caveat != "" {
+			headline = caveat
+		}
+		return fmt.Sprintf("**clerk %s** — %s. %d finding(s) discarded as uncheckable.\n\n"+
 			"A second opinion from a reader with no context: it can approve nothing and block nothing.",
-			name, len(dropped))
+			name, headline, len(dropped))
 	}
 
 	var b strings.Builder
@@ -273,6 +310,9 @@ func note(name string, kept []snag, dropped []string) string {
 	// Said out loud, always. "Nothing found" and "eleven findings none of which
 	// could be checked" are different facts, and only one is reassuring.
 	fmt.Fprintf(&b, "\n%d discarded as uncheckable.\n\n", len(dropped))
+	if caveat != "" {
+		fmt.Fprintf(&b, "Read with a caveat: %s.\n\n", caveat)
+	}
 	b.WriteString("Each is also an alert on the file, dismissable on its own with a reason. " +
 		"A second opinion from a reader with no context: it can approve nothing and block nothing.")
 	return b.String()

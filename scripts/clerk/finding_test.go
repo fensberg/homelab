@@ -187,7 +187,7 @@ func TestTheCommentNamesEveryFinding(t *testing.T) {
 	got := note("snag", []snag{
 		{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"},
 		{ruleDisagrees, "docs/epochs/01.md", 7, "claims a retry that the account does not describe"},
-	}, []string{"names a file that was not read"})
+	}, []string{"names a file that was not read"}, "")
 
 	for _, want := range []string{
 		"scripts/clerk/llm.go:42", "nothing reaches this branch",
@@ -202,11 +202,41 @@ func TestTheCommentNamesEveryFinding(t *testing.T) {
 
 // Nothing found still says so, and still reports what was discarded.
 func TestTheCommentSaysWhenThereIsNothingToRaise(t *testing.T) {
-	got := note("handover", nil, []string{"a", "b"})
+	got := note("handover", nil, []string{"a", "b"}, "")
 	if !strings.Contains(got, "nothing to raise") {
 		t.Errorf("a clean reading does not say so: %s", got)
 	}
 	if !strings.Contains(got, "2 finding(s) discarded") {
 		t.Errorf("the discard count is missing, and it is the number that says whether the clerk is any good: %s", got)
+	}
+}
+
+// A pull request the clerk could not read must not look like one it read and
+// liked. Zero findings is the same count either way, so the note is the only
+// place the difference can appear - and #241 went red rather than saying this,
+// which is how the case came to light.
+func TestTheCommentDistinguishesNothingReviewedFromNothingFound(t *testing.T) {
+	clean := note("snag", nil, nil, "")
+	if !strings.Contains(clean, "nothing to raise") {
+		t.Fatalf("a genuinely clean reading should still say so: %s", clean)
+	}
+
+	unread := note("snag", nil, nil, "there is no code in this change, so nothing was reviewed")
+	if strings.Contains(unread, "nothing to raise") {
+		t.Errorf("a change the clerk never read claims a clean reading: %s", unread)
+	}
+	if !strings.Contains(unread, "nothing was reviewed") {
+		t.Errorf("the reason nothing was reviewed is missing: %s", unread)
+	}
+}
+
+// The caveat survives alongside real findings, because a partial reading that
+// did raise something is still partial.
+func TestACaveatIsCarriedEvenWhenThereAreFindings(t *testing.T) {
+	got := note("snag", []snag{
+		{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"},
+	}, nil, "only the soundness pass ran")
+	if !strings.Contains(got, "only the soundness pass ran") {
+		t.Errorf("the caveat is dropped once there is a finding to report: %s", got)
 	}
 }
