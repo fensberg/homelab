@@ -272,6 +272,19 @@ mutations:
       worse than none: it is read at the moment everything else has already
       gone wrong.
 
+  - guard: TestEveryProviderIsADeclaredSupplier
+    file: management/cluster/versions.tf
+    find: 'kubernetes = { source = "hashicorp/kubernetes"'
+    replace: 'kubernetes = { source = "evilcorp/kubernetes"'
+    mentions: "is not an approved supplier"
+    why: >
+      A provider is third-party code downloaded at init time and executed with
+      this estate's credentials - the hypervisor API token, the cluster PKI,
+      the object storage keys. Swapping one source for another is a single word
+      in an HCL block and would otherwise reach the estate with nobody deciding
+      to take delivery from that party. The mutation is the exact shape of a
+      typosquat.
+
 # Guards that cannot be proved by mutation, and why.
 #
 # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in

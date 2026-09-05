@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -102,6 +103,18 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	// copied it first, and that no crash dump or snapshot caught it in
 	// between. Piping it into age's stdin makes all three assumptions
 	// unnecessary. The buffer is wiped as soon as age has consumed it.
+	// The workspace has to be able to reach the state before it can pull it.
+	//
+	// `task backup-state` and the nightly tier both run this phase on its own,
+	// on a workspace that has never been initialised - so `tofu state pull`
+	// failed with "Required plugins are not installed", naming all five
+	// providers. A phase that is documented as runnable on its own has to
+	// establish its own preconditions, which is the same rule the sterilize
+	// exemption landed on from the other direction.
+	if err := attachIfDetached(ctx); err != nil {
+		return err
+	}
+
 	run.Info("pulling the current state")
 	state, err := run.CmdOutputBytes(ctx.ClusterDir, "tofu", "state", "pull")
 	defer run.Wipe(state)
@@ -159,4 +172,35 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 `, ctx.Site, BackupIdentityRef)
 
 	return nil
+}
+
+// attachIfDetached initialises the workspace against the state database, but
+// only when it is not initialised already.
+//
+// Conditional, and that is load-bearing rather than an optimisation. In a full
+// ignition this phase runs after Migrate and BEFORE Sterilize, so the local
+// state file is still on disk - and Attach deliberately refuses to run when it
+// is, because a workspace holding local state is mid-ignition and attaching on
+// top of it would leave two states describing one estate. Calling Attach
+// unconditionally here would break the ignition path to fix the standalone one.
+//
+// So the question asked is the narrow one: has anything initialised this
+// workspace? A full run reached here through Migrate and has; a standalone
+// backup on a sterilized workspace has not.
+func attachIfDetached(ctx *run.Context) error {
+	if !needsAttach(ctx.ClusterDir) {
+		return nil
+	}
+	run.Info("workspace is not initialised - attaching to the state database first")
+	return Attach(ctx)
+}
+
+// needsAttach reports whether the workspace has no provider plugins installed.
+//
+// .terraform/providers is what `tofu init` populates and what `tofu state pull`
+// needs; the directory alone is not enough, because a workspace can carry a
+// .terraform holding only a backend record.
+func needsAttach(clusterDir string) bool {
+	entries, err := os.ReadDir(filepath.Join(clusterDir, ".terraform", "providers"))
+	return err != nil || len(entries) == 0
 }
