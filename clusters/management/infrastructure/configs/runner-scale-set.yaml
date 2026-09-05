@@ -77,6 +77,14 @@ spec:
     # benefit worth that: the jobs this runs today are minutes long and start
     # with a checkout regardless.
     minRunners: 0
+    # Left at 2 on purpose, now that there is somewhere for runners to go.
+    #
+    # This is an interlock rather than a cap to raise as capacity grows: the
+    # right value is how many heavy jobs should run at once, not how many
+    # would fit. Two heavy integration runs have no claim over one another, so
+    # the third should queue rather than preempt - see the lane model in
+    # docs/epochs/02-abstraction.md. Raising it is a capacity decision worth
+    # making with the measurements epoch 04 adds, not with arithmetic.
     maxRunners: 2
 
     # The image the runner runs in.
@@ -96,6 +104,27 @@ spec:
     # renovate: datasource=docker depName=ghcr.io/fensberg/homelab-runner
     template:
       spec:
+        # CI never runs on a machine holding quorum.
+        #
+        # This is `required`, not `preferred`, and the difference is the whole
+        # point: a preference would put CI back on the control plane the moment
+        # the workers were busy, which is exactly when a build is heaviest and
+        # exactly when etcd can least afford to share four cores with it. A
+        # build that cannot be placed should queue, not spill onto the site
+        # office.
+        #
+        # Expressed as "no control-plane role" rather than "has a worker label",
+        # because the control-plane label is set by Kubernetes itself and needs
+        # nothing added. A label we invented would be one more thing that can be
+        # missing, and a nodeSelector on a missing label fails closed in the
+        # wrong direction - silently unschedulable rather than obviously wrong.
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
         # runAsUser is set explicitly, and it has to be. The image's own USER
         # is the name "runner", not a number, and the kubelet refuses a pod
         # with runAsNonRoot: true and a non-numeric image user - it cannot
@@ -131,3 +160,26 @@ spec:
               allowPrivilegeEscalation: false
               capabilities:
                 drop: ["ALL"]
+            # Requests, and deliberately no limits.
+            #
+            # Requests are what stop this being BestEffort, which is what made
+            # it the OOM controller's first choice and killed a thirteen-minute
+            # integration run (#234, #236). They are also what the scheduler
+            # reserves, so a build is placed on a node that can actually hold
+            # it rather than discovering that at minute twelve.
+            #
+            # No limit, because a memory limit turns an infrastructure shortfall
+            # into a red test: the build needs what it needs, and capping it
+            # does not make the estate more capable, it makes the failure
+            # quieter and moves it onto the thing being tested. On a worker
+            # with no quorum to protect, letting a build burst into free memory
+            # is the correct behaviour.
+            #
+            # 2Gi is sized from the failure: the Terratest dependency compile
+            # wanted more than the ~1.9Gi ceiling that existed before workers.
+            # CPU is a request only - CPU is compressible, so contention slows
+            # a build rather than killing it.
+            resources:
+              requests:
+                cpu: 500m
+                memory: 2Gi
