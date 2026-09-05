@@ -114,7 +114,7 @@ func Compute(ctx *run.Context) error {
 
 	// The provider returns as soon as Proxmox defines the VM. Talos still
 	// has to boot. Poll its API port rather than guessing at a sleep.
-	for _, node := range append(append([]string{}, net.NodeIPs...), net.WorkerIPs...) {
+	for _, node := range net.AllMachineIPs() {
 		run.Info(fmt.Sprintf("waiting for the Talos API on %s:50000 ...", node))
 		if !run.WaitForPort(node, 50000, 5*time.Minute, 10*time.Second) {
 			return fmt.Errorf(`Talos on %s never came up within 5 minutes.

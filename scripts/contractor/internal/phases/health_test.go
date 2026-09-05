@@ -1,8 +1,13 @@
 package phases
 
 import (
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
+
+	"homelab/contractor/internal/config"
+	"homelab/contractor/internal/run"
 )
 
 // The first full ignition reported success over a state database running two
@@ -122,5 +127,49 @@ func TestDatabaseShortfall_MissingStatusIsZeroReady(t *testing.T) {
 func TestDatabaseShortfall_NoClusterIsAnError(t *testing.T) {
 	if _, _, err := databaseInstances([]byte(`{"items":[]}`)); err == nil {
 		t.Error("expected an error when no CNPG Cluster exists")
+	}
+}
+
+// The gate must expect exactly the machines the config says to build.
+//
+// It did not. expectedNodeCount returned ControlPlaneCount, the comparison at
+// the call site is strict equality, and so the first converge that built
+// workers reported "5 node(s) joined, expected 3" and halted a cluster that
+// was entirely healthy. The gate was right to refuse - it is fail-closed and
+// the cluster genuinely did not match what it had been told - but what it had
+// been told stopped being true the moment a second machine class existed.
+//
+// Driven from the corpus's own valid fixture rather than a config written
+// here, so the numbers this asserts are the numbers a real plan uses.
+func TestExpectedNodeCountCountsEveryMachineClass(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not determine this source file's location")
+	}
+	// <root>/scripts/contractor/internal/phases/health_test.go
+	root := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "..", ".."))
+	fixture := filepath.Join(root, "management", "cluster", "tests", "fixtures", "valid.json")
+
+	cfg, err := config.LoadRendered(fixture)
+	if err != nil {
+		t.Fatalf("loading the corpus fixture: %v", err)
+	}
+	site, found := cfg.Sites["site0"]
+	if !found {
+		t.Fatal("the corpus fixture no longer has a site0, so this test is asserting nothing")
+	}
+	if site.WorkerCount == 0 {
+		t.Fatal("the corpus fixture has no workers, so this cannot tell a gate that counts them from one that does not")
+	}
+
+	ctx := &run.Context{Site: "site0", ConfigRendered: fixture}
+	got, err := expectedNodeCount(ctx)
+	if err != nil {
+		t.Fatalf("expectedNodeCount: %v", err)
+	}
+
+	want := site.ControlPlaneCount + site.WorkerCount
+	if got != want {
+		t.Errorf("the health gate expects %d nodes but the config builds %d.\n\nThe comparison at the call site is strict equality, so a gate that undercounts halts a healthy cluster and one that overcounts waits five minutes for a machine nobody asked for.", got, want)
 	}
 }
