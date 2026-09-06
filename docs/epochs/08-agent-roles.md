@@ -453,10 +453,31 @@ that mistake." Every non-Go language took the weaker separation knowingly, and
 this is that trade arriving. Filed rather than dismissed, because a false
 positive in a role whose value rests on being trusted is the expensive kind.
 
-**The running count matters more than either.** One accepted finding and one
-mechanical false positive is not yet an answer to "is this decorative", and the
-honest way to reach one is to keep scoring both columns rather than only the
-one that confirms a prior.
+**A second hit, on #265**, and the most useful one yet, because it caught a
+defect introduced by a change that was itself a fix.
+
+That pull request replaced a `filepath.Walk` with a loop over git's tracked
+set. The walk propagated read errors; the replacement wrote
+`if err != nil { continue }` with a comment explaining the one benign case - a
+tracked file not on disk, which is a deleted-but-staged state. The comment was
+true of that case and of no other, so a permission problem or an I/O error
+became a file quietly not searched, in a guard whose entire job is searching
+files.
+
+The clerk's wording was "ignores any read errors silently, hiding potential
+access issues". It had not been told the walk propagated them and did not need
+to be; reading the code as written was enough. That is the "no context is an
+advantage" argument working literally - the context here was _the intent of the
+fix_, and holding it is what made the weaker error handling invisible to the
+person writing it.
+
+**The running count matters more than either.** Two accepted findings and two false
+positives is not yet an answer to "is this decorative", and the honest way to
+reach one is to keep scoring both columns rather than only the one that
+confirms a prior. The shape of the split is a better signal than the ratio: both
+hits were prose or error handling that a reader holding the intent skims past,
+and both misses were mechanical - text the stripper mislabelled, and a claim
+about a different file.
 
 ### A false positive is prompt feedback before it is a bug report
 

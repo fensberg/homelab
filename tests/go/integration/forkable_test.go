@@ -3,6 +3,8 @@
 package integration
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,9 +110,28 @@ func TestEstateNamesAreNotCommitted(t *testing.T) {
 			continue
 		}
 		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			// A tracked file that is not on disk is a deleted-but-staged
-			// state, not something this test has an opinion about.
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			// Tracked but not on disk is a deleted-but-staged state, and not
+			// something this test has an opinion about. This is the ONLY read
+			// failure that is benign.
+			continue
+		case err != nil:
+			// Everything else is reported rather than skipped.
+			//
+			// The first version of this loop wrote `if err != nil { continue }`
+			// with the comment above attached to every error, which turned a
+			// permission problem or an I/O error into a file quietly not
+			// examined - and a guard that silently searches fewer files still
+			// reports clean. That is the shape this repository refuses
+			// everywhere else: a disabled check indistinguishable from a
+			// passing one.
+			//
+			// Worse, the filepath.Walk this replaced propagated read errors.
+			// The rewrite made the check weaker while claiming to make it
+			// stricter, which is why this is a case statement naming the one
+			// benign error rather than a comment saying to be careful.
+			t.Errorf("could not read tracked file %s: %v\n\nThis file was not searched, so a name in it would not have been found. Fix the read rather than ignoring it.", rel, err)
 			continue
 		}
 		lower := strings.ToLower(string(body))
