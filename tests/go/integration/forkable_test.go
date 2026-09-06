@@ -119,18 +119,15 @@ func TestEstateNamesAreNotCommitted(t *testing.T) {
 		case err != nil:
 			// Everything else is reported rather than skipped.
 			//
-			// The first version of this loop wrote `if err != nil { continue }`
-			// with the comment above attached to every error, which turned a
-			// permission problem or an I/O error into a file quietly not
-			// examined - and a guard that silently searches fewer files still
-			// reports clean. That is the shape this repository refuses
-			// everywhere else: a disabled check indistinguishable from a
-			// passing one.
+			// Skipping is the tempting shape, because the benign case above is
+			// the one that actually happens. But a permission problem or an
+			// I/O error would then become a file quietly not searched, and a
+			// guard that silently searches fewer files still reports clean -
+			// which is the failure this repository refuses everywhere else, a
+			// disabled check indistinguishable from a passing one.
 			//
-			// Worse, the filepath.Walk this replaced propagated read errors.
-			// The rewrite made the check weaker while claiming to make it
-			// stricter, which is why this is a case statement naming the one
-			// benign error rather than a comment saying to be careful.
+			// So the benign error is named rather than the whole class being
+			// swallowed under a comment that is true of only one of them.
 			t.Errorf("could not read tracked file %s: %v\n\nThis file was not searched, so a name in it would not have been found. Fix the read rather than ignoring it.", rel, err)
 			continue
 		}

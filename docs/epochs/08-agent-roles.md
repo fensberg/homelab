@@ -471,13 +471,44 @@ advantage" argument working literally - the context here was _the intent of the
 fix_, and holding it is what made the weaker error handling invisible to the
 person writing it.
 
-**The running count matters more than either.** Two accepted findings and two false
-positives is not yet an answer to "is this decorative", and the honest way to
-reach one is to keep scoring both columns rather than only the one that
-confirms a prior. The shape of the split is a better signal than the ratio: both
-hits were prose or error handling that a reader holding the intent skims past,
-and both misses were mechanical - text the stripper mislabelled, and a claim
-about a different file.
+**A third miss, on #267, and the most instructive of the three** because its
+stated reason was wrong and it was pointing at something real anyway.
+
+It flagged a comment narrating what an earlier version of a loop had done,
+because "the account does not describe this". That is rule 1's silence case
+wearing rule 3's clothes - an account of the current code cannot confirm a
+claim about a previous version, and neither could contradict it.
+
+But the comment deserved deleting. It cited "the first version of this loop"
+and "the filepath.Walk this replaced", both of which are intermediate commits
+on a branch that squash-merges into one - so it pointed at evidence no future
+reader can ever look at. The house style narrates history constantly and
+correctly, and the difference is that it cites things that survive: a real
+teardown, a real apply, a pull request number. This cited an autobiography.
+
+So the finding was rejected on its reasoning and acted on anyway. That is
+exactly the design's own claim arriving literally - "where it misreads the
+code, the misreading is the finding" - and it is worth a column of its own,
+because scoring it as either a hit or a miss loses what happened.
+
+**The running count matters more than either.** Two accepted, two rejected, and one
+rejected-but-useful is not yet an answer to "is this decorative", and the honest
+way to reach one is to keep scoring every column rather than only the one that
+confirms a prior.
+
+The shape is a better signal than the ratio. **Every hit was prose or error
+handling that a reader holding the intent skims past** - a comment claiming CPU
+was a request only, a swallowed error class. **Every miss was the same
+mechanical shape**: something the account could not see, reported as though it
+had been contradicted. Three of those now, in three different disguises, which
+is why the fix moved from forbidding a phrasing to requiring the finding to
+quote both halves of the contradiction it claims.
+
+The rule that fell out of it, and it generalises past this role: **hardening a
+prohibition can move a failure rather than remove it.** Rule 1 stopped the model
+saying "the account is silent" and the same finding came back as a manufactured
+contradiction. Forbidding the wording renamed the failure; requiring evidence
+attacks it.
 
 ### A false positive is prompt feedback before it is a bug report
 
