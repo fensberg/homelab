@@ -136,14 +136,23 @@ spec:
       # Deployment only watches PVCs and asks a helper pod to make or remove a
       # directory on whichever node the volume belongs to.
       #
-      # WHEN THE CONTROL PLANES ARE TAINTED, READ THIS FIRST. Those helper pods
-      # are built by the provisioner from `helperPod` below, and chart 4.6.0
-      # exposes only image, hostNetwork and timeoutSecs there - no tolerations
-      # and no nodeSelector. So a NoSchedule taint on the control planes leaves
-      # the helper unable to reach the nodes the state database's volumes live
-      # on. Existing volumes are unaffected; creating or deleting one hangs
-      # until the timeout. That is a blocker for the taint, not for this
-      # change, and it is filed rather than left in a comment.
+      # THE HELPER POD TOLERATES THE TAINT ON ITS OWN, and the way that was
+      # nearly got wrong is worth keeping. `helperPod` below exposes only
+      # image, hostNetwork and timeoutSecs - no tolerations and no
+      # nodeSelector - which reads like a helper that cannot follow a volume
+      # onto a tainted control plane, and #269 was filed saying exactly that.
+      #
+      # It is wrong. The absence of a knob is not the absence of the
+      # behaviour. provisioner-localpv reads the taints off the Node it is
+      # provisioning for and builds a matching toleration for each
+      # (`GetTaints(selectedNode)` -> `selectedNodeTaints` ->
+      # `WithTolerationsForTaints`, v4.6.0), with `Operator: Exists` when the
+      # taint carries no value - which is the shape of
+      # node-role.kubernetes.io/control-plane:NoSchedule. That is better than a
+      # setting, because there is nothing to remember to set.
+      #
+      # So the taint's remaining blocker is CloudNativePG's instance pods
+      # needing a toleration on the Cluster spec, and not this.
       localpv:
         resources:
           requests:

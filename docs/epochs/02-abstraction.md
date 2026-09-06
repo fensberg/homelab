@@ -1666,18 +1666,36 @@ reporting a change. It is restated in the manifest for that reason.
 than merges, so setting one there would discard the controller's own
 `kubernetes.io/os: linux`.
 
-**The OpenEBS helper pod is a second blocker for the taint (step 2), and it is
-worse than the storage one.** The provisioner does not create directories
-itself; it launches a short-lived helper pod on whichever node the volume
-belongs to. Chart 4.6.0 exposes only `image`, `hostNetwork` and `timeoutSecs`
-under `helperPod` - no tolerations and no `nodeSelector`, and the provisioner
-takes none by environment variable either. So a `NoSchedule` taint on the
-control planes leaves the helper unable to reach the nodes the state database's
-volumes live on. Existing volumes keep working; creating or deleting one hangs
-until the timeout. Filed as #269 rather than left here, with the options that
-are worth weighing - including the chart's own `nodeDeployment` mode, which
-solves it by mounting the host root into a container on a control-plane node
-and so wants arguing rather than assuming.
+**Retraction: the OpenEBS helper pod is not a blocker for the taint.** This
+record briefly said it was the worst of them, and #269 was filed on that
+reading. Both were wrong, and the reasoning error is the part worth keeping.
+
+The provisioner does not create volume directories itself - it launches a
+short-lived helper pod on whichever node the volume belongs to. The chart
+exposes only `image`, `hostNetwork` and `timeoutSecs` under `helperPod`: no
+tolerations, no `nodeSelector`. That was read as "the helper cannot follow a
+volume onto a tainted control plane", which does not follow. **The absence of a
+configuration knob is not the absence of the behaviour.**
+
+Reading the program the chart deploys settles it. `provisioner-localpv` v4.6.0
+reads the taints off the `Node` it is provisioning for and builds a matching
+toleration for each one - `GetTaints(selectedNode)` into `selectedNodeTaints`
+into `WithTolerationsForTaints`, which emits `Operator: Exists` for a taint
+with no value, and `node-role.kubernetes.io/control-plane:NoSchedule` carries
+none. So the helper tolerates whatever the node it is aimed at happens to
+carry, automatically. That is better than a setting, because there is nothing
+to remember to set.
+
+**The taint's only remaining blocker is the one already recorded**: the
+CloudNativePG instance pods need a toleration on the `Cluster` spec, which is
+the same edit as their lane and is why the lane was deferred to step 2.
+
+Two general lessons, both cheap and both nearly skipped. `values.yaml` says
+what is _configurable_, not what _happens_ - so follow a missing option into the
+source before concluding the capability is missing. And check the newest
+release before treating a limitation as real: here it made no difference, since
+4.6.0 is the latest chart, but establishing that is the first question rather
+than one option among four.
 
 **The state database's lane is deferred to step 2 deliberately.** Adding
 `priorityClassName` to a CloudNativePG `Cluster` changes the instance pod spec,
