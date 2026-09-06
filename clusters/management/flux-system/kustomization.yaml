@@ -36,3 +36,81 @@ images:
     digest: sha256:16ada99456385100698a5d7adf90aba8a2089d987ab541c9566b6d7b0e897038
   - name: ghcr.io/fluxcd/notification-controller
     digest: sha256:071c351a0fb163eeb6a2bb82f1e894f51b6b0734216d2e97d3d99c9ab9d710b9
+
+# Flux's own controllers run on the workers, not on the machines holding
+# quorum.
+#
+# Unlike the three HelmReleases under infrastructure/controllers, Flux is not
+# BestEffort and never was: the generated manifest already gives all four
+# controllers requests and limits, and gives three of them
+# `priorityClassName: system-cluster-critical`. Those three are left alone -
+# upstream's call about upstream's components, and re-pointing it here would
+# put the estate's own class on pods the cluster treats as its own.
+#
+# notification-controller is the exception, and it is not an oversight
+# upstream: it is the one Flux controller whose death does not stop
+# reconciliation, so it alone is left unclassified. Unclassified is priority
+# zero, which puts the component that REPORTS failures below every lane in
+# this estate, and lowest exactly when things are going wrong. It gets lane 1
+# below - not because alerts outrank reconciliation, but because a tiny
+# always-on process that exists to tell you something broke has the same
+# delay tolerance as the rest of lane 1: none.
+#
+# Patched here for the same reason the image digests above are: gotk-components
+# .yaml is rewritten wholesale by `flux bootstrap`, so an edit to it disappears
+# on the next upgrade without warning. A strategic-merge patch against
+# `kind: Deployment` reaches exactly the four controllers - gotk-sync.yaml
+# contributes a GitRepository and a Kustomization and no Deployment at all.
+#
+# THIS IS SELF-MODIFYING, and worth saying out loud. kustomize-controller
+# applies this patch to its own Deployment, is terminated, and comes back on a
+# worker to finish the job. That is ordinary Flux behaviour, but the failure
+# mode is not ordinary: if the selector were wrong, Flux would become
+# unschedulable and could not reconcile its way back out. Recovery is a direct
+# kubectl, not a commit:
+#
+#   contractor kubeconfig -site <site> -- \
+#     kubectl -n flux-system patch deploy kustomize-controller \
+#       --type=json -p '[{"op":"remove","path":"/spec/template/spec/affinity"}]'
+#
+# The expression itself is not new or untested - it is the one already proven
+# on the live estate by the runner scale set, which placed a runner on a worker
+# and kept it off the control plane.
+#
+# Safe at ignition, and this was checked rather than assumed: gitops.tf's
+# bootstrap depends on `data.talos_cluster_health.this`, which since the worker
+# pool landed lists `worker_nodes` and depends on the worker configuration
+# apply. Workers are therefore Ready before Flux is installed, so there is no
+# window in which these pods have nowhere to go. Recovery from losing every
+# worker also does not need Flux: workers are built by OpenTofu, which does not
+# depend on Flux in either direction.
+patches:
+  - target:
+      kind: Deployment
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: patched-by-target-selector
+      spec:
+        template:
+          spec:
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                    - matchExpressions:
+                        - key: node-role.kubernetes.io/control-plane
+                          operator: DoesNotExist
+  - target:
+      kind: Deployment
+      name: notification-controller
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: notification-controller
+      spec:
+        template:
+          spec:
+            priorityClassName: lane-1-emergency
