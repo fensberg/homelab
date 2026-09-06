@@ -44,3 +44,39 @@ spec:
     # pauses reconciliation rather than losing anything. A job already running
     # is unaffected.
     replicaCount: 1
+
+    # Lane 1, and off the machines holding quorum.
+    #
+    # This controller is the thing that creates and destroys every runner pod.
+    # It was BestEffort, which made it the OOM controller's first choice on a
+    # node under memory pressure - and the pressure is caused by builds, which
+    # this is the supervisor of. The failure ate its own supervisor (#237).
+    #
+    # `requiredDuringScheduling`, not `preferred`, for the reason the runner
+    # scale set gives at length: a preference puts the pod back on a control
+    # plane exactly when the workers are busiest, which is exactly when etcd
+    # can least afford the company. Expressed as "no control-plane role"
+    # rather than "has a worker label", because the control-plane label is set
+    # by Kubernetes itself and needs nothing added - a label we invented would
+    # be one more thing that can be missing.
+    #
+    # Required placement is only safe because of the priority class beside it:
+    # if both workers are full, lane 1 evicts a runner to make room rather
+    # than sitting Pending. The two are one decision, not two.
+    resources:
+      # Requests, no limits - the estate's standing shape. A request is a
+      # reservation and a position in the kubelet's eviction ranking; it caps
+      # nothing. So a request that is too small costs only ranking, while a
+      # limit that is too small kills the process. Sized by judgement, not by
+      # measurement: epoch 04 is what replaces these with numbers.
+      requests:
+        cpu: 50m
+        memory: 128Mi
+    priorityClassName: lane-1-emergency
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist

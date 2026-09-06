@@ -87,6 +87,53 @@ spec:
     # making with the measurements epoch 04 adds, not with arithmetic.
     maxRunners: 2
 
+    # The listener: lane 1, and off the machines holding quorum.
+    #
+    # This is the dispatcher. It long-polls GitHub for queued jobs and tells
+    # the controller to create a runner; it is tiny, it is always on, and if
+    # it dies no CI runs at all. It was BestEffort (#237), which put the
+    # dispatcher first in the ditch.
+    #
+    # HOW THIS VALUE IS APPLIED, because the mechanism is unusual and its
+    # failure mode is silent. The chart copies `listenerTemplate` verbatim
+    # into the AutoscalingRunnerSet custom resource; the controller then merges
+    # it into the listener pod it builds
+    # (mergeListenerPodWithTemplate in controllers/actions.github.com/
+    # resourcebuilder.go). Read at the pinned tag rather than assumed, and it
+    # is not a normal Kubernetes strategic merge:
+    #
+    #   - A container is matched BY NAME. `listener` is merged into the real
+    #     container; any other name is appended as a side-car. So the name
+    #     below is load-bearing - a typo produces a second container rather
+    #     than an error.
+    #   - Most pod-level fields are ASSIGNED, not merged, whether or not this
+    #     template sets them. That is why terminationGracePeriodSeconds is
+    #     restated: the controller's own default is 60, and the assignment is
+    #     unconditional, so omitting it here would silently drop the listener
+    #     to Kubernetes' 30 without anything reporting a change.
+    #   - nodeSelector is the one field guarded by a nil check, and it
+    #     replaces rather than merges - setting one here would discard the
+    #     controller's own `kubernetes.io/os: linux`. Placement is expressed
+    #     as affinity below for that reason as much as for the required/
+    #     preferred one.
+    listenerTemplate:
+      spec:
+        terminationGracePeriodSeconds: 60
+        priorityClassName: lane-1-emergency
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        containers:
+          - name: listener
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+
     # The image the runner runs in.
     #
     # The stock actions-runner image is deliberately minimal - no op, no tofu,
@@ -118,6 +165,20 @@ spec:
         # nothing added. A label we invented would be one more thing that can be
         # missing, and a nodeSelector on a missing label fails closed in the
         # wrong direction - silently unschedulable rather than obviously wrong.
+        # Lane 3: logistics.
+        #
+        # Everything this scale set runs today is a delivery - integration
+        # runs, converges, image builds, the state backup. Important, slow by
+        # nature, and nothing watches the clock on them. The fast pull request
+        # checks belong in lane 2 and are not here yet, because a second lane
+        # needs a second scale set with its own maxRunners interlock; until
+        # that exists, one lane honestly labelled beats two lanes pretending.
+        #
+        # The consequence to be clear-eyed about: lane 1 preempts, so an
+        # operator that cannot be placed will evict a build mid-run. That is
+        # the trade the lane table makes deliberately - the alternative is
+        # the estate's own reconciler waiting behind a thirteen-minute job.
+        priorityClassName: lane-3-logistics
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:

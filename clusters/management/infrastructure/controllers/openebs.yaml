@@ -120,3 +120,40 @@ spec:
         basePath: /var/mnt/storage
         isDefaultClass: true
         reclaimPolicy: Delete
+
+      # Lane 1, and off the machines holding quorum.
+      #
+      # The provisioner hands out the volumes the state database runs on, and
+      # it was BestEffort (#237). Note the nesting: this is a subchart, so the
+      # path is `localpv-provisioner.localpv.*` and not the top-level
+      # `resources` the other two charts use. Read out of the pinned subchart's
+      # values.yaml (4.6.0) and confirmed against its templates/deployment.yaml,
+      # because a Helm value at a path nothing reads is accepted in silence -
+      # it looks applied and is not, which is the worst failure available here.
+      #
+      # Moving the provisioner does not move the volumes. Hostpath PVs carry
+      # their own node affinity and stay where their directory is; this
+      # Deployment only watches PVCs and asks a helper pod to make or remove a
+      # directory on whichever node the volume belongs to.
+      #
+      # WHEN THE CONTROL PLANES ARE TAINTED, READ THIS FIRST. Those helper pods
+      # are built by the provisioner from `helperPod` below, and chart 4.6.0
+      # exposes only image, hostNetwork and timeoutSecs there - no tolerations
+      # and no nodeSelector. So a NoSchedule taint on the control planes leaves
+      # the helper unable to reach the nodes the state database's volumes live
+      # on. Existing volumes are unaffected; creating or deleting one hangs
+      # until the timeout. That is a blocker for the taint, not for this
+      # change, and it is filed rather than left in a comment.
+      localpv:
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        priorityClassName: lane-1-emergency
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist

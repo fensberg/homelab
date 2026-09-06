@@ -45,3 +45,36 @@ spec:
     monitoring:
       # Turn on once Prometheus exists on this cluster.
       podMonitorEnabled: false
+
+    # Lane 1, and off the machines holding quorum.
+    #
+    # This operator manages the state database - the estate's own OpenTofu
+    # backend. It was BestEffort (#237), so a memory spike anywhere on its
+    # node killed the thing reconciling the record of what the estate is.
+    # It is not in the data path, so the database stays up when it dies; what
+    # stops is anything that needs the database's shape to change.
+    #
+    # The operator moves to a worker. The DATABASE does not, and that is not
+    # a compromise: its volumes are OpenEBS Local PV Hostpath, which pins each
+    # one to the node whose directory it was created on, and moving the pod
+    # would not move the data. docs/epochs/02-abstraction.md records why the
+    # database is to this estate what etcd is to the cluster.
+    #
+    # Verified against the pinned chart's own values.yaml (0.23.0), where
+    # `resources`, `affinity` and `priorityClassName` are top-level keys read
+    # by templates/deployment.yaml. A Helm value at a path the chart does not
+    # read is silently ignored, so these paths are checked rather than assumed
+    # - tests/go/repo/workload_placement_test.go holds the version they were
+    # checked against, and goes red if the chart moves.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+    priorityClassName: lane-1-emergency
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
