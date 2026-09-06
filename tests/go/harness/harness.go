@@ -101,7 +101,11 @@ type Site_ struct {
 	Name              string `json:"name"`
 	Octet             int    `json:"octet"`
 	ControlPlaneCount int    `json:"control_plane_count"`
-	Hypervisor        struct {
+	// Absent means none, which is what every config described before workers
+	// existed. Machines is what assertions about "how many nodes" should use;
+	// ControlPlaneCount is only ever the etcd-bearing subset.
+	WorkerCount int `json:"worker_count"`
+	Hypervisor  struct {
 		Provider    string `json:"provider"`
 		TokenID     string `json:"token_id"`
 		TokenSecret string `json:"token_secret"`
@@ -169,6 +173,16 @@ func ObjectStorageAccount(t *testing.T) struct {
 } {
 	t.Helper()
 	return LoadConfig(t).ObjectStorage
+}
+
+// Machines is every node this site builds, whatever its role.
+//
+// Named rather than left as an addition at each call site, because the
+// addition is exactly what gets forgotten: the Health phase counted control
+// planes and halted a healthy five-node cluster (#261), and the integration
+// tier made the identical assumption a second time (#262).
+func (s Site_) Machines() int {
+	return s.ControlPlaneCount + s.WorkerCount
 }
 
 func SiteConfig(t *testing.T) Site_ {
