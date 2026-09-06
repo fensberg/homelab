@@ -87,6 +87,86 @@ spec:
     # making with the measurements epoch 04 adds, not with arithmetic.
     maxRunners: 2
 
+    # The listener: critical, and off the machines holding quorum.
+    #
+    # This is the dispatcher. It long-polls GitHub for queued jobs and tells
+    # the controller to create a runner; it is tiny, it is always on, and if
+    # it dies no CI runs at all. It was BestEffort (#237), which put the
+    # dispatcher first in the ditch.
+    #
+    # HOW THIS VALUE IS APPLIED, because the mechanism is unusual and its
+    # failure mode is silent. The chart copies `listenerTemplate` verbatim
+    # into the AutoscalingRunnerSet custom resource; the controller then merges
+    # it into the listener pod it builds
+    # (mergeListenerPodWithTemplate in controllers/actions.github.com/
+    # resourcebuilder.go). Read at the pinned tag rather than assumed, and it
+    # is not a normal Kubernetes strategic merge:
+    #
+    #   - A container is matched BY NAME. `listener` is merged into the real
+    #     container; any other name is appended as a side-car. So the name
+    #     below is load-bearing - a typo produces a second container rather
+    #     than an error.
+    #   - Most pod-level fields are ASSIGNED, not merged, whether or not this
+    #     template sets them. That is why terminationGracePeriodSeconds is
+    #     restated: the controller's own default is 60, and the assignment is
+    #     unconditional, so omitting it here would silently drop the listener
+    #     to Kubernetes' 30 without anything reporting a change.
+    #   - nodeSelector is the one field guarded by a nil check, and it
+    #     replaces rather than merges - setting one here would discard the
+    #     controller's own `kubernetes.io/os: linux`. Placement is expressed
+    #     as affinity below for that reason as much as for the required/
+    #     preferred one.
+    listenerTemplate:
+      spec:
+        terminationGracePeriodSeconds: 60
+        # Asserted rather than inherited.
+        #
+        # The listener runs the controller's own image, which is
+        # gcr.io/distroless/static:nonroot with `USER 65532:65532` - so it
+        # already runs as a non-root user and this changes no behaviour. It is
+        # set because inheriting a property is not the same as requiring it: an
+        # upstream base-image change that reverted to root would otherwise be
+        # invisible, and here it fails to start instead.
+        #
+        # Note what is deliberately NOT set, because the runner container three
+        # blocks down does the opposite and the difference matters. There is no
+        # explicit runAsUser here. The runner needs one because its image's USER
+        # is the NAME "runner", and the kubelet cannot verify that a name is not
+        # root, so it refuses the pod outright. This image's USER is already
+        # numeric, so runAsNonRoot alone is verifiable - and pinning the uid
+        # would tie this manifest to a number upstream is free to renumber, for
+        # no gain over the check the kubelet is already able to make.
+        #
+        # readOnlyRootFilesystem is also absent, and that is a limit rather than
+        # a decision: nothing here has established what the listener writes at
+        # runtime, and asserting it on a guess would turn a hardening into an
+        # outage. #237 sized these controllers by judgement too; epoch 04 is
+        # where guesses get replaced with observations.
+        securityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        priorityClassName: critical
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        containers:
+          - name: listener
+            # A statically linked Go binary that long-polls an HTTPS endpoint.
+            # It needs no capability and no route to acquire one.
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+
     # The image the runner runs in.
     #
     # The stock actions-runner image is deliberately minimal - no op, no tofu,
@@ -118,6 +198,20 @@ spec:
         # nothing added. A label we invented would be one more thing that can be
         # missing, and a nodeSelector on a missing label fails closed in the
         # wrong direction - silently unschedulable rather than obviously wrong.
+        # Batch.
+        #
+        # Everything this scale set runs today has to complete and does not
+        # have to complete now - integration runs, converges, image builds,
+        # the state backup. The fast pull request checks are `interactive` and
+        # are not here yet, because separating them needs a second scale set
+        # with its own maxRunners interlock; until that exists, one class
+        # honestly applied beats two applied to the same pod.
+        #
+        # The consequence to be clear-eyed about: `critical` preempts, so an
+        # operator that cannot otherwise be placed will evict a build mid-run.
+        # That is deliberate - the alternative is the estate's own reconciler
+        # waiting behind a thirteen-minute job.
+        priorityClassName: batch
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:

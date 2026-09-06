@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 19
+floor: 22
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -287,8 +287,13 @@ mutations:
 
   - guard: TestRunnerPodsCannotScheduleOntoAControlPlane
     file: clusters/management/infrastructure/configs/runner-scale-set.yaml
-    find: "operator: DoesNotExist"
-    replace: "operator: Exists"
+    # Anchored on the priority class above it, because this file now carries
+    # the same anti-control-plane rule twice - once for the runner and once for
+    # the listener - and "operator: DoesNotExist" alone no longer names one spot.
+    # The anchor is YAML rather than the comment beside it on purpose:
+    # TestNoTestIsSatisfiedByAComment strips comments and re-runs everything.
+    find: "priorityClassName: batch\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: DoesNotExist"
+    replace: "priorityClassName: batch\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: Exists"
     mentions: "would schedule onto a control-plane node"
     why: >
       One character inverts it. With Exists a CI runner schedules ONLY onto
@@ -328,6 +333,61 @@ mutations:
       The mutation adds a stage rather than deleting the shim, because the
       failure being guarded against is somebody adding a stage to this config
       and reasonably assuming that is the whole job.
+
+  - guard: TestEveryWorkloadIsSizedPlacedAndGivenAPriority
+    file: clusters/management/infrastructure/controllers/openebs.yaml
+    find: "      localpv:"
+    replace: "      localpvv:"
+    mentions: "the cluster has been running without it"
+    why: >
+      This is the failure the whole table exists for, and it is silent. OpenEBS
+      is a subchart, so its provisioner's resources and placement live two
+      levels down at localpv-provisioner.localpv rather than at the top level
+      the other two charts use. Helm accepts a value at a path no template
+      reads without an error, a warning or an event - the manifest says the
+      provisioner has requests and is off the control plane, and the pod has
+      neither. One misspelt key is the whole distance between configured and
+      configured-looking, and nothing else in this repository would notice.
+
+  - guard: TestEveryHelmReleaseSaysWhereItsPodSpecLives
+    file: clusters/management/infrastructure/controllers/undescribed-chart.yaml
+    create: |
+      ---
+      apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      metadata:
+        name: something-nobody-sized
+        namespace: default
+      spec:
+        interval: 30m
+        chart:
+          spec:
+            chart: something
+            version: "1.0.0"
+    mentions: "are not described in workloadPods"
+    why: >
+      A table of the workloads somebody thought about is not a guard, it is a
+      list. Without this half, adding a chart and forgetting to describe it
+      reads exactly like adding a chart that is fine - the same silence and
+      the same exit code, which is the shape of every check this repository has
+      had to repair. Planted rather than substituted because the failure only
+      exists once a release is PRESENT and undescribed; there is nothing in the
+      tree to edit into that state.
+
+  - guard: TestEveryFluxControllerIsPlacedAndGivenAPriority
+    file: clusters/management/flux-system/kustomization.yaml
+    find: "  - target:\n      kind: Deployment\n    patch: |"
+    replace: "  - target:\n      kind: Deployment\n      name: source-controller\n    patch: |"
+    mentions: "has no required node affinity after the overlay is applied"
+    why: >
+      Flux's four controllers are patched as a group, by kind rather than by
+      name, precisely so that an upgrade adding or renaming one cannot slip out
+      from under the patch. Narrowing the target to a single name still builds -
+      kustomize is perfectly happy, and `task validate` stays green - while
+      three of the four quietly go back to running wherever the scheduler puts
+      them, including on the machines holding quorum. The guard applies the
+      patches the way kustomize would and then reads the result, because
+      nothing about a well-formed patch says which pods it reached.
 
 # Guards that cannot be proved by mutation, and why.
 #

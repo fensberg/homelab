@@ -1,0 +1,78 @@
+---
+# Three priority classes, sorted by how much delay the work tolerates.
+#
+# Delay tolerance is the property the scheduler can actually act on, and it is
+# not the same as importance. A nightly state backup is one of the more
+# important things this estate does and it belongs in `batch`, because nothing
+# observes its latency. A lint job matters far less and belongs above it,
+# because a person is sitting there waiting for it.
+#
+# The names are the field's own, deliberately, rather than anything thematic:
+# `critical` is the word Kubernetes itself uses for this (`system-cluster-
+# critical`), and interactive-versus-batch is the standard distinction for
+# work a person is waiting on against work that merely has to complete.
+# docs/epochs/02-abstraction.md records how the model was arrived at.
+#
+# WHAT A PriorityClass ACTUALLY DECIDES, because it is two things at once and
+# this set wants different answers to them:
+#
+#   `value` decides who gets the next free slot when several pods are pending.
+#   `preemptionPolicy` decides whether a pod may EVICT a running pod to make a
+#   slot that does not otherwise exist.
+#
+# An interactive job should get the next free slot ahead of a batch job. It
+# must NOT be able to kill a batch job twelve minutes into a thirteen-minute
+# run - destroying twelve minutes of work to save two minutes of waiting is a
+# bad trade in every direction. `preemptionPolicy: Never` says exactly that:
+# jump the queue, disturb nothing already running.
+#
+# So eviction exists in one place only, which is the smallest surface that
+# still protects quorum.
+#
+# WHY NOT `system-cluster-critical` FOR THE TOP CLASS. It sits at 2000000000,
+# above the kubelet's own static pods, and nothing here has a claim on that.
+# It is also a cluster-reserved name, so putting the estate's operators in it
+# would make a future decision about the API server a decision about them too.
+# Flux's generated manifest already sets it on three of its controllers and
+# that is left alone - upstream's call about upstream's components.
+#
+# The numbers are round and widely spaced because nothing computes with them.
+# They only have to sort, and four zeros between classes means one can be
+# split later without renumbering the others.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: critical
+value: 1000000
+# The default, stated rather than omitted: this is the one class that may evict
+# a running pod, and a policy that consequential should not be inferred from
+# its absence.
+preemptionPolicy: PreemptLowerPriority
+globalDefault: false
+description: >-
+  Tolerates no delay at all, and may evict running work to avoid one. The
+  operators that reconcile the estate, and the state database.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: interactive
+value: 10000
+preemptionPolicy: Never
+globalDefault: false
+description: >-
+  Somebody is waiting for it, so queueing is the entire cost - the fast pull
+  request checks, where the job is 40 seconds and the wait is not. Takes the
+  next free slot ahead of batch work; never interrupts anything running.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: batch
+value: 100
+preemptionPolicy: Never
+globalDefault: false
+description: >-
+  Must complete; need not complete now. Integration runs, converges, image
+  builds, state backups. Nothing observes its latency, so it yields the slot
+  and keeps the work.

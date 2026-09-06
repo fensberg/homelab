@@ -1132,121 +1132,156 @@ So preemption is the backstop that protects quorum, which is what it is for.
 The primary mechanism for CI against CI is **not admitting the job**, because a
 job that never started is cheaper than one killed near the end.
 
-### Three lanes, sorted by what tolerates delay
+### Three priority classes, sorted by what tolerates delay
 
 The operator's second model, and it supersedes the heavy/light split this
 section first proposed. That one sorted work by size on a security axis - jobs
 with estate access against jobs without - and let latency ride along with it.
 Sorting by **how much delay the work tolerates** is the property the scheduler
-actually acts on, and it produces three lanes rather than two:
+actually acts on, and it produces three classes rather than two:
 
-1. **Emergency vehicles.** Everything yields, including traffic already moving;
-   pushing a car onto the shoulder is an acceptable price. etcd, the API server,
-   CoreDNS, the state database, Flux, and the runner listener.
-2. **Commuters.** In a hurry, and delay is the whole cost. The fast pull request
-   lanes - lint, format, test - where the job itself is 40 seconds and a
-   two-minute queue is the entire user-visible latency.
-3. **Logistics.** Important, and slow by nature. Deliveries and refuse
-   collection: integration runs, converges, image builds, state backups, the
-   clerk's sweep, dependency updates. They must arrive; they need not arrive
-   now.
+1. **`critical`.** Tolerates no delay at all, and may evict running work to
+   avoid one. etcd, the API server, CoreDNS, the state database, Flux, and the
+   runner listener.
+2. **`interactive`.** Somebody is waiting for it, so queueing is the entire
+   cost - the fast pull request checks, where the job itself is 40 seconds and
+   a two-minute wait is all the user-visible latency there is.
+3. **`batch`.** Must complete; need not complete now. Integration runs,
+   converges, image builds, state backups, the clerk's sweep, dependency
+   updates.
 
 The assignment is by tolerance, not by importance. A state backup is one of the
-more important things the estate does and it belongs in lane 3, because nothing
+more important things the estate does and it is `batch`, because nothing
 observes its latency.
 
-#### Lane 2 jumps the queue but must not run anyone off the road
+**The names are the field's own, and that is deliberate.** The model was
+arrived at through an analogy - emergency vehicles, commuters and logistics on
+a road - which is a good way to think and a bad way to name. `critical` is the
+word Kubernetes itself uses for this (`system-cluster-critical`), and
+interactive-against-batch is the standard distinction for work somebody is
+waiting on against work that merely has to finish. This record keeps the
+reasoning; the cluster gets the vocabulary someone else would already know.
+The estate's own naming rule decides it: a thematic name must never obscure a
+real term of art.
+
+#### Jumping the queue is not the same as taking someone's slot
 
 The refinement that makes this implementable, and it is not obvious. Kubernetes
 priority does two things at once - it decides who gets the next free slot, and
-it decides who gets evicted to make one - and the three lanes want those
+it decides who gets evicted to make one - and these three want those
 answers to differ.
 
-A commuter should get the next gap ahead of a truck. A commuter should **not**
-be able to evict a truck that is already twelve minutes into a thirteen-minute
-run, which is exactly the trade the "eviction is not free" decision above
-refuses. Preempting a long job to admit a 40-second one destroys twelve minutes
-to save two.
+An interactive job should get the next free slot ahead of a batch job. It
+should **not** be able to evict one already twelve minutes into a
+thirteen-minute run, which is exactly the trade the "eviction is not free"
+decision above refuses. Preempting a long job to admit a 40-second one destroys
+twelve minutes of work to save two minutes of waiting.
 
-`PriorityClass` separates them. `preemptionPolicy: Never` places a pod ahead of
-lower-priority _pending_ pods while never evicting a _running_ one:
+`PriorityClass` separates the two answers. `preemptionPolicy: Never` places a
+pod ahead of lower-priority _pending_ pods while never evicting a _running_
+one:
 
-| Lane        | Priority                    | `preemptionPolicy`     | Yields to   |
-| ----------- | --------------------------- | ---------------------- | ----------- |
-| 1 Emergency | `system-cluster-critical`   | `PreemptLowerPriority` | nobody      |
-| 2 Commuter  | mid                         | **`Never`**            | lane 1 only |
-| 3 Logistics | low, and it may be negative | `Never`                | lanes 1, 2  |
+| Class         | `value` | `preemptionPolicy`     | Yields to         |
+| ------------- | ------- | ---------------------- | ----------------- |
+| `critical`    | 1000000 | `PreemptLowerPriority` | nobody            |
+| `interactive` | 10000   | **`Never`**            | `critical`        |
+| `batch`       | 100     | `Never`                | both of the above |
 
-So preemption exists in exactly one place - the emergency lane - which is the
-smallest surface that still protects quorum, and matches this record's
-preference for admission control over eviction everywhere else.
+So eviction exists in exactly one place, which is the smallest surface that
+still protects quorum, and matches this record's preference for admission
+control over eviction everywhere else.
 
-#### What makes it a lane is the rule, not a wall
+The values are round and widely spaced because nothing computes with them - they
+only have to sort. All three are above the zero an unclassified pod gets, which
+is deliberate: an unclassified pod is a workload nobody decided about, and it
+should rank below the work that was deliberately marked as able to wait.
 
-Worth stating because the model invites the wrong reading. Road lanes are not
-partitions: an empty lane can be driven in, and what makes it a lane is a rule
-about yielding. Three dedicated node pools would be walls, and walls would strand
-capacity in whichever lane happens to be idle - which is the opposite of the
-goal that produced this whole section.
+#### A priority is a rule about yielding, not a partition
+
+Worth stating because the model invites the wrong reading. Three dedicated node
+pools would be walls, and walls strand capacity in whichever pool happens to be
+idle - the opposite of the goal that produced this whole section. A priority
+class reserves nothing: when the cluster is quiet, `batch` work uses every core
+there is, and gives ground only when something above it needs the room.
 
 **One pool of workers, three priority classes.** The one genuine partition is
-the one already designed: lane 1 lives on the control planes, lanes 2 and 3
-share the workers, and the `nodeSelector` above is what draws it.
+the one already designed, and it is drawn by the anti-control-plane affinity
+above rather than by the priority classes.
 
-The security axis does not force a second partition either. Fork-run lanes must
+**Retraction, and this sentence used to say the opposite.** It read that the
+top class lives on the control planes and the other two share the workers -
+which is wrong
+and contradicted this record's own build order four sections down - the same
+order that lists Flux and the runner listener among the things to move OFF the
+control plane, while the lane table names both as lane 1. Both could not be
+right.
+
+The error was conflating two axes this model exists to separate. **A priority
+says when a pod yields; placement says which machine it sits on.** `critical`
+means nothing may delay it, and that is enforced by a `PriorityClass`, which is
+cluster-wide and says nothing about nodes. Almost every `critical` workload -
+Flux, both ARC pods, the CloudNativePG operator, the OpenEBS provisioner - is a
+small always-on controller with no reason to sit beside etcd, and each one that
+does is unreserved memory a heavy job can take.
+
+So the partition is: **the control plane carries only control-plane work**, and
+everything else shares the workers under three priority classes. The two
+genuine exceptions stay for a storage reason rather than a scheduling one -
+the state database's volumes are pinned to their nodes, and CoreDNS is
+Talos-managed - and both are `critical` while sitting where they sit.
+
+The security axis does not force a second partition either. Fork-run jobs must
 not be able to _reach_ the estate, which is a NetworkPolicy question and
 therefore waits on Cilium - see [`03-workload.md`](03-workload.md). It is not a
 question about which node they sit on. So the earlier claim that two independent
 arguments demanded the same structure was half right: they demand separate
-**credentials and network policy**, and separately a lane assignment. Those are
+**credentials and network policy**, and separately a priority. Those are
 different mechanisms and conflating them was the error in the first draft.
 
-#### Deliveries and refuse are not quite the same lane
+#### `batch` covers two things that differ in one way
 
-The operator's third lane names both, and they differ in one way worth keeping.
-A delivery must eventually complete - somebody is waiting on that integration
-run - so it wants bounded retries. Refuse collection is idempotent and
-catches up: a missed backup or dependency sweep is repaired by the next
-scheduled run doing the same work. The practical consequence is narrow but real:
-a killed truck carrying refuse needs no retry at all, and one carrying a
-delivery does.
+Work that must eventually complete - an integration run somebody is waiting on
+the result of - wants bounded retries. Work that is idempotent and catches up
+does not: a missed state backup or dependency sweep is repaired by the next
+scheduled run doing the same thing. Both tolerate delay equally, so both are
+`batch`, but only the first needs a retry when it is killed. Narrow, and real.
 
-#### The lanes govern infrastructure operations too, not only CI
+#### This governs infrastructure operations too, not only CI
 
-Creating a virtual machine is **lane 3**. It must complete - a worker that never
+Creating a virtual machine is `batch`. It must complete - a worker that never
 appears is a failure - and nothing observes its latency, because nobody is
 waiting on the second one. The same is true of a converge, a state backup and an
 image build. That the model extends past CI jobs to the estate's own operations
 is worth stating, because it is what makes it a scheduling policy for the estate
 rather than a CI feature.
 
-The consequence is a pleasing inversion: **lane 3 work is what builds the
-capacity lanes 1 and 2 consume.** The slow lane lays the road.
+The consequence is a pleasing inversion: **`batch` work is what builds the
+capacity the other two consume.** The slowest work builds the room for the rest.
 
-#### Lane by lane, what is actually short
+#### Class by class, what is actually short
 
-Measured rather than assumed, because the three lanes are not short in the same
-way and the remedies are different.
+Measured rather than assumed, because the three are not short in the same way
+and the remedies are different.
 
 **Lane 1 has capacity and no protection.** The control planes use about 1.2 GiB
-of 3.8 GiB each, so the emergency lane is not short of room. What it lacks is
+of 3.8 GiB each, so `critical` work is not short of room. What it lacks is
 any claim on that room: `Taints: <none>`, no requests on the dispatcher or the
 operators (#237), and no `PriorityClass`. Its capacity is real and entirely
-unreserved, which means a heavy lane-3 job can take it and has. **The remedy is
+unreserved, which means a heavy batch job can take it and has. **The remedy is
 not more capacity, it is making the capacity it already has non-negotiable** -
 which is requests and priority, not machines.
 
-**Lane 2 does not exist.** Nineteen jobs across the workflows run on
+**`interactive` has no workload.** Nineteen jobs across the workflows run on
 `ubuntu-latest` and five on the self-hosted scale set; every one of the eight
 pull request validation lanes is in the first group. So the commuter lane has
 no estate capacity at all today, and building it is a migration rather than a
 resize - with the prerequisites [`01-ignition.md`](01-ignition.md) already
 records, `harden-runner` not surviving the move being the substantive one.
 
-**Lane 3 is the one genuinely starved.** It is the only lane running in the
+**`batch` is the one genuinely starved.** It is the only class running in the
 estate today, and it is what #236 killed.
 
-So the workers being built serve lanes 2 and 3, and the lane 1 work is a
+So the workers being built serve `interactive` and `batch`, and the `critical` work is a
 configuration change on machines that already exist. Those are different
 efforts and only the first needs hardware.
 
@@ -1264,22 +1299,20 @@ it. The template's real cost is 8 GB of disk on a pool at 3.42% used.
 And it is load-bearing: `talos_cp` clones from it, so it is precisely what makes
 creating a machine cheap. Deleting it would not free memory the estate is short
 of, and would make every future VM - including the workers - re-download and
-re-materialise the image first. **It makes lane 3 work slower for no memory
+re-materialise the image first. **It makes batch work slower for no memory
 back.** The right disposition is to leave it alone.
 
 #### The model immediately finds a misassignment
 
 Applied to what is running today, the runner listener is the **dispatcher** -
-always on, tiny, and if it dies no CI runs at all - so it is unambiguously lane
-
-1. It is currently `BestEffort`, along with the ARC controller, the
-   CloudNativePG operator and the OpenEBS provisioner (#237). The eviction order in
-   force right now puts the dispatcher in the ditch first.
+always on, tiny, and if it dies no CI runs at all - so it is unambiguously
+`critical`. It was `BestEffort`, along with the ARC controller, the
+CloudNativePG operator and the OpenEBS provisioner (#237), which meant the
+eviction order in force put the dispatcher first.
 
 That is the argument for #237 being a prerequisite rather than hygiene, in one
-line: the lanes do not exist until every vehicle has been assigned to one, and
-an unassigned vehicle is not in lane 3, it is on the hard shoulder waiting to be
-hit.
+line: the model does not exist until every workload has been assigned to a
+class, and an unassigned one does not land in `batch` - it lands below it.
 
 ### Retraction: ZFS ARC was not the problem
 
@@ -1338,9 +1371,9 @@ is cheap in a way resizing a control plane is not - a worker is not an etcd
 member, so it is a drain and a restart - which is one more argument for putting
 capacity into workers rather than into the control plane.
 
-Worth noting where that work would land in the lane model: a development
-environment is interactive, so delay is its whole cost, which makes it **lane 2**
-rather than a fourth lane of its own.
+Worth noting where that work would land: a development environment is
+interactive in the literal sense, so delay is its whole cost, which makes it
+`interactive` rather than a fourth class of its own.
 
 ### Where the utilisation actually is
 
@@ -1352,7 +1385,7 @@ against roughly two thirds of the RAM already spoken for.
 That is not a coincidence, it is the one-fuse principle observed from the other
 side. **The resource with no breaker is the one with all the headroom, and the
 resource with the breaker is nearly committed.** So filling this box is
-overwhelmingly a CPU exercise - overcommit vCPU, pack the lanes, let contention
+overwhelmingly a CPU exercise - overcommit vCPU, pack the classes, let contention
 degrade - while the memory side is about spending a small fixed budget well
 rather than filling a large empty one.
 
@@ -1369,13 +1402,13 @@ In order, each additive and needing no cluster rebuild:
 3. **Requests on everything that matters**, which is #237 and #234. This is not
    hygiene, it is the load-bearing part: eviction order is driven by QoS class,
    and until it is designed rather than accidental, filling the box on purpose
-   is reckless. It is also what assigns each vehicle to a lane, and an
-   unassigned one is not in lane 3 - it is on the shoulder.
-4. **Three `PriorityClass` objects**, per the lane table above, with
-   `preemptionPolicy: Never` on lanes 2 and 3 so preemption exists only where it
-   protects quorum.
-5. **A second runner scale set**, so that a commuter lane and a logistics lane
-   have separate `maxRunners` interlocks and a lint job cannot queue behind an
+   is reckless. It is also what assigns each workload a priority, and an
+   unassigned one ranks below the work that was marked as able to wait.
+4. **Three `PriorityClass` objects**, per the table above, with
+   `preemptionPolicy: Never` on all but `critical`, so eviction exists only
+   where it protects quorum.
+5. **A second runner scale set**, so that `interactive` and `batch` CI have
+   separate `maxRunners` interlocks and a lint job cannot queue behind an
    integration run for a slot.
 
 Then epoch 04 measures it, and epoch 05 makes it elastic if that is ever worth
@@ -1561,7 +1594,7 @@ which answers the open question [`03-workload.md`](03-workload.md) records.
 
 **A namespace does not own machines.** A worker runs whatever the scheduler puts
 on it, so there is no such thing as a production VM unless nodes are deliberately
-partitioned by environment - which is the walls-not-lanes error the lane model
+partitioned by environment - which is the walls-not-rules error the priority model
 above rejects, and it strands capacity in whichever environment is idle.
 
 **And an environment carries no enforceable guarantee.** `prod` and `stage` say
@@ -1595,23 +1628,108 @@ and its trigger are recorded beside the count in `compute.tf`.
 
 **The order the rest has to happen in**, and each entry says what blocks it:
 
-1. **Move the operators off the control plane and give them requests** (#237).
-   Flux's four controllers, ARC's controller and listener, the CloudNativePG
-   operator, the OpenEBS provisioner. Blocked on reading each pinned chart's
-   own `values.yaml` first: placement and resources are set through Helm values,
-   and **a wrong values path is silently ignored rather than rejected**, which
-   is the worst failure mode available - it looks applied and is not. The
-   OpenEBS manifest already records this discipline for itself.
+1. ~~**Move the operators off the control plane and give them requests**~~
+   (#237) - **done**, together with what was step 3, because they are one
+   decision rather than two: requests set the QoS class the kubelet evicts by,
+   the priority class sets the order the scheduler admits and preempts by, and
+   a required affinity is only safe when the thing it constrains can preempt
+   its way to a slot. What each pinned chart was read for is recorded below.
 2. **Taint the control planes.** `allowSchedulingOnControlPlanes = false`, with
-   tolerations for the two things that stay. It has to come after step 1, or
-   the operators become unschedulable at the moment nothing can reconcile them
-   back.
-3. **Three `PriorityClass` objects**, per the lane table above, with
-   `preemptionPolicy: Never` on lanes 2 and 3 so preemption exists only where
-   it protects quorum.
+   tolerations for the two things that stay. It had to come after step 1, and
+   step 1 has now found it a second blocker - the OpenEBS helper pod, below.
+3. ~~**Three `PriorityClass` objects**~~ - **done**, in the same change as
+   step 1. Values are local rather than the built-in `system-cluster-critical`
+   the table above names; the reason is in `priority-classes.yaml`.
 4. **Proxmox pools by role**, as its own change - it edits every existing VM,
    and the converges that create machines should not also be the ones that
    modify them.
+
+### What reading the charts actually found
+
+Recorded because the instruction was to read each pinned chart's own
+`values.yaml` before trusting a path, and doing it turned up four things that
+guessing would have got wrong. The general lesson is the one the OpenEBS
+manifest already stated for itself: **a Helm value at a path the chart does not
+read is accepted in silence** - no error, no warning, no event - so the manifest
+says the pod is configured and the pod is not.
+
+**Flux was never BestEffort, and #237 never said it was.** The generated
+`gotk-components.yaml` already gives all four controllers requests and limits.
+Placement was the only thing missing, so Flux is patched by the overlay's
+kustomize `patches` rather than by values, alongside the image digests and for
+the same reason: `flux bootstrap` rewrites that file wholesale.
+
+**Three of Flux's four controllers carry `system-cluster-critical`;
+notification-controller carries nothing.** That is upstream being consistent -
+it is the one controller whose death does not stop reconciliation - but
+unclassified is priority zero, which puts the component that _reports_ failures
+below every class this estate declares, lowest exactly when something is going
+wrong. It is patched into `critical`. The other three are left on upstream's.
+
+**`listenerTemplate` is not a strategic merge.** The chart copies it verbatim
+into the `AutoscalingRunnerSet`, and the ARC controller merges it into the pod
+it builds with hand-written field assignments
+(`mergeListenerPodWithTemplate`). Most pod-level fields are **assigned
+unconditionally**, whether or not the template sets them, so supplying a
+template silently resets anything it omits - `terminationGracePeriodSeconds`
+would have dropped from the controller's 60 to Kubernetes' 30 with nothing
+reporting a change. It is restated in the manifest for that reason.
+`nodeSelector` is the one field guarded by a nil check, and it replaces rather
+than merges, so setting one there would discard the controller's own
+`kubernetes.io/os: linux`.
+
+**Retraction: the OpenEBS helper pod is not a blocker for the taint.** This
+record briefly said it was the worst of them, and #269 was filed on that
+reading. Both were wrong, and the reasoning error is the part worth keeping.
+
+The provisioner does not create volume directories itself - it launches a
+short-lived helper pod on whichever node the volume belongs to. The chart
+exposes only `image`, `hostNetwork` and `timeoutSecs` under `helperPod`: no
+tolerations, no `nodeSelector`. That was read as "the helper cannot follow a
+volume onto a tainted control plane", which does not follow. **The absence of a
+configuration knob is not the absence of the behaviour.**
+
+Reading the program the chart deploys settles it. `provisioner-localpv` v4.6.0
+reads the taints off the `Node` it is provisioning for and builds a matching
+toleration for each one - `GetTaints(selectedNode)` into `selectedNodeTaints`
+into `WithTolerationsForTaints`, which emits `Operator: Exists` for a taint
+with no value, and `node-role.kubernetes.io/control-plane:NoSchedule` carries
+none. So the helper tolerates whatever the node it is aimed at happens to
+carry, automatically. That is better than a setting, because there is nothing
+to remember to set.
+
+**The taint's only remaining blocker is the one already recorded**: the
+CloudNativePG instance pods need a toleration on the `Cluster` spec, which is
+the same edit as their priority, and is why the priority was deferred to step 2.
+
+Two general lessons, both cheap and both nearly skipped. `values.yaml` says
+what is _configurable_, not what _happens_ - so follow a missing option into the
+source before concluding the capability is missing. And check the newest
+release before treating a limitation as real: here it made no difference, since
+4.6.0 is the latest chart, but establishing that is the first question rather
+than one option among four.
+
+**The state database's priority is deferred to step 2 deliberately.** Adding
+`priorityClassName` to a CloudNativePG `Cluster` changes the instance pod spec,
+which CloudNativePG answers with a rolling restart and a switchover of the
+database holding this estate's OpenTofu state. The taint needs a toleration on
+that same spec, so doing both at once costs one rolling restart instead of two.
+Until then the database is unclassified, and the risk of that is nil rather
+than small: it is alone on the control planes with nothing to be preempted by.
+
+**Three of these pins carry a Renovate annotation for a Renovate that does not
+run** (#270). Noticed while fetching the charts: `cloudnative-pg` is six minor
+versions behind, and a Flux `HelmRelease` chart version is the one pin here
+that nothing updates and nothing reports on. Not dangerous - the operator is
+not in the data path and the estate is empty - but an annotation naming a tool
+that is not installed reads exactly like a pin somebody is maintaining.
+
+**Required placement on Flux is safe at ignition, and this was checked rather
+than assumed.** `gitops.tf` bootstraps Flux behind
+`data.talos_cluster_health.this`, which lists `worker_nodes` and depends on the
+worker configuration apply, so workers are Ready before Flux is installed.
+Recovery from losing every worker does not need Flux either: workers are built
+by OpenTofu, which does not depend on Flux in either direction.
 
 **What stays on the control plane, and why it is not a compromise.**
 

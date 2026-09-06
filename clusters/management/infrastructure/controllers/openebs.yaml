@@ -120,3 +120,49 @@ spec:
         basePath: /var/mnt/storage
         isDefaultClass: true
         reclaimPolicy: Delete
+
+      # Critical, and off the machines holding quorum.
+      #
+      # The provisioner hands out the volumes the state database runs on, and
+      # it was BestEffort (#237). Note the nesting: this is a subchart, so the
+      # path is `localpv-provisioner.localpv.*` and not the top-level
+      # `resources` the other two charts use. Read out of the pinned subchart's
+      # values.yaml (4.6.0) and confirmed against its templates/deployment.yaml,
+      # because a Helm value at a path nothing reads is accepted in silence -
+      # it looks applied and is not, which is the worst failure available here.
+      #
+      # Moving the provisioner does not move the volumes. Hostpath PVs carry
+      # their own node affinity and stay where their directory is; this
+      # Deployment only watches PVCs and asks a helper pod to make or remove a
+      # directory on whichever node the volume belongs to.
+      #
+      # THE HELPER POD TOLERATES THE TAINT ON ITS OWN, and the way that was
+      # nearly got wrong is worth keeping. `helperPod` below exposes only
+      # image, hostNetwork and timeoutSecs - no tolerations and no
+      # nodeSelector - which reads like a helper that cannot follow a volume
+      # onto a tainted control plane, and #269 was filed saying exactly that.
+      #
+      # It is wrong. The absence of a knob is not the absence of the
+      # behaviour. provisioner-localpv reads the taints off the Node it is
+      # provisioning for and builds a matching toleration for each
+      # (`GetTaints(selectedNode)` -> `selectedNodeTaints` ->
+      # `WithTolerationsForTaints`, v4.6.0), with `Operator: Exists` when the
+      # taint carries no value - which is the shape of
+      # node-role.kubernetes.io/control-plane:NoSchedule. That is better than a
+      # setting, because there is nothing to remember to set.
+      #
+      # So the taint's remaining blocker is CloudNativePG's instance pods
+      # needing a toleration on the Cluster spec, and not this.
+      localpv:
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        priorityClassName: critical
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
