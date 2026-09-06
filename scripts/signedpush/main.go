@@ -49,10 +49,11 @@ func main() {
 		branch   = flag.String("branch", "", "Branch to publish. Defaults to the current one.")
 		tokenOut = flag.Bool("token", false, "Print an installation access token and exit, for `gh auth login --with-token`.")
 		dryRun   = flag.Bool("dry-run", false, "Say what would be published, contact GitHub only to read.")
+		force    = flag.Bool("force", false, "Publish a rewritten branch by moving the ref, not by deleting it. For a deliberate rebase.")
 	)
 	flag.Parse()
 
-	if err := run(*appID, *keyPath, *branch, *tokenOut, *dryRun); err != nil {
+	if err := run(*appID, *keyPath, *branch, *tokenOut, *dryRun, *force); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -65,7 +66,7 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-func run(appID, keyPath, branch string, tokenOnly, dryRun bool) error {
+func run(appID, keyPath, branch string, tokenOnly, dryRun, force bool) error {
 	key, err := loadKey(keyPath)
 	if err != nil {
 		return err
@@ -113,6 +114,25 @@ func run(appID, keyPath, branch string, tokenOnly, dryRun bool) error {
 	if err != nil {
 		return err
 	}
+
+	// The remote tip as it was when this run started. baseSHA is reassigned on
+	// the deliberate-rewrite path, and this is the value the force update
+	// leases against - so a branch that moved underneath us is refused rather
+	// than overwritten.
+	remoteTip := baseSHA
+	forcing := false
+
+	// Never on the branches whose rulesets forbid it. GitHub would refuse
+	// anyway; failing here says why, before a token is spent and while the
+	// message can still name the branch.
+	if force && (branch == "main" || strings.HasPrefix(branch, "epoch/")) {
+		return fmt.Errorf(`refusing to force %s.
+
+main and epoch/** carry non_fast_forward, so their history cannot be rewritten
+by anybody - not the agent, not an administrator. A branch that needs a rewrite
+there is a branch that needs a new pull request instead.`, branch)
+	}
+
 	if branchExists {
 		// The published commits are replicas - same trees, different SHAs,
 		// because GitHub signs a commit it creates rather than the one that
@@ -124,7 +144,8 @@ func run(appID, keyPath, branch string, tokenOnly, dryRun bool) error {
 			return err
 		}
 		if _, err := git("merge-base", "--is-ancestor", baseSHA, "HEAD"); err != nil {
-			return fmt.Errorf(`%s has diverged from its remote.
+			if !force {
+				return fmt.Errorf(`%s has diverged from its remote.
 
 The remote tip (%s) is not an ancestor of HEAD, which happens when a publish
 half-completed or the branch was rewritten. Nothing here can pick the right
@@ -133,7 +154,23 @@ history for you:
     git fetch origin %s && git reset --hard origin/%s
 
 will take the published side, discarding local commits that were never
-published`, branch, baseSHA[:8], branch, branch)
+published.
+
+If you rewrote it on purpose - a rebase to clear a conflict or to unstack a
+branch - publish the rewrite instead of deleting the ref:
+
+    task push -- -force
+
+That moves the ref rather than removing it, so the pull request and its review
+history survive.`, branch, baseSHA[:8], branch, branch)
+			}
+			// A deliberate rewrite. The whole branch is republished, so the
+			// range is measured from main rather than from a remote tip that
+			// is no longer an ancestor of anything here.
+			forcing = true
+			if baseSHA, err = git("merge-base", "origin/main", "HEAD"); err != nil {
+				return fmt.Errorf("finding the merge base with origin/main: %w", err)
+			}
 		}
 	} else {
 		// A new branch forks from wherever it actually diverged, not from
@@ -149,6 +186,9 @@ published`, branch, baseSHA[:8], branch, branch)
 	}
 	commits := strings.Fields(revs)
 	if err := refuseMerges(commits); err != nil {
+		return err
+	}
+	if err := refuseStacked(branch); err != nil {
 		return err
 	}
 	if len(commits) == 0 {
@@ -195,7 +235,12 @@ published`, branch, baseSHA[:8], branch, branch)
 		parent = signed
 	}
 
-	if err := a.setRef(owner, repo, headRef, parent, branchExists); err != nil {
+	if forcing {
+		// Moved, never deleted. Deleting is what closes the pull request.
+		if err := a.setRefForce(owner, repo, headRef, parent, remoteTip); err != nil {
+			return err
+		}
+	} else if err := a.setRef(owner, repo, headRef, parent, branchExists); err != nil {
 		return err
 	}
 
@@ -308,4 +353,72 @@ func randomSuffix() string {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(b)
+}
+
+// refuseStacked stops a branch built on another open branch from publishing.
+//
+// A branch should carry only its own work. Cut one from another feature
+// branch instead of from main and it carries that branch's commits too - and
+// when the other branch is squash-merged, those commits become one different
+// commit with the same content. Merging this one then conflicts on every file
+// they touched, and the person who sees the conflict is the one who did
+// nothing wrong.
+//
+// That happened: a fix branch was cut while the previous fix branch was still
+// checked out, and inherited its whole commit. The mistake is invisible at the
+// time - the branch looks fine, the tests pass, the pull request reads
+// correctly - and only surfaces days later as a conflict nobody can explain.
+// It is also documented as a rule, and the rule was not enough, which is why
+// this is code.
+//
+// The detection needs no GitHub API. A commit in origin/main..HEAD that some
+// OTHER remote branch also contains was not written for this branch: had that
+// branch merged, the commit would be on main and out of this range already.
+//
+// Epoch branches are exempt, and deliberately. The estate's model is that
+// pieces of an epoch branch from it and target it, so a branch based on
+// epoch/** carries that epoch's commits by design. Refusing those would refuse
+// the documented way of working, which is the failure the push guard already
+// made once by applying a rule to everybody it was not written for.
+func refuseStacked(branch string) error {
+	// Fails loudly rather than skipping: without origin/main there is no range
+	// to check, and a guard that quietly checks nothing is worse than none.
+	if _, err := git("rev-parse", "--verify", "origin/main"); err != nil {
+		return fmt.Errorf("cannot check for a stacked branch: origin/main is not available locally (%w).\n\n    git fetch origin main", err)
+	}
+	revs, err := git("rev-list", "origin/main..HEAD")
+	if err != nil {
+		return err
+	}
+	for _, c := range strings.Fields(revs) {
+		out, err := git("branch", "-r", "--contains", c, "--format=%(refname:short)")
+		if err != nil {
+			return err
+		}
+		for _, ref := range strings.Fields(out) {
+			switch {
+			case ref == "origin/main", ref == "origin/HEAD",
+				ref == "origin/"+branch,
+				strings.HasPrefix(ref, "origin/epoch/"):
+				continue
+			}
+			subject, _ := git("log", "-1", "--format=%s", c)
+			return fmt.Errorf(`%s is already on %s, so this branch is stacked on it.
+
+    %s  %s
+
+A branch should carry only its own work. When %s is squash-merged, that commit
+becomes one different commit with the same content - and merging this branch
+afterwards conflicts on every file they both touch.
+
+Rebase onto main, dropping what belongs to the other branch:
+
+    git fetch origin && git rebase --onto origin/main %s
+
+If this genuinely belongs to an epoch branch, base it on that branch: epoch/**
+is exempt, because pieces of an epoch are meant to build on it.`,
+				c[:8], ref, c[:8], subject, ref, c[:8])
+		}
+	}
+	return nil
 }
