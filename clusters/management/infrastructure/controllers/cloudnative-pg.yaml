@@ -46,7 +46,7 @@ spec:
       # Turn on once Prometheus exists on this cluster.
       podMonitorEnabled: false
 
-    # Lane 1, and off the machines holding quorum.
+    # Critical, and off the machines holding quorum.
     #
     # This operator manages the state database - the estate's own OpenTofu
     # backend. It was BestEffort (#237), so a memory spike anywhere on its
@@ -70,7 +70,7 @@ spec:
       requests:
         cpu: 50m
         memory: 128Mi
-    priorityClassName: lane-1-emergency
+    priorityClassName: critical
     affinity:
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:

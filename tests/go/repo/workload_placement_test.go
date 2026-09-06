@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Every pod this estate deploys is sized, placed and assigned a lane.
+// Every pod this estate deploys is sized, placed and given a priority.
 //
 // WHAT THIS IS GUARDING AGAINST, which is not the obvious thing.
 //
@@ -57,7 +57,7 @@ var (
 )
 
 // workloadPod is one pod-producing thing, and where in its manifest the fields
-// that decide sizing, placement and lane actually live.
+// that decide sizing, placement and priority actually live.
 type workloadPod struct {
 	// What it is, in the words a failure message should use.
 	What string
@@ -77,8 +77,9 @@ type workloadPod struct {
 	// placement fields; pod-template-shaped values put them on each entry of
 	// a `containers` list instead.
 	ResourcesInContainers bool
-	// The lane it belongs to, per the table in docs/epochs/02-abstraction.md.
-	Lane string
+	// The priority class it belongs in, per the table in
+	// docs/epochs/02-abstraction.md.
+	Priority string
 }
 
 // Read from the pinned charts on 2026-09-06. Each entry names the file that
@@ -91,8 +92,8 @@ var workloadPods = []workloadPod{
 		ChartVersion: "0.14.2",
 		// charts/gha-runner-scale-set-controller/values.yaml: `resources`,
 		// `affinity` and `priorityClassName` are top-level.
-		Values: nil,
-		Lane:   "lane-1-emergency",
+		Values:   nil,
+		Priority: "critical",
 	},
 	{
 		What:         "the runner listener",
@@ -104,7 +105,7 @@ var workloadPods = []workloadPod{
 		// on the container rather than beside the placement fields.
 		Values:                []string{"listenerTemplate", "spec"},
 		ResourcesInContainers: true,
-		Lane:                  "lane-1-emergency",
+		Priority:              "critical",
 	},
 	{
 		What:                  "a CI runner",
@@ -113,7 +114,7 @@ var workloadPods = []workloadPod{
 		ChartVersion:          "0.14.2",
 		Values:                []string{"template", "spec"},
 		ResourcesInContainers: true,
-		Lane:                  "lane-3-logistics",
+		Priority:              "batch",
 	},
 	{
 		What:         "the CloudNativePG operator",
@@ -121,8 +122,8 @@ var workloadPods = []workloadPod{
 		Release:      "cloudnative-pg",
 		ChartVersion: "0.23.0",
 		// charts/cloudnative-pg/values.yaml, consumed by templates/deployment.yaml.
-		Values: nil,
-		Lane:   "lane-1-emergency",
+		Values:   nil,
+		Priority: "critical",
 	},
 	{
 		What:         "the OpenEBS Local PV provisioner",
@@ -131,8 +132,8 @@ var workloadPods = []workloadPod{
 		ChartVersion: "4.6.0",
 		// A subchart, so the keys are nested twice rather than top-level -
 		// the exact shape a value silently lands at the wrong path in.
-		Values: []string{"localpv-provisioner", "localpv"},
-		Lane:   "lane-1-emergency",
+		Values:   []string{"localpv-provisioner", "localpv"},
+		Priority: "critical",
 	},
 }
 
@@ -216,8 +217,8 @@ func requestsAreComplete(t *testing.T, resources any) error {
 	return nil
 }
 
-func TestEveryWorkloadIsSizedPlacedAndAssignedALane(t *testing.T) {
-	lanes := declaredPriorityClasses(t)
+func TestEveryWorkloadIsSizedPlacedAndGivenAPriority(t *testing.T) {
+	declared := declaredPriorityClasses(t)
 
 	for _, w := range workloadPods {
 		t.Run(w.What, func(t *testing.T) {
@@ -245,23 +246,24 @@ correct the paths if they moved, and set ChartVersion to %s.`,
 					w.File, err, w.What, pathString(w.Values), w.File)
 			}
 
-			// Lane.
-			lane, _ := podSpec["priorityClassName"].(string)
+			// Priority.
+			priority, _ := podSpec["priorityClassName"].(string)
 			switch {
-			case lane == "":
-				t.Errorf(`%s is in no lane.
+			case priority == "":
+				t.Errorf(`%s has no priority class.
 
-An unassigned pod is priority zero, below every lane this estate declares. It
-is not in the slow lane - it is on the hard shoulder. Set priorityClassName to
-%q, per the lane table in docs/epochs/02-abstraction.md.`, w.What, w.Lane)
-			case lane != w.Lane:
-				t.Errorf("%s is in lane %q, but this table says %q. One of the two is a decision nobody recorded.", w.What, lane, w.Lane)
-			case !lanes[lane]:
+An unclassified pod is priority zero, below every class this estate declares -
+so it is not merely last in the queue, it is below the work that is allowed to
+be last. Set priorityClassName to %q, per the table in
+docs/epochs/02-abstraction.md.`, w.What, w.Priority)
+			case priority != w.Priority:
+				t.Errorf("%s is %q, but this table says %q. One of the two is a decision nobody recorded.", w.What, priority, w.Priority)
+			case !declared[priority]:
 				t.Errorf(`%s names the priority class %q, which no manifest in this repository declares.
 
 A pod naming a PriorityClass that does not exist is refused admission - it does
 not fall back to zero. So this typo would take %s off the cluster entirely.`,
-					w.What, lane, w.What)
+					w.What, priority, w.What)
 			}
 
 			// Placement.
@@ -326,7 +328,7 @@ func requiredNodeSelectorTerms(t *testing.T, podSpec map[string]any) []any {
 	return terms
 }
 
-// declaredPriorityClasses is every lane this repository actually creates.
+// declaredPriorityClasses is every priority class this repository creates.
 func declaredPriorityClasses(t *testing.T) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
@@ -347,7 +349,7 @@ func declaredPriorityClasses(t *testing.T) map[string]bool {
 		}
 	}
 	if len(out) == 0 {
-		t.Fatal("no PriorityClass is declared, so every lane reference in this repository points at nothing")
+		t.Fatal("no PriorityClass is declared, so every priorityClassName in this repository points at nothing")
 	}
 	return out
 }
@@ -427,8 +429,8 @@ are the same silence from here.`, len(undescribed), strings.Join(undescribed, "\
 // What it therefore catches is the failure that build cannot: a patch that
 // builds perfectly and covers three controllers, or none, because a Flux
 // upgrade renamed one or added a fifth.
-func TestEveryFluxControllerIsPlacedAndInALane(t *testing.T) {
-	lanes := declaredPriorityClasses(t)
+func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
+	declared := declaredPriorityClasses(t)
 	const overlay = "clusters/management/flux-system/kustomization.yaml"
 
 	// The generated install, as bootstrap wrote it.
@@ -499,20 +501,20 @@ func TestEveryFluxControllerIsPlacedAndInALane(t *testing.T) {
 	for _, name := range sortedKeys(deployments) {
 		spec := deployments[name]
 
-		lane, _ := spec["priorityClassName"].(string)
+		priority, _ := spec["priorityClassName"].(string)
 		switch {
-		case lane == "":
-			t.Errorf(`the Flux controller %q ends up in no lane.
+		case priority == "":
+			t.Errorf(`the Flux controller %q ends up with no priority class.
 
-Unclassified is priority zero, below every lane declared here. Flux's own
+Unclassified is priority zero, below every class declared here. Flux's own
 manifest gives three of its controllers system-cluster-critical and leaves
 notification-controller unclassified; %s is not covered by either that or a
 patch in %s.`, name, name, overlay)
-		case strings.HasPrefix(lane, "system-"):
+		case strings.HasPrefix(priority, "system-"):
 			// Upstream's own class on upstream's own components. Left alone
 			// deliberately - see the overlay's comment.
-		case !lanes[lane]:
-			t.Errorf("the Flux controller %q names the priority class %q, which no manifest here declares - so the pod would be refused admission rather than defaulted.", name, lane)
+		case !declared[priority]:
+			t.Errorf("the Flux controller %q names the priority class %q, which no manifest here declares - so the pod would be refused admission rather than defaulted.", name, priority)
 		}
 
 		terms := requiredNodeSelectorTerms(t, spec)

@@ -1,72 +1,78 @@
 ---
-# The three lanes, as objects the scheduler can act on.
+# Three priority classes, sorted by how much delay the work tolerates.
 #
-# docs/epochs/02-abstraction.md sorts work by how much delay it tolerates
-# rather than by how important it is, and gets three lanes: emergency vehicles
-# (nothing may delay them), commuters (in a hurry, delay is the whole cost),
-# and logistics (important, slow by nature, nobody watches the clock). This
-# file is that model in the only form Kubernetes understands.
+# Delay tolerance is the property the scheduler can actually act on, and it is
+# not the same as importance. A nightly state backup is one of the more
+# important things this estate does and it belongs in `batch`, because nothing
+# observes its latency. A lint job matters far less and belongs above it,
+# because a person is sitting there waiting for it.
 #
-# WHAT A PriorityClass ACTUALLY DECIDES, because it is two things at once:
+# The names are the field's own, deliberately, rather than anything thematic:
+# `critical` is the word Kubernetes itself uses for this (`system-cluster-
+# critical`), and interactive-versus-batch is the standard distinction for
+# work a person is waiting on against work that merely has to complete.
+# docs/epochs/02-abstraction.md records how the model was arrived at.
+#
+# WHAT A PriorityClass ACTUALLY DECIDES, because it is two things at once and
+# this set wants different answers to them:
 #
 #   `value` decides who gets the next free slot when several pods are pending.
 #   `preemptionPolicy` decides whether a pod may EVICT a running pod to make a
-#   slot that does not exist yet.
+#   slot that does not otherwise exist.
 #
-# The lanes want different answers to those two questions, which is the whole
-# reason this is a table rather than one number. A commuter should get the next
-# gap ahead of a truck. A commuter must NOT be able to throw a truck off the
-# road twelve minutes into a thirteen-minute run - preempting a long job to
-# admit a 40-second one destroys twelve minutes to save two. So
-# `preemptionPolicy: Never` is set on lanes 2 and 3, and preemption exists in
-# exactly one place: the lane that protects quorum.
+# An interactive job should get the next free slot ahead of a batch job. It
+# must NOT be able to kill a batch job twelve minutes into a thirteen-minute
+# run - destroying twelve minutes of work to save two minutes of waiting is a
+# bad trade in every direction. `preemptionPolicy: Never` says exactly that:
+# jump the queue, disturb nothing already running.
 #
-# WHY NOT `system-cluster-critical` FOR LANE 1, which is what the epoch record's
-# table names. Two reasons, and the second is the one that decided it. The
-# built-in classes sit at 2000000000, above the kubelet's own static pods, and
-# nothing here has a claim on that. And they are a shared, cluster-reserved
-# name: putting the estate's own operators in the same class as the API server
-# means a future decision about one is a decision about both. Flux's generated
-# manifest already sets `system-cluster-critical` on its four controllers and
-# that is left alone - it is upstream's call about upstream's components, and
-# re-pointing it here would be an edit to a file Flux rewrites on upgrade.
+# So eviction exists in one place only, which is the smallest surface that
+# still protects quorum.
 #
-# The numbers are round and widely spaced on purpose. Nothing computes with
-# them; they only have to sort, and leaving four zeros between lanes means a
-# lane can be split later without renumbering the ones either side.
+# WHY NOT `system-cluster-critical` FOR THE TOP CLASS. It sits at 2000000000,
+# above the kubelet's own static pods, and nothing here has a claim on that.
+# It is also a cluster-reserved name, so putting the estate's operators in it
+# would make a future decision about the API server a decision about them too.
+# Flux's generated manifest already sets it on three of its controllers and
+# that is left alone - upstream's call about upstream's components.
+#
+# The numbers are round and widely spaced because nothing computes with them.
+# They only have to sort, and four zeros between classes means one can be
+# split later without renumbering the others.
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
-  name: lane-1-emergency
+  name: critical
 value: 1000000
-# The default, stated rather than omitted: this is the one lane that may evict
-# a running pod, and a policy that important should not be inferred from its
-# absence.
+# The default, stated rather than omitted: this is the one class that may evict
+# a running pod, and a policy that consequential should not be inferred from
+# its absence.
 preemptionPolicy: PreemptLowerPriority
 globalDefault: false
 description: >-
-  Emergency vehicles. Everything yields, including traffic already moving.
-  The operators that reconcile the estate, and the state database.
+  Tolerates no delay at all, and may evict running work to avoid one. The
+  operators that reconcile the estate, and the state database.
 ---
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
-  name: lane-2-commuter
+  name: interactive
 value: 10000
 preemptionPolicy: Never
 globalDefault: false
 description: >-
-  Commuters. In a hurry, and queueing is the entire user-visible cost - the
-  fast pull request checks, where the job is 40 seconds and the wait is not.
-  Jumps the queue ahead of logistics; runs nobody off the road.
+  Somebody is waiting for it, so queueing is the entire cost - the fast pull
+  request checks, where the job is 40 seconds and the wait is not. Takes the
+  next free slot ahead of batch work; never interrupts anything running.
 ---
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
-  name: lane-3-logistics
+  name: batch
 value: 100
 preemptionPolicy: Never
 globalDefault: false
 description: >-
-  Logistics. Deliveries and refuse collection: integration runs, converges,
-  image builds, state backups. They must arrive; they need not arrive now.
+  Must complete; need not complete now. Integration runs, converges, image
+  builds, state backups. Nothing observes its latency, so it yields the slot
+  and keeps the work.

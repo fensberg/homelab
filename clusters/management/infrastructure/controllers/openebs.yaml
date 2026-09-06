@@ -121,7 +121,7 @@ spec:
         isDefaultClass: true
         reclaimPolicy: Delete
 
-      # Lane 1, and off the machines holding quorum.
+      # Critical, and off the machines holding quorum.
       #
       # The provisioner hands out the volumes the state database runs on, and
       # it was BestEffort (#237). Note the nesting: this is a subchart, so the
@@ -158,7 +158,7 @@ spec:
           requests:
             cpu: 25m
             memory: 64Mi
-        priorityClassName: lane-1-emergency
+        priorityClassName: critical
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:

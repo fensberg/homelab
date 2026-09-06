@@ -45,7 +45,7 @@ spec:
     # is unaffected.
     replicaCount: 1
 
-    # Lane 1, and off the machines holding quorum.
+    # Critical, and off the machines holding quorum.
     #
     # This controller is the thing that creates and destroys every runner pod.
     # It was BestEffort, which made it the OOM controller's first choice on a
@@ -61,8 +61,8 @@ spec:
     # be one more thing that can be missing.
     #
     # Required placement is only safe because of the priority class beside it:
-    # if both workers are full, lane 1 evicts a runner to make room rather
-    # than sitting Pending. The two are one decision, not two.
+    # if both workers are full, a critical pod evicts a batch one to make room
+    # rather than sitting Pending. The two are one decision, not two.
     resources:
       # Requests, no limits - the estate's standing shape. A request is a
       # reservation and a position in the kubelet's eviction ranking; it caps
@@ -72,7 +72,7 @@ spec:
       requests:
         cpu: 50m
         memory: 128Mi
-    priorityClassName: lane-1-emergency
+    priorityClassName: critical
     affinity:
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:

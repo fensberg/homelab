@@ -87,7 +87,7 @@ spec:
     # making with the measurements epoch 04 adds, not with arithmetic.
     maxRunners: 2
 
-    # The listener: lane 1, and off the machines holding quorum.
+    # The listener: critical, and off the machines holding quorum.
     #
     # This is the dispatcher. It long-polls GitHub for queued jobs and tells
     # the controller to create a runner; it is tiny, it is always on, and if
@@ -146,7 +146,7 @@ spec:
           runAsNonRoot: true
           seccompProfile:
             type: RuntimeDefault
-        priorityClassName: lane-1-emergency
+        priorityClassName: critical
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
@@ -198,20 +198,20 @@ spec:
         # nothing added. A label we invented would be one more thing that can be
         # missing, and a nodeSelector on a missing label fails closed in the
         # wrong direction - silently unschedulable rather than obviously wrong.
-        # Lane 3: logistics.
+        # Batch.
         #
-        # Everything this scale set runs today is a delivery - integration
-        # runs, converges, image builds, the state backup. Important, slow by
-        # nature, and nothing watches the clock on them. The fast pull request
-        # checks belong in lane 2 and are not here yet, because a second lane
-        # needs a second scale set with its own maxRunners interlock; until
-        # that exists, one lane honestly labelled beats two lanes pretending.
+        # Everything this scale set runs today has to complete and does not
+        # have to complete now - integration runs, converges, image builds,
+        # the state backup. The fast pull request checks are `interactive` and
+        # are not here yet, because separating them needs a second scale set
+        # with its own maxRunners interlock; until that exists, one class
+        # honestly applied beats two applied to the same pod.
         #
-        # The consequence to be clear-eyed about: lane 1 preempts, so an
-        # operator that cannot be placed will evict a build mid-run. That is
-        # the trade the lane table makes deliberately - the alternative is
-        # the estate's own reconciler waiting behind a thirteen-minute job.
-        priorityClassName: lane-3-logistics
+        # The consequence to be clear-eyed about: `critical` preempts, so an
+        # operator that cannot otherwise be placed will evict a build mid-run.
+        # That is deliberate - the alternative is the estate's own reconciler
+        # waiting behind a thirteen-minute job.
+        priorityClassName: batch
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:

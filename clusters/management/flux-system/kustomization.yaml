@@ -50,11 +50,11 @@ images:
 # notification-controller is the exception, and it is not an oversight
 # upstream: it is the one Flux controller whose death does not stop
 # reconciliation, so it alone is left unclassified. Unclassified is priority
-# zero, which puts the component that REPORTS failures below every lane in
-# this estate, and lowest exactly when things are going wrong. It gets lane 1
-# below - not because alerts outrank reconciliation, but because a tiny
-# always-on process that exists to tell you something broke has the same
-# delay tolerance as the rest of lane 1: none.
+# zero, which puts the component that REPORTS failures below every class this
+# estate declares, and lowest exactly when things are going wrong. It is given
+# `critical` below - not because alerts outrank reconciliation, but because a
+# tiny always-on process whose whole job is to tell you something broke
+# tolerates delay exactly as poorly as the things it reports on.
 #
 # Patched here for the same reason the image digests above are: gotk-components
 # .yaml is rewritten wholesale by `flux bootstrap`, so an edit to it disappears
@@ -113,4 +113,4 @@ patches:
       spec:
         template:
           spec:
-            priorityClassName: lane-1-emergency
+            priorityClassName: critical

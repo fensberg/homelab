@@ -287,13 +287,13 @@ mutations:
 
   - guard: TestRunnerPodsCannotScheduleOntoAControlPlane
     file: clusters/management/infrastructure/configs/runner-scale-set.yaml
-    # Anchored on the lane above it, because this file now carries the same
-    # anti-control-plane rule twice - once for the runner and once for the
-    # listener - and "operator: DoesNotExist" alone no longer names one spot.
+    # Anchored on the priority class above it, because this file now carries
+    # the same anti-control-plane rule twice - once for the runner and once for
+    # the listener - and "operator: DoesNotExist" alone no longer names one spot.
     # The anchor is YAML rather than the comment beside it on purpose:
     # TestNoTestIsSatisfiedByAComment strips comments and re-runs everything.
-    find: "priorityClassName: lane-3-logistics\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: DoesNotExist"
-    replace: "priorityClassName: lane-3-logistics\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: Exists"
+    find: "priorityClassName: batch\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: DoesNotExist"
+    replace: "priorityClassName: batch\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: Exists"
     mentions: "would schedule onto a control-plane node"
     why: >
       One character inverts it. With Exists a CI runner schedules ONLY onto
@@ -334,7 +334,7 @@ mutations:
       failure being guarded against is somebody adding a stage to this config
       and reasonably assuming that is the whole job.
 
-  - guard: TestEveryWorkloadIsSizedPlacedAndAssignedALane
+  - guard: TestEveryWorkloadIsSizedPlacedAndGivenAPriority
     file: clusters/management/infrastructure/controllers/openebs.yaml
     find: "      localpv:"
     replace: "      localpvv:"
@@ -374,7 +374,7 @@ mutations:
       exists once a release is PRESENT and undescribed; there is nothing in the
       tree to edit into that state.
 
-  - guard: TestEveryFluxControllerIsPlacedAndInALane
+  - guard: TestEveryFluxControllerIsPlacedAndGivenAPriority
     file: clusters/management/flux-system/kustomization.yaml
     find: "  - target:\n      kind: Deployment\n    patch: |"
     replace: "  - target:\n      kind: Deployment\n      name: source-controller\n    patch: |"
