@@ -148,9 +148,20 @@ func (a *api) refSHA(owner, repo, ref string) (string, bool, error) {
 
 // setRef creates the branch if it is new and fast-forwards it if it exists.
 //
-// force is never set. A force update is what `non_fast_forward` refuses, and
-// wanting one here means the local branch was rewritten - which is a thing to
-// notice, not to push through.
+// force is off by default, and a rewritten branch is a thing to notice rather
+// than push through. What changed is what "notice" costs.
+//
+// The original reasoning stopped one step early. Refusing a force does not
+// prevent the rewrite - the rewrite has already happened locally, and the only
+// remaining way to publish it is to delete the ref and recreate it. GitHub
+// closes a pull request when its head ref is deleted and then refuses to
+// reopen it, so the refusal did not protect the branch; it chose the more
+// destructive of two ways to rewrite it, and took the review history with it.
+// Four pull requests were lost that way in two days.
+//
+// So force is available deliberately, behind a flag, and never on main or an
+// epoch branch. It is a compare-and-swap rather than a blind overwrite: see
+// setRefForce.
 func (a *api) setRef(owner, repo, ref, sha string, exists bool) error {
 	if exists {
 		return a.do(http.MethodPatch, fmt.Sprintf("/repos/%s/%s/git/refs/%s", owner, repo, ref),
@@ -162,4 +173,36 @@ func (a *api) setRef(owner, repo, ref, sha string, exists bool) error {
 
 func (a *api) deleteRef(owner, repo, ref string) error {
 	return a.do(http.MethodDelete, fmt.Sprintf("/repos/%s/%s/git/refs/%s", owner, repo, ref), nil, nil)
+}
+
+// setRefForce moves a ref backwards without deleting it.
+//
+// The delete-and-recreate this replaces is what closes a pull request: GitHub
+// closes one when its head ref disappears, and then refuses to reopen it
+// because the commit it recorded is no longer in the branch's history. A
+// PATCH with force never removes the ref, so the pull request, its review
+// comments and its attestation conversations all survive a rebase.
+//
+// expected is the lease. GitHub's API has no compare-and-swap, so this reads
+// the ref and refuses if it is not where it was when the publish started -
+// which is the case where two sessions publish the same branch at once, and
+// exactly when a blind force would silently discard somebody's work.
+func (a *api) setRefForce(owner, repo, ref, sha, expected string) error {
+	now, exists, err := a.refSHA(owner, repo, ref)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("%s no longer exists on the remote, so there is nothing to force", ref)
+	}
+	if now != expected {
+		return fmt.Errorf(`%s moved while this was publishing.
+
+It was %s when this run started and is %s now, so something else published it.
+Forcing would discard whatever that was. Fetch and look before deciding:
+
+    git fetch origin`, ref, expected[:8], now[:8])
+	}
+	return a.do(http.MethodPatch, fmt.Sprintf("/repos/%s/%s/git/refs/%s", owner, repo, ref),
+		map[string]any{"sha": sha, "force": true}, nil)
 }
