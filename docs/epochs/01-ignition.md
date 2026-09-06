@@ -2016,6 +2016,30 @@ a converge that refuses to run when its commit is not the tip of `main`.
   commits on an open pull request cannot be amended or rebased once pushed -
   no force-push is possible for anybody, agent or human. Fixing a bad commit
   message means a new commit, or closing the branch and starting over.
+
+  **Tried and refused, so nobody builds it twice.** A `-force` flag was added
+  to `signedpush` on the reasoning that refusing a force does not prevent a
+  rewrite - the rewrite has already happened locally - so the refusal only
+  chooses the destructive route of deleting the ref, which closes the pull
+  request and which GitHub then will not reopen. Four pull requests were lost
+  that way in two days, and the reasoning was sound.
+
+  It cannot work. The `all branches` ruleset targets `~ALL` and carries
+  `non_fast_forward`, so a `PATCH` with `force: true` returns _"Cannot
+  force-push to this branch"_ on every branch, for every actor. `deletion` is
+  scoped to `~DEFAULT_BRANCH` and `refs/heads/epoch/**` only, which is why
+  delete-and-recreate is available and rewriting is not: on a feature branch
+  you may destroy history but never revise it.
+
+  **And the ruleset should stay.** Immutable published history is what stops a
+  reviewer approving commit A and commit B being merged in its place. Losing a
+  pull request to a deliberate rebase is that property working, not a defect
+  in the publisher - so the fix is to need the rewrite less often, which is
+  what the `commit-msg` hook and the stacked-branch refusal are for, rather
+  than to route around the control.
+
+  The bullet above already said all this before it was built against.
+
 - **With `required_signatures` on `main`, squash-merge a branch holding
   unsigned commits.** GitHub creates and signs the squash commit with its own
   key, so it satisfies the rule; a **rebase** merge replays the original
