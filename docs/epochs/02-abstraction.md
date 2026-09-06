@@ -1190,8 +1190,29 @@ capacity in whichever lane happens to be idle - which is the opposite of the
 goal that produced this whole section.
 
 **One pool of workers, three priority classes.** The one genuine partition is
-the one already designed: lane 1 lives on the control planes, lanes 2 and 3
-share the workers, and the `nodeSelector` above is what draws it.
+the one already designed, and it is drawn by the anti-control-plane affinity
+above rather than by the lanes.
+
+**Retraction, and this sentence used to say the opposite.** It read "lane 1
+lives on the control planes, lanes 2 and 3 share the workers", which is wrong
+and contradicted this record's own build order four sections down - the same
+order that lists Flux and the runner listener among the things to move OFF the
+control plane, while the lane table names both as lane 1. Both could not be
+right.
+
+The error was conflating two axes that the lane model exists to separate. **A
+lane says when a pod yields; placement says which machine it sits on.** Lane 1
+means nothing may delay it, and that is enforced by a `PriorityClass`, which is
+cluster-wide and says nothing about nodes. Almost every lane-1 workload here -
+Flux, both ARC pods, the CloudNativePG operator, the OpenEBS provisioner - is a
+small always-on controller with no reason to sit beside etcd, and each one that
+does is unreserved memory a heavy job can take.
+
+So the partition is: **the control plane carries only control-plane work**, and
+everything else shares the workers under three priority classes. The two
+genuine exceptions stay for a storage reason rather than a lane reason - the
+state database's volumes are pinned to their nodes, and CoreDNS is
+Talos-managed - and both are lane 1 while sitting where they sit.
 
 The security axis does not force a second partition either. Fork-run lanes must
 not be able to _reach_ the estate, which is a NetworkPolicy question and
@@ -1595,23 +1616,90 @@ and its trigger are recorded beside the count in `compute.tf`.
 
 **The order the rest has to happen in**, and each entry says what blocks it:
 
-1. **Move the operators off the control plane and give them requests** (#237).
-   Flux's four controllers, ARC's controller and listener, the CloudNativePG
-   operator, the OpenEBS provisioner. Blocked on reading each pinned chart's
-   own `values.yaml` first: placement and resources are set through Helm values,
-   and **a wrong values path is silently ignored rather than rejected**, which
-   is the worst failure mode available - it looks applied and is not. The
-   OpenEBS manifest already records this discipline for itself.
+1. ~~**Move the operators off the control plane and give them requests**~~
+   (#237) - **done**, together with what was step 3, because they are one
+   decision rather than two: requests set the QoS class the kubelet evicts by,
+   the priority class sets the order the scheduler admits and preempts by, and
+   a required affinity is only safe when the thing it constrains can preempt
+   its way to a slot. What each pinned chart was read for is recorded below.
 2. **Taint the control planes.** `allowSchedulingOnControlPlanes = false`, with
-   tolerations for the two things that stay. It has to come after step 1, or
-   the operators become unschedulable at the moment nothing can reconcile them
-   back.
-3. **Three `PriorityClass` objects**, per the lane table above, with
-   `preemptionPolicy: Never` on lanes 2 and 3 so preemption exists only where
-   it protects quorum.
+   tolerations for the two things that stay. It had to come after step 1, and
+   step 1 has now found it a second blocker - the OpenEBS helper pod, below.
+3. ~~**Three `PriorityClass` objects**~~ - **done**, in the same change as
+   step 1. Values are local rather than the built-in `system-cluster-critical`
+   the table above names; the reason is in `priority-classes.yaml`.
 4. **Proxmox pools by role**, as its own change - it edits every existing VM,
    and the converges that create machines should not also be the ones that
    modify them.
+
+### What reading the charts actually found
+
+Recorded because the instruction was to read each pinned chart's own
+`values.yaml` before trusting a path, and doing it turned up four things that
+guessing would have got wrong. The general lesson is the one the OpenEBS
+manifest already stated for itself: **a Helm value at a path the chart does not
+read is accepted in silence** - no error, no warning, no event - so the manifest
+says the pod is configured and the pod is not.
+
+**Flux was never BestEffort, and #237 never said it was.** The generated
+`gotk-components.yaml` already gives all four controllers requests and limits.
+Placement was the only thing missing, so Flux is patched by the overlay's
+kustomize `patches` rather than by values, alongside the image digests and for
+the same reason: `flux bootstrap` rewrites that file wholesale.
+
+**Three of Flux's four controllers carry `system-cluster-critical`;
+notification-controller carries nothing.** That is upstream being consistent -
+it is the one controller whose death does not stop reconciliation - but
+unclassified is priority zero, which puts the component that _reports_ failures
+below every lane in this estate, lowest exactly when something is going wrong.
+It is patched into lane 1. The other three are left on upstream's own class.
+
+**`listenerTemplate` is not a strategic merge.** The chart copies it verbatim
+into the `AutoscalingRunnerSet`, and the ARC controller merges it into the pod
+it builds with hand-written field assignments
+(`mergeListenerPodWithTemplate`). Most pod-level fields are **assigned
+unconditionally**, whether or not the template sets them, so supplying a
+template silently resets anything it omits - `terminationGracePeriodSeconds`
+would have dropped from the controller's 60 to Kubernetes' 30 with nothing
+reporting a change. It is restated in the manifest for that reason.
+`nodeSelector` is the one field guarded by a nil check, and it replaces rather
+than merges, so setting one there would discard the controller's own
+`kubernetes.io/os: linux`.
+
+**The OpenEBS helper pod is a second blocker for the taint (step 2), and it is
+worse than the storage one.** The provisioner does not create directories
+itself; it launches a short-lived helper pod on whichever node the volume
+belongs to. Chart 4.6.0 exposes only `image`, `hostNetwork` and `timeoutSecs`
+under `helperPod` - no tolerations and no `nodeSelector`, and the provisioner
+takes none by environment variable either. So a `NoSchedule` taint on the
+control planes leaves the helper unable to reach the nodes the state database's
+volumes live on. Existing volumes keep working; creating or deleting one hangs
+until the timeout. Filed as #269 rather than left here, with the options that
+are worth weighing - including the chart's own `nodeDeployment` mode, which
+solves it by mounting the host root into a container on a control-plane node
+and so wants arguing rather than assuming.
+
+**The state database's lane is deferred to step 2 deliberately.** Adding
+`priorityClassName` to a CloudNativePG `Cluster` changes the instance pod spec,
+which CloudNativePG answers with a rolling restart and a switchover of the
+database holding this estate's OpenTofu state. The taint needs a toleration on
+that same spec, so doing both at once costs one rolling restart instead of two.
+Until then the database is unclassified, and the risk of that is nil rather
+than small: it is alone on the control planes with nothing to be preempted by.
+
+**Three of these pins carry a Renovate annotation for a Renovate that does not
+run** (#270). Noticed while fetching the charts: `cloudnative-pg` is six minor
+versions behind, and a Flux `HelmRelease` chart version is the one pin here
+that nothing updates and nothing reports on. Not dangerous - the operator is
+not in the data path and the estate is empty - but an annotation naming a tool
+that is not installed reads exactly like a pin somebody is maintaining.
+
+**Required placement on Flux is safe at ignition, and this was checked rather
+than assumed.** `gitops.tf` bootstraps Flux behind
+`data.talos_cluster_health.this`, which lists `worker_nodes` and depends on the
+worker configuration apply, so workers are Ready before Flux is installed.
+Recovery from losing every worker does not need Flux either: workers are built
+by OpenTofu, which does not depend on Flux in either direction.
 
 **What stays on the control plane, and why it is not a compromise.**
 
