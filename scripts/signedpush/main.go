@@ -49,11 +49,10 @@ func main() {
 		branch   = flag.String("branch", "", "Branch to publish. Defaults to the current one.")
 		tokenOut = flag.Bool("token", false, "Print an installation access token and exit, for `gh auth login --with-token`.")
 		dryRun   = flag.Bool("dry-run", false, "Say what would be published, contact GitHub only to read.")
-		force    = flag.Bool("force", false, "Publish a rewritten branch by moving the ref, not by deleting it. For a deliberate rebase.")
 	)
 	flag.Parse()
 
-	if err := run(*appID, *keyPath, *branch, *tokenOut, *dryRun, *force); err != nil {
+	if err := run(*appID, *keyPath, *branch, *tokenOut, *dryRun); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -66,7 +65,7 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-func run(appID, keyPath, branch string, tokenOnly, dryRun, force bool) error {
+func run(appID, keyPath, branch string, tokenOnly, dryRun bool) error {
 	key, err := loadKey(keyPath)
 	if err != nil {
 		return err
@@ -115,24 +114,6 @@ func run(appID, keyPath, branch string, tokenOnly, dryRun, force bool) error {
 		return err
 	}
 
-	// The remote tip as it was when this run started. baseSHA is reassigned on
-	// the deliberate-rewrite path, and this is the value the force update
-	// leases against - so a branch that moved underneath us is refused rather
-	// than overwritten.
-	remoteTip := baseSHA
-	forcing := false
-
-	// Never on the branches whose rulesets forbid it. GitHub would refuse
-	// anyway; failing here says why, before a token is spent and while the
-	// message can still name the branch.
-	if force && (branch == "main" || strings.HasPrefix(branch, "epoch/")) {
-		return fmt.Errorf(`refusing to force %s.
-
-main and epoch/** carry non_fast_forward, so their history cannot be rewritten
-by anybody - not the agent, not an administrator. A branch that needs a rewrite
-there is a branch that needs a new pull request instead.`, branch)
-	}
-
 	if branchExists {
 		// The published commits are replicas - same trees, different SHAs,
 		// because GitHub signs a commit it creates rather than the one that
@@ -144,8 +125,7 @@ there is a branch that needs a new pull request instead.`, branch)
 			return err
 		}
 		if _, err := git("merge-base", "--is-ancestor", baseSHA, "HEAD"); err != nil {
-			if !force {
-				return fmt.Errorf(`%s has diverged from its remote.
+			return fmt.Errorf(`%s has diverged from its remote.
 
 The remote tip (%s) is not an ancestor of HEAD, which happens when a publish
 half-completed or the branch was rewritten. Nothing here can pick the right
@@ -156,21 +136,11 @@ history for you:
 will take the published side, discarding local commits that were never
 published.
 
-If you rewrote it on purpose - a rebase to clear a conflict or to unstack a
-branch - publish the rewrite instead of deleting the ref:
-
-    task push -- -force
-
-That moves the ref rather than removing it, so the pull request and its review
-history survive.`, branch, baseSHA[:8], branch, branch)
-			}
-			// A deliberate rewrite. The whole branch is republished, so the
-			// range is measured from main rather than from a remote tip that
-			// is no longer an ancestor of anything here.
-			forcing = true
-			if baseSHA, err = git("merge-base", "origin/main", "HEAD"); err != nil {
-				return fmt.Errorf("finding the merge base with origin/main: %w", err)
-			}
+If the rewrite was deliberate - a rebase to clear a conflict or unstack a
+branch - there is no force to reach for: the "all branches" ruleset carries
+non_fast_forward, so GitHub refuses a rewrite on every branch here, for
+everybody. The branch has to be deleted and recreated, and the pull request
+recreated with it. See docs/epochs/01-ignition.md.`, branch, baseSHA[:8], branch, branch)
 		}
 	} else {
 		// A new branch forks from wherever it actually diverged, not from
@@ -235,12 +205,7 @@ history survive.`, branch, baseSHA[:8], branch, branch)
 		parent = signed
 	}
 
-	if forcing {
-		// Moved, never deleted. Deleting is what closes the pull request.
-		if err := a.setRefForce(owner, repo, headRef, parent, remoteTip); err != nil {
-			return err
-		}
-	} else if err := a.setRef(owner, repo, headRef, parent, branchExists); err != nil {
+	if err := a.setRef(owner, repo, headRef, parent, branchExists); err != nil {
 		return err
 	}
 

@@ -55,7 +55,22 @@ func sarif(found []snag) ([]byte, error) {
 		"version": "2.1.0",
 		"runs": []any{map[string]any{
 			"tool": map[string]any{"driver": map[string]any{
-				"name":           "clerk",
+				// The one piece of this surface that is ours.
+				//
+				// GitHub renders a code-scanning finding on a pull request as a
+				// review thread authored by github-advanced-security[bot], and
+				// that author is fixed - no SARIF field, no App permission and
+				// no marketplace action changes it, because the bot is GitHub's
+				// own renderer rather than the tool that found anything.
+				//
+				// What the thread's heading says is this name: it reads
+				// "<name> / <rule shortDescription>". So this is what
+				// distinguishes a prose-drift finding from CodeQL, Semgrep and
+				// Trivy sitting beside it, and it is worth being unmistakable
+				// rather than a lowercase word that reads like a GitHub
+				// feature. The upload categories in the workflow do the same
+				// job for the check names.
+				"name":           "Fensberg Clerk",
 				"informationUri": toolURI,
 				"rules":          rules,
 			}},

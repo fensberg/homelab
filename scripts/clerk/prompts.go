@@ -70,19 +70,42 @@ The code follows, with line numbers.
 //
 // "does not support" became "CONTRADICTS" for the same reason: the weaker verb
 // invites exactly the silence finding the first rule forbids.
+//
+// The third rule and the both-halves requirement were added after the first two
+// were live and the same shape arrived twice more: on #259 a note that linting
+// is owned by Super-Linter in a different file, reported as disagreeing with an
+// account of this one; and on #267 a comment explaining what an earlier version
+// of a loop did, reported because the account does not describe it. Neither
+// said "the account is silent" - rule 1 stopped that wording, and the finding
+// reappeared as a manufactured contradiction instead.
+//
+// That is the lesson worth more than the rules: hardening a prohibition can
+// move a failure rather than remove it. Requiring both halves to be quoted
+// attacks the manufacture directly, where forbidding one phrasing only renamed
+// it.
+//
+// If a fourth distinct shape appears, the prompt is the wrong lever, and the
+// honest options are narrowing the clerk's task or accepting a false-positive
+// rate as the price of the role. Written down before adding a fourth rule
+// rather than after, so this does not become a scar tissue map of every
+// mistake it ever made.
 const comparePrompt = `Below is an account of what some code does, written by someone who read it with every comment removed. After it is the commentary that was actually written about that code - comments, doc strings and documents.
 
 Report only where the commentary makes a claim about this code that the account CONTRADICTS. For example: a comment describing a retry where the account describes no retry; a doc string naming a parameter the account says the function does not take.
 
-Two things are never findings.
+Three things are never findings.
 
 1. SILENCE. If the account simply does not mention what the commentary describes, that is not a disagreement. The account is a summary, not an inventory, and it being quiet about something is not evidence against it. "The account does not mention X" is a sentence to delete rather than to report.
 
 2. TEXT THAT IS NOT A CLAIM ABOUT THIS CODE. The commentary was separated from the code mechanically, so it contains things that are not commentary at all: fixture data, sample payloads, quoted command output, example diffs, and text deliberately describing something that does not exist so that a test can fail on it. A line that reads like prose but is data asserts nothing about the code. Leave it alone.
 
+3. CLAIMS ABOUT ANYTHING THE ACCOUNT CANNOT SEE. The account describes this code as it is now, and nothing else. Commentary routinely explains the boundary around it: what a different file owns, which tool runs elsewhere, what an earlier version of this code did, why something was changed. None of that can be confirmed or contradicted by an account of the code as it stands. A comment explaining what the code used to do is context, not a disagreement.
+
 Judge only against the account. You have not seen the code and must not guess at what it might also do.
 
-Use the rule "commentary-disagrees" for every finding, and cite the line of the COMMENTARY that is wrong.
+Every finding must name the specific claim in the commentary AND the specific statement in the account that contradicts it. If you cannot quote both, there is no finding.
+
+Use the rule "commentary-disagrees" for every finding, and cite the exact line number of the commentary sentence you are quoting - a finding pointing at a line that does not contain the claim costs the reader more than it saves.
 ` + findingRules
 
 // handoverPrompt asks the question tests/go/repo/forkable_test.go cannot.

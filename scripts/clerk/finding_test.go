@@ -158,8 +158,13 @@ func TestEverySarifResultIsAdvisory(t *testing.T) {
 	if doc.Version != "2.1.0" || len(doc.Runs) != 1 {
 		t.Fatalf("version=%q runs=%d", doc.Version, len(doc.Runs))
 	}
-	if doc.Runs[0].Tool.Driver.Name != "clerk" {
-		t.Errorf("tool is %q; alerts are grouped by it", doc.Runs[0].Tool.Driver.Name)
+	// The name is the heading of every thread this posts, because GitHub
+	// renders code-scanning findings as "<tool> / <rule>" under an author it
+	// does not let anybody change. It is therefore the only thing separating a
+	// prose-drift note from CodeQL and Trivy in the same list, and a lowercase
+	// word that reads like a GitHub feature does not do that.
+	if name := doc.Runs[0].Tool.Driver.Name; name != "Fensberg Clerk" {
+		t.Errorf("tool is %q; alerts are grouped by it, and it is what tells a reader this is not GitHub's own finding", name)
 	}
 	for _, r := range doc.Runs[0].Results {
 		if r.Level != "note" {
@@ -176,26 +181,38 @@ func TestEverySarifResultIsAdvisory(t *testing.T) {
 	}
 }
 
-// The comment names the findings, rather than counting them.
+// The comment must NOT restate the findings.
 //
-// The first live run posted "1 snag(s) raised, 0 discarded" and the operator
-// asked what the snag was and where. The answer was two clicks away in the
-// Security tab, which is not where they were looking - the same objection they
-// had made an hour earlier about an alarm that says something changed without
-// saying what.
-func TestTheCommentNamesEveryFinding(t *testing.T) {
+// It used to, deliberately. The first live run posted "1 snag(s) raised, 0
+// discarded", the operator asked what the snag was and where, and the answer
+// was two clicks away in the Security tab - which is not where they were
+// looking. That objection held while the findings lived only there.
+//
+// They are now rendered inline on the diff, on the line they concern, in a
+// thread that can be replied to and dismissed with a stated reason. So a list
+// here is a second copy of what is already in front of the reader, and two
+// lists invite the question of whether they agree.
+//
+// What the comment must still do is say that findings exist and where to look,
+// so nobody reads its brevity as the clerk having found nothing.
+func TestTheCommentDoesNotRestateWhatIsAlreadyOnTheDiff(t *testing.T) {
 	got := note("snag", []snag{
 		{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"},
 		{ruleDisagrees, "docs/epochs/01.md", 7, "claims a retry that the account does not describe"},
 	}, []string{"names a file that was not read"}, "")
 
-	for _, want := range []string{
-		"scripts/clerk/llm.go:42", "nothing reaches this branch",
-		"docs/epochs/01.md:7", "claims a retry",
-		"2 snag(s)", "1 discarded",
+	for _, unwanted := range []string{
+		"scripts/clerk/llm.go", "nothing reaches this branch",
+		"docs/epochs/01.md", "claims a retry",
 	} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("the comment repeats %q, which is already an inline alert on that line:\n%s", unwanted, got)
+		}
+	}
+
+	for _, want := range []string{"2 snag(s)", "inline", "1 discarded"} {
 		if !strings.Contains(got, want) {
-			t.Errorf("the comment does not carry %q:\n%s", want, got)
+			t.Errorf("the comment does not carry %q, so a reader cannot tell findings exist or how many were dropped:\n%s", want, got)
 		}
 	}
 }

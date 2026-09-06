@@ -453,10 +453,62 @@ that mistake." Every non-Go language took the weaker separation knowingly, and
 this is that trade arriving. Filed rather than dismissed, because a false
 positive in a role whose value rests on being trusted is the expensive kind.
 
-**The running count matters more than either.** One accepted finding and one
-mechanical false positive is not yet an answer to "is this decorative", and the
-honest way to reach one is to keep scoring both columns rather than only the
-one that confirms a prior.
+**A second hit, on #265**, and the most useful one yet, because it caught a
+defect introduced by a change that was itself a fix.
+
+That pull request replaced a `filepath.Walk` with a loop over git's tracked
+set. The walk propagated read errors; the replacement wrote
+`if err != nil { continue }` with a comment explaining the one benign case - a
+tracked file not on disk, which is a deleted-but-staged state. The comment was
+true of that case and of no other, so a permission problem or an I/O error
+became a file quietly not searched, in a guard whose entire job is searching
+files.
+
+The clerk's wording was "ignores any read errors silently, hiding potential
+access issues". It had not been told the walk propagated them and did not need
+to be; reading the code as written was enough. That is the "no context is an
+advantage" argument working literally - the context here was _the intent of the
+fix_, and holding it is what made the weaker error handling invisible to the
+person writing it.
+
+**A third miss, on #267, and the most instructive of the three** because its
+stated reason was wrong and it was pointing at something real anyway.
+
+It flagged a comment narrating what an earlier version of a loop had done,
+because "the account does not describe this". That is rule 1's silence case
+wearing rule 3's clothes - an account of the current code cannot confirm a
+claim about a previous version, and neither could contradict it.
+
+But the comment deserved deleting. It cited "the first version of this loop"
+and "the filepath.Walk this replaced", both of which are intermediate commits
+on a branch that squash-merges into one - so it pointed at evidence no future
+reader can ever look at. The house style narrates history constantly and
+correctly, and the difference is that it cites things that survive: a real
+teardown, a real apply, a pull request number. This cited an autobiography.
+
+So the finding was rejected on its reasoning and acted on anyway. That is
+exactly the design's own claim arriving literally - "where it misreads the
+code, the misreading is the finding" - and it is worth a column of its own,
+because scoring it as either a hit or a miss loses what happened.
+
+**The running count matters more than either.** Two accepted, two rejected, and one
+rejected-but-useful is not yet an answer to "is this decorative", and the honest
+way to reach one is to keep scoring every column rather than only the one that
+confirms a prior.
+
+The shape is a better signal than the ratio. **Every hit was prose or error
+handling that a reader holding the intent skims past** - a comment claiming CPU
+was a request only, a swallowed error class. **Every miss was the same
+mechanical shape**: something the account could not see, reported as though it
+had been contradicted. Three of those now, in three different disguises, which
+is why the fix moved from forbidding a phrasing to requiring the finding to
+quote both halves of the contradiction it claims.
+
+The rule that fell out of it, and it generalises past this role: **hardening a
+prohibition can move a failure rather than remove it.** Rule 1 stopped the model
+saying "the account is silent" and the same finding came back as a manufactured
+contradiction. Forbidding the wording renamed the failure; requiring evidence
+attacks it.
 
 ### A false positive is prompt feedback before it is a bug report
 

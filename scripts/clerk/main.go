@@ -281,8 +281,21 @@ func handoverVerb(args []string) int {
 //
 // The alerts stay as alerts. Each is still dismissable on its own with a
 // stated reason, and those reasons are what turn this epoch's acceptance test
-// into a count rather than a judgement. This is the readable copy, not a
-// replacement.
+// into a count rather than a judgement.
+//
+// SUPERSEDED, and the reason it was right is the reason it no longer is.
+//
+// The objection above was that a count sent the reader two clicks away to the
+// Security tab, which is not where they were looking. That was true when the
+// findings only existed there. They are now rendered inline on the diff, on
+// the line they are about, in a thread that can be replied to and dismissed -
+// so "what is the snag, and where" is answered where the reader already is,
+// and repeating it here asks them to check whether two lists agree.
+//
+// What survives is the receipt. Zero findings still has to be distinguishable
+// from not having run, and the operator said the clean result was worth as
+// much to them as a finding - so the comment stays and stops restating what is
+// already on the diff.
 //
 // The caveat is why "nothing to raise" must not be the only thing zero findings
 // can say. A pull request that carried no code for the clerk to read produces
@@ -301,19 +314,29 @@ func note(name string, kept []snag, dropped []string, caveat string) string {
 			name, headline, len(dropped))
 	}
 
+	// The findings themselves are NOT repeated here.
+	//
+	// They are already inline on the diff, anchored to the line, dismissable
+	// with a structured reason that says whether the clerk was wrong or was
+	// right and we chose not to act - which is the distinction this record's
+	// acceptance test needs and a comment cannot provide. Listing them twice
+	// asks the reader to work out whether the two lists agree.
+	//
+	// What stays is a receipt, because zero findings has to be distinguishable
+	// from not having run. With no comment at all, a clerk that read the diff
+	// and found nothing looks exactly like one that was skipped - which is the
+	// failure this estate refuses everywhere else, and the operator said the
+	// clean result was worth as much to them as a finding.
 	var b strings.Builder
-	fmt.Fprintf(&b, "**clerk %s** — %d snag(s)\n\n", name, len(kept))
-	for _, s := range kept {
-		fmt.Fprintf(&b, "- `%s:%d` — %s\n", s.Path, s.Line, strings.TrimSpace(s.Message))
-	}
+	fmt.Fprintf(&b, "**clerk %s** — %d snag(s), reported inline on the diff.\n\n", name, len(kept))
 
 	// Said out loud, always. "Nothing found" and "eleven findings none of which
 	// could be checked" are different facts, and only one is reassuring.
-	fmt.Fprintf(&b, "\n%d discarded as uncheckable.\n\n", len(dropped))
+	fmt.Fprintf(&b, "%d discarded as uncheckable.\n\n", len(dropped))
 	if caveat != "" {
 		fmt.Fprintf(&b, "Read with a caveat: %s.\n\n", caveat)
 	}
-	b.WriteString("Each is also an alert on the file, dismissable on its own with a reason. " +
+	b.WriteString("Each is an alert on the file, dismissable on its own with a reason. " +
 		"A second opinion from a reader with no context: it can approve nothing and block nothing.")
 	return b.String()
 }
