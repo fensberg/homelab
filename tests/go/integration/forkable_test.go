@@ -4,6 +4,7 @@ package integration
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -25,7 +26,6 @@ import (
 // pull request; tests/go/repo carries a shape check for the likeliest leak so
 // the common case is still caught before merge.
 func TestEstateNamesAreNotCommitted(t *testing.T) {
-	cfg := harness.LoadConfig(t)
 	site := harness.SiteConfig(t)
 
 	// Everything that names a real thing. Each is an op:// reference in
@@ -44,7 +44,28 @@ func TestEstateNamesAreNotCommitted(t *testing.T) {
 		}
 	}
 
-	add(cfg.Organization.Name)
+	// The organization is deliberately NOT checked, and this is the one
+	// exclusion in the whole guard, so it is worth the paragraph.
+	//
+	// It was checked, and reported sixteen tracked files on every run. Every
+	// occurrence was this project's own identity rather than an estate secret:
+	// the repository slug in the Flux git source, in CODEOWNERS and in the
+	// GITHUB_REPOSITORY that a dozen tests set; the bot's own account name in
+	// commitlint's rule and the records describing it; the digest-pinned
+	// runner image at ghcr.io/<org>/homelab-runner; and the LICENSE copyright
+	// holder. None can be removed without breaking the thing that names them,
+	// and the image is pinned by digest precisely because a mutable tag is a
+	// pointer somebody can move.
+	//
+	// It is also not a secret in the first place. The organization is in the
+	// clone URL: anyone reading this file already has it. What a fork must
+	// replace is the site and the hypervisor, and those are what the vault
+	// holds and what a pasted terminal transcript leaks - which is the failure
+	// this guard exists for, and the failure it still catches.
+	//
+	// So the rule narrowed to what is true rather than accumulating sixteen
+	// exemptions each answering "never, it is in the clone URL". See
+	// docs/epochs/02-abstraction.md.
 	add(site.Name)
 	for _, node := range site.Hypervisor.Nodes {
 		add(node.Hostname)
@@ -55,37 +76,42 @@ func TestEstateNamesAreNotCommitted(t *testing.T) {
 	}
 
 	root := harness.RepoRoot(t)
-	skipDirs := map[string]bool{".git": true, "node_modules": true, ".terraform": true}
 	exts := map[string]bool{
 		".go": true, ".md": true, ".yml": true, ".yaml": true, ".tf": true,
 		".json": true, ".sh": true, ".hcl": true, ".ts": true, ".js": true,
 	}
 
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			if skipDirs[info.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !exts[strings.ToLower(filepath.Ext(path))] {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, path)
+	// Asked of git, not of the filesystem.
+	//
+	// The question is "is this committed", and a tree walk answers "is this on
+	// disk" - a different thing during a run that has just rendered secrets.
+	// management/hypervisor/inventory.yml is written by the Render phase,
+	// removed by Sterilize, gitignored and untracked, and holds the
+	// hypervisor's hostname and address because that is what it is for. The
+	// walk reported it as committed on every run.
+	//
+	// This also retires the two path exemptions that used to be needed for
+	// config/management.rendered.json and its placeholder. They were the same
+	// false positive found twice, and a third rendered artifact would have
+	// been found a third time. Nothing has to be listed now.
+	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
+	if err != nil {
+		t.Fatalf("listing tracked files: %v", err)
+	}
+	tracked := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
+	if len(tracked) < 100 {
+		t.Fatalf("git reported only %d tracked files, which is too few to be the repository - this test would pass by looking at almost nothing", len(tracked))
+	}
 
-		// The rendered config is the vault's own output. It is gitignored and
-		// wiped by Sterilize; finding names in it is the point of it.
-		if strings.HasPrefix(rel, "config/management.rendered.json") ||
-			strings.HasPrefix(rel, "config/management.placeholder.json") {
-			return nil
+	for _, rel := range tracked {
+		if rel == "" || !exts[strings.ToLower(filepath.Ext(rel))] {
+			continue
 		}
-
-		body, err := os.ReadFile(path)
+		body, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
-			return err
+			// A tracked file that is not on disk is a deleted-but-staged
+			// state, not something this test has an opinion about.
+			continue
 		}
 		lower := strings.ToLower(string(body))
 		for _, name := range names {
@@ -93,13 +119,9 @@ func TestEstateNamesAreNotCommitted(t *testing.T) {
 				// Deliberately does not print the name: this failure is read
 				// in CI logs, which for a public repository are public.
 				t.Errorf("%s contains one of this estate's own names. It belongs in the vault, not in git - redact it or use a documented placeholder.", rel)
-				return nil
+				break
 			}
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the repository: %v", err)
 	}
 }
 

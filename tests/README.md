@@ -281,6 +281,43 @@ for them, which committed them permanently to the repository it was protecting.
 
 It never prints the name it matched. CI logs on a public repository are public.
 
+**It checks the site and the hypervisor, and deliberately not the
+organization.** That exclusion is the one hole in the guard, so it is written
+down rather than left to be rediscovered.
+
+Checked, the organization reported sixteen tracked files on every run, and
+every occurrence was this project's own identity rather than an estate secret:
+the repository slug in the Flux git source, in `CODEOWNERS`, and in the
+`GITHUB_REPOSITORY` a dozen tests set; the bot's own account name in
+commitlint's rule and the records describing it; the digest-pinned runner image
+at `ghcr.io/<org>/homelab-runner`; and the `LICENSE` copyright holder.
+
+Two things settle it. **None can be removed without breaking what names them** -
+and the image is pinned by digest precisely because a mutable tag is a pointer
+somebody can move, so weakening that to satisfy this would trade a real
+invariant for a nominal one. And **the organization is not a secret**: it is in
+the clone URL, so anyone reading this file already has it.
+
+What a fork must actually replace is the site and the hypervisor. Those are
+what the vault holds, and they are what a pasted terminal transcript leaks -
+which is the failure this exists for. Both were measured at **zero
+occurrences** when this was decided, so narrowing the rule gave up nothing that
+was working.
+
+The alternative was sixteen exemption entries, each answering epoch 06's "what
+condition removes this" with "never, it is in the clone URL". Sixteen entries
+all saying never is not an exemption list; it is a rule that was wrong.
+
+**It asks git for the tracked set rather than walking the filesystem.** The
+question is "is this committed", and a tree walk answers "is this on disk" -
+a different thing during a run that has just rendered secrets.
+`management/hypervisor/inventory.yml` is written by Render, removed by
+Sterilize, gitignored and untracked, and holds the hypervisor's hostname
+because that is what it is for; the walk reported it as committed every time.
+Asking git also retired the two path exemptions that used to be needed for the
+rendered config and its placeholder - the same false positive found twice, and
+a third rendered artifact would have been found a third time.
+
 ## Running the real-estate tiers for the first time
 
 `integration-tests.yml` has never run. Before it can, two things have to exist
