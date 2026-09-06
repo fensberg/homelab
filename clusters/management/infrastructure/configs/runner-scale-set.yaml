@@ -119,6 +119,33 @@ spec:
     listenerTemplate:
       spec:
         terminationGracePeriodSeconds: 60
+        # Asserted rather than inherited.
+        #
+        # The listener runs the controller's own image, which is
+        # gcr.io/distroless/static:nonroot with `USER 65532:65532` - so it
+        # already runs as a non-root user and this changes no behaviour. It is
+        # set because inheriting a property is not the same as requiring it: an
+        # upstream base-image change that reverted to root would otherwise be
+        # invisible, and here it fails to start instead.
+        #
+        # Note what is deliberately NOT set, because the runner container three
+        # blocks down does the opposite and the difference matters. There is no
+        # explicit runAsUser here. The runner needs one because its image's USER
+        # is the NAME "runner", and the kubelet cannot verify that a name is not
+        # root, so it refuses the pod outright. This image's USER is already
+        # numeric, so runAsNonRoot alone is verifiable - and pinning the uid
+        # would tie this manifest to a number upstream is free to renumber, for
+        # no gain over the check the kubelet is already able to make.
+        #
+        # readOnlyRootFilesystem is also absent, and that is a limit rather than
+        # a decision: nothing here has established what the listener writes at
+        # runtime, and asserting it on a guess would turn a hardening into an
+        # outage. #237 sized these controllers by judgement too; epoch 04 is
+        # where guesses get replaced with observations.
+        securityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
         priorityClassName: lane-1-emergency
         affinity:
           nodeAffinity:
@@ -129,6 +156,12 @@ spec:
                       operator: DoesNotExist
         containers:
           - name: listener
+            # A statically linked Go binary that long-polls an HTTPS endpoint.
+            # It needs no capability and no route to acquire one.
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
             resources:
               requests:
                 cpu: 25m
