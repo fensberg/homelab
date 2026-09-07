@@ -161,6 +161,43 @@ node. When that node is replaced - which every image change does, since an image
 change means a rebuild - the world goes with it. Whatever this epoch does about
 workloads has to answer that before anyone plays on it.
 
+#### Inherited from epoch 02: tainting the control planes
+
+Moved here on 2026-09-07, because it is the same question wearing a different
+hat and epoch 02 was blocking on an answer this epoch owns.
+
+The step is `allowSchedulingOnControlPlanes = false` in `management/cluster/talos.tf`,
+with tolerations for whatever stays. Everything that can move is already off the
+control planes by a **required** node affinity, so the taint is not what gets CI
+or the operators onto workers - that is done. What the taint adds is coverage for
+anything added later that forgets an affinity, which is worth having and is not
+worth blocking an epoch on.
+
+It is blocked on exactly one thing, and it is the paragraph above. `tofu-state-1`,
+`-2` and `-3` are Local PV Hostpath volumes pinned to control-plane nodes. Taint
+those nodes and CloudNativePG tries to reschedule the state database onto a
+worker, and the directory holding the data stays where it is. That is the Valheim
+trap arriving early, against the database that holds this estate's own OpenTofu
+state - so it is the same decision, and making it once covers both.
+
+Two things that are **not** blockers, both established by reading source rather
+than assuming, so nobody re-derives them:
+
+- **The OpenEBS helper pod follows the volume on its own.** `helperPod` exposes
+  no tolerations and no `nodeSelector`, which reads like a helper that cannot
+  reach a tainted node. provisioner-localpv v4.6.0 reads the taints off the Node
+  it is provisioning for and builds a matching toleration for each. There is
+  nothing to set.
+- **`localpv.privileged: true` renders nothing here.** It is consumed only by
+  the subchart's DaemonSet (needs `nodeDeployment.enabled`, false) and its
+  PodSecurityPolicy (needs `rbac.pspEnabled`, false, and PSP has not existed
+  since Kubernetes 1.25).
+
+What is genuinely open is where stateful data lives when the machine under it
+becomes ineligible - a replicated engine, a CSI driver that can move a volume,
+or an accepted pinning with the taint carrying a toleration for the database.
+See also #315, which is the security half of the same component.
+
 ## Open questions to settle first
 
 - `deploy-infrastructure.yml` already encodes the promotion model: `main` ->
