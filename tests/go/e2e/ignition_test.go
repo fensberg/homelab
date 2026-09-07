@@ -107,6 +107,7 @@ func buildIgnite(t *testing.T) {
 	require.NoError(t, build.Run(), "building ignite")
 }
 
+// covers: verb:break-ground
 func TestIgnitionBuildsAndTearsDownAnEstate(t *testing.T) {
 	site := guard(t)
 	buildIgnite(t)

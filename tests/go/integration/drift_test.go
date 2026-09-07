@@ -21,6 +21,7 @@ import (
 // the repository actually checks.
 //
 // Plan only - InitAndPlanWithExitCode never applies anything.
+// covers: verb:plan
 func TestDeployedEstateMatchesTheCode(t *testing.T) {
 	opts := harness.TofuOptions(t, nil)
 

@@ -41,7 +41,7 @@
 # this repository refuses those by name. Six of the seven shell scripts were in
 # exactly that state, including the gate that enforces coverage, the script
 # that sets up every machine, and all three git hooks.
-ceiling: 10
+ceiling: 21
 
 blocked:
   # Shell. Nothing runs these; the tests that mention them read their source.
@@ -69,3 +69,23 @@ blocked:
   - ci:task test # 295
   - ci:task push-guard # 296
   - ci:task merge-guard # 297
+
+  # Estate surfaces nothing claims. Enumerated from the repository itself:
+  # every workload Flux deploys, every concern an outside vendor serves, and
+  # every verb the lifecycle program offers. A test claims one by carrying
+  # `covers: <unit>` in its doc comment.
+  #
+  # restore is the one to read twice. It is the break-glass path - the thing
+  # that brings state back after a total loss - and no test in any tier runs
+  # it. The whole backup design rests on it.
+  - api:overlay_network # 300
+  - integration:cloudnative-pg # 301
+  - integration:gha-runner-scale-set-controller # 302
+  - integration:openebs # 303
+  - integration:self-hosted # 304
+  - verb:check-inventory # 305
+  - verb:converge # 306
+  - verb:kubeconfig # 307
+  - verb:restore # 308
+  - verb:survey # 309
+  - verb:talosconfig # 310

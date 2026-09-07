@@ -164,6 +164,7 @@ func readWorkflows(t *testing.T) map[string]workflowFile {
 	return out
 }
 
+// covers: api:source_control
 func TestEveryRequiredCheckCanReportOnTheBranchesItGates(t *testing.T) {
 	workflows := readWorkflows(t)
 

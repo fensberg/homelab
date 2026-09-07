@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 30
+floor: 31
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -500,6 +500,19 @@ mutations:
       written the cheap tiers held 513 tests and the three that touch a real
       estate held 25. Raising a floor above the real count stands in for the
       count falling below the floor - the failure this exists to catch.
+
+  - guard: TestEveryEstateSurfaceIsNamedByATestOrIsADeclaredDebt
+    file: tests/coverage-blocklist.yml
+    find: "  - verb:restore # 308"
+    replace: "  # - verb:restore was here"
+    mentions: "claimed by no test"
+    why: >
+      restore is the break-glass path - the thing that brings state back after
+      a total loss - and no test in any tier runs it. Quietly dropping its line
+      is how a surface stops being tracked without anybody deciding to stop
+      tracking it, which is the difference between debt and a gap. The whole
+      point of enumerating surfaces from the repository is that a surface
+      cannot leave the list by being forgotten, only by being covered.
 
 # Guards that cannot be proved by mutation, and why.
 #

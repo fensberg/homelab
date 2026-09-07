@@ -33,6 +33,7 @@ import (
 // The unit test that shipped with that change asserted the flag was present.
 // It passed throughout. A test that asserts a change is present is not
 // coverage; this asserts the property the change broke.
+// covers: verb:demolish
 func TestDemolishRemovesAnEstateWhoseMachinesAreStopped(t *testing.T) {
 	site := guard(t)
 	buildIgnite(t)
