@@ -503,7 +503,7 @@ mutations:
 
   - guard: TestEveryEstateSurfaceIsNamedByATestOrIsADeclaredDebt
     file: tests/coverage-blocklist.yml
-    find: "  - verb:restore # 308"
+    find: "  - verb:restore # 298"
     replace: "  # - verb:restore was here"
     mentions: "claimed by no test"
     why: >

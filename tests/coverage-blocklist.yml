@@ -78,14 +78,14 @@ blocked:
   # restore is the one to read twice. It is the break-glass path - the thing
   # that brings state back after a total loss - and no test in any tier runs
   # it. The whole backup design rests on it.
-  - api:overlay_network # 300
-  - integration:cloudnative-pg # 301
-  - integration:gha-runner-scale-set-controller # 302
+  - api:overlay_network # 304
+  - integration:cloudnative-pg # 302
+  - integration:gha-runner-scale-set-controller # 301
   - integration:openebs # 303
-  - integration:self-hosted # 304
-  - verb:check-inventory # 305
-  - verb:converge # 306
-  - verb:kubeconfig # 307
-  - verb:restore # 308
-  - verb:survey # 309
-  - verb:talosconfig # 310
+  - integration:self-hosted # 300
+  - verb:check-inventory # 307
+  - verb:converge # 299
+  - verb:kubeconfig # 305
+  - verb:restore # 298
+  - verb:survey # 308
+  - verb:talosconfig # 306
