@@ -1,0 +1,57 @@
+# Units this repository cannot yet prove it tests.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  THIS IS A BLOCK LIST, NOT AN ALLOW LIST, AND THE DIFFERENCE IS THE POINT.
+#
+#  An allow list says "here is what we test". Everything missing from it is
+#  invisible rather than red, and it drifts silently - which is exactly what
+#  happened: `task test:coverage` measured one Go module of seven, two modules
+#  were compiled and run by nothing at all, and every guard written for one of
+#  them had only ever passed in the terminal that wrote it. Nobody removed
+#  those checks. They were never added, and an allow list cannot tell the
+#  difference.
+#
+#  So coverage is now discovered from the filesystem and fails closed. A unit
+#  nothing executes is a failure unless it is named here, and naming it is a
+#  debt rather than a decision.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# THERE IS DELIBERATELY NO `reason:` FIELD.
+#
+# Everywhere else in this repository an exemption carries a reason, because
+# there the question is whether an exception was considered. Here it is not.
+# A reason makes an entry feel settled, and a list of well-reasoned exemptions
+# is an allow list wearing a different hat - it stops being a debt anybody
+# intends to pay. An entry here says only "this is not tested yet".
+#
+# THE CEILING MAY ONLY FALL.
+#
+# It is the count of entries below and nothing may raise it. Removing an entry
+# without lowering the ceiling is refused, and so is an entry for something
+# that IS now tested - so the list cannot quietly accumulate slack the way a
+# coverage baseline once sat ten points below the real figure.
+#
+# Empty is the target.
+#
+# WHAT "TESTED" MEANS HERE: executed, not read. A test that greps a script's
+# text is a change detector - it passes forever while the behaviour rots, and
+# this repository refuses those by name. Six of the seven shell scripts were in
+# exactly that state, including the gate that enforces coverage, the script
+# that sets up every machine, and all three git hooks.
+ceiling: 6
+
+blocked:
+  # Shell. Nothing runs these; the tests that mention them read their source.
+  #
+  # scripts/coverage-gate.sh came off this list in the same change that added
+  # it, because it was the entry that mattered most: it decides whether every
+  # other coverage number is acceptable, and nothing had ever executed it.
+  - shell:.github/scripts/placeholder-config.sh
+  - shell:githooks/commit-msg
+  - shell:githooks/pre-commit
+  - shell:githooks/pre-push
+  - shell:scripts/install-dependencies.sh
+
+  # Ansible. There is no test tier for it at all - `task check-hypervisor` is a
+  # dry run against real hardware, not a test.
+  - ansible:management/hypervisor/hypervisor-prep.yml

@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 25
+floor: 28
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -431,6 +431,46 @@ mutations:
       ten points below the measured figure without anybody noticing. The guard
       refuses the opposite case too - the workflow asking for a key the
       baseline does not declare - so neither half can happen quietly.
+
+  - guard: TestEveryUnitIsExecutedByATestOrIsADeclaredDebt
+    file: tests/coverage-blocklist.yml
+    find: "  - shell:githooks/commit-msg"
+    replace: "  # - shell:githooks/commit-msg"
+    mentions: "executed by no test"
+    why: >
+      The regime is fail-closed: a unit nothing executes is a failure unless it
+      is named as a debt. Removing an entry for something still untested is the
+      move that turns a block list back into an allow list, quietly, one line
+      at a time - and an allow list cannot tell the difference between a check
+      that is absent and a check that is fine. That is not hypothetical here:
+      coverage measured one Go module of seven, two modules were run by nothing
+      at all, and three whole tiers sat outside the regime with nothing saying
+      so.
+
+  - guard: TestTheCoverageGateHoldsItsFloor
+    file: scripts/coverage-gate.sh
+    find: '	if (c + 0 < f + 0)      { print "regressed" }'
+    replace: '	if (c + 0 < -1)         { print "regressed" }'
+    mentions: "want 1"
+    why: >
+      With the comparison against a number nothing can be below, every
+      coverage figure reports as held and the gate exits 0 forever - a ratchet
+      that has quietly stopped holding anything, which is worse than none
+      because the green check says otherwise. Nothing executed this script
+      before; the only test that named it read one line of the workflow that
+      calls it.
+
+  - guard: TestTheCoverageGateRefusesWhatItCannotJudge
+    file: scripts/coverage-gate.sh
+    find: "	echo \"known languages: $(jq -r '.baselines | keys | join(\", \")' \"$BASELINE_FILE\")\" >&2\n	exit 2"
+    replace: "	echo \"known languages: $(jq -r '.baselines | keys | join(\", \")' \"$BASELINE_FILE\")\" >&2\n	exit 0"
+    mentions: "want 2"
+    why: >
+      A gate asked about a key it has no baseline for cannot judge, and exiting
+      0 makes that indistinguishable from judging and passing. This estate's
+      rule is that "I was not told what belongs here" and "nothing is wrong"
+      must never share an exit code - and this is the exact path a new module
+      takes before somebody writes its floor down.
 
 # Guards that cannot be proved by mutation, and why.
 #
