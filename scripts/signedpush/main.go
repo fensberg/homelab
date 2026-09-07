@@ -88,6 +88,28 @@ func run(appID, keyPath, branch string, tokenOnly, dryRun bool) error {
 		return nil
 	}
 
+	// Refused before anything is published, not after.
+	//
+	// This check already existed, inside syncLocal, which runs AFTER the
+	// commits have been signed and the branch moved. So a dirty tree produced
+	// the worst available outcome: published remotely, not synced locally, the
+	// two permanently diverged - and `non_fast_forward` covers every branch
+	// here, so the only repair is deleting the branch and recreating the pull
+	// request with it. That happened in the session this was written.
+	//
+	// It also catches something else, which is why it is worth moving rather
+	// than only warning. A commit that silently failed - a mangled message, a
+	// hook that refused, a shell chain that swallowed the exit status - leaves
+	// exactly this state: work still in the working tree, and a publish about
+	// to go out without it. Refusing here turns "I published the wrong thing"
+	// into "I have not committed yet", which is a sentence somebody can act on.
+	//
+	// Untracked files are deliberately not dirty: the built binaries live in
+	// toolshed/ and blocked a perfectly safe publish once already.
+	if err := refuseDirtyTree(); err != nil {
+		return err
+	}
+
 	a := &api{token: token, http: httpc}
 
 	remoteURL, err := git("remote", "get-url", "origin")
@@ -288,12 +310,8 @@ func syncLocal(branch, sha string) error {
 	// scripts/signedpush left the built tool sitting untracked, which read as
 	// a dirty tree and blocked a sync that would have been perfectly safe.
 	// What must block it is a modified tracked file, which reset would discard.
-	dirty, err := git("status", "--porcelain", "--untracked-files=no")
-	if err != nil {
+	if err := refuseDirtyTree(); err != nil {
 		return err
-	}
-	if strings.TrimSpace(dirty) != "" {
-		return fmt.Errorf("the working tree has uncommitted changes to tracked files")
 	}
 	if _, err := git("fetch", "--quiet", "origin", branch); err != nil {
 		return err
@@ -413,4 +431,29 @@ is exempt, because pieces of an epoch are meant to build on it.`,
 		}
 	}
 	return nil
+}
+
+// refuseDirtyTree stops anything proceeding while tracked files are modified.
+//
+// Untracked files are not dirty. The built binaries in toolshed/ are untracked
+// by design, and treating them as a dirty tree blocked a publish that was
+// perfectly safe. What matters is a modified TRACKED file: that is work the
+// publish would leave behind and the local reset would discard.
+func refuseDirtyTree() error {
+	dirty, err := git("status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(dirty) == "" {
+		return nil
+	}
+	return fmt.Errorf(`the working tree has uncommitted changes to tracked files:
+
+%s
+Publishing now would send a branch that is not what you have, and the local
+reset afterwards would refuse - leaving local and remote permanently diverged,
+which no force can repair here because non_fast_forward covers every branch.
+
+Commit them, or stash them, then publish. If you expected these to be committed
+already, a commit failed and said so somewhere you did not look.`, dirty)
 }
