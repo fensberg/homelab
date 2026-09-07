@@ -15,30 +15,61 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Where everything actually runs, asserted rather than audited by hand.
+// Does the cluster agree with what this repository declared?
 //
-// tests/go/repo/workload_placement_test.go checks what the manifests ASK for.
-// This checks what the cluster DID, and the two are different questions: a
-// Helm value at a path the chart does not read is accepted in silence, a
-// `preferred` affinity can be satisfied badly and never revisited, and a
-// component Talos owns can carry whatever Talos decided. None of those is
-// visible from the repository.
+// WHAT THIS IS AND IS NOT, because the first version of this file got the line
+// wrong and checked four things where only three were tests.
 //
-// It exists because the first audit of this - run by hand, once, after #237
-// merged - found two things nothing was watching for. Running it by hand again
-// next time is the failure this repository keeps having to repair.
+// A test compares reality against something this repository DECLARED. When it
+// fails, a file is wrong or was silently not applied, and somebody fixes it in
+// a commit. A monitor watches state that nothing declared - a scheduler's
+// runtime choice, an upstream component changing - and when that moves there
+// is nothing in the repository to fix. Failing a build for the second kind is
+// noise, and noise is the direction that gets checks switched off.
+//
+// So this covers the workloads this repository deploys, and nothing else.
+// Whether Talos's own components are well placed, and whether a Deployment's
+// replicas drifted onto one node, are real questions and they are epoch 04's -
+// see docs/epochs/04-observability.md.
+//
+// WHY IT CANNOT BE DONE IN THE REPO TIER. tests/go/repo checks that the
+// manifests ask for the right thing. It cannot check that the ask arrived: all
+// of this is set through Helm values, and a value at a path the chart does not
+// read is accepted with no error, no warning and no event. The manifest then
+// says the pod is placed and sized, and the pod is neither. This is the same
+// question TestDeployedEstateMatchesTheCode asks of OpenTofu, asked of the
+// things Flux applies.
 
 // A NODE NAME IS A SECRET HERE. Node names are `<site>-cp-100`, and the site
 // name must never reach a log or the repository. Nothing below prints one:
 // every node becomes its role plus its host octet, and every failure message
-// is passed through the redactor first. Static pods are named
-// `kube-apiserver-<node>`, so this matters for pod names too.
+// goes through the redactor first.
 type placement struct {
-	role   map[string]string // node name -> "control-plane" | "worker"
-	short  map[string]string // node name -> "cp-100" | "wk-200"
+	role   map[string]string
+	short  map[string]string
 	redact func(string) string
 	pods   []corev1.Pod
 }
+
+// talosOwned is the namespace this repository does not write.
+//
+// Everything in it is rendered by Talos from the machine config and reconciled
+// back if edited, so nothing in it can fail this file for a reason a commit
+// could fix. kube-proxy is the concrete case: it is BestEffort, and Talos's
+// `cluster.proxy` config exposes only disabled, image, mode and extraArgs -
+// there is no resources field to set.
+//
+// Excluding it was argued against in the first draft, on the grounds that it
+// would hide a regression in Talos's own components as readily as it hides
+// kube-proxy. That is true and it is the wrong conclusion: such a regression is
+// something to be alerted about, not something to fail an acceptance run over.
+const talosOwned = "kube-system"
+
+// The state database is the one workload of ours that stays on the control
+// planes, identified by the label CloudNativePG puts on its instance pods
+// rather than by a namespace name - the namespace comes from a vault value and
+// must not be written down here.
+const cnpgInstanceLabel = "cnpg.io/cluster"
 
 func readPlacement(t *testing.T) placement {
 	t.Helper()
@@ -49,10 +80,10 @@ func readPlacement(t *testing.T) placement {
 	require.NotEmpty(t, nodes, "the cluster reports no nodes, so nothing below asserts anything")
 
 	for _, n := range nodes {
-		role := "worker"
 		prefix := "wk"
+		role := "worker"
 		if _, ok := n.Labels["node-role.kubernetes.io/control-plane"]; ok {
-			role, prefix = "control-plane", "cp"
+			prefix, role = "cp", "control-plane"
 		}
 		parts := strings.Split(n.Name, "-")
 		p.role[n.Name] = role
@@ -65,19 +96,22 @@ func readPlacement(t *testing.T) placement {
 		return s
 	}
 
-	pods, err := k8s.ListPodsE(t, opts, metav1.ListOptions{})
+	all, err := k8s.ListPodsE(t, opts, metav1.ListOptions{})
 	require.NoError(t, err, "listing pods across every namespace")
-	for _, pod := range pods {
+	for _, pod := range all {
+		if pod.Namespace == talosOwned {
+			continue
+		}
 		switch pod.Status.Phase {
 		case corev1.PodRunning, corev1.PodPending:
 			p.pods = append(p.pods, pod)
 		}
 	}
-	require.NotEmpty(t, p.pods, "no running pods, so nothing below asserts anything")
+	require.NotEmpty(t, p.pods,
+		"no running pods outside %s, so this whole file is asserting nothing - has Flux reconciled?", talosOwned)
 	return p
 }
 
-// where names a pod without naming a machine.
 func (p placement) where(pod corev1.Pod) string {
 	node := p.short[pod.Spec.NodeName]
 	if node == "" {
@@ -86,116 +120,72 @@ func (p placement) where(pod corev1.Pod) string {
 	return fmt.Sprintf("%s  %s/%s", node, pod.Namespace, p.redact(pod.Name))
 }
 
-func (p placement) onControlPlane(pod corev1.Pod) bool {
-	return p.role[pod.Spec.NodeName] == "control-plane"
+func (p placement) isDatabase(pod corev1.Pod) bool {
+	_, ok := pod.Labels[cnpgInstanceLabel]
+	return ok
 }
 
-// talosOwned is the namespace whose contents this estate does not write.
-//
-// Everything in it is rendered by Talos from the machine config and reconciled
-// back if edited, so its sizing and placement are Talos's decisions, not ours.
-// Naming it here rather than testing "not ours" some other way keeps the line
-// explicit: the moment something of ours lands in kube-system, this stops
-// covering it and somebody has to say so.
-const talosOwned = "kube-system"
-
-// The state database is the one workload of ours that stays on the control
-// planes, and it is identified by the label CloudNativePG puts on its own
-// instance pods rather than by a namespace name - the namespace comes from a
-// vault value and must not be written down here.
-const cnpgInstanceLabel = "cnpg.io/cluster"
-
-// The property #237 exists to deliver: the control plane carries only
-// control-plane work.
-//
-// Asserted against the cluster rather than the manifests because the manifests
-// cannot see this. Four of the five workloads moved by Helm values, one by a
-// kustomize patch, and a value at a path a chart does not read is accepted
-// without an error - so "the manifest says worker" and "the pod is on a
-// worker" are genuinely separate facts.
-func TestOnlyTheStateDatabaseRunsOnAControlPlane(t *testing.T) {
+// Every manifest under clusters/ but the state database declares a required
+// anti-control-plane affinity. This is whether that arrived.
+func TestDeployedWorkloadsAreOffTheControlPlane(t *testing.T) {
 	t.Parallel()
 	p := readPlacement(t)
 
 	var trespassers []string
 	for _, pod := range p.pods {
-		if !p.onControlPlane(pod) || pod.Namespace == talosOwned {
-			continue
-		}
-		if _, isDatabase := pod.Labels[cnpgInstanceLabel]; isDatabase {
+		if p.role[pod.Spec.NodeName] != "control-plane" || p.isDatabase(pod) {
 			continue
 		}
 		trespassers = append(trespassers, p.where(pod))
 	}
 	sort.Strings(trespassers)
 
-	assert.Empty(t, trespassers, `%d pod(s) of ours are on a machine holding quorum:
+	assert.Empty(t, trespassers, `%d deployed pod(s) are on a machine holding quorum:
 
   %s
 
-The control plane is meant to carry control-plane work and the state database,
-whose volumes are pinned to those nodes by OpenEBS Local PV Hostpath. Anything
-else there is unreserved memory beside etcd, and it is what an integration run
-took when it killed a control plane (#236).
+Every manifest under clusters/ but the state database declares a required
+anti-control-plane affinity, so this is the affinity not arriving rather than
+a scheduling accident - `+"`requiredDuringScheduling`"+` cannot be satisfied by a
+control plane.
 
-If this is a new workload, give it the anti-control-plane affinity the others
-carry. If a chart moved, check the values path still exists - a Helm value at a
-path nothing reads is accepted in silence.`,
+The likely cause is a Helm values path that no longer exists. A value at a path
+the chart does not read is accepted in silence, so the manifest still says
+worker while the pod is not on one. Check the path against the pinned chart's
+own values.yaml; tests/go/repo/workload_placement_test.go records which version
+each was read from.`,
 		len(trespassers), strings.Join(trespassers, "\n  "))
 }
 
-// besteffortExemptions are the pods that carry no requests and stay that way,
-// each with the reason it cannot be fixed here.
-//
-// A list rather than "skip kube-system", because kube-system is where the
-// cluster's own machinery lives and most of it IS sized. Exempting the whole
-// namespace would hide a Talos regression as readily as it hides this.
-var besteffortExemptions = map[string]string{
-	"kube-proxy": "Talos renders and reconciles the kube-proxy DaemonSet, and its " +
-		"machine-config surface (cluster.proxy) exposes only disabled, image, mode " +
-		"and extraArgs - there is no resources field to set, so this is not ours. " +
-		"It is also on its way out: epoch 03 sets cluster.proxy.disabled because " +
-		"Cilium replaces kube-proxy.",
-}
-
-// BestEffort is the first cgroup the OOM controller reaches for, which is how
-// a thirteen-minute integration run died (#234) and how five infrastructure
-// pods were found to be the estate's own default victims (#237).
-func TestNoPodIsBestEffortWithoutASayingWhy(t *testing.T) {
+// Requests are declared in the same values as the placement, through the same
+// silently-ignored paths, and their absence is what made five infrastructure
+// pods the OOM controller's first choice (#237).
+func TestDeployedWorkloadsCarryTheRequestsTheyDeclare(t *testing.T) {
 	t.Parallel()
 	p := readPlacement(t)
 
-	var unexplained []string
+	var besteffort []string
 	for _, pod := range p.pods {
-		if pod.Status.QOSClass != corev1.PodQOSBestEffort {
-			continue
-		}
-		exempt := false
-		for prefix := range besteffortExemptions {
-			if strings.HasPrefix(pod.Name, prefix) {
-				exempt = true
-				break
-			}
-		}
-		if !exempt {
-			unexplained = append(unexplained, p.where(pod))
+		if pod.Status.QOSClass == corev1.PodQOSBestEffort {
+			besteffort = append(besteffort, p.where(pod))
 		}
 	}
-	sort.Strings(unexplained)
+	sort.Strings(besteffort)
 
-	assert.Empty(t, unexplained, `%d pod(s) request nothing at all:
+	assert.Empty(t, besteffort, `%d deployed pod(s) request nothing at all:
 
   %s
 
-A pod with no requests is QoS class BestEffort, which puts it first in the
-kubelet's eviction order and first in the OOM controller's. Give it requests -
-no limits - or add it to besteffortExemptions with the reason it cannot have
-them. An omission and a considered exemption must not look the same from here.`,
-		len(unexplained), strings.Join(unexplained, "\n  "))
+Every one of these declares requests in its manifest, so BestEffort here means
+the declaration did not arrive - the same silently-ignored values path as the
+affinity above. A BestEffort pod is first in the kubelet's eviction order and
+first in the OOM controller's.`,
+		len(besteffort), strings.Join(besteffort, "\n  "))
 }
 
-// priorityExemptions are the pods deliberately left unclassified, and until
-// when.
+// priorityExemptions are the deployed pods deliberately left unclassified, with
+// the reason and the condition that removes the exemption. An omission and a
+// considered exemption must not look the same from here.
 var priorityExemptions = map[string]string{
 	cnpgInstanceLabel: "The state database. Setting priorityClassName on a " +
 		"CloudNativePG Cluster changes the instance pod spec, which CNPG answers " +
@@ -205,10 +195,7 @@ var priorityExemptions = map[string]string{
 		"two. Remove this when the taint lands.",
 }
 
-// An unclassified pod is priority zero, below every class this estate
-// declares - so it is not merely last, it is below the work deliberately
-// marked as able to wait.
-func TestEveryPodHasAPriorityClass(t *testing.T) {
+func TestDeployedWorkloadsCarryThePriorityTheyDeclare(t *testing.T) {
 	t.Parallel()
 	p := readPlacement(t)
 
@@ -230,64 +217,13 @@ func TestEveryPodHasAPriorityClass(t *testing.T) {
 	}
 	sort.Strings(unclassified)
 
-	assert.Empty(t, unclassified, `%d pod(s) have no priority class:
+	assert.Empty(t, unclassified, `%d deployed pod(s) have no priority class:
 
   %s
 
-Priority zero is below critical, interactive and batch alike. Give it one of
-those, or record it in priorityExemptions with the reason and the condition
-that removes the exemption.`,
+Priority zero is below critical, interactive and batch alike. Either the
+manifest does not set one - repo-tier tests cover that - or it does and the
+value did not arrive. If it is deliberate, add it to priorityExemptions with
+the reason and the condition that removes the exemption.`,
 		len(unclassified), strings.Join(unclassified, "\n  "))
-}
-
-// Cluster DNS runs two replicas so that losing one machine does not take DNS
-// with it. That only holds if they are on different machines.
-//
-// Talos asks for exactly this and asks for it softly: the CoreDNS Deployment
-// it renders carries a podAntiAffinity at
-// preferredDuringSchedulingIgnoredDuringExecution, weight 100, over
-// kubernetes.io/hostname. Preferred means the scheduler will co-locate them
-// when it has a reason to, and IgnoredDuringExecution means it never revisits
-// the decision - so a pair placed together during bootstrap, when one node was
-// Ready, stays together for the life of the cluster with nothing reporting it.
-//
-// That is exactly what the first placement audit found: both replicas on the
-// same control plane, months after there were five nodes to choose from.
-func TestClusterDNSIsNotAllOnOneNode(t *testing.T) {
-	t.Parallel()
-	p := readPlacement(t)
-
-	nodes := map[string]bool{}
-	replicas := 0
-	for _, pod := range p.pods {
-		if pod.Namespace != talosOwned || pod.Labels["k8s-app"] != "kube-dns" {
-			continue
-		}
-		replicas++
-		nodes[p.short[pod.Spec.NodeName]] = true
-	}
-	require.NotZero(t, replicas, "no CoreDNS pod carries k8s-app=kube-dns, so this asserts nothing - has Talos renamed the label?")
-
-	if replicas < 2 || len(p.short) < 2 {
-		t.Skipf("%d CoreDNS replica(s) across %d node(s): spreading is not available, so there is nothing to assert", replicas, len(p.short))
-	}
-
-	placed := make([]string, 0, len(nodes))
-	for n := range nodes {
-		placed = append(placed, n)
-	}
-	sort.Strings(placed)
-
-	assert.Greater(t, len(nodes), 1, `all %d CoreDNS replicas are on %s.
-
-Losing that one machine takes cluster DNS with it until the pods are
-rescheduled, which is the failure the second replica exists to prevent.
-
-Talos's anti-affinity is `+"`preferred`"+`, not `+"`required`"+`, and it is
-IgnoredDuringExecution - so this is not a rule being violated, it is a
-preference that was satisfied badly once (most likely at bootstrap, when one
-node was Ready) and is never revisited. Restarting the Deployment reschedules
-them and is the immediate remedy; it does not stop it recurring, which is why
-this test exists rather than a note.`,
-		replicas, strings.Join(placed, " and "))
 }

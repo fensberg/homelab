@@ -1810,9 +1810,12 @@ soft constraint is evaluated once, at the least representative moment there is,
 and then remembered forever.**
 
 Restarting the Deployment would spread them today and would not stop it
-recurring, so the check ships with the finding (#274). The ecosystem's answer to
-"pods that are in the wrong place because scheduling happened at a bad moment"
-is the descheduler, and that is what to evaluate rather than anything bespoke.
+recurring. This was first written as an integration test, and that was wrong:
+nothing in this repository asks for the spread, so a red run would report
+something no commit could fix. **It is an alert, and it moved to epoch 04.**
+The ecosystem's answer to "pods that are in the wrong place because scheduling
+happened at a bad moment" is the descheduler, and that is what to evaluate
+rather than anything bespoke. Tracked as #274.
 
 ### kube-proxy is BestEffort, is not ours, and is about to be deleted
 

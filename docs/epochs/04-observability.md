@@ -89,6 +89,73 @@ the matrix; run on each hypervisor, the rows assemble into the whole. This
 epoch owns making it periodic, making its output land somewhere durable, and
 deciding what a hole in the mesh should page for.
 
+## Known driver: three placement questions that are alerts, not tests
+
+Arrived from epoch 02, where the first placement audit of the live cluster
+found them and the first instinct was to write them as integration tests. The
+operator refused that framing, and the line they drew is the one to keep:
+**"isn't the discovery of processes on which node the job of a monitor? Why
+test for it?"**
+
+The distinction generalises past these three. **A test compares reality against
+something the repository declared** - when it fails, a file is wrong or was
+silently not applied, and somebody fixes it in a commit. **A monitor watches
+state that nothing declared** - a scheduler's runtime choice, an upstream
+component changing - and when that moves there is nothing in the repository to
+fix. The practical test is whether a red result sends someone to a file or to
+the cluster. If it is the cluster, it is an alert.
+
+Failing an acceptance run for the second kind is not merely untidy: it is a
+guard broken toward noise, which is the direction that gets guards switched off.
+A red integration run that means "the scheduler put two pods together" teaches
+everybody to skim red integration runs.
+
+What stayed in `tests/go/integration/placement_test.go` is the part that is a
+declaration: the workloads this repository deploys, and whether the placement,
+requests and priority class they declare actually arrived. Those are set
+through Helm values, a value at a path the chart does not read is accepted in
+silence, and the deployed pod then disagrees with the manifest. That is drift
+between code and reality, the same question `TestDeployedEstateMatchesTheCode`
+already asks of OpenTofu.
+
+Three things came out of the suite and belong here instead.
+
+**Replica spread within a Deployment.** Both CoreDNS replicas run on one node
+(#274) and have since the cluster was built. Nothing in this repository asks
+otherwise - Talos's rendered Deployment carries a `podAntiAffinity` at
+`preferredDuringSchedulingIgnoredDuringExecution`, and `preferred` plus
+`IgnoredDuringExecution` means the scheduler co-located them at bootstrap, when
+one node was Ready, and has never revisited it. No commit fixes that, which is
+exactly why it is not a test. The alert is "a Deployment with more than one
+replica has them all on one node", and it generalises past CoreDNS to anything
+this estate later runs in pairs.
+
+**Anything in the namespace Talos owns going BestEffort or unclassified.** The
+integration tier now skips `kube-system` entirely, and that exclusion was
+argued against before it was made - it hides a regression in Talos's own
+components as readily as it hides the known kube-proxy case. The objection is
+right and the conclusion was wrong: such a regression is worth being told about
+promptly, not worth failing an acceptance run over, and a Talos upgrade
+changing a component's QoS class is precisely a thing the world did rather than
+a thing this repository got wrong.
+
+**Requested against actually used.** The audit could only report requests -
+what the scheduler has promised. The two diverge in both directions: kube-proxy
+requests zero and uses something, and the API server reserves 512 MiB whether
+or not it wants it. Every sizing number in `02-abstraction.md` is a judgement
+awaiting this measurement, and the operator's standing goal - near 100%
+utilisation, never pegged - cannot be evaluated at all without it. This is the
+single most load-bearing thing this epoch adds.
+
+A fourth, noticed while answering a question about priority classes rather than
+by the audit: **three pods on the workers carry a priority this estate did not
+choose.** Flux's source, kustomize and helm controllers ship with
+`system-cluster-critical` from upstream, which is 2,000,000,000 - two thousand
+times the top of this estate's own scale, and above `critical`. It is probably
+right that Flux outranks everything here, but it was upstream's decision rather
+than one made in `priority-classes.yaml`, and the eviction order on a full
+worker depends on it. Worth surfacing rather than deciding now.
+
 ## Decisions
 
 _Recorded as they are made._
