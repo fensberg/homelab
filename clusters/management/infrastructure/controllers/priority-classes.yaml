@@ -29,12 +29,22 @@
 # So eviction exists in one place only, which is the smallest surface that
 # still protects quorum.
 #
-# WHY NOT `system-cluster-critical` FOR THE TOP CLASS. It sits at 2000000000,
-# above the kubelet's own static pods, and nothing here has a claim on that.
-# It is also a cluster-reserved name, so putting the estate's operators in it
-# would make a future decision about the API server a decision about them too.
-# Flux's generated manifest already sets it on three of its controllers and
-# that is left alone - upstream's call about upstream's components.
+# WHY NOT `system-cluster-critical` FOR THE TOP CLASS. Not because it ranks
+# higher than anything here needs - it does, at 2000000000 - but because it is
+# already occupied. A placement audit of the live cluster found Talos using it
+# for the API server, the scheduler, the controller manager, CoreDNS and
+# kube-proxy, with `system-node-critical` above that for the CNI. Putting the
+# estate's own operators in the same class would mean a future decision about
+# the API server is a decision about them too.
+#
+# The name is reserved as well: the API server refuses a user-created class
+# whose name begins `system-`, so these three could not have been called that
+# even if it were wanted. Flux's generated manifest already sets
+# `system-cluster-critical` on three of its four controllers and that is left
+# alone - upstream's call about upstream's components.
+#
+# The result is a ladder: Kubernetes' own machinery on top, these three below
+# it, and an unclassified pod at zero underneath all of them.
 #
 # The numbers are round and widely spaced because nothing computes with them.
 # They only have to sort, and four zeros between classes means one can be
