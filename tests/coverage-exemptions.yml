@@ -38,49 +38,49 @@ files:
   # MachinesAreStopped covers the teardown path. Not visible in the unit
   # coverage profile because that tier is build-tagged and needs a real
   # hypervisor, which is the point of it rather than a shortcoming.
-  - path: internal/ansible/ansible.go
+  - path: contractor/internal/ansible/ansible.go
     uncovered: 2
     covered_by: e2e
-  - path: internal/phases/attach.go
+  - path: contractor/internal/phases/attach.go
     uncovered: 1
     covered_by: e2e
-  - path: internal/phases/cluster.go
+  - path: contractor/internal/phases/cluster.go
     uncovered: 3
     covered_by: e2e
-  - path: internal/phases/compute.go
+  - path: contractor/internal/phases/compute.go
     uncovered: 4
     covered_by: e2e
-  - path: internal/phases/destroy.go
+  - path: contractor/internal/phases/destroy.go
     uncovered: 3
     covered_by: e2e
-  - path: internal/phases/hypervisor.go
+  - path: contractor/internal/phases/hypervisor.go
     uncovered: 1
     covered_by: e2e
-  - path: internal/phases/migrate.go
+  - path: contractor/internal/phases/migrate.go
     uncovered: 2
     covered_by: e2e
-  - path: internal/phases/overlay.go
+  - path: contractor/internal/phases/overlay.go
     uncovered: 1
     covered_by: e2e
-  - path: internal/phases/render.go
+  - path: contractor/internal/phases/render.go
     uncovered: 2
     covered_by: e2e
-  - path: internal/phases/sterilize.go
+  - path: contractor/internal/phases/sterilize.go
     uncovered: 6
     covered_by: e2e
-  - path: internal/phases/teardown.go
+  - path: contractor/internal/phases/teardown.go
     uncovered: 3
     covered_by: e2e
-  - path: internal/phases/verify.go
+  - path: contractor/internal/phases/verify.go
     uncovered: 1
     covered_by: e2e
-  - path: internal/run/adopt.go
+  - path: contractor/internal/run/adopt.go
     uncovered: 2
     covered_by: e2e
-  - path: internal/run/exec.go
+  - path: contractor/internal/run/exec.go
     uncovered: 15
     covered_by: e2e
-  - path: internal/run/net.go
+  - path: contractor/internal/run/net.go
     uncovered: 1
     covered_by: e2e
 
@@ -90,22 +90,22 @@ files:
   # the count odd, the Talos API answering, Flux reconciled, the newest
   # backup fresh and well formed, backup generations bounded, WAL archiving
   # healthy, and the deployed estate matching the code.
-  - path: internal/phases/backup.go
+  - path: contractor/internal/phases/backup.go
     uncovered: 2
     covered_by: integration
-  - path: internal/phases/health.go
+  - path: contractor/internal/phases/health.go
     uncovered: 11
     covered_by: integration
-  - path: internal/phases/health_etcd.go
+  - path: contractor/internal/phases/health_etcd.go
     uncovered: 2
     covered_by: integration
-  - path: internal/phases/plan.go
+  - path: contractor/internal/phases/plan.go
     uncovered: 2
     covered_by: integration
-  - path: internal/phases/prune.go
+  - path: contractor/internal/phases/prune.go
     uncovered: 3
     covered_by: integration
-  - path: internal/survey/run.go
+  - path: contractor/internal/survey/run.go
     uncovered: 3
     covered_by: integration
 
@@ -120,28 +120,28 @@ files:
   # recorded in Deferred as never having been executed. encryption.go sets
   # TF_ENCRYPTION, where being wrong writes plaintext state to a database
   # that ships off-site.
-  - path: internal/onepassword/onepassword.go
+  - path: contractor/internal/onepassword/onepassword.go
     uncovered: 6
     covered_by: nothing
-  - path: internal/onepassword/probe.go
+  - path: contractor/internal/onepassword/probe.go
     uncovered: 2
     covered_by: nothing
-  - path: internal/onepassword/upsert.go
+  - path: contractor/internal/onepassword/upsert.go
     uncovered: 2
     covered_by: nothing
-  - path: internal/phases/checkvault.go
+  - path: contractor/internal/phases/checkvault.go
     uncovered: 1
     covered_by: nothing
-  - path: internal/phases/converge_preconditions.go
+  - path: contractor/internal/phases/converge_preconditions.go
     uncovered: 1
     covered_by: nothing
-  - path: internal/phases/encryption.go
+  - path: contractor/internal/phases/encryption.go
     uncovered: 1
     covered_by: nothing
-  - path: internal/phases/restore.go
+  - path: contractor/internal/phases/restore.go
     uncovered: 3
     covered_by: nothing
-  - path: internal/phases/secrets.go
+  - path: contractor/internal/phases/secrets.go
     uncovered: 4
     covered_by: nothing
 
@@ -153,15 +153,70 @@ files:
   # failures_are_reported_test.go, which requires a failure to name its
   # cause and not only its remedy. main.go's one real decision,
   # selectPhases, is covered.
-  - path: internal/phases/registry.go
+  - path: contractor/internal/phases/registry.go
     uncovered: 2
     covered_by: not-worth-testing
-  - path: internal/run/context.go
+  - path: contractor/internal/run/context.go
     uncovered: 1
     covered_by: not-worth-testing
-  - path: internal/run/log.go
+  - path: contractor/internal/run/log.go
     uncovered: 6
     covered_by: not-worth-testing
-  - path: main.go
+  - path: contractor/main.go
     uncovered: 8
     covered_by: not-worth-testing
+
+  # --- the other six programs ------------------------------------------
+  #
+  # This file covered scripts/contractor alone, so a function with no coverage
+  # anywhere else was invisible. Six of the seven modules were in that state,
+  # including the gatehouse - whose functions refuse unsigned pushes and
+  # unapproved deliveries - and signedpush, which reads the App private key.
+  #
+  # Every one is `covered_by: nothing`, and that is the honest answer rather
+  # than a placeholder: these are local tools, so no integration, api or e2e
+  # tier reaches them. Unlike the contractor's entries above, there is no other
+  # tier quietly doing the work - these are simply untested, and each is a
+  # candidate for an ordinary unit test rather than a tier decision.
+  - path: attestation/main.go
+    uncovered: 5
+    covered_by: nothing
+  - path: clerk/github.go
+    uncovered: 2
+    covered_by: nothing
+  - path: clerk/main.go
+    uncovered: 8
+    covered_by: nothing
+  - path: collector/clear-branches.go
+    uncovered: 8
+    covered_by: nothing
+  - path: collector/main.go
+    uncovered: 3
+    covered_by: nothing
+  - path: gatehouse/guard-deliveries.go
+    uncovered: 4
+    covered_by: nothing
+  - path: gatehouse/guard-push.go
+    uncovered: 2
+    covered_by: nothing
+  - path: gatehouse/main.go
+    uncovered: 3
+    covered_by: nothing
+  - path: gatehouse/patrol.go
+    uncovered: 7
+    covered_by: nothing
+  - path: inspector/comment.go
+    uncovered: 1
+    covered_by: nothing
+  - path: inspector/main.go
+    uncovered: 4
+    covered_by: nothing
+  - path: signedpush/api.go
+    uncovered: 3
+    covered_by: nothing
+  - path: signedpush/jwt.go
+    uncovered: 1
+    covered_by: nothing
+  - path: signedpush/main.go
+    uncovered: 6
+    covered_by: nothing
