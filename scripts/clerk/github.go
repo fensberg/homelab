@@ -292,7 +292,23 @@ func (g *gh) shown(pr int) (map[string]map[int]bool, error) {
 // the half that decides whether a finding is treated as visible.
 func linesFromPatch(patch string) map[int]bool {
 	lines := map[int]bool{}
-	for _, line := range strings.Split(patch, "\n") {
+	body := strings.Split(patch, "\n")
+
+	// A hunk header is metadata and can claim anything. "@@ -1,1 +1,4000000000
+	// @@" is well formed, and trusting its count meant allocating four billion
+	// map entries - the process was killed. This patch text comes from the
+	// GitHub API, so it is not attacker-controlled in any interesting way, but
+	// a wrong number in a header should cost nothing rather than everything.
+	//
+	// The bound is the patch's own length: a hunk cannot display more new-side
+	// lines than the patch body contains, because each displayed line is one
+	// line of it. Generous, exact enough, and needs no second source of truth.
+	//
+	// Found by FuzzLinesFromPatch. No table of hunk headers anybody writes by
+	// hand contains this one.
+	limit := len(body)
+
+	for _, line := range body {
 		m := hunkHeader.FindStringSubmatch(line)
 		if m == nil {
 			continue
@@ -307,7 +323,17 @@ func linesFromPatch(patch string) map[int]bool {
 				continue
 			}
 		}
+		if count > limit {
+			count = limit
+		}
 		for i := start; i < start+count; i++ {
+			// Files start at line 1. A hunk header of "@@ -0,0 +0,1 @@" is
+			// well formed and yields line 0, and marking that shown claims a
+			// finding there would render on the diff - about a line that does
+			// not exist. Found by FuzzLinesFromPatch.
+			if i < 1 {
+				continue
+			}
 			lines[i] = true
 		}
 	}
