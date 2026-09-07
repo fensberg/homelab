@@ -367,6 +367,36 @@ tasks:
           echo "  [skip] no node_modules - skipping JS coverage"
         fi
 
+  test:fuzz:
+    desc: "Fuzz every target for a bounded time. Slow; `task test` runs their seeds."
+    # `go test` already runs each fuzz target against its committed seed corpus,
+    # so the ordinary suite exercises them on every run and a crasher found here
+    # becomes a seed that fails forever after. This verb is the other half: it
+    # generates new input.
+    #
+    # One target at a time is a Go limitation, not a choice - `-fuzz` takes a
+    # single pattern - so this sweeps them. FUZZTIME is per target.
+    #
+    # Deliberately not in `task test` and not in CI. Fuzzing is unbounded work
+    # with a time budget, and a lane whose result depends on how long it ran is
+    # a lane that fails for reasons unrelated to the change.
+    vars:
+      FUZZTIME: '{{.FUZZTIME | default "30s"}}'
+    cmds:
+      - |
+        for dir in scripts/*/ tests/go; do
+          dir="${dir%/}"
+          [ -f "$dir/go.mod" ] || continue
+          grep -rlE "^func Fuzz[A-Za-z0-9_]+\\(" "$dir" --include='*_test.go' | while read -r file; do
+            pkg="./$(realpath --relative-to="$dir" "$(dirname "$file")")"
+            [ "$pkg" = "./." ] && pkg="."
+            grep -oE "^func Fuzz[A-Za-z0-9_]+" "$file" | sed 's/^func //' | while read -r target; do
+              echo "  -> $dir $pkg $target ({{.FUZZTIME}})"
+              go test -C "$dir" -run "$target" -fuzz "$target" -fuzztime {{.FUZZTIME}} "$pkg"
+            done
+          done
+        done
+
   test:integration:
     desc: "Read-only checks against a real, already-built estate. Needs secrets."
     # Reads the same rendered config the start button reads, so rendering it

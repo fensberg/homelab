@@ -46,7 +46,12 @@
     "coverage floor may: consolidating five test functions into one table is an",
     "improvement and will drop a count. What they refuse is the count dropping",
     "and nobody noticing, which is how a tier that is hard to write quietly",
-    "stops being written."
+    "stops being written.",
+    "",
+    "fuzz is counted wherever it lives rather than by directory, because a fuzz",
+    "target beside the unit tests is still a fuzz target and the interesting",
+    "number is how many exist at all. It is the tier most likely to go quietly to",
+    "zero: deleting one looks like tidying away a test that never fails."
   ],
   "baselines": {
     "go/attestation": 26,
@@ -60,11 +65,12 @@
   },
   "tiers": {
     "unit": 391,
-    "contract": 122,
+    "contract": 123,
     "integration": 14,
     "api": 9,
     "e2e": 2,
     "js": 9,
-    "tofu": 11
+    "tofu": 11,
+    "fuzz": 8
   }
 }

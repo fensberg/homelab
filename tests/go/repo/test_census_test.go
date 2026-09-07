@@ -40,7 +40,14 @@ import (
 // count; that is a decision worth writing down rather than a failure. What the
 // floor makes impossible is the count dropping and nobody noticing.
 
-var testDeclaration = regexp.MustCompile(`(?m)^func (Test|Fuzz|Benchmark)[A-Z_]`)
+var testDeclaration = regexp.MustCompile(`(?m)^func (Test|Benchmark)[A-Z_]`)
+
+// Fuzz targets are counted as their own tier rather than folded into the one
+// they happen to live in. They answer a different question - what happens on
+// input nobody thought of - and their number is exactly the kind that goes
+// quietly to zero, because deleting a fuzz target looks like tidying up a test
+// that never fails.
+var fuzzDeclaration = regexp.MustCompile(`(?m)^func Fuzz[A-Z_]`)
 
 var buildTag = regexp.MustCompile(`(?m)^//go:build\s+([a-z0-9_]+)`)
 
@@ -78,6 +85,9 @@ func census(t *testing.T) map[string]int {
 		if tier := tierOf(rel, body); tier != "" {
 			counts[tier] += len(testDeclaration.FindAll(body, -1))
 		}
+		// Wherever it lives. A fuzz target beside the unit tests is still a
+		// fuzz target, and the interesting number is how many exist at all.
+		counts["fuzz"] += len(fuzzDeclaration.FindAll(body, -1))
 	}
 
 	// JavaScript, where a test is an `it(` or a `test(` call.
