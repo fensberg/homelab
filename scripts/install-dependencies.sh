@@ -349,11 +349,22 @@ ok "git hooks wired to githooks/, with the supplier guard ahead of pre-commit"
 # Configured for this repository only. Nothing here should quietly change how
 # somebody's other checkouts behave.
 #
-# Registering the key with GitHub is NOT required for a push to succeed. The
-# hook asks whether a signature exists, not whether GitHub can verify it, so
-# these three lines are enough to unblock `git push` and the editor's sync
-# button. Registering it only earns the "Verified" badge, which is why it is
-# printed as optional rather than as a blocker.
+# REGISTERING THE KEY WITH GITHUB IS REQUIRED, and this comment used to say the
+# opposite - that it "only earns the Verified badge" and was safe to leave as an
+# optional note. That is false, and it cost an evening.
+#
+# The local hook does ask only whether a signature exists, so it passes. GitHub
+# asks something stricter: the "all branches" ruleset carries
+# required_signatures, and a signature GitHub cannot verify is not one it
+# accepts. It can only verify against a key registered to the signer's account.
+# So an unregistered key produces a commit the hook waves through and the remote
+# refuses - and the editor's sync button reports "failed to push some refs" with
+# no reason, because it does not surface git's stderr.
+#
+# That is the worst arrangement available: every local check green, the push
+# refused, and nothing anywhere saying why. So the registration happens here,
+# and a failure to register is a warning with the exact command rather than a
+# silent gap.
 step "commit signing"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -378,9 +389,23 @@ else
 	git -C "$repo_root" config user.signingkey "$signing_key"
 	git -C "$repo_root" config commit.gpgsign true
 	ok "commits from this checkout are now signed with $signing_key"
-	info "optional: add that key to GitHub a second time, as a Signing key"
-	info "  (Settings > SSH and GPG keys > New SSH key > Key type: Signing)"
-	info "  Pushes work without it; it is what earns the Verified badge."
+
+	# The agent has no user account by construction, so there is nothing to
+	# register a key against and nothing to warn about - it publishes through
+	# signedpush, which has GitHub sign on its behalf through the API.
+	if ! has gh || ! gh api user --jq .login >/dev/null 2>&1; then
+		info "no GitHub user account here, so nothing to register"
+		info "  (the agent signs through signedpush, not with a key)"
+	elif gh ssh-key list 2>/dev/null | grep -qF "$(awk '{print $2}' "$signing_key")"; then
+		skip "that key is already registered with GitHub"
+	elif gh ssh-key add "$signing_key" --type signing --title "$(hostname -s) git signing" >/dev/null 2>&1; then
+		ok "registered it with GitHub as a signing key"
+	else
+		warn "could not register the signing key, and pushes WILL be refused without it"
+		warn "run these two, then push again:"
+		warn "  gh auth refresh -h github.com -s write:ssh_signing_key"
+		warn "  gh ssh-key add $signing_key --type signing --title \"$(hostname -s) git signing\""
+	fi
 fi
 
 echo
