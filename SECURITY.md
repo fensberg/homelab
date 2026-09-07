@@ -6,10 +6,14 @@ than opening a public issue.
 
 ## Reporting a Vulnerability
 
-Use GitHub's private vulnerability reporting for this repository: open the
-**Security** tab -> **Advisories** -> **Report a vulnerability**. That opens a
-private conversation with the maintainer that nobody else can see until it's
-resolved.
+**[Report a vulnerability privately](https://github.com/fensberg/homelab/security/advisories/new)**.
+That link opens GitHub's private vulnerability reporting for this repository;
+the same form is reachable from the **Security** tab -> **Advisories** ->
+**Report a vulnerability**. Either way it opens a private conversation with the
+maintainer that nobody else can see until it is resolved.
+
+If you have forked this repository, use your own fork's advisory page instead:
+the link above reports to this one.
 
 Do not open a public issue or pull request for a security finding.
 
