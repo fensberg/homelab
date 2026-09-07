@@ -12,9 +12,13 @@ on:
       - ".github/workflows/runner-image.yml"
   workflow_dispatch:
 
+# Workflow-level: read and nothing else. `packages: write` is granted on the
+# build job, which is the only thing that pushes an image, so a job added to
+# this file later does not inherit the ability to publish to the registry.
+# Scorecard flags the workflow-level form as `topLevel 'packages' permission
+# set to 'write'`.
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: runner-image
@@ -38,6 +42,9 @@ defaults:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      packages: write
     name: Build and publish
     # ubuntu-latest deliberately: the runner cannot be relied on to build the
     # image it is itself running, and this needs no estate access.

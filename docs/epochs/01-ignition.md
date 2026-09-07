@@ -1337,6 +1337,86 @@ refuses any control-plane resize.
 that each node's name ends in the last octet of its address, so the three
 cannot drift apart again quietly.
 
+## Known driver: the first Scorecard triage, and what is deliberately not fixed
+
+Fourteen open Scorecard alerts, read for the first time on 2026-09-07. Recorded
+because roughly half of them are things this repository will never fix, and a
+list of permanent alerts with no stated reason is indistinguishable from a
+backlog nobody has looked at.
+
+**The headline is unflattering and useful. "Pin everything" was not true in
+four places**, and it is this repository's loudest invariant.
+
+| Alert                     | What was unpinned                                                    |
+| ------------------------- | -------------------------------------------------------------------- |
+| `PinnedDependenciesID`    | `.github/runner-image/Dockerfile` took its base image by **tag**     |
+| `PinnedDependenciesID`    | `task` installed by `curl \| sudo sh` from an unpinned remote script |
+| `PinnedDependenciesID` x2 | `ansible-core` and `pre-commit` installed by `pip` with no version   |
+
+The runner Dockerfile is the sharpest of those. `runner-scale-set.yaml` argues
+at length that "a tag is a pointer someone can move" and that "a mutable tag is
+the one pin that silently is not one" - about the image that Dockerfile
+_produces_, while the image it _consumes_ was pinned by tag. The argument was
+made and then not applied one line up.
+
+The `task` install is the same shape. `install-dependencies.sh` already refuses
+rclone's official installer in a comment that says piping an unpinned remote
+script into `sudo bash` is "both a real supply-chain risk and unpinned,
+contrary to this project's own rule" - and then installs `task` with exactly
+that. Both now take the pinned `.deb` from the same GitHub release.
+
+**Four Go vulnerabilities, all in the test module and none in the program.**
+`klauspost/compress` and `golang.org/x/crypto` are indirect dependencies of
+Terratest in `tests/go`. `scripts/contractor`, `signedpush`, `gatehouse` and
+`clerk` have no `go.sum` at all - zero third-party dependencies is a deliberate
+property of everything that can touch the estate, and it is why this finding is
+a test-harness bump rather than an incident. Three had fixes and were taken.
+`GO-2026-5932` has none: `golang.org/x/crypto/openpgp` is unmaintained by
+declaration, so the alert cannot be cleared by upgrading and will persist.
+
+### What is deliberately not fixed, and why
+
+**`BranchProtectionID` (high), in part.** Scorecard raises four sub-warnings and
+one of them must stay: _"'up-to-date branches' is disabled on branch main"_.
+Requiring branches to be up to date deadlocks against the epoch topology, where
+the epoch branch is normally both ahead of and behind `main` - see
+the epoch-branch topology recorded in [`02-abstraction.md`](02-abstraction.md). Turning it on would make the
+"Update branch" button mandatory and resolve nothing. The other three -
+enforcing protection on administrators, last-push approval, and a second
+required reviewer - are open questions rather than refusals, and the second
+reviewer is not available to a one-person estate at all.
+
+**`TokenPermissionsID` on `pr-validation.yml`.** The `analyze` job holds
+`statuses: write`, and that is load-bearing: Super-Linter's `MULTI_STATUS`
+defaults on and is what produces the per-linter check rows (`Linted: CHECKOV`,
+`Linted: YAML` and the rest) that this repository actually reads. Dropping the
+permission would mean setting `MULTI_STATUS: false` and losing a working
+surface to satisfy a heuristic. The other two are genuine and were moved from
+the workflow to the job that needs them.
+
+**`MaintainedID` (high)** says only _"project was created within the last 90
+days"_. Time fixes it; nothing else can.
+
+**`FuzzingID`** - no fuzz targets. The plausible one is the config parser, and
+it is not worth the harness today.
+
+**`CIIBestPracticesID`** - an OpenSSF badge, which is an application process
+rather than a code change, for a personal estate.
+
+**`CodeReviewID` (high)** says _"Found 0/3 approved changesets"_, and that one
+is worth a second look rather than a dismissal: this repository's own
+convention is that the operator approves and then merges. If merges are landing
+without a recorded approving review, Scorecard is reporting something true
+about the process rather than about the code.
+
+### What the exercise says about Scorecard here
+
+Two thirds of the alerts by count were either genuine and small, or structural
+and permanent. Nothing in the middle. That is a decent signal-to-noise ratio for
+a tool nobody configured, and the permanent ones are worth dismissing with these
+reasons attached rather than left to accumulate - an alert list nobody clears
+stops being read, which is the failure this estate refuses everywhere else.
+
 ## Acceptance tests
 
 Two, and both must pass before this epoch is signed off:

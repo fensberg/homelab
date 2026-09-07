@@ -56,12 +56,17 @@ on:
   issue_comment:
     types: [created]
 
+# Workflow-level: read and nothing else.
+#
+# The writes this needs are granted on the one job that needs them, below.
+# A workflow-level write is held by every job in the file - here that is one
+# job, so the practical difference is nil and the reviewable difference is
+# not: a second job added later would silently inherit the ability to upload
+# security findings and comment on pull requests. Scorecard flags the
+# workflow-level form as `topLevel 'security-events' permission set to
+# 'write'`, and it is right that the narrower place is the job.
 permissions:
   contents: read
-  # To upload SARIF. Alerts are attributed to the tool name in the report, so
-  # the clerk App keeps its own narrow grant and is not used here at all.
-  security-events: write
-  pull-requests: write
 
 concurrency:
   # One read per pull request. A second request supersedes a first that is
@@ -76,6 +81,13 @@ defaults:
 jobs:
   read:
     name: An outside reading
+    permissions:
+      contents: read
+      # To upload SARIF. Alerts are attributed to the tool name in the
+      # report, so the clerk App keeps its own narrow grant and is not used
+      # here at all.
+      security-events: write
+      pull-requests: write
     # Two ways in, and the second needs a gate the first does not.
     #
     # issue_comment fires for anybody who can comment, and on a public

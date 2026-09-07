@@ -17,7 +17,33 @@
 # version therefore belongs in versions.env with the others, where it is one
 # line to see and to change.
 ARG RUNNER_VERSION
-FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}
+# Pinned by digest as well as by tag, and the digest is what actually decides.
+#
+# This file's own comment two paragraphs up says a version belongs in
+# versions.env where it is one line to see and to change, and that is still
+# true - the tag stays, and it is what a person reads. But a tag is a pointer
+# somebody upstream can move, so a tag alone is the one pin that silently is
+# not one. That is the same argument clusters/management/infrastructure/configs
+# /runner-scale-set.yaml makes at length about the image this Dockerfile
+# produces; it was not being applied to the image it consumes. Scorecard
+# flagged it as `containerImage not pinned by hash`.
+#
+# Written literally rather than taken as a build argument because the argument
+# would have to be passed by .github/workflows/runner-image.yml, which the
+# agent cannot write. The same choice, for the same reason, as the Flux
+# component digests in clusters/management/flux-system/kustomization.yaml.
+#
+# UPGRADING: this moves with RUNNER_VERSION, in the same commit. Re-resolve it
+# for the new tag rather than copying from anywhere:
+#
+#   TOKEN=$(curl -sSfL "https://ghcr.io/token?scope=repository:actions/actions-runner:pull&service=ghcr.io" | jq -r .token)
+#   curl -sSfI -H "Authorization: Bearer $TOKEN" \
+#     -H "Accept: application/vnd.oci.image.index.v1+json" \
+#     "https://ghcr.io/v2/actions/actions-runner/manifests/<tag>" | grep -i docker-content-digest
+#
+# Docker resolves image:tag@digest by the digest and ignores the tag, so the
+# two disagreeing is a readability bug rather than a silent downgrade.
+FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4
 
 ARG TOFU_VERSION
 # Deliberately not named RCLONE_VERSION. rclone configures every one of its

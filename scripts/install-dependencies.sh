@@ -229,12 +229,28 @@ else
 fi
 
 step "task (go-task)"
-if has task; then
-	skip "task already present ($(task --version))"
+task_installed_version() { task --version 2>/dev/null | sed 's/^Task version: v\{0,1\}//'; }
+if has task && [ "$(task_installed_version)" = "$TASK_VERSION" ]; then
+	skip "task already at the pinned ${TASK_VERSION}"
 else
-	info "installing task via the official install script"
-	curl -fsSL https://taskfile.dev/install.sh | sudo sh -s -- -d -b /usr/local/bin
-	ok "task installed"
+	if has task; then
+		warn "task $(task_installed_version) is not the pinned ${TASK_VERSION} - replacing it"
+	fi
+	# Not the official install script, for exactly the reason given against
+	# rclone's above: `curl | sudo sh` runs an unpinned, unverified remote
+	# script as root, and this project's first invariant is that everything
+	# is pinned. Scorecard flagged it as `downloadThenRun not pinned by hash`
+	# and was right - the repository had made the argument and then not
+	# applied it to the next tool along.
+	#
+	# The .deb is published on the same GitHub release the install script
+	# would have fetched from, is no less official, and executes nothing on
+	# the way in.
+	info "installing task ${TASK_VERSION}"
+	curl -fsSL -o "$TMP/task.deb" \
+		"https://github.com/go-task/task/releases/download/v${TASK_VERSION}/task_${TASK_VERSION}_linux_${GOARCH}.deb"
+	sudo apt-get install -y "$TMP/task.deb"
+	ok "task ${TASK_VERSION} installed"
 fi
 
 step "gh (GitHub CLI)"
@@ -256,7 +272,7 @@ if has ansible-playbook; then
 	skip "ansible already present ($(ansible --version | head -1))"
 else
 	info "installing ansible-core via pip"
-	python3 -m pip install --user --break-system-packages ansible-core
+	python3 -m pip install --user --break-system-packages "ansible-core==${ANSIBLE_CORE_VERSION}"
 	ok "ansible installed"
 fi
 
@@ -274,7 +290,7 @@ if has pre-commit; then
 	skip "pre-commit already present ($(pre-commit --version))"
 else
 	info "installing pre-commit via pip"
-	python3 -m pip install --user --break-system-packages pre-commit
+	python3 -m pip install --user --break-system-packages "pre-commit==${PRE_COMMIT_VERSION}"
 	ok "pre-commit installed"
 fi
 # Installing the tool is not enough on its own: without this, pre-commit only
