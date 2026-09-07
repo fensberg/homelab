@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // parseRemote extracts owner and repo from whatever `git remote get-url` says.
@@ -53,5 +54,32 @@ func splitPath(path string, bad error) (string, string, error) {
 	if repo == "" || strings.Contains(repo, "/") {
 		return "", "", bad
 	}
+	// Both halves are interpolated into an API path - "/repos/<owner>/<repo>/…"
+	// - so a value that is not a single path segment does not fail, it
+	// addresses something else. `https://github.com/../repo` parsed to
+	// owner ".." before this, which resolves one level up from /repos.
+	//
+	// Found by FuzzParseRemote rather than by review, which is the argument
+	// for the fuzz tier in one line: the table of URLs somebody thinks of does
+	// not contain the ones that break it.
+	for _, segment := range []string{owner, repo} {
+		if !isOneSegment(segment) {
+			return "", "", bad
+		}
+	}
 	return owner, repo, nil
+}
+
+// isOneSegment reports whether s can stand as a single path segment: not a
+// traversal, no separator, nothing a URL would have to escape.
+func isOneSegment(s string) bool {
+	if s == "." || s == ".." {
+		return false
+	}
+	for _, r := range s {
+		if r == '/' || r == '\\' || unicode.IsSpace(r) || unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
