@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 28
+floor: 30
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -471,6 +471,35 @@ mutations:
       rule is that "I was not told what belongs here" and "nothing is wrong"
       must never share an exit code - and this is the exact path a new module
       takes before somebody writes its floor down.
+
+  - guard: TestEveryLocalGuardIsAlsoEnforcedInCI
+    file: .pre-commit-config.yaml
+    # Not a rename: CI runs whatever the config names, so renaming changes
+    # nothing. Moving it to a stage `pre-commit run --all-files` does not run
+    # is the regression - green locally, absent in CI, silent either way.
+    find: "        entry: task delivery-guard"
+    replace: "        entry: task delivery-guard\n        stages: [pre-push]"
+    mentions: "enforced nowhere but a git hook"
+    why: >
+      A git hook is advice: --no-verify skips every one, a fresh clone has none
+      installed, and an outside pull request never had any. The supplier guard
+      is only a real guard because the Format lane runs the same
+      .pre-commit-config.yaml, so renaming it to something no workflow reaches
+      turns it back into a courtesy - green locally for whoever has hooks on,
+      absent for everybody else, and silent either way.
+
+  - guard: TestNoTierQuietlyLosesTests
+    file: tests/coverage-baseline.json
+    find: '"integration": 14,'
+    replace: '"integration": 99,'
+    mentions: "integration tier has"
+    why: >
+      Unit tests are cheap and the count always rises; the tiers that drive
+      real infrastructure are hard, and theirs can fall without anybody
+      noticing, because the total still looks healthy. On the day this was
+      written the cheap tiers held 513 tests and the three that touch a real
+      estate held 25. Raising a floor above the real count stands in for the
+      count falling below the floor - the failure this exists to catch.
 
 # Guards that cannot be proved by mutation, and why.
 #

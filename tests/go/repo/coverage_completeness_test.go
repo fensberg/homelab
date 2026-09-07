@@ -244,6 +244,22 @@ func covered(t *testing.T, u unit, sources map[string]string, floors map[string]
 	return false
 }
 
+// blocklistEntries is the declared debt, shared by every guard that can defer
+// something into it. One list and one ceiling, so the total debt is a number
+// somebody can look at rather than a set of separate allowances.
+func blocklistEntries(t *testing.T) map[string]bool {
+	t.Helper()
+	var list coverageBlocklist
+	if err := yaml.Unmarshal([]byte(readRepoFile(t, "tests/coverage-blocklist.yml")), &list); err != nil {
+		t.Fatalf("parsing tests/coverage-blocklist.yml: %v", err)
+	}
+	out := map[string]bool{}
+	for _, b := range list.Blocked {
+		out[strings.TrimSpace(b)] = true
+	}
+	return out
+}
+
 func TestEveryUnitIsExecutedByATestOrIsADeclaredDebt(t *testing.T) {
 	var list coverageBlocklist
 	if err := yaml.Unmarshal([]byte(readRepoFile(t, "tests/coverage-blocklist.yml")), &list); err != nil {

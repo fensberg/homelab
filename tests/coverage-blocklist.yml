@@ -38,7 +38,7 @@
 # this repository refuses those by name. Six of the seven shell scripts were in
 # exactly that state, including the gate that enforces coverage, the script
 # that sets up every machine, and all three git hooks.
-ceiling: 6
+ceiling: 10
 
 blocked:
   # Shell. Nothing runs these; the tests that mention them read their source.
@@ -55,3 +55,14 @@ blocked:
   # Ansible. There is no test tier for it at all - `task check-hypervisor` is a
   # dry run against real hardware, not a test.
   - ansible:management/hypervisor/hypervisor-prep.yml
+
+  # Local guards CI does not run. Each is enforced by a git hook and by nothing
+  # else, so `--no-verify`, a fresh clone, or an outside pull request skips it.
+  #
+  # validate and test are the drift the whole rule is about: CI reimplements
+  # both rather than running them, which is how the Test lane's list of Go
+  # modules and the taskfile's list disagreed for months.
+  - ci:task validate
+  - ci:task test
+  - ci:task push-guard
+  - ci:task merge-guard
