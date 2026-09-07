@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 24
+floor: 25
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -418,6 +418,21 @@ mutations:
       purpose - a floor that ratchets automatically records whatever the last
       green run happened to hit - so the thing that must not be forgotten is
       writing it, and this is what refuses to forget.
+
+  - guard: TestTheCoverageShimDiesWithTheWorkflowStepThatNeedsIt
+    file: tests/coverage-baseline.json
+    find: '"go": 34,'
+    replace: '"go-shim-removed-early": 34,'
+    mentions: "fails on every pull request"
+    why: >
+      The bare "go" key is a floor for nothing; it exists only because the
+      workflow still computes its own coverage against one module and asks for
+      that key, and the agent cannot edit a workflow. Removing it before the
+      handover patch lands turns every pull request red in a lane whose own
+      tests are green, and leaving it after the patch lands leaves a number
+      nobody chose sitting among the ones somebody did - which is how a
+      baseline here once sat ten points below the measured figure without
+      anybody noticing. The two states are tied together so neither can happen.
 
 # Guards that cannot be proved by mutation, and why.
 #

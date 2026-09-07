@@ -121,3 +121,37 @@ whatever the last green run happened to hit.`, key, m, key)
 		}
 	}
 }
+
+// The coverage shim dies with the thing that needs it.
+//
+// tests/coverage-baseline.json carries a bare "go" key that is a floor for
+// nothing. It exists because .github/workflows/pr-validation.yml still runs its
+// own coverage step against scripts/contractor alone and asks the gate for that
+// key, and the agent cannot edit a workflow - the change is handed over as a
+// patch instead.
+//
+// A shim that outlives its reason is indistinguishable from a floor somebody
+// chose, and this repository has been bitten by exactly that: a baseline sat
+// ten points below the measured figure for long enough that nobody remembered
+// setting it. So the two are tied together here rather than left to whoever
+// applies the patch to notice.
+func TestTheCoverageShimDiesWithTheWorkflowStepThatNeedsIt(t *testing.T) {
+	workflow := readRepoFile(t, ".github/workflows/pr-validation.yml")
+	baseline := readRepoFile(t, "tests/coverage-baseline.json")
+
+	stillAsksForIt := strings.Contains(workflow, `coverage-gate.sh go "`)
+	shimPresent := strings.Contains(baseline, `"go":`)
+
+	switch {
+	case stillAsksForIt && !shimPresent:
+		t.Error(`pr-validation.yml asks the coverage gate for the key "go" and ` +
+			`tests/coverage-baseline.json does not declare one, so the Test lane fails ` +
+			`on every pull request. Either restore the shim or apply the patch that ` +
+			`stops the workflow needing it.`)
+	case !stillAsksForIt && shimPresent:
+		t.Error(`the workflow no longer asks for the bare "go" key, so the shim in ` +
+			`tests/coverage-baseline.json is a floor for nothing. Remove it: a leftover ` +
+			`number is indistinguishable from one somebody chose, which is how a ` +
+			`baseline once sat ten points below the real figure unnoticed.`)
+	}
+}
