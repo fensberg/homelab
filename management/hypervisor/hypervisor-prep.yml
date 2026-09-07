@@ -445,6 +445,21 @@
               | regex_replace('[,\s]+', ' ') | trim).split(' ') }}
       tags: [rbac]
 
+    # What the management role holds right now, parsed the same way, so the
+    # reconcile below can tell "already correct" from "needs changing".
+    #
+    # Empty when the role does not exist yet, which is the create path rather
+    # than the reconcile path and is handled by the `when` on each task.
+    - name: Determine what the management role currently holds
+      ansible.builtin.set_fact:
+        pve_role_current_privs: >-
+          {{ ((existing_roles.stdout | from_json
+               | selectattr('roleid', 'equalto', pve_role)
+               | map(attribute='privs') | first | default(''))
+              | regex_replace('[,\s]+', ' ') | trim).split(' ')
+             | reject('equalto', '') | list }}
+      tags: [rbac]
+
     # pveum reports only the first offender and does so as a bare 400, which
     # says nothing about which name is wrong or why. Checking the whole list
     # up front names every one of them at once.
@@ -496,10 +511,25 @@
     # a host already matching ends up unchanged. The assertion above has
     # already proved every name is one this Proxmox version defines, so this
     # cannot strip the role down to nothing by carrying a typo through.
+    # Conditional on the privileges actually differing, not merely on the role
+    # existing. `pveum role modify` is idempotent, so running it unconditionally
+    # is harmless to the host - but reporting `changed` unconditionally is not
+    # harmless to the operator. A playbook that says it changed something on
+    # every run cannot be read for whether it changed anything, and
+    # `--check --diff` becomes a page of noise with the real change hidden in
+    # it. This estate has had to repair that shape more than once: a surface
+    # that says the same thing whatever happened is a surface nobody reads.
+    #
+    # symmetric_difference rather than a plain comparison, because the two
+    # lists are sets: order differs between what pveum reports and what this
+    # file declares, and a missing privilege and an undeclared extra one are
+    # both drift worth correcting.
     - name: Reconcile the management role to the declared privileges
       ansible.builtin.command: >-
         pveum role modify {{ pve_role }} --privs "{{ pve_role_privs | join(' ') }}"
-      when: pve_role in (existing_roles.stdout | from_json | map(attribute='roleid') | list)
+      when:
+        - pve_role in (existing_roles.stdout | from_json | map(attribute='roleid') | list)
+        - (pve_role_privs | symmetric_difference(pve_role_current_privs) | length) > 0
       changed_when: true
       tags: [rbac]
 
