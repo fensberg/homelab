@@ -57,7 +57,7 @@
     "go/attestation": 26,
     "go/clerk": 56,
     "go/collector": 7,
-    "go/contractor": 38.0,
+    "go/contractor": 39.2,
     "go/gatehouse": 31,
     "go/inspector": 75,
     "go/signedpush": 36,

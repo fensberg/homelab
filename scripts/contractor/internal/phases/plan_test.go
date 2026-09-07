@@ -1,6 +1,7 @@
 package phases
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -271,8 +272,8 @@ func TestSummarisePlan_SeesAnOutputOnlyChange(t *testing.T) {
 	if !strings.Contains(got, "output.talosconfig") {
 		t.Errorf("the changed output is not named; got:\n%s", got)
 	}
-	if !strings.Contains(got, "1 output(s) to change") {
-		t.Errorf("the output change is not counted; got:\n%s", got)
+	if !strings.Contains(got, "1 output is rebuilt") {
+		t.Errorf("the output change is not reported; got:\n%s", got)
 	}
 }
 
@@ -309,8 +310,11 @@ func TestSummarisePlan_KeepsOutputsOutOfTheWorksCount(t *testing.T) {
 	if !strings.Contains(got, "0 to add, 0 to change, 0 to replace, 1 to destroy") {
 		t.Errorf("the works count is wrong or has changed shape; got:\n%s", got)
 	}
-	if !strings.Contains(got, "2 output(s) to change") {
-		t.Errorf("the outputs are not counted separately; got:\n%s", got)
+	if !strings.Contains(got, "(machines and other infrastructure)") {
+		t.Errorf("the works count does not say what it counts; got:\n%s", got)
+	}
+	if !strings.Contains(got, "2 outputs are rebuilt") {
+		t.Errorf("the outputs are not reported separately; got:\n%s", got)
 	}
 }
 
@@ -331,10 +335,13 @@ func TestSummarisePlan_CallsADataSourceReadASurvey(t *testing.T) {
 	if !strings.Contains(got, "survey") {
 		t.Errorf("a data source read is not named as a survey; got:\n%s", got)
 	}
-	if !strings.Contains(got, "1 to survey") {
-		t.Errorf("the survey is not counted; got:\n%s", got)
+	if !strings.Contains(got, "1 data source is re-read") {
+		t.Errorf("the survey is not explained; got:\n%s", got)
 	}
-	if strings.Contains(got, "1 to change") || strings.Contains(got, "1 to add") {
+	if !strings.Contains(got, "nothing is changed by looking") {
+		t.Errorf("the summary does not say a survey changes nothing, which is the point of the verb; got:\n%s", got)
+	}
+	if !strings.Contains(got, "0 to add, 0 to change, 0 to replace, 0 to destroy") {
 		t.Errorf("a survey was counted as a work; got:\n%s", got)
 	}
 }
@@ -423,5 +430,179 @@ func TestCommentBodySaysThePlanCoversTheMerge(t *testing.T) {
 	if !strings.Contains(strings.ToLower(body), "merged") {
 		t.Errorf(`the comment does not say the plan covers the merge result, so the SHA reads as "the branch was planned":
 %s`, body)
+	}
+}
+
+// --- what is changing, not merely that something is -------------------------
+
+// A row naming only an address is a tease: it tells a reviewer that a machine
+// is being altered and makes them merge to find out how. The operator's words
+// on being handed "1 output(s) to change": "I have no idea what that actually
+// means."
+func TestSummarisePlan_NamesTheAttributesThatChange(t *testing.T) {
+	const updating = `{"format_version":"1.2","resource_changes":[
+	  {"address":"proxmox_virtual_environment_vm.talos_cp[0]","mode":"managed","change":{"actions":["update"],
+	    "before":{"name":"a","memory":{"dedicated":4096},"started":true},
+	    "after":{"name":"a","memory":{"dedicated":8192},"started":true}}}]}`
+	got, err := summarisePlan([]byte(updating))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "memory") {
+		t.Errorf("the changed attribute is not named; got:\n%s", got)
+	}
+	// An attribute whose value did not move is not a change, and listing it
+	// would make every row too long to read.
+	for _, unchanged := range []string{"name", "started"} {
+		if strings.Contains(got, unchanged) {
+			t.Errorf("%q did not change but is reported as though it did:\n%s", unchanged, got)
+		}
+	}
+}
+
+// A replacement destroys and rebuilds a machine. The verb already says that;
+// the question a reviewer actually has is what made it necessary, and tofu
+// answers it in replace_paths.
+func TestSummarisePlan_SaysWhatForcedAReplacement(t *testing.T) {
+	const replacing = `{"format_version":"1.2","resource_changes":[
+	  {"address":"proxmox_virtual_environment_vm.talos_wk[1]","mode":"managed","change":{
+	    "actions":["delete","create"],"replace_paths":[["disk"],["initialization","user_account"]]}}]}`
+	got, err := summarisePlan([]byte(replacing))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "forced by") || !strings.Contains(got, "disk") {
+		t.Errorf("the plan does not say what forced the replacement; got:\n%s", got)
+	}
+	// Only the head of each path. "initialization" is a schema attribute;
+	// "user_account" is one level down, where operator-supplied keys live.
+	if strings.Contains(got, "user_account") {
+		t.Errorf("a nested path element reached the summary; got:\n%s", got)
+	}
+}
+
+// THE DEPTH LIMIT IS THE SAFETY PROPERTY.
+//
+// A top-level key is a provider schema attribute - public API surface,
+// identical in every estate. One level down, map-typed attributes have
+// operator-supplied keys: a label, an annotation, a tag, any of which can be a
+// real hostname. This comment is world-readable, so descending is a leak and
+// this test is what stops someone "improving" the detail by going deeper.
+func TestSummarisePlan_NeverDescendsIntoAnAttribute(t *testing.T) {
+	const nested = `{"format_version":"1.2","resource_changes":[
+	  {"address":"kubernetes_secret.state_db","mode":"managed","change":{"actions":["update"],
+	    "before":{"metadata":{"annotations":{"real-hostname.example.internal":"192.0.2.7"}}},
+	    "after":{"metadata":{"annotations":{"real-hostname.example.internal":"192.0.2.8"}}}}}]}`
+	got, err := summarisePlan([]byte(nested))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "metadata") {
+		t.Errorf("the top-level attribute should still be named; got:\n%s", got)
+	}
+	for _, secret := range []string{"real-hostname", "example.internal", "192.0.2.7", "192.0.2.8", "annotations"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("descended into an attribute and leaked %q into a world-readable comment:\n%s", secret, got)
+		}
+	}
+}
+
+// after_unknown is how an attribute that cannot be computed until apply shows
+// up. Dropping it hides exactly the attributes a converge is about to decide -
+// and its `false` entries must not be mistaken for changes.
+func TestSummarisePlan_CountsUnknownAttributesAsChanging(t *testing.T) {
+	const unknown = `{"format_version":"1.2","resource_changes":[
+	  {"address":"proxmox_virtual_environment_vm.talos_cp[0]","mode":"managed","change":{"actions":["update"],
+	    "before":{"name":"a"},"after":{"name":"a"},
+	    "after_unknown":{"ipv4_addresses":true,"name":false,"boot_order":null}}}]}`
+	got, err := summarisePlan([]byte(unknown))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "ipv4_addresses") {
+		t.Errorf("an attribute unknown until apply is not reported; got:\n%s", got)
+	}
+	for _, notChanging := range []string{"name", "boot_order"} {
+		if strings.Contains(got, notChanging) {
+			t.Errorf("after_unknown %q is false or null and is not a change:\n%s", notChanging, got)
+		}
+	}
+}
+
+// Formatting is not a change. Comparing raw bytes reports an attribute as
+// changed because its JSON had different key order, which is noise dressed as
+// information - and noise is what gets a surface ignored.
+func TestSummarisePlan_IgnoresReformattedValues(t *testing.T) {
+	const reformatted = `{"format_version":"1.2","resource_changes":[
+	  {"address":"proxmox_virtual_environment_vm.talos_cp[0]","mode":"managed","change":{"actions":["update"],
+	    "before":{"cpu":{"cores":4,"sockets":1},"memory":{"dedicated":4096}},
+	    "after":{"cpu":{"sockets":1,"cores":4},"memory":{"dedicated":8192}}}}]}`
+	got, err := summarisePlan([]byte(reformatted))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, "cpu") {
+		t.Errorf("an attribute whose JSON was merely reordered is reported as changed:\n%s", got)
+	}
+	if !strings.Contains(got, "memory") {
+		t.Errorf("the genuinely changed attribute is missing:\n%s", got)
+	}
+}
+
+// A sensitive output is one whose value this summary will never print. Say so,
+// rather than leaving a reader to wonder whether it was withheld deliberately
+// or is missing by accident.
+func TestSummarisePlan_SaysASecretWasWithheldOnPurpose(t *testing.T) {
+	const secret = `{"format_version":"1.2","resource_changes":[],
+	  "output_changes":{"talosconfig":{"actions":["update"],"before_sensitive":true,"after_sensitive":true}}}`
+	got, err := summarisePlan([]byte(secret))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "withheld") {
+		t.Errorf("a withheld secret is not declared as withheld; got:\n%s", got)
+	}
+}
+
+// The line that replaced "1 output(s) to change" has to say what it means,
+// and must not read like a machine count.
+func TestSummarisePlan_ExplainsAnOutputInWords(t *testing.T) {
+	const outputsOnly = `{"format_version":"1.2","resource_changes":[],
+	  "output_changes":{"talosconfig":{"actions":["update"]}}}`
+	got, err := summarisePlan([]byte(outputsOnly))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, "output(s)") {
+		t.Errorf(`the summary still says "output(s)", which is the shape being replaced:\n%s`, got)
+	}
+	if !strings.Contains(got, "1 output is rebuilt") {
+		t.Errorf("the output line does not read as a sentence; got:\n%s", got)
+	}
+	if !strings.Contains(got, "publishes") {
+		t.Errorf("the summary does not say what an output IS, which is the whole complaint; got:\n%s", got)
+	}
+	// The works count must stay unambiguous about what it counts.
+	if !strings.Contains(got, "machines and other infrastructure") {
+		t.Errorf("the works count does not say what it counts; got:\n%s", got)
+	}
+}
+
+// One very wide resource must not bury every other row, and the reader must be
+// told that the list was cut rather than left to think it was complete.
+func TestSummarisePlan_BoundsTheAttributeList(t *testing.T) {
+	before, after := []string{}, []string{}
+	for i := 0; i < 12; i++ {
+		before = append(before, fmt.Sprintf(`"attr%02d":%d`, i, i))
+		after = append(after, fmt.Sprintf(`"attr%02d":%d`, i, i+1))
+	}
+	doc := `{"format_version":"1.2","resource_changes":[{"address":"x.y","mode":"managed","change":{"actions":["update"],
+	  "before":{` + strings.Join(before, ",") + `},"after":{` + strings.Join(after, ",") + `}}}]}`
+	got, err := summarisePlan([]byte(doc))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "and 6 more") {
+		t.Errorf("a long attribute list is not bounded, or does not say it was cut; got:\n%s", got)
 	}
 }

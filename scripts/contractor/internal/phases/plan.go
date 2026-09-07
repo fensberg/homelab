@@ -1,6 +1,7 @@
 package phases
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -213,11 +214,31 @@ type planChange struct {
 	Mode    string `json:"mode"`
 	Change  struct {
 		Actions []string `json:"actions"`
+		// Top-level attributes only, and never their contents. See
+		// changedAttributes for why the depth limit is the safety property
+		// rather than an approximation.
+		Before       map[string]json.RawMessage `json:"before"`
+		After        map[string]json.RawMessage `json:"after"`
+		AfterUnknown map[string]json.RawMessage `json:"after_unknown"`
+		// Which attributes forced a replacement. The most valuable field in a
+		// plan and the one nothing here was reading: "this machine is being
+		// rebuilt" and "this machine is being rebuilt BECAUSE ITS DISK
+		// CHANGED" are different decisions.
+		ReplacePaths [][]json.RawMessage `json:"replace_paths"`
 	} `json:"change"`
 }
 
 type outputChange struct {
-	Actions []string `json:"actions"`
+	Actions         []string        `json:"actions"`
+	BeforeSensitive json.RawMessage `json:"before_sensitive"`
+	AfterSensitive  json.RawMessage `json:"after_sensitive"`
+}
+
+// sensitive reports whether tofu marked either side of this output secret.
+// Both sides matter: an output that stops being sensitive is still one whose
+// old value must not be printed.
+func (o outputChange) sensitive() bool {
+	return string(o.BeforeSensitive) == "true" || string(o.AfterSensitive) == "true"
 }
 
 // planDoc is the part of a tofu plan this summary reads.
@@ -253,7 +274,7 @@ func summarisePlan(raw []byte) (string, error) {
 		return "", fmt.Errorf("this JSON has no plan format version, so it is not a plan and nothing here examined the estate")
 	}
 
-	type row struct{ address, verb string }
+	type row struct{ address, verb, detail string }
 	var rows []row
 	counts := map[string]int{}
 
@@ -276,7 +297,18 @@ func summarisePlan(raw []byte) (string, error) {
 		if verb == "" {
 			continue // no-op: noise in a review, not information
 		}
-		rows = append(rows, row{redactKeys(c.Address), verb})
+		// What is changing, not merely that something is. A row saying
+		// "change proxmox_virtual_environment_vm.talos_cp[0]" and nothing else
+		// is a tease: it tells a reviewer a machine is being altered and makes
+		// them merge to find out how.
+		var d string
+		switch verb {
+		case "change":
+			d = detail("", changedAttributes(c.Change.Before, c.Change.After, c.Change.AfterUnknown))
+		case "replace":
+			d = detail("forced by ", replacedBecause(c.Change.ReplacePaths))
+		}
+		rows = append(rows, row{redactKeys(c.Address), verb, d})
 		counts[verb]++
 	}
 
@@ -303,7 +335,15 @@ func summarisePlan(raw []byte) (string, error) {
 		if verb == "" {
 			continue
 		}
-		rows = append(rows, row{"output." + name, verb})
+		d := ""
+		if doc.OutputChanges[name].sensitive() {
+			// Worth saying out loud rather than leaving to inference. A
+			// sensitive output is one this summary will never show, so a
+			// reader who cannot see a value should know it was withheld on
+			// purpose rather than absent by accident.
+			d = "  (a secret this estate hands out; value withheld)"
+		}
+		rows = append(rows, row{"output." + name, verb, d})
 		counts["output"]++
 	}
 
@@ -322,7 +362,7 @@ func summarisePlan(raw []byte) (string, error) {
 		}
 	}
 	for _, r := range rows {
-		fmt.Fprintf(&b, "  %-*s  %s\n", width, r.verb, r.address)
+		fmt.Fprintf(&b, "  %-*s  %s%s\n", width, r.verb, r.address, r.detail)
 	}
 
 	// The works, counted. Always all four, including the zeroes: a reviewer
@@ -337,21 +377,26 @@ func summarisePlan(raw []byte) (string, error) {
 		parts = append(parts, fmt.Sprintf("%d %s", counts[v.verb], v.label))
 	}
 	b.WriteString(strings.Join(parts, ", "))
-	b.WriteString("\n")
+	b.WriteString("  (machines and other infrastructure)\n")
 
-	// Everything that is not a work goes on its own line, and only when there
-	// is any. These do not belong in the count above - an output changing is
-	// not a machine changing, and folding them together would inflate the one
-	// number a reviewer is scanning for.
-	var aside []string
+	// Everything that is not a work, in words rather than as a count.
+	//
+	// "1 output(s) to change" was a tease: it reported that something was
+	// happening and left the reader to work out whether it mattered, which is
+	// the opposite of what this comment is for. A count is only useful for
+	// things a reader is already counting - machines - and an output is not
+	// one of those.
 	if counts["output"] > 0 {
-		aside = append(aside, fmt.Sprintf("%d output(s) to change", counts["output"]))
+		what := "a value this estate publishes"
+		if counts["output"] > 1 {
+			what = "values this estate publishes"
+		}
+		fmt.Fprintf(&b, "  %s %s rebuilt: %s will differ after this merge.\n",
+			plural(counts["output"], "output", "outputs"), was(counts["output"]), what)
 	}
 	if counts["survey"] > 0 {
-		aside = append(aside, fmt.Sprintf("%d to survey", counts["survey"]))
-	}
-	if len(aside) > 0 {
-		fmt.Fprintf(&b, "  %s\n", strings.Join(aside, ", "))
+		fmt.Fprintf(&b, "  %s re-read from the live estate before anything is decided; nothing is changed by looking.\n",
+			plural(counts["survey"], "data source is", "data sources are"))
 	}
 
 	// The one line a reviewer must not skim past. A converge that destroys is
@@ -361,6 +406,115 @@ func summarisePlan(raw []byte) (string, error) {
 		b.WriteString("\n  THIS PLAN DESTROYS OR REPLACES RESOURCES. Read every line above before merging.\n")
 	}
 	return b.String(), nil
+}
+
+// changedAttributes names the top-level attributes whose value differs, so a
+// row says what is changing rather than only that something is.
+//
+// WHY NAMES ARE SAFE AND VALUES ARE NOT. A top-level key in a plan's before or
+// after object is a provider schema attribute - `memory`, `cpu`, `disk`. Those
+// are public API surface, identical in every estate that uses the provider,
+// and they carry nothing about THIS estate. The values under them are the
+// hostnames, addresses and credentials this repository keeps out of git, and
+// the comment this feeds is world-readable.
+//
+// SO THE DEPTH LIMIT IS THE SAFETY PROPERTY, not a simplification. One level
+// down, map-typed attributes have operator-supplied keys - a label, an
+// annotation, a tag - and those can be a real hostname. `metadata.annotations`
+// is safe to print; the key inside it is exactly the leak redactKeys exists to
+// stop in addresses. So this never descends, and must not be "improved" to.
+//
+// after_unknown marks an attribute whose value is not computable until apply.
+// It counts as changing: unknown-at-plan is how a change that depends on
+// something being created shows up, and dropping it would hide precisely the
+// attributes a converge is about to decide.
+func changedAttributes(before, after, afterUnknown map[string]json.RawMessage) []string {
+	seen := map[string]bool{}
+	for name, unknown := range afterUnknown {
+		// after_unknown carries `false` for known attributes as well as `true`
+		// for unknown ones, so its mere presence proves nothing.
+		if string(unknown) != "false" && string(unknown) != "null" {
+			seen[name] = true
+		}
+	}
+	for name, a := range after {
+		b, had := before[name]
+		if !had || !bytes.Equal(canonical(b), canonical(a)) {
+			seen[name] = true
+		}
+	}
+	for name := range before {
+		if _, still := after[name]; !still {
+			seen[name] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// canonical re-encodes a value so two equal values compare equal regardless of
+// key order or whitespace in the plan document. Comparing raw bytes without
+// this reports an attribute as changed because its JSON was formatted
+// differently, which is noise dressed as information.
+func canonical(raw json.RawMessage) []byte {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return raw
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
+// replacedBecause names the attributes that force a replacement.
+//
+// A replacement destroys and rebuilds a machine, and the question a reviewer
+// actually has is never "is it being replaced" - the verb says that - but
+// "what made that necessary". tofu answers it in replace_paths and nothing
+// here was reading it.
+//
+// Same depth rule as changedAttributes, and for the same reason: a path is a
+// list of steps and only its first is guaranteed to be a schema attribute.
+func replacedBecause(paths [][]json.RawMessage) []string {
+	seen := map[string]bool{}
+	for _, path := range paths {
+		if len(path) == 0 {
+			continue
+		}
+		var head string
+		if err := json.Unmarshal(path[0], &head); err != nil {
+			continue // A numeric index rather than an attribute name.
+		}
+		if head != "" {
+			seen[head] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// detail renders the attribute list that follows an address, bounded so one
+// wide resource cannot bury every other row. The cap is on display only - the
+// count tells the reader there is more rather than implying there is not.
+func detail(prefix string, names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	const most = 6
+	if len(names) > most {
+		return fmt.Sprintf("  (%s%s and %d more)", prefix, strings.Join(names[:most], ", "), len(names)-most)
+	}
+	return fmt.Sprintf("  (%s%s)", prefix, strings.Join(names, ", "))
 }
 
 // classify collapses tofu's action list into one verb. A delete paired with a
@@ -409,4 +563,21 @@ func redactKeys(address string) string {
 		}
 		return `["<redacted>"]`
 	})
+}
+
+// plural picks a word for a count. Written out rather than reached for from a
+// library because the estate's Go programs carry no dependencies, and because
+// "1 output(s)" is the shape this exists to stop.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
+}
+
+func was(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
 }
