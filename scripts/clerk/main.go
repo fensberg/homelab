@@ -190,9 +190,34 @@ func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, string,
 		return 1
 	}
 
+	// Which of the findings the pull request will actually display. Only the
+	// ones it will not are worth a comment; see note.
+	var unseen []snag
+	if *pr != 0 && len(kept) > 0 {
+		shown, err := shownLines(*pr)
+		switch {
+		case err != nil:
+			// Cannot tell, so assume the worst rather than the convenient
+			// thing: a comment too many costs a line, and being wrong the
+			// other way means findings nobody ever sees.
+			fmt.Fprintln(os.Stderr, "clerk:", err)
+			unseen = kept
+			if caveat == "" {
+				caveat = "could not read which lines this pull request shows, so every finding is listed"
+			}
+		default:
+			for _, s := range kept {
+				if !shown[s.Path][s.Line] {
+					unseen = append(unseen, s)
+				}
+			}
+		}
+		fmt.Fprintf(os.Stderr, "clerk %s: %d of %d finding(s) fall outside the diff\n", name, len(unseen), len(kept))
+	}
+
 	// An empty note means there is nothing to say that the alerts do not
 	// already say, and silence is the answer rather than a receipt.
-	if body := note(name, kept, dropped, caveat); *pr != 0 && body != "" {
+	if body := note(name, kept, unseen, dropped, caveat); *pr != 0 && body != "" {
 		if code := post(*pr, body); code != 0 {
 			return code
 		}
@@ -290,13 +315,28 @@ func handoverVerb(args []string) int {
 // and only one is reassuring. That is also why the caveat exists - a change
 // carrying no readable code produces the same zero as a clean one.
 //
-// The one thing that survives into the N > 0 case is a caveat, and only a
-// caveat. It says the reading itself was partial, which is a fact about the
-// clerk rather than about the code, so no alert carries it and hiding it would
-// lose it silently. It is emitted alone, with no count and no receipt.
+// Two things survive into the N > 0 case, and neither is a receipt.
+//
+// A CAVEAT, alone and with no count. It says the reading itself was partial,
+// which is a fact about the clerk rather than about the code, so no alert
+// carries it and hiding it would lose it silently.
+//
+// FINDINGS THE PULL REQUEST WILL NOT SHOW. This is the qualification the rule
+// needed and did not have, and #277 is what found it. The clerk reads changed
+// files WHOLE, so it regularly finds things on lines the change never touched
+// - and GitHub renders an alert on the pull request only when it falls inside
+// the diff. Such a finding is uploaded, counted, opened as an alert, and
+// displayed nowhere the reviewer is looking.
+//
+// While the clerk still posted a count that was survivable, because the count
+// said "go and look". Without it the run is silent while holding findings,
+// which is worse than the redundancy the rule was written to remove. So the
+// comment comes back for exactly those, and says nothing about the rest: the
+// alerts on changed lines speak for themselves, and repeating them is the
+// thing that was wrong in the first place.
 //
 // An empty return means post nothing.
-func note(name string, kept []snag, dropped []string, caveat string) string {
+func note(name string, kept, unseen []snag, dropped []string, caveat string) string {
 	if len(kept) == 0 {
 		headline := "nothing to raise"
 		if caveat != "" {
@@ -307,12 +347,50 @@ func note(name string, kept []snag, dropped []string, caveat string) string {
 			name, headline, len(dropped))
 	}
 
-	// Findings exist, so they are already on the diff and this says nothing
+	// Findings on changed lines are already on the diff, and this says nothing
 	// about them - not what they are, not how many, not that there were any.
-	if caveat == "" {
+	if len(unseen) == 0 && caveat == "" {
 		return ""
 	}
-	return fmt.Sprintf("**clerk %s** — read with a caveat: %s. Anything found is on the diff.", name, caveat)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "**clerk %s**", name)
+	if caveat != "" {
+		fmt.Fprintf(&b, " — read with a caveat: %s", caveat)
+	}
+	b.WriteString("\n\n")
+	if len(unseen) > 0 {
+		b.WriteString("These are on lines this pull request does not show, so they are " +
+			"alerts with nowhere to appear on the diff:\n\n")
+		for _, s := range unseen {
+			fmt.Fprintf(&b, "- `%s:%d` — %s\n", s.Path, s.Line, s.Message)
+		}
+		b.WriteString("\nAnything found on a changed line is inline on the diff and is not repeated here.")
+	} else {
+		b.WriteString("Anything found is on the diff.")
+	}
+	return b.String()
+}
+
+// shownLines asks GitHub which lines of which files this pull request displays.
+//
+// Same credential path as post, and a failure here is reported rather than
+// fatal: not knowing which lines are shown is a reason to say more, never a
+// reason to fail a reading that has already been done.
+func shownLines(pr int) (map[string]map[int]bool, error) {
+	env, err := need("CLERK_BOT_APP_ID", "CLERK_BOT_PRIVATE_KEY", "GITHUB_REPOSITORY")
+	if err != nil {
+		return nil, err
+	}
+	key, err := parseAppKey(env["CLERK_BOT_PRIVATE_KEY"])
+	if err != nil {
+		return nil, err
+	}
+	g, _, err := exchange(githubAPI, env["GITHUB_REPOSITORY"], env["CLERK_BOT_APP_ID"], key, &http.Client{Timeout: 30 * time.Second}, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return g.shown(pr)
 }
 
 // post puts a short note on a pull request, as a comment and never more.
