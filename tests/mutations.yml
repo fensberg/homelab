@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 22
+floor: 25
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -388,6 +388,49 @@ mutations:
       them, including on the machines holding quorum. The guard applies the
       patches the way kustomize would and then reads the result, because
       nothing about a well-formed patch says which pods it reached.
+
+  - guard: TestTheTaskfileDiscoversModulesRatherThanListingThem
+    file: taskfile.yml
+    find: '          go test -C "$dir" ./...'
+    replace: "          go test -C scripts/contractor ./..."
+    mentions: "vets or tests named modules"
+    why: >
+      clerk and inspector sat outside both `validate` and `test:go` for their
+      whole lives, so neither was compiled or run by anything - not locally,
+      not in CI. Every guard written for the clerk had passed only in the
+      terminal that wrote it, and would have gone on passing after the code it
+      guards stopped working, because nothing ever ran it again. A module is
+      added by creating a directory with a go.mod in it, and nothing about that
+      act suggests two lists elsewhere need editing, which is exactly why the
+      lists are asserted rather than remembered. The sweep is the fix; this
+      entry is what stops it turning back into a list.
+
+  - guard: TestEveryGoModuleHasACoverageFloor
+    file: tests/coverage-baseline.json
+    find: '"go/clerk": 56,'
+    replace: '"go-clerk-was-here": 56,'
+    mentions: "has no floor for"
+    why: >
+      A module with no floor has its coverage measured and compared against
+      nothing. Six of the seven were in that state, two of them modules no task
+      ran at all, so the number the gate reported for "go" described one module
+      while appearing to describe the project. The floor is written by hand on
+      purpose - a floor that ratchets automatically records whatever the last
+      green run happened to hit - so the thing that must not be forgotten is
+      writing it, and this is what refuses to forget.
+
+  - guard: TestTheCoverageShimDiesWithTheWorkflowStepThatNeedsIt
+    file: tests/coverage-baseline.json
+    find: '"go/attestation": 26,'
+    replace: '"go": 34,\n    "go/attestation": 26,'
+    mentions: "floor for nothing"
+    why: >
+      A bare "go" key is a floor for nothing once the workflow sweeps every
+      module and asks for one key each. Leaving it there puts a number nobody
+      chose among the ones somebody did, which is how a baseline here once sat
+      ten points below the measured figure without anybody noticing. The guard
+      refuses the opposite case too - the workflow asking for a key the
+      baseline does not declare - so neither half can happen quietly.
 
 # Guards that cannot be proved by mutation, and why.
 #

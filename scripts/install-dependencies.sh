@@ -315,6 +315,16 @@ info "wiring the git hooks"
 (
 	cd "$(dirname "$0")/.."
 	git config core.hooksPath githooks
+	# Delete remote-tracking refs whose branch is gone, on every fetch and pull.
+	#
+	# GitHub deletes the head branch when a pull request merges, and without this
+	# the ref pointing at it stays in every checkout forever - so the branch
+	# picker fills with branches that no longer exist anywhere. Repository-local
+	# rather than --global: this repository's habits are not everyone's.
+	#
+	# It does nothing about LOCAL branches, which nothing deletes ever. That is
+	# what `task clear-branches` is for.
+	git config fetch.prune true
 
 	# Still install pre-commit's own hook environments, so the first real
 	# commit is not also the first download. `install-hooks` clones and builds
