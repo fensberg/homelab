@@ -156,3 +156,33 @@ func TestRefuseStackedRefusesWhenItCannotSeeMain(t *testing.T) {
 		t.Errorf("the refusal does not name what is missing: %v", err)
 	}
 }
+
+// A failing git command says what git said.
+//
+// This is not a style preference. The stderr used to be dropped, so a rejected
+// push reported "exit status 1" and nothing else - and the message git had
+// printed named the cause exactly. A wrapper that swallows a subprocess's
+// diagnosis converts a one-line answer into an investigation, every time,
+// for everybody.
+func TestAFailingGitCommandCarriesWhatGitSaid(t *testing.T) {
+	// Neutralised so this reports the code rather than whatever git
+	// configuration the machine happens to carry.
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+
+	dir := gitRepo(t)
+	t.Chdir(dir)
+
+	_, err := git("rev-parse", "--verify", "a-ref-that-does-not-exist")
+	if err == nil {
+		t.Fatal("resolving a ref that does not exist succeeded, so this asserts nothing")
+	}
+	if !strings.Contains(err.Error(), "fatal") {
+		t.Errorf(`the error carries no line from git, so a caller sees only an exit status:
+
+%v
+
+git printed something on stderr and it was dropped. That is what turned a
+rejected push into four wrong theories.`, err)
+	}
+}
