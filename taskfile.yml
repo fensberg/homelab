@@ -156,6 +156,22 @@ tasks:
       - go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
       - ./toolshed/gatehouse guard-deliveries
 
+  clear-branches:
+    desc: "List local branches whose work has landed. Add -- -apply to delete them."
+    # A dry run by default, and the deletion it eventually does is recoverable:
+    # `git branch -D` leaves the commits in the reflog for ninety days, and the
+    # sha of each is printed so restoring one needs nothing looked up.
+    #
+    #   task clear-branches            say what would go
+    #   task clear-branches -- -apply  take them away
+    #
+    # Deliberately not run by anything automatically. Refuse collection is
+    # idempotent and safe to miss, so a schedule buys nothing a person running
+    # it when the branch picker gets annoying does not.
+    cmds:
+      - go build -C scripts/collector -o ../../toolshed/collector .
+      - ./toolshed/collector clear-branches {{.CLI_ARGS}}
+
   gh-token:
     desc: "Mint a 1-hour GitHub App installation token (for gh auth login --with-token)"
     cmds:
@@ -229,6 +245,18 @@ tasks:
       - go build -C scripts/signedpush -o /dev/null .
       - go vet -C scripts/gatehouse ./...
       - go build -C scripts/gatehouse -o /dev/null .
+      - go vet -C scripts/collector ./...
+      - go build -C scripts/collector -o /dev/null .
+      # clerk and inspector were absent from this list and from test:go, so
+      # neither was vetted, built or tested by anything - locally or in CI.
+      # Every guard written for the clerk had therefore never run outside the
+      # terminal that wrote it. tests/go/repo/go_modules_test.go now refuses a
+      # module that is missing from either list, which is what stops the next
+      # one being forgotten the same way.
+      - go vet -C scripts/clerk ./...
+      - go build -C scripts/clerk -o /dev/null .
+      - go vet -C scripts/inspector ./...
+      - go build -C scripts/inspector -o /dev/null .
       - go vet -C scripts/attestation ./...
       - go build -C scripts/attestation -o /dev/null .
       # Every tier, not just the untagged one. The integration, api and e2e
@@ -264,6 +292,9 @@ tasks:
       - go test -C scripts/signedpush ./...
       - go test -C scripts/gatehouse ./...
       - go test -C scripts/attestation ./...
+      - go test -C scripts/clerk ./...
+      - go test -C scripts/collector ./...
+      - go test -C scripts/inspector ./...
 
   test:tofu:
     desc: "OpenTofu unit tests: registry.tf's invariants against fixture configs"

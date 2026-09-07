@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 22
+floor: 23
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -388,6 +388,21 @@ mutations:
       them, including on the machines holding quorum. The guard applies the
       patches the way kustomize would and then reads the result, because
       nothing about a well-formed patch says which pods it reached.
+
+  - guard: TestEveryGoModuleIsValidatedAndTested
+    file: taskfile.yml
+    find: "- go test -C scripts/clerk ./..."
+    replace: "- true # go test -C scripts/clerk was here"
+    mentions: "never runs"
+    why: >
+      clerk and inspector sat outside both `validate` and `test:go` for their
+      whole lives, so neither was compiled or run by anything - not locally,
+      not in CI. Every guard written for the clerk had passed only in the
+      terminal that wrote it, and would have gone on passing after the code it
+      guards stopped working, because nothing ever ran it again. A module is
+      added by creating a directory with a go.mod in it, and nothing about that
+      act suggests two lists elsewhere need editing, which is exactly why the
+      lists are asserted rather than remembered.
 
 # Guards that cannot be proved by mutation, and why.
 #
