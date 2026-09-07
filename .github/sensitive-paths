@@ -21,6 +21,7 @@
 
 tests/go/repo/                              # The building code. Deleting one assertion is a smaller file and a green build.
 tests/mutations.yml                         # The proof each guard catches anything. Deleting a line makes a red check vanish and takes the proof with it.
+tests/coverage-blocklist.yml                # Declared debt. Adding a line and bumping the ceiling is two characters and turns a red build green.
 .github/sensitive-paths                     # This list. Removing a line turns the alarm off for that path, silently.
 .github/workflows/                          # Runs with a token. The agent cannot write here, so a human meant this.
 .pre-commit-config.yaml                     # Owns formatting and the commit-msg hook, pinned exactly. Unpinning resolves to whatever is latest.

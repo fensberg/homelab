@@ -25,6 +25,7 @@ import (
 // true: if the vendor ever starts answering 200-with-an-error-body, the switch
 // in r2BucketExists falls through to its default branch and the whole Cluster
 // phase fails with "HTTP 200" - during a run that has already created VMs.
+// covers: api:object_storage
 func TestObjectStorageMissingBucketIsA404(t *testing.T) {
 	acct := harness.ObjectStorageAccount(t)
 	require.NotEmpty(t, acct.AccountID, "the rendered config has no object_storage.account_id")

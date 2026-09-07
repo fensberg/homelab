@@ -100,6 +100,7 @@ func TestHypervisorDatastoreContentEnvelopeIsUnchanged(t *testing.T) {
 // opening a TCP connection to 8006 and nothing more. This confirms that the
 // port answering actually means the API answers, rather than something else
 // having taken the port.
+// covers: api:hypervisor
 func TestHypervisorAPIPortServesTheAPI(t *testing.T) {
 	site := harness.SiteConfig(t)
 	hostname, ip := harness.FirstHypervisor(t)

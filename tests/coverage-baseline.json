@@ -33,7 +33,20 @@
     "run-to-run wobble reason the old single number was.",
     "",
     "js: measured by vitest over any application code. There is none yet, so",
-    "the floor is 0 until there is."
+    "the floor is 0 until there is.",
+    "",
+    "TIER FLOORS are a different measurement and exist for a different reason.",
+    "A percentage answers how much of a Go program the tests executed, which is",
+    "fair for a unit test and meaningless for a tier whose job is to drive real",
+    "infrastructure - an integration test that provisions a cluster and asserts",
+    "five things about it covers almost no statements and is worth more than a",
+    "hundred that do. So the higher tiers get a count and a floor instead.",
+    "",
+    "The floors may be lowered, deliberately and in the same commit, the way a",
+    "coverage floor may: consolidating five test functions into one table is an",
+    "improvement and will drop a count. What they refuse is the count dropping",
+    "and nobody noticing, which is how a tier that is hard to write quietly",
+    "stops being written."
   ],
   "baselines": {
     "go/attestation": 26,
@@ -44,5 +57,14 @@
     "go/inspector": 75,
     "go/signedpush": 36,
     "js": 0
+  },
+  "tiers": {
+    "unit": 391,
+    "contract": 122,
+    "integration": 14,
+    "api": 9,
+    "e2e": 2,
+    "js": 9,
+    "tofu": 11
   }
 }

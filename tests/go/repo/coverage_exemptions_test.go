@@ -57,35 +57,56 @@ var knownTiers = map[string]bool{
 func uncoveredByFile(t *testing.T) map[string]int {
 	t.Helper()
 	root := repoRoot(t)
-	dir := filepath.Join(root, "scripts", "contractor")
-
-	profile := filepath.Join(t.TempDir(), "cover.out")
-	build := exec.Command("go", "test", "-covermode=atomic", "-coverprofile="+profile, "./...")
-	build.Dir = dir
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("running the contractor tests with coverage: %v\n%s", err, out)
-	}
-
-	report := exec.Command("go", "tool", "cover", "-func="+profile)
-	report.Dir = dir
-	out, err := report.Output()
-	if err != nil {
-		t.Fatalf("reading the coverage profile: %v", err)
-	}
-
 	counts := map[string]int{}
-	for _, line := range strings.Split(string(out), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 3 || f[len(f)-1] != "0.0%" {
-			continue
+
+	// Every module, not just the contractor.
+	//
+	// This looked at scripts/contractor alone, so a function with no coverage
+	// anywhere else was invisible. The operator's question is the one that
+	// matters here: "I want to know if in two weeks we've built a function that
+	// itself has no coverage." For six of the seven modules the answer was no -
+	// including the gatehouse, whose functions refuse unsigned pushes and
+	// unapproved deliveries, and signedpush, which reads the App private key.
+	//
+	// Paths are prefixed with the module, so two modules with an internal/run
+	// cannot collide and the file says which program each entry is about.
+	for _, module := range goModules(t) {
+		dir := filepath.Join(root, "scripts", module)
+
+		profile := filepath.Join(t.TempDir(), module+".out")
+		build := exec.Command("go", "test", "-covermode=atomic", "-coverprofile="+profile, "./...")
+		build.Dir = dir
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("running the %s tests with coverage: %v\n%s", module, err, out)
 		}
-		// "homelab/contractor/internal/run/exec.go:59:  CmdOutput  0.0%"
-		path := strings.TrimPrefix(strings.Split(f[0], ":")[0], "homelab/contractor/")
-		counts[path]++
+
+		report := exec.Command("go", "tool", "cover", "-func="+profile)
+		report.Dir = dir
+		out, err := report.Output()
+		if err != nil {
+			t.Fatalf("reading the %s coverage profile: %v", module, err)
+		}
+
+		for _, line := range strings.Split(string(out), "\n") {
+			f := strings.Fields(line)
+			if len(f) < 3 || f[len(f)-1] != "0.0%" {
+				continue
+			}
+			// "homelab/contractor/internal/run/exec.go:59:  CmdOutput  0.0%"
+			full := strings.Split(f[0], ":")[0]
+			path := strings.TrimPrefix(full, "homelab/"+module+"/")
+			if path == full {
+				// A file in the module root reports as "homelab/<module>/x.go"
+				// only when it is in a package below; the root package reports
+				// the bare file name already.
+				path = strings.TrimPrefix(full, "homelab/")
+			}
+			counts[module+"/"+path]++
+		}
 	}
 	if len(counts) == 0 {
-		t.Fatal("the coverage profile reported no uncovered functions at all, which " +
-			"is not this program - the parse has stopped matching the report's shape")
+		t.Fatal("the coverage profiles reported no uncovered functions at all, which " +
+			"is not these programs - the parse has stopped matching the report's shape")
 	}
 	return counts
 }
