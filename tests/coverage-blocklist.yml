@@ -31,7 +31,10 @@
 # that IS now tested - so the list cannot quietly accumulate slack the way a
 # coverage baseline once sat ten points below the real figure.
 #
-# Empty is the target.
+# Empty is the target, and every entry has an issue so the debt is visible
+# somewhere other than this file. The number after each is that issue: closing
+# it means removing the line and lowering the ceiling, and the guard refuses an
+# entry for something that is tested again, so the two cannot drift apart.
 #
 # WHAT "TESTED" MEANS HERE: executed, not read. A test that greps a script's
 # text is a change detector - it passes forever while the behaviour rots, and
@@ -46,15 +49,15 @@ blocked:
   # scripts/coverage-gate.sh came off this list in the same change that added
   # it, because it was the entry that mattered most: it decides whether every
   # other coverage number is acceptable, and nothing had ever executed it.
-  - shell:.github/scripts/placeholder-config.sh
-  - shell:githooks/commit-msg
-  - shell:githooks/pre-commit
-  - shell:githooks/pre-push
-  - shell:scripts/install-dependencies.sh
+  - shell:.github/scripts/placeholder-config.sh # 288
+  - shell:githooks/commit-msg # 289
+  - shell:githooks/pre-commit # 290
+  - shell:githooks/pre-push # 291
+  - shell:scripts/install-dependencies.sh # 292
 
   # Ansible. There is no test tier for it at all - `task check-hypervisor` is a
   # dry run against real hardware, not a test.
-  - ansible:management/hypervisor/hypervisor-prep.yml
+  - ansible:management/hypervisor/hypervisor-prep.yml # 293
 
   # Local guards CI does not run. Each is enforced by a git hook and by nothing
   # else, so `--no-verify`, a fresh clone, or an outside pull request skips it.
@@ -62,7 +65,7 @@ blocked:
   # validate and test are the drift the whole rule is about: CI reimplements
   # both rather than running them, which is how the Test lane's list of Go
   # modules and the taskfile's list disagreed for months.
-  - ci:task validate
-  - ci:task test
-  - ci:task push-guard
-  - ci:task merge-guard
+  - ci:task validate # 294
+  - ci:task test # 295
+  - ci:task push-guard # 296
+  - ci:task merge-guard # 297
