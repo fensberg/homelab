@@ -19,6 +19,12 @@
     "that far below the floor you are standing on is not a ratchet, it is a",
     "number. Set at 34 rather than 34.1 so ordinary run-to-run wobble does not",
     "fail a change that added nothing.",
+    "The bare \"go\" key is a shim, not a floor for anything. pr-validation.yml",
+    "still runs its own coverage step against scripts/contractor alone, and the",
+    "agent cannot edit a workflow - that change is handed over as",
+    ".github/patches/coverage-sweeps-every-go-module.patch, which deletes this key",
+    "as it lands. Nothing else reads it.",
+    "",
     "One floor per Go module, because a single number over one module was what",
     "this was: scripts/contractor alone had a floor, and the other six modules -",
     "two of which no task even ran - had none. A combined number also cannot say",
@@ -35,6 +41,7 @@
     "the floor is 0 until there is."
   ],
   "baselines": {
+    "go": 34,
     "go/attestation": 26,
     "go/clerk": 56,
     "go/collector": 7,
