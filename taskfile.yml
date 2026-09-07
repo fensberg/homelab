@@ -78,7 +78,21 @@ tasks:
       - ./toolshed/contractor break-ground -site {{.SITE}} -whatif
 
   render-secrets:
-    desc: "Hydrate templates from 1Password"
+    desc: "Prove every template renders from 1Password, then wipe what it wrote"
+    # It does NOT leave the rendered files behind, and the old description -
+    # "Hydrate templates from 1Password" - implied it did. Sterilize runs on
+    # every exit including a successful one, so this pulls the secrets, writes
+    # them, and removes them again.
+    #
+    # That is the safeguard working rather than a defect, but the description
+    # sent an operator down a path that cannot work: render, then run the phase
+    # that needs the rendered files, and find them already gone. Phases now
+    # render their own prerequisites in the same process, which is where that
+    # need is actually met.
+    #
+    # What this is still good for is proving the vault resolves and every
+    # template substitutes. `task check-inventory` answers the narrower
+    # question - do the references resolve - without pulling a single value.
     cmds:
       - task: build
       - ./toolshed/contractor break-ground -site {{.SITE}} -phase render
