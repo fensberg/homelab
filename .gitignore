@@ -88,7 +88,13 @@ workstation/inventory.yml
 # One line cannot be forgotten for a program nobody thought about.
 toolshed/
 
-scripts/contractor/coverage-go.out
+# A glob rather than one line per module, for the reason written directly
+# above about toolshed/: this file said `scripts/contractor/coverage-go.out`
+# back when contractor was the only module coverage measured. It sweeps all
+# seven now, so six modules were dropping an untracked artefact that nothing
+# ignored - one `git add -A` away from being committed, which is how a binary
+# reached a commit here before.
+scripts/*/coverage-go.out
 coverage/
 
 # Go test binaries, if anyone runs `go test -c`

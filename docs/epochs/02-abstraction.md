@@ -1644,9 +1644,76 @@ and its trigger are recorded beside the count in `compute.tf`.
 3. ~~**Three `PriorityClass` objects**~~ - **done**, in the same change as
    step 1. Values are local rather than the built-in `system-cluster-critical`
    the table above names; the reason is in `priority-classes.yaml`.
-4. **Proxmox pools by role**, as its own change - it edits every existing VM,
-   and the converges that create machines should not also be the ones that
-   modify them.
+4. ~~**Proxmox pools by role**~~ - **done**, and the premise of this entry was
+   wrong. See "Pools edit no machine at all" below.
+
+### Pools edit no machine at all, and the role could not have been granted
+
+Step 4 was written as "it edits every existing VM, and the converges that
+create machines should not also be the ones that modify them". That is true of
+the obvious implementation and false of the one that shipped, and the
+difference is worth keeping because it is the second time in this epoch that
+reading the provider rather than assuming changed the answer.
+
+**`pool_id` on the VM resource was the wrong mechanism, twice over.** Reading
+bpg/proxmox v0.111.1 rather than the documentation page: the attribute is not
+`ForceNew`, so it is an in-place move via the pools API rather than a rebuild -
+that part was better than feared. But it carries a `DiffSuppressFunc` that
+ignores the change whenever the new value is empty and the old one is not. So a
+machine can be put into a pool declaratively and **never taken out of one**;
+deleting the line from the config does nothing at all, silently. A change that
+cannot be reverted through the config is not something to do to five machines
+on a whim.
+
+`proxmox_pool_membership` is a first-class resource instead. Removing it
+destroys the membership, which is what a reader of the diff expects. And
+because membership lives outside the VM resource, **no machine is touched**:
+the plan is creates of a new kind of object beside them, and the three
+control planes holding etcd get no diff whatsoever. The caution in step 4 was
+aimed at a risk this implementation does not have.
+
+**The blocker was elsewhere, and it was not small.** The `TerraformProv` role
+carries no `Pool.*` privilege, so the converge would have failed with a 403.
+Adding `Pool.Allocate` and `Pool.Audit` to `pve_role_privs` fixes that for a
+future host and **would have changed nothing on this one**, because the
+playbook deliberately had no "modify existing role" task: it initialises a host
+from zero, and its comment said privilege changes are picked up by a rebuild.
+
+The rebuild is deferred until there is a second hypervisor. So "picked up by a
+rebuild" meant "not until then", and the only routes left were running `pveum`
+by hand - ClickOps, which this estate refuses - or rebuilding the machine the
+estate runs on. **A rule that blocks the only path to compliance is not a rule,
+it is an outage**, and it is the same shape as the push guard that blocked the
+one person who could not use the alternative.
+
+The playbook now reconciles the role to exactly what the file declares. That
+widens its job from "initialise" to "initialise and keep true", deliberately
+and in both directions: a privilege added here reaches the host on the next
+run, and a privilege added by hand on the host is removed on the next run. The
+second half is the point rather than a side effect.
+
+**Grouped by function, and by nothing else.** Not by hypervisor - the console
+already groups by node and a second copy of that answer adds nothing. Not by
+lifecycle stage - the management tier has no staging or production form, and
+borrowing those words from the workload tier is a mistake `CLAUDE.md` names
+outright. Function is also the only axis that survives the estate changing: a
+machine can move hypervisor, change size or be rebuilt on a new image and
+remain a control plane throughout.
+
+Pool ids carry the site name because pools are datacenter-scoped. Two sites
+sharing a Proxmox cluster would collide on a bare `control-plane`, and Proxmox
+answers a collision by **adopting the other estate's machines into this pool**
+rather than by failing. The config supports several sites by design, so that is
+expressible rather than theoretical.
+
+The guard is `TestEveryMachineClassIsAssignedAPool`, and it is pointed at the
+direction this actually breaks. Nobody will delete the pools - that is a
+visible, deliberate change. What happens is a new class of machine gets written
+beside the others and nothing says where it belongs, so the tree grows an
+ungrouped machine and the grouping quietly stops being true of everything. The
+test reads the VM resources out of `compute.tf` and requires each one's
+`for_each` collection to be placed, so the new class is a red build rather than
+a gap nobody can see.
 
 ### What reading the charts actually found
 

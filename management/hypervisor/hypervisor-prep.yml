@@ -62,6 +62,14 @@
       - VM.Config.Options
       - VM.Audit
       - VM.PowerMgmt
+      # Resource pools, so the hypervisor's machine list is grouped by what a
+      # machine is for rather than being one flat list that grows with the
+      # estate. Allocate covers creating a pool and moving a member into one;
+      # Audit is what lets the provider read a pool back and notice drift.
+      # Both are scoped to pools and grant nothing over a VM that the VM.*
+      # privileges above do not grant already.
+      - Pool.Allocate
+      - Pool.Audit
       - Datastore.AllocateSpace
       - Datastore.AllocateTemplate
       - Datastore.Audit
@@ -458,10 +466,42 @@
       when: pve_role not in (existing_roles.stdout | from_json | map(attribute='roleid') | list)
       tags: [rbac]
 
-    # Deliberately no "modify existing role" task. This playbook initialises a
-    # host from zero; it does not reconcile one that has drifted. If the role
-    # already exists, it was created by a previous run of this same code.
-    # Privilege changes ship as a new version and are picked up by a rebuild.
+    # This used to stop at "create", with a comment saying the playbook
+    # initialises a host from zero rather than reconciling one that has
+    # drifted, and that privilege changes ship as a new version and are picked
+    # up by a rebuild.
+    #
+    # That reasoning has one hole, and it is load-bearing: THE REBUILD IS
+    # DEFERRED. Factory-fresh ignition waits for a second hypervisor - the
+    # first machine that can be wiped without taking the estate down - so
+    # "picked up by a rebuild" meant "not until then", and a role on a live
+    # estate could not gain a privilege by any route this repository offers.
+    # Adding Pool.Allocate above would have been a line that changed nothing,
+    # and the converge that needed it would have failed with a 403 naming no
+    # cause.
+    #
+    # The remaining routes were to run pveum by hand on the host, which is
+    # ClickOps, or to rebuild the hypervisor, which is refused. A rule that
+    # blocks the only path to compliance is not a rule, it is an outage.
+    #
+    # So the role is reconciled to exactly what this file declares. That widens
+    # the playbook's job from "initialise" to "initialise and keep true", and
+    # it cuts both ways on purpose: a privilege added here reaches the host on
+    # the next run, and a privilege added by hand on the host is removed on the
+    # next run. The second half is the point rather than a side effect - this
+    # repository is the source of truth for what that token may do, and a
+    # privilege nobody declared is one nobody reviewed.
+    #
+    # `pveum role modify --privs` sets the list rather than appending to it, so
+    # a host already matching ends up unchanged. The assertion above has
+    # already proved every name is one this Proxmox version defines, so this
+    # cannot strip the role down to nothing by carrying a typo through.
+    - name: Reconcile the management role to the declared privileges
+      ansible.builtin.command: >-
+        pveum role modify {{ pve_role }} --privs "{{ pve_role_privs | join(' ') }}"
+      when: pve_role in (existing_roles.stdout | from_json | map(attribute='roleid') | list)
+      changed_when: true
+      tags: [rbac]
 
     - name: List existing Proxmox users
       ansible.builtin.command: pveum user list --output-format json

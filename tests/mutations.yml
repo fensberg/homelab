@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 31
+floor: 33
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -513,6 +513,31 @@ mutations:
       tracking it, which is the difference between debt and a gap. The whole
       point of enumerating surfaces from the repository is that a surface
       cannot leave the list by being forgotten, only by being covered.
+
+  - guard: TestEveryMachineClassIsAssignedAPool
+    file: management/cluster/pools.tf
+    find: "for k, v in local.workers"
+    replace: "for k, v in local.control_plane"
+    mentions: "never placed in a pool"
+    why: >
+      The pools break by addition rather than by deletion - a new class of
+      machine is written beside the others and nothing says where it belongs,
+      so the hypervisor grows an ungrouped machine and the grouping quietly
+      stops being true of everything. This mutation is the shape that failure
+      actually takes: the workers keep a pool assignment, so nothing looks
+      missing, but no line in pool_members iterates local.workers any more.
+
+  - guard: TestPoolIdsAreScopedToTheSite
+    file: management/cluster/pools.tf
+    find: 'pool_id = "${local.site_name}-${each.key}"'
+    replace: 'pool_id = "homelab-${each.key}"'
+    mentions: "does not include the site"
+    why: >
+      Pools are datacenter-scoped, so a bare `control-plane` collides the
+      moment two sites share a Proxmox cluster - and Proxmox answers a
+      collision by adopting the other estate's machines into this pool rather
+      than by failing. The config supports several sites by design, so the
+      collision is expressible rather than theoretical, and it is silent.
 
 # Guards that cannot be proved by mutation, and why.
 #
