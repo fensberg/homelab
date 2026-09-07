@@ -193,26 +193,42 @@ func TestEverySarifResultIsAdvisory(t *testing.T) {
 // here is a second copy of what is already in front of the reader, and two
 // lists invite the question of whether they agree.
 //
-// What the comment must still do is say that findings exist and where to look,
-// so nobody reads its brevity as the clerk having found nothing.
-func TestTheCommentDoesNotRestateWhatIsAlreadyOnTheDiff(t *testing.T) {
+// SUPERSEDED, and by an instruction rather than an argument. The operator's
+// rule is zero findings comment, more than zero silence - the alerts are the
+// report, and a comment beside them is a second count to reconcile.
+//
+// The first attempt at that kept a comment for N > 0 and only stopped it
+// listing the findings, which is not what was asked for. This test is now the
+// thing that stops that drifting back.
+func TestTheCommentIsSilentWhenThereAreFindings(t *testing.T) {
 	got := note("snag", []snag{
 		{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"},
 		{ruleDisagrees, "docs/epochs/01.md", 7, "claims a retry that the account does not describe"},
 	}, []string{"names a file that was not read"}, "")
 
-	for _, unwanted := range []string{
-		"scripts/clerk/llm.go", "nothing reaches this branch",
-		"docs/epochs/01.md", "claims a retry",
-	} {
-		if strings.Contains(got, unwanted) {
-			t.Errorf("the comment repeats %q, which is already an inline alert on that line:\n%s", unwanted, got)
-		}
-	}
+	if got != "" {
+		t.Errorf(`the clerk posted a comment alongside findings that are already inline on the diff:
 
-	for _, want := range []string{"2 snag(s)", "inline", "1 discarded"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the comment does not carry %q, so a reader cannot tell findings exist or how many were dropped:\n%s", want, got)
+%s
+
+The rule is zero findings comment, more than zero silence. A comment beside the
+alerts adds a second count for the reader to reconcile against the first and
+says nothing the alerts do not. This regressed once already, by keeping a
+receipt and merely trimming the findings out of it.`, got)
+	}
+}
+
+// The count is not the thing being hidden - the comment is. Trimming a receipt
+// down to a count was the first, wrong attempt at this, and it is the shape a
+// future change is most likely to drift back into.
+func TestTheCommentCarriesNoCountWhenItSpeaksAtAll(t *testing.T) {
+	got := note("snag", []snag{
+		{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"},
+	}, []string{"a", "b"}, "only the soundness pass ran")
+
+	for _, unwanted := range []string{"1 snag", "2 discarded", "2 finding"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("the caveat note carries %q, which turns it back into the receipt this rule removed:\n%s", unwanted, got)
 		}
 	}
 }

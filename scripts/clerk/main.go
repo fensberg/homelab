@@ -190,8 +190,10 @@ func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, string,
 		return 1
 	}
 
-	if *pr != 0 {
-		if code := post(*pr, note(name, kept, dropped, caveat)); code != 0 {
+	// An empty note means there is nothing to say that the alerts do not
+	// already say, and silence is the answer rather than a receipt.
+	if body := note(name, kept, dropped, caveat); *pr != 0 && body != "" {
+		if code := post(*pr, body); code != 0 {
 			return code
 		}
 	}
@@ -267,42 +269,33 @@ func handoverVerb(args []string) int {
 	})
 }
 
-// note is what the pull request is told, and it names every finding.
+// note is what the pull request is told, and usually it is nothing.
 //
-// The first version posted a count: "1 snag(s) raised, 0 discarded". The
-// operator's immediate question was "what is the snag, and where?" - and the
-// honest answer was two clicks away in the Security tab, which is not where
-// they were looking.
+// THE RULE, which is the operator's and was stated plainly: zero findings gets
+// a comment, more than zero gets silence.
 //
-// That is the same objection they had raised about a ciphertext fingerprint an
-// hour earlier: something changed and I will not tell you what is an alarm
-// nobody can action. The findings are all in hand at this point - the SARIF was
-// written from them - so withholding them was nothing but a missing loop.
+// It took two goes to implement, and the way it was got wrong is worth
+// keeping. Told "N > 0 hide", the first attempt kept a comment for N > 0 and
+// merely stopped it restating the findings - and wrote a long justification
+// for the receipt into this very comment block. That is substituting a design
+// argument for a decision somebody had already made. The findings are on the
+// diff, on the line they are about, in a thread that can be replied to and
+// dismissed; a comment beside them saying how many there are asks the reader
+// to check that two counts agree and offers nothing else.
 //
-// The alerts stay as alerts. Each is still dismissable on its own with a
-// stated reason, and those reasons are what turn this epoch's acceptance test
-// into a count rather than a judgement.
+// Zero findings is the opposite case and must always speak. With no comment at
+// all, a clerk that read the change and found it sound looks exactly like one
+// that was skipped, and this estate refuses that everywhere else: "I was not
+// given anything to look at" and "I looked and it is fine" are different facts
+// and only one is reassuring. That is also why the caveat exists - a change
+// carrying no readable code produces the same zero as a clean one.
 //
-// SUPERSEDED, and the reason it was right is the reason it no longer is.
+// The one thing that survives into the N > 0 case is a caveat, and only a
+// caveat. It says the reading itself was partial, which is a fact about the
+// clerk rather than about the code, so no alert carries it and hiding it would
+// lose it silently. It is emitted alone, with no count and no receipt.
 //
-// The objection above was that a count sent the reader two clicks away to the
-// Security tab, which is not where they were looking. That was true when the
-// findings only existed there. They are now rendered inline on the diff, on
-// the line they are about, in a thread that can be replied to and dismissed -
-// so "what is the snag, and where" is answered where the reader already is,
-// and repeating it here asks them to check whether two lists agree.
-//
-// What survives is the receipt. Zero findings still has to be distinguishable
-// from not having run, and the operator said the clean result was worth as
-// much to them as a finding - so the comment stays and stops restating what is
-// already on the diff.
-//
-// The caveat is why "nothing to raise" must not be the only thing zero findings
-// can say. A pull request that carried no code for the clerk to read produces
-// exactly the same count as one read closely and found sound, and only one of
-// those is reassuring. "I was not given anything to look at" and "I looked and
-// it is fine" are different facts, and the surface has to tell them apart - the
-// same rule the discarded count already follows.
+// An empty return means post nothing.
 func note(name string, kept []snag, dropped []string, caveat string) string {
 	if len(kept) == 0 {
 		headline := "nothing to raise"
@@ -314,31 +307,12 @@ func note(name string, kept []snag, dropped []string, caveat string) string {
 			name, headline, len(dropped))
 	}
 
-	// The findings themselves are NOT repeated here.
-	//
-	// They are already inline on the diff, anchored to the line, dismissable
-	// with a structured reason that says whether the clerk was wrong or was
-	// right and we chose not to act - which is the distinction this record's
-	// acceptance test needs and a comment cannot provide. Listing them twice
-	// asks the reader to work out whether the two lists agree.
-	//
-	// What stays is a receipt, because zero findings has to be distinguishable
-	// from not having run. With no comment at all, a clerk that read the diff
-	// and found nothing looks exactly like one that was skipped - which is the
-	// failure this estate refuses everywhere else, and the operator said the
-	// clean result was worth as much to them as a finding.
-	var b strings.Builder
-	fmt.Fprintf(&b, "**clerk %s** — %d snag(s), reported inline on the diff.\n\n", name, len(kept))
-
-	// Said out loud, always. "Nothing found" and "eleven findings none of which
-	// could be checked" are different facts, and only one is reassuring.
-	fmt.Fprintf(&b, "%d discarded as uncheckable.\n\n", len(dropped))
-	if caveat != "" {
-		fmt.Fprintf(&b, "Read with a caveat: %s.\n\n", caveat)
+	// Findings exist, so they are already on the diff and this says nothing
+	// about them - not what they are, not how many, not that there were any.
+	if caveat == "" {
+		return ""
 	}
-	b.WriteString("Each is an alert on the file, dismissable on its own with a reason. " +
-		"A second opinion from a reader with no context: it can approve nothing and block nothing.")
-	return b.String()
+	return fmt.Sprintf("**clerk %s** — read with a caveat: %s. Anything found is on the diff.", name, caveat)
 }
 
 // post puts a short note on a pull request, as a comment and never more.

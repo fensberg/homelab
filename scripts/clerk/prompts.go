@@ -40,6 +40,8 @@ Second, list what is not built soundly. Look for things like:
 - an error that is swallowed, or a failure path that cannot be reached
 - structure so tangled that you cannot follow what happens when
 
+Before reporting anything about control flow - an unreachable branch, a condition that skips what it should keep, a loop that does not do what its body suggests - work the logic through on one concrete input and satisfy yourself that the input really does reach the wrong place. Boolean conditions with "and", "or" and negation are where this goes wrong most often, and a claim about one that has not been traced is usually the reader's mistake rather than the code's. If you cannot name the input, do not report it.
+
 Use the rule "unsound-work" for every finding.
 
 Answer with JSON and nothing else, as one object:
@@ -115,15 +117,21 @@ Use the rule "commentary-disagrees" for every finding, and cite the exact line n
 // prerequisite, or a config key with no instruction for what to put in it.
 // Reading as a stranger IS the task, which is the one place where having no
 // context is the qualification rather than the limitation.
-const handoverPrompt = `You have just cloned this repository and intend to run it yourself, against your own accounts and your own hardware. You have never spoken to anyone who built it, and you cannot ask.
+const handoverPrompt = `You intend to run this project yourself, against your own accounts and your own hardware. You have never spoken to anyone who built it, and you cannot ask.
 
-List what would stop you. Look for:
-- a step assuming an account, credential, network or machine already exists, without saying how to obtain one
-- a configuration key with no instruction for what to put in it
-- an instruction naming something the repository never explains
-- an order of operations that is implied but never stated
+WHAT YOU ARE LOOKING AT. You have NOT been given the repository. You have been given only the files one change touched. The repository is much larger and everything else in it exists; you simply cannot see it.
 
-Report what would actually block you, not what is merely unfamiliar. Use the rule "handover-gap" for every finding.
+So three things are never findings, and each is a fact about your input rather than about the work:
+
+1. THAT SOMETHING DOES NOT EXIST. You cannot tell. A file, function, type, test, script or directory named in the text you were given is almost certainly there and simply outside your view. Never write that the repository "contains no such file" or that something "does not exist".
+
+2. THAT SOMETHING IS UNDEFINED, UNEXPLAINED OR UNDOCUMENTED because you cannot find where it comes from. A function called here is defined somewhere you were not shown - very often in the same package, in a file this change did not touch. Not seeing a definition is not evidence there is none.
+
+3. THAT A CROSS-REFERENCE IS WRONG. When the text points at another path, you cannot check it. Take it at face value.
+
+What you CAN judge is whether the files in front of you tell somebody what to DO: whether a step assumes an account, credential, network or machine exists without saying how to obtain one; whether a configuration key says what to put in it; whether an order of operations is stated rather than implied.
+
+Report only what would actually block you, and only from what you were given. Use the rule "handover-gap" for every finding.
 ` + findingRules + `
 The files follow, with line numbers.
 `

@@ -439,6 +439,63 @@ decision above describes: the clerk was not asserting a defect, it was
 describing what the code says, and the gap between that description and the
 prose was the finding.
 
+**Three misses in one run, on #275, and one of them was the harness lying to
+the model.** The worst run so far: three findings, none of them right.
+
+The first was a plain misreading. `if role != "control-plane" || isDatabase()
+{ continue }` was reported as skipping non-database pods on control planes,
+which is the one case it collects - both clauses are false there, so the
+disjunction is false and the loop does not continue. A boolean read backwards.
+
+The other two share a cause worth writing down, because it was not the model's
+fault. `handoverPrompt` opened with "You have just cloned this repository",
+while the workflow hands the clerk **only the files one change touched** - and
+says so in its own comment two steps earlier: "The clerk reads the change, not
+the repository". So the model was told it held a repository and given a diff,
+and then reported that a helper was undefined (it is in the next file of the
+same package) and that a file did not exist (it does; it landed in #271).
+
+**A prompt that misdescribes the input produces findings about the input.**
+Both of those are the model reasoning correctly from a false premise it was
+handed. The earlier rule about claims the account cannot see was already in
+the comparison prompt and did not help, because handover is a different prompt
+and its premise was the thing at fault.
+
+What changed: handover now states what it is actually looking at and names
+three things that are never findings - that something does not exist, that
+something is undefined because its definition was not shown, and that a
+cross-reference is wrong. The blind prompt gained a requirement that a
+control-flow claim be traced on one concrete input first, naming boolean
+conditions as where this goes wrong.
+
+Scored honestly, that is one hit and four misses across the runs recorded here.
+Not yet a verdict - the fixes for three of the four are prompt changes whose
+effect can only be seen by running the model again - but the trend is the thing
+this section exists to measure, and it is not currently good.
+
+### The clerk is silent when it has findings, and this took two goes
+
+The operator's rule, stated plainly the first time: **zero findings gets a
+comment, more than zero gets silence.** The alerts are the report; a comment
+beside them is a second count to reconcile against the first.
+
+The first implementation kept a comment for N > 0 and merely stopped it listing
+the findings, then wrote a paragraph into the source justifying the receipt that
+survived. That is substituting a design argument for a decision somebody had
+already made, and it was noticed the next time the clerk ran: a comment reading
+"1 snag(s)" beside three alerts, which also reads as a disagreement it is not -
+snag found one, handover found two, and handover has always run without `-pr`.
+
+Zero findings still speaks, and must: a clerk that read the change and found it
+sound has to be distinguishable from one that was skipped. The only thing that
+survives into the N > 0 case is a caveat, alone and with no count, because a
+partial reading is a fact about the clerk that no alert carries.
+
+`TestTheCommentIsSilentWhenThereAreFindings` and
+`TestTheCommentCarriesNoCountWhenItSpeaksAtAll` hold it. Both were checked by
+reverting the behaviour and watching them fail, since the mutation ledger
+cannot reach Go source.
+
 **A miss, on #254**, and a mechanical one rather than a judgement error. It
 flagged `tests/mutations.yml:148`, a line reading `# context that does not
 exist either`, as commentary unsupported by the account. That line is _data_ -
