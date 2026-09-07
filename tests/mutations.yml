@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 23
+floor: 24
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -389,11 +389,11 @@ mutations:
       patches the way kustomize would and then reads the result, because
       nothing about a well-formed patch says which pods it reached.
 
-  - guard: TestEveryGoModuleIsValidatedAndTested
+  - guard: TestTheTaskfileDiscoversModulesRatherThanListingThem
     file: taskfile.yml
-    find: "- go test -C scripts/clerk ./..."
-    replace: "- true # go test -C scripts/clerk was here"
-    mentions: "never runs"
+    find: '          go test -C "$dir" ./...'
+    replace: "          go test -C scripts/contractor ./..."
+    mentions: "vets or tests named modules"
     why: >
       clerk and inspector sat outside both `validate` and `test:go` for their
       whole lives, so neither was compiled or run by anything - not locally,
@@ -402,7 +402,22 @@ mutations:
       guards stopped working, because nothing ever ran it again. A module is
       added by creating a directory with a go.mod in it, and nothing about that
       act suggests two lists elsewhere need editing, which is exactly why the
-      lists are asserted rather than remembered.
+      lists are asserted rather than remembered. The sweep is the fix; this
+      entry is what stops it turning back into a list.
+
+  - guard: TestEveryGoModuleHasACoverageFloor
+    file: tests/coverage-baseline.json
+    find: '"go/clerk": 56,'
+    replace: '"go-clerk-was-here": 56,'
+    mentions: "has no floor for"
+    why: >
+      A module with no floor has its coverage measured and compared against
+      nothing. Six of the seven were in that state, two of them modules no task
+      ran at all, so the number the gate reported for "go" described one module
+      while appearing to describe the project. The floor is written by hand on
+      purpose - a floor that ratchets automatically records whatever the last
+      green run happened to hit - so the thing that must not be forgotten is
+      writing it, and this is what refuses to forget.
 
 # Guards that cannot be proved by mutation, and why.
 #

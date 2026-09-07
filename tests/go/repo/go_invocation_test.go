@@ -155,6 +155,26 @@ func TestNoGoCommandResolvesAgainstTheRootlessRepository(t *testing.T) {
 			}
 
 			if c := goChangeDir.FindStringSubmatch(args); c != nil {
+				// A discovered directory, not a written one.
+				//
+				// taskfile.yml sweeps `scripts/*/go.mod` rather than naming
+				// each module, because the hand-written lists it replaced went
+				// stale - clerk and inspector were on none of them and were
+				// never compiled or run by anything. The loop tests for a
+				// go.mod before it does anything, so the property this guard
+				// exists to enforce is enforced by the shell instead, one line
+				// earlier and at run time.
+				//
+				// Refused rather than skipped when that test is absent: a bare
+				// `-C "$dir"` with nothing checking $dir is exactly the
+				// unresolvable invocation this was written for.
+				if strings.HasPrefix(c[1], "$") || strings.HasPrefix(c[1], `"$`) {
+					if !strings.Contains(body, `[ -f "$dir/go.mod" ] || continue`) {
+						t.Errorf("%s: `go %s -C %s` changes into a directory this cannot resolve, "+
+							"and nothing in the file checks that it holds a go.mod first", name, sub, c[1])
+					}
+					continue
+				}
 				judged++
 				dir := filepath.Join(root, c[1])
 				if !hasGoMod(dir) {

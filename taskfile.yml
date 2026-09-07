@@ -239,26 +239,25 @@ tasks:
       # transformer that does not build is a pin that silently is not applied.
       - kubectl kustomize clusters/management/flux-system > /dev/null
       - rm -f config/management.placeholder.json
-      - go vet -C scripts/contractor ./...
-      - go build -C scripts/contractor -o /dev/null .
-      - go vet -C scripts/signedpush ./...
-      - go build -C scripts/signedpush -o /dev/null .
-      - go vet -C scripts/gatehouse ./...
-      - go build -C scripts/gatehouse -o /dev/null .
-      - go vet -C scripts/collector ./...
-      - go build -C scripts/collector -o /dev/null .
-      # clerk and inspector were absent from this list and from test:go, so
-      # neither was vetted, built or tested by anything - locally or in CI.
-      # Every guard written for the clerk had therefore never run outside the
-      # terminal that wrote it. tests/go/repo/go_modules_test.go now refuses a
-      # module that is missing from either list, which is what stops the next
-      # one being forgotten the same way.
-      - go vet -C scripts/clerk ./...
-      - go build -C scripts/clerk -o /dev/null .
-      - go vet -C scripts/inspector ./...
-      - go build -C scripts/inspector -o /dev/null .
-      - go vet -C scripts/attestation ./...
-      - go build -C scripts/attestation -o /dev/null .
+      # Every Go module under scripts/, discovered rather than listed.
+      #
+      # It was a hand-written list, and clerk and inspector were never on it -
+      # nor on test:go's, nor on the coverage gate's. Neither was vetted, built
+      # or run by anything, locally or in CI, for its whole life. Every guard
+      # written for the clerk had therefore only ever passed in the terminal
+      # that wrote it.
+      #
+      # A module is created by making a directory with a go.mod in it, and
+      # nothing about that act suggests three lists elsewhere need editing. So
+      # the lists are gone: this finds the modules, and a new one is covered
+      # the moment it exists.
+      - |
+        for dir in scripts/*/; do
+          [ -f "$dir/go.mod" ] || continue
+          echo "  -> vet and build ${dir%/}"
+          go vet -C "$dir" ./...
+          go build -C "$dir" -o /dev/null .
+        done
       # Every tier, not just the untagged one. The integration, api and e2e
       # tiers are build-tagged, so a bare `go vet ./...` does not compile them
       # at all - a change to a shared struct can break them and still pass
@@ -288,13 +287,12 @@ tasks:
   test:go:
     desc: "Go unit and contract tests for the ignition button and the push tools"
     cmds:
-      - go test -C scripts/contractor ./...
-      - go test -C scripts/signedpush ./...
-      - go test -C scripts/gatehouse ./...
-      - go test -C scripts/attestation ./...
-      - go test -C scripts/clerk ./...
-      - go test -C scripts/collector ./...
-      - go test -C scripts/inspector ./...
+      # Discovered, not listed - see the note in `validate`.
+      - |
+        for dir in scripts/*/; do
+          [ -f "$dir/go.mod" ] || continue
+          go test -C "$dir" ./...
+        done
 
   test:tofu:
     desc: "OpenTofu unit tests: registry.tf's invariants against fixture configs"
@@ -337,10 +335,25 @@ tasks:
   test:coverage:
     desc: "Run the tests with coverage and check it against the committed floor"
     cmds:
+      # One floor per module, and the modules are discovered.
+      #
+      # This measured scripts/contractor alone, so six of the seven Go modules
+      # had no coverage floor at all - including two that no task even ran. A
+      # single "go" number also could not say which module had lost its tests.
+      #
+      # The gate refuses a key it has no baseline for, so a new module fails
+      # here until somebody writes its floor into tests/coverage-baseline.json.
+      # That is deliberate: the file's own reasoning is that a floor should
+      # record a decision rather than whatever the last green run happened to
+      # hit, and a number nobody chose is not a decision.
       - |
-        go test -C scripts/contractor -covermode=atomic -coverprofile=coverage-go.out ./...
-        pct="$(go -C scripts/contractor tool cover -func=coverage-go.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
-        bash scripts/coverage-gate.sh go "$pct"
+        for dir in scripts/*/; do
+          [ -f "$dir/go.mod" ] || continue
+          module="$(basename "$dir")"
+          go test -C "$dir" -covermode=atomic -coverprofile=coverage-go.out ./...
+          pct="$(go -C "$dir" tool cover -func=coverage-go.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
+          bash scripts/coverage-gate.sh "go/$module" "$pct"
+        done
       - |
         if [ -d node_modules ]; then
           pnpm test:coverage
