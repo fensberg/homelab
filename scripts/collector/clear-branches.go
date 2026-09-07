@@ -37,6 +37,8 @@ import (
 //	upstream gone         the remote branch is gone, which is what merging does
 //	inside main           the tip is already an ancestor of origin/main
 //	pull request merged   GitHub says so - the only evidence a squash preserves
+//	pull request closed   somebody decided it would not land, which is as
+//	                      finished as merged and leaves no trace in git at all
 //
 // The third is what makes this worth having: on that same checkout it accounted
 // for 109 of the 149 finished branches, and nothing local could have known.
@@ -60,19 +62,19 @@ func clearBranches(args []string) int {
 	// Refresh remote-tracking refs first, or "upstream gone" is answered from
 	// whatever this checkout last happened to hear. A fetch reads and never
 	// writes to the remote.
-	if _, err := run("git", "fetch", "--prune", "--quiet"); err != nil {
+	if _, err := git("fetch", "--prune", "--quiet"); err != nil {
 		fmt.Fprintln(os.Stderr, "collector: could not fetch, so this is judged on stale information:", err)
 	}
 
-	current, err := run("git", "rev-parse", "--abbrev-ref", "HEAD")
+	current, err := git("rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "collector:", err)
 		return 1
 	}
 
-	merged := mergedPullRequestBranches()
+	merged, closed := pullRequestBranches()
 	if merged == nil {
-		fmt.Fprintln(os.Stderr, "collector: could not ask GitHub which pull requests merged, so"+
+		fmt.Fprintln(os.Stderr, "collector: could not ask GitHub about pull requests, so"+
 			" branches whose work was squash-merged are being kept. Authenticate gh and run again to clear those.")
 	}
 
@@ -84,15 +86,32 @@ func clearBranches(args []string) int {
 
 	var finishedRows, keep []string
 	for _, b := range branches {
-		why, done := finished(b.name, current, b.track, insideMain(b.name), merged[b.name])
+		why, done := finished(b.name, current, b.track, insideMain(b.name), merged[b.name], closed[b.name])
 		switch {
 		case done:
 			finishedRows = append(finishedRows, strings.Join([]string{b.name, b.sha, why}, "\x00"))
 		case why != "":
-			keep = append(keep, b.name)
+			age, _ := git("log", "-1", "--format=%cr", b.name)
+			keep = append(keep, fmt.Sprintf("%-52s %-28s last commit %s", b.name, why, age))
 		}
 	}
 	sort.Strings(finishedRows)
+
+	sort.Strings(keep)
+	// Said out loud, always, and this is the half the first version got wrong.
+	//
+	// It reported "9 still in use" and named none of them, which tells a reader
+	// nothing they can act on and hides the interesting question: WHY is each
+	// one kept? A branch nothing landed and nothing closed is either work in
+	// progress or work abandoned, and only the person who wrote it knows which.
+	// Naming them with their age is what lets that judgement be made at all.
+	if len(keep) > 0 {
+		fmt.Printf("kept, because nothing says this work is finished:\n\n")
+		for _, row := range keep {
+			fmt.Printf("  %s\n", row)
+		}
+		fmt.Println()
+	}
 
 	if len(finishedRows) == 0 {
 		fmt.Printf("nothing to collect: %d branch(es) are still in use\n", len(keep))
@@ -106,7 +125,7 @@ func clearBranches(args []string) int {
 			fmt.Printf("  would collect  %-52s %-20s %s\n", name, why, short(sha))
 			continue
 		}
-		if _, err := run("git", "branch", "-D", name); err != nil {
+		if _, err := git("branch", "-D", name); err != nil {
 			fmt.Fprintf(os.Stderr, "  FAILED         %-52s %v\n", name, err)
 			continue
 		}
@@ -130,7 +149,7 @@ func clearBranches(args []string) int {
 // gone" and "GitHub says the pull request merged" are different amounts of
 // evidence, and somebody watching a hundred branches disappear is entitled to
 // see which one applied to each.
-func finished(name, current, track string, insideMain, mergedPR bool) (why string, done bool) {
+func finished(name, current, track string, insideMain, mergedPR, closedPR bool) (why string, done bool) {
 	switch {
 	case name == current:
 		// Never the branch you are standing on, whatever else is true of it.
@@ -143,8 +162,14 @@ func finished(name, current, track string, insideMain, mergedPR bool) (why strin
 		return "inside main", true
 	case mergedPR:
 		return "pull request merged", true
+	case closedPR:
+		// Closed without merging is still a decision, and it is the only one
+		// that leaves no mark on the branch whatsoever - the commits are still
+		// there, the upstream may still exist, and nothing local can tell it
+		// apart from work in progress.
+		return "pull request closed", true
 	default:
-		return "not landed anywhere", false
+		return "no pull request, not in main", false
 	}
 }
 
@@ -158,7 +183,7 @@ func localBranches() ([]localBranch, error) {
 	// passed to exec is a NUL-terminated C string, so a real NUL inside one is
 	// rejected by the kernel with "invalid argument" - which is what the first
 	// version of this line did.
-	out, err := run("git", "for-each-ref",
+	out, err := git("for-each-ref",
 		"--format=%(refname:short)%00%(objectname)%00%(upstream:track)", "refs/heads")
 	if err != nil {
 		return nil, err
@@ -178,12 +203,13 @@ func localBranches() ([]localBranch, error) {
 }
 
 func insideMain(name string) bool {
-	_, err := run("git", "merge-base", "--is-ancestor", name, "origin/main")
+	_, err := git("merge-base", "--is-ancestor", name, "origin/main")
 	return err == nil
 }
 
-// mergedPullRequestBranches asks GitHub which head branches belong to a merged
-// pull request. A nil map means the question could not be asked.
+// pullRequestBranches asks GitHub which head branches belong to a pull request
+// that merged, and which to one that was closed without merging. A nil merged
+// map means the question could not be asked at all.
 //
 // This shells out to gh, which tests/go/repo forbids in scripts/contractor for
 // a good reason: gh is on every developer's machine and in no image, so the
@@ -191,19 +217,26 @@ func insideMain(name string) bool {
 // This verb only ever runs on a developer's machine, by hand, against their own
 // checkout - it is in no workflow - and a missing gh degrades to keeping more
 // branches rather than to failing.
-func mergedPullRequestBranches() map[string]bool {
-	out, err := run("gh", "pr", "list", "--state", "merged",
-		"--limit", "500", "--json", "headRefName", "--jq", ".[].headRefName")
+func pullRequestBranches() (merged, closed map[string]bool) {
+	out, err := gh("pr", "list", "--state", "all", "--limit", "500",
+		"--json", "headRefName,state", "--jq", `.[] | "\(.state)\t\(.headRefName)"`)
 	if err != nil {
-		return nil
+		return nil, map[string]bool{}
 	}
-	merged := map[string]bool{}
-	for _, name := range strings.Split(out, "\n") {
-		if name = strings.TrimSpace(name); name != "" {
+	merged, closed = map[string]bool{}, map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		state, name, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if !ok || name == "" {
+			continue
+		}
+		switch state {
+		case "MERGED":
 			merged[name] = true
+		case "CLOSED":
+			closed[name] = true
 		}
 	}
-	return merged
+	return merged, closed
 }
 
 func short(sha string) string {
@@ -213,11 +246,21 @@ func short(sha string) string {
 	return sha
 }
 
-// run says what the command said when it fails. signedpush learned this the
-// expensive way: a wrapper that swallows a subprocess's stderr turns a one-line
-// diagnosis into an investigation, every time, for everybody.
-func run(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
+// Two wrappers rather than one taking the program as a parameter, so the
+// command name is a literal at the point exec sees it.
+//
+// Semgrep's dangerous-exec-command rule refused the single-wrapper version, and
+// while every caller passed a constant, the rule is asking the right question:
+// a helper that will run whatever it is handed is one refactor away from
+// running whatever it is given. Two names cost nothing and cannot drift.
+func git(args ...string) (string, error) { return runOutput(exec.Command("git", args...), "git", args) }
+
+func gh(args ...string) (string, error) { return runOutput(exec.Command("gh", args...), "gh", args) }
+
+// runOutput says what the command said when it fails. signedpush learned this
+// the expensive way: a wrapper that swallows a subprocess's stderr turns a
+// one-line diagnosis into an investigation, every time, for everybody.
+func runOutput(cmd *exec.Cmd, name string, args []string) (string, error) {
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

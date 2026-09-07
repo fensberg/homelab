@@ -12,19 +12,20 @@ func TestFinishedNamesWhichEvidenceDecidedIt(t *testing.T) {
 		track      string
 		insideMain bool
 		mergedPR   bool
+		closedPR   bool
 		wantWhy    string
 		wantDone   bool
 	}{
 		{
 			name:   "the branch you are standing on is never collected",
 			branch: "feat/in-progress", current: "feat/in-progress",
-			track: "[gone]", insideMain: true, mergedPR: true,
+			track: "[gone]", insideMain: true, mergedPR: true, closedPR: true,
 			wantWhy: "", wantDone: false,
 		},
 		{
 			name:   "main is never collected",
 			branch: "main", current: "feat/other",
-			track: "[gone]", insideMain: true, mergedPR: true,
+			track: "[gone]", insideMain: true, mergedPR: true, closedPR: true,
 			wantWhy: "", wantDone: false,
 		},
 		{
@@ -47,14 +48,23 @@ func TestFinishedNamesWhichEvidenceDecidedIt(t *testing.T) {
 			wantWhy: "pull request merged", wantDone: true,
 		},
 		{
+			// Closed without merging leaves no mark in git at all: the commits
+			// are still there and the upstream may still exist. Only GitHub
+			// knows somebody decided against it.
+			name:   "a pull request closed without merging is a decision too",
+			branch: "spike/rejected", current: "main",
+			track: "", insideMain: false, closedPR: true,
+			wantWhy: "pull request closed", wantDone: true,
+		},
+		{
 			name:   "work that landed nowhere is kept",
 			branch: "spike/abandoned", current: "main",
 			track: "", insideMain: false, mergedPR: false,
-			wantWhy: "not landed anywhere", wantDone: false,
+			wantWhy: "no pull request, not in main", wantDone: false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			why, done := finished(tc.branch, tc.current, tc.track, tc.insideMain, tc.mergedPR)
+			why, done := finished(tc.branch, tc.current, tc.track, tc.insideMain, tc.mergedPR, tc.closedPR)
 			if done != tc.wantDone {
 				t.Errorf("collect=%v, want %v - %q", done, tc.wantDone, why)
 			}
@@ -73,7 +83,7 @@ func TestFinishedNamesWhichEvidenceDecidedIt(t *testing.T) {
 // says collect.
 func TestNothingCollectsTheCurrentBranchOrMain(t *testing.T) {
 	for _, name := range []string{"main", "feat/here"} {
-		if _, done := finished(name, "feat/here", "[gone]", true, true); done {
+		if _, done := finished(name, "feat/here", "[gone]", true, true, true); done {
 			t.Errorf("%q was collected while every other signal said finished; losing the branch you are on, or main, is not recoverable in the way the others are", name)
 		}
 	}
