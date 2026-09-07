@@ -875,12 +875,27 @@
     # Peers is the list of hypervisors that speak BGP to each other. With one
     # node it contains only itself, which is valid and becomes correct
     # automatically when the fleet grows.
+    #
+    # Conditional on the list actually differing, and `changed_when: true` when
+    # it runs. It used to set unconditionally while reporting `changed_when:
+    # false`, which was wrong twice over: it wrote controllers.cfg on every run
+    # while telling the operator it had changed nothing, and that write is what
+    # made the SDN configuration look pending on every run - see the apply
+    # below, which is the expensive consequence.
     - name: Keep the controller's peer list in step with the fleet
       ansible.builtin.command: >-
         pvesh set /cluster/sdn/controllers/{{ sdn_controller }}
         --peers {{ sdn_peers | join(',') }}
-      when: sdn_controller in (sdn_controllers.stdout | from_json | map(attribute='controller') | list)
-      changed_when: false
+      vars:
+        sdn_current_peers: >-
+          {{ ((sdn_controllers.stdout | from_json
+               | selectattr('controller', 'equalto', sdn_controller)
+               | map(attribute='peers', default='') | first | default(''))
+              | regex_replace('\s+', '')).split(',') | reject('equalto', '') | list }}
+      when:
+        - sdn_controller in (sdn_controllers.stdout | from_json | map(attribute='controller') | list)
+        - (sdn_peers | symmetric_difference(sdn_current_peers) | length) > 0
+      changed_when: true
       run_once: true
       tags: [sdn]
 
@@ -926,12 +941,24 @@
 
     # Exit nodes are the hypervisors that route this subnet to the outside
     # world. Every node is one, so losing a box does not cut off the others.
+    #
+    # Conditional for the same reason as the controller's peer list above: this
+    # wrote zones.cfg on every run while reporting no change, and that write is
+    # what kept the SDN configuration permanently pending.
     - name: Keep the zone's exit nodes in step with the fleet
       ansible.builtin.command: >-
         pvesh set /cluster/sdn/zones/{{ sdn_zone }}
         --exitnodes {{ sdn_exit_nodes | join(',') }}
-      when: sdn_zone in (sdn_zones.stdout | from_json | map(attribute='zone') | list)
-      changed_when: false
+      vars:
+        sdn_current_exit_nodes: >-
+          {{ ((sdn_zones.stdout | from_json
+               | selectattr('zone', 'equalto', sdn_zone)
+               | map(attribute='exitnodes', default='') | first | default(''))
+              | regex_replace('\s+', '')).split(',') | reject('equalto', '') | list }}
+      when:
+        - sdn_zone in (sdn_zones.stdout | from_json | map(attribute='zone') | list)
+        - (sdn_exit_nodes | symmetric_difference(sdn_current_exit_nodes) | length) > 0
+      changed_when: true
       run_once: true
       tags: [sdn]
 
@@ -977,23 +1004,81 @@
       run_once: true
       tags: [sdn]
 
-    # Always commit. 'pvesh set /cluster/sdn' is the API equivalent of the
-    # Apply button in the web UI, and it reloads only what changed.
+    # WHAT `pvesh set /cluster/sdn` ACTUALLY DOES, measured rather than assumed.
     #
-    # This comment used to call it idempotent. It is not, in one specific and
-    # observable way: every apply appends another copy of the subnet's SNAT
-    # rule, so a run that changes nothing still grows the nat table by one. The
-    # task below collapses them, which is why nobody noticed the claim was
-    # wrong. See #323 for whether the appending itself can be stopped - the
-    # short version is that `--snat 1` is what makes the EVPN exit nodes NAT at
-    # all, so removing it does not tidy the table, it removes the cluster's
-    # route to the outside world.
+    # This comment used to say the call was "idempotent", that it "reloads only
+    # what changed", and - two lines later - that we deliberately do not run
+    # `ifreload -a` because it "reloads every interface on a live hypervisor and
+    # can drop the management link out from under you".
     #
-    # We deliberately do NOT run 'ifreload -a'. That reloads every interface on
-    # a live hypervisor and can drop the management link out from under you.
+    # All three claims were checked on a live host, and the first and third are
+    # wrong. Run against a configuration with nothing pending:
+    #
+    #     # iptables -t nat -S POSTROUTING | grep -c -- '-j SNAT'
+    #     1
+    #     # pvesh set /cluster/sdn
+    #     martha: reloading network config
+    #     info: executing /usr/bin/dpkg -l ifupdown2
+    #     UPID:...:reloadnetworkall::root@pam:
+    #     # iptables -t nat -S POSTROUTING | grep -c -- '-j SNAT'
+    #     2
+    #
+    # It appends a duplicate SNAT rule, and it performs `reloadnetworkall` -
+    # the ifupdown2 reload the comment below says we avoid. The operation being
+    # carefully not run directly was being run indirectly, on every invocation
+    # of this playbook, including invocations that changed nothing.
+    #
+    # In fairness: a reload against an unchanged config is normally a no-op and
+    # this estate has run it many times without incident. The estate was not in
+    # danger. What was wrong was the reasoning - "worst case, an untidy nat
+    # table" is what made an unconditional network reload look free, and a
+    # reload of the box the whole estate routes through is not free enough to
+    # do for no reason.
+    #
+    # SO IT IS NOW CONDITIONAL, on Proxmox's own view of whether anything is
+    # pending rather than on ours.
+    #
+    # That distinction is why the previous version of this comment was right to
+    # refuse a conditional apply: keyed on whether OUR tasks changed something,
+    # we would be predicting what Proxmox considers pending and would eventually
+    # be wrong, and skipping a needed apply is far worse than an untidy rule
+    # set. Keyed on the on-disk state, we are not predicting anything.
+    #
+    # Proxmox writes what it has applied to /etc/pve/sdn/.running-config, beside
+    # the *.cfg files holding what has been asked for. A .cfg newer than
+    # .running-config is a pending change. The check fails toward applying: no
+    # .running-config, an unreadable directory, or any doubt means apply, which
+    # is exactly the old behaviour. It can only ever skip when Proxmox has
+    # already written down that it is up to date.
+    #
+    # This only became possible once the two "keep in step" tasks above stopped
+    # rewriting their .cfg on every run. While they did, everything was
+    # permanently pending and this check would have applied every time anyway.
+    - name: Find out whether Proxmox has an SDN change waiting
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          running=/etc/pve/sdn/.running-config
+          if [ ! -r "$running" ]; then
+            echo pending
+            exit 0
+          fi
+          if [ -n "$(find /etc/pve/sdn -maxdepth 1 -name '*.cfg' -newer "$running" -print -quit)" ]; then
+            echo pending
+          else
+            echo applied
+          fi
+      register: sdn_pending
+      changed_when: false
+      check_mode: false
+      run_once: true
+      tags: [sdn]
+
     - name: Apply the pending SDN configuration
       ansible.builtin.command: pvesh set /cluster/sdn
-      changed_when: false
+      when: (sdn_pending.stdout | trim) == 'pending'
+      changed_when: true
       run_once: true
       tags: [sdn]
 
@@ -1004,11 +1089,19 @@
     # what it costs is a nat table that grows without bound and is the first
     # thing read when something network-related is being debugged.
     #
-    # Collapsed here rather than by making the apply conditional. The apply has
-    # to stay unconditional - it is what commits a pending SDN change, and
-    # skipping it on a run that did change something is a worse failure than an
-    # untidy rule set. Converging the rules to one is also true regardless of
-    # which layer appended them, which a conditional apply would not be.
+    # This stays even though the apply above is now conditional, and the reason
+    # is the half of the old comment that was always right: converging the rules
+    # to one is true regardless of which layer appended them. A conditional
+    # apply is not a substitute for that. Somebody pressing Apply in the web UI
+    # adds a duplicate this playbook never saw, and a run that legitimately does
+    # apply still adds one.
+    #
+    # What the conditional apply changed is the frequency, not the need: this
+    # used to clean up after every run, and now cleans up after runs that
+    # actually applied something. The rest of the old comment - that the apply
+    # "has to stay unconditional" - was reasoning about a conditional keyed on
+    # whether OUR tasks changed anything, which would have meant predicting what
+    # Proxmox considers pending. Keyed on .running-config, nothing is predicted.
     #
     # Scoped to this subnet by `-s`, so a NAT rule somebody else put on the
     # hypervisor is not this task's business.
