@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 31
+floor: 33
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -513,6 +513,29 @@ mutations:
       tracking it, which is the difference between debt and a gap. The whole
       point of enumerating surfaces from the repository is that a surface
       cannot leave the list by being forgotten, only by being covered.
+
+  - guard: TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem
+    file: clusters/management/infrastructure/controllers/actions-runner-controller.yaml
+    find: "      runAsNonRoot: true"
+    replace: "      runAsNonRoot: false"
+    mentions: "runAsNonRoot"
+    why: >
+      The controller does not run as root because its base image says
+      USER 65532, and nothing in this repository can see that change. Remove
+      the assertion and the property becomes something an upstream rebuild can
+      take away with no diff here, no event, and a pod that keeps starting.
+
+  - guard: TestTheRenderedTalosconfigNamesNodesAndEveryEndpoint
+    file: management/cluster/talos.tf
+    find: "  nodes                = local.node_ips"
+    replace: "  nodes                = []"
+    mentions: "nodes"
+    why: >
+      The Talos provider leaves `nodes` empty unless told otherwise, and an
+      empty one is not a broken credential - it is a working one on which every
+      node-targeted command refuses on first use. The runtime guard in
+      writeTalosconfigTo catches it at the moment of use; this catches the
+      branch that removed it, which is cheaper by a whole diagnostic.
 
 # Guards that cannot be proved by mutation, and why.
 #

@@ -71,6 +71,42 @@ spec:
         cpu: 50m
         memory: 128Mi
     priorityClassName: critical
+
+    # Declare the floor rather than inherit it (#272).
+    #
+    # This chart is the well-behaved one: 0.23.0 already ships
+    # `runAsNonRoot: true`, `allowPrivilegeEscalation: false`,
+    # `readOnlyRootFilesystem: true`, uid/gid 10001, RuntimeDefault seccomp
+    # and `drop: [ALL]` as its defaults. #272 described these as "partial",
+    # having read the values file's layout rather than its values; reading it
+    # properly found nothing missing. So none of this hardens anything today.
+    #
+    # It is written down anyway, and the reason is the difference between a
+    # default and a requirement. A chart upgrade that quietly dropped one of
+    # these would downgrade this estate with no diff of ours to notice it in -
+    # the version bump would look like every other version bump. Restated here,
+    # the same upgrade either keeps the property or produces a manifest that
+    # visibly disagrees with what we asked for.
+    #
+    # This is duplication, and duplication normally drifts - which is why the
+    # estate pins versions in exactly one file. It is not the same case: these
+    # are not values that have to stay in step with the chart's, they are the
+    # minimum below which we will not go. The chart is free to exceed them.
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10001
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+
     affinity:
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:

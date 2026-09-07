@@ -153,6 +153,33 @@ spec:
       #
       # So the taint's remaining blocker is CloudNativePG's instance pods
       # needing a toleration on the Cluster spec, and not this.
+      #
+      # NO SECURITY CONTEXT IS SET HERE, AND THAT IS A FINDING RATHER THAN AN
+      # OVERSIGHT (#272, and #315 which carries it forward).
+      #
+      # Its two neighbours got `runAsNonRoot: true` asserted in this change.
+      # This one did not, because reading the pinned artifacts rather than
+      # trusting the pattern turned up three things:
+      #
+      #   1. docker.io/openebs/provisioner-localpv:4.6.0 declares NO `USER`,
+      #      so the provisioner runs as uid 0. Asserting runAsNonRoot here
+      #      would not harden it, it would stop it starting - and it hands out
+      #      the volumes the estate's own OpenTofu state runs on.
+      #   2. `localpv.securityContext` exists in the subchart's values.yaml and
+      #      is read by no template in it. Setting it does nothing, silently,
+      #      which is the exact failure this file already warns about twice.
+      #      The only readable path is the subchart's top-level
+      #      `podSecurityContext`, and it reaches the pod, never the container.
+      #   3. `localpv.privileged: true` is inert in this installation. It is
+      #      read only by templates/daemonset.yaml, which needs
+      #      `nodeDeployment.enabled` (false by default and unset here), and by
+      #      templates/psp.yaml, which needs `rbac.pspEnabled` (false, and
+      #      PodSecurityPolicy has not existed since Kubernetes 1.25). #272
+      #      flagged it as load-bearing and needing care before being touched;
+      #      it turns out to render nothing at all.
+      #
+      # This is also the pod that decides what #273 costs: under a `restricted`
+      # Pod Security level this namespace would refuse it outright.
       localpv:
         resources:
           requests:
