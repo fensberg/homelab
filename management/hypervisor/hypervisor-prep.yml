@@ -978,7 +978,16 @@
       tags: [sdn]
 
     # Always commit. 'pvesh set /cluster/sdn' is the API equivalent of the
-    # Apply button in the web UI: idempotent, and it reloads only what changed.
+    # Apply button in the web UI, and it reloads only what changed.
+    #
+    # This comment used to call it idempotent. It is not, in one specific and
+    # observable way: every apply appends another copy of the subnet's SNAT
+    # rule, so a run that changes nothing still grows the nat table by one. The
+    # task below collapses them, which is why nobody noticed the claim was
+    # wrong. See #323 for whether the appending itself can be stopped - the
+    # short version is that `--snat 1` is what makes the EVPN exit nodes NAT at
+    # all, so removing it does not tidy the table, it removes the cluster's
+    # route to the outside world.
     #
     # We deliberately do NOT run 'ifreload -a'. That reloads every interface on
     # a live hypervisor and can drop the management link out from under you.
