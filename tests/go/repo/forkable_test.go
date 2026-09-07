@@ -99,8 +99,23 @@ var addressKeyPattern = regexp.MustCompile(
 // else is refused rather than allowed, so a key nobody considered fails closed.
 var positionalKey = regexp.MustCompile(`^(node|site)\d+$|^\d+$`)
 
+// The one non-positional key that is safe, and it is safe by construction:
+// `<redacted>` is the literal string summarisePlan substitutes FOR a key it
+// would not print. Finding it in the repository is evidence that redaction
+// worked, not evidence that a name leaked - so refusing it means documentation
+// cannot show what a redacted plan looks like, which is exactly the thing
+// somebody reading about this guard most wants to see.
+//
+// Narrow on purpose: this exact string and nothing resembling it. It is
+// duplicated from scripts/contractor/internal/phases/plan.go rather than
+// shared, because Go's internal/ rule is per-module and this tier cannot
+// import that package. If the marker there ever changes, this stops matching
+// and the guard goes back to refusing the documentation - noisy, which is the
+// safe direction for the two to drift in.
+const redactionMarker = "<redacted>"
+
 func isPlaceholderKey(key string) bool {
-	return positionalKey.MatchString(key) || isPlaceholderSite(key)
+	return key == redactionMarker || positionalKey.MatchString(key) || isPlaceholderSite(key)
 }
 
 var textFileExts = map[string]bool{

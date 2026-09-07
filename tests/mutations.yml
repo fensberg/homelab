@@ -71,7 +71,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 33
+floor: 34
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -516,8 +516,8 @@ mutations:
 
   - guard: TestEveryMachineClassIsAssignedAPool
     file: management/cluster/pools.tf
-    find: "for k, v in local.workers"
-    replace: "for k, v in local.control_plane"
+    find: "  for_each = local.workers"
+    replace: "  for_each = local.control_plane"
     mentions: "never placed in a pool"
     why: >
       The pools break by addition rather than by deletion - a new class of
@@ -529,15 +529,29 @@ mutations:
 
   - guard: TestPoolIdsAreScopedToTheSite
     file: management/cluster/pools.tf
-    find: 'pool_id = "${local.site_name}-${each.key}"'
-    replace: 'pool_id = "homelab-${each.key}"'
+    find: 'pool_id = "${local.site_name}-workers"'
+    replace: 'pool_id = "workers"'
     mentions: "does not include the site"
     why: >
-      Pools are datacenter-scoped, so a bare `control-plane` collides the
-      moment two sites share a Proxmox cluster - and Proxmox answers a
-      collision by adopting the other estate's machines into this pool rather
-      than by failing. The config supports several sites by design, so the
-      collision is expressible rather than theoretical, and it is silent.
+      Pools are datacenter-scoped, so a bare `workers` collides the moment two
+      sites share a Proxmox cluster - and Proxmox answers a collision by
+      adopting the other estate's machines into this pool rather than by
+      failing. The config supports several sites by design, so the collision is
+      expressible rather than theoretical, and it is silent.
+
+  - guard: TestPoolMembershipNamesTheFunctionInTheResourceName
+    file: management/cluster/pools.tf
+    find: 'resource "proxmox_pool_membership" "workers"'
+    replace: 'resource "proxmox_pool_membership" "by_function"'
+    mentions: "named for the grouping rather than for a function"
+    why: >
+      The plan comment renders a resource name and redacts the for_each key,
+      because a key can be a hypervisor's real hostname and nothing downstream
+      can tell a safe key from an unsafe one. So the function has to live in
+      the name: the first version of this file keyed membership by function and
+      produced nine identical "<redacted>" rows on the change whose entire
+      purpose is that somebody can see which machine is which. This guard is
+      what stops the tidier, unreadable form coming back.
 
 # Guards that cannot be proved by mutation, and why.
 #

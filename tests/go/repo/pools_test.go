@@ -18,25 +18,23 @@ import (
 // grows an ungrouped machine and the grouping quietly stops meaning "all of
 // them".
 //
-// So this is fail-closed in the direction the failure actually comes from. It
-// enumerates the VM resources from the file that declares them and requires
-// each one's collection to be assigned a pool. A machine class that is not is
-// a red build, not a gap nobody can see.
+// So this is fail-closed in the direction the failure actually comes from.
 //
-// It compares the for_each collection rather than the resource name, because
-// the collection is what decides which machines exist. A resource renamed
-// still has to iterate something, and that something still has to be placed.
+// It compares the collection each resource iterates rather than resource names,
+// because the collection is what decides which machines exist. A resource
+// renamed still has to iterate something, and that something still has to be
+// placed in a pool.
 
-// vmCollections returns the local each VM resource iterates, keyed by the
-// resource name, read from the file that declares them.
+// forEachCollections returns the collection each resource of the given type
+// iterates, keyed by resource name.
 //
 // `toset(...)` is unwrapped because it is a type conversion rather than a
-// different collection - `toset(local.all_vm_hypervisors)` and
-// `local.all_vm_hypervisors` name the same set of machines, and a test that
-// treated them as different would fail on a change that altered nothing.
-func vmCollections(t *testing.T, body string) map[string]string {
+// different collection: `toset(local.all_vm_hypervisors)` and
+// `local.all_vm_hypervisors` name the same machines, and treating them as
+// different would fail on a change that altered nothing.
+func forEachCollections(t *testing.T, body, resourceType string) map[string]string {
 	t.Helper()
-	block := regexp.MustCompile(`(?s)resource\s+"proxmox_virtual_environment_vm"\s+"([A-Za-z0-9_]+)"\s*\{(.*?)\n\}`)
+	block := regexp.MustCompile(`(?s)resource\s+"` + regexp.QuoteMeta(resourceType) + `"\s+"([A-Za-z0-9_]+)"\s*\{(.*?)\n\}`)
 	forEach := regexp.MustCompile(`(?m)^\s*for_each\s*=\s*(.+?)\s*$`)
 	unwrap := regexp.MustCompile(`^toset\((.*)\)$`)
 
@@ -45,14 +43,7 @@ func vmCollections(t *testing.T, body string) map[string]string {
 		name, inner := m[1], m[2]
 		fe := forEach.FindStringSubmatch(inner)
 		if fe == nil {
-			// A VM declared without for_each is a single machine. It still has
-			// to be placed, and there is nowhere for this test to look, so say
-			// so rather than skipping it.
-			t.Errorf(`proxmox_virtual_environment_vm.%s declares no for_each.
-
-This test places machines by the collection they iterate. A singleton VM has
-none, so extend this to name it directly rather than leaving it unplaced.`, name)
-			continue
+			continue // A singleton. Handled by the caller if it matters.
 		}
 		expr := strings.TrimSpace(fe[1])
 		if u := unwrap.FindStringSubmatch(expr); u != nil {
@@ -67,29 +58,25 @@ func TestEveryMachineClassIsAssignedAPool(t *testing.T) {
 	compute := readRepoFile(t, "management/cluster/compute.tf")
 	pools := readRepoFile(t, "management/cluster/pools.tf")
 
-	collections := vmCollections(t, compute)
-	if len(collections) == 0 {
-		t.Fatal("found no proxmox_virtual_environment_vm resources in management/cluster/compute.tf, so this test asserts nothing")
+	machines := forEachCollections(t, compute, "proxmox_virtual_environment_vm")
+	if len(machines) == 0 {
+		t.Fatal("found no proxmox_virtual_environment_vm resources with a for_each in management/cluster/compute.tf, so this test asserts nothing")
 	}
 
-	// The membership local is the one place a machine is given a function.
-	// Reading only that block, rather than the whole file, keeps a mention in
-	// a comment from counting as a placement.
-	_, after, ok := strings.Cut(pools, "pool_members = merge(")
-	if !ok {
-		t.Fatal(`management/cluster/pools.tf declares no pool_members, so nothing places any machine.
-
-If pools have been removed deliberately, remove this test in the same change -
-a guard left standing over a decision that was reversed is noise.`)
+	placed := map[string]bool{}
+	for _, collection := range forEachCollections(t, pools, "proxmox_pool_membership") {
+		placed[collection] = true
 	}
-	members, _, ok := strings.Cut(after, "\n  )")
-	if !ok {
-		t.Fatal("pool_members is not terminated where this expects; the block could not be read, so it has not been checked")
+	if len(placed) == 0 {
+		t.Fatal(`management/cluster/pools.tf declares no proxmox_pool_membership with a for_each, so no machine is placed.
+
+If pools were removed deliberately, remove this test in the same change - a
+guard left standing over a reversed decision is noise.`)
 	}
 
 	var unplaced []string
-	for name, collection := range collections {
-		if !strings.Contains(members, collection) {
+	for name, collection := range machines {
+		if !placed[collection] {
 			unplaced = append(unplaced, name+"  (iterates "+collection+")")
 		}
 	}
@@ -100,10 +87,11 @@ a guard left standing over a decision that was reversed is noise.`)
 
   %s
 
-Add each to pool_members in management/cluster/pools.tf, choosing the function
-it serves. The hypervisor groups machines by what they are for so an operator
-can tell a control plane from a worker at a glance, and a class that is missing
-does not break that visibly - it just quietly stops being true of everything.`,
+Add a proxmox_pool_membership in management/cluster/pools.tf iterating the same
+collection, in the pool for the function it serves. The hypervisor groups
+machines by what they are for so an operator can tell a control plane from a
+worker at a glance, and a class that is missing does not break that visibly -
+it just quietly stops being true of everything.`,
 			len(unplaced), strings.Join(unplaced, "\n  "))
 	}
 }
@@ -117,15 +105,52 @@ does not break that visibly - it just quietly stops being true of everything.`,
 func TestPoolIdsAreScopedToTheSite(t *testing.T) {
 	pools := readRepoFile(t, "management/cluster/pools.tf")
 
-	id := regexp.MustCompile(`(?m)^\s*pool_id\s*=\s*"([^"]*)"`).FindStringSubmatch(pools)
-	if id == nil {
+	ids := regexp.MustCompile(`(?m)^\s*pool_id\s*=\s*"([^"]*)"`).FindAllStringSubmatch(pools, -1)
+	if len(ids) == 0 {
 		t.Fatal("no literal pool_id assignment found in management/cluster/pools.tf, so its scoping has not been checked")
 	}
-	if !strings.Contains(id[1], "local.site_name") {
-		t.Errorf(`pool ids are %q, which does not include the site.
+	for _, id := range ids {
+		if !strings.Contains(id[1], "local.site_name") {
+			t.Errorf(`a pool id is %q, which does not include the site.
 
 Pools are datacenter-scoped, so an unprefixed id collides the moment two sites
 share a Proxmox cluster - and Proxmox answers a collision by adopting the other
 estate's machines into this pool rather than by failing.`, id[1])
+		}
+	}
+}
+
+// The function belongs in the resource NAME, not in a for_each key.
+//
+// This is a legibility guard with a security reason underneath it. redactKeys
+// strips any for_each key that is not purely numeric, because a key can be a
+// hypervisor's real hostname - a vault value - and nothing downstream can tell
+// a safe key from an unsafe one. So a membership keyed by function rendered as
+// nine identical `<redacted>` rows in the plan comment, on a change whose
+// entire purpose is that somebody can see what is what.
+//
+// A resource name cannot carry a vault value: it is an HCL identifier written
+// in this file. Keeping the function there is what makes the plan readable
+// without weakening redaction, and this fails if somebody consolidates the
+// blocks back into one resource over a map of functions.
+func TestPoolMembershipNamesTheFunctionInTheResourceName(t *testing.T) {
+	pools := readRepoFile(t, "management/cluster/pools.tf")
+
+	memberships := forEachCollections(t, pools, "proxmox_pool_membership")
+	if len(memberships) < 2 {
+		t.Errorf(`there are %d proxmox_pool_membership resources, so at most one function is named in a resource name.
+
+Consolidating these into one resource over a map of functions puts the function
+into a for_each key, and redactKeys cannot tell that key from a hypervisor
+hostname - so every row in the plan comment becomes "<redacted>" and the change
+that exists to make the estate legible produces a plan nobody can read.`, len(memberships))
+	}
+	for name := range memberships {
+		if strings.Contains(name, "by_function") {
+			t.Errorf(`proxmox_pool_membership.%s is named for the grouping rather than for a function.
+
+The plan renders the resource name and redacts the key, so the name is the only
+part a reviewer can read. It has to say which pool this is.`, name)
+		}
 	}
 }
