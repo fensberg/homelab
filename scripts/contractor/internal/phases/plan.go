@@ -111,7 +111,7 @@ func commentBody(site, summary, commit string) string {
 	// compare that against the pull request in one glance.
 	provenance := ""
 	if commit != "" {
-		provenance = fmt.Sprintf("\nPlanned against `%s`.\n", commit)
+		provenance = fmt.Sprintf("\nPlanned against `%s`, as it would be once merged.\n", commit)
 	}
 	return fmt.Sprintf("%s\n## Plan — %s\n%s\n```text\n%s\n```\n",
 		commentMarker(site), site, provenance, strings.TrimRight(summary, "\n"))
@@ -120,21 +120,85 @@ func commentBody(site, summary, commit string) string {
 // plannedCommit is the commit this plan describes, as a reader would recognise
 // it.
 //
-// On a pull request the workspace is a merge commit that appears nowhere in the
-// pull request's own list, so its second parent - the branch head - is the one
-// worth printing. Everywhere else HEAD is already that commit. An empty string
-// when neither can be read: a comment without provenance is worse than one with
-// it and far better than one carrying a commit that is wrong.
+// THE POINT IS RECOGNISABILITY, NOT PRECISION. On a pull request the workspace
+// is a merge commit GitHub synthesises for the run. Planning against it is
+// correct - it is the tree that will exist after the merge - but naming it is
+// useless, because it appears in no branch, in no clone, and nowhere in the
+// pull request's own list of commits. A reviewer given that SHA cannot look it
+// up, which is exactly what happened: a plan comment said "Planned against
+// ea516dc" and the operator reasonably replied that they had no idea what that
+// was (#320).
+//
+// So this reports the BRANCH HEAD and says the plan covers it as merged. The
+// SHA is then one a reader can click.
+//
+// WHY THE EVENT PAYLOAD RATHER THAN GIT. The previous version asked git for
+// HEAD^2 - the merge commit's second parent, which is the branch head - and
+// fell back to HEAD. That was right in principle and dead in practice: the
+// plan job checks out at the default depth of one, so the merge commit's
+// parents are not in the clone, HEAD^2 fails, and it fell back to naming the
+// merge commit. A fallback that silently produces a plausible wrong answer is
+// worse than no fallback, and this one had been producing it on every plan.
+//
+// The event payload is authoritative rather than inferred, and it needs no
+// change to the workflow - which matters because this repository's agent
+// cannot edit one, so a fix that required deepening the checkout would have
+// been a fix waiting on a human.
 func plannedCommit() string {
+	if sha := headFromEvent(os.Getenv("GITHUB_EVENT_PATH")); sha != "" {
+		return sha
+	}
+	// A full clone - a workstation, or any job that fetches depth 0 - can
+	// still answer this from topology.
 	if head, err := run.CmdOutputQuiet(".", "git", "rev-parse", "--short", "HEAD^2"); err == nil {
 		if s := strings.TrimSpace(head); s != "" {
 			return s
 		}
 	}
+	// Not a pull request at all: HEAD is already the commit worth naming. On
+	// a pull request it is the merge commit, and naming that is the bug above,
+	// so this deliberately does not run there.
+	if os.Getenv("GITHUB_EVENT_NAME") == "pull_request" {
+		return ""
+	}
 	if head, err := run.CmdOutputQuiet(".", "git", "rev-parse", "--short", "HEAD"); err == nil {
 		return strings.TrimSpace(head)
 	}
 	return ""
+}
+
+// headFromEvent reads pull_request.head.sha out of the Actions event payload
+// and shortens it the way git would.
+//
+// Split out so it can be tested against a payload file without an Actions
+// runner, a pull request or a repository - the same reason summarisePlan is
+// separate from Plan.
+func headFromEvent(path string) string {
+	if path == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var event struct {
+		PullRequest struct {
+			Head struct {
+				SHA string `json:"sha"`
+			} `json:"head"`
+		} `json:"pull_request"`
+	}
+	if err := json.Unmarshal(raw, &event); err != nil {
+		return ""
+	}
+	sha := strings.TrimSpace(event.PullRequest.Head.SHA)
+	// Anything that is not a full hex object name is not a commit, and
+	// truncating one would produce a SHA-shaped string that resolves to
+	// nothing - the failure this whole function exists to stop.
+	if len(sha) != 40 || strings.Trim(sha, "0123456789abcdef") != "" {
+		return ""
+	}
+	return sha[:7]
 }
 
 // commentMarker identifies this comment so a later run can find and replace
@@ -146,13 +210,33 @@ func commentMarker(site string) string {
 
 type planChange struct {
 	Address string `json:"address"`
+	Mode    string `json:"mode"`
 	Change  struct {
 		Actions []string `json:"actions"`
 	} `json:"change"`
 }
 
+type outputChange struct {
+	Actions []string `json:"actions"`
+}
+
+// planDoc is the part of a tofu plan this summary reads.
+//
+// FormatVersion is not decoration. Every field below is optional in JSON - a
+// document with none of them unmarshals cleanly into an empty struct, and an
+// empty struct used to render "No changes. The estate already matches the
+// config.", which is a positive claim about reality made from having read
+// nothing. A plan document always carries a format version, so requiring it
+// is what separates "this plan holds no changes" from "this is not a plan".
+//
+// There is deliberately no third status for the second case. A plan that
+// examined nothing means the tool is broken, not that the estate is quiet, and
+// inventing a calm-looking way to say so would put the reassuring words in
+// front of the reader at exactly the wrong moment. It is an error.
 type planDoc struct {
-	ResourceChanges []planChange `json:"resource_changes"`
+	FormatVersion   string                  `json:"format_version"`
+	ResourceChanges []planChange            `json:"resource_changes"`
+	OutputChanges   map[string]outputChange `json:"output_changes"`
 }
 
 // summarisePlan renders a plan as addresses and verbs.
@@ -165,6 +249,9 @@ func summarisePlan(raw []byte) (string, error) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return "", fmt.Errorf("this is not a tofu plan in JSON form: %w", err)
 	}
+	if doc.FormatVersion == "" {
+		return "", fmt.Errorf("this JSON has no plan format version, so it is not a plan and nothing here examined the estate")
+	}
 
 	type row struct{ address, verb string }
 	var rows []row
@@ -172,11 +259,52 @@ func summarisePlan(raw []byte) (string, error) {
 
 	for _, c := range doc.ResourceChanges {
 		verb := classify(c.Change.Actions)
+		// A data source is not a work. It is measured, and the estate is
+		// unchanged by measuring it - so it gets the verb this estate already
+		// uses for reading the ground as it is rather than trusting the
+		// drawings, and it stays out of the works count below.
+		//
+		// This has to come BEFORE the empty-verb check, not after it. tofu's
+		// action for a deferred data source is "read", classify has no case
+		// for it, and its default returns the same empty string a no-op does -
+		// so the read was being discarded as noise. That was half of #320: a
+		// data source whose inputs changed is the only signal that something
+		// like the talosconfig is about to be rebuilt.
+		if c.Mode == "data" && slices.Contains(c.Change.Actions, "read") {
+			verb = "survey"
+		}
 		if verb == "" {
 			continue // no-op: noise in a review, not information
 		}
 		rows = append(rows, row{redactKeys(c.Address), verb})
 		counts[verb]++
+	}
+
+	// Outputs, which used to be invisible entirely.
+	//
+	// A change confined to outputs is a real change to what this estate hands
+	// out - the talosconfig and the kubeconfig are both outputs, and both are
+	// credentials somebody uses. Reading only resource_changes meant a commit
+	// that rewrote one of them summarised as "No changes", which is the plan
+	// comment supplying confidence rather than information (#320).
+	//
+	// Names only, and never a before or an after: an output can BE a secret,
+	// so the rule that governs resource attributes governs these with more
+	// force rather than less. The name is safe because it is a static
+	// identifier declared in HCL, unlike a for_each key, which redactKeys
+	// exists to strip.
+	outputNames := make([]string, 0, len(doc.OutputChanges))
+	for name := range doc.OutputChanges {
+		outputNames = append(outputNames, name)
+	}
+	sort.Strings(outputNames)
+	for _, name := range outputNames {
+		verb := classify(doc.OutputChanges[name].Actions)
+		if verb == "" {
+			continue
+		}
+		rows = append(rows, row{"output." + name, verb})
+		counts["output"]++
 	}
 
 	if len(rows) == 0 {
@@ -197,6 +325,9 @@ func summarisePlan(raw []byte) (string, error) {
 		fmt.Fprintf(&b, "  %-*s  %s\n", width, r.verb, r.address)
 	}
 
+	// The works, counted. Always all four, including the zeroes: a reviewer
+	// reads this line to find the destroy count, and a line whose shape
+	// changes with its contents is one you have to read rather than glance at.
 	b.WriteString("\n  ")
 	var parts []string
 	for _, v := range []struct{ verb, label string }{
@@ -207,6 +338,21 @@ func summarisePlan(raw []byte) (string, error) {
 	}
 	b.WriteString(strings.Join(parts, ", "))
 	b.WriteString("\n")
+
+	// Everything that is not a work goes on its own line, and only when there
+	// is any. These do not belong in the count above - an output changing is
+	// not a machine changing, and folding them together would inflate the one
+	// number a reviewer is scanning for.
+	var aside []string
+	if counts["output"] > 0 {
+		aside = append(aside, fmt.Sprintf("%d output(s) to change", counts["output"]))
+	}
+	if counts["survey"] > 0 {
+		aside = append(aside, fmt.Sprintf("%d to survey", counts["survey"]))
+	}
+	if len(aside) > 0 {
+		fmt.Fprintf(&b, "  %s\n", strings.Join(aside, ", "))
+	}
 
 	// The one line a reviewer must not skim past. A converge that destroys is
 	// almost always either deliberate and understood, or a mistake nobody
