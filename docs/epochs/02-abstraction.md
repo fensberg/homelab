@@ -1263,8 +1263,12 @@ capacity the other two consume.** The slowest work builds the room for the rest.
 Measured rather than assumed, because the three are not short in the same way
 and the remedies are different.
 
-**Lane 1 has capacity and no protection.** The control planes use about 1.2 GiB
-of 3.8 GiB each, so `critical` work is not short of room. What it lacks is
+**`critical` work has capacity and no protection.** The control planes use about
+1.2 GiB each, so it is not short of room. The denominator in that sentence used
+to read 3.8 GiB and was wrong: 3.8 GiB is what the guest reports, while what the
+scheduler can hand out is **3281 MiB** - Talos reserves about 815 MiB of a 4 GiB
+machine for itself and the kubelet. The headroom was overstated by 600 MiB. What
+it lacks is
 any claim on that room: `Taints: <none>`, no requests on the dispatcher or the
 operators (#237), and no `PriorityClass`. Its capacity is real and entirely
 unreserved, which means a heavy batch job can take it and has. **The remedy is
@@ -1750,6 +1754,119 @@ That leaves "lean" meaning **the control plane carries only control-plane
 work**, which is the property that protects quorum. The RAM number is a
 second-order optimisation and should not be taken before epoch 04 measures
 anything - see the gotcha below about what changing it would do.
+
+## Known driver: the first placement audit, and what it found
+
+Run against the live cluster on 2026-09-06, immediately after #271 merged. The
+audit itself was a throwaway command; its assertions are now
+`tests/go/integration/placement_test.go`, so the next one is a nightly run
+rather than a session.
+
+**#237 delivered.** All eight operators are on workers - CloudNativePG, three
+Flux controllers and the runner's ARC controller, listener and OpenEBS
+provisioner between the two of them. What remains on the control planes is
+Talos's own machinery and the three state-database instances, which is exactly
+the intended shape.
+
+### The prize was not the memory, and this record said it was
+
+Worth retracting precisely, because the reasoning was wrong in kind rather than
+in degree.
+
+Moving the operators off the control planes was described here as recovering
+capacity, with a note that the prize was small - a couple of hundred mebibytes.
+**It recovered none at all.** Those five pods were `BestEffort`; a `BestEffort`
+pod reserves nothing, so removing it frees nothing the scheduler was holding.
+The arithmetic is exact: a control plane now requests 1138 MiB, and every byte
+of it is Talos's - 512 for the API server, 256 for the controller manager, 64
+for the scheduler, 50 for the CNI, zero for kube-proxy - plus 256 for the
+database instance. The node carrying both CoreDNS replicas requests 140 more.
+
+What the move actually bought is different and better: **the machines holding
+quorum no longer host any cgroup the OOM controller will choose first, and no
+longer host workloads that can grow without a reservation.** The defect was
+never a shortage; it was that the estate's own control machinery sat in the
+eviction path of a build. Say that, rather than talking about megabytes.
+
+### Both CoreDNS replicas are on one node
+
+The clearest defect the audit found, and nothing in the repository could have
+shown it.
+
+Cluster DNS runs two replicas so that losing one machine does not take DNS with
+it. Both are on the same control plane, and have been since the cluster was
+built. Talos does ask for them to be spread - the CoreDNS Deployment it renders
+carries a `podAntiAffinity` at
+`preferredDuringSchedulingIgnoredDuringExecution`, weight 100, over
+`kubernetes.io/hostname` (read from `k8stemplates/coredns.go` at v1.13.8, not
+assumed).
+
+**`preferred` is the whole story.** The scheduler will co-locate when it has a
+reason to, and `IgnoredDuringExecution` means it never revisits the choice. A
+pair placed together during bootstrap - when one node was Ready and there was
+no alternative - stays together for the life of the cluster, with nothing
+anywhere reporting it. That is the failure shape worth carrying forward: **a
+soft constraint is evaluated once, at the least representative moment there is,
+and then remembered forever.**
+
+Restarting the Deployment would spread them today and would not stop it
+recurring. This was first written as an integration test, and that was wrong:
+nothing in this repository asks for the spread, so a red run would report
+something no commit could fix. **It is an alert, and it moved to epoch 04.**
+The ecosystem's answer to "pods that are in the wrong place because scheduling
+happened at a bad moment" is the descheduler, and that is what to evaluate
+rather than anything bespoke. Tracked as #274.
+
+### kube-proxy is BestEffort, is not ours, and is about to be deleted
+
+Issue #237 deferred this with "may not be ours to set; worth confirming rather than
+assuming". Confirmed, in both directions.
+
+It is genuinely not ours: Talos's `cluster.proxy` machine-config surface
+exposes `disabled`, `image`, `mode` and `extraArgs` and nothing else - there is
+no `resources` field, and `ProxyConfig` in `v1alpha1_proxyconfig.go` has no
+other accessor. Editing the DaemonSet directly would be reconciled back.
+
+It is also less alarming than it looks, for a reason worth stating because it
+separates two mechanisms this epoch has been treating as one. kube-proxy is
+`BestEffort` **and** `system-cluster-critical`. So it is protected from the
+scheduler, which will never preempt it, and unprotected from the kubelet, which
+ranks eviction by QoS class and will pick it first under node memory pressure.
+**Priority and QoS are different guards against different actors**, and a pod
+can have one without the other.
+
+The disposition is to leave it. [`03-workload.md`](03-workload.md) already plans
+`cluster.proxy.disabled: true`, because Cilium replaces kube-proxy - so this is
+a component on its way out, and building a workaround for it would be work
+thrown away. The integration check exempts it by name with that reason attached,
+rather than skipping `kube-system` wholesale, which would hide a Talos
+regression as readily as it hides this.
+
+### The numbers, for epoch 04 to argue with
+
+|                | control plane (x3)           | worker (x2)          |
+| -------------- | ---------------------------- | -------------------- |
+| Allocatable    | 3.95 cpu, 3281 MiB           | 5.95 cpu, 7435 MiB   |
+| Requested      | 0.46-0.66 cpu, 1138-1278 MiB | 0.3-0.4 cpu, 370 MiB |
+| Of allocatable | 12-17% cpu, 35-39% memory    | 5-7% cpu, 5% memory  |
+
+Two things follow. **Allocatable is not the guest's RAM** - Talos keeps about
+815 MiB of a 4 GiB machine and 757 MiB of an 8 GiB one - so every headroom
+figure in this record that divided by the guest total was optimistic.
+
+And **the workers are nearly empty**: 370 MiB reserved of 7435. Two runners at
+2 GiB each would take them to about 60%, which is the first honest answer this
+epoch has to the goal of filling the box on purpose. The room for epoch 03's
+workloads is there and is larger than expected.
+
+### What the audit could not answer
+
+Requests, not usage. This is the admission-control view - what the scheduler has
+promised - and it says nothing about what is actually resident. The two diverge
+in both directions: `kube-proxy` requests zero and uses something, and the API
+server reserves 512 MiB whether or not it wants it. Closing that gap needs
+metrics, which is epoch 04, and no amount of care with `kubectl get` substitutes
+for it.
 
 ## Gotchas
 
