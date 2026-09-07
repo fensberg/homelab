@@ -204,7 +204,7 @@ func TestTheCommentIsSilentWhenThereAreFindings(t *testing.T) {
 	got := note("snag", []snag{
 		{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"},
 		{ruleDisagrees, "docs/epochs/01.md", 7, "claims a retry that the account does not describe"},
-	}, []string{"names a file that was not read"}, "")
+	}, nil, []string{"names a file that was not read"}, "")
 
 	if got != "" {
 		t.Errorf(`the clerk posted a comment alongside findings that are already inline on the diff:
@@ -224,7 +224,7 @@ receipt and merely trimming the findings out of it.`, got)
 func TestTheCommentCarriesNoCountWhenItSpeaksAtAll(t *testing.T) {
 	got := note("snag", []snag{
 		{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"},
-	}, []string{"a", "b"}, "only the soundness pass ran")
+	}, nil, []string{"a", "b"}, "only the soundness pass ran")
 
 	for _, unwanted := range []string{"1 snag", "2 discarded", "2 finding"} {
 		if strings.Contains(got, unwanted) {
@@ -235,7 +235,7 @@ func TestTheCommentCarriesNoCountWhenItSpeaksAtAll(t *testing.T) {
 
 // Nothing found still says so, and still reports what was discarded.
 func TestTheCommentSaysWhenThereIsNothingToRaise(t *testing.T) {
-	got := note("handover", nil, []string{"a", "b"}, "")
+	got := note("handover", nil, nil, []string{"a", "b"}, "")
 	if !strings.Contains(got, "nothing to raise") {
 		t.Errorf("a clean reading does not say so: %s", got)
 	}
@@ -249,12 +249,12 @@ func TestTheCommentSaysWhenThereIsNothingToRaise(t *testing.T) {
 // place the difference can appear - and #241 went red rather than saying this,
 // which is how the case came to light.
 func TestTheCommentDistinguishesNothingReviewedFromNothingFound(t *testing.T) {
-	clean := note("snag", nil, nil, "")
+	clean := note("snag", nil, nil, nil, "")
 	if !strings.Contains(clean, "nothing to raise") {
 		t.Fatalf("a genuinely clean reading should still say so: %s", clean)
 	}
 
-	unread := note("snag", nil, nil, "there is no code in this change, so nothing was reviewed")
+	unread := note("snag", nil, nil, nil, "there is no code in this change, so nothing was reviewed")
 	if strings.Contains(unread, "nothing to raise") {
 		t.Errorf("a change the clerk never read claims a clean reading: %s", unread)
 	}
@@ -268,8 +268,87 @@ func TestTheCommentDistinguishesNothingReviewedFromNothingFound(t *testing.T) {
 func TestACaveatIsCarriedEvenWhenThereAreFindings(t *testing.T) {
 	got := note("snag", []snag{
 		{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"},
-	}, nil, "only the soundness pass ran")
+	}, nil, nil, "only the soundness pass ran")
 	if !strings.Contains(got, "only the soundness pass ran") {
 		t.Errorf("the caveat is dropped once there is a finding to report: %s", got)
+	}
+}
+
+// The qualification the silence rule needed, and the run that found it.
+//
+// The clerk is handed the files a change touched and reads them whole, so it
+// finds things on lines the change never went near. GitHub renders an alert on
+// a pull request only when it falls inside the diff, so those findings are
+// uploaded, counted, opened as alerts - and displayed nowhere the reviewer is
+// looking. On #277 that produced a run with two findings and no signal at all.
+//
+// So the comment comes back for exactly those, and stays away from the rest.
+func TestFindingsThePullRequestWillNotShowAreNamed(t *testing.T) {
+	seen := snag{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"}
+	unseen := snag{ruleUnsound, ".github/workflows/clerk.yml", 287, "duplicate parameters under with"}
+
+	got := note("snag", []snag{seen, unseen}, []snag{unseen}, nil, "")
+
+	if got == "" {
+		t.Fatal("a finding on a line the pull request does not show produced no comment, so nobody will ever see it")
+	}
+	if !strings.Contains(got, ".github/workflows/clerk.yml:287") ||
+		!strings.Contains(got, "duplicate parameters under with") {
+		t.Errorf("the comment does not name the finding nothing else will display:\n%s", got)
+	}
+	// The one on a changed line is inline on the diff already. Repeating it is
+	// the redundancy this whole rule exists to remove.
+	for _, unwanted := range []string{"scripts/clerk/llm.go", "nothing reaches this branch"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("the comment repeats %q, which is already inline on the diff:\n%s", unwanted, got)
+		}
+	}
+}
+
+// hunk parsing, because the whole decision above rests on it.
+//
+// The single-line form omits the count, and a hunk header inside the patch
+// body (a line of context that happens to start with @@) must not be read as
+// one - both are why this is a regexp anchored at the start rather than a
+// strings.Contains.
+func TestShownReadsTheNewSideOfEachHunk(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		patch string
+		want  []int
+		gone  []int
+	}{
+		{
+			name:  "a counted hunk covers its whole new-side range",
+			patch: "@@ -10,3 +12,4 @@ func x() {\n context\n+added\n context\n context",
+			want:  []int{12, 13, 14, 15},
+			gone:  []int{11, 16},
+		},
+		{
+			name:  "a single-line hunk omits the count and covers one line",
+			patch: "@@ -5 +7 @@\n-old\n+new",
+			want:  []int{7},
+			gone:  []int{6, 8},
+		},
+		{
+			name:  "two hunks in one file",
+			patch: "@@ -1,2 +1,2 @@\n a\n b\n@@ -50,1 +50,1 @@\n c",
+			want:  []int{1, 2, 50},
+			gone:  []int{3, 49, 51},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := linesFromPatch(tc.patch)
+			for _, l := range tc.want {
+				if !lines[l] {
+					t.Errorf("line %d is in the diff and was not counted as shown", l)
+				}
+			}
+			for _, l := range tc.gone {
+				if lines[l] {
+					t.Errorf("line %d is not in the diff and was counted as shown, so a finding there would be silently trusted to render", l)
+				}
+			}
+		})
 	}
 }

@@ -304,10 +304,37 @@ func syncLocal(branch, sha string) error {
 	return nil
 }
 
+// git runs a git command and, when it fails, says what git said.
+//
+// The stderr used to be discarded, and that cost a whole session. A publish
+// failed with nothing but `staging objects: git push ... exit status 1`, which
+// says only that something went wrong somewhere; four wrong theories followed,
+// including one that had the operator checking a GitHub App permission that
+// was never the problem. The line git had actually printed named the cause
+// exactly:
+//
+//	! [remote rejected] HEAD -> refs/signing/...
+//	  (refusing to allow a GitHub App to create or update workflow
+//	   `.github/workflows/clerk.yml` without `workflows` permission)
+//
+// That is the boundary working as designed - the branch had been cut from a
+// stale main, so relative to the new tip it reverted a workflow file - and it
+// is a one-line diagnosis the moment anybody can read it.
+//
+// Nothing here is a secret. The push authenticates through git's credential
+// helper rather than a URL, so the remote git prints carries no token, and the
+// program holds the App key rather than passing it to a subprocess.
 func git(args ...string) (string, error) {
-	out, err := exec.Command("git", args...).Output()
+	cmd := exec.Command("git", args...)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		said := strings.TrimSpace(stderr.String())
+		if said == "" {
+			return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		}
+		return "", fmt.Errorf("git %s: %w\n%s", strings.Join(args, " "), err, said)
 	}
 	return strings.TrimRight(string(out), "\n"), nil
 }

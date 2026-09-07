@@ -473,6 +473,58 @@ Not yet a verdict - the fixes for three of the four are prompt changes whose
 effect can only be seen by running the model again - but the trend is the thing
 this section exists to measure, and it is not currently good.
 
+### A finding nobody can see, which the silence rule turned into no signal at all
+
+Found on #277, which produced two findings and gave the reader nothing: no
+comment, and no report visible anywhere on the pull request. Four theories were
+wrong before the right one, and the wrong ones are worth listing because each
+was plausible.
+
+Not the clerk failing to run - it ran, both passes, both SARIF uploads
+succeeded. Not the patch file being read as source, which was the first guess
+and was wrong because the operator had already applied the patch, so
+`clerk.yml` was genuinely in the diff. Not a fingerprint problem: `fingerprint`
+already excludes the line number so an alert survives moving, and the two
+alerts differed because they named different steps. Not `keep` letting through
+a path that was not read, which it already refuses.
+
+**The cause is that GitHub renders a code scanning alert on a pull request only
+when it falls inside the diff.** The clerk is handed the files a change touched
+and reads them WHOLE, so it regularly finds things on lines the change never
+went near - here, an upload step 200 lines below the permissions block that was
+actually edited. The alert was created, is open, and appears nowhere a reviewer
+looks.
+
+That was survivable while the clerk still posted a count, because the count
+said "go and look". **Removing the count removed the only signal those findings
+had**, which makes it a regression introduced by the change one section below
+rather than a pre-existing gap.
+
+The fix is a qualification rather than a reversal. The clerk now asks GitHub
+which lines the pull request displays (`/pulls/N/files`, hunk ranges rather
+than added lines only, since context lines render too) and comments **only**
+about findings that fall outside them. Findings on changed lines stay silent,
+because those are inline on the diff and repeating them is the redundancy the
+rule exists to remove. If the diff cannot be read at all, every finding is
+treated as unseen and said so - a comment too many costs a line, and being
+wrong the other way costs a finding nobody ever reads.
+
+Worth stating as a general shape: **a rule about not repeating yourself is only
+safe while the other copy is actually visible.** Nothing checked that, and the
+first version of the rule assumed it.
+
+**And the finding itself was false**, which makes five misses. It reported that
+`ref` and `sha` in the SARIF upload steps are "duplicate parameters directly
+underneath the `with` block, which will be ignored". They are inside `with`, at
+the same indentation as `sarif_file` and `category`, and both are documented
+inputs of `github/codeql-action/upload-sarif`. The model appears to have seen
+the same two keys in two sibling steps and read repetition across steps as
+duplication within one. Its dismissed twin, alert 29, is the same claim about
+the other step.
+
+Scored honestly: **one hit, five misses.** The prompt fixes for four of them
+have not been through a run yet.
+
 ### The clerk is silent when it has findings, and this took two goes
 
 The operator's rule, stated plainly the first time: **zero findings gets a

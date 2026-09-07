@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -226,4 +228,88 @@ func excerptOf(body []byte) string {
 		return "(no body)"
 	}
 	return s
+}
+
+// hunkHeader matches the new-side range of a unified diff hunk: the `+c,d` in
+// `@@ -a,b +c,d @@`. A single-line hunk omits the count, which is why the
+// second group is optional.
+var hunkHeader = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
+
+// shown reports which lines of which files this pull request actually displays.
+//
+// WHY THE CLERK NEEDS THIS AT ALL, which is not obvious and cost a run to find
+// out. The clerk is handed the files a change touched and reads them WHOLE, so
+// it routinely finds things on lines the change never went near. Those findings
+// are uploaded, counted and opened as alerts exactly like any other - and then
+// GitHub renders none of them on the pull request, because it only comments on
+// alerts inside the diff. The finding exists, is correct SARIF, and is visible
+// nowhere a reviewer is looking.
+//
+// That was survivable while the clerk also posted a count. It stopped being
+// survivable when the count was removed: a run can now produce findings and
+// give the reader no signal whatsoever, which is what happened on #277.
+//
+// The set is the hunk ranges rather than only the added lines, because GitHub
+// shows context lines too and an alert anchored to one of those does render.
+//
+// A file with no `patch` - too large, or binary - yields no lines, so anything
+// found in it is treated as unseen. That is the safe direction: the cost of
+// being wrong is one comment too many, against a finding nobody ever reads.
+func (g *gh) shown(pr int) (map[string]map[int]bool, error) {
+	out := map[string]map[int]bool{}
+	for page := 1; page <= 10; page++ {
+		var files []struct {
+			Filename string `json:"filename"`
+			Patch    string `json:"patch"`
+		}
+		url := fmt.Sprintf("%s/repos/%s/pulls/%d/files?per_page=100&page=%d", g.api, g.repo, pr, page)
+		if err := call(g.http, http.MethodGet, url, g.token, nil, &files); err != nil {
+			return nil, fmt.Errorf("reading which lines #%d shows: %w", pr, err)
+		}
+		if len(files) == 0 {
+			break
+		}
+		for _, f := range files {
+			lines, ok := out[f.Filename]
+			if !ok {
+				lines = map[int]bool{}
+				out[f.Filename] = lines
+			}
+			for line := range linesFromPatch(f.Patch) {
+				lines[line] = true
+			}
+		}
+		if len(files) < 100 {
+			break
+		}
+	}
+	return out, nil
+}
+
+// linesFromPatch reads the new-side line numbers a unified diff displays.
+//
+// Separated from shown so the parsing can be tested without a server, which is
+// the half that decides whether a finding is treated as visible.
+func linesFromPatch(patch string) map[int]bool {
+	lines := map[int]bool{}
+	for _, line := range strings.Split(patch, "\n") {
+		m := hunkHeader.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		start, err := strconv.Atoi(m[1])
+		if err != nil {
+			continue
+		}
+		count := 1
+		if m[2] != "" {
+			if count, err = strconv.Atoi(m[2]); err != nil {
+				continue
+			}
+		}
+		for i := start; i < start+count; i++ {
+			lines[i] = true
+		}
+	}
+	return lines
 }
