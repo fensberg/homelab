@@ -370,9 +370,9 @@ tasks:
   test:fuzz:
     desc: "Fuzz every target for a bounded time. Slow; `task test` runs their seeds."
     # `go test` already runs each fuzz target against its committed seed corpus,
-    # so the ordinary suite exercises them on every run and a crasher found here
-    # becomes a seed that fails forever after. This verb is the other half: it
-    # generates new input.
+    # so the ordinary suite exercises them on every run and a failing input found
+    # here becomes a seed that fails forever after. This verb is the other half:
+    # it generates new input.
     #
     # One target at a time is a Go limitation, not a choice - `-fuzz` takes a
     # single pattern - so this sweeps them. FUZZTIME is per target.
