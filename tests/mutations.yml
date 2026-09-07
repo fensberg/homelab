@@ -421,18 +421,16 @@ mutations:
 
   - guard: TestTheCoverageShimDiesWithTheWorkflowStepThatNeedsIt
     file: tests/coverage-baseline.json
-    find: '"go": 34,'
-    replace: '"go-shim-removed-early": 34,'
-    mentions: "fails on every pull request"
+    find: '"go/attestation": 26,'
+    replace: '"go": 34,\n    "go/attestation": 26,'
+    mentions: "floor for nothing"
     why: >
-      The bare "go" key is a floor for nothing; it exists only because the
-      workflow still computes its own coverage against one module and asks for
-      that key, and the agent cannot edit a workflow. Removing it before the
-      handover patch lands turns every pull request red in a lane whose own
-      tests are green, and leaving it after the patch lands leaves a number
-      nobody chose sitting among the ones somebody did - which is how a
-      baseline here once sat ten points below the measured figure without
-      anybody noticing. The two states are tied together so neither can happen.
+      A bare "go" key is a floor for nothing once the workflow sweeps every
+      module and asks for one key each. Leaving it there puts a number nobody
+      chose among the ones somebody did, which is how a baseline here once sat
+      ten points below the measured figure without anybody noticing. The guard
+      refuses the opposite case too - the workflow asking for a key the
+      baseline does not declare - so neither half can happen quietly.
 
 # Guards that cannot be proved by mutation, and why.
 #
