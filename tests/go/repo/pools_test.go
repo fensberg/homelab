@@ -154,3 +154,55 @@ part a reviewer can read. It has to say which pool this is.`, name)
 		}
 	}
 }
+
+// A pool membership must depend on the machine it places, and the only way to
+// say that in HCL is to read the vm_id off the VM resource.
+//
+// WHAT THIS GUARDS. On destroy, OpenTofu reverses the dependency graph - so an
+// edge from the membership to the VM is what makes the membership come out
+// first, while the VM still exists to be removed from a pool. Without that
+// edge the two are unordered, they are deleted concurrently, and deleting the
+// VM takes it out of its pool as a side effect. The membership delete that
+// loses the race then asks Proxmox to remove a VM that is no longer a member,
+// which answers HTTP 500 and fails the teardown.
+//
+// That is not hypothetical. It happened twice in one session, on
+// `templates["<hypervisor>"]`, `control_plane["102"]`, `workers["200"]` and
+// `workers["202"]`, and each time it left the estate half-destroyed with state
+// deliberately preserved - the "unexploded ordnance" case the destroy path
+// exists to avoid.
+//
+// `each.value.vm_id` reads the same number from a local and creates no edge at
+// all, which is why it cannot be spelled that way. The number being identical
+// is exactly what makes this easy to get wrong and impossible to see in review.
+func TestPoolMembershipDependsOnTheMachineItPlaces(t *testing.T) {
+	pools := readRepoFile(t, "management/cluster/pools.tf")
+
+	block := regexp.MustCompile(`(?s)resource\s+"proxmox_pool_membership"\s+"([A-Za-z0-9_]+)"\s*\{(.*?)\n\}`)
+	vmID := regexp.MustCompile(`(?m)^\s*vm_id\s*=\s*(.+?)\s*$`)
+	referencesVM := regexp.MustCompile(`proxmox_virtual_environment_vm\.[A-Za-z0-9_]+\[[^\]]+\]\.vm_id`)
+
+	found := 0
+	for _, m := range block.FindAllStringSubmatch(pools, -1) {
+		name, inner := m[1], m[2]
+		got := vmID.FindStringSubmatch(inner)
+		if got == nil {
+			t.Errorf("proxmox_pool_membership %q sets no vm_id", name)
+			continue
+		}
+		found++
+		if !referencesVM.MatchString(got[1]) {
+			t.Errorf(`proxmox_pool_membership %q takes vm_id from %s.
+
+It must read vm_id off the VM resource itself, so that OpenTofu orders the
+membership's destroy before the machine's. Reading the same number out of a
+local creates no dependency edge, the two deletes race, and the one that loses
+asks Proxmox to remove a VM that is already gone from the pool - HTTP 500, and
+a teardown that stops half-done.`, name, got[1])
+		}
+	}
+
+	if found == 0 {
+		t.Fatal("no proxmox_pool_membership resources found - this guard is looking at the wrong file")
+	}
+}

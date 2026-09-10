@@ -14,10 +14,20 @@
 # were both rejected, is in docs/epochs/03-workload.md.
 
 resource "terraform_data" "cilium" {
-  # The kubeconfig is referenced below, which orders this after the API server
-  # exists. Bootstrap is named as well because that is the operation this
-  # actually waits on, and an implicit edge through a credential is not the
-  # place to record a dependency somebody needs to see.
+  # NEITHER OF THESE EDGES MEANS THE API SERVER IS SERVING, and an earlier
+  # version of this comment claimed the first one did.
+  #
+  # talos_cluster_kubeconfig retrieves a credential over the Talos API on port
+  # 50000, which answers as soon as the cluster's PKI exists. talos_machine_
+  # bootstrap returns when the bootstrap RPC is accepted, not when the control
+  # plane has finished coming up. So both can be complete while nothing is
+  # listening on 6443 at all - which is what happened: this step ran roughly
+  # thirty seconds after bootstrap and got `connection refused`, and with it
+  # went every other resource in the wave that touches Kubernetes.
+  #
+  # The wait is therefore in the script below, where it can be measured, rather
+  # than inferred from an edge that does not carry the meaning it looks like it
+  # carries.
   depends_on = [talos_machine_bootstrap.this]
 
   # Re-applies whenever the rendered manifest changes, which is the only way it
@@ -42,10 +52,32 @@ resource "terraform_data" "cilium" {
       printf '%s' "$KUBECONFIG_CONTENT" >"$tmp"
       export KUBECONFIG="$tmp"
 
-      # The API server answers here even though no node is Ready: etcd, the
+      # Wait for the API server to actually serve.
+      #
+      # It answers with no node Ready and no CNI installed, because etcd, the
       # apiserver, the controller manager and the scheduler are static pods on
-      # host networking, so the control plane comes up with no CNI at all.
-      # That fact is what makes this whole sequence possible.
+      # host networking - that fact is what makes this whole sequence possible.
+      # But "eventually answers" is not "answers now": the static pods still
+      # have to be pulled and started, and etcd has to elect. That takes a
+      # couple of minutes on a cold cluster and nothing upstream of here waits
+      # for it.
+      #
+      # /readyz is the apiserver's own readiness endpoint, so this asks the
+      # server whether it is ready rather than whether a port accepts a
+      # connection. Bounded, because a control plane that has not come up in
+      # five minutes is broken rather than slow, and the message says which of
+      # the two this was.
+      attempt=0
+      until kubectl get --raw='/readyz' >/dev/null 2>&1; do
+        attempt=$((attempt + 1))
+        if [ "$attempt" -ge 60 ]; then
+          echo "the Kubernetes API server did not become ready within 5 minutes" >&2
+          echo "this is upstream of the CNI: nothing has been installed yet" >&2
+          exit 1
+        fi
+        sleep 5
+      done
+
       kubectl apply -f "${path.module}/../../clusters/bootstrap/cilium.yaml"
 
       # Wait for the agents rather than leaving it to the health gate.

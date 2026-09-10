@@ -17,6 +17,15 @@
 # database.tf already use.
 
 resource "kubernetes_namespace" "valheim" {
+  # The cluster has to be real before anything is created in it. Without this
+  # edge OpenTofu starts this in the first wave of the apply, against an API
+  # server still starting its static pods, and the run dies on connection
+  # refused - taking the whole ignition down with it, because a failed ignition
+  # tears the estate back down. The secret below inherits the ordering by
+  # reading its namespace from here. tests/go/repo/kubernetes_gate_test.go
+  # refuses a kubernetes_* resource with no such edge.
+  depends_on = [data.talos_cluster_health.this]
+
   metadata {
     name = "valheim"
 

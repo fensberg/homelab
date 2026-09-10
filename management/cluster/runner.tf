@@ -102,8 +102,14 @@ resource "kubernetes_secret" "runner_app_credentials_runners" {
 # variables. infra-configs.yaml lists both.
 resource "kubernetes_secret" "runner_vars" {
   metadata {
-    name      = "runner-vars"
-    namespace = "flux-system"
+    name = "runner-vars"
+    # Read off the namespace resource rather than written as the literal
+    # "flux-system". The string was identical and the dependency edge was not:
+    # a literal creates none, so this was built in the first wave of the apply
+    # against an API server that had not finished starting, and failed the run
+    # with connection refused. Taking it from the resource orders it behind the
+    # namespace, which is itself behind the cluster health gate.
+    namespace = kubernetes_namespace.flux_system.metadata[0].name
   }
 
   # Two keys, not seven. Everything else the manifests need is constant and is
