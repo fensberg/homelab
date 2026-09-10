@@ -327,3 +327,37 @@ off the overlay sidesteps it rather than fixing it.
 ## Deferred
 
 ## Gotchas
+
+### Rendering the chart emits real private keys, and the chart says so
+
+Found on the first render, by gitleaks, before anything was committed.
+
+`helm template` on the Cilium chart with its defaults emits key material as
+part of the output: a `cilium-ca` Secret carrying `ca.key`, and
+`hubble-server-certs` carrying `tls.key`. Committing the rendered manifest -
+which is the whole delivery route this epoch chose - would therefore have
+published a CA private key to a public repository.
+
+The chart labels those objects `cilium.io/helm-template-non-idempotent: "true"`
+itself, so this is documented upstream rather than surprising. The second
+consequence follows from that label: the keys are **regenerated on every
+render**, so the committed file would show a meaningless diff every time
+`task render-cni` ran, and the drift check that exists to prove the manifest
+matches the pinned chart would be proving nothing.
+
+Both problems have one cause, and it is Hubble. `hubble.enabled: false` removes
+every Secret from the output - verified, zero `kind: Secret` objects remain, and
+the only surviving `tls.key` strings are `optional: true` clustermesh volume
+projections naming a key inside a Secret rather than carrying one.
+
+Hubble is observability and belongs to epoch 04, so this defers it rather than
+discarding it. Turning it on later is not just flipping the flag: it means
+deciding where the certificates come from - cert-manager, or Cilium's own
+cronJob method - because the one thing that must not happen is baking them into
+git.
+
+**The general shape is worth keeping.** "Render a chart and commit the result"
+is a reasonable pattern and this estate now uses it, but a chart is a program
+and some charts generate secrets when you run them. Any future use of this
+pattern checks the output for `kind: Secret` before committing, and the reason
+that check exists is this one.
