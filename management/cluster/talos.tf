@@ -199,10 +199,33 @@ resource "talos_cluster_kubeconfig" "this" {
   node                 = local.node_ips[0]
 }
 
+# The credential the operator actually holds, so it carries the estate rather
+# than requiring the operator to.
+#
+# `endpoints` is every control plane, not the first one. An endpoint is what
+# talosctl connects *to*, and it proxies to whichever node is being targeted -
+# so naming one machine made the whole credential useless at exactly the moment
+# that machine was the one being diagnosed. Three means it survives losing any
+# one of them, which is the case a diagnostic exists for.
+#
+# `nodes` is what talosctl operates *on*, and setting it is the whole of #235:
+# the provider leaves it empty, so every node-targeted command refused on first
+# use with "nodes are not set for the command" and had to be re-run with an
+# explicit -n. Node addresses are exactly what this repository keeps in the
+# vault so the config shows the estate's shape without revealing it, so making
+# the operator supply one puts back the piece the design took out.
+#
+# Control planes rather than every machine, deliberately. The commands this
+# credential exists for are the quorum ones - `talosctl etcd status`,
+# `talosctl health` - and those are meaningless on a worker: a default that
+# included workers would answer three times and error twice, every time. A
+# worker is still reachable with an explicit -n, which is the rarer case and
+# the one where naming a specific machine is the point.
 data "talos_client_configuration" "this" {
   cluster_name         = local.cluster_name
   client_configuration = talos_machine_secrets.this.client_configuration
-  endpoints            = [local.node_ips[0]]
+  endpoints            = local.node_ips
+  nodes                = local.node_ips
 }
 
 # talos_machine_bootstrap returning doesn't mean the Kubernetes API is

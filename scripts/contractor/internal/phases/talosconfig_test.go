@@ -1,6 +1,9 @@
 package phases
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The shape check exists to fail here, naming the output, rather than several
 // commands later inside talosctl with an error about control characters.
@@ -45,5 +48,87 @@ func TestTheTwoCredentialChecksDoNotOverlap(t *testing.T) {
 	}
 	if looksLikeTalosconfig(kube) {
 		t.Error("a kubeconfig was accepted as a talosconfig")
+	}
+}
+
+// A talosconfig that names no nodes is well-formed and useless: every
+// node-targeted command refuses on first use. These cases are the shapes the
+// Talos provider and a hand-edit actually produce, rather than invented ones.
+func TestNamesNodes(t *testing.T) {
+	const withNodes = `context: site0
+contexts:
+  site0:
+    endpoints:
+      - 192.0.2.100
+    nodes:
+      - 192.0.2.100
+      - 192.0.2.101
+`
+	const noNodesField = `context: site0
+contexts:
+  site0:
+    endpoints:
+      - 192.0.2.100
+`
+	const emptyBlock = `context: site0
+contexts:
+  site0:
+    endpoints:
+      - 192.0.2.100
+    nodes:
+`
+	const emptyInline = `context: site0
+contexts:
+  site0:
+    nodes: []
+`
+	const inline = `context: site0
+contexts:
+  site0:
+    nodes: [192.0.2.100]
+`
+	// A key that merely ends in "nodes" is not the nodes field. Without the
+	// prefix check this passes on a credential that names nothing.
+	const lookalike = `context: site0
+contexts:
+  site0:
+    worker_nodes:
+      - 192.0.2.200
+`
+	for _, tc := range []struct {
+		name string
+		raw  string
+		ok   bool
+	}{
+		{"a block sequence of nodes", withNodes, true},
+		{"an inline list", inline, true},
+		{"no nodes field at all", noNodesField, false},
+		{"nodes with nothing under it", emptyBlock, false},
+		{"an empty inline list", emptyInline, false},
+		{"a field that only ends in nodes", lookalike, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := namesNodes(tc.raw)
+			if tc.ok && err != nil {
+				t.Fatalf("refused a usable talosconfig: %v", err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatal("accepted a talosconfig on which every node command would refuse")
+			}
+		})
+	}
+}
+
+// The refusal has to say where to fix it. A guard that fires without naming
+// the file it is about turns a one-line change into a search.
+func TestNamesNodesSaysWhereToFixIt(t *testing.T) {
+	err := namesNodes("context: site0\ncontexts:\n  site0:\n")
+	if err == nil {
+		t.Fatal("no refusal to inspect")
+	}
+	for _, want := range []string{"management/cluster/talos.tf", "nodes", "-n"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal never mentions %q, so it does not say what to do:\n%s", want, err)
+		}
 	}
 }

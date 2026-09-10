@@ -80,6 +80,25 @@ type workloadPod struct {
 	// The priority class it belongs in, per the table in
 	// docs/epochs/02-abstraction.md.
 	Priority string
+
+	// Where this workload's security properties are declared. Charts disagree
+	// about both the path and the key names - one chart's container-level key
+	// is `securityContext`, another's is `containerSecurityContext`, and a
+	// third has none that any template reads - so neither is guessable and
+	// both were read out of the pinned chart.
+	//
+	// SecurityValues is the path from spec.values to the mapping holding
+	// PodSecurityKey; nil is the values root. When ResourcesInContainers, the
+	// container-level context sits on each container beside its resources, the
+	// way a PodSpec has it, and ContainerSecurityKey names the key there.
+	SecurityValues       []string
+	PodSecurityKey       string
+	ContainerSecurityKey string
+	// Unasserted is why a level is not asserted, and must be non-empty
+	// whenever either key above is empty. An omission and a considered
+	// exemption are the same silence from here, so the exemption has to say
+	// something.
+	Unasserted string
 }
 
 // Read from the pinned charts on 2026-09-06. Each entry names the file that
@@ -91,9 +110,14 @@ var workloadPods = []workloadPod{
 		Release:      "gha-runner-scale-set-controller",
 		ChartVersion: "0.14.2",
 		// charts/gha-runner-scale-set-controller/values.yaml: `resources`,
-		// `affinity` and `priorityClassName` are top-level.
-		Values:   nil,
-		Priority: "critical",
+		// `affinity` and `priorityClassName` are top-level, and so are both
+		// security keys - `podSecurityContext` on the pod and `securityContext`
+		// on the container, each wrapped in `{{- with }}` in
+		// templates/deployment.yaml so an empty map renders nothing.
+		Values:               nil,
+		Priority:             "critical",
+		PodSecurityKey:       "podSecurityContext",
+		ContainerSecurityKey: "securityContext",
 	},
 	{
 		What:         "the runner listener",
@@ -106,6 +130,8 @@ var workloadPods = []workloadPod{
 		Values:                []string{"listenerTemplate", "spec"},
 		ResourcesInContainers: true,
 		Priority:              "critical",
+		PodSecurityKey:        "securityContext",
+		ContainerSecurityKey:  "securityContext",
 	},
 	{
 		What:                  "a CI runner",
@@ -115,6 +141,8 @@ var workloadPods = []workloadPod{
 		Values:                []string{"template", "spec"},
 		ResourcesInContainers: true,
 		Priority:              "batch",
+		PodSecurityKey:        "securityContext",
+		ContainerSecurityKey:  "securityContext",
 	},
 	{
 		What:         "the CloudNativePG operator",
@@ -122,8 +150,13 @@ var workloadPods = []workloadPod{
 		Release:      "cloudnative-pg",
 		ChartVersion: "0.23.0",
 		// charts/cloudnative-pg/values.yaml, consumed by templates/deployment.yaml.
-		Values:   nil,
-		Priority: "critical",
+		// Note the container key is `containerSecurityContext` here and plain
+		// `securityContext` on the chart above - the same property, two names,
+		// which is the whole reason this is a table and not a convention.
+		Values:               nil,
+		Priority:             "critical",
+		PodSecurityKey:       "podSecurityContext",
+		ContainerSecurityKey: "containerSecurityContext",
 	},
 	{
 		What:         "the OpenEBS Local PV provisioner",
@@ -134,6 +167,10 @@ var workloadPods = []workloadPod{
 		// the exact shape a value silently lands at the wrong path in.
 		Values:   []string{"localpv-provisioner", "localpv"},
 		Priority: "critical",
+		Unasserted: "the image declares no USER and runs as uid 0, so runAsNonRoot " +
+			"would stop the provisioner starting rather than harden it; and the " +
+			"subchart's `localpv.securityContext` is read by no template in it, " +
+			"so the only container-level path available does nothing (#315)",
 	},
 }
 
@@ -561,4 +598,134 @@ func sortedKeys(m map[string]map[string]any) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// --- asserted, not inherited ------------------------------------------------
+
+// Every workload requires its security properties rather than inheriting them.
+//
+// WHAT THIS CATCHES, which is not "a pod running as root". Nothing in this
+// estate runs as root today except the OpenEBS provisioner, and that is
+// recorded rather than fixed. What it catches is the property arriving from
+// somewhere this repository cannot see: the ARC controller does not run as
+// root because its base image says `USER 65532`, and an upstream base-image
+// change takes that away with no diff here, no event, and a pod that keeps
+// starting. Asserted in the manifest, the same change fails admission - which
+// is the estate's standing preference for loud over silently degraded.
+//
+// It is deliberately not a Semgrep rule or a lint. Those read the file; this
+// reads the file against a table that records which chart version each path
+// was checked in, so a chart bump re-opens the question instead of carrying
+// the old answer forward.
+func TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem(t *testing.T) {
+	for _, w := range workloadPods {
+		t.Run(w.What, func(t *testing.T) {
+			if w.PodSecurityKey == "" && w.ContainerSecurityKey == "" {
+				if strings.TrimSpace(w.Unasserted) == "" {
+					t.Fatalf(`%s asserts no security properties and says why nowhere.
+
+Set PodSecurityKey and ContainerSecurityKey to the paths the pinned chart
+actually reads, or set Unasserted to what reading it found. Leaving all three
+empty is indistinguishable from nobody having looked.`, w.What)
+				}
+				return
+			}
+			if w.Unasserted != "" {
+				t.Errorf("%s both asserts security properties and explains why it does not; one of the two is stale", w.What)
+			}
+
+			releases := readHelmReleases(t, w.File)
+			hr, ok := releases[w.Release]
+			if !ok {
+				t.Fatalf("%s declares no HelmRelease named %q", w.File, w.Release)
+			}
+			at := w.SecurityValues
+			if at == nil {
+				at = w.Values
+			}
+			root, err := descend(hr.Spec.Values, at)
+			if err != nil {
+				t.Fatalf("%s: %v", w.File, err)
+			}
+
+			if w.PodSecurityKey != "" {
+				pod, ok := root[w.PodSecurityKey].(map[string]any)
+				if !ok {
+					t.Errorf(`%s declares no %s at spec.values%s.
+
+The pinned chart reads that path. Left unset it renders nothing, and whether
+the pod runs as root becomes a property of whatever image the chart happens to
+pull - which this repository cannot see change.`,
+						w.What, w.PodSecurityKey, pathString(at))
+				} else if pod["runAsNonRoot"] != true {
+					t.Errorf("%s does not require runAsNonRoot: true; it has %v", w.What, pod["runAsNonRoot"])
+				}
+			}
+
+			if w.ContainerSecurityKey == "" {
+				return
+			}
+			for _, c := range containerSecurityContexts(t, w, root) {
+				if c == nil {
+					t.Errorf(`%s declares no %s on a container at spec.values%s.
+
+Container-level is the level that matters for privilege escalation: a pod-level
+runAsNonRoot says who the process is, and says nothing about what it may become.`,
+						w.What, w.ContainerSecurityKey, pathString(at))
+					continue
+				}
+				if c["allowPrivilegeEscalation"] != false {
+					t.Errorf("%s does not refuse privilege escalation; it has %v", w.What, c["allowPrivilegeEscalation"])
+				}
+				if !dropsAllCapabilities(c) {
+					t.Errorf("%s does not drop ALL capabilities, so it keeps whatever the runtime's default set happens to be", w.What)
+				}
+			}
+		})
+	}
+}
+
+// containerSecurityContexts returns one entry per container that must carry a
+// context - nil where it is absent - so a missing one is reported rather than
+// skipped by an empty range.
+func containerSecurityContexts(t *testing.T, w workloadPod, root map[string]any) []map[string]any {
+	t.Helper()
+	if !w.ResourcesInContainers {
+		c, _ := root[w.ContainerSecurityKey].(map[string]any)
+		return []map[string]any{c}
+	}
+	containers, ok := root["containers"].([]any)
+	if !ok || len(containers) == 0 {
+		t.Fatalf("%s declares no containers, so there is nothing to secure", w.What)
+	}
+	out := make([]map[string]any, 0, len(containers))
+	for _, raw := range containers {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("%s has a container that is not a mapping", w.What)
+		}
+		c, _ := m[w.ContainerSecurityKey].(map[string]any)
+		out = append(out, c)
+	}
+	return out
+}
+
+// dropsAllCapabilities accepts the two spellings a manifest actually uses -
+// a block sequence and an inline list - and nothing else. "ALL" is compared
+// exactly, because Kubernetes does not accept "all".
+func dropsAllCapabilities(sc map[string]any) bool {
+	caps, ok := sc["capabilities"].(map[string]any)
+	if !ok {
+		return false
+	}
+	drop, ok := caps["drop"].([]any)
+	if !ok {
+		return false
+	}
+	for _, c := range drop {
+		if s, ok := c.(string); ok && s == "ALL" {
+			return true
+		}
+	}
+	return false
 }
