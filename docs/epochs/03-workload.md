@@ -949,6 +949,52 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### Two unrelated flakes, and a wrong diagnosis worth recording
+
+#### SteamCMD fails its first app_update often enough to need retries
+
+The image build failed on merge with
+
+```text
+ERROR! Failed to install app '896660' (Missing configuration)
+```
+
+and exit code 8, on a Dockerfile that had built successfully two hours earlier
+and unchanged in that stage. The line above it is the tell: SteamCMD updates
+itself and restarts on its first invocation, and an `app_update` issued in that
+same run intermittently comes back with this.
+
+Now retried five times, after a warm-up run that gets the self-update out of the
+way. The stage also checks the server binary is actually present afterwards -
+SteamCMD is known to exit 0 having downloaded nothing, and that stage is the
+last moment anything can tell. After it, the files are copied into an image that
+would build, publish, deploy and fail at runtime with the binary simply absent.
+
+#### The Super-Linter hang was not Black and Ruff
+
+Recorded because the reasoning was wrong in an instructive way, and the fix
+shipped anyway on merits that still hold.
+
+The Python linters were disabled, the conflict warning went away, and **the lane
+hung in exactly the same place.** The last line is now "Successfully gathered
+list of files..." - which is the line the Black/Ruff warning had been printed
+immediately after all along.
+
+So the hang was never at that warning. It has always been at the same point:
+after the file list is built, as the linters begin. The warning was simply the
+last thing printed before the stall, and being last is not the same as being
+responsible. That distinction is the whole error, and it is a real hazard of the
+otherwise-correct rule that a hang's final line is where to look: the final line
+marks **where** it stopped, not always **why**.
+
+The change stands on its own - six Python linters against zero Python files is
+waste regardless - but it did not fix the hang, and #365 stays open. The next
+thing to examine is what runs immediately after file-gathering, and whether
+harden-runner's blocked egress on this job is stalling a linter that reaches the
+network rather than failing it fast. That would also explain why it is
+intermittent: which linters run at all depends on which files a given pull
+request changed.
+
 ### The join code was empty because PlayFab Party wanted PulseAudio
 
 The cluster came up clean and the game server ran: world generated, 183
