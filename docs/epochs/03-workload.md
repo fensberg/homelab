@@ -474,6 +474,66 @@ the overlay answers what the machine itself reaches; neither is affected by the
 CNI. Cilium is necessary and is not sufficient, and the temptation once it
 lands will be to treat the isolation question as closed.
 
+### The control plane oversees the zone; the zone sees nothing
+
+Settled in discussion before the policy work, so it is inherited rather than
+re-derived.
+
+The intent is asymmetry: the control plane is aware of everything and
+orchestrates it, and from the workload's side the machine it runs on should
+look miraculous - administered by something it cannot see or reach.
+
+**That asymmetry mostly already exists, and not because of the network.** Node
+authorization and NodeRestriction mean the zone's kubelet may read Secrets and
+ConfigMaps only for pods bound to itself. It cannot list other nodes or other
+pods, and it cannot modify its own Node object beyond a narrow set of fields -
+which is the same mechanism that refuses it its own taint, recorded above.
+
+**One part of the intent has to be inverted: Kubernetes pulls.** The kubelet
+opens the connection and watches the API server for pods assigned to it; the
+control plane does not push work down. A node that cannot reach the API is not
+a member, so "reaches nothing at all" is not available. What makes that
+acceptable is the paragraph above - the reach exists and what it obtains is one
+workload's own secrets.
+
+#### The oversight channel is API server to kubelet, and it must be open
+
+`kubectl logs`, `kubectl exec`, `port-forward` and metrics scraping all travel
+API server -> kubelet on **10250**. That is the direction "the control plane
+oversees the zone" actually runs on, and it is the safe one: the control plane
+reaching down grants the zone nothing.
+
+Closing it costs the ability to read a log from the workload this whole epoch
+exists to host, which is a thing nobody misses until the evening it matters.
+
+**Only the API server talks to that node.** Not etcd, not the scheduler, not
+the controller manager. "The control plane" is four components and one of them
+has business here.
+
+#### Why the workload can be denied everything while the node is not
+
+NetworkPolicy governs **pods**. The kubelet is a host process on the host
+network, so pod policy does not apply to it.
+
+So the workload can be denied all cluster access - no API server, no node
+subnet, no hypervisor - while the machine underneath it stays a fully
+orchestrated cluster member. The workload sees nothing, the node is
+administered normally, and the control plane sees everything. That is the
+intent above, and it falls out of the layering rather than needing to be built.
+
+The shape the policy work inherits:
+
+| Direction             | Rule                                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Workload egress       | Deny by default. DNS and the internet only - the game, and its backups. Not the API, not the node subnet, not the hypervisor. |
+| Workload ingress      | Its own ports, from the port forward. Nothing else.                                                                           |
+| API server -> kubelet | Allowed, on 10250. This is the oversight channel.                                                                             |
+| Service account token | `automountServiceAccountToken: false`. It has no use for the API, so it is not handed a token.                                |
+
+That last row is worth doing even though the egress rule already makes the
+token useless: a credential that cannot be spent is still a credential that was
+handed over, and the cheaper habit is not to mount it.
+
 ### Removing the untrusted zone
 
 Written while the zone is being built rather than when it is being removed,
