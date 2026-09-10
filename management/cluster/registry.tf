@@ -116,6 +116,11 @@ resource "terraform_data" "invariants" {
       error_message = "worker_count must be between 0 and 55. Zero is valid and means no workers; the ceiling keeps the 200+ band inside a single octet."
     }
 
+    precondition {
+      condition     = local.dmz_count >= 0 && local.dmz_count <= 55
+      error_message = "dmz_count must be between 0 and 55. Zero is valid and is the right default - a machine dedicated to running untrusted code is a liability on an estate with none to run. The ceiling keeps the band inside a single octet, as the worker one does."
+    }
+
     # --- vendor lock, checked three ways -----------------------------------
     #
     # 1. The code implements one vendor per concern.

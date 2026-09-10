@@ -69,6 +69,11 @@ func Render(ctx *run.Context) error {
 	// Not a secret, but it lives beside the rendered files and is wiped
 	// with them, so the playbook only ever sees one site's values.
 	run.Info("writing per-site network values for Ansible")
+	// The untrusted zone's values are written whether or not it has machines.
+	// They are derived from the octet rather than chosen, so they are the same
+	// values next time; what decides whether the vnet is built is the count,
+	// and building network no machine sits on is infrastructure nobody asked
+	// for. The playbook gates on dmz_count for exactly that reason.
 	siteVars := fmt.Sprintf(`---
 sdn_subnet: %q
 sdn_gateway: %q
@@ -76,7 +81,12 @@ advertise_routes: %q
 sdn_asn: %d
 sdn_vrf_vni: %d
 sdn_vnet_vni: %d
-`, net.NodeCIDR, net.Gateway, net.SiteCIDR, net.ASN, net.VRFVNI, net.VNetVNI)
+dmz_count: %d
+sdn_dmz_subnet: %q
+sdn_dmz_gateway: %q
+sdn_dmz_vnet_vni: %d
+`, net.NodeCIDR, net.Gateway, net.SiteCIDR, net.ASN, net.VRFVNI, net.VNetVNI,
+		len(net.DMZIPs), net.DMZCIDR, net.DMZGateway, net.DMZVNetVNI)
 	if err := os.WriteFile(ctx.SiteVars, []byte(siteVars), 0o644); err != nil {
 		return err
 	}

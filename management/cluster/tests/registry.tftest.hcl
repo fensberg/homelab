@@ -173,3 +173,17 @@ run "negative_worker_count_fails_its_precondition" {
 
   expect_failures = [terraform_data.invariants]
 }
+
+run "negative_dmz_count_fails_its_precondition" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/negative-dmz-count.json"
+  }
+
+  plan_options {
+    target = [terraform_data.invariants]
+  }
+
+  expect_failures = [terraform_data.invariants]
+}
