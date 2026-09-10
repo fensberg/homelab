@@ -59,6 +59,13 @@ registries:
       GitHub's registry. Holds both this estate's own runner image, built from
       a committed Dockerfile in this repository, and the upstream Flux and
       Actions Runner Controller images.
+  - host: registry.k8s.io
+    reason: >-
+      The Kubernetes project's own registry, run by the same people who publish
+      Kubernetes itself. Needed for the descheduler image, which is pinned by
+      digest at its point of use like every other image here. This is the
+      narrowest possible reason to add a registry: one component, published by
+      the project whose API it calls.
 
 # Helm chart sources. Charts are as much a supply chain as images - a chart
 # decides what images get deployed, so an unapproved chart repository is an
@@ -70,6 +77,11 @@ charts:
     reason: The operator running the state database.
   - url: https://openebs.github.io/openebs
     reason: The storage provisioner backing every volume in the cluster.
+  - url: https://kubernetes-sigs.github.io/descheduler
+    reason: >-
+      Rebalances pods that were scheduled correctly and are now in the wrong
+      place. A kubernetes-sigs project maintained by SIG Scheduling - the same
+      group that owns kube-scheduler, whose decisions this corrects.
 
 # OpenTofu providers. Third-party code that runs with the estate's credentials.
 #

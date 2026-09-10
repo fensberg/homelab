@@ -67,10 +67,12 @@ func TestOnlyQuietTofuSubcommandsAreStreamed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading %s: %v", dir, err)
 	}
+	checked := 0
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
 			continue
 		}
+		checked++
 		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
 			t.Fatalf("reading %s: %v", e.Name(), err)
@@ -95,6 +97,19 @@ func TestOnlyQuietTofuSubcommandsAreStreamed(t *testing.T) {
 					"verb and no values.", e.Name(), sub, strings.TrimSpace(firstLine(call)))
 			}
 		}
+	}
+	// The phases directory is this guard's whole subject, and reading zero
+	// files from it passes: the loop below asserts something about each file,
+	// so no files means no assertions and a green check. That is reachable by
+	// ordinary maintenance - the phases moving one level down would have every
+	// entry skipped as a directory - and it announces itself nowhere.
+	//
+	// A real minimum rather than "at least one", because the interesting
+	// failure is a filter that still matches something. There were 24 at the
+	// time of writing; this is deliberately well below that, so it catches a
+	// collapse without failing on ordinary consolidation.
+	if checked < 10 {
+		t.Fatalf("only %d phase source files were checked, which cannot be right - this guard is reading the wrong directory and proves nothing", checked)
 	}
 }
 

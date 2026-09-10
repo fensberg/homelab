@@ -127,9 +127,24 @@ var skipWalkDirs = map[string]bool{
 	".git": true, "node_modules": true, ".terraform": true, "coverage": true,
 }
 
+// walkText hands every text file in the repository to a check.
+//
+// It counts what it visited and refuses to return having visited nothing, for
+// the same reason tracked() does: the callers here are leak guards, and a leak
+// guard that inspects zero files passes. There is no output that distinguishes
+// "no estate name is committed anywhere" from "this walk stopped finding
+// files" - both are silence and a green check - and only the first is ever the
+// intended claim.
+//
+// The reachable version of that is not exotic. textFileExts is a fixed list, so
+// a repository that moved to a different extension would be walked past;
+// skipWalkDirs is a fixed list, so a directory renamed into it would vanish;
+// and repoRoot resolving somewhere unexpected empties the walk entirely. None
+// of those announces itself.
 func walkText(t *testing.T, check func(rel, body string)) {
 	t.Helper()
 	root := repoRoot(t)
+	visited := 0
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -148,10 +163,17 @@ func walkText(t *testing.T, check func(rel, body string)) {
 			return err
 		}
 		rel, _ := filepath.Rel(root, path)
+		visited++
 		check(rel, string(body))
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("walking the repository: %v", err)
+	}
+	if visited == 0 {
+		t.Fatal(`walked the repository and read no text files at all, so this test asserts nothing.
+
+The callers of this are leak guards. Inspecting zero files passes every one of
+them, and looks identical to a repository with nothing to find.`)
 	}
 }

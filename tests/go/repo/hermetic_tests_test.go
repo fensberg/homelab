@@ -37,6 +37,7 @@ func TestPackagesThatShellToGitNeutraliseUserConfig(t *testing.T) {
 	// package directory -> whether it invokes git, and whether it neutralises
 	invokesGit := map[string]bool{}
 	neutralises := map[string]bool{}
+	visited := 0
 
 	for _, r := range roots {
 		err := filepath.Walk(r, func(path string, info os.FileInfo, err error) error {
@@ -49,6 +50,7 @@ func TestPackagesThatShellToGitNeutraliseUserConfig(t *testing.T) {
 			}
 			text := string(body)
 			dir := filepath.Dir(path)
+			visited++
 
 			// Shelling out to git, by any of the shapes used here.
 			if strings.Contains(text, `exec.Command("git"`) ||
@@ -65,8 +67,24 @@ func TestPackagesThatShellToGitNeutraliseUserConfig(t *testing.T) {
 		}
 	}
 
+	// Prove the walk worked before drawing any conclusion from what it found.
+	//
+	// This used to go straight to `t.Skip("no test package invokes git")`, and
+	// a skip is the wrong answer twice over. It reports as neither pass nor
+	// fail, so CI treats it as fine; and it cannot tell "no package invokes
+	// git" - a real, checkable statement - from "this walk read no test files
+	// at all", which means the guard is off. A rename or a move under either
+	// root produces the second, permanently and in silence, and this is the
+	// guard that catches a failure mode CLAUDE.md records as having already
+	// happened twice.
+	//
+	// With a floor underneath it, an empty invokesGit genuinely means no
+	// package shells out to git, which is a pass rather than a skip.
+	if visited < 40 {
+		t.Fatalf("only %d test files were read under scripts/ and tests/go/, which cannot be right - this guard is walking the wrong tree and proves nothing", visited)
+	}
 	if len(invokesGit) == 0 {
-		t.Skip("no test package invokes git; nothing to check")
+		return // Checked, and nothing shells out to git.
 	}
 
 	for dir := range invokesGit {

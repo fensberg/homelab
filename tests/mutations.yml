@@ -54,13 +54,27 @@
 #             on a nil map is red for the wrong reason, and red for the wrong
 #             reason is not proof of anything.
 #   why       what breaks in the estate if this guard stops working.
+#   reads_source
+#             opt-in for a `.go` target, which is otherwise refused. Say true
+#             only when the guard OPENS the file and inspects its text; say
+#             nothing when the guard asserts what the compiled code does. See
+#             the paragraph below for why the two differ.
 #
 # What this cannot judge, said out loud because a guard whose edges nobody
-# knows is worse than none: Go source. The guards run from a binary compiled
-# once from the real tree, so editing a .go file in the scratch copy changes no
-# behaviour, and an entry doing that would pass or fail for reasons unrelated
-# to what it claims. The runner refuses such an entry rather than letting it
-# look like coverage. Guards over Go behaviour belong in that program's own
+# knows is worse than none: Go BEHAVIOUR. The guards run from a binary compiled
+# once from the real tree, so editing a .go file in the scratch copy changes
+# nothing about what that binary does, and an entry doing that would pass or
+# fail for reasons unrelated to what it claims. The runner refuses a .go target
+# rather than letting it look like coverage.
+#
+# The exception, and it is narrow: a guard that READS source as data. runGuard
+# points the repo root at the scratch tree and repoRoot honours it, so a guard
+# that opens .go files and inspects their text sees the mutation in full - only
+# guards asserting compiled behaviour are blind to it. That is a property of
+# the guard rather than of the ledger, which this paragraph used to get wrong
+# by stating it as a flat "cannot judge Go source". Such an entry says
+# `reads_source: true`, and claiming it wrongly produces an entry that cannot
+# fail, which is why it is claimed rather than inferred. Guards over Go behaviour belong in that program's own
 # package tests, beside the code, where a counterexample is an ordinary table
 # entry - which is also where the comment check's own decision is proved, in
 # TestSatisfiedByProseOnlyNamesAPassToFailFlip.
@@ -71,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 34
+floor: 35
 
 mutations:
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
@@ -552,6 +566,27 @@ mutations:
       produced nine identical "<redacted>" rows on the change whose entire
       purpose is that somebody can see which machine is which. This guard is
       what stops the tidier, unreadable form coming back.
+
+  - guard: TestEveryGuardThatDiscoversItsSubjectAssertsItFoundSome
+    file: tests/go/repo/suppliers_test.go
+    reads_source: true
+    find: "\t\tt.Fatal(\"no image references found under clusters/, so this test proves nothing\")"
+    replace: "\t\t_ = checked // the floor used to be asserted here"
+    mentions: "never assert they found any"
+    why: >
+      This is the first entry to mutate Go source, and it is legitimate for a
+      reason the refusal above now states: the guard READS these files as text
+      rather than executing them, and runGuard points the repo root at the
+      scratch tree, so the mutation is fully visible to it.
+
+      What it proves is that removing a floor from a guard is noticed. The
+      floor is the only thing standing between "walked the tree and everything
+      is fine" and "walked nothing and said the same" - three defects in this
+      estate came from that distinction being invisible - and a floor is
+      exactly the kind of line that looks like dead weight to somebody tidying
+      up. suppliers_test.go is the right subject because its floor guards the
+      supply chain: without it, an image walk that stops matching reports every
+      image approved and digest-pinned.
 
 # Guards that cannot be proved by mutation, and why.
 #
