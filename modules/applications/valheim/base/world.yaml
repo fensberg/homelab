@@ -1,0 +1,28 @@
+---
+# The world, on a volume rather than in the container.
+#
+# This is a WORKING COPY and not the durable one. It is OpenEBS Local PV
+# Hostpath, so it is pinned to whichever node the pod first lands on, and a
+# rebuild of that node takes it - which is the routine way a Talos version
+# reaches these machines. What survives a rebuild is the backup in object
+# storage; see #330 and the storage section of docs/epochs/03-workload.md.
+#
+# Sized for a world rather than for a filesystem. Valheim's saves are tens of
+# megabytes and grow with exploration; ten gigabytes is room for the world, its
+# rotating backups and years of growth, on a node whose data disk is 32.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: world
+  namespace: valheim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # Named rather than relying on whichever class is default, for the same
+  # reason the state database names its own: "whatever is default" is not a
+  # dependency worth having on the volume holding the thing people would mind
+  # losing.
+  storageClassName: openebs-hostpath
+  resources:
+    requests:
+      storage: 10Gi

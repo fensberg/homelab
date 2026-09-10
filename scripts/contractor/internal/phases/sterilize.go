@@ -117,6 +117,9 @@ func tearDown(ctx *run.Context) teardownResult {
 	// is already back on local disk by this point, so neither step can strand
 	// the destroy it is clearing the way for. See teardown.go.
 	forgetClusterInternalResources(ctx)
+	// Before the emptying, so a failure to forget it stops short of deleting
+	// what it holds rather than after.
+	forgetWorkloadBucket(ctx)
 	emptyObjectStorage(ctx)
 
 	if err := run.TofuDestroy(ctx, "tofu destroy"); err != nil {

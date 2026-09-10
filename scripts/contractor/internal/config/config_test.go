@@ -378,6 +378,7 @@ func TestResolveSiteNetwork_NegativeWorkerCount(t *testing.T) {
 func TestEveryMachineClassIsInAllMachineIPs(t *testing.T) {
 	site := validSite()
 	site.WorkerCount = 2
+	site.DMZZones = map[string]DMZZone{"example": {}}
 	cfg := &Config{Sites: map[string]Site{"site0": site}}
 
 	net, err := ResolveSiteNetwork(cfg, "site0")
@@ -441,6 +442,45 @@ func TestAllMachineNamesCoversEveryClass(t *testing.T) {
 	for _, want := range append(append([]string{}, net.VMNames...), net.WorkerNames...) {
 		if !seen[want] {
 			t.Errorf("%q would be destroyed without appearing in the warning", want)
+		}
+	}
+}
+
+// An estate with no untrusted workload derives nothing for one.
+//
+// The zone hosts a workload that will be deprecated one day, and the whole
+// reason for its shape is that deprecating that workload is a config change
+// rather than a rebuild. This is the config half of that: with no count
+// declared - which is every config written before the zone existed, and every
+// config again after the last untrusted workload leaves - no address and no
+// machine name may derive.
+//
+// The structural half lives in tests/go/repo: that no zone RESOURCE is keyed
+// off the site rather than off these lists. Both halves are needed, because an
+// empty list still builds something if a resource ranges over the wrong thing.
+func TestNoUntrustedWorkloadDerivesNoZone(t *testing.T) {
+	site := validSite()
+	cfg := &Config{Sites: map[string]Site{"site0": site}}
+
+	net, err := ResolveSiteNetwork(cfg, "site0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := len(net.DMZIPs); got != 0 {
+		t.Errorf("a site declaring no untrusted workload derives %d zone address(es): %v", got, net.DMZIPs)
+	}
+	if got := len(net.DMZNames); got != 0 {
+		t.Errorf("a site declaring no untrusted workload derives %d zone machine name(s): %v", got, net.DMZNames)
+	}
+
+	// The subnet and VNI are derived from the octet and are the same values
+	// whether or not the zone has machines - that is deliberate, so the zone
+	// comes back at the same address if it ever returns. What must not exist is
+	// a machine, and AllMachineNames is what the teardown warns with.
+	for _, name := range net.AllMachineNames() {
+		if strings.Contains(name, "-dmz-") {
+			t.Errorf("AllMachineNames includes %q on a site with no untrusted workload", name)
 		}
 	}
 }

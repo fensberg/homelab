@@ -3,7 +3,7 @@
 - **Tier / path:** `environments/`
 - **Branch:** `epoch/03-workload`
 - **PR:** —
-- **Status:** Not started
+- **Status:** In progress
 
 ## Goal
 
@@ -31,6 +31,14 @@ if the estate cannot host these, the tier has not done its job.
 - **A Valheim dedicated server**
   ([a guide to dedicated servers](https://www.valheimgame.com/support/a-guide-to-dedicated-servers/)).
   This one sets the constraints, because it needs inbound **UDP 2456-2458**.
+
+  > **Both halves of that sentence are wrong, and the correction is in
+  > [Superseded: isolation is proportional to exposure and blast radius](#superseded-isolation-is-proportional-to-exposure-and-blast-radius).**
+  > The ports are 2456-2457, and the crossplay backend uses a relay so no
+  > inbound path is needed at all. It is left here because this claim is what
+  > set the constraints for everything below it, and a requirement that drove a
+  > design is worth reading beside the correction rather than being quietly
+  > replaced.
 
 ### Cilium is still required, for one of the two reasons given
 
@@ -69,6 +77,11 @@ nodes go Ready, so it cannot arrive through Flux the way everything else does,
 which means a cluster rebuild rather than a converge.
 
 ### The overlay grants everything to everyone, which is why enrolling players is not an option
+
+> **Superseded in its premise.** This section reasons from the game server
+> needing an inbound port forward. It does not - see the correction under
+> Decisions. The mechanism it argues for is still what the zone is; what
+> changed is which workload earns one, and it is no longer this one.
 
 Recorded here because it is the strongest argument for the port-forward
 decision below, and because it is true of the estate **today** rather than only
@@ -115,6 +128,11 @@ believed and isolation that exists.
 
 ### Why the game server decides the network design
 
+> **Superseded in its premise.** This section reasons from the game server
+> needing an inbound port forward. It does not - see the correction under
+> Decisions. The mechanism it argues for is still what the zone is; what
+> changed is which workload earns one, and it is no longer this one.
+
 Cloudflare Tunnel's public hostname routing is HTTP and TCP; it cannot carry
 arbitrary UDP, and public UDP is Spectrum, which is enterprise-priced. Cloudflare
 Zero Trust _can_ carry UDP over WARP private networking, but every player would
@@ -129,6 +147,11 @@ which is a materially different posture from anything built so far, and the
 reason the isolation question below is not optional.
 
 ### The isolation this requires
+
+> **Superseded in its premise.** This section reasons from the game server
+> needing an inbound port forward. It does not - see the correction under
+> Decisions. The mechanism it argues for is still what the zone is; what
+> changed is which workload earns one, and it is no longer this one.
 
 The intent is that the game server is walled off from everything else, and
 today that is not achievable. The cluster runs Flannel, which **does not enforce
@@ -160,6 +183,54 @@ A Valheim world is state, and OpenEBS Local PV Hostpath pins a volume to one
 node. When that node is replaced - which every image change does, since an image
 change means a rebuild - the world goes with it. Whatever this epoch does about
 workloads has to answer that before anyone plays on it.
+
+#### Settled: the workload's state goes to a bucket the teardown keeps
+
+The framing above - that the world save is pinned to a node - is right about
+the consequence and wrong about the mechanism, and the correction is on #330.
+
+An image change does not replace the node VMs. They clone from a template by
+`vm_id` and carry no `lifecycle` block, and #97 already records that an image
+change cannot reach a running estate at all. What loses the data is that the
+delivery mechanism is a **rebuild**: a demolish followed by an ignition, and
+demolish destroys every disk by design. That is the contract - "TNT is TNT" -
+so no disk-lifecycle trick can help, and teaching the teardown to skip a volume
+would make a destructive operation partial, which this estate refuses.
+
+Three options, and only one survives.
+
+**Network storage from the hypervisor** - NFS or iSCSI to a dataset - survives
+a rebuild and hands the untrusted machine a direct path to the one thing on the
+estate that is not disposable. Rejected on the zone's own terms.
+
+**A preserve-on-teardown flag** makes `demolish` partial and leaves a volume
+nothing tracks. Rejected.
+
+**Object storage, in a bucket of its own.** Taken. It needs only outbound
+egress from the zone, which the workload has anyway and which opens no path
+into the estate - the same direction its own traffic already goes.
+
+The bucket is `<state bucket>-workloads`, derived rather than configured so it
+needs no vault item and cannot drift from the bucket beside it. Sterilize
+**forgets** it before the destroy, and the next ignition adopts it back.
+
+That forgetting is a deliberate exception to the rule in `teardown.go` - that
+losing track of something which outlives the VMs leaves a real thing nothing
+tracks. It does, for exactly as long as there is no estate to track it.
+Adoption closes the window, and the alternatives are a teardown that stops
+part-way on a bucket Cloudflare will not delete, or one that succeeds by
+deleting the backups.
+
+The order of those two steps is the safety, and
+`TestTheWorkloadBucketIsReleasedBeforeAnythingCanDeleteIt` holds it: released
+first, a failure to release stops short of deleting anything; reversed, the
+deletion has already happened by the time anyone finds out. The mutation
+proving it reorders rather than deletes, because reordering is what somebody
+writes while looking at a stuck teardown instead of at this file.
+
+**What this does not do** is make the node's local disk durable. It is not, and
+it should not be - the machine is chosen to be destroyable. Anything that must
+outlive a rebuild goes to the bucket; the disk is a working copy.
 
 #### Inherited from epoch 02: tainting the control planes
 
@@ -214,116 +285,629 @@ See also #315, which is the security half of the same component.
 
 _Record as made._
 
-### The untrusted zone is a node, the workload is a container, and the isolation is three layers
+### Superseded: isolation is proportional to exposure and blast radius
 
-**Chose:** the game server runs as an ordinary pod, reconciled by Flux, on a
-**dedicated Talos worker in the untrusted zone that does not join the overlay
-network**.
-**Rejected:** a pod on a shared worker with only NetworkPolicy; a plain virtual
-machine running the game server directly; and an LXC container on the
-hypervisor.
-**Because:** this was derived by working backwards from what a compromise
-reaches, which is the only way the layers can be justified individually.
+The decision this replaces read the problem as **untrusted code**, and built
+from there: a game server is code nobody here wrote, therefore it is suspect,
+therefore it gets a machine of its own. That reasoning produced a design which
+is still correct in its mechanism and wrong in its default, and it is worth
+saying exactly where it went wrong because the same mistake is easy to repeat.
 
-#### What a compromised pod reaches today
+**Provenance is almost never the threat here.** The operator's own framing, and
+it is the right one: "The code itself is hardly ever the threat because we're
+vetting it. The traffic and the blast radius is the threat." Nothing
+self-hosted here is novel software written by a stranger with intent. It is
+Home Assistant, a game server from Steam, a fork of somebody's published
+project. The code is vetted. What is not vetted is who is allowed to send it
+packets, and what those packets reach if they win.
 
-Assume the process is taken. A game server accepting inbound UDP from strangers
-is a live category, not a hypothetical.
+So the axis is two questions, and neither is about who wrote it:
 
-- **The Kubernetes API**, by service address, from any pod.
-- **The state database**, holding this estate's own OpenTofu state.
-- **The hypervisor's API**, because the cluster reaches it over a flat network -
-  recorded in [`02-abstraction.md`](02-abstraction.md).
-- **The overlay network, which is the worst of the four.** Every node carries
-  the tailscale extension from the single shared schematic, and the tailnet
-  policy is the default `{"src": ["*"], "dst": ["*:*"]}`. A compromised pod on
-  an overlay-joined node therefore reaches the hypervisor, the workstation and
-  every other site.
+- **Exposure** - what can send this traffic?
+- **Blast radius** - if that traffic wins, what does it reach, and what does it
+  hold?
 
-The API server is the obvious worry and it is the second worst. Overlay
-membership is the real exposure, because nothing narrows what the mesh grants.
+Vetted code compromised through hostile traffic is exactly as compromised as
+malicious code would have been. The isolation still earns its place. "We do not
+trust this binary" was simply never the reason.
 
-#### Three layers, each answering a different question
+#### Which produces a tiering, not a zone
 
-**NetworkPolicy answers "what may it talk to."** Necessary, and insufficient
-alone: it says nothing about a container escape, because the escape does not
-traverse the network.
+| Tier                           | For                                       | Gets                                            |
+| ------------------------------ | ----------------------------------------- | ----------------------------------------------- |
+| **Shared workers** _(default)_ | Most things. LAN-reachable, small radius. | A namespace each and NetworkPolicy between them |
+| **Dedicated zone**             | High exposure **or** high blast radius    | Its own subnet, vnet, machine and taint         |
+| **Case by case**               | Workloads whose reach is the point        | Argued in its own record                        |
 
-**A dedicated node answers "what shares its kernel."** This is the layer that
-decides against a shared worker, and the reason is specific rather than
-general - the thing it would share a kernel with is the CI runner, which holds
-vault credentials and reaches the estate.
+**Shared workers is the default and the zone is the exception.** The previous
+decision implied the reverse, and the reverse does not survive contact with
+what this estate is for: a model where every third-party application gets a
+virtual machine stops at about five workloads on the memory this hypervisor
+has, and the plan is ten or twenty. Most of them are LAN-only with a small
+radius, and a namespace with an enforced policy is the proportionate answer.
 
-**Omitting the overlay answers "what does the machine itself reach."** This is
-the layer that is not currently expressible, and it has a real cost: the
-tailscale extension is in the one shared schematic, so an untrusted node
-requires a **second Talos schematic without it** - a second image, a second
-`proxmox_download_file`, and #97 applying to both. Recorded as a cost rather
-than discovered later, because it is the least obvious consequence of the
-decision and the most likely to be dropped for convenience.
+That tier is now possible for the first time. NetworkPolicy between namespaces
+on shared workers was not enforcement under Flannel - it was decoration - which
+is the argument that put Cilium in.
 
-#### Why not a plain virtual machine
+#### The examples, classified
 
-Stronger on paper - no kubelet, no cluster credentials, not a member at all -
-and it loses on everything else. Talos is a Kubernetes operating system and
-cannot do it, so this means adding a **second operating system** to the estate
-with its own image, patching and provisioning path. It also means managing the
-machine by hand or by Ansible, which makes it a pet and puts an interactive
-management path into the one machine that should be least reachable. The
-estate's rule applies directly: either the automation works or it does not, and
-a shortcut is not the answer.
+| Workload                 | Exposure                             | Blast radius                                                                                      |
+| ------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| A game server, crossplay | Outbound relay only, nothing inbound | A world save                                                                                      |
+| Home automation          | LAN, possibly WAN through a tunnel   | **Physical** - locks, heating, cameras - and it must reach every device on the LAN to work at all |
+| A mail relay fork        | Inbound SMTP from the whole internet | Mail, and it is the one carrying edited code                                                      |
 
-#### What an escape actually obtains, which is the test that matters
+**Home automation is the case that breaks the zone**, and it is worth keeping
+in the record because it is the highest-stakes thing on the list and the zone
+would fail it. Its blast radius is physical, and the containment the zone
+provides - a subnet that reaches nothing - is precisely what stops it working,
+because reaching every device on the LAN _is_ the application. It needs an
+argument about what it may reach outward and who may reach it, not a subnet
+that isolates it from its own purpose.
 
-The fail-closed principle is not "the attacker cannot get in", it is "what they
-obtain is worthless". Audited against the chosen design, an escape onto the
-untrusted node yields:
+**The mail relay is the zone's real first tenant.** Inbound SMTP from the
+internet, mail at stake, and custom code on top. Every part of the original
+three-layer argument applies to it, and applies more strongly than it ever did
+to a game.
 
-- **No shell, no SSH, no package manager.** Talos has none.
-- **Kubelet credentials scoped by Node authorization and NodeRestriction**, so
-  the node may read secrets of pods bound to it - which, with only untrusted
-  workloads scheduled there, are that workload's own.
-- **No etcd membership**, because workers are not members.
-- **No overlay**, by the schematic.
-- **A zone subnet with policy on it.**
-- **The Talos API behind mTLS**, for which the container holds no certificate.
+#### What the zone still is, and why it was worth building
 
-A machine that reaches nothing and can read its own secrets. That is the
-property being bought, and each of the three layers above is load-bearing for
-one line of it.
+Unchanged in mechanism, and the record below it stands: a dedicated machine on
+its own subnet and vnet, from an image without the overlay extension, tainted
+so nothing else lands there. The three layers still answer three different
+questions - what it may talk to, what shares its kernel, what the machine
+itself can reach - and the audit of what an escape obtains still holds.
 
-#### The dedication has to be enforced, not conventional
+What changed is when to reach for it. It is not where workloads go. It is what
+a workload gets when its exposure or its blast radius earns it, and the
+per-workload zone model means the next one that does costs a config entry.
 
-The audit holds only while the node runs untrusted workloads **and nothing
-else**. If the scheduler places anything else there, the blast radius grows and
-nothing announces it.
+#### The game server moves to the shared workers
 
-So it is a **taint with `NoSchedule`, and a toleration carried only by workloads
-in the untrusted zone** - not a `nodeSelector` convention and not a note in this
-record. This repository has already shipped one policy that applied cleanly and
-enforced nothing; the distinction between isolation that exists and isolation
-somebody believes in is the whole subject of this epoch.
+By the axis above it is the least demanding thing on the list: no inbound path
+at all under crossplay, and a world save as its entire blast radius. A
+dedicated machine for it was proportionate to a threat model that turned out
+not to describe it.
 
-#### Consequences for naming, and for capacity
+One thing follows it there and is not optional. The shared workers are where
+the CI runner lives, and that runner holds a vault token with read and write
+over the whole vault. **Blast radius is not only what a workload holds - it is
+what is reachable from where it sits.** The game server's own radius is
+trivial; its neighbour's is the estate.
 
-The machine is `<site>-dmz-100` at `10.<site>.30.100`, per the addressing
-decision in [`02-abstraction.md`](02-abstraction.md). **The workload gets no
-machine name at all** - it is a namespace and a Deployment, named in Kubernetes.
-That separation is why the environment never needed to appear in a VM name.
+That is not an argument for a zone, and two answers were considered before
+landing on neither.
 
-On capacity: a dedicated node wants roughly 4-6 GiB, and only about 8 GiB
-remains after epoch 02's two workers. That is tight until the build VM's 16 GiB
-returns, which is expected, and it sequences correctly - the workers are epoch
-02 and this is epoch 03.
+**A node anti-affinity** between the workload and the runner. Rejected on
+shape: the rule is written on every workload, against the runner, so it is N
+rules and forgetting one silently puts something on the same kernel as a token
+with read and write over the whole vault. Fail-open, and it gets worse as
+workloads are added.
 
-Two things this does **not** solve, both already named above. The world save is
-on OpenEBS Local PV Hostpath and therefore pinned to a node - now a node
-specifically chosen to be destroyable. And the tailnet's allow-all policy
-remains the reason any new device on the mesh has full reach; keeping this node
-off the overlay sidesteps it rather than fixing it.
+**A worker dedicated to CI**, tainted, with the runner tolerating it. Much
+better shape - one rule, written once, on the thing that actually holds the
+credential, and a forgotten toleration means a workload does not land there
+rather than that it does. It is the taint-over-convention argument this epoch
+already made, applied to the privileged side: **isolate the crown jewels, not
+each visitor from them**, because the privileged things can be enumerated and
+future workloads cannot.
+
+**Separated, but by adding workload nodes rather than by reserving a CI one.**
+
+The density objection to a dedicated CI worker was real: the estate is
+deliberately being packed, CI is bursty, and holding a machine idle for it
+fights what this epoch is for. That objection dissolves once the split is
+described from the other side. CI keeps the workers that already exist and are
+already sized for it; the workloads get nodes of their own, which is capacity
+being added for work that is about to run rather than capacity standing by.
+
+Same separation, and the memory is spent on the things being packed instead of
+on the thing that idles.
+
+So the classes are:
+
+| Node class        | Runs                                             | Taint                         |
+| ----------------- | ------------------------------------------------ | ----------------------------- |
+| **Control plane** | etcd and the API                                 | Untainted today; see epoch 02 |
+| **Privileged**    | CI, and anything else holding estate credentials | Tolerated only by that work   |
+| **Workload**      | Things found on the internet and self-hosted     | Tolerated only by workloads   |
+
+#### And it needs a guard, because a declaration nobody checks is a convention
+
+The operator's requirement, and it is the right one: privileged work must not
+end up on a machine running things somebody found on the internet.
+
+Placement by convention fails the way every convention here has. A workload
+added without the right toleration does not fail - it schedules somewhere, and
+the somewhere is decided by whatever the scheduler finds convenient. Nothing
+reports it, and the first sign is an incident.
+
+The guard has two halves, and both are needed because each alone is
+satisfiable while the property is false:
+
+- **Every workload manifest places itself on workload nodes**, by toleration and
+  node selection. A workload with neither is one the scheduler may put beside
+  the vault token.
+- **Nothing privileged tolerates the workload taint.** The reverse direction,
+  and the one that would otherwise be missed: it is the privileged side moving
+  that puts the two together, and CI already carries tolerations for reasons of
+  its own.
+
+It lands with the node classes rather than before them. There is nothing to
+assert while `environments/` is empty and both classes are one undifferentiated
+pool - a guard written now would pass by finding nothing, which this repository
+has a test specifically to refuse.
+
+#### Is there actually a vector? Walked, rather than assumed
+
+Four answers were written for this before anybody asked how the attack would
+work. That question turns out to settle it, and it should have come first.
+
+**Pod to pod: no.** The runner's token is a Kubernetes Secret mounted into the
+runner's own mount namespace. A neighbouring pod cannot read it off disk, and
+cannot read it through the API either - RBAC does not grant it, and a workload
+with `automountServiceAccountToken: false` has no identity to ask with.
+
+**Escape to the node: yes, and it is the only one.** The kubelet stores mounted
+secrets under `/var/lib/kubelet/pods/<uid>/volumes/kubernetes.io~secret/`, which
+root on the host can read. The kubelet's own credential reaches the same place
+by Node authorization. So the chain is: remote code execution in the workload,
+then a container escape to node root, then the token.
+
+**The second step is the hard one.** Talos has no shell, no package manager and
+a read-only root, and enforces Pod Security - a workload running non-root
+without `privileged` or `hostPath` needs a kernel vulnerability to escape, not a
+misconfiguration.
+
+Two things lower it further, and both are recent:
+
+- Nothing on these workers is internet-**inbound** now that crossplay removed
+  the port forward. The chain has no obvious place to start.
+- The self-hosted runner does not execute pull-request code. `pr-validation`
+  runs on GitHub-hosted runners, and the integration lane is deliberately not
+  reachable from a pull request.
+
+**So: real but narrow.** Two hard steps, one of them a kernel exploit.
+
+#### Which makes the response proportionate rather than urgent
+
+The consequence is total - read and write over the whole vault is the estate -
+and self-hosted software does get remote code execution. That asymmetry is what
+makes it worth something rather than nothing.
+
+- **It does not block a workload.** A relay-only game server running non-root
+  does not start the chain.
+- **The separation is taken when workload nodes are added anyway**, where it
+  costs a taint and a toleration. It was never worth a machine standing idle,
+  which is what the first three answers each talked themselves into.
+- **Narrowing the token is the higher-value fix**, and it is the one this
+  estate's own rule points at: narrow what a credential may **do** before
+  hardening where it is **kept**. Kernel isolation lowers the probability;
+  narrowing lowers the consequence, and a lowered consequence keeps holding
+  after the isolation has failed and after everyone has stopped watching.
+
+The guard above still lands with the node classes. What changed is that it is
+enforcing a proportionate decision rather than an escalating one.
+
+#### Which splits isolation into two dials rather than one
+
+Worth stating separately, because the zone conflates them and the CI question
+is what pulls them apart:
+
+| Dial                  | Answers                          | Bought with                          |
+| --------------------- | -------------------------------- | ------------------------------------ |
+| **Kernel isolation**  | What shares its kernel?          | A dedicated node and a taint         |
+| **Network isolation** | What can it reach, and reach it? | Its own subnet and vnet, plus policy |
+
+They are independent, and most things want neither:
+
+- **CI** would want the first and not the second. Its blast radius is the whole
+  estate, so sharing a kernel with nothing has real value - but it must reach
+  the hypervisor, the API server and the vault, so a subnet isolating it would
+  stop it working.
+- **A mail relay taking inbound SMTP** wants both.
+- **A game server on a relay** wants neither, which is how it ends up on the
+  shared workers.
+
+The zone as built is both dials at once. That is right for what earns it, and
+it is why CI would get a node rather than a zone if it gets anything.
+
+#### How the original decision went wrong, since it is repeatable
+
+Three of the four claims that produced it came from a summary rather than from
+the vendor, and the fourth followed from them:
+
+- The port range was given as UDP 2456-2458. Iron Gate's guide says the server
+  uses the given port and port+1, so 2456-2457. The third port is widely
+  repeated and is not in the documentation.
+- The inbound port forward was treated as unavoidable. The crossplay backend
+  uses a relay: the server connects outbound and no forward is needed.
+- From those, "the first genuinely inbound path into this estate", which was
+  the sentence carrying the whole design.
+
+The requirement doing the most architectural work is the one to verify first,
+and it cost one page of vendor documentation to check - read after the design
+was built rather than before it.
+
+### Cilium arrives from OpenTofu, between bootstrap and the health gate
+
+**Chose:** a manifest rendered from the pinned chart, committed to this
+repository, and applied by OpenTofu after `talos_machine_bootstrap` and before
+`data.talos_cluster_health` - using the `terraform_data` + `local-exec` +
+`kubectl` pattern `gitops.tf` already uses to bootstrap Flux.
+**Rejected:** Talos `inlineManifests`; the Cilium CLI; adding the Helm provider.
+**Because:** three of the four cannot be upgraded, cannot be reviewed, or cannot
+be seen by the guard that checks suppliers.
+
+#### Why the obvious answer is the wrong one
+
+`inlineManifests` looks correct and is the first thing anyone reaches for: the
+manifest travels with the machine config, so it is applied as the cluster comes
+up and the ordering problem disappears. Sidero's own documentation closes it:
+
+> Talos only creates missing resources from inline manifests - it never deletes
+> or updates them.
+
+So Cilium would be installed once and reconciled by nothing. Changing it means
+editing the control-plane machine configuration and running
+`talosctl upgrade-k8s` by hand, which is an imperative path outside the button
+and precisely the shape this estate refuses everywhere else. The second cost is
+review: a rendered CNI chart is thousands of lines, and this would put them
+inside the machine configuration - the most privileged document the estate
+produces, and the one whose diffs most need to be readable.
+
+The **Cilium CLI** is a new supplier, a new binary, and imperative. It is
+documented by Sidero for development and testing, which is what it is for.
+
+The **Helm provider** is the closest call, and is rejected for this path only.
+A provider is not a library: it is a binary downloaded at init and executed
+locally with a live credential, which is why `approved-suppliers.yml` treats
+providers as the most privileged deliveries here. It would also fetch the chart
+at apply time, so the image digests would never appear in this repository - and
+a digest that is not committed is one `tests/go/repo/suppliers_test.go` cannot
+read. Adopting Helm later for the workload tier is a separate question that
+this decision does not foreclose.
+
+#### What the chosen route buys, and what it costs
+
+It buys four things: the digests are committed, so the supplier guard can
+actually see them; the diff of a Cilium bump is a diff of Kubernetes objects
+rather than of a machine configuration; the apply mechanism is one already
+reviewed and in the tree; and no new supplier is required.
+
+It costs a large generated file in git, and a regeneration step. **That step
+must be codified rather than remembered** - a `task` verb that re-renders from
+the pinned chart version, with a test asserting the committed manifest matches
+what that version renders. A generated artefact nobody can regenerate
+deterministically is worse than no artefact, because it silently becomes the
+source of truth.
+
+#### The ordering works because the control plane does not need a CNI
+
+Worth writing down, because it is the fact the whole sequence rests on and it
+is not obvious. `kube-apiserver`, `etcd`, `kube-controller-manager` and
+`kube-scheduler` run as static pods on host networking. They come up with no
+CNI at all. So the API answers while every node is still `NotReady`, and
+OpenTofu can apply a manifest into a cluster that has no pod network yet.
+
+The sequence is therefore: bootstrap, apply Cilium, nodes reach `Ready`, health
+gate passes. `data.talos_cluster_health` gains a dependency on the apply.
+
+The failure mode if that edge is missing is not subtle and is worth naming so
+it is recognised: with `cni.name: none` and nothing installing a CNI, no node
+ever reaches `Ready`, and the health gate waits its full ten-minute timeout
+before failing. Ten minutes of apparent hang is what a missing dependency looks
+like here.
+
+#### KubePrism, and a single point of failure this declines to inherit
+
+`proxy.disabled: true` hands service routing to Cilium, and Cilium's agents
+then need to reach the API server themselves. They cannot do it through a
+Service ClusterIP, because nothing implements ClusterIP until Cilium is the
+thing implementing it.
+
+The obvious address is the cluster endpoint, and this estate hardcodes that to
+`local.node_ips[0]` - one named control plane, which is issue #316. Pointing
+Cilium at it would promote a known API single point of failure into a **pod
+network** single point of failure: lose that one machine and no node on the
+cluster has working networking.
+
+Talos's answer is **KubePrism**, a TCP load balancer Talos runs on every
+machine at `localhost:7445`, spread across all control-plane endpoints and
+health-filtered. Cilium is configured `k8sServiceHost=localhost` and
+`k8sServicePort=7445`, per Sidero's documented values.
+
+This does **not** fix #316. The kubeconfig and the cluster endpoint still name
+one machine, and that issue stays open. It declines to make it worse, which is
+a different and smaller claim.
+
+**KubePrism is declared explicitly even though it is enabled by default.**
+Relying on an upstream default for load-bearing behaviour is a blind spot: the
+day it changes, the pod network fails and nothing in this repository ever said
+it was required. The estate's own rule is that a guard which is off by default
+is indistinguishable from nothing being wrong.
+
+#### The values Talos requires, read rather than guessed
+
+From Sidero's Cilium guide for the kube-proxy-free variant, recorded here so
+nobody re-derives them from a blog post:
+
+| Value                                      | Setting                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `ipam.mode`                                | `kubernetes`                                                                                     |
+| `kubeProxyReplacement`                     | `true`                                                                                           |
+| `k8sServiceHost`                           | `localhost`                                                                                      |
+| `k8sServicePort`                           | `7445`                                                                                           |
+| `cgroup.autoMount.enabled`                 | `false`                                                                                          |
+| `cgroup.hostRoot`                          | `/sys/fs/cgroup`                                                                                 |
+| `securityContext.capabilities.ciliumAgent` | `CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID` |
+
+The cgroup pair is the Talos-specific half: Talos mounts the cgroup hierarchy
+itself, so Cilium must be told not to.
+
+#### This is a rebuild, and the rebuild has one-way doors
+
+A CNI cannot be swapped on a running cluster - nodes must not be `Ready` when
+it arrives - so this is `demolish` followed by a fresh ignition. The operator
+has confirmed the cluster VMs are disposable and hold nothing, which is what
+makes that acceptable rather than merely necessary.
+
+Two consequences that must be said before the command is run rather than
+discovered during it:
+
+- **The teardown empties the object storage bucket.** `emptyObjectStorage` in
+  `scripts/contractor/internal/phases/teardown.go` deletes every object in the
+  site's bucket, because Cloudflare refuses to delete a bucket that is not
+  empty. The age-encrypted state backups live in that bucket. So the operation
+  most likely to precede needing a state backup is the one that destroys every
+  state backup. This is fine here only because a fresh ignition starts from
+  empty state by design and there is nothing worth restoring - it is not fine
+  in general, and it is not a property to rely on twice.
+- **The OpenTofu state lives inside the cluster being destroyed**, in Postgres.
+  `demolish` consumes that state to know what to destroy, which is the correct
+  order. A teardown that stops partway has already done irreversible work and
+  leaves machines nothing tracks, so preconditions belong before the first
+  irreversible step.
+
+#### What this does not deliver
+
+Cilium makes NetworkPolicy _enforced_. It does not write any policy, and an
+estate with an enforcing CNI and no policies is exactly as open as one with a
+non-enforcing CNI and many. The policies are their own piece of work.
+
+It is also only one of the three isolation layers this epoch's untrusted-zone
+decision names. A dedicated node answers what shares its kernel, and omitting
+the overlay answers what the machine itself reaches; neither is affected by the
+CNI. Cilium is necessary and is not sufficient, and the temptation once it
+lands will be to treat the isolation question as closed.
+
+### The control plane oversees the zone; the zone sees nothing
+
+Settled in discussion before the policy work, so it is inherited rather than
+re-derived.
+
+The intent is asymmetry: the control plane is aware of everything and
+orchestrates it, and from the workload's side the machine it runs on should
+look miraculous - administered by something it cannot see or reach.
+
+**That asymmetry mostly already exists, and not because of the network.** Node
+authorization and NodeRestriction mean the zone's kubelet may read Secrets and
+ConfigMaps only for pods bound to itself. It cannot list other nodes or other
+pods, and it cannot modify its own Node object beyond a narrow set of fields -
+which is the same mechanism that refuses it its own taint, recorded above.
+
+**One part of the intent has to be inverted: Kubernetes pulls.** The kubelet
+opens the connection and watches the API server for pods assigned to it; the
+control plane does not push work down. A node that cannot reach the API is not
+a member, so "reaches nothing at all" is not available. What makes that
+acceptable is the paragraph above - the reach exists and what it obtains is one
+workload's own secrets.
+
+#### The oversight channel is API server to kubelet, and it must be open
+
+`kubectl logs`, `kubectl exec`, `port-forward` and metrics scraping all travel
+API server -> kubelet on **10250**. That is the direction "the control plane
+oversees the zone" actually runs on, and it is the safe one: the control plane
+reaching down grants the zone nothing.
+
+Closing it costs the ability to read a log from the workload this whole epoch
+exists to host, which is a thing nobody misses until the evening it matters.
+
+**Only the API server talks to that node.** Not etcd, not the scheduler, not
+the controller manager. "The control plane" is four components and one of them
+has business here.
+
+#### Why the workload can be denied everything while the node is not
+
+NetworkPolicy governs **pods**. The kubelet is a host process on the host
+network, so pod policy does not apply to it.
+
+So the workload can be denied all cluster access - no API server, no node
+subnet, no hypervisor - while the machine underneath it stays a fully
+orchestrated cluster member. The workload sees nothing, the node is
+administered normally, and the control plane sees everything. That is the
+intent above, and it falls out of the layering rather than needing to be built.
+
+The shape the policy work inherits:
+
+| Direction             | Rule                                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Workload egress       | Deny by default. DNS and the internet only - the game, and its backups. Not the API, not the node subnet, not the hypervisor. |
+| Workload ingress      | Its own ports, from the port forward. Nothing else.                                                                           |
+| API server -> kubelet | Allowed, on 10250. This is the oversight channel.                                                                             |
+| Service account token | `automountServiceAccountToken: false`. It has no use for the API, so it is not handed a token.                                |
+
+That last row is worth doing even though the egress rule already makes the
+token useless: a credential that cannot be spent is still a credential that was
+handed over, and the cheaper habit is not to mount it.
+
+### Removing the untrusted zone
+
+Written while the zone is being built rather than when it is being removed,
+because the thing that makes deprecation painful is never the design - it is
+that nobody wrote down which parts were optional.
+
+The workload this zone was built for will be deprecated one day. Removing it
+must be a config change and a converge, never a rebuild, and this is the path.
+
+#### The order matters, innermost first
+
+1. **The workload.** Delete its directory under `environments/`. Flux syncs
+   `./clusters/management` with `prune: true`, so the objects go with it. This
+   is the only step that needs no privilege beyond a merge.
+2. **The machine.** Remove that workload's entry from the site's `dmz_zones`,
+   then `contractor converge`. A machine in a zone is not an etcd member, so
+   this is a drain and one destroy rather than a quorum event. Removing one
+   zone renumbers no other: the zones are sorted by name and each keeps the
+   subnet it was given, so a neighbour being deprecated never moves a surviving
+   workload's addresses out from under its firewall rules.
+3. **The port forward.** On the router, by hand. Nothing in this repository can
+   see it, which is the reason it is listed here at all.
+4. **The network**, below.
+
+Doing this in the other order takes a workload's network away while the
+workload is still running, which is a diagnosis nobody enjoys.
+
+#### What removing the last zone does on its own
+
+Everything derived from the machines stops existing: no VM, and no second
+image, because `proxmox_download_file.dmz_disk_image` keys off
+`local.dmz_hypervisors` rather than off the site. The SDN tasks **loop over the
+zones** rather than being gated on a count, which is the stronger form of the
+same property - a `when:` has to be remembered on every task, and a loop over
+an empty list cannot run at all.
+
+`tests/go/repo/untrusted_zone_offswitch_test.go` holds both halves of that in
+place - that every zone resource keys off its machines, and that every zone
+task carries the gate - and
+`TestNoUntrustedWorkloadDerivesNoZone` covers the config half. They exist
+because both mistakes read as correct in review: keying off the site is what
+the resource above does, and a task that keeps its idempotency check still
+looks guarded.
+
+#### What is left behind, and how to clear it
+
+**Ansible creates and never removes.** So three things survive
+`dmz_count: 0`, all inert, none of them dangerous, and none of them obvious to
+whoever finds them later:
+
+- each zone's vnet (`vnetdmz0`, `vnetdmz1`, ...)
+- each of their subnets
+- the second Talos image in `local-iso`, once no zone is left
+
+Clearing them is a hypervisor operation, listed before deleted because the
+subnet id is generated and should be read rather than guessed:
+
+```sh
+# What is actually there
+pvesh get /cluster/sdn/vnets --output-format json | grep vnetdmz
+pvesh get /cluster/sdn/vnets/<vnet from the listing>/subnets --output-format json
+pvesm list local-iso | grep '/dmz-'
+
+# Remove, innermost first, then apply the SDN change
+pvesh delete /cluster/sdn/vnets/<vnet>/subnets/<id from the listing>
+pvesh delete /cluster/sdn/vnets/<vnet>
+pvesh set /cluster/sdn
+
+pvesm free local-iso:iso/<image from the listing>
+```
+
+`pvesh set /cluster/sdn` performs a network reload on the hypervisor - see the
+note in `hypervisor-prep.yml` about what that call actually does. It is the
+same operation the playbook runs conditionally, and it is not free enough to
+run for no reason.
+
+#### What is not removed, deliberately
+
+**Cilium stays, and that is not an oversight.** Swapping the CNI back would
+need another rebuild in the other direction, and nothing wants Flannel back:
+enforced NetworkPolicy is what lets the hypervisor grant recorded in
+[`02-abstraction.md`](02-abstraction.md) be narrowed to the runner pod, which
+that record names Flannel as the reason it could not be. The untrusted workload
+motivated the upgrade; it does not own it.
+
+**The zones' addressing stays too.** Each subnet, gateway and VNI is derived
+from the site's octet and the zone's position in the sorted list rather than
+chosen, so they cost nothing while unused. A zone that returns under the same
+name returns to the same addresses. Deleting that would be deleting arithmetic.
 
 ## Outcome
 
 ## Deferred
 
 ## Gotchas
+
+### Rendering the chart emits real private keys, and the chart says so
+
+Found on the first render, by gitleaks, before anything was committed.
+
+`helm template` on the Cilium chart with its defaults emits key material as
+part of the output: a `cilium-ca` Secret carrying `ca.key`, and
+`hubble-server-certs` carrying `tls.key`. Committing the rendered manifest -
+which is the whole delivery route this epoch chose - would therefore have
+published a CA private key to a public repository.
+
+The chart labels those objects `cilium.io/helm-template-non-idempotent: "true"`
+itself, so this is documented upstream rather than surprising. The second
+consequence follows from that label: the keys are **regenerated on every
+render**, so the committed file would show a meaningless diff every time
+`task render-cni` ran, and the drift check that exists to prove the manifest
+matches the pinned chart would be proving nothing.
+
+Both problems have one cause, and it is Hubble. `hubble.enabled: false` removes
+every Secret from the output - verified, zero `kind: Secret` objects remain, and
+the only surviving `tls.key` strings are `optional: true` clustermesh volume
+projections naming a key inside a Secret rather than carrying one.
+
+Hubble is observability and belongs to epoch 04, so this defers it rather than
+discarding it. Turning it on later is not just flipping the flag: it means
+deciding where the certificates come from - cert-manager, or Cilium's own
+cronJob method - because the one thing that must not happen is baking them into
+git.
+
+### Which machines get which half, and the node that does not exist yet
+
+Asked during review, and worth answering in the record because the split is not
+obvious from the diff.
+
+**`cluster.network.cni.name` and `cluster.proxy.disabled` are set once, on the
+control plane's config.** They are cluster-level facts rather than machine
+ones - they decide which bootstrap manifests Talos renders, and only a control
+plane renders those. This is the same convention `allowSchedulingOnControlPlanes`
+already follows a few lines above, for the reason that file already gives: a
+worker repeating it would be a second declaration of one fact, and two
+declarations of one fact eventually disagree.
+
+**KubePrism is machine-level, and every machine gets it.** It lives in
+`local.machine_patches`, which is built from
+`all_machines = merge(local.control_plane, local.workers)`, and both the
+control-plane and worker configurations consume it. That is not incidental: an
+agent on a worker has exactly the same problem as one on a control plane, since
+without kube-proxy there is no ClusterIP anywhere in the cluster to reach the
+API through.
+
+**Workers get Cilium because the agent is a DaemonSet.** There is nothing to
+configure per worker.
+
+**The DMZ node does not exist yet, and its readiness is already decided.** It is
+planned as a dedicated worker carrying a `NoSchedule` taint, with the toleration
+held only by workloads in the untrusted zone. A CNI has to ignore that: a node
+with no agent has no pod network, never reaches `Ready`, and never joins the
+cluster - so tainting it without a tolerating CNI would produce a machine that
+silently never arrives. Cilium's agent DaemonSet carries
+`tolerations: [{operator: Exists}]`, which covers it, and
+`TestTheCNIReachesEveryNodeIncludingTaintedOnes` now holds that in place before
+the node exists to test against.
+
+Worth naming the shape, because this repository has refused a blanket
+`operator: Exists` toleration before - on an unpinned debug image proposed for a
+control plane. The distinction is real rather than convenient: there, the
+toleration widened where untrusted code could run; here, it is the condition on
+a machine having a network at all.
+
+**The general shape is worth keeping.** "Render a chart and commit the result"
+is a reasonable pattern and this estate now uses it, but a chart is a program
+and some charts generate secrets when you run them. Any future use of this
+pattern checks the output for `kind: Secret` before committing, and the reason
+that check exists is this one.

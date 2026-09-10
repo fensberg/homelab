@@ -1,0 +1,80 @@
+# Cilium's values, and every one of them is here for a reason Talos gives.
+#
+# `task render-cni` turns this plus the chart version in scripts/versions.env
+# into cilium.yaml beside it. Change this file, re-render, commit both.
+#
+# Sourced from Sidero's own Cilium guide rather than from a blog post:
+# https://docs.siderolabs.com/kubernetes-guides/cni/deploying-cilium
+
+# Talos assigns pod CIDRs through Kubernetes itself, so Cilium takes them from
+# the node spec rather than running its own allocator.
+ipam:
+  mode: kubernetes
+
+# Cilium replaces kube-proxy entirely; talos.tf sets cluster.proxy.disabled to
+# match. Both halves have to move together - one without the other leaves two
+# things programming service routing on every node.
+kubeProxyReplacement: true
+
+# Where the agents find the API server, and the reason this is not the cluster
+# endpoint.
+#
+# Without kube-proxy there is no ClusterIP to reach the API through, because
+# nothing implements ClusterIP until Cilium is the thing implementing it. The
+# obvious address is the cluster endpoint, which this estate hardcodes to one
+# control plane (#316) - pointing every agent at it would turn a known API
+# single point of failure into a pod-network one: lose that machine and no node
+# has working networking.
+#
+# KubePrism is Talos's answer: a TCP load balancer on every machine at
+# localhost:7445, spread across all control-plane endpoints and health-filtered.
+# talos.tf declares it explicitly rather than relying on it being default-on.
+k8sServiceHost: localhost
+k8sServicePort: 7445
+
+# Talos mounts the cgroup hierarchy itself, so Cilium must be told not to.
+cgroup:
+  autoMount:
+    enabled: false
+  hostRoot: /sys/fs/cgroup
+
+# Talos's documented capability sets. A CNI is the node's network, so these are
+# wide by nature - which is why the epoch record calls this the most privileged
+# delivery in the chart list and says so in as many words.
+securityContext:
+  capabilities:
+    ciliumAgent:
+      - CHOWN
+      - KILL
+      - NET_ADMIN
+      - NET_RAW
+      - IPC_LOCK
+      - SYS_ADMIN
+      - SYS_RESOURCE
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    cleanCiliumState:
+      - NET_ADMIN
+      - SYS_ADMIN
+      - SYS_RESOURCE
+
+# Hubble is off, and the reason is not that it is unwanted.
+#
+# `helm template` with Hubble enabled emits real key material: a `cilium-ca`
+# Secret carrying `ca.key`, and `hubble-server-certs` carrying `tls.key`. The
+# chart labels them `cilium.io/helm-template-non-idempotent: "true"` itself,
+# which is Cilium saying out loud that a re-render produces different keys.
+#
+# Committing that would publish a CA private key to a public repository, and it
+# would make the drift check meaningless - every `task render-cni` would show a
+# diff that means nothing. gitleaks caught it on the first render, which is the
+# guard doing exactly its job.
+#
+# Hubble is observability and belongs to epoch 04, so this defers rather than
+# discards it. Turning it back on means deciding where its certificates come
+# from - cert-manager, or Cilium's own cronJob method - rather than baking them
+# into git.
+hubble:
+  enabled: false

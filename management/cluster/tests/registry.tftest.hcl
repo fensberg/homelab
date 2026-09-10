@@ -173,3 +173,17 @@ run "negative_worker_count_fails_its_precondition" {
 
   expect_failures = [terraform_data.invariants]
 }
+
+run "negative_zone_node_count_fails_its_precondition" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/negative-zone-node-count.json"
+  }
+
+  plan_options {
+    target = [terraform_data.invariants]
+  }
+
+  expect_failures = [terraform_data.invariants]
+}

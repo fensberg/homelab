@@ -9,8 +9,41 @@
 # to edit, and the broad ClusterRole permissions it flags are inherent to
 # how a GitOps controller has to work, not a misconfiguration in code we
 # control.
+# HEALTHCHECK, which Kubernetes ignores.
+#
+# CKV_DOCKER_2 wants a HEALTHCHECK instruction in every image. Nothing built
+# here runs anywhere but Kubernetes, and the kubelet does not read that
+# instruction at all - liveness and readiness probes on the pod are what
+# decides whether a container is healthy, and they live in the manifest where
+# they can be tuned without rebuilding an image.
+#
+# Adding one to satisfy this check would add an instruction that never
+# executes, which is worse than not having it: it reads as a health check to
+# whoever finds it next.
+#
+# Removed when something here is built to run outside Kubernetes.
+skip-check:
+  - CKV_DOCKER_2
+
 skip-path:
   - clusters/management/flux-system
+  # clusters/bootstrap/ is Cilium's own chart output, committed verbatim for
+  # the same reason flux-system is: a version bump should be a reviewable diff
+  # of what actually changes in the cluster, not a one-line version bump nobody
+  # can see the consequences of.
+  #
+  # Every finding checkov raises in it is true and is inherent to what a CNI is
+  # - privileged, hostNetwork, CAP_NET_ADMIN, hostPath mounts. A CNI is the
+  # node's network; there is no version of one that satisfies these rules. That
+  # privilege is not being waved away here, it is recorded deliberately in
+  # scripts/approved-suppliers.yml, which calls Cilium the most privileged
+  # delivery in that file and says why in as many words.
+  #
+  # What this DOES cost: a future chart version adding a new hostPath or a
+  # broader ClusterRole would not be flagged. The compensating control is that
+  # the manifest is committed, so that change appears in a pull request diff -
+  # which is the whole reason it is committed rather than fetched at apply time.
+  - clusters/bootstrap
   # The root kustomization.yaml lists flux-system as a resource, so
   # Checkov's kustomize build starting from this file pulls in the same
   # vendored Deployment/ClusterRole objects and attributes findings about

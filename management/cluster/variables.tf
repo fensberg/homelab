@@ -142,6 +142,21 @@ locals {
   control_plane_band = 100
   worker_band        = 200
 
+  # The untrusted zones: one subnet each, not a band inside the node subnet.
+  #
+  # A band would put the machine that takes inbound traffic from strangers on
+  # the same L2 as every control plane. A subnet each - rather than one shared
+  # by every untrusted workload - is because two untrusted workloads on one
+  # segment can reach each other, and what shares a kernel is the whole reason
+  # either gets a machine of its own.
+  #
+  # 30 upwards is the range 02-abstraction.md reserves for tenants with their
+  # own ranges, which is exactly what a zone is. No new overlay route is needed:
+  # hypervisor-prep advertises the site's whole /16.
+  dmz_first_subnet = 30
+  dmz_max_zones    = 10
+  dmz_band         = 100
+
   # The one number every other identifier is derived from.
   host_octets = [for i in range(local.node_count) : local.control_plane_band + i]
 
@@ -219,6 +234,60 @@ locals {
       hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[i % length(local.hypervisors)].hostname : ""
     }
   }
+
+  # The untrusted zones, keyed by the workload each exists for.
+  #
+  # Sorted, so a zone's subnet does not move when another is added or removed.
+  # An address that shifts under a workload because a neighbour was deprecated
+  # is a firewall rule silently pointing at somebody else.
+  #
+  # This has to agree with ResolveSiteNetwork in
+  # scripts/contractor/internal/config/config.go, the same contract every other
+  # tier here already implements twice.
+  dmz_zones_in   = try(local.site.dmz_zones, {})
+  dmz_zone_names = sort(keys(local.dmz_zones_in))
+
+  dmz_zones = {
+    for i, zone in local.dmz_zone_names : zone => {
+      name  = zone
+      index = i
+      cidr  = "10.${local.octet}.${local.dmz_first_subnet + i}.0/24"
+      # Indexed rather than named: a Proxmox vnet id is capped at eight
+      # characters, which a workload name of any length will exceed.
+      vnet = "vnetdmz${i}"
+      # Banded so a second zone at one site cannot collide with a first zone at
+      # another: the node vnet tops out at 11000+octet, and these start at
+      # 12100.
+      vni = 12000 + local.octet * 100 + i
+      # Absent means one. A zone with no machine is a subnet and a VXLAN
+      # identifier nothing sits on.
+      nodes = try(local.dmz_zones_in[zone].node_count, 0) > 0 ? local.dmz_zones_in[zone].node_count : 1
+    }
+  }
+
+  # Every zone's machines, flattened and keyed so one can be removed without
+  # renumbering the rest.
+  dmz = merge([
+    for zone, z in local.dmz_zones : {
+      for j in range(z.nodes) : "${zone}-${local.dmz_band + j}" => {
+        zone       = zone
+        host_octet = local.dmz_band + j
+        ip         = cidrhost(z.cidr, local.dmz_band + j)
+        name       = "${local.site_name}-${zone}-${local.dmz_band + j}"
+        vm_id      = local.octet * 1000 + 300 + z.index * 10 + j
+        hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[(z.index + j) % length(local.hypervisors)].hostname : ""
+      }
+    }
+  ]...)
+
+  dmz_keys  = sort(keys(local.dmz))
+  dmz_ips   = [for k in local.dmz_keys : local.dmz[k].ip]
+  dmz_names = [for k in local.dmz_keys : local.dmz[k].name]
+
+  # Only hypervisors actually hosting an untrusted machine pull the second
+  # image. A ~4.5GB decompressed disk image on a node with nothing to run it is
+  # a cost with no purpose, and the set is empty when no zone is declared.
+  dmz_hypervisors = distinct([for k in local.dmz_keys : local.dmz[k].hypervisor])
 
   # Ordered views, for the places that genuinely need a list: the first node is
   # the cluster endpoint and the NodePort host, and the health data source takes
@@ -331,6 +400,28 @@ locals {
   # this is that change, and every node is rebuilt by it either way.
   schematic_id = "6e810eb45767cfabcdb7a45e389eee803045af7a9467faebde5c91164861883a"
 
+  # The same image without the overlay extension, for the untrusted zone.
+  #
+  # This is the layer that answers "what does the machine itself reach", and it
+  # cannot be a configuration setting: every node carrying the tailscale
+  # extension from one shared schematic is how a compromised pod on any of them
+  # reaches the hypervisor, the workstation and every other site, because the
+  # tailnet policy is still the default allow-all. Leaving the extension out of
+  # the image is the only form of that answer which a machine cannot talk its
+  # way back into.
+  #
+  # Minted from the schematic above with siderolabs/tailscale removed and
+  # siderolabs/util-linux-tools kept; the Factory ids are content-addressed, so
+  # this one is exactly that customization and nothing else. Verified against
+  # factory.talos.dev/schematics/<id>, which returns the customization it was
+  # minted from.
+  #
+  # Both ids resolve their extensions from talos_version above, so the two
+  # images move together rather than drifting apart on a version bump - and #97
+  # applies to both: an image change reaches a running estate only through a
+  # rebuild.
+  dmz_schematic_id = "70d243b7e2cbe699e4db5e73356a2add6b4bb8e34eadba9db22c823110e79099"
+
   gitops_target_path = "clusters/management"
 
   # --- state database ------------------------------------------------------
@@ -363,5 +454,13 @@ output "site_network" {
     worker_ips       = local.worker_ips
     worker_names     = local.worker_names
     worker_placement = local.worker_placement
+
+    # The untrusted zone is reported alongside the rest for the same reason the
+    # workers are: a tier nothing consumes is a tier tflint cannot see, and this
+    # one has its own subnet, so leaving it out would make the estate's own
+    # description of its addressing incomplete in the place it matters most.
+    dmz_zones = local.dmz_zones
+    dmz_ips   = local.dmz_ips
+    dmz_names = local.dmz_names
   }
 }

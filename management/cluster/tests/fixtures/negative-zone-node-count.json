@@ -1,0 +1,60 @@
+{
+  "organization": {
+    "name": "Fixture Org"
+  },
+  "source_control": {
+    "repo_url": "https://example.invalid/fixture/repo",
+    "foreman_bot": {
+      "app_id": "1234567",
+      "installation_id": "12345678",
+      "private_key": "not-a-key-these-fixtures-are-shape-only"
+    }
+  },
+  "object_storage": {
+    "account_id": "fixture-account-id",
+    "admin_token": "fixture-admin-token"
+  },
+  "state_backup": {
+    "recipient": "age1fixturefixturefixturefixturefixturefixturefixturefixture"
+  },
+  "sites": {
+    "site0": {
+      "name": "Fixture Site",
+      "octet": 10,
+      "control_plane_count": 3,
+      "worker_count": 0,
+      "dmz_zones": {
+        "example": { "node_count": -1 }
+      },
+      "hypervisor": {
+        "provider": "proxmox",
+        "vault_provider": "proxmox",
+        "token_id": "fixture@pve!fixture",
+        "token_secret": "00000000-0000-0000-0000-000000000000",
+        "nodes": {
+          "node0": {
+            "hostname": "fixture-hv0",
+            "ip": "10.10.0.5"
+          }
+        }
+      },
+      "overlay_network": {
+        "provider": "tailscale",
+        "vault_provider": "tailscale",
+        "domain": "fixture.ts.net",
+        "client_id": "fixture-client-id",
+        "client_secret": "fixture-client-secret"
+      },
+      "object_storage": {
+        "provider": "cloudflare",
+        "vault_provider": "cloudflare",
+        "access_key_id": "f1e2d3c4b5a697887766554433221100",
+        "secret_access_key": "fixture-secret-access-key",
+        "bucket": "fixture-state-bucket"
+      },
+      "database": {
+        "password": "fixture-db-password"
+      }
+    }
+  }
+}

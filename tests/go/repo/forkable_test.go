@@ -177,3 +177,67 @@ The callers of this are leak guards. Inspecting zero files passes every one of
 them, and looks identical to a repository with nothing to find.`)
 	}
 }
+
+// An untrusted zone is named after the workload it hosts, which makes the zone
+// name the second thing likeliest to be pasted in from real life.
+//
+// It is not a secret in the way a site or a hypervisor name is, and nobody
+// would be harmed by it. The reason it stays out is a design one: the zone is
+// for untrusted work rather than for any particular workload, and a plumbing
+// layer that names its first tenant is how a general capability quietly
+// becomes that tenant's feature. The record names the workload, because the
+// record is where the motivation belongs; the machinery should read the same
+// whoever moves in next.
+//
+// So zone names in committed fixtures and tests use the same documented
+// placeholders site names do.
+func TestZoneNamesUseAPlaceholder(t *testing.T) {
+	root := repoRoot(t)
+
+	// Both shapes a zone name is written in: a config fixture's map key, and
+	// the Go test fixture that builds one directly.
+	inJSON := regexp.MustCompile(`"dmz_zones"\s*:\s*\{\s*"([a-z][a-z0-9-]*)"`)
+	inGo := regexp.MustCompile(`DMZZone\{\s*"([a-z][a-z0-9-]*)"`)
+
+	var checked int
+	for _, dir := range []string{
+		filepath.Join(root, "management", "cluster", "tests"),
+		filepath.Join(root, "scripts"),
+	} {
+		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return err
+			}
+			if !strings.HasSuffix(path, ".json") && !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(root, path)
+			for _, pattern := range []*regexp.Regexp{inJSON, inGo} {
+				for _, m := range pattern.FindAllStringSubmatch(string(body), -1) {
+					checked++
+					if !isPlaceholderSite(m[1]) {
+						t.Errorf("%s names an untrusted zone %q.\n\n"+
+							"A zone is named after the workload it hosts, and naming a real one here "+
+							"makes the plumbing read as that workload's rather than as a general "+
+							"capability - which is how the next tenant inherits somebody else's "+
+							"assumptions. Use one of the documented placeholders; the epoch record is "+
+							"where the actual workload belongs.", rel, m[1])
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walking %s: %v", dir, err)
+		}
+	}
+
+	if checked == 0 {
+		t.Fatal("no untrusted zone is named in any fixture or test, so this test proves nothing.\n\n" +
+			"Either the zones moved or the shapes they are written in changed.")
+	}
+}

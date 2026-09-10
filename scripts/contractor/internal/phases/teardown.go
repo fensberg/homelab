@@ -79,7 +79,53 @@ func forgetClusterInternalResources(ctx *run.Context) {
 	run.Ok("cluster-internal resources forgotten; they go with the disks")
 }
 
-// emptyObjectStorage deletes every object in the site's bucket.
+// workloadBucketAddress is the one resource the teardown deliberately loses
+// track of.
+const workloadBucketAddress = "cloudflare_r2_bucket.workloads"
+
+// forgetWorkloadBucket takes the workload bucket out of state before the
+// destroy, so the destroy cannot delete it.
+//
+// This is the exception to the rule stated above - that forgetting something
+// which outlives the VMs leaves a real thing nothing tracks - and it is
+// deliberate rather than an oversight in that rule.
+//
+// The alternative is worse in both directions. Left in state, the destroy
+// tries to delete a bucket Cloudflare refuses to delete while it has objects
+// in it, and the teardown stops part-way with the machines still running -
+// which is the failure the emptying below exists to prevent. Emptied first, the
+// destroy succeeds and takes every workload backup with it, which is the entire
+// thing this bucket exists not to do: a rebuild is the routine way a new Talos
+// version reaches these machines, so "survives a teardown" is the normal path.
+//
+// The window where nothing tracks it closes on the next ignition, which adopts
+// it exactly as it adopts the state bucket. If there is no next ignition, an
+// empty bucket is a rounding error on a Cloudflare bill and the data in it is
+// the reason it was kept.
+func forgetWorkloadBucket(ctx *run.Context) {
+	list, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list")
+	if err != nil {
+		run.Warn("could not list state to find the workload bucket: " + err.Error())
+		return
+	}
+	if !strings.Contains(list, workloadBucketAddress) {
+		return
+	}
+
+	run.Info("keeping the workload bucket - forgetting it so the destroy leaves it alone")
+	if _, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "rm", workloadBucketAddress); err != nil {
+		run.Warn("could not forget the workload bucket: " + err.Error())
+		run.Warn("The destroy will try to delete it, and Cloudflare refuses to delete a bucket with objects in it - so the teardown will stop there with the machines still running. Empty it by hand only if you are certain nothing in it is wanted.")
+		return
+	}
+	run.Ok("workload bucket kept; the next ignition will adopt it")
+}
+
+// emptyObjectStorage deletes every object in the site's STATE bucket.
+//
+// The site's bucket by name, which is what scopes it: the workload bucket has
+// a name of its own and is never reached by this, because what is in it is
+// meant to outlive the estate rather than describe it.
 //
 // Cloudflare refuses to delete a bucket that is not empty, and returns that
 // refusal as a plain apply error part-way through the destroy - so the first

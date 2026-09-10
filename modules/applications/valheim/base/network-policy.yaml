@@ -1,0 +1,80 @@
+---
+# What this workload may talk to, enforced rather than described.
+#
+# Enforced is the operative word and the reason Cilium replaced Flannel: under
+# Flannel this object was accepted, stored, and evaluated by nothing. A policy
+# that looks like isolation and is not is worse than no policy, because it is
+# isolation somebody believes in.
+#
+# The shape comes from docs/epochs/03-workload.md, "The control plane oversees
+# the zone; the zone sees nothing". It governs PODS. The kubelet is a host
+# process on the host network and is not affected - which is what lets the
+# workload be denied the cluster entirely while the machine underneath it stays
+# a fully managed member. The workload sees nothing; the control plane sees
+# everything.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: valheim
+  namespace: valheim
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: valheim
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # NOTHING MAY REACH IT. Not a hardening flourish - a consequence of crossplay.
+  #
+  # The server connects outbound to the relay and players reach it through
+  # that, so there is no inbound path to permit and no port forward on the
+  # router. With the Steam backend this would instead be an allowance for
+  # 2456-2457 from anywhere, which is the design this replaced.
+  ingress: []
+
+  egress:
+    # DNS, and only DNS, into the cluster.
+    #
+    # It has to be named separately because the rule below excludes every
+    # private range, and the DNS service lives in one of them.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # The internet, and nothing on this estate.
+    #
+    # The relay is the reason outbound exists at all, and the backup in a later
+    # change uses the same allowance. Written as "everything except the private
+    # ranges" rather than as an allow-list of the relay's addresses, because
+    # PlayFab's edge is a rotating set nobody can enumerate - the same problem
+    # the image build has with Steam's CDN, and the same honest answer.
+    #
+    # The exclusions are what make this a policy rather than an open door:
+    #
+    #   10.0.0.0/8       every site, the node subnets, pod and service ranges
+    #   172.16.0.0/12    private space this estate does not use but might
+    #   192.168.0.0/16   the house LAN the hypervisor sits on
+    #   169.254.0.0/16   link-local, including the metadata address a cloud
+    #                    workload would be attacked through
+    #
+    # So a compromised server can reach the internet, which it must, and cannot
+    # reach the API server, the hypervisor, the state database, another
+    # workload, or anything on the LAN.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16

@@ -40,6 +40,22 @@ const (
 	// button and `tofu plan` build different estates.
 	ControlPlaneBand = 100
 	WorkerBand       = 200
+
+	// The untrusted zone bands from 100 as well, and does not collide with the
+	// control plane despite sharing the number: it lives in its own /24, so
+	// the pair that has to be unique is (subnet, host) rather than the host
+	// alone. 10.<octet>.10.100 and 10.<octet>.30.100 are different machines on
+	// different networks, which is the entire point of giving the zone a
+	// subnet of its own.
+	DMZBand = 100
+
+	// The third octet the first untrusted zone takes, and how many may exist.
+	//
+	// 02-abstraction.md reserves 10.<site>.30.0/24 and upwards for tenants that
+	// get their own ranges, which is exactly what a zone is. Ten of them keeps
+	// every zone inside 30-39 and well clear of anything else the site uses.
+	DMZFirstSubnet = 30
+	MaxDMZZones    = 10
 )
 
 // RequiredProvidersByConcern is the one vendor this code implements per
@@ -80,11 +96,34 @@ type Site struct {
 	ControlPlaneCount int    `json:"control_plane_count"`
 	// Absent means none, which is what every config described before workers
 	// existed. Zero is a meaningful value here rather than a missing one.
-	WorkerCount    int            `json:"worker_count"`
-	Hypervisor     Hypervisor     `json:"hypervisor"`
-	OverlayNetwork OverlayNetwork `json:"overlay_network"`
-	ObjectStorage  ObjectStorage  `json:"object_storage"`
-	Database       Database       `json:"database"`
+	WorkerCount int `json:"worker_count"`
+	// The untrusted zones, keyed by the workload each exists for.
+	//
+	// A map rather than a count, because two untrusted workloads sharing one
+	// zone share a kernel - and what shares its kernel is precisely why this
+	// estate gives an untrusted workload a machine of its own. That argument
+	// does not stop at the estate boundary; it applies between two untrusted
+	// workloads just as well.
+	//
+	// Isolating them with NetworkPolicy inside one zone would be a convention,
+	// and the day somebody adds a third workload and forgets the policy they are
+	// sharing with nothing saying so. A zone each is structural.
+	//
+	// Absent means none, which is the right default and the shape every config
+	// had before this existed.
+	DMZZones       map[string]DMZZone `json:"dmz_zones"`
+	Hypervisor     Hypervisor         `json:"hypervisor"`
+	OverlayNetwork OverlayNetwork     `json:"overlay_network"`
+	ObjectStorage  ObjectStorage      `json:"object_storage"`
+	Database       Database           `json:"database"`
+}
+
+// DMZZone is one untrusted workload's own network and machines.
+type DMZZone struct {
+	// Machines in this zone. Absent means one: a zone with no machine is a
+	// subnet and a VXLAN identifier nothing sits on, and a workload that has
+	// been declared wants somewhere to run.
+	NodeCount int `json:"node_count"`
 }
 
 type Hypervisor struct {
@@ -169,6 +208,17 @@ func LoadRendered(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+// ResolvedZone is one untrusted zone with its addressing worked out.
+type ResolvedZone struct {
+	Name    string // the workload this zone exists for
+	CIDR    string
+	Gateway string
+	VNet    string // Proxmox vnet id, which the API caps at 8 characters
+	VNI     int
+	IPs     []string
+	Names   []string
+}
+
 // SiteNetwork is everything derived from a site's declared octet: its
 // addressing, EVPN identifiers, and the VM/hostnames that follow from it.
 type SiteNetwork struct {
@@ -191,6 +241,23 @@ type SiteNetwork struct {
 	// can only be wrong.
 	WorkerIPs   []string
 	WorkerNames []string
+
+	// The untrusted zones, one per workload, ordered by name so the addressing
+	// a zone gets is the addressing it keeps.
+	//
+	// Each has its own subnet rather than a band of the node one: a band would
+	// put the machine taking inbound traffic from strangers on the same L2 as
+	// every control plane. Each has its own vnet rather than sharing one: two
+	// untrusted workloads on one L2 segment are two workloads that can reach
+	// each other, and the reason either gets a machine of its own is what shares
+	// its kernel.
+	DMZZones []ResolvedZone
+
+	// Every zone's machines, flattened. AllMachineIPs and AllMachineNames are
+	// built from these, and the health gate and the teardown warning are built
+	// from those.
+	DMZIPs      []string
+	DMZNames    []string
 	Hypervisors []Node
 }
 
@@ -215,18 +282,27 @@ var slugInvalid = regexp.MustCompile(`[^A-Za-z0-9]+`)
 // do we wait on" reads this. A future class - the untrusted node epoch 03
 // needs - is added here and every caller is correct by construction.
 func (n *SiteNetwork) AllMachineIPs() []string {
-	out := make([]string, 0, len(n.NodeIPs)+len(n.WorkerIPs))
+	out := make([]string, 0, len(n.NodeIPs)+len(n.WorkerIPs)+len(n.DMZIPs))
 	out = append(out, n.NodeIPs...)
-	return append(out, n.WorkerIPs...)
+	out = append(out, n.WorkerIPs...)
+	// The untrusted machine is off the overlay and in its own subnet, but it is
+	// still a member of this cluster and still a machine this estate built.
+	// Leaving it out of the count the health gate compares with strict equality
+	// would halt a converge on a cluster that is entirely healthy.
+	return append(out, n.DMZIPs...)
 }
 
 // AllMachineNames is the same set, named rather than addressed. The teardown
 // warns with these, and under-reporting what is about to be destroyed is the
 // failure #213 is about.
 func (n *SiteNetwork) AllMachineNames() []string {
-	out := make([]string, 0, len(n.VMNames)+len(n.WorkerNames))
+	out := make([]string, 0, len(n.VMNames)+len(n.WorkerNames)+len(n.DMZNames))
 	out = append(out, n.VMNames...)
-	return append(out, n.WorkerNames...)
+	out = append(out, n.WorkerNames...)
+	// Named here for the same reason as #213: the teardown warns with this
+	// list, and a machine missing from it is a machine somebody is not told
+	// they are about to destroy.
+	return append(out, n.DMZNames...)
 }
 
 func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
@@ -321,6 +397,14 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	if site.WorkerCount < 0 {
 		return nil, fmt.Errorf("site '%s' has worker_count %d; it cannot be negative", name, site.WorkerCount)
 	}
+	for zone, z := range site.DMZZones {
+		if zone == "" {
+			return nil, fmt.Errorf("site '%s' has an untrusted zone with no name; the name is what its subnet, its machines and its taint are derived from", name)
+		}
+		if z.NodeCount < 0 {
+			return nil, fmt.Errorf("site '%s' zone '%s' has node_count %d; it cannot be negative", name, zone, z.NodeCount)
+		}
+	}
 
 	o := site.Octet
 
@@ -361,6 +445,49 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		workerNames[i] = fmt.Sprintf("%s-wk-%d", slug, host)
 	}
 
+	// The untrusted zones. Sorted, so a zone's subnet does not move when
+	// another is added or removed - an address that shifts under a workload
+	// because a neighbour was deprecated is a firewall rule that silently points
+	// at somebody else.
+	zoneNames := make([]string, 0, len(site.DMZZones))
+	for zone := range site.DMZZones {
+		zoneNames = append(zoneNames, zone)
+	}
+	sort.Strings(zoneNames)
+	if len(zoneNames) > MaxDMZZones {
+		return nil, fmt.Errorf("site '%s' declares %d untrusted zones; the ceiling is %d, which is what keeps their subnets inside the band reserved for them", name, len(zoneNames), MaxDMZZones)
+	}
+
+	zones := make([]ResolvedZone, 0, len(zoneNames))
+	var dmzIPs, dmzNames []string
+	for i, zone := range zoneNames {
+		nodes := site.DMZZones[zone].NodeCount
+		if nodes == 0 {
+			nodes = 1
+		}
+		third := DMZFirstSubnet + i
+		z := ResolvedZone{
+			Name:    zone,
+			CIDR:    fmt.Sprintf("10.%d.%d.0/24", o, third),
+			Gateway: fmt.Sprintf("10.%d.%d.1", o, third),
+			// Indexed rather than named: a Proxmox vnet id is capped at eight
+			// characters, which a workload name of any length will exceed.
+			VNet: fmt.Sprintf("vnetdmz%d", i),
+			// Banded so a second zone at one site cannot collide with a first
+			// zone at another: the node vnet tops out at 11000+octet, and these
+			// start at 12100.
+			VNI: 12000 + o*100 + i,
+		}
+		for j := 0; j < nodes; j++ {
+			host := DMZBand + j
+			z.IPs = append(z.IPs, fmt.Sprintf("10.%d.%d.%d", o, third, host))
+			z.Names = append(z.Names, fmt.Sprintf("%s-%s-%d", slug, zone, host))
+		}
+		dmzIPs = append(dmzIPs, z.IPs...)
+		dmzNames = append(dmzNames, z.Names...)
+		zones = append(zones, z)
+	}
+
 	return &SiteNetwork{
 		Name:        slug,
 		Key:         name,
@@ -376,6 +503,9 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		VMNames:     vmNames,
 		WorkerIPs:   workerIPs,
 		WorkerNames: workerNames,
+		DMZZones:    zones,
+		DMZIPs:      dmzIPs,
+		DMZNames:    dmzNames,
 		Hypervisors: nodes,
 	}, nil
 }

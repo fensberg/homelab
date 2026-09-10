@@ -611,6 +611,147 @@ mutations:
       supply chain: without it, an image walk that stops matching reports every
       image approved and digest-pinned.
 
+  - guard: TestTheHealthGateWaitsForTheCNI
+    file: management/cluster/talos.tf
+    find: "    terraform_data.cilium,"
+    replace: "    talos_cluster_kubeconfig.this,"
+    mentions: "does not depend on"
+    why: >
+      Replaced with a dependency that is already there rather than deleted, so
+      the mutation is the realistic one: somebody tidying a depends_on list and
+      leaving it non-empty. The edge is the entire ordering of the ignition -
+      bootstrap, install the CNI, nodes go Ready, gate passes - and losing it
+      produces no error at all. It produces a ten-minute wait and then a
+      complaint about the cluster's health, ten minutes away from the line that
+      was actually wrong.
+
+  - guard: TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy
+    file: management/cluster/talos.tf
+    find: '            name = "none"'
+    replace: '            name = "flannel"'
+    mentions: "cluster.network.cni.name"
+    why: >
+      Naming Flannel explicitly is the mutation that matters, because it is the
+      thing this estate is moving away from and the thing Talos installs if the
+      setting is lost. Flannel implements no NetworkPolicy controller, so the
+      policies isolating the untrusted workload would be accepted, stored, and
+      never evaluated. The failure is silent by construction: everything comes
+      up healthy and the isolation simply is not there.
+
+  - guard: TestKubePrismIsDeclaredRatherThanAssumed
+    file: management/cluster/talos.tf
+    find: "              port    = 7445\n            }\n          }\n        }\n      }),\n\n      # The taint,"
+    replace: "              port    = 7446\n            }\n          }\n        }\n      }),\n\n      # The taint,"
+    mentions: "7445"
+    why: >
+      Moved in one patch collection and not the other, which is the realistic
+      drift: the port is declared once per collection and as k8sServicePort in
+      the Cilium values, and a change that updates the one somebody was looking
+      at leaves the rest behind. It breaks the pod network on whichever
+      machines took the stale value, with nothing anywhere naming a port.
+
+      The mutation targets the untrusted zone's collection deliberately. This
+      guard used to assert only that the file mentioned KubePrism somewhere,
+      which a second machine class made insufficient - the zone's agents need
+      the endpoint exactly as much as a worker's do, and the check would have
+      been satisfied by somebody else's declaration.
+
+  - guard: TestTheRenderedCNIManifestMatchesThePinnedChartVersion
+    file: scripts/versions.env
+    find: "CILIUM_VERSION=1.20.1"
+    replace: "CILIUM_VERSION=1.19.7"
+    mentions: "render-cni"
+    why: >
+      Bumping the pin and forgetting to re-render is the failure this guard
+      exists for, so the mutation is exactly that. The committed manifest is
+      generated, and a generated file nobody can prove is current silently
+      becomes the source of truth while still claiming to be a copy - the
+      estate would then be running a version no file in it names.
+
+  - guard: TestTheCNIReachesEveryNodeIncludingTaintedOnes
+    file: clusters/bootstrap/cilium.yaml
+    find: "      tolerations:\n        - operator: Exists\n\n      volumes:"
+    replace: "      tolerations:\n        - key: node-role.kubernetes.io/control-plane\n          operator: Exists\n\n      volumes:"
+    mentions: "does not tolerate every taint"
+    why: >
+      Narrowed to a real, plausible toleration rather than deleted, because
+      that is what the regression actually looks like: a keyed toleration reads
+      as more careful than a blanket one, and is the change somebody would make
+      believing they were tightening things. It silently excludes every taint
+      nobody thought to name - which, once the untrusted zone exists, is the
+      DMZ node. That node would never reach Ready, and it would look like a
+      broken machine rather than a missing line in a chart's values.
+
+  - guard: TestEveryZoneResourceIsKeyedOffItsMachines
+    file: management/cluster/compute.tf
+    find: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.dmz_hypervisors)"
+    replace: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.all_vm_hypervisors)"
+    mentions: "keyed off"
+    why: >
+      The mutation is the line the resource directly above it uses, which is
+      what makes it the plausible one: copying a neighbouring for_each reads as
+      consistency rather than as a change of meaning. It pulls a 4.5GB image
+      onto every hypervisor forever, including an estate that has deprecated
+      its last untrusted workload - and nothing fails, so the only symptom is
+      disk somebody notices months later.
+
+  - guard: TestEveryZoneTaskLoopsOverTheZones
+    file: management/hypervisor/hypervisor-prep.yml
+    find: "      loop: \"{{ dmz_zones }}\"\n      loop_control:\n        label: \"{{ item.name }}\"\n      run_once: true\n      tags: [sdn]\n\n    - name: List subnets on each untrusted zone's vnet"
+    replace: "      run_once: true\n      tags: [sdn]\n\n    - name: List subnets on each untrusted zone's vnet"
+    mentions: "without looping over the zones"
+    why: >
+      Dropping the loop from a task that still reads item.vnet is what a
+      copy-paste of the block beside it produces, and it leaves the task running
+      once against an undefined item on every estate - including one with no
+      untrusted workload at all. The loop is the off switch here rather than a
+      `when:`, deliberately: a gate has to be remembered on every task, and a
+      loop over an empty list cannot run.
+
+      This entry replaced one proving a dmz_count gate. The config changed shape
+      from a count to named zones, and the old guard broke while the behaviour
+      it cared about did not - a test matching a variable's spelling rather than
+      the property it stood for.
+
+  - guard: TestZoneNamesUseAPlaceholder
+    file: management/cluster/tests/fixtures/negative-zone-node-count.json
+    find: '"example": { "node_count": -1 }'
+    replace: '"valheim": { "node_count": -1 }'
+    mentions: "names an untrusted zone"
+    why: >
+      A real workload name in a fixture is what this catches, and the mutation
+      uses the one that was actually there before somebody noticed. It is not a
+      secret in the way a site or hypervisor name is - nobody is harmed by
+      knowing which game runs here - so the reason it stays out is a design one:
+      a zone is for untrusted work rather than for one workload, and plumbing
+      that names its first tenant is how a general capability quietly becomes
+      that tenant's feature.
+
+      The epoch record names the workload, deliberately. That is where the
+      motivation belongs. The machinery should read the same whoever moves in
+      next.
+
+  - guard: TestTheWorkloadBucketIsReleasedBeforeAnythingCanDeleteIt
+    file: scripts/contractor/internal/phases/sterilize.go
+    reads_source: true
+    find: "\tforgetWorkloadBucket(ctx)\n\temptyObjectStorage(ctx)"
+    replace: "\temptyObjectStorage(ctx)\n\tforgetWorkloadBucket(ctx)"
+    mentions: "before it releases the workload bucket"
+    why: >
+      reads_source, because this guard reads sterilize.go as text rather than
+      executing it - the order of two calls is a property of the file, and the
+      scratch copy is the file it reads.
+
+      Reordered rather than deleted, because that is the version somebody
+      writes while looking at a stuck teardown instead of at this file: the
+      destroy halted on a bucket Cloudflare would not delete, emptying is
+      visibly the thing that unsticks it, and moving it earlier looks like
+      fixing the order rather than deleting the backups.
+
+      It still reads as correct afterwards. Both calls are present, both run,
+      and the teardown completes - which is exactly why the order needs a guard
+      rather than a comment.
+
 # Guards that cannot be proved by mutation, and why.
 #
 # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in

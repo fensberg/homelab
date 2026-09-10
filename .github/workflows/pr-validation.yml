@@ -321,6 +321,9 @@ jobs:
           STATE_DB_NODEPORT: "30432"
           OBJECT_STORAGE_BUCKET: placeholder-bucket
           OBJECT_STORAGE_ENDPOINT: https://example.invalid
+          # A stand-in, like the rest: only the shape is checked, and the real
+          # URL belongs in the config rather than in a workflow.
+          SOURCE_CONTROL_REPO_URL: https://example.invalid/fork/homelab
         run: |
           schema='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           for dir in clusters/management/infrastructure/*/ clusters/management/flux-system/; do
@@ -334,7 +337,18 @@ jobs:
           kubeconform -strict -summary -ignore-missing-schemas \
             -schema-location default -schema-location "${schema}" \
             clusters/management/infra-controllers.yaml \
-            clusters/management/infra-configs.yaml
+            clusters/management/infra-configs.yaml \
+            clusters/management/workloads.yaml
+
+          # The workload tier's overlays. Globbed rather than listed, so a
+          # third environment is validated by existing rather than by somebody
+          # remembering this line.
+          for dir in environments/*/applications/; do
+            echo "==> ${dir}"
+            kubectl kustomize "${dir}" | envsubst | kubeconform \
+              -strict -summary -ignore-missing-schemas \
+              -schema-location default -schema-location "${schema}" -
+          done
 
       # Not Super-Linter's Go linting: in diff mode, when a PR's changed Go
       # files span more than one package directory, Super-Linter hands them
@@ -651,7 +665,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Run Semgrep CI
-        run: semgrep ci
+        # clusters/bootstrap/ is Cilium's chart output, committed verbatim so a
+        # version bump is a reviewable diff rather than a one-line pin change.
+        # Its hostNetwork and privilege-escalation findings are true and are
+        # inherent to what a CNI is - it is the node's network. Excluded here
+        # rather than in a root .semgrepignore, because that file REPLACES
+        # semgrep's built-in ignore list rather than adding to it, and silently
+        # losing those defaults is a bigger hole than the one being closed.
+        run: semgrep ci --exclude=clusters/bootstrap
         env:
           SEMGREP_RULES: "p/default"
 
@@ -715,7 +736,16 @@ jobs:
           # misconfiguration in code we control - so this is excluded from
           # scanning entirely rather than suppressing the specific rule IDs
           # project-wide, which would also silence real findings elsewhere.
-          skip-dirs: "clusters/management/flux-system"
+          #
+          # clusters/bootstrap/ is Cilium's chart output, committed for the same
+          # reason and excluded on the same grounds: a CNI runs privileged, on
+          # the host network, with CAP_NET_ADMIN and hostPath mounts, and no
+          # version of one satisfies these rules. The privilege is recorded
+          # deliberately in scripts/approved-suppliers.yml rather than waved
+          # away here. The cost is that a future chart version adding a new
+          # mount would not be flagged; the compensating control is that the
+          # manifest is committed, so it shows up in a pull request diff.
+          skip-dirs: "clusters/management/flux-system,clusters/bootstrap"
 
   # -----------------------------------------------------------------
   # LANE 8: Secrets - waits for nothing

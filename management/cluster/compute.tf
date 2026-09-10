@@ -43,7 +43,7 @@ resource "proxmox_download_file" "talos_disk_image" {
   # Proxmox even fetches the URL, independent of the actual bytes. This is
   # the same disk image either way - the extension just has to lie to get
   # stored where compressed non-ISO images are allowed to live.
-  file_name               = "talos-${local.talos_version}-nocloud-amd64.iso"
+  file_name               = "talos-${local.talos_version}.iso"
   decompression_algorithm = "zst"
 
   # Without this, the provider compares the URL's advertised size (the
@@ -55,6 +55,112 @@ resource "proxmox_download_file" "talos_disk_image" {
   # cannot suppress this; overwrite=false is the mechanism the provider's own
   # plan output names for exactly this case.
   overwrite = false
+}
+
+# The same Talos release without the overlay extension, for the untrusted zone.
+#
+# A separate resource rather than a second entry in the one above, because the
+# two are pulled for different reasons and onto different sets of hypervisors:
+# every hypervisor hosting a cluster node needs the first, and only a
+# hypervisor hosting an untrusted machine needs this.
+#
+# THE TWO IMAGES ARE NAMED APART AT THE FRONT, NOT THE BACK.
+#
+# The resource above records that the schematic is deliberately absent from the
+# file name, and that this once left a template running old bytes because the
+# datastore path never changed. With one schematic that was a subtlety. With two
+# at the same Talos version it would be a collision: both would want
+# local-iso:iso/talos-<version>.iso, and whichever downloaded second would
+# either fail or quietly overwrite the other - putting the overlay-carrying
+# image under the machine whose entire purpose is not to have it, with nothing
+# anywhere reporting the swap.
+#
+# Distinguishing them by prefix rather than by a qualifier on the end is what
+# lets the orphan check in scripts/contractor/internal/phases/compute.go say
+# which image a stored volume is by reading its first characters, instead of
+# testing suffixes that overlap. Two names, two prefixes, no ambiguity.
+resource "proxmox_download_file" "dmz_disk_image" {
+  for_each = toset(local.dmz_hypervisors)
+
+  content_type = "iso"
+  datastore_id = "local-iso"
+  node_name    = each.value
+  url          = "https://factory.talos.dev/image/${local.dmz_schematic_id}/${local.talos_version}/nocloud-amd64.raw.xz"
+
+  file_name               = "dmz-${local.talos_version}.iso"
+  decompression_algorithm = "zst"
+
+  # Same reason as the image above: the provider compares the compressed
+  # advertised size against the decompressed stored size and forces a
+  # destroy-and-reimport on every plan without this.
+  overwrite = false
+}
+
+# The untrusted zone's own template, and it has to be its own.
+#
+# A template is built from one image, and the whole point of this zone is that
+# its machines run an image without the overlay extension. Cloning the template
+# above would put the overlay-carrying image under the machine whose entire
+# purpose is not to have it - the same swap the two file names exist to prevent,
+# arriving through the clone instead of through the download.
+#
+# Built only on hypervisors that host an untrusted machine, so an estate with no
+# untrusted workload has neither the image nor a template for it.
+resource "proxmox_virtual_environment_vm" "dmz_template" {
+  for_each = toset(local.dmz_hypervisors)
+
+  name      = "${local.site_name}-dmz-template"
+  node_name = each.value
+  # The top of the 300 band, above every zone machine that band can hold, the
+  # way 199 sits above the control planes.
+  vm_id = local.octet * 1000 + 399
+
+  template = true
+  started  = false
+
+  boot_order = ["virtio0"]
+
+  cpu {
+    cores = 2
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 2048
+  }
+
+  network_device {
+    bridge = "vnetint"
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = "local-zfs"
+    file_format  = "raw"
+    interface    = "virtio0"
+    file_id      = proxmox_download_file.dmz_disk_image[each.key].id
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  stop_on_destroy = true
+
+  smbios {
+    serial       = "${local.site_name}-dmz-template"
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
+  }
+
+  lifecycle {
+    # Same reason as the template above: file_id is a stable string, so
+    # replacing the image behind it changes no attribute here and would leave
+    # this template on the old bytes.
+    replace_triggered_by = [proxmox_download_file.dmz_disk_image[each.key]]
+  }
 }
 
 # One template VM per hypervisor, built once from the downloaded disk image.
@@ -350,5 +456,102 @@ resource "proxmox_virtual_environment_vm" "talos_worker" {
         gateway = local.node_gateway
       }
     }
+  }
+}
+
+# The untrusted zone's machines.
+#
+# On its zone's vnet rather than the node one - that is the L2 separation the
+# zone is for, and it is why this cannot simply be another worker with a taint.
+resource "proxmox_virtual_environment_vm" "dmz" {
+  for_each = local.dmz
+
+  name      = each.value.name
+  node_name = each.value.hypervisor
+  vm_id     = each.value.vm_id
+
+  boot_order = ["virtio0"]
+
+  clone {
+    vm_id = proxmox_virtual_environment_vm.dmz_template[each.value.hypervisor].vm_id
+    full  = true
+  }
+
+  cpu {
+    # Four, and the clock matters more than the count.
+    #
+    # Sized for the workload this zone was built for, whose published guidance
+    # is in docs/epochs/03-workload.md - it leans on single-thread performance,
+    # so a high base clock is what matters and more cores past four buy very
+    # little. The figures are looked up rather than guessed; the first version
+    # of this file said two cores, which was one too few.
+    #
+    # The zone itself is not sized for that workload or named after it. This is
+    # the machine's allocation, and the next tenant's will be its own.
+    cores = 4
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    # No floating, so no balloon device, for the same reason the workers have
+    # none: the kubelet computes Allocatable at boot and never revisits it, so
+    # a node deflated afterwards keeps scheduling against memory that is gone.
+    # That makes this a hard allocation and the estate's scarcest resource.
+    #
+    # EIGHT, AND THE REASONING IS IN docs/epochs/03-workload.md.
+    #
+    # The workload this zone was built for wants 4 GiB on a fresh install and
+    # 6-8 GiB once it has accumulated state, at the player count it is intended
+    # for. This VM also runs Talos, the kubelet, the Cilium agent and the
+    # OpenEBS provisioner - roughly a gigabyte before the workload starts - so
+    # eight here is about seven for it.
+    #
+    # The top of the band rather than the middle, deliberately. The failure
+    # mode of being short is a service that degrades once it has accumulated
+    # state people care about - which is the moment it is hardest to take away
+    # for a resize, and the moment anyone would mind most. The hypervisor was
+    # measured rather than estimated and has room: raising this later would buy
+    # nothing that taking it now does not, and would cost an outage to do it.
+    dedicated = 8192
+  }
+
+  network_device {
+    bridge = local.dmz_zones[each.value.zone].vnet
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = "local-zfs"
+    file_format  = "raw"
+    interface    = "virtio0"
+    size         = 64
+  }
+
+  # The provisioner's data path, off the OS disk for the same reason as every
+  # other node: Talos grows disk 0 to fill with its own partitions, so a
+  # provisioner sharing it has no predictable capacity.
+  #
+  # This is where the workload's state lives, and it does NOT survive a
+  # rebuild - see #330. Anything that must outlive one belongs in object
+  # storage, not here.
+  disk {
+    datastore_id = "local-zfs"
+    file_format  = "raw"
+    interface    = "virtio1"
+    size         = 32
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  stop_on_destroy = true
+
+  smbios {
+    serial       = each.value.name
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
   }
 }

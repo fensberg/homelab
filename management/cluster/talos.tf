@@ -13,6 +13,73 @@ locals {
   # letting one silently win here.
   all_machines = merge(local.control_plane, local.workers)
 
+  # The untrusted zone's machines get their own patches, and the differences
+  # are the point.
+  #
+  # No overlay patch. The extension is absent from the image, so configuring it
+  # would fail anyway - but the reason it is absent is that the tailnet policy
+  # is still the default allow-all, and a node on the mesh reaches the
+  # hypervisor, the workstation and every other site. This is the layer that
+  # answers what the machine itself can reach.
+  #
+  # Its own gateway, because it is in its own subnet rather than a band of the
+  # node one.
+  dmz_patches = {
+    for k, v in local.dmz : k => [
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "LinkConfig"
+        name       = "eth0"
+        addresses  = [{ address = "${v.ip}/24" }]
+        routes     = [{ gateway = local.dmz_zones[v.zone].gateway }]
+      }),
+      yamlencode({
+        apiVersion  = "v1alpha1"
+        kind        = "ResolverConfig"
+        nameservers = [{ address = "1.1.1.1" }, { address = "1.0.0.1" }]
+      }),
+      yamlencode({
+        machine = {
+          features = {
+            kubePrism = {
+              enabled = true
+              port    = 7445
+            }
+          }
+        }
+      }),
+
+      # The taint, and why it is a kubelet argument rather than machine.nodeTaints.
+      #
+      # A worker cannot taint itself. NodeRestriction refuses a kubelet
+      # modifying taints on its own Node object - "is not allowed to modify
+      # taints" - and it is on by default in Talos and cannot be turned off.
+      # machine.nodeTaints would therefore apply cleanly, report nothing, and
+      # leave the node schedulable, which is the exact shape of failure this
+      # zone cannot have: the taint is what makes the dedication enforced
+      # rather than conventional.
+      #
+      # --register-with-taints is applied when the kubelet CREATES the Node
+      # object, which NodeRestriction permits - the restriction is on updating
+      # one afterwards.
+      #
+      # Talos v1.14 introduced KubeNodeConfig, which Talos reconciles onto the
+      # Node itself and which is the tidier answer. This estate is pinned to
+      # v1.13.9, where it does not exist. Adopt it when the OS is bumped for
+      # its own reasons, rather than moving every machine in the estate onto a
+      # week-old release for one field.
+      yamlencode({
+        machine = {
+          kubelet = {
+            extraArgs = {
+              "register-with-taints" = "untrusted-zone=${v.zone}:NoSchedule"
+            }
+          }
+        }
+      }),
+    ]
+  }
+
   machine_patches = {
     for k, v in local.all_machines : k => [
       yamlencode({
@@ -29,6 +96,32 @@ locals {
         apiVersion  = "v1alpha1"
         kind        = "ResolverConfig"
         nameservers = [{ address = "1.1.1.1" }, { address = "1.0.0.1" }]
+      }),
+      # KubePrism, declared rather than assumed.
+      #
+      # Talos enables this by default, which is exactly why it is written down.
+      # With kube-proxy disabled, every Cilium agent reaches the API server
+      # through it: there is no ClusterIP to use, because nothing implements
+      # ClusterIP until Cilium is the thing implementing it.
+      #
+      # The alternative address is the cluster endpoint, and this estate
+      # hardcodes that to one control plane (#316). Pointing every agent there
+      # would promote a known API single point of failure into a pod-network
+      # one - lose that machine and no node has working networking. KubePrism
+      # is a local TCP load balancer across all control-plane endpoints, health
+      # filtered, so it declines to inherit that.
+      #
+      # The port is repeated in clusters/bootstrap/cilium-values.yaml as k8sServicePort.
+      # Both halves have to move together.
+      yamlencode({
+        machine = {
+          features = {
+            kubePrism = {
+              enabled = true
+              port    = 7445
+            }
+          }
+        }
       }),
       # Join the node to the overlay.
       #
@@ -151,6 +244,33 @@ data "talos_machine_configuration" "controlplane" {
         allowSchedulingOnControlPlanes = true
       }
     }),
+
+    # Talos ships Flannel and kube-proxy; this estate runs neither.
+    #
+    # Both settings are one decision rather than two. Flannel implements no
+    # NetworkPolicy controller at all - a policy is accepted, stored, and never
+    # evaluated - which is the whole reason for the move, and Cilium is
+    # rendered with kubeProxyReplacement so leaving kube-proxy running would
+    # put two things on every node programming service routing.
+    #
+    # The cost is that no node reaches Ready until something installs a CNI.
+    # cilium.tf does that between bootstrap and the health gate; see
+    # docs/epochs/03-workload.md for why it cannot arrive through Flux.
+    #
+    # Cluster-level, so it is set once on the control plane's config. A worker
+    # repeating it would be a second declaration of one fact.
+    yamlencode({
+      cluster = {
+        network = {
+          cni = {
+            name = "none"
+          }
+        }
+        proxy = {
+          disabled = true
+        }
+      }
+    }),
   ], local.machine_patches[each.key])
 }
 
@@ -184,6 +304,37 @@ resource "talos_machine_configuration_apply" "worker" {
   client_configuration = talos_machine_secrets.this.client_configuration
 
   machine_configuration_input = data.talos_machine_configuration.worker[each.key].machine_configuration
+  node                        = each.value.ip
+}
+
+# The untrusted zone's machines.
+#
+# Workers, because that is what they are: a tainted machine that runs one
+# workload is still a cluster member, and making it anything else would mean a
+# second operating system and a second provisioning path for one node.
+#
+# What makes it untrusted is not its machine_type. It is the image without the
+# overlay extension, the subnet of its own, and the taint below - the three
+# layers docs/epochs/03-workload.md audits an escape against.
+data "talos_machine_configuration" "dmz" {
+  for_each           = local.dmz
+  cluster_name       = local.cluster_name
+  machine_type       = "worker"
+  cluster_endpoint   = "https://${local.node_ips[0]}:6443"
+  machine_secrets    = talos_machine_secrets.this.machine_secrets
+  kubernetes_version = local.kubernetes_version
+
+  # dmz_patches, not machine_patches: the difference between them is the
+  # overlay, and it is the whole reason this zone exists.
+  config_patches = local.dmz_patches[each.key]
+}
+
+resource "talos_machine_configuration_apply" "dmz" {
+  for_each             = local.dmz
+  depends_on           = [proxmox_virtual_environment_vm.dmz]
+  client_configuration = talos_machine_secrets.this.client_configuration
+
+  machine_configuration_input = data.talos_machine_configuration.dmz[each.key].machine_configuration
   node                        = each.value.ip
 }
 
@@ -270,11 +421,22 @@ data "talos_cluster_health" "this" {
     # its configuration, and the gate would report a cluster healthy while a
     # machine it is meant to cover is still in maintenance mode.
     talos_machine_configuration_apply.worker,
+    # Same reason as the workers: without this the gate can read health before
+    # an untrusted machine has been handed its configuration, and report a
+    # cluster healthy while a machine it is meant to cover sits in maintenance.
+    talos_machine_configuration_apply.dmz,
+    # Without a CNI no node ever reaches Ready, so this gate would wait its
+    # full ten-minute timeout and then blame the cluster for a dependency that
+    # was simply missing. This edge is the whole ordering: bootstrap, install
+    # the CNI, nodes go Ready, gate passes.
+    terraform_data.cilium,
   ]
   client_configuration = talos_machine_secrets.this.client_configuration
   control_plane_nodes  = local.node_ips
-  worker_nodes         = local.worker_ips
-  endpoints            = local.node_ips
+  # The zone's machines are workers and are counted as such. Leaving them out
+  # would have the gate compare a number it built from part of the estate.
+  worker_nodes = concat(local.worker_ips, local.dmz_ips)
+  endpoints    = local.node_ips
 
   timeouts = {
     read = "10m"
