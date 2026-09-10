@@ -185,6 +185,34 @@ else
 	ok "flux ${FLUX_VERSION} installed"
 fi
 
+step "helm (pinned)"
+if has helm; then
+	skip "helm already present ($(helm version --short 2>/dev/null))"
+else
+	# Only ever used to render the committed Cilium manifest - `task render-cni`
+	# - never to install anything into the cluster. Nothing here holds a release
+	# or talks to the API server, so helm is a build tool rather than a deploy
+	# path. See docs/epochs/03-workload.md for why the chart is rendered and
+	# committed instead of applied by a provider at run time.
+	#
+	# The checksum is per-architecture, so it lives here beside the download
+	# rather than in versions.env, for the same reason node's does.
+	case "$GOARCH" in
+	amd64) HELM_SHA256=86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb ;;
+	arm64) HELM_SHA256=31c5794dd55c66a51e6b7d2e2ac7a114ae8b1de41ff1d9ba51748ac973b06a08 ;;
+	*)
+		echo "no pinned helm checksum for ${GOARCH}" >&2
+		exit 1
+		;;
+	esac
+	info "installing helm ${HELM_VERSION}"
+	curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${GOARCH}.tar.gz" -o "$TMP/helm.tar.gz"
+	echo "${HELM_SHA256}  $TMP/helm.tar.gz" | sha256sum -c -
+	tar -C "$TMP" -xzf "$TMP/helm.tar.gz" "linux-${GOARCH}/helm"
+	sudo mv "$TMP/linux-${GOARCH}/helm" /usr/local/bin/helm
+	ok "helm ${HELM_VERSION} installed"
+fi
+
 step "age"
 if has age; then
 	skip "age already present"

@@ -611,6 +611,71 @@ mutations:
       supply chain: without it, an image walk that stops matching reports every
       image approved and digest-pinned.
 
+  - guard: TestTheHealthGateWaitsForTheCNI
+    file: management/cluster/talos.tf
+    find: "    terraform_data.cilium,"
+    replace: "    talos_cluster_kubeconfig.this,"
+    mentions: "does not depend on"
+    why: >
+      Replaced with a dependency that is already there rather than deleted, so
+      the mutation is the realistic one: somebody tidying a depends_on list and
+      leaving it non-empty. The edge is the entire ordering of the ignition -
+      bootstrap, install the CNI, nodes go Ready, gate passes - and losing it
+      produces no error at all. It produces a ten-minute wait and then a
+      complaint about the cluster's health, ten minutes away from the line that
+      was actually wrong.
+
+  - guard: TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy
+    file: management/cluster/talos.tf
+    find: '            name = "none"'
+    replace: '            name = "flannel"'
+    mentions: "cluster.network.cni.name"
+    why: >
+      Naming Flannel explicitly is the mutation that matters, because it is the
+      thing this estate is moving away from and the thing Talos installs if the
+      setting is lost. Flannel implements no NetworkPolicy controller, so the
+      policies isolating the untrusted workload would be accepted, stored, and
+      never evaluated. The failure is silent by construction: everything comes
+      up healthy and the isolation simply is not there.
+
+  - guard: TestKubePrismIsDeclaredRatherThanAssumed
+    file: management/cluster/talos.tf
+    find: "              port    = 7445"
+    replace: "              port    = 7446"
+    mentions: "7445"
+    why: >
+      The port is declared twice on purpose - here and as k8sServicePort in
+      manifests/cilium-values.yaml - because the agents have to find the
+      endpoint Talos actually opened. Moving one and not the other is the
+      realistic drift, and it breaks the pod network on every node at once with
+      no clue pointing at a port number.
+
+  - guard: TestTheRenderedCNIManifestMatchesThePinnedChartVersion
+    file: scripts/versions.env
+    find: "CILIUM_VERSION=1.20.1"
+    replace: "CILIUM_VERSION=1.19.7"
+    mentions: "render-cni"
+    why: >
+      Bumping the pin and forgetting to re-render is the failure this guard
+      exists for, so the mutation is exactly that. The committed manifest is
+      generated, and a generated file nobody can prove is current silently
+      becomes the source of truth while still claiming to be a copy - the
+      estate would then be running a version no file in it names.
+
+  - guard: TestTheCNIReachesEveryNodeIncludingTaintedOnes
+    file: clusters/bootstrap/cilium.yaml
+    find: "      tolerations:\n        - operator: Exists\n\n      volumes:"
+    replace: "      tolerations:\n        - key: node-role.kubernetes.io/control-plane\n          operator: Exists\n\n      volumes:"
+    mentions: "does not tolerate every taint"
+    why: >
+      Narrowed to a real, plausible toleration rather than deleted, because
+      that is what the regression actually looks like: a keyed toleration reads
+      as more careful than a blanket one, and is the change somebody would make
+      believing they were tightening things. It silently excludes every taint
+      nobody thought to name - which, once the untrusted zone exists, is the
+      DMZ node. That node would never reach Ready, and it would look like a
+      broken machine rather than a missing line in a chart's values.
+
 # Guards that cannot be proved by mutation, and why.
 #
 # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
