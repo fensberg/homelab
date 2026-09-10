@@ -81,12 +81,34 @@ func adoptOrphanedR2Bucket(ctx *run.Context) error {
 	}
 	site := cfg.Sites[ctx.Site]
 
-	return run.AdoptIfOrphaned(ctx, "cloudflare_r2_bucket.homelab", func() (string, error) {
+	if err := run.AdoptIfOrphaned(ctx, "cloudflare_r2_bucket.homelab", func() (string, error) {
 		exists, err := r2BucketExists(cfg.ObjectStorage, site.ObjectStorage)
 		if err != nil || !exists {
 			return "", err
 		}
 		return cfg.ObjectStorage.AccountID + "/" + site.ObjectStorage.Bucket, nil
+	}); err != nil {
+		return err
+	}
+
+	// The workload bucket is adopted for a different reason, and the difference
+	// matters. The bucket above is adopted because a teardown FAILED part-way
+	// and left it behind. This one is adopted because a teardown SUCCEEDED: the
+	// Sterilize phase forgets it deliberately so the destroy cannot take the
+	// backups with it, which means finding it here is the normal case rather
+	// than the recovery one.
+	//
+	// If this ever stops working, the symptom is a second bucket appearing
+	// beside the first with a name Cloudflare had to disambiguate, and a
+	// workload restoring from an empty one.
+	workloads := site.ObjectStorage
+	workloads.Bucket = site.ObjectStorage.Bucket + "-workloads"
+	return run.AdoptIfOrphaned(ctx, "cloudflare_r2_bucket.workloads", func() (string, error) {
+		exists, err := r2BucketExists(cfg.ObjectStorage, workloads)
+		if err != nil || !exists {
+			return "", err
+		}
+		return cfg.ObjectStorage.AccountID + "/" + workloads.Bucket, nil
 	})
 }
 
