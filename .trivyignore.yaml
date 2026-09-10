@@ -1,0 +1,24 @@
+# Findings Trivy raises that are wrong here, scoped to where they are wrong.
+#
+# Scoped rather than global on purpose. A bare .trivyignore lists an ID and
+# silences it everywhere, which turns one wrong finding into a permanent blind
+# spot for every future file. Each entry here names the path it applies to and
+# says what would remove it.
+misconfigurations:
+  - id: KSV-0109
+    paths:
+      - "environments/production/applications/valheim/server.yaml"
+    statement: >-
+      "ConfigMap stores secrets in key(s) VALHEIM_SETKEY_PASSIVEMOBS".
+
+      It does not. The check matches the substring PASS inside PASSIVEMOBS and
+      concludes the key holds a password. The value is the string "false", and
+      the key turns hostile creatures passive - the vendor's own flag is called
+      passivemobs, so no spelling of it avoids the substring.
+
+      The real secrets for this workload are not in any ConfigMap: the server
+      name, world name and password come from the vault through a Kubernetes
+      Secret written by OpenTofu. See management/cluster/workloads.tf.
+
+      Removed if the check learns to look at values, or if the game renames the
+      flag.

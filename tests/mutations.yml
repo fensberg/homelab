@@ -752,6 +752,67 @@ mutations:
       and the teardown completes - which is exactly why the order needs a guard
       rather than a comment.
 
+  - guard: TestAnUnsetDialProducesNoArgument
+    file: modules/applications/valheim/image/entrypoint.sh
+    find: "\t\tset -- \"$@\" -modifier \"$dial\" \"$value\"\n\tfi"
+    replace: "\t\tset -- \"$@\" -modifier \"$dial\" \"$value\"\n\tfi\n\tset -- \"$@\" -modifier \"$dial\" \"$value\""
+    mentions: "reached the server as an argument"
+    why: >
+      Passing the dial unconditionally as well as conditionally, which is what
+      "just always pass them" looks like when somebody simplifies this loop.
+      Every value the server accepts for a modifier changes the game and there
+      is no token meaning "leave this alone", so an empty one is not a harmless
+      default - it is an argument the server either rejects or misreads.
+
+  - guard: TestASetDialIsPassedAsAKeyAndValue
+    file: modules/applications/valheim/image/entrypoint.sh
+    find: 'set -- "$@" -modifier "$dial" "$value"'
+    replace: 'set -- "$@" -modifier "$dial"'
+    mentions: "missing"
+    why: >
+      A key with no value. The server would take whatever followed as the
+      value, so the next flag becomes the setting - which is the shape of bug
+      that produces a world nobody asked for rather than an error.
+
+  - guard: TestAFlagIsOnlyPassedWhenItIsTrue
+    file: modules/applications/valheim/image/entrypoint.sh
+    find: "\tif [ \"$value\" = \"true\" ]; then"
+    replace: "\tif [ -n \"$value\" ]; then"
+    mentions: "was passed anyway"
+    why: >
+      Treating any value as enabling, which reads as a reasonable
+      simplification and inverts the meaning of "false". The server has no
+      argument that turns one of these off, so passing it turns it ON - and for
+      nomap that means the map disappears for every player, silently, from a
+      config that says false.
+
+  - guard: TestCrossplayIsPassedAsABareFlag
+    file: modules/applications/valheim/image/entrypoint.sh
+    find: "\tset -- \"$@\" -crossplay"
+    replace: "\tset -- \"$@\" -crossplay true"
+    mentions: "given a value"
+    why: >
+      Giving a flag-only argument a value, which is what somebody writes if
+      they assume it is a boolean like the variable that gates it. If the
+      server then rejects the argument and falls back to the Steam backend,
+      the estate needs an inbound port forward it has deliberately not built,
+      and the symptom is players unable to join rather than an error here.
+
+  - guard: TestAMissingValueRefusesToStartAndNamesTheField
+    file: modules/applications/valheim/image/entrypoint.sh
+    find: "\t\techo \"entrypoint: $required is empty - check the valheim-server Secret\" >&2"
+    replace: "\t\techo \"entrypoint: a required value is empty\" >&2"
+    mentions: "without naming the field"
+    why: >
+      The message loses the field's name, which is the only thing this check
+      contributes and the easiest thing to lose while tidying a string.
+
+      It is not the same job. `set -u` also refuses, so the mutation still
+      exits non-zero - what it takes away is the field's name, leaving
+      "parameter not set" from a script the operator has never read, at the
+      moment a server will not start. The guard therefore asserts the message
+      rather than the exit code, because the message is the whole contribution.
+
 # Guards that cannot be proved by mutation, and why.
 #
 # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in

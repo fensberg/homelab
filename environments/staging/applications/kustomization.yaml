@@ -7,8 +7,4 @@
 # clusters/management/kustomization.yaml exists to avoid.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources:
-  # The workload's environment-agnostic half. What differs between staging and
-  # production is supplied here rather than there - today nothing does, because
-  # nothing is running yet.
-  - ../../../modules/applications/valheim/base
+resources: []

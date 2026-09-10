@@ -1,11 +1,14 @@
 ---
-# Deliberately empty rather than absent.
+# Production's overlay: which modules land here, and what differs about them.
 #
-# Flux's kustomize-controller auto-generates a kustomization when it finds none,
-# which flattens in every manifest beneath it recursively - the same trap
-# clusters/management/kustomization.yaml exists to avoid. An empty resources
-# list applies nothing, which is the correct state for an environment with
-# nothing in it yet, and it says so on purpose.
+# The game server is here rather than in staging because it is the real thing -
+# the world people play on, and the one whose loss would be felt. Calling it
+# staging because it was the first thing built would have been a name chosen by
+# accident of order.
+#
+# This reconciles from a v* tag rather than from main. Nothing here is live
+# until one exists.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources: []
+resources:
+  - valheim

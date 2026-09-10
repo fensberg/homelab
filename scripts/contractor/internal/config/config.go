@@ -74,6 +74,7 @@ type Config struct {
 	ObjectStorage ObjectStorageAccount `json:"object_storage"`
 	SourceControl SourceControl        `json:"source_control"`
 	StateBackup   StateBackup          `json:"state_backup"`
+	Workloads     map[string]Workload  `json:"workloads"`
 	Sites         map[string]Site      `json:"sites"`
 }
 
@@ -88,6 +89,24 @@ type Organization struct {
 type SourceControl struct {
 	RepoURL    string     `json:"repo_url"`
 	ForemanBot ForemanBot `json:"foreman_bot"`
+}
+
+// Workload is one self-hosted application's vault-backed values.
+//
+// Fleet-level rather than per-site, because one repository drives every cluster
+// and a workload is deployed by Flux rather than placed on a machine. If a
+// second site ever runs its own copy, this is where that becomes a decision
+// rather than an assumption.
+type Workload struct {
+	// What players see. Not a secret in any real sense - it is broadcast to
+	// anyone who joins - but it lives here so a fork picks its own without
+	// editing a manifest, for the same reason site names do.
+	ServerName string `json:"server_name"`
+	// Which save file loads. Changing it starts a new world rather than
+	// renaming one.
+	WorldName string `json:"world_name"`
+	// Genuinely secret.
+	Password string `json:"password"`
 }
 
 type Site struct {

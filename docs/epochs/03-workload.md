@@ -832,6 +832,117 @@ from the site's octet and the zone's position in the sorted list rather than
 chosen, so they cost nothing while unused. A zone that returns under the same
 name returns to the same addresses. Deleting that would be deleting arithmetic.
 
+### The move to shared workers was not costed on memory
+
+Found while writing the Deployment's resource requests, which is late.
+
+The workers are 8 GiB each. The vendor's guidance for this workload is 4 GiB on
+a fresh world and 6-8 once it is explored and built on, and the request is 4 GiB
+with a 6 GiB limit. So a mature world takes most of a worker, on machines that
+also host the CI runner and every operator with an anti-control-plane affinity.
+
+The isolation argument for moving it there was right and is unaffected: the
+workload's exposure is a relay and its blast radius is a world save, so it does
+not earn a zone. What was not weighed is that the zone came with a machine
+sized for it, and the shared workers were sized before this workload existed.
+
+**Settled: three workers at 10 GiB, and the workload asks for 8.**
+
+The operator's call, and the arithmetic is worth keeping because the obvious
+number is wrong. A node's Allocatable is its memory minus what Talos, the
+kubelet and the Cilium agent reserve - roughly a gigabyte. **A pod requesting
+8Gi therefore does not fit on an 8 GiB node at all.** It stays Pending
+indefinitely with an "Insufficient memory" event, which reads as a scheduling
+puzzle rather than as a machine that is simply too small.
+
+Ten leaves about nine allocatable: the 8Gi request fits, with room for the
+daemons that must run everywhere. Three of them spends fourteen of the 23 GiB
+measured free on the hypervisor.
+
+Request and limit are both 8Gi, which makes the pod Guaranteed rather than
+Burstable - not evicted ahead of others under node pressure, and unable to grow
+into a neighbour's memory. It also **effectively dedicates a worker**: nine
+allocatable minus eight leaves very little else. That is a real consequence of
+asking for the vendor's upper bound, and it is worth noticing that the estate
+has arrived at a dedicated machine for this workload by resource sizing, having
+decided against one on isolation grounds. Both decisions are right for their own
+reasons; the outcome looking similar is a coincidence rather than a plan.
+
+**There is no horizontal answer.** A dedicated server is one process simulating
+one world - Kubernetes cannot split a process across nodes, and a second replica
+would either fail to schedule against the ReadWriteOnce volume or corrupt the
+world if it did. `replicas: 1` and the Recreate strategy exist for that reason.
+The node has to fit it, which is why sizing is the only dial.
+
+### A tag releases the estate, not a resource
+
+Asked while reading production's overlay, which lists its modules as a flat
+`resources:` list. If a second module joins that list and a tag ships it, does
+the first module get re-released too - and what happens when one module is
+mid-rewrite and another is ready?
+
+**The premise is right.** `flux-production` resolves `semver: ">=0.0.0"` against
+the repository's tags, so the tag names a commit of the whole tree. There is no
+per-resource tag and nothing in the overlay narrows it. Tagging to ship one
+module does re-apply every other module as it stands at that commit.
+
+**What makes that survivable is that three different questions are answered in
+three different places**, and only one of them is the tag:
+
+| Question                  | Answered by                        |
+| ------------------------- | ---------------------------------- |
+| Which modules are live?   | the overlay's `resources:` list    |
+| What code does one run?   | the image digest in its Deployment |
+| When does any of it move? | the `v*` tag                       |
+
+So a release is a snapshot of what the estate declared, and the version of a
+given workload is its digest. Upgrading the game is a digest change, which is a
+commit, which is a tag - the tag is the act of publishing, not the version
+number of the thing published.
+
+**The re-release is usually a no-op.** If a module's rendered manifests are
+byte-identical between two tags, the apply changes nothing; the server does not
+restart and the world is not touched. Coupling only bites when the other
+module's declaration actually changed in that range.
+
+#### The half-finished module is a branch problem, not a tag problem
+
+Which is what makes the awkward case rarer than it looks. In-progress work lives
+on a branch off the epoch branch and merges when it is done, so the tree at the
+tag point holds only finished work by construction. A half-rewritten module
+reaching a tag means it was merged before it was ready, and no release
+granularity fixes that.
+
+The genuinely residual case is narrower: two _finished_ changes are both on the
+branch, and only one should go out now. A single repository tag cannot separate
+them. The answer is to treat the merge as the readiness signal rather than the tag,
+which the epoch model already does since pieces merge when they are done. Where
+something slips through anyway, revert it and tag forward.
+
+**Roll back by tagging forward, never by deleting a tag.** `>=0.0.0` takes the
+highest tag it finds, so deleting one does roll production back, silently, by
+re-resolving to the next highest. That is a destructive git operation with an
+invisible deployment as its side effect. Reverting the commit and tagging a new
+version says the same thing in a way that leaves a record.
+
+#### Why per-module tags are not the cheap alternative they sound like
+
+Flux's `semver` ref ranges over tags that parse as semver, and `valheim/v1.2.0`
+does not parse. The fields that would select a per-module tag - `ref.tag` and
+`ref.name` - pin one exact ref, so releasing would mean editing a pinned string
+inside `environments/production/`. That is precisely what the two-source design
+exists to prevent: nothing promotes by somebody editing a file in production's
+directory.
+
+Per-module cadence is available, and the ecosystem's answer to it is
+image-reflector-controller and image-automation-controller, which watch a
+registry per image and commit the digest bump themselves. That moves the release
+decision to the image rather than to git, which is a coherent model and a larger
+one - another controller, another set of credentials, and a bot with write
+access to the branch. Not now, and not for two workloads. The trigger to
+revisit is a module that genuinely needs to move on a different rhythm from the
+rest of the estate, rather than the count of modules going up.
+
 ## Outcome
 
 ## Deferred

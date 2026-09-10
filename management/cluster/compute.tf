@@ -406,7 +406,19 @@ resource "proxmox_virtual_environment_vm" "talos_worker" {
     # deflated afterwards keeps scheduling against memory that no longer
     # exists. Overcommit belongs inside Kubernetes, where requests and limits
     # describe it and the kubelet can act on it.
-    dedicated = 8192
+    #
+    # TEN, RAISED FROM EIGHT BECAUSE OF WHAT NOW RUNS HERE.
+    #
+    # A node's Allocatable is its memory minus what Talos, the kubelet and the
+    # Cilium agent reserve - roughly a gigabyte. A pod requesting 8Gi therefore
+    # does not fit on an 8 GiB node at all: it stays Pending forever, with an
+    # "Insufficient memory" event and nothing wrong that a restart would fix.
+    #
+    # Ten leaves about nine allocatable, which fits an 8Gi request with room
+    # for the daemons that must run everywhere. It is deliberately not more:
+    # the hypervisor was measured at 23 GiB available, and three workers at ten
+    # spends fourteen of it.
+    dedicated = 10240
   }
 
   network_device {

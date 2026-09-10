@@ -111,7 +111,14 @@ VOLUME ["/data"]
 
 # No CMD arguments here on purpose.
 #
-# Every one of them - the server name, the world, the password - is either
-# environment-specific or a secret, and this file is neither. The deployment
-# supplies them; see the base beside this directory.
-ENTRYPOINT ["/valheim/valheim_server.x86_64"]
+# Every one of them - the server name, the world, the password, the difficulty -
+# is either environment-specific or a secret, and this file is neither. The
+# deployment supplies them as environment variables and the entrypoint turns
+# them into the server's argument list.
+#
+# That indirection earns its place: the server has no neutral value for a world
+# modifier and no way to express "off" for a setkey flag, so an unset dial has
+# to be an ABSENT argument. A manifest cannot express that, because Kubernetes
+# expands $(VAR) into exactly one argument and never splits it.
+COPY --chown=root:root entrypoint.sh /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

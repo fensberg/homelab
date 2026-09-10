@@ -1,0 +1,174 @@
+---
+# The server itself.
+#
+# Deployment rather than StatefulSet: there is one of these and there will
+# always be one. A StatefulSet buys ordered identity for a set, and a set of
+# one has no order to keep.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valheim
+  namespace: valheim
+  labels:
+    app.kubernetes.io/name: valheim
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate. The volume is ReadWriteOnce and the world is a
+  # single-writer file: two pods would either fail to schedule or, worse,
+  # both open it. Taking the server down before bringing it up is correct here
+  # and is what a rolling update would prevent.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: valheim
+  template:
+    metadata:
+      labels:
+        # Matched by the NetworkPolicy beside this file. If this label changes
+        # the policy stops selecting the pod, and a pod no policy selects is
+        # one with no restrictions at all.
+        app.kubernetes.io/name: valheim
+    spec:
+      serviceAccountName: valheim
+      # Belt and braces: the ServiceAccount already declines the token, and
+      # saying so here means a pod that is later pointed at a different account
+      # does not silently acquire one.
+      automountServiceAccountToken: false
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        runAsGroup: 10000
+        # The volume is mounted for this group, so the server can write its
+        # world without the game files being writable by it.
+        fsGroup: 10000
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: valheim
+          # A digest, not a tag, and this is the version of the software -
+          # the git tag production reconciles from versions the declaration
+          # around it. Changing what the server runs means changing this line,
+          # which is a commit, which is a release.
+          #
+          # Re-pin it whenever the image rebuilds. The entrypoint that turns
+          # these environment variables into the server's arguments lives in
+          # the image, so a digest published before it existed does not have
+          # it. That failure is loud rather than subtle - the older entrypoint
+          # is the server binary itself, which exits complaining about missing
+          # arguments - but it is a failure. The build workflow prints the new
+          # digest into its job summary for this line.
+          # renovate: datasource=docker depName=ghcr.io/fensberg/homelab-valheim
+          image: ghcr.io/fensberg/homelab-valheim@sha256:8508de483caa2db5cc1efc7ac0be5047bc12da591043c0277deb3ee18ff4720b
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            # An attacker who lands in this process cannot write an executable
+            # anywhere it could be run from, and cannot tamper with the game
+            # files it is serving. Trivy rates the absence of this HIGH and is
+            # right to.
+            #
+            # It needs somewhere writable to exist: the volume for the world,
+            # and scratch for whatever the engine puts under a home directory.
+            # HOME is pointed at that scratch below, because the image's home
+            # is the game directory and that is deliberately not writable.
+            readOnlyRootFilesystem: true
+
+          # The password arrives as an environment variable and is expanded
+          # into the argument below by Kubernetes, not by a shell. The image's
+          # entrypoint is the server binary directly, so there is no shell to
+          # do it - and $(VAR) expansion in args is the mechanism that does not
+          # need one.
+          #
+          # It is still visible in the process list inside this container,
+          # which is what -password means and is not something a manifest can
+          # fix. What it is not is written into git.
+          # Every world dial, straight from the ConfigMap - its keys are the
+          # variable names the entrypoint reads, so adding a dial is one line
+          # there and nothing here.
+          envFrom:
+            - configMapRef:
+                name: valheim-world
+
+          env:
+            # Somewhere writable that is not the game directory. Unity writes
+            # preferences and logs under a home directory whatever -savedir
+            # says, and the game files are read-only to this user.
+            - name: HOME
+              value: /scratch
+
+            # All three from the Secret OpenTofu writes out of the vault. Two
+            # are not credentials - the server name is broadcast to anyone who
+            # joins - but they live there so a fork picks its own by changing
+            # its config rather than by editing this file.
+            - name: VALHEIM_SERVER_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: valheim-server
+                  key: server-name
+            - name: VALHEIM_WORLD_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: valheim-server
+                  key: world-name
+            - name: VALHEIM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: valheim-server
+                  key: password
+
+          volumeMounts:
+            - name: world
+              mountPath: /data
+            - name: scratch
+              mountPath: /scratch
+
+          # Sized from the vendor's own guidance rather than from a guess: 4 GiB
+          # for a fresh world at this player count, 6-8 once it is explored and
+          # built on. The request is what the scheduler reserves; the limit is
+          # what stops a leak taking the node's other tenants with it.
+          #
+          # THIS DOES NOT FIT COMFORTABLY ON AN 8 GiB WORKER. See the note in
+          # docs/epochs/03-workload.md - moving this workload to the shared
+          # workers was right on isolation grounds and was not costed on memory.
+          resources:
+            requests:
+              memory: 8Gi
+              # Four, and there is deliberately no CPU limit beneath it.
+              #
+              # A request reserves scheduling room rather than consuming it:
+              # the node keeps four cores' worth free for this pod, and
+              # anything it is not using is available to everything else.
+              #
+              # A CPU LIMIT WOULD BE ACTIVELY HARMFUL HERE. Limits are enforced
+              # by CFS quota, which stops the process dead at each quota
+              # boundary - on an idle node, with cores free - and for a
+              # simulation people are moving around in, that is stutter. Memory
+              # is different and does have a limit: it is incompressible, so
+              # the only alternative to a limit is a neighbour being evicted.
+              cpu: "4"
+            limits:
+              # Request and limit are equal, which makes this Guaranteed rather
+              # than Burstable: the kubelet will not evict it under node
+              # pressure ahead of anything else, and it cannot grow into a
+              # neighbour's memory.
+              #
+              # It also effectively dedicates a worker. Nine gigabytes
+              # allocatable minus eight leaves room for the daemons that run
+              # everywhere and very little else, which is a real consequence of
+              # asking for the vendor's upper bound rather than an accident.
+              memory: 8Gi
+
+      volumes:
+        - name: world
+          persistentVolumeClaim:
+            claimName: world
+        # Deliberately not persisted. Anything here is a preference file or a
+        # log the engine can rebuild; the world is the thing that matters and
+        # it is on the claim above.
+        - name: scratch
+          emptyDir: {}

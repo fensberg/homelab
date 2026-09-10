@@ -1,0 +1,56 @@
+---
+# Production's world settings. Every dial the server exposes, set here.
+#
+# Empty means "leave it alone", and that is a real value rather than a
+# placeholder: the server has no neutral token for a modifier and no way to
+# express "off" for a flag, so an unset dial has to be an absent argument. The
+# image's entrypoint drops the empty ones.
+#
+# What is NOT here: the server name, the world name and the password. Those
+# come from the vault through a Secret written by OpenTofu - see
+# management/cluster/workloads.tf.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: valheim-world
+  namespace: valheim
+data:
+  # The relay. "true" is what makes players reach the server without a port
+  # forward; anything else falls back to the Steam backend, which needs one.
+  VALHEIM_CROSSPLAY: "true"
+
+  # Listed in the public server browser. Off, because the join code is how
+  # people get in and a server nobody can enumerate is one nobody probes.
+  VALHEIM_PUBLIC: "0"
+
+  # Seconds between world saves. The server's own default is 1800; twenty
+  # minutes is a smaller amount of progress to lose to a crash.
+  VALHEIM_SAVE_INTERVAL: "1200"
+
+  # --- difficulty ---------------------------------------------------------
+
+  # The whole of it in one value, and what every dial below falls back to.
+  #   normal | casual | easy | hard | hardcore | immersive | hammer
+  VALHEIM_PRESET: "normal"
+
+  # Each overrides the preset on one axis. There is no "normal" value for
+  # these - every listed one changes the game - so empty is how an axis stays
+  # at whatever the preset says.
+  #   veryeasy | easy | hard | veryhard
+  VALHEIM_MODIFIER_COMBAT: ""
+  #   casual | veryeasy | easy | hard | hardcore
+  VALHEIM_MODIFIER_DEATHPENALTY: ""
+  #   muchless | less | more | muchmore | most
+  VALHEIM_MODIFIER_RESOURCES: ""
+  #   none | muchless | less | more | muchmore
+  VALHEIM_MODIFIER_RAIDS: ""
+  #   casual | hard | veryhard
+  VALHEIM_MODIFIER_PORTALS: ""
+
+  # On or off, and the server only understands on: passing one of these turns
+  # it on and there is no argument that turns it off. So "true" enables, and
+  # anything else - including "false" - leaves it at the preset's value.
+  VALHEIM_SETKEY_NOBUILDCOST: "false"
+  VALHEIM_SETKEY_PLAYEREVENTS: "false"
+  # Enabling this one disables the in-game map for everybody.
+  VALHEIM_SETKEY_NOMAP: "false"

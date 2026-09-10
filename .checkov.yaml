@@ -25,6 +25,51 @@
 skip-check:
   - CKV_DOCKER_2
 
+  # CKV_K8S_8 and CKV_K8S_9: liveness and readiness probes.
+  #
+  # The game server is a single process in its container. A process that exits
+  # takes the container with it and the kubelet restarts it, so a liveness
+  # probe would be checking that something which cannot be running is running.
+  # Readiness gates a Service, and there is no Service: crossplay means nothing
+  # connects inbound.
+  #
+  # The case a probe would genuinely catch is a hang without an exit. Detecting
+  # that means asking the server something over UDP, which needs a client the
+  # image deliberately does not carry - and a probe that cannot fail is worse
+  # than none, because it reports health nobody measured.
+  #
+  # Removed when a workload here serves traffic through a Service, or when
+  # there is a real check to run.
+  - CKV_K8S_8
+  - CKV_K8S_9
+
+  # CKV_K8S_11: CPU limits.
+  #
+  # Deliberately absent, and this is the one where the check is wrong for the
+  # workload. CPU limits are enforced by CFS quota, which stops a process at
+  # each quota boundary even on an idle node with cores free. For a simulation
+  # people are moving around in, that is stutter rather than safety.
+  #
+  # The CPU request is what protects the node: it reserves scheduling room, so
+  # nothing else is placed expecting capacity this needs. Memory is different
+  # and does carry a limit - it is incompressible, so the alternative to a
+  # limit there is a neighbour being evicted.
+  - CKV_K8S_11
+
+  # CKV_K8S_35: secrets as files rather than environment variables.
+  #
+  # Sound in general and it changes nothing here. The server takes its password
+  # as a command-line argument - that is the only interface it has - so the
+  # value is in that container's /proc/<pid>/cmdline whichever way it arrives.
+  # Mounting a file would add a shell to read it and pass it on, which is more
+  # moving parts for an exposure that does not move.
+  #
+  # What matters is that it is not in git, and it is not: it comes from the
+  # vault through a Secret written by OpenTofu.
+  #
+  # Removed if the server ever learns to read a password from a file.
+  - CKV_K8S_35
+
 skip-path:
   - clusters/management/flux-system
   # clusters/bootstrap/ is Cilium's own chart output, committed verbatim for
