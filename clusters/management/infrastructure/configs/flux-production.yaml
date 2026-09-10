@@ -33,6 +33,23 @@ spec:
   interval: 10m
   ref:
     semver: ">=0.0.0"
-  secretRef:
-    name: flux-system
+  # NO secretRef, and that is deliberate rather than an omission.
+  #
+  # This repository is public, so the source needs no credential - the
+  # flux-system GitRepository beside it has never had one and has always
+  # worked. This one named `flux-system`, on the assumption that the secret
+  # `flux bootstrap` creates would be there. Flux is installed here by OpenTofu
+  # applying the manifests directly, so no such secret is ever created, and a
+  # secretRef pointing at a missing secret does NOT fall back to anonymous
+  # access - it fails closed with AuthenticationFailed and never builds an
+  # artifact.
+  #
+  # That cost a full rebuild, and the symptom named the wrong thing twice over:
+  # the Kustomization downstream reported "Source artifact not found", which
+  # reads as a missing tag, and infra-configs - which applies this file and has
+  # wait:true - sat waiting for its own GitRepository to go Ready until the
+  # ignition's health gate ran out of patience.
+  #
+  # tests/go/repo/flux_source_secret_test.go refuses a secretRef naming a
+  # secret nothing in this repository creates.
   url: ${SOURCE_CONTROL_REPO_URL}
