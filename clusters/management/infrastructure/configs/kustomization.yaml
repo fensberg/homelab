@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
   - state-database.yaml
   - runner-scale-set.yaml
+  - flux-production.yaml

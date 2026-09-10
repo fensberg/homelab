@@ -29,31 +29,6 @@ spec:
   prune: true
   wait: false
 ---
-# Production tracks tags, and that is the whole gate.
-#
-# A second GitRepository rather than a second path on the first: the first is
-# pinned to a branch, so pointing production at a different directory of the
-# same branch would deploy to production every time anything merged. The tag is
-# the deliberate act, and it is the operator's - see the epoch log's "Tag v*
-# when the change should reach production".
-#
-# THIS IS NOT READY UNTIL THE FIRST TAG EXISTS, AND THAT IS CORRECT.
-# A semver ref with no matching tag reports the source as failed, which reads
-# as a red light and is an accurate one: nothing has been released. It is not
-# a reason to point production at a branch.
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: GitRepository
-metadata:
-  name: flux-production
-  namespace: flux-system
-spec:
-  interval: 10m
-  ref:
-    semver: ">=0.0.0"
-  secretRef:
-    name: flux-system
-  url: ${SOURCE_CONTROL_REPO_URL}
----
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -66,6 +41,9 @@ spec:
   retryInterval: 1m
   timeout: 10m
   sourceRef:
+    # Declared in infrastructure/configs rather than here, because its url is
+    # substituted and this file is validated without substitution - see the
+    # note on that resource.
     kind: GitRepository
     name: flux-production
   path: ./environments/production/applications
