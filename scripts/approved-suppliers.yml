@@ -66,6 +66,12 @@ registries:
       digest at its point of use like every other image here. This is the
       narrowest possible reason to add a registry: one component, published by
       the project whose API it calls.
+  - host: quay.io
+    reason: >-
+      Red Hat's registry, and where the Cilium project publishes every image it
+      ships. Needed for the CNI and its operator, both pinned by digest at their
+      point of use like every other image here. Added for one component, on the
+      same narrow ground as registry.k8s.io above.
 
 # Helm chart sources. Charts are as much a supply chain as images - a chart
 # decides what images get deployed, so an unapproved chart repository is an
@@ -82,6 +88,18 @@ charts:
       Rebalances pods that were scheduled correctly and are now in the wrong
       place. A kubernetes-sigs project maintained by SIG Scheduling - the same
       group that owns kube-scheduler, whose decisions this corrects.
+  - url: https://helm.cilium.io
+    reason: >-
+      The pod network, replacing the Flannel that Talos ships and the kube-proxy
+      that Cilium makes redundant. A CNCF graduated project, published by the
+      Cilium maintainers themselves. This is the most privileged delivery in
+      this section by some distance: a CNI is the node's network, so it runs as
+      a privileged DaemonSet on every machine, holds CAP_NET_ADMIN, and loads
+      eBPF programs into the kernel. Taken anyway because Flannel ships no
+      NetworkPolicy controller at all - under it a policy is accepted, stored,
+      and never evaluated, so isolation is something this estate can write down
+      but not enforce. That gap is the condition on hosting an untrusted
+      workload; see docs/epochs/03-workload.md.
 
 # OpenTofu providers. Third-party code that runs with the estate's credentials.
 #
