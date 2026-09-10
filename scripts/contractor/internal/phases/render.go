@@ -69,11 +69,23 @@ func Render(ctx *run.Context) error {
 	// Not a secret, but it lives beside the rendered files and is wiped
 	// with them, so the playbook only ever sees one site's values.
 	run.Info("writing per-site network values for Ansible")
-	// The untrusted zone's values are written whether or not it has machines.
-	// They are derived from the octet rather than chosen, so they are the same
-	// values next time; what decides whether the vnet is built is the count,
-	// and building network no machine sits on is infrastructure nobody asked
-	// for. The playbook gates on dmz_count for exactly that reason.
+	// The untrusted zones, as a list Ansible loops over.
+	//
+	// A list rather than a count and a set of scalars, because looping over it
+	// IS the off switch: an empty list creates nothing, with no `when:` for
+	// somebody adding a task to forget. The values are derived from the site's
+	// octet and the zone's name rather than chosen, so a zone comes back at the
+	// same addresses if it ever returns.
+	var zones strings.Builder
+	for _, z := range net.DMZZones {
+		fmt.Fprintf(&zones, "  - name: %q\n    vnet: %q\n    vni: %d\n    subnet: %q\n    gateway: %q\n",
+			z.Name, z.VNet, z.VNI, z.CIDR, z.Gateway)
+	}
+	zoneBlock := "dmz_zones: []\n"
+	if zones.Len() > 0 {
+		zoneBlock = "dmz_zones:\n" + zones.String()
+	}
+
 	siteVars := fmt.Sprintf(`---
 sdn_subnet: %q
 sdn_gateway: %q
@@ -81,12 +93,7 @@ advertise_routes: %q
 sdn_asn: %d
 sdn_vrf_vni: %d
 sdn_vnet_vni: %d
-dmz_count: %d
-sdn_dmz_subnet: %q
-sdn_dmz_gateway: %q
-sdn_dmz_vnet_vni: %d
-`, net.NodeCIDR, net.Gateway, net.SiteCIDR, net.ASN, net.VRFVNI, net.VNetVNI,
-		len(net.DMZIPs), net.DMZCIDR, net.DMZGateway, net.DMZVNetVNI)
+`, net.NodeCIDR, net.Gateway, net.SiteCIDR, net.ASN, net.VRFVNI, net.VNetVNI) + zoneBlock
 	if err := os.WriteFile(ctx.SiteVars, []byte(siteVars), 0o644); err != nil {
 		return err
 	}

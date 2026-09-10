@@ -689,18 +689,23 @@ mutations:
       its last untrusted workload - and nothing fails, so the only symptom is
       disk somebody notices months later.
 
-  - guard: TestEveryZoneTaskIsGatedOnTheCount
+  - guard: TestEveryZoneTaskLoopsOverTheZones
     file: management/hypervisor/hypervisor-prep.yml
-    find: "      when:\n        - (dmz_count | int) > 0\n        - sdn_dmz_vnet not in"
-    replace: "      when:\n        - sdn_dmz_vnet not in"
-    mentions: "not gated on dmz_count"
+    find: "      loop: \"{{ dmz_zones }}\"\n      loop_control:\n        label: \"{{ item.name }}\"\n      run_once: true\n      tags: [sdn]\n\n    - name: List subnets on each untrusted zone's vnet"
+    replace: "      run_once: true\n      tags: [sdn]\n\n    - name: List subnets on each untrusted zone's vnet"
+    mentions: "without looping over the zones"
     why: >
-      Dropping the count from a task that already has another condition is the
-      realistic version of this: the task still looks guarded, and the guard it
-      keeps is the idempotency check rather than the one deciding whether the
-      zone should exist at all. Ansible creates and never removes, so the
-      result is a vnet and a VXLAN identifier on an estate with nothing to put
-      on them.
+      Dropping the loop from a task that still reads item.vnet is what a
+      copy-paste of the block beside it produces, and it leaves the task running
+      once against an undefined item on every estate - including one with no
+      untrusted workload at all. The loop is the off switch here rather than a
+      `when:`, deliberately: a gate has to be remembered on every task, and a
+      loop over an empty list cannot run.
+
+      This entry replaced one proving a dmz_count gate. The config changed shape
+      from a count to named zones, and the old guard broke while the behaviour
+      it cared about did not - a test matching a variable's spelling rather than
+      the property it stood for.
 
 # Guards that cannot be proved by mutation, and why.
 #

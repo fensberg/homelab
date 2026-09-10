@@ -102,12 +102,12 @@
       "because": "Zero workers is a real and common answer - it is the estate epoch 01 shipped - so the count cannot simply be required to be positive. Negative is the one value that is meaningless, and it would otherwise reach range() in variables.tf."
     },
     {
-      "name": "negative_dmz_count_fails_its_precondition",
-      "fixture": "negative-dmz-count.json",
+      "name": "negative_zone_node_count_fails_its_precondition",
+      "fixture": "negative-zone-node-count.json",
       "site": "site0",
       "valid": false,
-      "go_error_contains": "dmz_count",
-      "because": "Zero machines in the untrusted zone is the right default rather than an omission, so the count cannot be required to be positive. Negative is the meaningless one, and it would otherwise reach range() in variables.tf exactly as a negative worker count would."
+      "go_error_contains": "node_count",
+      "because": "A zone with no node_count means one machine, so the count cannot be required to be positive. Negative is the meaningless value and would otherwise reach range() in variables.tf, exactly as a negative worker count would."
     }
   ]
 }

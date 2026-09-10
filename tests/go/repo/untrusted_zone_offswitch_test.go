@@ -68,40 +68,48 @@ there are none.`, header, strings.TrimSpace(forEach[1]))
 	}
 }
 
-// Every zone task in the playbook is gated on the count.
+// Every zone task in the playbook loops over the zones.
 //
-// Ansible creates and does not remove, so a task that runs unconditionally
-// leaves a vnet, a subnet and a VXLAN identifier behind on an estate with
-// nothing to put on them. The gate is one line per task and is exactly the
-// line somebody adding a fourth task copies without.
-func TestEveryZoneTaskIsGatedOnTheCount(t *testing.T) {
+// The loop IS the off switch, and that is a stronger property than a gate. A
+// `when:` has to be remembered on every task and is exactly the line somebody
+// adding a fourth one copies without; a loop over an empty list runs zero
+// times because there is nothing to run it against. Ansible creates and never
+// removes, so a task that runs unconditionally leaves a vnet, a subnet and a
+// VXLAN identifier behind on an estate with nothing to put on them.
+//
+// This guard replaced one asserting a `dmz_count` gate. That test matched the
+// spelling of a variable rather than the property, so reshaping the config from
+// a count to named zones broke it while the behaviour it cared about was
+// unchanged - which is the failure the mutation ledger exists to make visible.
+func TestEveryZoneTaskLoopsOverTheZones(t *testing.T) {
 	body := readRepoFile(t, "management/hypervisor/hypervisor-prep.yml")
 
-	// Task boundaries. The playbook writes every task as "    - name:".
 	tasks := regexp.MustCompile(`(?m)^    - name:`).Split(body, -1)
 
 	var checked int
 	for _, task := range tasks {
-		// A task is a zone task if it touches the zone's own variables. The
-		// shared vnet listing is not one: it lists every vnet, and gating it
-		// would hide the node vnet from the task that creates it.
-		if !strings.Contains(task, "sdn_dmz_") {
+		// A zone task is one that reads a zone's own values. The shared vnet
+		// listing is not one: it lists every vnet, and looping it over the
+		// zones would hide the node vnet from the task that creates it.
+		if !strings.Contains(task, "item.vnet") && !strings.Contains(task, "item.item.vnet") {
 			continue
 		}
 		checked++
 
-		if !strings.Contains(task, "dmz_count") {
+		if !strings.Contains(task, "loop:") {
 			name := strings.SplitN(strings.TrimSpace(task), "\n", 2)[0]
-			t.Errorf(`the task "%s" touches the untrusted zone and is not gated on dmz_count.
+			t.Errorf(`the task "%s" reads a zone's values without looping over the zones.
 
-Ansible creates and never removes, so this runs on an estate with no untrusted
-workload and leaves a vnet, a subnet and a VXLAN identifier that nothing uses
-and nobody will recognise later.`, strings.Trim(name, ": "))
+Without the loop it runs once against an undefined item on every estate,
+including one with no untrusted workload at all. The loop is what makes "no
+zones" mean "nothing is built" - Ansible creates and never removes, so anything
+this leaves behind stays until somebody finds it and wonders what it is for.`,
+				strings.Trim(name, ": "))
 		}
 	}
 
 	if checked == 0 {
-		t.Fatal("no task in hypervisor-prep.yml touches the zone's variables, so this test proves nothing.\n\n" +
-			"Either the zone's SDN tasks were removed or its variables were renamed.")
+		t.Fatal("no task in hypervisor-prep.yml reads a zone's values, so this test proves nothing.\n\n" +
+			"Either the zones' SDN tasks were removed or their loop variable was renamed.")
 	}
 }

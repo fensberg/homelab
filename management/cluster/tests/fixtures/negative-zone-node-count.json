@@ -23,7 +23,9 @@
       "octet": 10,
       "control_plane_count": 3,
       "worker_count": 0,
-      "dmz_count": -1,
+      "dmz_zones": {
+        "valheim": { "node_count": -1 }
+      },
       "hypervisor": {
         "provider": "proxmox",
         "vault_provider": "proxmox",

@@ -117,8 +117,13 @@ resource "terraform_data" "invariants" {
     }
 
     precondition {
-      condition     = local.dmz_count >= 0 && local.dmz_count <= 55
-      error_message = "dmz_count must be between 0 and 55. Zero is valid and is the right default - a machine dedicated to running untrusted code is a liability on an estate with none to run. The ceiling keeps the band inside a single octet, as the worker one does."
+      condition     = length(local.dmz_zone_names) <= local.dmz_max_zones
+      error_message = "Too many untrusted zones. The ceiling is what keeps every zone's subnet inside the band reserved for tenants; none is valid and is the right default."
+    }
+
+    precondition {
+      condition     = alltrue([for zone, z in local.dmz_zones_in : try(z.node_count, 0) >= 0])
+      error_message = "An untrusted zone declares a negative node_count. Absent means one machine; negative is the meaningless value, and it would otherwise reach range() in variables.tf."
     }
 
     # --- vendor lock, checked three ways -----------------------------------
