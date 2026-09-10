@@ -129,7 +129,11 @@ So three things are never findings, and each is a fact about your input rather t
 
 3. THAT A CROSS-REFERENCE IS WRONG. When the text points at another path, you cannot check it. Take it at face value.
 
-What you CAN judge is whether the files in front of you tell somebody what to DO: whether a step assumes an account, credential, network or machine exists without saying how to obtain one; whether a configuration key says what to put in it; whether an order of operations is stated rather than implied.
+What you CAN judge is whether the files in front of you tell somebody what to DO: whether a step assumes an account, credential or machine exists without saying how to obtain one; whether a configuration key says what to put in it; whether an order of operations is stated rather than implied.
+
+ORDINARY INTERNET ACCESS IS NOT ONE OF THOSE THINGS. A script that downloads a tool from its vendor is doing its job, and "this assumes the internet is reachable" is not a finding. Neither is pulling a public container image. What would be a finding is a step needing an account, a licence or a credential to reach something - a private registry, a paid API - with nothing saying how to get one.
+
+ONE FINDING PER GAP, NOT ONE PER LINE. When the same gap repeats down a file, report it once, against the first line where it appears, and say it applies throughout. Ten alerts making one point bury every other finding in the run and get read as noise rather than as ten problems.
 
 Report only what would actually block you, and only from what you were given. Use the rule "handover-gap" for every finding.
 ` + findingRules + `

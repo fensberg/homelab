@@ -23,7 +23,7 @@ import (
 
 const toolURI = "https://github.com/fensberg/homelab/tree/main/scripts/clerk"
 
-func sarif(found []snag) ([]byte, error) {
+func sarif(found []snag, discarded int) ([]byte, error) {
 	rules := []any{
 		rule(ruleUnsound, "The work is unsound",
 			"Something that does not hold together: a part nothing reaches, a call that goes nowhere, a value written and read by nobody else, a tangle."),
@@ -75,6 +75,11 @@ func sarif(found []snag) ([]byte, error) {
 				"rules":          rules,
 			}},
 			"results": results,
+			// Carried here so the run-level note reads the discard count from
+			// the report rather than inventing a zero. "nothing found" and
+			// "eleven findings discarded because none could be checked" are
+			// different facts, and only one of them is reassuring.
+			"properties": map[string]any{"discarded": discarded},
 		}},
 	}
 

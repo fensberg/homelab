@@ -55,6 +55,7 @@ func main() {
 	verbs := []verb{
 		{"snag", "walk the work and list what is unsound or does not match what was written about it", snagVerb},
 		{"handover", "read it as a stranger who has just cloned it, and list what would stop them", handoverVerb},
+		{"note", "post the one note a run is entitled to, from every report it produced", noteVerb},
 	}
 
 	if len(os.Args) < 2 {
@@ -178,7 +179,7 @@ func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, string,
 		fmt.Fprintf(os.Stderr, "  discarded: %s\n", d)
 	}
 
-	report, err := sarif(kept)
+	report, err := sarif(kept, len(dropped))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clerk:", err)
 		return 1
