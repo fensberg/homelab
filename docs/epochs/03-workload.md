@@ -376,11 +376,142 @@ over the whole vault. **Blast radius is not only what a workload holds - it is
 what is reachable from where it sits.** The game server's own radius is
 trivial; its neighbour's is the estate.
 
-That is not an argument for a zone. It is an argument for a **node
-anti-affinity** keeping the two off the same machine: a scheduling constraint
-rather than a subnet, proportionate to a container escape being a far higher
-bar than a game exploit, and cheap while there are two workers to spread
-across.
+That is not an argument for a zone, and two answers were considered before
+landing on neither.
+
+**A node anti-affinity** between the workload and the runner. Rejected on
+shape: the rule is written on every workload, against the runner, so it is N
+rules and forgetting one silently puts something on the same kernel as a token
+with read and write over the whole vault. Fail-open, and it gets worse as
+workloads are added.
+
+**A worker dedicated to CI**, tainted, with the runner tolerating it. Much
+better shape - one rule, written once, on the thing that actually holds the
+credential, and a forgotten toleration means a workload does not land there
+rather than that it does. It is the taint-over-convention argument this epoch
+already made, applied to the privileged side: **isolate the crown jewels, not
+each visitor from them**, because the privileged things can be enumerated and
+future workloads cannot.
+
+**Separated, but by adding workload nodes rather than by reserving a CI one.**
+
+The density objection to a dedicated CI worker was real: the estate is
+deliberately being packed, CI is bursty, and holding a machine idle for it
+fights what this epoch is for. That objection dissolves once the split is
+described from the other side. CI keeps the workers that already exist and are
+already sized for it; the workloads get nodes of their own, which is capacity
+being added for work that is about to run rather than capacity standing by.
+
+Same separation, and the memory is spent on the things being packed instead of
+on the thing that idles.
+
+So the classes are:
+
+| Node class        | Runs                                             | Taint                         |
+| ----------------- | ------------------------------------------------ | ----------------------------- |
+| **Control plane** | etcd and the API                                 | Untainted today; see epoch 02 |
+| **Privileged**    | CI, and anything else holding estate credentials | Tolerated only by that work   |
+| **Workload**      | Things found on the internet and self-hosted     | Tolerated only by workloads   |
+
+#### And it needs a guard, because a declaration nobody checks is a convention
+
+The operator's requirement, and it is the right one: privileged work must not
+end up on a machine running things somebody found on the internet.
+
+Placement by convention fails the way every convention here has. A workload
+added without the right toleration does not fail - it schedules somewhere, and
+the somewhere is decided by whatever the scheduler finds convenient. Nothing
+reports it, and the first sign is an incident.
+
+The guard has two halves, and both are needed because each alone is
+satisfiable while the property is false:
+
+- **Every workload manifest places itself on workload nodes**, by toleration and
+  node selection. A workload with neither is one the scheduler may put beside
+  the vault token.
+- **Nothing privileged tolerates the workload taint.** The reverse direction,
+  and the one that would otherwise be missed: it is the privileged side moving
+  that puts the two together, and CI already carries tolerations for reasons of
+  its own.
+
+It lands with the node classes rather than before them. There is nothing to
+assert while `environments/` is empty and both classes are one undifferentiated
+pool - a guard written now would pass by finding nothing, which this repository
+has a test specifically to refuse.
+
+#### Is there actually a vector? Walked, rather than assumed
+
+Four answers were written for this before anybody asked how the attack would
+work. That question turns out to settle it, and it should have come first.
+
+**Pod to pod: no.** The runner's token is a Kubernetes Secret mounted into the
+runner's own mount namespace. A neighbouring pod cannot read it off disk, and
+cannot read it through the API either - RBAC does not grant it, and a workload
+with `automountServiceAccountToken: false` has no identity to ask with.
+
+**Escape to the node: yes, and it is the only one.** The kubelet stores mounted
+secrets under `/var/lib/kubelet/pods/<uid>/volumes/kubernetes.io~secret/`, which
+root on the host can read. The kubelet's own credential reaches the same place
+by Node authorization. So the chain is: remote code execution in the workload,
+then a container escape to node root, then the token.
+
+**The second step is the hard one.** Talos has no shell, no package manager and
+a read-only root, and enforces Pod Security - a workload running non-root
+without `privileged` or `hostPath` needs a kernel vulnerability to escape, not a
+misconfiguration.
+
+Two things lower it further, and both are recent:
+
+- Nothing on these workers is internet-**inbound** now that crossplay removed
+  the port forward. The chain has no obvious place to start.
+- The self-hosted runner does not execute pull-request code. `pr-validation`
+  runs on GitHub-hosted runners, and the integration lane is deliberately not
+  reachable from a pull request.
+
+**So: real but narrow.** Two hard steps, one of them a kernel exploit.
+
+#### Which makes the response proportionate rather than urgent
+
+The consequence is total - read and write over the whole vault is the estate -
+and self-hosted software does get remote code execution. That asymmetry is what
+makes it worth something rather than nothing.
+
+- **It does not block a workload.** A relay-only game server running non-root
+  does not start the chain.
+- **The separation is taken when workload nodes are added anyway**, where it
+  costs a taint and a toleration. It was never worth a machine standing idle,
+  which is what the first three answers each talked themselves into.
+- **Narrowing the token is the higher-value fix**, and it is the one this
+  estate's own rule points at: narrow what a credential may **do** before
+  hardening where it is **kept**. Kernel isolation lowers the probability;
+  narrowing lowers the consequence, and a lowered consequence keeps holding
+  after the isolation has failed and after everyone has stopped watching.
+
+The guard above still lands with the node classes. What changed is that it is
+enforcing a proportionate decision rather than an escalating one.
+
+#### Which splits isolation into two dials rather than one
+
+Worth stating separately, because the zone conflates them and the CI question
+is what pulls them apart:
+
+| Dial                  | Answers                          | Bought with                          |
+| --------------------- | -------------------------------- | ------------------------------------ |
+| **Kernel isolation**  | What shares its kernel?          | A dedicated node and a taint         |
+| **Network isolation** | What can it reach, and reach it? | Its own subnet and vnet, plus policy |
+
+They are independent, and most things want neither:
+
+- **CI** would want the first and not the second. Its blast radius is the whole
+  estate, so sharing a kernel with nothing has real value - but it must reach
+  the hypervisor, the API server and the vault, so a subnet isolating it would
+  stop it working.
+- **A mail relay taking inbound SMTP** wants both.
+- **A game server on a relay** wants neither, which is how it ends up on the
+  shared workers.
+
+The zone as built is both dials at once. That is right for what earns it, and
+it is why CI would get a node rather than a zone if it gets anything.
 
 #### How the original decision went wrong, since it is repeatable
 
