@@ -187,6 +187,9 @@ files:
   - path: clerk/main.go
     uncovered: 8
     covered_by: nothing
+  - path: clerk/runnote.go
+    uncovered: 1
+    covered_by: nothing
   - path: collector/clear-branches.go
     uncovered: 8
     covered_by: nothing

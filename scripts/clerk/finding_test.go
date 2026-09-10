@@ -118,7 +118,7 @@ func TestEverySarifResultIsAdvisory(t *testing.T) {
 	out, err := sarif([]snag{
 		{ruleUnsound, "a.go", 1, "one"},
 		{ruleDisagrees, "b.md", 2, "two"},
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("sarif: %v", err)
 	}
