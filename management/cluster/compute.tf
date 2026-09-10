@@ -480,11 +480,14 @@ resource "proxmox_virtual_environment_vm" "dmz" {
   cpu {
     # Four, and the clock matters more than the count.
     #
-    # Valheim's world generation and physics lean on single-thread performance,
-    # so a high base clock is what removes rubber-banding during exploration -
-    # more cores past four buy very little. Four is the published
-    # recommendation rather than a guess; the first version of this file said
-    # two, which was one.
+    # Sized for the workload this zone was built for, whose published guidance
+    # is in docs/epochs/03-workload.md - it leans on single-thread performance,
+    # so a high base clock is what matters and more cores past four buy very
+    # little. The figures are looked up rather than guessed; the first version
+    # of this file said two cores, which was one too few.
+    #
+    # The zone itself is not sized for that workload or named after it. This is
+    # the machine's allocation, and the next tenant's will be its own.
     cores = 4
     type  = "x86-64-v2-AES"
   }
@@ -497,15 +500,15 @@ resource "proxmox_virtual_environment_vm" "dmz" {
     #
     # EIGHT, AND THE REASONING IS IN docs/epochs/03-workload.md.
     #
-    # Published guidance for five players is 4GiB on a fresh vanilla world and
-    # 6-8GiB once the map is explored and bases are established. This VM also
-    # runs Talos, the kubelet, the Cilium agent and the OpenEBS provisioner -
-    # roughly a gigabyte before the game starts - so eight here is about seven
-    # for the workload.
+    # The workload this zone was built for wants 4 GiB on a fresh install and
+    # 6-8 GiB once it has accumulated state, at the player count it is intended
+    # for. This VM also runs Talos, the kubelet, the Cilium agent and the
+    # OpenEBS provisioner - roughly a gigabyte before the workload starts - so
+    # eight here is about seven for it.
     #
     # The top of the band rather than the middle, deliberately. The failure
-    # mode of being short is a server that degrades once a world is established
-    # and players have built - which is the moment it is hardest to take away
+    # mode of being short is a service that degrades once it has accumulated
+    # state people care about - which is the moment it is hardest to take away
     # for a resize, and the moment anyone would mind most. The hypervisor was
     # measured rather than estimated and has room: raising this later would buy
     # nothing that taking it now does not, and would cost an outage to do it.

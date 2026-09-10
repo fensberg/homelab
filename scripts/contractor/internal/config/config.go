@@ -471,7 +471,7 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 			CIDR:    fmt.Sprintf("10.%d.%d.0/24", o, third),
 			Gateway: fmt.Sprintf("10.%d.%d.1", o, third),
 			// Indexed rather than named: a Proxmox vnet id is capped at eight
-			// characters, which "minecraft" alone already exceeds.
+			// characters, which a workload name of any length will exceed.
 			VNet: fmt.Sprintf("vnetdmz%d", i),
 			// Banded so a second zone at one site cannot collide with a first
 			// zone at another: the node vnet tops out at 11000+octet, and these

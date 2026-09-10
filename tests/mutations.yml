@@ -713,6 +713,24 @@ mutations:
       it cared about did not - a test matching a variable's spelling rather than
       the property it stood for.
 
+  - guard: TestZoneNamesUseAPlaceholder
+    file: management/cluster/tests/fixtures/negative-zone-node-count.json
+    find: '"example": { "node_count": -1 }'
+    replace: '"valheim": { "node_count": -1 }'
+    mentions: "names an untrusted zone"
+    why: >
+      A real workload name in a fixture is what this catches, and the mutation
+      uses the one that was actually there before somebody noticed. It is not a
+      secret in the way a site or hypervisor name is - nobody is harmed by
+      knowing which game runs here - so the reason it stays out is a design one:
+      a zone is for untrusted work rather than for one workload, and plumbing
+      that names its first tenant is how a general capability quietly becomes
+      that tenant's feature.
+
+      The epoch record names the workload, deliberately. That is where the
+      motivation belongs. The machinery should read the same whoever moves in
+      next.
+
 # Guards that cannot be proved by mutation, and why.
 #
 # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in

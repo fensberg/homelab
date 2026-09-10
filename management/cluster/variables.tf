@@ -253,7 +253,7 @@ locals {
       index = i
       cidr  = "10.${local.octet}.${local.dmz_first_subnet + i}.0/24"
       # Indexed rather than named: a Proxmox vnet id is capped at eight
-      # characters, which "minecraft" alone already exceeds.
+      # characters, which a workload name of any length will exceed.
       vnet = "vnetdmz${i}"
       # Banded so a second zone at one site cannot collide with a first zone at
       # another: the node vnet tops out at 11000+octet, and these start at
