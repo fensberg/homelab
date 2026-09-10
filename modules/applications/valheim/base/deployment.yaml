@@ -1,0 +1,129 @@
+---
+# The server itself.
+#
+# Deployment rather than StatefulSet: there is one of these and there will
+# always be one. A StatefulSet buys ordered identity for a set, and a set of
+# one has no order to keep.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valheim
+  namespace: valheim
+  labels:
+    app.kubernetes.io/name: valheim
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate. The volume is ReadWriteOnce and the world is a
+  # single-writer file: two pods would either fail to schedule or, worse,
+  # both open it. Taking the server down before bringing it up is correct here
+  # and is what a rolling update would prevent.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: valheim
+  template:
+    metadata:
+      labels:
+        # Matched by the NetworkPolicy beside this file. If this label changes
+        # the policy stops selecting the pod, and a pod no policy selects is
+        # one with no restrictions at all.
+        app.kubernetes.io/name: valheim
+    spec:
+      serviceAccountName: valheim
+      # Belt and braces: the ServiceAccount already declines the token, and
+      # saying so here means a pod that is later pointed at a different account
+      # does not silently acquire one.
+      automountServiceAccountToken: false
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        runAsGroup: 10000
+        # The volume is mounted for this group, so the server can write its
+        # world without the game files being writable by it.
+        fsGroup: 10000
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: valheim
+          # renovate: datasource=docker depName=ghcr.io/fensberg/homelab-valheim
+          image: ghcr.io/fensberg/homelab-valheim@sha256:1f202cb87a04d7c5bfcf0f434ba04a872e7aea747b75dda019e37013970e8ca7
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+
+          # The password arrives as an environment variable and is expanded
+          # into the argument below by Kubernetes, not by a shell. The image's
+          # entrypoint is the server binary directly, so there is no shell to
+          # do it - and $(VAR) expansion in args is the mechanism that does not
+          # need one.
+          #
+          # It is still visible in the process list inside this container,
+          # which is what -password means and is not something a manifest can
+          # fix. What it is not is written into git.
+          env:
+            # The name people see and the world to load. Environment values,
+            # not module ones: the overlay supplies them, and staging is not
+            # obliged to call itself the same thing production does.
+            - name: VALHEIM_SERVER_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: valheim-server
+                  key: server-name
+            - name: VALHEIM_WORLD_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: valheim-server
+                  key: world-name
+            - name: VALHEIM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: valheim-server
+                  key: password
+
+          args:
+            - "-name"
+            - "$(VALHEIM_SERVER_NAME)"
+            - "-world"
+            - "$(VALHEIM_WORLD_NAME)"
+            - "-password"
+            - "$(VALHEIM_PASSWORD)"
+            # The relay, and the reason there is no ingress rule and no port
+            # forward. Without this the Steam backend is used, which needs both.
+            - "-crossplay"
+            # The world lives on the volume rather than under the server's home
+            # directory, so nothing depends on where a container's home is.
+            - "-savedir"
+            - "/data"
+            # Not listed in the public browser. The join code is how people get
+            # in, and a server nobody can enumerate is one nobody probes.
+            - "-public"
+            - "0"
+
+          volumeMounts:
+            - name: world
+              mountPath: /data
+
+          # Sized from the vendor's own guidance rather than from a guess: 4 GiB
+          # for a fresh world at this player count, 6-8 once it is explored and
+          # built on. The request is what the scheduler reserves; the limit is
+          # what stops a leak taking the node's other tenants with it.
+          #
+          # THIS DOES NOT FIT COMFORTABLY ON AN 8 GiB WORKER. See the note in
+          # docs/epochs/03-workload.md - moving this workload to the shared
+          # workers was right on isolation grounds and was not costed on memory.
+          resources:
+            requests:
+              memory: 4Gi
+              cpu: "2"
+            limits:
+              memory: 6Gi
+
+      volumes:
+        - name: world
+          persistentVolumeClaim:
+            claimName: world

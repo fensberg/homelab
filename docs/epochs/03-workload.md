@@ -832,6 +832,35 @@ from the site's octet and the zone's position in the sorted list rather than
 chosen, so they cost nothing while unused. A zone that returns under the same
 name returns to the same addresses. Deleting that would be deleting arithmetic.
 
+### The move to shared workers was not costed on memory
+
+Found while writing the Deployment's resource requests, which is late.
+
+The workers are 8 GiB each. The vendor's guidance for this workload is 4 GiB on
+a fresh world and 6-8 once it is explored and built on, and the request is 4 GiB
+with a 6 GiB limit. So a mature world takes most of a worker, on machines that
+also host the CI runner and every operator with an anti-control-plane affinity.
+
+The isolation argument for moving it there was right and is unaffected: the
+workload's exposure is a relay and its blast radius is a world save, so it does
+not earn a zone. What was not weighed is that the zone came with a machine
+sized for it, and the shared workers were sized before this workload existed.
+
+Three answers, none of them urgent while the world is empty:
+
+- **Raise the workers.** They are 8 GiB by a decision made when they ran CI and
+  operators. One line in the config, and it costs a rebuild of those machines
+  rather than of the estate.
+- **Add a worker.** `worker_count` is a config bump, and the memory measured on
+  the hypervisor - 23 GiB available - is enough for one.
+- **Let the limit bite.** 6 GiB is a ceiling rather than a reservation, and a
+  world that grows into it is a world worth spending a machine on. It is the
+  honest option while nobody has played on it yet.
+
+Recorded rather than fixed because the number that matters - how big the world
+actually gets - does not exist yet, and sizing against a vendor's upper bound
+before anybody has played is how the last estimate went wrong.
+
 ## Outcome
 
 ## Deferred

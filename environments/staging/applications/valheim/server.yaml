@@ -1,0 +1,18 @@
+---
+# Staging's values for the game server.
+#
+# Not secret: the name is what players see in their server list and the world
+# name is what they are joining. Both are here rather than in the module
+# because a module that knows which environment it is in is not a module.
+#
+# The world name is what decides which save file loads. Changing it does not
+# rename a world - it starts a new one and leaves the old on the volume, which
+# is a surprise worth having in writing rather than discovering.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: valheim-server
+  namespace: valheim
+data:
+  server-name: "homelab-staging"
+  world-name: "midgard"
