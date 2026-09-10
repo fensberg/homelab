@@ -93,6 +93,22 @@
 
     sdn_zone: "internal"
     sdn_vnet: "vnetint"
+
+    # The untrusted zone shares the EVPN zone and takes its own vnet.
+    #
+    # Same zone because a zone is the VRF and the routing domain, and these
+    # subnets do have to be routable to each other - a tainted worker is still a
+    # cluster member and still talks to the API server. Different vnet because a
+    # vnet is the L2 segment, and putting the machine that takes inbound traffic
+    # from strangers on the same broadcast domain as every control plane is the
+    # thing this zone exists to avoid.
+    #
+    # Nothing here is built unless dmz_count says a machine will sit on it.
+    sdn_dmz_vnet: "vnetdmz"
+    dmz_count: 0
+    sdn_dmz_subnet: "UNSET"
+    sdn_dmz_gateway: "UNSET"
+    sdn_dmz_vnet_vni: 0
     # One file this playbook owns, rather than editing the shared
     # /etc/sysctl.conf. Numbered 99 so it sorts after the fragments
     # Proxmox ships under the same directory.
@@ -1001,6 +1017,62 @@
       when: >-
         sdn_subnets.rc != 0 or
         (sdn_subnets.stdout | default('[]') | from_json | length) == 0
+      run_once: true
+      tags: [sdn]
+
+    # --- the untrusted zone -------------------------------------------------
+    #
+    # Built only when a machine will sit on it. An empty vnet is a broadcast
+    # domain nobody is on and a VNI nobody can reuse.
+    - name: Refuse an untrusted zone with no values
+      ansible.builtin.assert:
+        that:
+          - sdn_dmz_subnet != "UNSET"
+          - sdn_dmz_gateway != "UNSET"
+          - (sdn_dmz_vnet_vni | int) > 0
+          - (sdn_dmz_vnet_vni | int) != (sdn_vnet_vni | int)
+        fail_msg: >-
+          dmz_count is {{ dmz_count }} but the zone's values are missing or
+          collide with the node vnet's. They are written by the Render phase
+          from the site's octet; re-run it rather than setting them by hand.
+        success_msg: "The untrusted zone's values are present and distinct."
+      when: (dmz_count | int) > 0
+      run_once: true
+      tags: [sdn]
+
+    - name: Create the untrusted zone's vnet
+      ansible.builtin.command: >-
+        pvesh create /cluster/sdn/vnets
+        --vnet {{ sdn_dmz_vnet }} --zone {{ sdn_zone }} --tag {{ sdn_dmz_vnet_vni }}
+      when:
+        - (dmz_count | int) > 0
+        - sdn_dmz_vnet not in (sdn_vnets.stdout | from_json | map(attribute='vnet') | list)
+      run_once: true
+      tags: [sdn]
+
+    - name: List subnets on the untrusted zone's vnet
+      ansible.builtin.command: >-
+        pvesh get /cluster/sdn/vnets/{{ sdn_dmz_vnet }}/subnets --output-format json
+      register: sdn_dmz_subnets
+      when: (dmz_count | int) > 0
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      run_once: true
+      tags: [sdn]
+
+    # SNAT for the same reason the node subnet has it: the machine needs to
+    # reach the internet to pull its own images and to ship its backups off the
+    # estate. Outbound only - nothing here routes anything inbound, and the
+    # port forward that eventually does is on the router, not on this host.
+    - name: Create the untrusted zone's subnet with SNAT
+      ansible.builtin.command: >-
+        pvesh create /cluster/sdn/vnets/{{ sdn_dmz_vnet }}/subnets
+        --type subnet --subnet {{ sdn_dmz_subnet }} --gateway {{ sdn_dmz_gateway }} --snat 1
+      when: >-
+        (dmz_count | int) > 0 and
+        (sdn_dmz_subnets.rc | default(1) != 0 or
+         (sdn_dmz_subnets.stdout | default('[]') | from_json | length) == 0)
       run_once: true
       tags: [sdn]
 
