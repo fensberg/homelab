@@ -1643,8 +1643,9 @@ and its trigger are recorded beside the count in `compute.tf`.
 3. ~~**Three `PriorityClass` objects**~~ - **done**, in the same change as
    step 1. Values are local rather than the built-in `system-cluster-critical`
    the table above names; the reason is in `priority-classes.yaml`.
-4. ~~**Proxmox pools by role**~~ - **done**, and the premise of this entry was
-   wrong. See "Pools edit no machine at all" below.
+4. **Proxmox pools by role**, as its own change - it edits every existing VM,
+   and the converges that create machines should not also be the ones that
+   modify them.
 5. **A second runner scale set**, so `interactive` and `batch` CI have separate
    `maxRunners` interlocks and a lint job cannot queue behind an integration
    run for a slot. This entry was missing from this list until 2026-09-07 while
@@ -1680,6 +1681,13 @@ that it also covers anything added later without an affinity - real, and worth
 having, and not worth blocking an epoch on.
 
 ### Pools edit no machine at all, and the role could not have been granted
+
+**Step 4 above is done**, and its wording is left standing on purpose: striking
+it through would edit the lines main's step 5 was inserted against, and git
+cannot separate a modification from an adjacent insertion. That is #328 in
+miniature - the entry stays as written and this section carries the status,
+which costs a reader one hop and costs nobody a merge conflict. Strike it
+when nothing else is in flight.
 
 Step 4 was written as "it edits every existing VM, and the converges that
 create machines should not also be the ones that modify them". That is true of
