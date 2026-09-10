@@ -874,6 +874,75 @@ would either fail to schedule against the ReadWriteOnce volume or corrupt the
 world if it did. `replicas: 1` and the Recreate strategy exist for that reason.
 The node has to fit it, which is why sizing is the only dial.
 
+### A tag releases the estate, not a resource
+
+Asked while reading production's overlay, which lists its modules as a flat
+`resources:` list. If a second module joins that list and a tag ships it, does
+the first module get re-released too - and what happens when one module is
+mid-rewrite and another is ready?
+
+**The premise is right.** `flux-production` resolves `semver: ">=0.0.0"` against
+the repository's tags, so the tag names a commit of the whole tree. There is no
+per-resource tag and nothing in the overlay narrows it. Tagging to ship one
+module does re-apply every other module as it stands at that commit.
+
+**What makes that survivable is that three different questions are answered in
+three different places**, and only one of them is the tag:
+
+| Question                  | Answered by                        |
+| ------------------------- | ---------------------------------- |
+| Which modules are live?   | the overlay's `resources:` list    |
+| What code does one run?   | the image digest in its Deployment |
+| When does any of it move? | the `v*` tag                       |
+
+So a release is a snapshot of what the estate declared, and the version of a
+given workload is its digest. Upgrading the game is a digest change, which is a
+commit, which is a tag - the tag is the act of publishing, not the version
+number of the thing published.
+
+**The re-release is usually a no-op.** If a module's rendered manifests are
+byte-identical between two tags, the apply changes nothing; the server does not
+restart and the world is not touched. Coupling only bites when the other
+module's declaration actually changed in that range.
+
+#### The half-finished module is a branch problem, not a tag problem
+
+Which is what makes the awkward case rarer than it looks. In-progress work lives
+on a branch off the epoch branch and merges when it is done, so the tree at the
+tag point holds only finished work by construction. A half-rewritten module
+reaching a tag means it was merged before it was ready, and no release
+granularity fixes that.
+
+The genuinely residual case is narrower: two _finished_ changes are both on the
+branch, and only one should go out now. A single repository tag cannot separate
+them. The answer is to treat the merge as the readiness signal rather than the tag,
+which the epoch model already does since pieces merge when they are done. Where
+something slips through anyway, revert it and tag forward.
+
+**Roll back by tagging forward, never by deleting a tag.** `>=0.0.0` takes the
+highest tag it finds, so deleting one does roll production back, silently, by
+re-resolving to the next highest. That is a destructive git operation with an
+invisible deployment as its side effect. Reverting the commit and tagging a new
+version says the same thing in a way that leaves a record.
+
+#### Why per-module tags are not the cheap alternative they sound like
+
+Flux's `semver` ref ranges over tags that parse as semver, and `valheim/v1.2.0`
+does not parse. The fields that would select a per-module tag - `ref.tag` and
+`ref.name` - pin one exact ref, so releasing would mean editing a pinned string
+inside `environments/production/`. That is precisely what the two-source design
+exists to prevent: nothing promotes by somebody editing a file in production's
+directory.
+
+Per-module cadence is available, and the ecosystem's answer to it is
+image-reflector-controller and image-automation-controller, which watch a
+registry per image and commit the digest bump themselves. That moves the release
+decision to the image rather than to git, which is a coherent model and a larger
+one - another controller, another set of credentials, and a bot with write
+access to the branch. Not now, and not for two workloads. The trigger to
+revisit is a module that genuinely needs to move on a different rhythm from the
+rest of the estate, rather than the count of modules going up.
+
 ## Outcome
 
 ## Deferred

@@ -48,17 +48,20 @@ spec:
 
       containers:
         - name: valheim
-          # THIS DIGEST MUST BE RE-PINNED AFTER THE IMAGE REBUILDS.
+          # A digest, not a tag, and this is the version of the software -
+          # the git tag production reconciles from versions the declaration
+          # around it. Changing what the server runs means changing this line,
+          # which is a commit, which is a release.
           #
-          # The entrypoint that turns these environment variables into the
-          # server's arguments lives in the image, so a digest published before
-          # it existed does not have it. That failure is loud rather than
-          # subtle - the old image's entrypoint is the server binary itself,
-          # which exits complaining about missing arguments - but it is a
-          # failure, and the build workflow prints the new digest into its job
-          # summary for this line.
+          # Re-pin it whenever the image rebuilds. The entrypoint that turns
+          # these environment variables into the server's arguments lives in
+          # the image, so a digest published before it existed does not have
+          # it. That failure is loud rather than subtle - the older entrypoint
+          # is the server binary itself, which exits complaining about missing
+          # arguments - but it is a failure. The build workflow prints the new
+          # digest into its job summary for this line.
           # renovate: datasource=docker depName=ghcr.io/fensberg/homelab-valheim
-          image: ghcr.io/fensberg/homelab-valheim@sha256:1f202cb87a04d7c5bfcf0f434ba04a872e7aea747b75dda019e37013970e8ca7
+          image: ghcr.io/fensberg/homelab-valheim@sha256:8508de483caa2db5cc1efc7ac0be5047bc12da591043c0277deb3ee18ff4720b
 
           securityContext:
             allowPrivilegeEscalation: false
