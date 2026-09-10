@@ -1,26 +1,48 @@
 ---
-# Production's values for the game server.
+# Production's world settings.
 #
-# Not secret: the name is what players see in their server list and the world
-# name is what they are joining. Both are here rather than in the module
-# because a module that knows which environment it is in is not a module.
+# What is NOT here: the server name, the world name and the password. They come
+# from the vault through a Secret OpenTofu writes - see
+# management/cluster/workloads.tf. A fork changes its config rather than this
+# file.
 #
-# The world name is what decides which save file loads. Changing it does not
-# rename a world - it starts a new one and leaves the old on the volume, which
-# is a surprise worth having in writing rather than discovering.
+# What IS here is every dial the vendor exposes, listed whether or not it is
+# set, so the answer to "can we change X" is in one place rather than in a
+# search. Only `preset` is wired into the Deployment's arguments today; adding
+# one of the others is a key here and a matching argument pair there.
+#
+# The reason it is not all wired already: Kubernetes expands $(VAR) into a
+# single argument and does not split on spaces, so "extra args in one string"
+# does not work without a shell - and the image's entrypoint is the server
+# binary, deliberately. Each dial is therefore its own argument pair.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: valheim-server
+  name: valheim-world
   namespace: valheim
 data:
-  # What players see in their list. Yours to change - it is not derived from
-  # anything and nothing else reads it.
-  server-name: "valheim"
-  # Which save file loads. Changing this does not rename a world: it starts a
-  # new one and leaves the old on the volume.
-  world-name: "midgard"
-  # Normal, Casual, Easy, Hard, Hardcore, Immersive or Hammer. Set explicitly
-  # rather than left to default, so the answer to "what difficulty is this" is
-  # in a file rather than in somebody's memory.
+  # -preset. The whole difficulty in one value, and the right starting point
+  # because it is a single thing somebody can read back later.
+  #
+  #   normal | casual | easy | hard | hardcore | immersive | hammer
   preset: "normal"
+
+  # --- individual dials, none of them wired yet ---------------------------
+  #
+  # Each overrides the preset for that one axis. Passed as
+  # `-modifier <key> <value>`, so enabling one means adding a key here and
+  # `-modifier <key> "$(VALHEIM_MOD_<KEY>)"` to the Deployment's args.
+  #
+  #   combat        veryeasy | easy | hard | veryhard
+  #   deathpenalty  casual | veryeasy | easy | hard | hardcore
+  #   resources     muchless | less | more | muchmore | most
+  #   raids         none | muchless | less | more | muchmore
+  #   portals       casual | hard | veryhard
+  #
+  # And the on-or-off ones, passed as `-setkey <flag>` with no value:
+  #
+  #   nobuildcost | playerevents | passivemobs | nomap
+  #
+  # There is no "normal" token for the -modifier dials. Omitting one is how it
+  # stays at whatever the preset says, which is why they cannot simply all be
+  # passed with a default value.

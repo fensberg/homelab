@@ -22,6 +22,14 @@
     "recipient": "{{ op://homelab/state_backup/recipient }}"
   },
 
+  "workloads": {
+    "valheim": {
+      "server_name": "{{ op://homelab/valheim/server_name }}",
+      "world_name": "{{ op://homelab/valheim/world_name }}",
+      "password": "{{ op://homelab/valheim/password }}"
+    }
+  },
+
   "sites": {
     "site0": {
       "name": "{{ op://homelab/site0/name }}",

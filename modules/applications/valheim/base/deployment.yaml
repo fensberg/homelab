@@ -55,6 +55,16 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
+            # An attacker who lands in this process cannot write an executable
+            # anywhere it could be run from, and cannot tamper with the game
+            # files it is serving. Trivy rates the absence of this HIGH and is
+            # right to.
+            #
+            # It needs somewhere writable to exist: the volume for the world,
+            # and scratch for whatever the engine puts under a home directory.
+            # HOME is pointed at that scratch below, because the image's home
+            # is the game directory and that is deliberately not writable.
+            readOnlyRootFilesystem: true
 
           # The password arrives as an environment variable and is expanded
           # into the argument below by Kubernetes, not by a shell. The image's
@@ -69,14 +79,19 @@ spec:
             # The name people see and the world to load. Environment values,
             # not module ones: the overlay supplies them, and staging is not
             # obliged to call itself the same thing production does.
+            # All three from the Secret OpenTofu writes out of the vault.
+            # Two of them are not credentials - the server name is broadcast to
+            # anyone who joins - but they live there so a fork picks its own by
+            # changing its config rather than by editing this file, and so a
+            # pod is not half-configured from two sources.
             - name: VALHEIM_SERVER_NAME
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: valheim-server
                   key: server-name
             - name: VALHEIM_WORLD_NAME
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: valheim-server
                   key: world-name
             # Difficulty. Nothing set this before, which meant Normal by
@@ -84,8 +99,13 @@ spec:
             - name: VALHEIM_PRESET
               valueFrom:
                 configMapKeyRef:
-                  name: valheim-server
+                  name: valheim-world
                   key: preset
+            # Somewhere writable that is not the game directory. Unity writes
+            # player preferences and logs under the home directory whatever
+            # -savedir says, and the game files are read-only to this user.
+            - name: HOME
+              value: /scratch
             - name: VALHEIM_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -123,6 +143,8 @@ spec:
           volumeMounts:
             - name: world
               mountPath: /data
+            - name: scratch
+              mountPath: /scratch
 
           # Sized from the vendor's own guidance rather than from a guess: 4 GiB
           # for a fresh world at this player count, 6-8 once it is explored and
@@ -135,7 +157,19 @@ spec:
           resources:
             requests:
               memory: 8Gi
-              cpu: "2"
+              # Four, and there is deliberately no CPU limit beneath it.
+              #
+              # A request reserves scheduling room rather than consuming it:
+              # the node keeps four cores' worth free for this pod, and
+              # anything it is not using is available to everything else.
+              #
+              # A CPU LIMIT WOULD BE ACTIVELY HARMFUL HERE. Limits are enforced
+              # by CFS quota, which stops the process dead at each quota
+              # boundary - on an idle node, with cores free - and for a
+              # simulation people are moving around in, that is stutter. Memory
+              # is different and does have a limit: it is incompressible, so
+              # the only alternative to a limit is a neighbour being evicted.
+              cpu: "4"
             limits:
               # Request and limit are equal, which makes this Guaranteed rather
               # than Burstable: the kubelet will not evict it under node
@@ -152,3 +186,8 @@ spec:
         - name: world
           persistentVolumeClaim:
             claimName: world
+        # Deliberately not persisted. Anything here is a preference file or a
+        # log the engine can rebuild; the world is the thing that matters and
+        # it is on the claim above.
+        - name: scratch
+          emptyDir: {}

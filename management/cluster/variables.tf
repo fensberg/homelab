@@ -422,6 +422,16 @@ locals {
   # rebuild.
   dmz_schematic_id = "70d243b7e2cbe699e4db5e73356a2add6b4bb8e34eadba9db22c823110e79099"
 
+  # --- workloads -----------------------------------------------------------
+  #
+  # Fleet-level rather than per-site: one repository drives every cluster, and
+  # a workload is deployed by Flux rather than placed on a machine.
+  valheim = try(local.config.workloads.valheim, {
+    server_name = ""
+    world_name  = ""
+    password    = ""
+  })
+
   gitops_target_path = "clusters/management"
 
   # --- state database ------------------------------------------------------

@@ -1,14 +1,15 @@
 ---
-# The environment-agnostic half. An overlay under environments/ supplies the
-# image digest, the replica count and anything else that differs between
-# staging and production.
+# The environment-agnostic half.
+#
+# No namespace here. It is created by OpenTofu alongside the Secret that has to
+# live in it - a secret needs its namespace to exist, and OpenTofu runs before
+# Flux has reconciled anything. See management/cluster/workloads.tf.
 #
 # The Deployment is pinned to an image digest rather than a tag. The build
 # workflow prints the digest into its job summary for exactly this line.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
   - service-account.yaml
   - world.yaml
   - network-policy.yaml
