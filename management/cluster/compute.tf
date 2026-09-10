@@ -478,7 +478,14 @@ resource "proxmox_virtual_environment_vm" "dmz" {
   }
 
   cpu {
-    cores = 2
+    # Four, and the clock matters more than the count.
+    #
+    # Valheim's world generation and physics lean on single-thread performance,
+    # so a high base clock is what removes rubber-banding during exploration -
+    # more cores past four buy very little. Four is the published
+    # recommendation rather than a guess; the first version of this file said
+    # two, which was one.
+    cores = 4
     type  = "x86-64-v2-AES"
   }
 
@@ -486,11 +493,17 @@ resource "proxmox_virtual_environment_vm" "dmz" {
     # No floating, so no balloon device, for the same reason the workers have
     # none: the kubelet computes Allocatable at boot and never revisits it, so
     # a node deflated afterwards keeps scheduling against memory that is gone.
+    # That makes this a hard allocation and the estate's scarcest resource.
     #
-    # Four gigabytes is what a game server wants and roughly what the estate
-    # can spare - see the capacity note in docs/epochs/03-workload.md. It is
-    # the number to revisit first if a zone will not schedule.
-    dedicated = 4096
+    # SIX, AND THE REASONING IS IN docs/epochs/03-workload.md.
+    #
+    # Published guidance for five players is 4GiB on a fresh vanilla world and
+    # 6-8GiB once the map is explored and bases are established. This VM also
+    # runs Talos, the kubelet, the Cilium agent and the OpenEBS provisioner -
+    # roughly a gigabyte before the game starts - so six here is about five for
+    # the workload: comfortable now, and the number to raise when the world
+    # matures rather than when something falls over.
+    dedicated = 6144
   }
 
   network_device {

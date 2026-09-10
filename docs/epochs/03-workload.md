@@ -316,6 +316,31 @@ remains after epoch 02's two workers. That is tight until the build VM's 16 GiB
 returns, which is expected, and it sequences correctly - the workers are epoch
 02 and this is epoch 03.
 
+**Corrected once the real numbers were looked up rather than estimated.** The
+published guidance for five players is 4 GiB on a fresh vanilla world, and
+**6-8 GiB** once the map is explored and bases are established; the CPU wants
+**four cores above 3.0 GHz**, because world generation and physics lean on
+single-thread performance and clock speed matters far more than core count.
+The first version of this branch guessed two cores and 4 GiB, and both were
+low.
+
+Two things that estimate did not account for, and which the machine's
+allocation now does:
+
+- **The VM is not all game.** Talos, the kubelet, the Cilium agent and the
+  OpenEBS provisioner take roughly a gigabyte before the server starts, so a
+  6 GiB machine offers about 5 GiB to the workload.
+- **Memory here is a hard allocation.** There is no balloon device, for the
+  reason recorded beside it - a deflated node keeps scheduling against memory
+  that no longer exists - so this is taken from the estate rather than shared
+  with it.
+
+The machine is set at **four cores and 6 GiB**: above the fresh-world figure,
+inside the mature-world band, and leaving headroom rather than consuming the
+last of it. The trigger to raise it to 8 GiB is the world maturing, not
+something falling over - and the build VM's 16 GiB returning is what makes that
+comfortable rather than a trade against something else.
+
 Two things this does **not** solve, both already named above. The world save is
 on OpenEBS Local PV Hostpath and therefore pinned to a node - now a node
 specifically chosen to be destroyable. And the tailnet's allow-all policy
