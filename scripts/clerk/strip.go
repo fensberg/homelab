@@ -40,8 +40,21 @@ func split(path, body string) (code, prose string, ok bool) {
 		return "", body, false
 	case ".yml", ".yaml", ".sh", ".bash", ".toml", ".env", ".cfg", ".conf":
 		return blankLines(body, "#")
-	case ".ts", ".js", ".tf", ".hcl":
+	case ".ts", ".js":
 		return blankLines(body, "//")
+	// HCL accepts `#`, `//` and `/* */`, and this repository writes `#`
+	// essentially always: 879 whole-line `#` comments across management/cluster
+	// and not one `//` at the time this was fixed.
+	//
+	// It was listed with the `//` languages, so blankLines had nothing to
+	// match and every one of those 879 lines went to the CODE side. The blind
+	// pass - whose entire purpose is to read the code without being told what
+	// it is for - has never once been blind to an OpenTofu file, and the prose
+	// side for those files was empty, so the comparison pass had nothing of
+	// theirs to check either. Both halves of the clerk were silently off for
+	// the language most of this estate's infrastructure is written in.
+	case ".tf", ".hcl":
+		return blankLines(body, "#", "//")
 	default:
 		// Unknown, so nothing is asserted about it. Sending it whole to the
 		// code side is the conservative error: the comparison pass may be
@@ -91,11 +104,25 @@ func splitGo(path, body string) (string, string, bool) {
 // likely to be inside a string, a URL or a colour as it is to start a comment,
 // and mangling the code to catch a few more words of prose is the wrong trade
 // when the code is what the blind pass has to reason about.
-func blankLines(body, marker string) (string, string, bool) {
+//
+// Several markers because a language may have more than one, and picking the
+// wrong single one fails silently: nothing matches, every comment is treated
+// as code, and the separation this whole file exists to perform simply does
+// not happen. There is no error and no empty result to notice - the blind pass
+// is handed a commented file and answers as if it had been given a bare one.
+func blankLines(body string, markers ...string) (string, string, bool) {
+	starts := func(line string) bool {
+		for _, m := range markers {
+			if strings.HasPrefix(line, m) {
+				return true
+			}
+		}
+		return false
+	}
 	lines := strings.Split(body, "\n")
 	var prose strings.Builder
 	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), marker) {
+		if starts(strings.TrimSpace(line)) {
 			prose.WriteString(strings.TrimSpace(line))
 			prose.WriteString("\n")
 			lines[i] = ""
