@@ -117,16 +117,35 @@ func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {
 func TestKubePrismIsDeclaredRatherThanAssumed(t *testing.T) {
 	body := readRepoFile(t, talosFile)
 
-	if !strings.Contains(body, "kubePrism") {
-		t.Fatalf("%s: KubePrism is never declared.\n\n"+
-			"It is enabled by default today, which is exactly why it is written down: "+
-			"a default is not a declaration, and the pod network depends on this one.",
-			talosFile)
+	// Every collection of machine patches, so a machine class added later
+	// cannot quietly skip it. This used to assert that the file mentioned
+	// KubePrism somewhere, which was true and insufficient the moment a second
+	// patch set existed: the untrusted zone's agents need the endpoint exactly
+	// as much as a worker's do, and a check satisfied by somebody else's
+	// declaration would not have noticed theirs missing.
+	sets := regexp.MustCompile(`(?m)^  ([a-z_]*patches) = \{`).FindAllStringSubmatch(body, -1)
+	if len(sets) < 2 {
+		t.Fatalf("found %d machine-patch collection(s) in %s; with fewer than two this "+
+			"cannot detect one being left out.", len(sets), talosFile)
 	}
-	if !strings.Contains(body, "7445") {
-		t.Errorf("%s: KubePrism is declared without naming port 7445.\n\n"+
-			"The Cilium values in %s point k8sServicePort at 7445. If the port moves, "+
-			"both halves have to move together.", talosFile, cniValues)
+
+	// Split on the collection headers so each is judged on its own contents.
+	blocks := regexp.MustCompile(`(?m)^  [a-z_]*patches = \{`).Split(body, -1)[1:]
+	for i, name := range sets {
+		block := blocks[i]
+		if !strings.Contains(block, "kubePrism") {
+			t.Errorf("%s: %s never declares KubePrism.\n\n"+
+				"With kube-proxy gone there is no ClusterIP for these machines' agents to "+
+				"reach the API through, and the alternative address is one control plane "+
+				"(#316). It is enabled by default, which is exactly why it is written "+
+				"down: a default is not a declaration.", talosFile, name[1])
+			continue
+		}
+		if !strings.Contains(block, "7445") {
+			t.Errorf("%s: %s declares KubePrism without naming port 7445.\n\n"+
+				"The Cilium values in %s point k8sServicePort at 7445. If the port moves, "+
+				"every half has to move with it.", talosFile, name[1], cniValues)
+		}
 	}
 }
 

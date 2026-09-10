@@ -116,6 +116,16 @@ resource "terraform_data" "invariants" {
       error_message = "worker_count must be between 0 and 55. Zero is valid and means no workers; the ceiling keeps the 200+ band inside a single octet."
     }
 
+    precondition {
+      condition     = length(local.dmz_zone_names) <= local.dmz_max_zones
+      error_message = "Too many untrusted zones. The ceiling is what keeps every zone's subnet inside the band reserved for tenants; none is valid and is the right default."
+    }
+
+    precondition {
+      condition     = alltrue([for zone, z in local.dmz_zones_in : try(z.node_count, 0) >= 0])
+      error_message = "An untrusted zone declares a negative node_count. Absent means one machine; negative is the meaningless value, and it would otherwise reach range() in variables.tf."
+    }
+
     # --- vendor lock, checked three ways -----------------------------------
     #
     # 1. The code implements one vendor per concern.

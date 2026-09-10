@@ -316,6 +316,49 @@ remains after epoch 02's two workers. That is tight until the build VM's 16 GiB
 returns, which is expected, and it sequences correctly - the workers are epoch
 02 and this is epoch 03.
 
+**Corrected once the real numbers were looked up rather than estimated.** The
+published guidance for five players is 4 GiB on a fresh vanilla world, and
+**6-8 GiB** once the map is explored and bases are established; the CPU wants
+**four cores above 3.0 GHz**, because world generation and physics lean on
+single-thread performance and clock speed matters far more than core count.
+The first version of this branch guessed two cores and 4 GiB, and both were
+low.
+
+Two things that estimate did not account for, and which the machine's
+allocation now does:
+
+- **The VM is not all game.** Talos, the kubelet, the Cilium agent and the
+  OpenEBS provisioner take roughly a gigabyte before the server starts, so a
+  6 GiB machine offers about 5 GiB to the workload.
+- **Memory here is a hard allocation.** There is no balloon device, for the
+  reason recorded beside it - a deflated node keeps scheduling against memory
+  that no longer exists - so this is taken from the estate rather than shared
+  with it.
+
+#### The capacity estimate above was wrong, and the hypervisor was measured
+
+The paragraph opening this section - "only about 8 GiB remains" - was written
+before the machines it describes existed. Measured on the host instead of
+estimated: **62 GiB total, roughly 36 GiB committed to running machines, and
+about 23 GiB available.** Three control planes at 4 GiB, two workers at 8 GiB
+and the development machine at 8 GiB account for the commitment.
+
+So the zone is not tight at all, and the sequencing worry in that paragraph -
+that this had to wait for a build VM's memory to return - does not apply. It is
+left above rather than deleted because a wrong number that was acted on is
+worth seeing next to the measurement that corrected it.
+
+The machine is set at **four cores and 8 GiB**: the top of the published band
+rather than the middle. The failure mode of being short is a server that
+degrades once a world is established and players have built on it - which is
+both the moment it is hardest to take offline for a resize and the moment
+anyone would mind most. With 23 GiB available, taking 8 now costs nothing that
+taking 6 would have saved, and it removes a future outage from the plan.
+
+The rule that produced this is worth keeping: **measure the estate before
+budgeting against it.** Two numbers in this section were estimates, both were
+wrong, and one command settled both.
+
 Two things this does **not** solve, both already named above. The world save is
 on OpenEBS Local PV Hostpath and therefore pinned to a node - now a node
 specifically chosen to be destroyable. And the tailnet's allow-all policy
@@ -473,6 +516,156 @@ decision names. A dedicated node answers what shares its kernel, and omitting
 the overlay answers what the machine itself reaches; neither is affected by the
 CNI. Cilium is necessary and is not sufficient, and the temptation once it
 lands will be to treat the isolation question as closed.
+
+### The control plane oversees the zone; the zone sees nothing
+
+Settled in discussion before the policy work, so it is inherited rather than
+re-derived.
+
+The intent is asymmetry: the control plane is aware of everything and
+orchestrates it, and from the workload's side the machine it runs on should
+look miraculous - administered by something it cannot see or reach.
+
+**That asymmetry mostly already exists, and not because of the network.** Node
+authorization and NodeRestriction mean the zone's kubelet may read Secrets and
+ConfigMaps only for pods bound to itself. It cannot list other nodes or other
+pods, and it cannot modify its own Node object beyond a narrow set of fields -
+which is the same mechanism that refuses it its own taint, recorded above.
+
+**One part of the intent has to be inverted: Kubernetes pulls.** The kubelet
+opens the connection and watches the API server for pods assigned to it; the
+control plane does not push work down. A node that cannot reach the API is not
+a member, so "reaches nothing at all" is not available. What makes that
+acceptable is the paragraph above - the reach exists and what it obtains is one
+workload's own secrets.
+
+#### The oversight channel is API server to kubelet, and it must be open
+
+`kubectl logs`, `kubectl exec`, `port-forward` and metrics scraping all travel
+API server -> kubelet on **10250**. That is the direction "the control plane
+oversees the zone" actually runs on, and it is the safe one: the control plane
+reaching down grants the zone nothing.
+
+Closing it costs the ability to read a log from the workload this whole epoch
+exists to host, which is a thing nobody misses until the evening it matters.
+
+**Only the API server talks to that node.** Not etcd, not the scheduler, not
+the controller manager. "The control plane" is four components and one of them
+has business here.
+
+#### Why the workload can be denied everything while the node is not
+
+NetworkPolicy governs **pods**. The kubelet is a host process on the host
+network, so pod policy does not apply to it.
+
+So the workload can be denied all cluster access - no API server, no node
+subnet, no hypervisor - while the machine underneath it stays a fully
+orchestrated cluster member. The workload sees nothing, the node is
+administered normally, and the control plane sees everything. That is the
+intent above, and it falls out of the layering rather than needing to be built.
+
+The shape the policy work inherits:
+
+| Direction             | Rule                                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Workload egress       | Deny by default. DNS and the internet only - the game, and its backups. Not the API, not the node subnet, not the hypervisor. |
+| Workload ingress      | Its own ports, from the port forward. Nothing else.                                                                           |
+| API server -> kubelet | Allowed, on 10250. This is the oversight channel.                                                                             |
+| Service account token | `automountServiceAccountToken: false`. It has no use for the API, so it is not handed a token.                                |
+
+That last row is worth doing even though the egress rule already makes the
+token useless: a credential that cannot be spent is still a credential that was
+handed over, and the cheaper habit is not to mount it.
+
+### Removing the untrusted zone
+
+Written while the zone is being built rather than when it is being removed,
+because the thing that makes deprecation painful is never the design - it is
+that nobody wrote down which parts were optional.
+
+The workload this zone was built for will be deprecated one day. Removing it
+must be a config change and a converge, never a rebuild, and this is the path.
+
+#### The order matters, innermost first
+
+1. **The workload.** Delete its directory under `environments/`. Flux syncs
+   `./clusters/management` with `prune: true`, so the objects go with it. This
+   is the only step that needs no privilege beyond a merge.
+2. **The machine.** Remove that workload's entry from the site's `dmz_zones`,
+   then `contractor converge`. A machine in a zone is not an etcd member, so
+   this is a drain and one destroy rather than a quorum event. Removing one
+   zone renumbers no other: the zones are sorted by name and each keeps the
+   subnet it was given, so a neighbour being deprecated never moves a surviving
+   workload's addresses out from under its firewall rules.
+3. **The port forward.** On the router, by hand. Nothing in this repository can
+   see it, which is the reason it is listed here at all.
+4. **The network**, below.
+
+Doing this in the other order takes a workload's network away while the
+workload is still running, which is a diagnosis nobody enjoys.
+
+#### What removing the last zone does on its own
+
+Everything derived from the machines stops existing: no VM, and no second
+image, because `proxmox_download_file.dmz_disk_image` keys off
+`local.dmz_hypervisors` rather than off the site. The SDN tasks **loop over the
+zones** rather than being gated on a count, which is the stronger form of the
+same property - a `when:` has to be remembered on every task, and a loop over
+an empty list cannot run at all.
+
+`tests/go/repo/untrusted_zone_offswitch_test.go` holds both halves of that in
+place - that every zone resource keys off its machines, and that every zone
+task carries the gate - and
+`TestNoUntrustedWorkloadDerivesNoZone` covers the config half. They exist
+because both mistakes read as correct in review: keying off the site is what
+the resource above does, and a task that keeps its idempotency check still
+looks guarded.
+
+#### What is left behind, and how to clear it
+
+**Ansible creates and never removes.** So three things survive
+`dmz_count: 0`, all inert, none of them dangerous, and none of them obvious to
+whoever finds them later:
+
+- each zone's vnet (`vnetdmz0`, `vnetdmz1`, ...)
+- each of their subnets
+- the second Talos image in `local-iso`, once no zone is left
+
+Clearing them is a hypervisor operation, listed before deleted because the
+subnet id is generated and should be read rather than guessed:
+
+```sh
+# What is actually there
+pvesh get /cluster/sdn/vnets --output-format json | grep vnetdmz
+pvesh get /cluster/sdn/vnets/<vnet from the listing>/subnets --output-format json
+pvesm list local-iso | grep '/dmz-'
+
+# Remove, innermost first, then apply the SDN change
+pvesh delete /cluster/sdn/vnets/<vnet>/subnets/<id from the listing>
+pvesh delete /cluster/sdn/vnets/<vnet>
+pvesh set /cluster/sdn
+
+pvesm free local-iso:iso/<image from the listing>
+```
+
+`pvesh set /cluster/sdn` performs a network reload on the hypervisor - see the
+note in `hypervisor-prep.yml` about what that call actually does. It is the
+same operation the playbook runs conditionally, and it is not free enough to
+run for no reason.
+
+#### What is not removed, deliberately
+
+**Cilium stays, and that is not an oversight.** Swapping the CNI back would
+need another rebuild in the other direction, and nothing wants Flannel back:
+enforced NetworkPolicy is what lets the hypervisor grant recorded in
+[`02-abstraction.md`](02-abstraction.md) be narrowed to the runner pod, which
+that record names Flannel as the reason it could not be. The untrusted workload
+motivated the upgrade; it does not own it.
+
+**The zones' addressing stays too.** Each subnet, gateway and VNI is derived
+from the site's octet and the zone's position in the sorted list rather than
+chosen, so they cost nothing while unused. A zone that returns under the same
+name returns to the same addresses. Deleting that would be deleting arithmetic.
 
 ## Outcome
 

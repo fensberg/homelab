@@ -640,15 +640,21 @@ mutations:
 
   - guard: TestKubePrismIsDeclaredRatherThanAssumed
     file: management/cluster/talos.tf
-    find: "              port    = 7445"
-    replace: "              port    = 7446"
+    find: "              port    = 7445\n            }\n          }\n        }\n      }),\n\n      # The taint,"
+    replace: "              port    = 7446\n            }\n          }\n        }\n      }),\n\n      # The taint,"
     mentions: "7445"
     why: >
-      The port is declared twice on purpose - here and as k8sServicePort in
-      manifests/cilium-values.yaml - because the agents have to find the
-      endpoint Talos actually opened. Moving one and not the other is the
-      realistic drift, and it breaks the pod network on every node at once with
-      no clue pointing at a port number.
+      Moved in one patch collection and not the other, which is the realistic
+      drift: the port is declared once per collection and as k8sServicePort in
+      the Cilium values, and a change that updates the one somebody was looking
+      at leaves the rest behind. It breaks the pod network on whichever
+      machines took the stale value, with nothing anywhere naming a port.
+
+      The mutation targets the untrusted zone's collection deliberately. This
+      guard used to assert only that the file mentioned KubePrism somewhere,
+      which a second machine class made insufficient - the zone's agents need
+      the endpoint exactly as much as a worker's do, and the check would have
+      been satisfied by somebody else's declaration.
 
   - guard: TestTheRenderedCNIManifestMatchesThePinnedChartVersion
     file: scripts/versions.env
@@ -675,6 +681,55 @@ mutations:
       nobody thought to name - which, once the untrusted zone exists, is the
       DMZ node. That node would never reach Ready, and it would look like a
       broken machine rather than a missing line in a chart's values.
+
+  - guard: TestEveryZoneResourceIsKeyedOffItsMachines
+    file: management/cluster/compute.tf
+    find: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.dmz_hypervisors)"
+    replace: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.all_vm_hypervisors)"
+    mentions: "keyed off"
+    why: >
+      The mutation is the line the resource directly above it uses, which is
+      what makes it the plausible one: copying a neighbouring for_each reads as
+      consistency rather than as a change of meaning. It pulls a 4.5GB image
+      onto every hypervisor forever, including an estate that has deprecated
+      its last untrusted workload - and nothing fails, so the only symptom is
+      disk somebody notices months later.
+
+  - guard: TestEveryZoneTaskLoopsOverTheZones
+    file: management/hypervisor/hypervisor-prep.yml
+    find: "      loop: \"{{ dmz_zones }}\"\n      loop_control:\n        label: \"{{ item.name }}\"\n      run_once: true\n      tags: [sdn]\n\n    - name: List subnets on each untrusted zone's vnet"
+    replace: "      run_once: true\n      tags: [sdn]\n\n    - name: List subnets on each untrusted zone's vnet"
+    mentions: "without looping over the zones"
+    why: >
+      Dropping the loop from a task that still reads item.vnet is what a
+      copy-paste of the block beside it produces, and it leaves the task running
+      once against an undefined item on every estate - including one with no
+      untrusted workload at all. The loop is the off switch here rather than a
+      `when:`, deliberately: a gate has to be remembered on every task, and a
+      loop over an empty list cannot run.
+
+      This entry replaced one proving a dmz_count gate. The config changed shape
+      from a count to named zones, and the old guard broke while the behaviour
+      it cared about did not - a test matching a variable's spelling rather than
+      the property it stood for.
+
+  - guard: TestZoneNamesUseAPlaceholder
+    file: management/cluster/tests/fixtures/negative-zone-node-count.json
+    find: '"example": { "node_count": -1 }'
+    replace: '"valheim": { "node_count": -1 }'
+    mentions: "names an untrusted zone"
+    why: >
+      A real workload name in a fixture is what this catches, and the mutation
+      uses the one that was actually there before somebody noticed. It is not a
+      secret in the way a site or hypervisor name is - nobody is harmed by
+      knowing which game runs here - so the reason it stays out is a design one:
+      a zone is for untrusted work rather than for one workload, and plumbing
+      that names its first tenant is how a general capability quietly becomes
+      that tenant's feature.
+
+      The epoch record names the workload, deliberately. That is where the
+      motivation belongs. The machinery should read the same whoever moves in
+      next.
 
 # Guards that cannot be proved by mutation, and why.
 #
