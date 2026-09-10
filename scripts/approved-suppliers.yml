@@ -201,6 +201,42 @@ endpoints:
     hosts:
       - mirror.gcr.io:443
 
+  - group: game-server-delivery
+    reason: >-
+      Valve, for SteamCMD and for the dedicated server software it fetches.
+
+      This is a delivery of EXECUTABLE CONTENT rather than an endpoint a job
+      happens to reach, and it is the first entry here of that kind - the
+      groups above are toolchains, registries and analysis services. What
+      arrives is the application this estate will run, from the vendor that
+      publishes it, and it arrives at image build time rather than into the
+      cluster.
+
+      Valve is the only possible supplier of it. There is no distribution
+      channel for a Steam dedicated server that is not Steam, and no official
+      container image, which is why this estate builds one
+      rather than taking a community image - see docs/epochs/03-workload.md and
+      the image's own Dockerfile.
+
+      THE CONTENT CDN CANNOT BE ENUMERATED, AND SAYING SO IS THE POINT.
+
+      media.steampowered.com serves the SteamCMD bootstrap and is nameable.
+      The depot content it then downloads comes from a rotating set of CDN
+      hosts chosen per-request by region and load, and no fixed list describes
+      them. An allowlist here would be a guess that breaks quietly the first
+      time Valve moves a host.
+
+      So the job that builds this image runs egress-policy: audit, like the
+      runner image build beside it, and the entry above it in that table is
+      the honest place to look for why. What bounds the risk is not the
+      network: it is that the job produces an artifact which is then pinned by
+      digest, published to this estate's own registry, and pulled from there -
+      so what reaches the cluster is a specific set of bytes somebody can point
+      at, whatever the build did to obtain them.
+    hosts:
+      - media.steampowered.com:443
+      - steamcdn-a.akamaihd.net:443
+
   - group: supply-chain-analysis
     reason: >-
       Scorecard and dependency review. These call vulnerability and provenance
