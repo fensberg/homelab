@@ -242,12 +242,16 @@ jobs:
           PATHS: ${{ steps.touched.outputs.paths }}
         run: |
           # shellcheck disable=SC2086 # PATHS is a space-separated path list
-          ./toolshed/clerk snag -pr "$PR" -out snag.sarif $PATHS
+          ./toolshed/clerk snag -out snag.sarif $PATHS
 
       # handover asks the question tests/go/repo/forkable_test.go cannot: what
       # would stop somebody who cloned this and pointed it at their own vault.
-      # No -pr: its findings are alerts, and a second comment saying the same
-      # count twice is noise. Not every action needs an explicit output.
+      #
+      # No -pr, and neither has snag any more. A verb sees only its own half of
+      # the run, so when the clean one is the only one able to speak it
+      # announces a clean run on behalf of a verb that found plenty - which is
+      # exactly what happened in #335. Both write a report and stay quiet;
+      # `clerk note` below reads every report and posts once.
       - name: Read it as a stranger
         if: steps.touched.outputs.paths != '' && contains(steps.ask.outputs.verbs, 'handover')
         env:
@@ -286,6 +290,34 @@ jobs:
           # attributed to one tree with line numbers from another (#228).
           ref: refs/pull/${{ steps.change.outputs.pr }}/head
           sha: ${{ steps.change.outputs.head }}
+
+      # The one note the run is entitled to, composed from every report it
+      # produced rather than from whichever verb happened to hold the flag.
+      #
+      # Only the reports that exist are passed: `@clerk snag` on its own writes
+      # no handover reading, and a missing report is an error rather than an
+      # empty one - deliberately, so a failure to look can never be reported as
+      # a clean run.
+      - name: Say what the run found
+        if: always() && steps.touched.outputs.paths != ''
+        env:
+          CLERK_BOT_APP_ID: ${{ secrets.CLERK_BOT_APP_ID }}
+          CLERK_BOT_PRIVATE_KEY: ${{ secrets.CLERK_BOT_PRIVATE_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR: ${{ steps.change.outputs.pr }}
+        run: |
+          reports=""
+          for r in snag.sarif handover.sarif; do
+            if [ -f "$r" ]; then
+              reports="$reports $r"
+            fi
+          done
+          if [ -z "$reports" ]; then
+            echo "::notice::no reports were written, so there is nothing to say"
+            exit 0
+          fi
+          # shellcheck disable=SC2086 # reports is a space-separated path list
+          ./toolshed/clerk note -pr "$PR" $reports
 
       # Done. The thumbs up Dependabot gives, and it means the same thing:
       # what you asked for has happened, go and look.
