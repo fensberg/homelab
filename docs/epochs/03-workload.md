@@ -846,20 +846,33 @@ workload's exposure is a relay and its blast radius is a world save, so it does
 not earn a zone. What was not weighed is that the zone came with a machine
 sized for it, and the shared workers were sized before this workload existed.
 
-Three answers, none of them urgent while the world is empty:
+**Settled: three workers at 10 GiB, and the workload asks for 8.**
 
-- **Raise the workers.** They are 8 GiB by a decision made when they ran CI and
-  operators. One line in the config, and it costs a rebuild of those machines
-  rather than of the estate.
-- **Add a worker.** `worker_count` is a config bump, and the memory measured on
-  the hypervisor - 23 GiB available - is enough for one.
-- **Let the limit bite.** 6 GiB is a ceiling rather than a reservation, and a
-  world that grows into it is a world worth spending a machine on. It is the
-  honest option while nobody has played on it yet.
+The operator's call, and the arithmetic is worth keeping because the obvious
+number is wrong. A node's Allocatable is its memory minus what Talos, the
+kubelet and the Cilium agent reserve - roughly a gigabyte. **A pod requesting
+8Gi therefore does not fit on an 8 GiB node at all.** It stays Pending
+indefinitely with an "Insufficient memory" event, which reads as a scheduling
+puzzle rather than as a machine that is simply too small.
 
-Recorded rather than fixed because the number that matters - how big the world
-actually gets - does not exist yet, and sizing against a vendor's upper bound
-before anybody has played is how the last estimate went wrong.
+Ten leaves about nine allocatable: the 8Gi request fits, with room for the
+daemons that must run everywhere. Three of them spends fourteen of the 23 GiB
+measured free on the hypervisor.
+
+Request and limit are both 8Gi, which makes the pod Guaranteed rather than
+Burstable - not evicted ahead of others under node pressure, and unable to grow
+into a neighbour's memory. It also **effectively dedicates a worker**: nine
+allocatable minus eight leaves very little else. That is a real consequence of
+asking for the vendor's upper bound, and it is worth noticing that the estate
+has arrived at a dedicated machine for this workload by resource sizing, having
+decided against one on isolation grounds. Both decisions are right for their own
+reasons; the outcome looking similar is a coincidence rather than a plan.
+
+**There is no horizontal answer.** A dedicated server is one process simulating
+one world - Kubernetes cannot split a process across nodes, and a second replica
+would either fail to schedule against the ReadWriteOnce volume or corrupt the
+world if it did. `replicas: 1` and the Recreate strategy exist for that reason.
+The node has to fit it, which is why sizing is the only dial.
 
 ## Outcome
 

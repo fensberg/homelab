@@ -1,5 +1,5 @@
 ---
-# Staging's overlay for the game server: the module, plus what differs here.
+# Production's overlay for the game server: the module, plus what differs here.
 #
 # The password is deliberately absent. It is a secret, so it is not in git -
 # see the note in the pull request that introduced this, and #345 for where

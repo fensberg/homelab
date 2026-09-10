@@ -1,5 +1,5 @@
 ---
-# Staging's values for the game server.
+# Production's values for the game server.
 #
 # Not secret: the name is what players see in their server list and the world
 # name is what they are joining. Both are here rather than in the module
@@ -14,5 +14,13 @@ metadata:
   name: valheim-server
   namespace: valheim
 data:
-  server-name: "homelab-staging"
+  # What players see in their list. Yours to change - it is not derived from
+  # anything and nothing else reads it.
+  server-name: "valheim"
+  # Which save file loads. Changing this does not rename a world: it starts a
+  # new one and leaves the old on the volume.
   world-name: "midgard"
+  # Normal, Casual, Easy, Hard, Hardcore, Immersive or Hammer. Set explicitly
+  # rather than left to default, so the answer to "what difficulty is this" is
+  # in a file rather than in somebody's memory.
+  preset: "normal"

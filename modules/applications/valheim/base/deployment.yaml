@@ -79,6 +79,13 @@ spec:
                 configMapKeyRef:
                   name: valheim-server
                   key: world-name
+            # Difficulty. Nothing set this before, which meant Normal by
+            # default - correct, but by omission rather than by decision.
+            - name: VALHEIM_PRESET
+              valueFrom:
+                configMapKeyRef:
+                  name: valheim-server
+                  key: preset
             - name: VALHEIM_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -97,6 +104,15 @@ spec:
             - "-crossplay"
             # The world lives on the volume rather than under the server's home
             # directory, so nothing depends on where a container's home is.
+            # Difficulty, as a named preset. The vendor's presets are
+            # Normal, Casual, Easy, Hard, Hardcore, Immersive and Hammer.
+            # Individual dials exist too - `-modifier <key> <value>` for
+            # combat, deathpenalty, resources, raids and portals, and
+            # `-setkey <flag>` for nobuildcost, playerevents, passivemobs and
+            # nomap - and a preset is the right starting point because it is
+            # one value somebody can read back later.
+            - "-preset"
+            - "$(VALHEIM_PRESET)"
             - "-savedir"
             - "/data"
             # Not listed in the public browser. The join code is how people get
@@ -118,10 +134,19 @@ spec:
           # workers was right on isolation grounds and was not costed on memory.
           resources:
             requests:
-              memory: 4Gi
+              memory: 8Gi
               cpu: "2"
             limits:
-              memory: 6Gi
+              # Request and limit are equal, which makes this Guaranteed rather
+              # than Burstable: the kubelet will not evict it under node
+              # pressure ahead of anything else, and it cannot grow into a
+              # neighbour's memory.
+              #
+              # It also effectively dedicates a worker. Nine gigabytes
+              # allocatable minus eight leaves room for the daemons that run
+              # everywhere and very little else, which is a real consequence of
+              # asking for the vendor's upper bound rather than an accident.
+              memory: 8Gi
 
       volumes:
         - name: world
