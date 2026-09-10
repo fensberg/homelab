@@ -949,6 +949,49 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### Six Python linters, no Python, and a required check that hung
+
+`Analyze (Super-Linter)` normally finishes in about two minutes. Intermittently
+it stopped returning and burned its full twenty-minute `timeout-minutes`
+instead - on a check required to merge into `main`, so a hang was a hard block
+rather than a slow lane, and it was force-merged past twice.
+
+The last line the job ever printed was Super-Linter's own warning:
+
+```text
+[WARN] Black and Ruff are both enabled, and might conflict with each other.
+```
+
+Everything before it completed - configuration validated, file list gathered -
+and nothing after it appeared. `.github/super-linter.vars` set no
+`VALIDATE_PYTHON_*` at all, so all six of Super-Linter's Python linters ran by
+default, against a repository where `git ls-files '*.py'` returns nothing and
+always has.
+
+**The diagnosis came from the operator, not from the log being read carefully
+enough.** Two turns were spent treating this as an infrastructure flake and
+tabulating durations, when the run output had already named the last thing that
+happened. The instruction was blunt: "Please read the actual output I am giving
+you."
+
+That is the lesson worth more than the fix. A hang has a last line, and the last
+line is evidence rather than noise. Comparing durations across runs answered
+"is this abnormal", which was never in doubt, while the log answered "where did
+it stop" and was sitting there the whole time.
+
+#### And the summary it promised did not exist
+
+Found in the same file while fixing the first thing. A comment there asserted
+that Super-Linter's output "already lands in the job summary, which is where
+somebody reading a failing lane is looking". It did not: the step summary was
+enabled but `SAVE_SUPER_LINTER_SUMMARY` was false, which Super-Linter also warns
+about on every run.
+
+So the lane produced no summary anywhere - not as a pull request comment, by a
+deliberate decision, and not in the job summary either, by omission - while a
+comment in the configuration assured the reader otherwise. Both warnings had
+been printing on every run for as long as the lane has existed.
+
 ### A failed teardown left a backend file that deadlocked the estate
 
 The worst of the run, because it broke both directions at once and named the
