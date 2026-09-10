@@ -124,18 +124,35 @@ resource "proxmox_virtual_environment_pool" "templates" {
 # step, and tests/go/repo/pools_test.go fails if a VM resource ever iterates
 # something no membership resource does.
 
+# EVERY ONE OF THESE READS vm_id OFF THE VM RESOURCE, AND MUST.
+#
+# The number is identical either way - the VM resource takes its own vm_id from
+# the same local. What differs is the dependency edge, and the edge is the whole
+# point: OpenTofu reverses the graph on destroy, so the membership comes out
+# first, while the machine still exists to be removed from a pool.
+#
+# Spelled `each.value.vm_id` there is no edge. The two deletes are unordered,
+# Proxmox removes a destroyed VM from its pool as a side effect, and whichever
+# delete loses the race asks the API to remove a VM that is no longer a member.
+# That answers HTTP 500 and fails the teardown - which then stops with state
+# and secrets deliberately left in place, because a half-finished destroy is
+# how machines end up orphaned.
+#
+# It failed exactly that way twice in one session before the edges were added.
+# tests/go/repo/pools_test.go refuses the shorter spelling now.
+
 resource "proxmox_pool_membership" "control_plane" {
   for_each = local.control_plane
 
   pool_id = proxmox_virtual_environment_pool.control_plane.pool_id
-  vm_id   = each.value.vm_id
+  vm_id   = proxmox_virtual_environment_vm.talos_cp[each.key].vm_id
 }
 
 resource "proxmox_pool_membership" "workers" {
   for_each = local.workers
 
   pool_id = proxmox_virtual_environment_pool.workers.pool_id
-  vm_id   = each.value.vm_id
+  vm_id   = proxmox_virtual_environment_vm.talos_worker[each.key].vm_id
 }
 
 resource "proxmox_pool_membership" "templates" {
@@ -157,7 +174,7 @@ resource "proxmox_pool_membership" "untrusted" {
   for_each = local.dmz
 
   pool_id = proxmox_virtual_environment_pool.untrusted.pool_id
-  vm_id   = each.value.vm_id
+  vm_id   = proxmox_virtual_environment_vm.dmz[each.key].vm_id
 }
 
 # The zone's template is a template, so it belongs with the others. What it is

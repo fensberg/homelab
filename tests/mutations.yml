@@ -88,6 +88,34 @@
 floor: 32
 
 mutations:
+  - guard: TestPoolMembershipDependsOnTheMachineItPlaces
+    file: management/cluster/pools.tf
+    find: "vm_id   = proxmox_virtual_environment_vm.talos_worker[each.key].vm_id"
+    replace: "vm_id   = each.value.vm_id"
+    mentions: "no dependency edge"
+    why: >
+      The number is identical either way, so nothing about the estate that gets
+      built changes and no plan looks different. What is lost is the ordering on
+      destroy: without the edge OpenTofu deletes the membership and the machine
+      concurrently, Proxmox drops a destroyed VM out of its pool as a side
+      effect, and the delete that loses the race asks the API to remove a VM
+      that is no longer a member. Proxmox answers HTTP 500 and the teardown
+      stops half-done, leaving state and secrets in place on purpose. It failed
+      exactly this way twice in one session.
+
+  - guard: TestEveryKubernetesResourceWaitsForTheCluster
+    file: management/cluster/workloads.tf
+    find: "  depends_on = [data.talos_cluster_health.this]"
+    replace: "  # depends_on removed"
+    mentions: "does not depend on"
+    why: >
+      OpenTofu starts everything it can in the first wave. A kubernetes_*
+      resource with no edge into the cluster's readiness is created while the
+      API server is still starting its static pods, so the provider gets
+      connection refused and the apply dies - which on an ignition tears the
+      whole estate back down. Two resources were unordered this way at once, and
+      neither had anything else wrong with it.
+
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
     file: githooks/pre-commit
     find: "./toolshed/gatehouse guard-deliveries"

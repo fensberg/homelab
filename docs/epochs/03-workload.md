@@ -949,6 +949,79 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### The first real rebuild failed twice, in two unrelated places
+
+Both found by running it rather than by reading it, and both were invisible to
+every check in the repository.
+
+#### Nothing waited for the API server
+
+The Cluster phase completed in thirty seconds and then everything that touches
+Kubernetes failed at once - `terraform_data.cilium`,
+`kubernetes_namespace.valheim`, `kubernetes_secret.runner_vars` and the Flux
+bootstrap - all with `dial tcp 10.10.10.100:6443: connect: connection refused`.
+
+The comment on the Cilium resource asserted the ordering was already handled:
+"the kubeconfig is referenced below, which orders this after the API server
+exists". That is false, and it is a good example of a comment that reads as a
+fact and is actually an assumption. `talos_cluster_kubeconfig` fetches a
+credential over the **Talos** API on port 50000, which answers as soon as the
+cluster's PKI exists. `talos_machine_bootstrap` returns when the bootstrap RPC
+is **accepted**. Both can be complete while nothing is listening on 6443,
+because the apiserver, controller manager and scheduler are static pods that
+still have to be pulled and started and etcd still has to elect - a couple of
+minutes on a cold cluster.
+
+So the CNI step, which is the first thing in the whole estate to touch 6443,
+had nothing in front of it. The fix is a bounded poll of the apiserver's own
+`/readyz` inside that step, where it can be measured, rather than an edge that
+looks like it carries a meaning it does not.
+
+**The second half of it is worse, because it was avoidable by pattern.** The
+estate already has a gate for exactly this - `data.talos_cluster_health.this` -
+and `gitops.tf` and both of `runner.tf`'s namespaces name it. Two resources did
+not. `kubernetes_namespace.valheim` was written without it, and
+`kubernetes_secret.runner_vars` wrote its namespace as the literal string
+`"flux-system"`, which looks like a reference and creates no dependency
+whatsoever. Ten resources were correct, two were not, and nothing could tell.
+
+`tests/go/repo/kubernetes_gate_test.go` now refuses any `kubernetes_*` resource
+that neither names the gate nor takes its namespace from a namespace resource.
+
+#### Pool memberships raced their own machines on destroy
+
+The teardown failed, twice, with
+
+```text
+Unable to update pool 'site0-templates': received an HTTP 500 response -
+Reason: update pools failed: VM 10199 is not a pool member
+```
+
+`proxmox_pool_membership.control_plane`, `.workers` and `.untrusted` all took
+`vm_id` from `each.value.vm_id` - the same number the VM resource itself reads
+out of the same local. Identical value, **no dependency edge**. On destroy
+OpenTofu reverses the graph, but there was no edge to reverse, so the membership
+and the machine were deleted concurrently. Proxmox removes a destroyed VM from
+its pool as a side effect, so whichever delete lost the race asked the API to
+remove a VM that was no longer a member, and got a 500.
+
+`.templates` and `.dmz_templates` were written the other way -
+`proxmox_virtual_environment_vm.talos_template[each.key].vm_id` - and were
+correct by accident of spelling rather than by decision.
+
+**This is the "unexploded ordnance" case the destroy path exists to prevent.**
+A teardown that stops half-way has already done irreversible work and leaves
+machines nothing tracks, which is why it holds state and secrets rather than
+sterilizing. Getting it to complete is therefore load-bearing in a way an
+ordinary flake is not.
+
+The lesson worth keeping is about the shape rather than the provider: **a value
+copied from a local and a value read from a resource can be textually identical
+and mean completely different things to the dependency graph.** Nothing in a
+plan shows the difference, and nothing in a review does either - the diff is one
+identifier. Only a destroy reveals it, which is the operation nobody runs
+speculatively.
+
 ### Rendering the chart emits real private keys, and the chart says so
 
 Found on the first render, by gitleaks, before anything was committed.
