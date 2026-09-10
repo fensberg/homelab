@@ -335,11 +335,29 @@ allocation now does:
   that no longer exists - so this is taken from the estate rather than shared
   with it.
 
-The machine is set at **four cores and 6 GiB**: above the fresh-world figure,
-inside the mature-world band, and leaving headroom rather than consuming the
-last of it. The trigger to raise it to 8 GiB is the world maturing, not
-something falling over - and the build VM's 16 GiB returning is what makes that
-comfortable rather than a trade against something else.
+#### The capacity estimate above was wrong, and the hypervisor was measured
+
+The paragraph opening this section - "only about 8 GiB remains" - was written
+before the machines it describes existed. Measured on the host instead of
+estimated: **62 GiB total, roughly 36 GiB committed to running machines, and
+about 23 GiB available.** Three control planes at 4 GiB, two workers at 8 GiB
+and the development machine at 8 GiB account for the commitment.
+
+So the zone is not tight at all, and the sequencing worry in that paragraph -
+that this had to wait for a build VM's memory to return - does not apply. It is
+left above rather than deleted because a wrong number that was acted on is
+worth seeing next to the measurement that corrected it.
+
+The machine is set at **four cores and 8 GiB**: the top of the published band
+rather than the middle. The failure mode of being short is a server that
+degrades once a world is established and players have built on it - which is
+both the moment it is hardest to take offline for a resize and the moment
+anyone would mind most. With 23 GiB available, taking 8 now costs nothing that
+taking 6 would have saved, and it removes a future outage from the plan.
+
+The rule that produced this is worth keeping: **measure the estate before
+budgeting against it.** Two numbers in this section were estimates, both were
+wrong, and one command settled both.
 
 Two things this does **not** solve, both already named above. The world save is
 on OpenEBS Local PV Hostpath and therefore pinned to a node - now a node

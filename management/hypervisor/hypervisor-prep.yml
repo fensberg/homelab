@@ -1094,7 +1094,7 @@
     #     # iptables -t nat -S POSTROUTING | grep -c -- '-j SNAT'
     #     1
     #     # pvesh set /cluster/sdn
-    #     martha: reloading network config
+    #     redacted: reloading network config
     #     info: executing /usr/bin/dpkg -l ifupdown2
     #     UPID:...:reloadnetworkall::root@pam:
     #     # iptables -t nat -S POSTROUTING | grep -c -- '-j SNAT'

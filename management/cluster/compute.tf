@@ -495,15 +495,21 @@ resource "proxmox_virtual_environment_vm" "dmz" {
     # a node deflated afterwards keeps scheduling against memory that is gone.
     # That makes this a hard allocation and the estate's scarcest resource.
     #
-    # SIX, AND THE REASONING IS IN docs/epochs/03-workload.md.
+    # EIGHT, AND THE REASONING IS IN docs/epochs/03-workload.md.
     #
     # Published guidance for five players is 4GiB on a fresh vanilla world and
     # 6-8GiB once the map is explored and bases are established. This VM also
     # runs Talos, the kubelet, the Cilium agent and the OpenEBS provisioner -
-    # roughly a gigabyte before the game starts - so six here is about five for
-    # the workload: comfortable now, and the number to raise when the world
-    # matures rather than when something falls over.
-    dedicated = 6144
+    # roughly a gigabyte before the game starts - so eight here is about seven
+    # for the workload.
+    #
+    # The top of the band rather than the middle, deliberately. The failure
+    # mode of being short is a server that degrades once a world is established
+    # and players have built - which is the moment it is hardest to take away
+    # for a resize, and the moment anyone would mind most. The hypervisor was
+    # measured rather than estimated and has room: raising this later would buy
+    # nothing that taking it now does not, and would cost an outage to do it.
+    dedicated = 8192
   }
 
   network_device {
