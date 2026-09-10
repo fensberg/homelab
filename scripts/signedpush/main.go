@@ -390,6 +390,19 @@ func randomSuffix() string {
 // epoch/** carries that epoch's commits by design. Refusing those would refuse
 // the documented way of working, which is the failure the push guard already
 // made once by applying a rule to everybody it was not written for.
+// onEpochBranch reports whether any of these refs is an epoch branch.
+//
+// Membership of the commit, not identity of the ref being compared. See the
+// note in refuseStacked for why the difference matters.
+func onEpochBranch(refs []string) bool {
+	for _, ref := range refs {
+		if strings.HasPrefix(ref, "origin/epoch/") {
+			return true
+		}
+	}
+	return false
+}
+
 func refuseStacked(branch string) error {
 	// Fails loudly rather than skipping: without origin/main there is no range
 	// to check, and a guard that quietly checks nothing is worse than none.
@@ -405,7 +418,27 @@ func refuseStacked(branch string) error {
 		if err != nil {
 			return err
 		}
-		for _, ref := range strings.Fields(out) {
+		refs := strings.Fields(out)
+
+		// A commit on an epoch branch is that epoch's work, whoever else also
+		// carries it.
+		//
+		// The exemption below asks "is the branch I am comparing against an
+		// epoch branch", which is the wrong question once two pieces of one
+		// epoch are open at the same time. Both were cut from the epoch branch,
+		// so both contain its commits - and each then looks, to the other, like
+		// a branch stacked on a plain feature branch. The second piece cannot
+		// publish until the first merges, which is not a rule anybody chose.
+		//
+		// Asking instead whether the COMMIT is on an epoch branch answers what
+		// the guard actually cares about: whether this branch is carrying work
+		// that belongs to somebody else's pull request. Epoch commits never
+		// are.
+		if onEpochBranch(refs) {
+			continue
+		}
+
+		for _, ref := range refs {
 			switch {
 			case ref == "origin/main", ref == "origin/HEAD",
 				ref == "origin/"+branch,

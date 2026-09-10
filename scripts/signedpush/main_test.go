@@ -143,6 +143,61 @@ func TestRefuseStackedAllowsABranchBasedOnAnEpochBranch(t *testing.T) {
 	}
 }
 
+// Two pieces of one epoch, open at the same time, must both publish.
+//
+// This is the case the exemption missed. Both are cut from the epoch branch, so
+// both carry its commits - and each then looks, to the other, like a branch
+// stacked on a plain feature branch. The guard asked whether the branch it was
+// comparing against was an epoch branch, when what it needed to ask was whether
+// the COMMIT belonged to one.
+//
+// The symptom was that the second piece could not publish until the first
+// merged, which is not a rule anybody chose and which arrived as a refusal
+// naming the epoch's own tip.
+func TestRefuseStackedAllowsASecondPieceOfTheSameEpoch(t *testing.T) {
+	dir := repoWithRemote(t)
+	t.Chdir(dir)
+	inDir(t, dir, "checkout", "-q", "-b", "epoch/03-workload", "origin/main")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "epoch work")
+	inDir(t, dir, "push", "-q", "origin", "epoch/03-workload")
+
+	// The first piece, published and still open.
+	inDir(t, dir, "checkout", "-q", "-b", "feat/first-piece")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "first piece")
+	inDir(t, dir, "push", "-q", "origin", "feat/first-piece")
+
+	// The second, cut from the epoch branch exactly as the first was.
+	inDir(t, dir, "checkout", "-q", "-B", "feat/second-piece", "epoch/03-workload")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "second piece")
+
+	if err := refuseStacked("feat/second-piece"); err != nil {
+		t.Errorf("a second piece of one epoch cannot publish while the first is open: %v\n\n"+
+			"Both carry the epoch's commits because both were cut from it, which is the "+
+			"documented way of working. Serialising pieces behind each other's merges is "+
+			"not a rule anybody chose.", err)
+	}
+}
+
+// And the guard still catches what it was written for: a branch carrying
+// another feature branch's work, where the shared commit belongs to no epoch.
+func TestRefuseStackedStillRejectsARealStackOutsideAnEpoch(t *testing.T) {
+	dir := repoWithRemote(t)
+	t.Chdir(dir)
+	inDir(t, dir, "checkout", "-q", "-b", "feat/first", "origin/main")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "first branch work")
+	inDir(t, dir, "push", "-q", "origin", "feat/first")
+
+	inDir(t, dir, "checkout", "-q", "-b", "feat/second")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "second branch work")
+
+	if err := refuseStacked("feat/second"); err == nil {
+		t.Error("a branch built on another feature branch published.\n\n" +
+			"That is the case this guard exists for: when the first is squash-merged, its " +
+			"commit becomes a different one with the same content, and merging the second " +
+			"conflicts on every file they both touch.")
+	}
+}
+
 // A guard that cannot see the range must say so rather than pass.
 func TestRefuseStackedRefusesWhenItCannotSeeMain(t *testing.T) {
 	dir := gitRepo(t) // no remote at all, so no origin/main
