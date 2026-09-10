@@ -149,6 +149,36 @@ func tracked(t *testing.T, keep func(rel string) bool) []string {
 	if err != nil {
 		t.Fatalf("walking the repository: %v", err)
 	}
+	// A filter that matches nothing is a test that proves nothing, and the two
+	// are indistinguishable from the outside: every caller here loops over what
+	// comes back and asserts something about each entry, so an empty slice runs
+	// zero assertions and reports success.
+	//
+	// That is the failure this estate keeps finding in other places - a plan
+	// summarising "no changes" from a document it never parsed, a dry run
+	// exiting 0 having matched no hosts - and it is reachable here by ordinary
+	// maintenance rather than by anything exotic. A directory gets renamed, an
+	// extension changes, a path moves under a directory this skips: the filter
+	// stops matching, every caller goes quiet, and nothing says so.
+	//
+	// Refused in the helper rather than left to each caller. Three tests in
+	// suppliers_test.go already do this by hand with a `checked == 0` guard,
+	// which is the right instinct applied one test at a time - and the ones
+	// that forgot are exactly the ones nobody would notice.
+	//
+	// If a caller genuinely wants to assert that NOTHING matches, it wants a
+	// different function: "check each of these" and "prove there are none of
+	// these" are different assertions, and only the first is what this is for.
+	if len(matched) == 0 {
+		t.Fatal(`the file filter matched nothing, so this test asserts nothing.
+
+Every caller loops over what this returns, so an empty result is not "the
+repository is clean" - it is zero assertions and a green check. Something the
+filter names has almost certainly moved or been renamed.
+
+If proving a set is EMPTY is the actual intent, that is a different assertion
+and wants its own helper rather than this one.`)
+	}
 	sort.Strings(matched)
 	return matched
 }

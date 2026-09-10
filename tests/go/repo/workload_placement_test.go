@@ -368,6 +368,7 @@ func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
 	}
 
 	var undescribed []string
+	seen := 0
 	clusters := filepath.Join(root, "clusters")
 	err := filepath.WalkDir(clusters, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -389,6 +390,7 @@ func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
 			return relErr
 		}
 		for name := range readHelmReleases(t, rel) {
+			seen++
 			if !described[rel+"#"+name] {
 				undescribed = append(undescribed, rel+" -> "+name)
 			}
@@ -397,6 +399,23 @@ func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walking clusters/: %v", err)
+	}
+
+	// This is the fail-closed half of the table above: a HelmRelease nobody
+	// described is a failure rather than a skip. That property depends
+	// entirely on the walk finding the releases, and finding none passes -
+	// undescribed stays empty and the check reports success having enumerated
+	// nothing.
+	//
+	// So the walk has to prove it worked. Moving clusters/, or nesting the
+	// manifests under a directory this skips, would otherwise turn the guard
+	// off while leaving it green.
+	if seen == 0 {
+		t.Fatal(`no HelmRelease was found anywhere under clusters/, so this proves nothing.
+
+The whole point of this check is that a release nobody described is a failure
+rather than an omission. With none found it cannot tell a fully-described
+estate from a walk that is reading the wrong tree.`)
 	}
 
 	sort.Strings(undescribed)
