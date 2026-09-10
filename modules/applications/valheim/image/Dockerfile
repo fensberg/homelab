@@ -66,12 +66,67 @@ RUN curl -fsSL -o steamcmd.tar.gz https://media.steampowered.com/client/steamcmd
 # resolved - this fails loudly here at build time rather than at runtime, which
 # is the right place for it to fail.
 ARG VALHEIM_APP_ID=896660
-RUN ./steamcmd.sh \
-	+@sSteamCmdForcePlatformType linux \
-	+force_install_dir /valheim \
-	+login anonymous \
-	+app_update "${VALHEIM_APP_ID}" validate \
-	+quit
+
+# Retried, because SteamCMD fails this way intermittently and the failure is
+# not about this image.
+#
+# On its first invocation SteamCMD updates itself and restarts - "Restarting
+# steamcmd by request..." - and an app_update issued in that same run comes
+# back with
+#
+#   ERROR! Failed to install app '896660' (Missing configuration)
+#
+# and exit code 8. The same Dockerfile built successfully twice earlier the same
+# evening and then failed twice in a row, with nothing here changed between
+# them. So the warm-up run below gets the self-update out of the way first, and
+# the download is then attempted up to five times.
+#
+# Two more things go with the retry, because the failure recurred identically
+# rather than clearing, which is not what a transient flake looks like.
+#
+# The steamapps directory is created first. SteamCMD downloads and applies an
+# update to ITSELF on every run - forty megabytes of it, visible in the build
+# log - so the client is not a fixed input the way the base image is. A client
+# released between two builds is the only thing that changed here, and a
+# missing steamapps under force_install_dir is a known way for a newer client
+# to answer "Missing configuration" against a directory it is creating fresh.
+#
+# app_info_update 1 forces the app metadata to be refetched rather than read
+# from whatever the freshly-installed client cached. "Missing configuration" is
+# a complaint about exactly that metadata, so refusing to trust the cache is
+# aimed straight at it.
+#
+# Neither is certain. Both are one line, harmless when unnecessary, and target
+# the specific error - which beats another twenty-minute cycle to test them one
+# at a time.
+#
+# The trailing test is not decoration. SteamCMD is known to exit 0 having
+# downloaded nothing, and this is the last moment anything can tell - after
+# this stage the files are copied into an image that would build cleanly,
+# publish, deploy, and fail at runtime with the server binary simply absent.
+RUN set -eu; \
+	./steamcmd.sh +quit || true; \
+	mkdir -p /valheim/steamapps; \
+	ok=0; \
+	for attempt in 1 2 3 4 5; do \
+		if ./steamcmd.sh \
+			+@sSteamCmdForcePlatformType linux \
+			+force_install_dir /valheim \
+			+login anonymous \
+			+app_info_update 1 \
+			+app_update "${VALHEIM_APP_ID}" validate \
+			+quit; then ok=1; break; fi; \
+		echo "steamcmd attempt ${attempt} failed; retrying in 15s" >&2; \
+		sleep 15; \
+	done; \
+	if [ "$ok" != 1 ]; then \
+		echo "steamcmd could not install app ${VALHEIM_APP_ID} after 5 attempts" >&2; \
+		exit 1; \
+	fi; \
+	if [ ! -f /valheim/valheim_server.x86_64 ]; then \
+		echo "steamcmd reported success but the server binary is not there" >&2; \
+		exit 1; \
+	fi
 
 # --- run --------------------------------------------------------------------
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
