@@ -111,26 +111,34 @@ func Destroy(ctx *run.Context, confirm string) error {
 	if _, err := os.Stat(ctx.LocalState); err != nil {
 		if _, err := os.Stat(ctx.BackendPgOn); err != nil {
 			run.Info("no local state - looking for it in the cluster's Postgres")
-			if err := copyFile(ctx.BackendPgOff, ctx.BackendPgOn); err != nil {
-				return fmt.Errorf("enabling the Postgres backend: %w", err)
-			}
 			connStr, host, port, err := buildStateConnStr(ctx)
 			if err != nil {
 				return err
 			}
 			run.Info(fmt.Sprintf("connecting to the state database at %s:%d", host, port))
-			if err := run.Tofu(ctx, "tofu init (pg backend)",
-				"init", "-input=false", "-reconfigure",
-				"-backend-config=conn_str="+connStr,
-			); err != nil {
+			if err := attachToStateInPostgres(ctx, func() error {
+				return run.Tofu(ctx, "tofu init (pg backend)",
+					"init", "-input=false", "-reconfigure",
+					"-backend-config=conn_str="+connStr,
+				)
+			}); err != nil {
 				return fmt.Errorf(`could not reach the state database, so there is nothing to destroy from.
 
-State lives in Postgres inside the cluster after a successful ignition. If that
-cluster is already gone, the state went with it - restore the age-encrypted
-backup from object storage first (see docs/state-and-secret-rotation.md), or
-remove whatever is left in Proxmox by hand.
+THE LIKELIEST CAUSE IS THAT THERE IS NOTHING LEFT TO DESTROY. State lives in
+Postgres inside the cluster, so a teardown that already succeeded took both the
+cluster and its state with it, and this run has no way to tell that apart from
+a cluster that is unreachable for some other reason.
 
-underlying error: %w`, err)
+Look at the hypervisor. If the machines are gone, the estate is already down and
+the workspace just needs clearing:
+
+    task clean-secrets SITE=%s
+
+If the machines are still there, the state that described them is genuinely
+lost. Restore the age-encrypted backup from object storage before destroying
+anything - see docs/state-and-secret-rotation.md.
+
+underlying error: %w`, ctx.Site, err)
 			}
 		}
 	} else {
@@ -331,4 +339,35 @@ func reportMachinesInState(ctx *run.Context, fromConfig int) {
 	}
 	run.Warn("  Everything above goes. The shorter list is the stale one.")
 	fmt.Println()
+}
+
+// attachToStateInPostgres enables the Postgres backend, runs init against it,
+// and takes the backend file back out again if that init fails.
+//
+// The cleanup is the whole reason this is a function rather than four inline
+// lines. backend_pg.tf declares a backend for the entire module, so a copy left
+// behind by a failed attach is picked up by EVERY later `tofu init` in the
+// workspace - including phases with no interest in cluster state. With no
+// -backend-config alongside it, tofu falls back to dialling localhost, and a
+// fresh ignition dies in its Overlay phase with
+//
+//	Error: dial tcp [::1]:5432: connect: connection refused
+//
+// which names Postgres, which is not involved, in a phase that only mints a
+// tailnet key. The estate deadlocks in both directions at once: the destroy
+// cannot find a cluster and the rebuild cannot start.
+//
+// It happened. The file is gitignored, so nothing about the working tree looked
+// wrong either.
+func attachToStateInPostgres(ctx *run.Context, init func() error) error {
+	if err := copyFile(ctx.BackendPgOff, ctx.BackendPgOn); err != nil {
+		return fmt.Errorf("enabling the Postgres backend: %w", err)
+	}
+	if err := init(); err != nil {
+		if rmErr := os.Remove(ctx.BackendPgOn); rmErr != nil && !os.IsNotExist(rmErr) {
+			return fmt.Errorf("%w (and the backend file could not be removed afterwards: %v)", err, rmErr)
+		}
+		return err
+	}
+	return nil
 }

@@ -949,6 +949,167 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### The join code was empty because PlayFab Party wanted PulseAudio
+
+The cluster came up clean and the game server ran: world generated, 183
+locations placed, PlayFab login succeeded. And the join code was blank.
+
+```text
+New session server "..." that has join code ,  now 0 player(s)
+Server '...' begin PlayFab create and join network for server
+[30s] PlayFab reconnect server '...'
+```
+
+Nothing in that loop names a cause, and the parts that worked are exactly the
+parts that make the real cause hard to see. **PlayFab login is managed code
+over HTTPS and needs nothing special; only the relay network needs the native
+runtime.** So the server authenticates, reports itself logged in, registers a
+session - and then silently cannot do the one thing crossplay exists for.
+
+`libparty.so` could not load:
+
+```text
+== /valheim/valheim_server_Data/Plugins/libparty.so
+        libpulse.so.0 => not found
+        libpulse-simple.so.0 => not found
+        libpulse-mainloop-glib.so.0 => not found
+```
+
+PlayFab Party is a combined **voice and data** SDK shipped as one library, so it
+links PulseAudio even on a headless server with no sound device and no voice
+feature in use. `libatomic1` was already installed - the community's known list
+for this is libpulse, libatomic1 and glibc 2.29+, and this image had two of the
+three.
+
+#### What was checked first, and was wrong
+
+The NetworkPolicy, because it was the obvious suspect and this epoch had just
+written it. It allows every port and protocol outbound to the public internet,
+so it was never a candidate - established by reading it rather than by
+reasoning about it, which cost one minute against a rebuild cycle.
+
+The vendor documentation was no help either, and would not have been: this is
+not a Valheim behaviour, it is a property of running Valheim in a container
+built from a slim base. The answer was in two issue threads on community
+container images, found by searching for the exact log line.
+
+#### The guard is a build step, not a test
+
+Nothing a test in this repository can reach knows what a Debian image resolves
+at runtime, so the image now proves it itself: after the game files are copied,
+the build runs `ldd` against `libparty.so` and fails if anything is unresolved,
+naming the libraries.
+
+That placement is the whole point. The failure it replaces produces an image
+that **starts, runs, and serves a world nobody can join**, retrying forever,
+with no error mentioning a library anywhere. A build that stops and says which
+libraries are missing costs a minute; the version it replaces cost an evening.
+
+Deliberately not installed: the wayland, cairo, pango and dbus libraries that
+`libdecor` also reports missing. That is Unity's desktop windowing stack,
+shipped in every engine build and never loaded headless - installing it would
+buy megabytes of attack surface to silence a scan that is correctly reporting
+something harmless.
+
+### Six Python linters, no Python, and a required check that hung
+
+`Analyze (Super-Linter)` normally finishes in about two minutes. Intermittently
+it stopped returning and burned its full twenty-minute `timeout-minutes`
+instead - on a check required to merge into `main`, so a hang was a hard block
+rather than a slow lane, and it was force-merged past twice.
+
+The last line the job ever printed was Super-Linter's own warning:
+
+```text
+[WARN] Black and Ruff are both enabled, and might conflict with each other.
+```
+
+Everything before it completed - configuration validated, file list gathered -
+and nothing after it appeared. `.github/super-linter.vars` set no
+`VALIDATE_PYTHON_*` at all, so all six of Super-Linter's Python linters ran by
+default, against a repository where `git ls-files '*.py'` returns nothing and
+always has.
+
+**The diagnosis came from the operator, not from the log being read carefully
+enough.** Two turns were spent treating this as an infrastructure flake and
+tabulating durations, when the run output had already named the last thing that
+happened. The instruction was blunt: "Please read the actual output I am giving
+you."
+
+That is the lesson worth more than the fix. A hang has a last line, and the last
+line is evidence rather than noise. Comparing durations across runs answered
+"is this abnormal", which was never in doubt, while the log answered "where did
+it stop" and was sitting there the whole time.
+
+#### And the summary it promised did not exist
+
+Found in the same file while fixing the first thing. A comment there asserted
+that Super-Linter's output "already lands in the job summary, which is where
+somebody reading a failing lane is looking". It did not: the step summary was
+enabled but `SAVE_SUPER_LINTER_SUMMARY` was false, which Super-Linter also warns
+about on every run.
+
+So the lane produced no summary anywhere - not as a pull request comment, by a
+deliberate decision, and not in the job summary either, by omission - while a
+comment in the configuration assured the reader otherwise. Both warnings had
+been printing on every run for as long as the lane has existed.
+
+### A failed teardown left a backend file that deadlocked the estate
+
+The worst of the run, because it broke both directions at once and named the
+wrong subsystem while doing it.
+
+After a teardown that had already succeeded, `demolish` found no local state.
+That is the normal state of a sterilized workspace, but the code reads it as
+"state must be where a successful ignition puts it" - in Postgres, inside the
+cluster - so it copies `backend_pg.tf` into place and inits against the
+database. The cluster was gone, so the init failed, the destroy halted, and
+**the backend file it had just written stayed there.**
+
+`backend_pg.tf` declares a backend for the whole module, so every later
+`tofu init` in that workspace picked it up. With no `-backend-config` alongside
+it, tofu fell back to dialling localhost:
+
+```text
+PHASE 2 : OVERLAY
+Mint a tagged auth key for the hypervisor to join the overlay network.
+  -> tofu init
+Error: dial tcp [::1]:5432: connect: connection refused
+```
+
+A phase whose entire job is minting a tailnet key, failing on Postgres, which it
+does not use. And the file is gitignored, so nothing about the working tree
+looked wrong.
+
+**Both routes out were closed simultaneously.** The destroy could not run
+because it could not find a cluster; the rebuild could not run because the
+destroy had poisoned the workspace on its way out. Neither error mentioned the
+other, and the file linking them appears in no listing.
+
+#### Two things were wrong, not one
+
+The leak is the defect. `attachToStateInPostgres` now removes the file when the
+init it wraps fails, which is the whole reason it exists as a function rather
+than four inline lines, and both halves are tested.
+
+The second is the message. It led with restoring the age-encrypted break-glass
+backup, and offered "remove whatever is left in Proxmox by hand" - a manual
+step this estate refuses on principle - when **the likeliest cause by far is
+that there is nothing left to destroy.** A teardown that already succeeded takes
+the cluster and its state together, and from inside there is no way to tell that
+apart from a cluster that is merely unreachable. The message now says so, names
+`task clean-secrets` as the ordinary recovery, and keeps the break-glass path
+for the case that actually needs it: machines still running with no state left
+to describe them.
+
+#### The shape
+
+An operation that writes a file speculatively owns removing it on every failure
+path. This one wrote a _backend configuration_, which is the highest-blast-radius
+kind of speculative file in an OpenTofu workspace - it silently redirects where
+every future command believes state lives, including commands that have no
+opinion about state at all.
+
 ### A secretRef naming a secret nobody creates fails closed, three layers away
 
 The rebuild after those two fixes got the whole way to a healthy cluster - six

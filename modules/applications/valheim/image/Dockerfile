@@ -77,13 +77,40 @@ RUN ./steamcmd.sh \
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 
 # ca-certificates for the relay's TLS, libatomic1 because the server links
-# against it. Nothing else: no shell tooling, no package manager left usable
-# for anything, no SteamCMD.
+# against it, and PulseAudio because PlayFab Party does.
+#
+# THE PULSEAUDIO PACKAGES ARE NOT A MISTAKE AND ARE NOT OPTIONAL. Nothing here
+# plays or records audio, and a headless dedicated server has no sound device
+# at all - but PlayFab Party is a combined voice-and-data SDK shipped as one
+# native library, and `libparty.so` links PulseAudio whether or not voice is
+# used. Without them the library cannot load.
+#
+# What that failure looks like matters, because it does not look like a missing
+# library. The server starts, generates its world, and logs in to PlayFab
+# perfectly happily - all of that is managed code over HTTPS. Only the relay
+# network needs the native runtime, so the symptom is an EMPTY JOIN CODE and a
+# thirty-second loop, with no error naming a library anywhere in it:
+#
+#   New session server "..." that has join code ,  now 0 player(s)
+#   Server '...' begin PlayFab create and join network for server
+#   [30s] PlayFab reconnect server '...'
+#
+# libpulse0 carries libpulse.so.0 and libpulse-simple.so.0;
+# libpulse-mainloop-glib0 carries the third. All three are required.
+#
+# Not installed, deliberately: the wayland, cairo, pango and dbus libraries
+# that `libdecor-0.so.0` and `libdecor-cairo.so` also report as missing. Those
+# are Unity's desktop windowing stack, shipped in every build of the engine and
+# never loaded by a headless server. Installing them would be several megabytes
+# of attack surface bought to silence a scan that is correctly reporting
+# something harmless.
 # hadolint ignore=DL3008
 RUN apt-get update \
 	&& apt-get install --no-install-recommends -y \
 		ca-certificates \
 		libatomic1 \
+		libpulse-mainloop-glib0 \
+		libpulse0 \
 	&& rm -rf /var/lib/apt/lists/*
 
 # A real user, and one that owns nothing it does not need.
@@ -93,6 +120,36 @@ RUN apt-get update \
 # is one less thing an exploit can do with the process it lands in.
 RUN useradd --system --uid 10000 --home-dir /valheim --shell /usr/sbin/nologin valheim
 COPY --from=fetch --chown=root:root /valheim /valheim
+
+# Prove the relay's library can actually load, here, at build time.
+#
+# This is the guard for the packages above, and it is a build step rather than
+# a test because nothing a test can reach knows what a Debian image resolves at
+# runtime. It earns its place by the shape of the failure it catches: a missing
+# dependency here produces an image that starts, runs, and serves a world that
+# nobody can join, retrying every thirty seconds forever with no error naming a
+# library. Hours of looking at network policy and relay documentation, for a
+# package that was never installed.
+#
+# So the build fails instead, at the one step that could fix it, naming the
+# libraries by name. If a future Valheim update moves or renames this file the
+# build also fails, which is the right outcome - it is the estate's one link to
+# the crossplay backend and its absence is worth knowing about immediately.
+RUN set -eu; \
+	party=/valheim/valheim_server_Data/Plugins/libparty.so; \
+	if [ ! -f "$party" ]; then \
+		echo "libparty.so is not where this image expects it: $party" >&2; \
+		echo "the PlayFab relay is what crossplay runs on - find where it moved" >&2; \
+		exit 1; \
+	fi; \
+	missing="$(ldd "$party" | grep 'not found' || true)"; \
+	if [ -n "$missing" ]; then \
+		echo "the PlayFab Party runtime cannot load - unresolved dependencies:" >&2; \
+		echo "$missing" >&2; \
+		echo "add the packages providing them to the apt-get above" >&2; \
+		exit 1; \
+	fi
+
 RUN mkdir -p /data && chown valheim:valheim /data
 
 USER 10000
