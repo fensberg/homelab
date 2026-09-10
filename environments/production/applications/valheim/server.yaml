@@ -52,6 +52,5 @@ data:
   # anything else - including "false" - leaves it at the preset's value.
   VALHEIM_SETKEY_NOBUILDCOST: "false"
   VALHEIM_SETKEY_PLAYEREVENTS: "false"
-  VALHEIM_SETKEY_PASSIVEMOBS: "false"
   # Enabling this one disables the in-game map for everybody.
   VALHEIM_SETKEY_NOMAP: "false"
