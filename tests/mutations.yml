@@ -676,6 +676,32 @@ mutations:
       DMZ node. That node would never reach Ready, and it would look like a
       broken machine rather than a missing line in a chart's values.
 
+  - guard: TestEveryZoneResourceIsKeyedOffItsMachines
+    file: management/cluster/compute.tf
+    find: "  for_each = toset(local.dmz_hypervisors)"
+    replace: "  for_each = toset(local.all_vm_hypervisors)"
+    mentions: "keyed off"
+    why: >
+      The mutation is the line the resource directly above it uses, which is
+      what makes it the plausible one: copying a neighbouring for_each reads as
+      consistency rather than as a change of meaning. It pulls a 4.5GB image
+      onto every hypervisor forever, including an estate that has deprecated
+      its last untrusted workload - and nothing fails, so the only symptom is
+      disk somebody notices months later.
+
+  - guard: TestEveryZoneTaskIsGatedOnTheCount
+    file: management/hypervisor/hypervisor-prep.yml
+    find: "      when:\n        - (dmz_count | int) > 0\n        - sdn_dmz_vnet not in"
+    replace: "      when:\n        - sdn_dmz_vnet not in"
+    mentions: "not gated on dmz_count"
+    why: >
+      Dropping the count from a task that already has another condition is the
+      realistic version of this: the task still looks guarded, and the guard it
+      keeps is the idempotency check rather than the one deciding whether the
+      zone should exist at all. Ansible creates and never removes, so the
+      result is a vnet and a VXLAN identifier on an estate with nothing to put
+      on them.
+
 # Guards that cannot be proved by mutation, and why.
 #
 # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
