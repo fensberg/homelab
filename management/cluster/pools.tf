@@ -81,6 +81,11 @@ resource "proxmox_virtual_environment_pool" "workers" {
   comment = "Talos workers. CI and anything else that may be evicted and rescheduled."
 }
 
+resource "proxmox_virtual_environment_pool" "untrusted" {
+  pool_id = "${local.site_name}-untrusted"
+  comment = "Untrusted zones. Off the overlay, tainted, one per workload - and the machines an operator should look at first when something is wrong."
+}
+
 resource "proxmox_virtual_environment_pool" "templates" {
   pool_id = "${local.site_name}-templates"
   comment = "Golden images, one per hypervisor. Clone sources rather than running machines."
@@ -138,4 +143,28 @@ resource "proxmox_pool_membership" "templates" {
 
   pool_id = proxmox_virtual_environment_pool.templates.pool_id
   vm_id   = proxmox_virtual_environment_vm.talos_template[each.key].vm_id
+}
+
+# The untrusted zones' machines get a pool of their own, and it earns its place
+# rather than following a pattern.
+#
+# The hypervisor's pools are how an operator tells what a machine is for before
+# touching it. Putting these in with the workers would say they are
+# interchangeable with the machines running CI, and they are the opposite of
+# that: off the overlay, tainted, and running the only code on this estate that
+# arrived from strangers.
+resource "proxmox_pool_membership" "untrusted" {
+  for_each = local.dmz
+
+  pool_id = proxmox_virtual_environment_pool.untrusted.pool_id
+  vm_id   = each.value.vm_id
+}
+
+# The zone's template is a template, so it belongs with the others. What it is
+# an image OF is the interesting part, and that is readable from its name.
+resource "proxmox_pool_membership" "dmz_templates" {
+  for_each = toset(local.dmz_hypervisors)
+
+  pool_id = proxmox_virtual_environment_pool.templates.pool_id
+  vm_id   = proxmox_virtual_environment_vm.dmz_template[each.key].vm_id
 }

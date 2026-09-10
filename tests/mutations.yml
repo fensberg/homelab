@@ -640,15 +640,21 @@ mutations:
 
   - guard: TestKubePrismIsDeclaredRatherThanAssumed
     file: management/cluster/talos.tf
-    find: "              port    = 7445"
-    replace: "              port    = 7446"
+    find: "              port    = 7445\n            }\n          }\n        }\n      }),\n\n      # The taint,"
+    replace: "              port    = 7446\n            }\n          }\n        }\n      }),\n\n      # The taint,"
     mentions: "7445"
     why: >
-      The port is declared twice on purpose - here and as k8sServicePort in
-      manifests/cilium-values.yaml - because the agents have to find the
-      endpoint Talos actually opened. Moving one and not the other is the
-      realistic drift, and it breaks the pod network on every node at once with
-      no clue pointing at a port number.
+      Moved in one patch collection and not the other, which is the realistic
+      drift: the port is declared once per collection and as k8sServicePort in
+      the Cilium values, and a change that updates the one somebody was looking
+      at leaves the rest behind. It breaks the pod network on whichever
+      machines took the stale value, with nothing anywhere naming a port.
+
+      The mutation targets the untrusted zone's collection deliberately. This
+      guard used to assert only that the file mentioned KubePrism somewhere,
+      which a second machine class made insufficient - the zone's agents need
+      the endpoint exactly as much as a worker's do, and the check would have
+      been satisfied by somebody else's declaration.
 
   - guard: TestTheRenderedCNIManifestMatchesThePinnedChartVersion
     file: scripts/versions.env
@@ -678,8 +684,8 @@ mutations:
 
   - guard: TestEveryZoneResourceIsKeyedOffItsMachines
     file: management/cluster/compute.tf
-    find: "  for_each = toset(local.dmz_hypervisors)"
-    replace: "  for_each = toset(local.all_vm_hypervisors)"
+    find: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.dmz_hypervisors)"
+    replace: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.all_vm_hypervisors)"
     mentions: "keyed off"
     why: >
       The mutation is the line the resource directly above it uses, which is

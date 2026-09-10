@@ -96,6 +96,73 @@ resource "proxmox_download_file" "dmz_disk_image" {
   overwrite = false
 }
 
+# The untrusted zone's own template, and it has to be its own.
+#
+# A template is built from one image, and the whole point of this zone is that
+# its machines run an image without the overlay extension. Cloning the template
+# above would put the overlay-carrying image under the machine whose entire
+# purpose is not to have it - the same swap the two file names exist to prevent,
+# arriving through the clone instead of through the download.
+#
+# Built only on hypervisors that host an untrusted machine, so an estate with no
+# untrusted workload has neither the image nor a template for it.
+resource "proxmox_virtual_environment_vm" "dmz_template" {
+  for_each = toset(local.dmz_hypervisors)
+
+  name      = "${local.site_name}-dmz-template"
+  node_name = each.value
+  # The top of the 300 band, above every zone machine that band can hold, the
+  # way 199 sits above the control planes.
+  vm_id = local.octet * 1000 + 399
+
+  template = true
+  started  = false
+
+  boot_order = ["virtio0"]
+
+  cpu {
+    cores = 2
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 2048
+  }
+
+  network_device {
+    bridge = "vnetint"
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = "local-zfs"
+    file_format  = "raw"
+    interface    = "virtio0"
+    file_id      = proxmox_download_file.dmz_disk_image[each.key].id
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  stop_on_destroy = true
+
+  smbios {
+    serial       = "${local.site_name}-dmz-template"
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
+  }
+
+  lifecycle {
+    # Same reason as the template above: file_id is a stable string, so
+    # replacing the image behind it changes no attribute here and would leave
+    # this template on the old bytes.
+    replace_triggered_by = [proxmox_download_file.dmz_disk_image[each.key]]
+  }
+}
+
 # One template VM per hypervisor, built once from the downloaded disk image.
 # This is the only place file_id-based disk creation happens - it requires
 # Terraform to SSH into the node and run pvesm/qm commands directly (see
@@ -389,5 +456,80 @@ resource "proxmox_virtual_environment_vm" "talos_worker" {
         gateway = local.node_gateway
       }
     }
+  }
+}
+
+# The untrusted zone's machines.
+#
+# On its zone's vnet rather than the node one - that is the L2 separation the
+# zone is for, and it is why this cannot simply be another worker with a taint.
+resource "proxmox_virtual_environment_vm" "dmz" {
+  for_each = local.dmz
+
+  name      = each.value.name
+  node_name = each.value.hypervisor
+  vm_id     = each.value.vm_id
+
+  boot_order = ["virtio0"]
+
+  clone {
+    vm_id = proxmox_virtual_environment_vm.dmz_template[each.value.hypervisor].vm_id
+    full  = true
+  }
+
+  cpu {
+    cores = 2
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    # No floating, so no balloon device, for the same reason the workers have
+    # none: the kubelet computes Allocatable at boot and never revisits it, so
+    # a node deflated afterwards keeps scheduling against memory that is gone.
+    #
+    # Four gigabytes is what a game server wants and roughly what the estate
+    # can spare - see the capacity note in docs/epochs/03-workload.md. It is
+    # the number to revisit first if a zone will not schedule.
+    dedicated = 4096
+  }
+
+  network_device {
+    bridge = local.dmz_zones[each.value.zone].vnet
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = "local-zfs"
+    file_format  = "raw"
+    interface    = "virtio0"
+    size         = 64
+  }
+
+  # The provisioner's data path, off the OS disk for the same reason as every
+  # other node: Talos grows disk 0 to fill with its own partitions, so a
+  # provisioner sharing it has no predictable capacity.
+  #
+  # This is where the workload's state lives, and it does NOT survive a
+  # rebuild - see #330. Anything that must outlive one belongs in object
+  # storage, not here.
+  disk {
+    datastore_id = "local-zfs"
+    file_format  = "raw"
+    interface    = "virtio1"
+    size         = 32
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  stop_on_destroy = true
+
+  smbios {
+    serial       = each.value.name
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
   }
 }
