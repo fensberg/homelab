@@ -322,6 +322,158 @@ specifically chosen to be destroyable. And the tailnet's allow-all policy
 remains the reason any new device on the mesh has full reach; keeping this node
 off the overlay sidesteps it rather than fixing it.
 
+### Cilium arrives from OpenTofu, between bootstrap and the health gate
+
+**Chose:** a manifest rendered from the pinned chart, committed to this
+repository, and applied by OpenTofu after `talos_machine_bootstrap` and before
+`data.talos_cluster_health` - using the `terraform_data` + `local-exec` +
+`kubectl` pattern `gitops.tf` already uses to bootstrap Flux.
+**Rejected:** Talos `inlineManifests`; the Cilium CLI; adding the Helm provider.
+**Because:** three of the four cannot be upgraded, cannot be reviewed, or cannot
+be seen by the guard that checks suppliers.
+
+#### Why the obvious answer is the wrong one
+
+`inlineManifests` looks correct and is the first thing anyone reaches for: the
+manifest travels with the machine config, so it is applied as the cluster comes
+up and the ordering problem disappears. Sidero's own documentation closes it:
+
+> Talos only creates missing resources from inline manifests - it never deletes
+> or updates them.
+
+So Cilium would be installed once and reconciled by nothing. Changing it means
+editing the control-plane machine configuration and running
+`talosctl upgrade-k8s` by hand, which is an imperative path outside the button
+and precisely the shape this estate refuses everywhere else. The second cost is
+review: a rendered CNI chart is thousands of lines, and this would put them
+inside the machine configuration - the most privileged document the estate
+produces, and the one whose diffs most need to be readable.
+
+The **Cilium CLI** is a new supplier, a new binary, and imperative. It is
+documented by Sidero for development and testing, which is what it is for.
+
+The **Helm provider** is the closest call, and is rejected for this path only.
+A provider is not a library: it is a binary downloaded at init and executed
+locally with a live credential, which is why `approved-suppliers.yml` treats
+providers as the most privileged deliveries here. It would also fetch the chart
+at apply time, so the image digests would never appear in this repository - and
+a digest that is not committed is one `tests/go/repo/suppliers_test.go` cannot
+read. Adopting Helm later for the workload tier is a separate question that
+this decision does not foreclose.
+
+#### What the chosen route buys, and what it costs
+
+It buys four things: the digests are committed, so the supplier guard can
+actually see them; the diff of a Cilium bump is a diff of Kubernetes objects
+rather than of a machine configuration; the apply mechanism is one already
+reviewed and in the tree; and no new supplier is required.
+
+It costs a large generated file in git, and a regeneration step. **That step
+must be codified rather than remembered** - a `task` verb that re-renders from
+the pinned chart version, with a test asserting the committed manifest matches
+what that version renders. A generated artefact nobody can regenerate
+deterministically is worse than no artefact, because it silently becomes the
+source of truth.
+
+#### The ordering works because the control plane does not need a CNI
+
+Worth writing down, because it is the fact the whole sequence rests on and it
+is not obvious. `kube-apiserver`, `etcd`, `kube-controller-manager` and
+`kube-scheduler` run as static pods on host networking. They come up with no
+CNI at all. So the API answers while every node is still `NotReady`, and
+OpenTofu can apply a manifest into a cluster that has no pod network yet.
+
+The sequence is therefore: bootstrap, apply Cilium, nodes reach `Ready`, health
+gate passes. `data.talos_cluster_health` gains a dependency on the apply.
+
+The failure mode if that edge is missing is not subtle and is worth naming so
+it is recognised: with `cni.name: none` and nothing installing a CNI, no node
+ever reaches `Ready`, and the health gate waits its full ten-minute timeout
+before failing. Ten minutes of apparent hang is what a missing dependency looks
+like here.
+
+#### KubePrism, and a single point of failure this declines to inherit
+
+`proxy.disabled: true` hands service routing to Cilium, and Cilium's agents
+then need to reach the API server themselves. They cannot do it through a
+Service ClusterIP, because nothing implements ClusterIP until Cilium is the
+thing implementing it.
+
+The obvious address is the cluster endpoint, and this estate hardcodes that to
+`local.node_ips[0]` - one named control plane, which is issue #316. Pointing
+Cilium at it would promote a known API single point of failure into a **pod
+network** single point of failure: lose that one machine and no node on the
+cluster has working networking.
+
+Talos's answer is **KubePrism**, a TCP load balancer Talos runs on every
+machine at `localhost:7445`, spread across all control-plane endpoints and
+health-filtered. Cilium is configured `k8sServiceHost=localhost` and
+`k8sServicePort=7445`, per Sidero's documented values.
+
+This does **not** fix #316. The kubeconfig and the cluster endpoint still name
+one machine, and that issue stays open. It declines to make it worse, which is
+a different and smaller claim.
+
+**KubePrism is declared explicitly even though it is enabled by default.**
+Relying on an upstream default for load-bearing behaviour is a blind spot: the
+day it changes, the pod network fails and nothing in this repository ever said
+it was required. The estate's own rule is that a guard which is off by default
+is indistinguishable from nothing being wrong.
+
+#### The values Talos requires, read rather than guessed
+
+From Sidero's Cilium guide for the kube-proxy-free variant, recorded here so
+nobody re-derives them from a blog post:
+
+| Value                                      | Setting                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `ipam.mode`                                | `kubernetes`                                                                                     |
+| `kubeProxyReplacement`                     | `true`                                                                                           |
+| `k8sServiceHost`                           | `localhost`                                                                                      |
+| `k8sServicePort`                           | `7445`                                                                                           |
+| `cgroup.autoMount.enabled`                 | `false`                                                                                          |
+| `cgroup.hostRoot`                          | `/sys/fs/cgroup`                                                                                 |
+| `securityContext.capabilities.ciliumAgent` | `CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID` |
+
+The cgroup pair is the Talos-specific half: Talos mounts the cgroup hierarchy
+itself, so Cilium must be told not to.
+
+#### This is a rebuild, and the rebuild has one-way doors
+
+A CNI cannot be swapped on a running cluster - nodes must not be `Ready` when
+it arrives - so this is `demolish` followed by a fresh ignition. The operator
+has confirmed the cluster VMs are disposable and hold nothing, which is what
+makes that acceptable rather than merely necessary.
+
+Two consequences that must be said before the command is run rather than
+discovered during it:
+
+- **The teardown empties the object storage bucket.** `emptyObjectStorage` in
+  `scripts/contractor/internal/phases/teardown.go` deletes every object in the
+  site's bucket, because Cloudflare refuses to delete a bucket that is not
+  empty. The age-encrypted state backups live in that bucket. So the operation
+  most likely to precede needing a state backup is the one that destroys every
+  state backup. This is fine here only because a fresh ignition starts from
+  empty state by design and there is nothing worth restoring - it is not fine
+  in general, and it is not a property to rely on twice.
+- **The OpenTofu state lives inside the cluster being destroyed**, in Postgres.
+  `demolish` consumes that state to know what to destroy, which is the correct
+  order. A teardown that stops partway has already done irreversible work and
+  leaves machines nothing tracks, so preconditions belong before the first
+  irreversible step.
+
+#### What this does not deliver
+
+Cilium makes NetworkPolicy _enforced_. It does not write any policy, and an
+estate with an enforcing CNI and no policies is exactly as open as one with a
+non-enforcing CNI and many. The policies are their own piece of work.
+
+It is also only one of the three isolation layers this epoch's untrusted-zone
+decision names. A dedicated node answers what shares its kernel, and omitting
+the overlay answers what the machine itself reaches; neither is affected by the
+CNI. Cilium is necessary and is not sufficient, and the temptation once it
+lands will be to treat the isolation question as closed.
+
 ## Outcome
 
 ## Deferred
