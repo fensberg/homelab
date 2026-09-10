@@ -949,6 +949,54 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### A secretRef naming a secret nobody creates fails closed, three layers away
+
+The rebuild after those two fixes got the whole way to a healthy cluster - six
+nodes Ready, Cilium up, all four HelmReleases installed, Postgres at 3/3 - and
+then sat in the health gate waiting on Flux.
+
+What the gate reported was `workloads-production: Source artifact not found`,
+which reads as a missing tag. The tag was fine. The actual state was:
+
+```text
+flux-production   False   failed to get secret 'flux-system/flux-system':
+                          secrets "flux-system" not found
+```
+
+`flux-production` carried `secretRef: {name: flux-system}` on the assumption
+that the secret `flux bootstrap` creates would be present. Flux is installed
+here by OpenTofu applying the manifests directly, so that secret is never
+created - and the repository is public, so no credential was needed in the
+first place. The `flux-system` GitRepository sitting beside it has never had a
+secretRef and has always worked.
+
+**The important property is that a missing secret does not degrade to anonymous
+access.** It fails closed with `AuthenticationFailed` and the source never
+builds an artifact. That is correct behaviour and it is also why one unchecked
+reference was so expensive.
+
+#### The symptom surfaced three layers from the cause
+
+Worth writing down, because the debugging time went into the wrong places:
+
+| Layer                  | What it said                    | What was true                                         |
+| ---------------------- | ------------------------------- | ----------------------------------------------------- |
+| `flux-production`      | AuthenticationFailed            | the cause                                             |
+| `workloads-production` | Source artifact not found       | reads as a missing tag                                |
+| `infra-configs`        | Reconciliation in progress      | `wait: true`, blocked on the GitRepository it applied |
+| Health phase           | waiting for Flux reconciliation | 15 minutes, then destroy the estate                   |
+
+`infra-configs` is the one that turns a bad reference into a lost rebuild. It
+applies `flux-production.yaml` **and** has `wait: true`, so it waits for its own
+GitRepository to become Ready. It cannot, so the layer never finishes, and the
+ignition's health gate eventually gives up - upstream of Migrate, so the run
+tears everything down.
+
+`tests/go/repo/flux_source_secret_test.go` now refuses a `secretRef` naming a
+secret nothing in this repository creates. The floor it asserts is on manifests
+scanned rather than on secretRefs found, because zero secretRefs is the correct
+state for a public repository and must keep passing.
+
 ### The first real rebuild failed twice, in two unrelated places
 
 Both found by running it rather than by reading it, and both were invisible to

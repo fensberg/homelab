@@ -88,6 +88,19 @@
 floor: 32
 
 mutations:
+  - guard: TestFluxSourcesOnlyNameSecretsThisRepositoryCreates
+    file: clusters/management/infrastructure/configs/flux-production.yaml
+    find: "  # NO secretRef, and that is deliberate rather than an omission."
+    replace: "  secretRef:\n    name: flux-system"
+    mentions: "nothing in this repository creates"
+    why: >
+      A secretRef naming a secret that does not exist does not degrade to
+      anonymous access - the source fails closed with AuthenticationFailed and
+      never produces an artifact. Downstream that reads as "Source artifact not
+      found", which looks like a missing tag, and the layer applying the source
+      has wait:true so it blocks on its own GitRepository until the ignition's
+      health gate gives up. One unchecked reference cost a full rebuild.
+
   - guard: TestPoolMembershipDependsOnTheMachineItPlaces
     file: management/cluster/pools.tf
     find: "vm_id   = proxmox_virtual_environment_vm.talos_worker[each.key].vm_id"
