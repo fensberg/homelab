@@ -9,6 +9,22 @@
 # to edit, and the broad ClusterRole permissions it flags are inherent to
 # how a GitOps controller has to work, not a misconfiguration in code we
 # control.
+# HEALTHCHECK, which Kubernetes ignores.
+#
+# CKV_DOCKER_2 wants a HEALTHCHECK instruction in every image. Nothing built
+# here runs anywhere but Kubernetes, and the kubelet does not read that
+# instruction at all - liveness and readiness probes on the pod are what
+# decides whether a container is healthy, and they live in the manifest where
+# they can be tuned without rebuilding an image.
+#
+# Adding one to satisfy this check would add an instruction that never
+# executes, which is worse than not having it: it reads as a health check to
+# whoever finds it next.
+#
+# Removed when something here is built to run outside Kubernetes.
+skip-check:
+  - CKV_DOCKER_2
+
 skip-path:
   - clusters/management/flux-system
   # clusters/bootstrap/ is Cilium's own chart output, committed verbatim for
