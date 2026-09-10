@@ -9,8 +9,11 @@ earlier epoch whose decisions you are about to touch.
 
 ## State of the world
 
-- **Current epoch:** 02 — Abstraction, starting with the worker pool. Epoch 01
-  signed off 2026-09-03; epoch 08 is part-built and paused.
+- **Current epoch:** 03 — Workload, opened 2026-09-10 for the CNI its untrusted
+  workload is blocked on. Epoch 02 remains open rather than closed: the module
+  work is unfinished, and epoch 03 was brought forward because the game server
+  named as its success criterion needs enforced NetworkPolicy before it may run
+  at all. Epoch 01 signed off 2026-09-03; epoch 08 is part-built and paused.
 - **Built:** the phased ignition button (`scripts/contractor`), an
   idempotent Proxmox playbook, Talos + Flux provisioning, codified overlay-network
   route auto-approval, and a two-layer state backup story.
@@ -49,7 +52,7 @@ earlier epoch whose decisions you are about to touch.
 | --- | -------------- | ------------------------------------- | ----------- | -------------------------------------------- |
 | 01  | Ignition       | `management/`                         | Complete    | [01-ignition.md](01-ignition.md)             |
 | 02  | Abstraction    | `modules/`                            | Next        | [02-abstraction.md](02-abstraction.md)       |
-| 03  | Workload       | `environments/`                       | Not started | [03-workload.md](03-workload.md)             |
+| 03  | Workload       | `environments/`                       | In progress | [03-workload.md](03-workload.md)             |
 | 04  | Observability  | `clusters/management/infrastructure/` | Not started | [04-observability.md](04-observability.md)   |
 | 05  | Node Lifecycle | `management/`, `scripts/contractor/`  | Not started | [05-node-lifecycle.md](05-node-lifecycle.md) |
 | 06  | Consolidation  | repository-wide                       | Not started | [06-consolidation.md](06-consolidation.md)   |
