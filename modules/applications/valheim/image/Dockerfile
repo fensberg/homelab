@@ -76,10 +76,29 @@ ARG VALHEIM_APP_ID=896660
 #
 #   ERROR! Failed to install app '896660' (Missing configuration)
 #
-# and exit code 8. The same Dockerfile built successfully two hours earlier and
-# again afterwards; nothing here changed between them. So the warm-up run below
-# gets the self-update out of the way first, and the download is then attempted
-# up to five times.
+# and exit code 8. The same Dockerfile built successfully twice earlier the same
+# evening and then failed twice in a row, with nothing here changed between
+# them. So the warm-up run below gets the self-update out of the way first, and
+# the download is then attempted up to five times.
+#
+# Two more things go with the retry, because the failure recurred identically
+# rather than clearing, which is not what a transient flake looks like.
+#
+# The steamapps directory is created first. SteamCMD downloads and applies an
+# update to ITSELF on every run - forty megabytes of it, visible in the build
+# log - so the client is not a fixed input the way the base image is. A client
+# released between two builds is the only thing that changed here, and a
+# missing steamapps under force_install_dir is a known way for a newer client
+# to answer "Missing configuration" against a directory it is creating fresh.
+#
+# app_info_update 1 forces the app metadata to be refetched rather than read
+# from whatever the freshly-installed client cached. "Missing configuration" is
+# a complaint about exactly that metadata, so refusing to trust the cache is
+# aimed straight at it.
+#
+# Neither is certain. Both are one line, harmless when unnecessary, and target
+# the specific error - which beats another twenty-minute cycle to test them one
+# at a time.
 #
 # The trailing test is not decoration. SteamCMD is known to exit 0 having
 # downloaded nothing, and this is the last moment anything can tell - after
@@ -87,12 +106,14 @@ ARG VALHEIM_APP_ID=896660
 # publish, deploy, and fail at runtime with the server binary simply absent.
 RUN set -eu; \
 	./steamcmd.sh +quit || true; \
+	mkdir -p /valheim/steamapps; \
 	ok=0; \
 	for attempt in 1 2 3 4 5; do \
 		if ./steamcmd.sh \
 			+@sSteamCmdForcePlatformType linux \
 			+force_install_dir /valheim \
 			+login anonymous \
+			+app_info_update 1 \
 			+app_update "${VALHEIM_APP_ID}" validate \
 			+quit; then ok=1; break; fi; \
 		echo "steamcmd attempt ${attempt} failed; retrying in 15s" >&2; \
