@@ -43,7 +43,7 @@ resource "proxmox_download_file" "talos_disk_image" {
   # Proxmox even fetches the URL, independent of the actual bytes. This is
   # the same disk image either way - the extension just has to lie to get
   # stored where compressed non-ISO images are allowed to live.
-  file_name               = "talos-${local.talos_version}-nocloud-amd64.iso"
+  file_name               = "talos-${local.talos_version}.iso"
   decompression_algorithm = "zst"
 
   # Without this, the provider compares the URL's advertised size (the
@@ -64,16 +64,21 @@ resource "proxmox_download_file" "talos_disk_image" {
 # every hypervisor hosting a cluster node needs the first, and only a
 # hypervisor hosting an untrusted machine needs this.
 #
-# THE FILE NAME CARRIES "dmz" AND IT HAS TO.
+# THE TWO IMAGES ARE NAMED APART AT THE FRONT, NOT THE BACK.
 #
 # The resource above records that the schematic is deliberately absent from the
 # file name, and that this once left a template running old bytes because the
-# datastore path never changed. With one schematic that was a subtlety. With
-# two at the same Talos version it would be a collision: both would want
-# local-iso:iso/talos-<version>-nocloud-amd64.iso, and whichever downloaded
-# second would either fail or quietly overwrite the other - putting the
-# overlay-carrying image under the machine whose entire purpose is not to have
-# it, with nothing anywhere reporting the swap.
+# datastore path never changed. With one schematic that was a subtlety. With two
+# at the same Talos version it would be a collision: both would want
+# local-iso:iso/talos-<version>.iso, and whichever downloaded second would
+# either fail or quietly overwrite the other - putting the overlay-carrying
+# image under the machine whose entire purpose is not to have it, with nothing
+# anywhere reporting the swap.
+#
+# Distinguishing them by prefix rather than by a qualifier on the end is what
+# lets the orphan check in scripts/contractor/internal/phases/compute.go say
+# which image a stored volume is by reading its first characters, instead of
+# testing suffixes that overlap. Two names, two prefixes, no ambiguity.
 resource "proxmox_download_file" "dmz_disk_image" {
   for_each = toset(local.dmz_hypervisors)
 
@@ -82,7 +87,7 @@ resource "proxmox_download_file" "dmz_disk_image" {
   node_name    = each.value
   url          = "https://factory.talos.dev/image/${local.dmz_schematic_id}/${local.talos_version}/nocloud-amd64.raw.xz"
 
-  file_name               = "talos-${local.talos_version}-dmz-nocloud-amd64.iso"
+  file_name               = "dmz-${local.talos_version}.iso"
   decompression_algorithm = "zst"
 
   # Same reason as the image above: the provider compares the compressed

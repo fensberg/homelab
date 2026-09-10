@@ -166,7 +166,7 @@ func reclaimOrphanedDiskImage(ctx *run.Context, cfg *config.Config, net *config.
 		return nil
 	}
 
-	volID, err := findTalosDiskImage(site.Hypervisor, hv)
+	volID, err := findStoredImage(site.Hypervisor, hv, clusterImagePrefix)
 	if err != nil {
 		return fmt.Errorf("checking whether a disk image already exists outside Terraform: %w", err)
 	}
@@ -196,7 +196,7 @@ func deleteDatastoreFile(hv config.Hypervisor, node config.Node, volID string) e
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 		// Same self-signed endpoint versions.tf already accepts with
-		// insecure = true; see findTalosDiskImage below.
+		// insecure = true; see listDatastoreVolumes below.
 		// nosemgrep: problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification.bypass-tls-verification
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}, //nolint:gosec
 	}
@@ -220,8 +220,8 @@ func deleteDatastoreFile(hv config.Hypervisor, node config.Node, volID string) e
 
 	deadline := time.Now().Add(2 * time.Minute)
 	for time.Now().Before(deadline) {
-		remaining, err := findTalosDiskImage(hv, node)
-		if err == nil && remaining == "" {
+		present, err := datastoreHasVolume(hv, node, volID)
+		if err == nil && !present {
 			return nil
 		}
 		time.Sleep(3 * time.Second)
@@ -237,7 +237,7 @@ func datastoreContentURL(node config.Node) string {
 // datastoreFileURL addresses one volume in that datastore.
 //
 // PathEscape, not QueryEscape and not raw. A Proxmox volume id looks like
-// "local-iso:iso/talos-v1.13.8-nocloud-amd64.iso" - it carries both a colon
+// "local-iso:iso/talos-v1.13.9.iso" - it carries both a colon
 // and a slash, and it occupies a single path segment. Left raw, that slash
 // would split the segment and address a URL that does not exist; QueryEscape
 // would turn the spaces-as-plus rule loose on a path, which is a different
@@ -246,11 +246,28 @@ func datastoreFileURL(node config.Node, volID string) string {
 	return datastoreContentURL(node) + "/" + urlpkg.PathEscape(volID)
 }
 
-// findTalosDiskImage lists the local-iso datastore's content directly via
-// the Proxmox API - not through Terraform, which cannot answer "does this
-// exist" without already having it in state - and returns the volid of a
-// file matching the naming pattern compute.tf uses, or "" if none is there.
-func findTalosDiskImage(hv config.Hypervisor, node config.Node) (string, error) {
+// Volume id prefixes for the two images compute.tf stores.
+//
+// They differ at the FRONT rather than by a qualifier on the end, and that is
+// what makes deciding which image a stored volume is a matter of reading its
+// first characters. A suffix test cannot do it safely: every one of these ends
+// in ".iso", so a check for the cluster image would match the untrusted one
+// too - and adopting the wrong one would put the overlay-carrying image under
+// the machine whose whole purpose is not to have it.
+//
+// The version segment is the one part not spelled out, and deliberately: an
+// orphan left by an older run carries an older version, and finding it is the
+// entire job. Go does not hold that pin - it lives in management/cluster/
+// variables.tf - so the prefix is as explicit as this side can be.
+const (
+	clusterImagePrefix = "local-iso:iso/talos-"
+	dmzImagePrefix     = "local-iso:iso/dmz-"
+)
+
+// listDatastoreVolumes lists the local-iso datastore's content directly via the
+// Proxmox API - not through Terraform, which cannot answer "does this exist"
+// without already having it in state.
+func listDatastoreVolumes(hv config.Hypervisor, node config.Node) ([]string, error) {
 	client := &http.Client{
 		Timeout: 15 * time.Second,
 		// InsecureSkipVerify is deliberate, not a bug: this hits the same
@@ -266,22 +283,22 @@ func findTalosDiskImage(hv config.Hypervisor, node config.Node) (string, error) 
 	url := datastoreContentURL(node)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", hv.TokenID, hv.TokenSecret))
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("querying the local-iso datastore: %w", err)
+		return nil, fmt.Errorf("querying the local-iso datastore: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("querying the local-iso datastore: HTTP %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("querying the local-iso datastore: HTTP %d: %s", resp.StatusCode, body)
 	}
 
 	var parsed struct {
@@ -290,15 +307,51 @@ func findTalosDiskImage(hv config.Hypervisor, node config.Node) (string, error) 
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", fmt.Errorf("parsing the datastore content response: %w", err)
+		return nil, fmt.Errorf("parsing the datastore content response: %w", err)
 	}
 
+	vols := make([]string, 0, len(parsed.Data))
 	for _, item := range parsed.Data {
-		// "local-iso:iso/talos-v1.13.8-nocloud-amd64.iso" - the exact
-		// version segment doesn't matter here, see the doc comment above.
-		if strings.HasPrefix(item.VolID, "local-iso:iso/talos-") && strings.HasSuffix(item.VolID, "-nocloud-amd64.iso") {
-			return item.VolID, nil
+		vols = append(vols, item.VolID)
+	}
+	return vols, nil
+}
+
+// findStoredImage returns the volid of the stored image with this prefix, or ""
+// if none is there.
+//
+// One prefix per call rather than "any Talos image": the two images live in the
+// same datastore, and a search that could return either would let a run adopt
+// or delete the wrong one.
+func findStoredImage(hv config.Hypervisor, node config.Node, prefix string) (string, error) {
+	vols, err := listDatastoreVolumes(hv, node)
+	if err != nil {
+		return "", err
+	}
+	for _, vol := range vols {
+		if strings.HasPrefix(vol, prefix) {
+			return vol, nil
 		}
 	}
 	return "", nil
+}
+
+// datastoreHasVolume reports whether exactly this volume is still stored.
+//
+// Named by volid rather than by prefix on purpose. The delete below polls until
+// the file it removed is gone, and asking "is any image still there" would be a
+// different question with a worse answer: with two images in one datastore it
+// stays true after a successful delete, so the poll would run to its deadline
+// and report a failure that did not happen.
+func datastoreHasVolume(hv config.Hypervisor, node config.Node, volID string) (bool, error) {
+	vols, err := listDatastoreVolumes(hv, node)
+	if err != nil {
+		return false, err
+	}
+	for _, vol := range vols {
+		if vol == volID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
