@@ -48,6 +48,15 @@ spec:
 
       containers:
         - name: valheim
+          # THIS DIGEST MUST BE RE-PINNED AFTER THE IMAGE REBUILDS.
+          #
+          # The entrypoint that turns these environment variables into the
+          # server's arguments lives in the image, so a digest published before
+          # it existed does not have it. That failure is loud rather than
+          # subtle - the old image's entrypoint is the server binary itself,
+          # which exits complaining about missing arguments - but it is a
+          # failure, and the build workflow prints the new digest into its job
+          # summary for this line.
           # renovate: datasource=docker depName=ghcr.io/fensberg/homelab-valheim
           image: ghcr.io/fensberg/homelab-valheim@sha256:1f202cb87a04d7c5bfcf0f434ba04a872e7aea747b75dda019e37013970e8ca7
 
@@ -75,15 +84,24 @@ spec:
           # It is still visible in the process list inside this container,
           # which is what -password means and is not something a manifest can
           # fix. What it is not is written into git.
+          # Every world dial, straight from the ConfigMap - its keys are the
+          # variable names the entrypoint reads, so adding a dial is one line
+          # there and nothing here.
+          envFrom:
+            - configMapRef:
+                name: valheim-world
+
           env:
-            # The name people see and the world to load. Environment values,
-            # not module ones: the overlay supplies them, and staging is not
-            # obliged to call itself the same thing production does.
-            # All three from the Secret OpenTofu writes out of the vault.
-            # Two of them are not credentials - the server name is broadcast to
-            # anyone who joins - but they live there so a fork picks its own by
-            # changing its config rather than by editing this file, and so a
-            # pod is not half-configured from two sources.
+            # Somewhere writable that is not the game directory. Unity writes
+            # preferences and logs under a home directory whatever -savedir
+            # says, and the game files are read-only to this user.
+            - name: HOME
+              value: /scratch
+
+            # All three from the Secret OpenTofu writes out of the vault. Two
+            # are not credentials - the server name is broadcast to anyone who
+            # joins - but they live there so a fork picks its own by changing
+            # its config rather than by editing this file.
             - name: VALHEIM_SERVER_NAME
               valueFrom:
                 secretKeyRef:
@@ -94,51 +112,11 @@ spec:
                 secretKeyRef:
                   name: valheim-server
                   key: world-name
-            # Difficulty. Nothing set this before, which meant Normal by
-            # default - correct, but by omission rather than by decision.
-            - name: VALHEIM_PRESET
-              valueFrom:
-                configMapKeyRef:
-                  name: valheim-world
-                  key: preset
-            # Somewhere writable that is not the game directory. Unity writes
-            # player preferences and logs under the home directory whatever
-            # -savedir says, and the game files are read-only to this user.
-            - name: HOME
-              value: /scratch
             - name: VALHEIM_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: valheim-server
                   key: password
-
-          args:
-            - "-name"
-            - "$(VALHEIM_SERVER_NAME)"
-            - "-world"
-            - "$(VALHEIM_WORLD_NAME)"
-            - "-password"
-            - "$(VALHEIM_PASSWORD)"
-            # The relay, and the reason there is no ingress rule and no port
-            # forward. Without this the Steam backend is used, which needs both.
-            - "-crossplay"
-            # The world lives on the volume rather than under the server's home
-            # directory, so nothing depends on where a container's home is.
-            # Difficulty, as a named preset. The vendor's presets are
-            # Normal, Casual, Easy, Hard, Hardcore, Immersive and Hammer.
-            # Individual dials exist too - `-modifier <key> <value>` for
-            # combat, deathpenalty, resources, raids and portals, and
-            # `-setkey <flag>` for nobuildcost, playerevents, passivemobs and
-            # nomap - and a preset is the right starting point because it is
-            # one value somebody can read back later.
-            - "-preset"
-            - "$(VALHEIM_PRESET)"
-            - "-savedir"
-            - "/data"
-            # Not listed in the public browser. The join code is how people get
-            # in, and a server nobody can enumerate is one nobody probes.
-            - "-public"
-            - "0"
 
           volumeMounts:
             - name: world

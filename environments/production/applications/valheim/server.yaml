@@ -1,48 +1,57 @@
 ---
-# Production's world settings.
+# Production's world settings. Every dial the server exposes, set here.
 #
-# What is NOT here: the server name, the world name and the password. They come
-# from the vault through a Secret OpenTofu writes - see
-# management/cluster/workloads.tf. A fork changes its config rather than this
-# file.
+# Empty means "leave it alone", and that is a real value rather than a
+# placeholder: the server has no neutral token for a modifier and no way to
+# express "off" for a flag, so an unset dial has to be an absent argument. The
+# image's entrypoint drops the empty ones.
 #
-# What IS here is every dial the vendor exposes, listed whether or not it is
-# set, so the answer to "can we change X" is in one place rather than in a
-# search. Only `preset` is wired into the Deployment's arguments today; adding
-# one of the others is a key here and a matching argument pair there.
-#
-# The reason it is not all wired already: Kubernetes expands $(VAR) into a
-# single argument and does not split on spaces, so "extra args in one string"
-# does not work without a shell - and the image's entrypoint is the server
-# binary, deliberately. Each dial is therefore its own argument pair.
+# What is NOT here: the server name, the world name and the password. Those
+# come from the vault through a Secret written by OpenTofu - see
+# management/cluster/workloads.tf.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: valheim-world
   namespace: valheim
 data:
-  # -preset. The whole difficulty in one value, and the right starting point
-  # because it is a single thing somebody can read back later.
-  #
-  #   normal | casual | easy | hard | hardcore | immersive | hammer
-  preset: "normal"
+  # The relay. "true" is what makes players reach the server without a port
+  # forward; anything else falls back to the Steam backend, which needs one.
+  VALHEIM_CROSSPLAY: "true"
 
-  # --- individual dials, none of them wired yet ---------------------------
-  #
-  # Each overrides the preset for that one axis. Passed as
-  # `-modifier <key> <value>`, so enabling one means adding a key here and
-  # `-modifier <key> "$(VALHEIM_MOD_<KEY>)"` to the Deployment's args.
-  #
-  #   combat        veryeasy | easy | hard | veryhard
-  #   deathpenalty  casual | veryeasy | easy | hard | hardcore
-  #   resources     muchless | less | more | muchmore | most
-  #   raids         none | muchless | less | more | muchmore
-  #   portals       casual | hard | veryhard
-  #
-  # And the on-or-off ones, passed as `-setkey <flag>` with no value:
-  #
-  #   nobuildcost | playerevents | passivemobs | nomap
-  #
-  # There is no "normal" token for the -modifier dials. Omitting one is how it
-  # stays at whatever the preset says, which is why they cannot simply all be
-  # passed with a default value.
+  # Listed in the public server browser. Off, because the join code is how
+  # people get in and a server nobody can enumerate is one nobody probes.
+  VALHEIM_PUBLIC: "0"
+
+  # Seconds between world saves. The server's own default is 1800; twenty
+  # minutes is a smaller amount of progress to lose to a crash.
+  VALHEIM_SAVE_INTERVAL: "1200"
+
+  # --- difficulty ---------------------------------------------------------
+
+  # The whole of it in one value, and what every dial below falls back to.
+  #   normal | casual | easy | hard | hardcore | immersive | hammer
+  VALHEIM_PRESET: "normal"
+
+  # Each overrides the preset on one axis. There is no "normal" value for
+  # these - every listed one changes the game - so empty is how an axis stays
+  # at whatever the preset says.
+  #   veryeasy | easy | hard | veryhard
+  VALHEIM_MODIFIER_COMBAT: ""
+  #   casual | veryeasy | easy | hard | hardcore
+  VALHEIM_MODIFIER_DEATHPENALTY: ""
+  #   muchless | less | more | muchmore | most
+  VALHEIM_MODIFIER_RESOURCES: ""
+  #   none | muchless | less | more | muchmore
+  VALHEIM_MODIFIER_RAIDS: ""
+  #   casual | hard | veryhard
+  VALHEIM_MODIFIER_PORTALS: ""
+
+  # On or off, and the server only understands on: passing one of these turns
+  # it on and there is no argument that turns it off. So "true" enables, and
+  # anything else - including "false" - leaves it at the preset's value.
+  VALHEIM_SETKEY_NOBUILDCOST: "false"
+  VALHEIM_SETKEY_PLAYEREVENTS: "false"
+  VALHEIM_SETKEY_PASSIVEMOBS: "false"
+  # Enabling this one disables the in-game map for everybody.
+  VALHEIM_SETKEY_NOMAP: "false"
