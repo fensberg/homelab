@@ -1,0 +1,11 @@
+---
+# Deliberately empty rather than absent.
+#
+# Flux's kustomize-controller auto-generates a kustomization when it finds none,
+# which flattens in every manifest beneath it recursively - the same trap
+# clusters/management/kustomization.yaml exists to avoid. An empty resources
+# list applies nothing, which is the correct state for an environment with
+# nothing in it yet, and it says so on purpose.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: []

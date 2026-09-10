@@ -294,6 +294,11 @@ tasks:
       # pinned unnoticed. It carries an image transformer now, and a
       # transformer that does not build is a pin that silently is not applied.
       - kubectl kustomize clusters/management/flux-system > /dev/null
+      # The workload tier. Empty overlays still have to build: an environment
+      # with nothing in it is a valid state, and a kustomization that does not
+      # parse is not.
+      - kubectl kustomize environments/staging/applications > /dev/null
+      - kubectl kustomize environments/production/applications > /dev/null
       - rm -f config/management.placeholder.json
       # Every Go module under scripts/, discovered rather than listed.
       #
