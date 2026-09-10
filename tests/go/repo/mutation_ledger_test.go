@@ -42,6 +42,9 @@ type mutation struct {
 	Create   string `yaml:"create"`
 	Mentions string `yaml:"mentions"`
 	Why      string `yaml:"why"`
+	// ReadsSource opts a Go target in, for the one kind of guard the blanket
+	// refusal below gets wrong. See the refusal for why the default stays no.
+	ReadsSource bool `yaml:"reads_source"`
 }
 
 // creates reports whether the entry proves a guard by adding a file rather
@@ -217,18 +220,35 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 				}
 			}
 
-			// A Go target would prove nothing. The guards are run from a
+			// A Go target usually proves nothing. The guards are run from a
 			// binary compiled once from the real tree, so editing Go source
 			// in the scratch copy changes no behaviour and the entry would
 			// "fail to fail" for a reason that has nothing to do with the
 			// guard. Refuse it rather than let it look like coverage.
-			if strings.HasSuffix(m.File, ".go") {
+			//
+			// EXCEPT WHERE THE GUARD READS THE SOURCE AS DATA, which this
+			// refusal used to state as a property of the ledger when it is
+			// really a property of the guard. runGuard sets the repo-root
+			// environment variable to the scratch tree and repoRoot honours
+			// it, so a guard that opens .go files and inspects their text sees
+			// the mutation in full. Only guards asserting COMPILED BEHAVIOUR
+			// are blind to it.
+			//
+			// So the opt-in is explicit and narrow rather than the default
+			// being loosened: `reads_source: true` says "this guard reads the
+			// named file, it does not execute it". Getting that wrong makes an
+			// entry that cannot fail, which is why it has to be claimed rather
+			// than inferred.
+			if strings.HasSuffix(m.File, ".go") && !m.ReadsSource {
 				t.Fatalf("this entry mutates %s, and the ledger cannot judge Go source.\n\n"+
 					"The guards run from a binary compiled once from the real tree, so a "+
 					"change to Go source in the scratch copy has no effect - the entry "+
 					"would pass or fail for reasons unrelated to what it claims.\n\n"+
 					"Guards over Go behaviour belong in that program's own package tests, "+
-					"beside the code, where a counterexample is an ordinary table entry.",
+					"beside the code, where a counterexample is an ordinary table entry.\n\n"+
+					"If this guard READS the file as data rather than executing it, say so "+
+					"with `reads_source: true` - the scratch tree does reach a guard that "+
+					"opens source and inspects its text.",
 					m.File)
 			}
 
