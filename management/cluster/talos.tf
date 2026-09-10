@@ -30,6 +30,32 @@ locals {
         kind        = "ResolverConfig"
         nameservers = [{ address = "1.1.1.1" }, { address = "1.0.0.1" }]
       }),
+      # KubePrism, declared rather than assumed.
+      #
+      # Talos enables this by default, which is exactly why it is written down.
+      # With kube-proxy disabled, every Cilium agent reaches the API server
+      # through it: there is no ClusterIP to use, because nothing implements
+      # ClusterIP until Cilium is the thing implementing it.
+      #
+      # The alternative address is the cluster endpoint, and this estate
+      # hardcodes that to one control plane (#316). Pointing every agent there
+      # would promote a known API single point of failure into a pod-network
+      # one - lose that machine and no node has working networking. KubePrism
+      # is a local TCP load balancer across all control-plane endpoints, health
+      # filtered, so it declines to inherit that.
+      #
+      # The port is repeated in clusters/bootstrap/cilium-values.yaml as k8sServicePort.
+      # Both halves have to move together.
+      yamlencode({
+        machine = {
+          features = {
+            kubePrism = {
+              enabled = true
+              port    = 7445
+            }
+          }
+        }
+      }),
       # Join the node to the overlay.
       #
       # This is how the cluster reaches the hypervisor at all. The node subnet
@@ -151,6 +177,33 @@ data "talos_machine_configuration" "controlplane" {
         allowSchedulingOnControlPlanes = true
       }
     }),
+
+    # Talos ships Flannel and kube-proxy; this estate runs neither.
+    #
+    # Both settings are one decision rather than two. Flannel implements no
+    # NetworkPolicy controller at all - a policy is accepted, stored, and never
+    # evaluated - which is the whole reason for the move, and Cilium is
+    # rendered with kubeProxyReplacement so leaving kube-proxy running would
+    # put two things on every node programming service routing.
+    #
+    # The cost is that no node reaches Ready until something installs a CNI.
+    # cilium.tf does that between bootstrap and the health gate; see
+    # docs/epochs/03-workload.md for why it cannot arrive through Flux.
+    #
+    # Cluster-level, so it is set once on the control plane's config. A worker
+    # repeating it would be a second declaration of one fact.
+    yamlencode({
+      cluster = {
+        network = {
+          cni = {
+            name = "none"
+          }
+        }
+        proxy = {
+          disabled = true
+        }
+      }
+    }),
   ], local.machine_patches[each.key])
 }
 
@@ -270,6 +323,11 @@ data "talos_cluster_health" "this" {
     # its configuration, and the gate would report a cluster healthy while a
     # machine it is meant to cover is still in maintenance mode.
     talos_machine_configuration_apply.worker,
+    # Without a CNI no node ever reaches Ready, so this gate would wait its
+    # full ten-minute timeout and then blame the cluster for a dependency that
+    # was simply missing. This edge is the whole ordering: bootstrap, install
+    # the CNI, nodes go Ready, gate passes.
+    terraform_data.cilium,
   ]
   client_configuration = talos_machine_secrets.this.client_configuration
   control_plane_nodes  = local.node_ips
