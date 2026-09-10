@@ -488,10 +488,12 @@ must be a config change and a converge, never a rebuild, and this is the path.
 1. **The workload.** Delete its directory under `environments/`. Flux syncs
    `./clusters/management` with `prune: true`, so the objects go with it. This
    is the only step that needs no privilege beyond a merge.
-2. **The machine.** Remove the site's `dmz_count` (or lower it), then
-   `contractor converge`. A machine in this zone is not an etcd member, so this
-   is a drain and one destroy rather than a quorum event, and it renumbers
-   nothing else.
+2. **The machine.** Remove that workload's entry from the site's `dmz_zones`,
+   then `contractor converge`. A machine in a zone is not an etcd member, so
+   this is a drain and one destroy rather than a quorum event. Removing one
+   zone renumbers no other: the zones are sorted by name and each keeps the
+   subnet it was given, so a neighbour being deprecated never moves a surviving
+   workload's addresses out from under its firewall rules.
 3. **The port forward.** On the router, by hand. Nothing in this repository can
    see it, which is the reason it is listed here at all.
 4. **The network**, below.
@@ -499,12 +501,14 @@ must be a config change and a converge, never a rebuild, and this is the path.
 Doing this in the other order takes a workload's network away while the
 workload is still running, which is a diagnosis nobody enjoys.
 
-#### What `dmz_count: 0` does on its own
+#### What removing the last zone does on its own
 
 Everything derived from the machines stops existing: no VM, and no second
 image, because `proxmox_download_file.dmz_disk_image` keys off
-`local.dmz_hypervisors` rather than off the site. The SDN tasks are gated on
-the same count, so nothing new is created.
+`local.dmz_hypervisors` rather than off the site. The SDN tasks **loop over the
+zones** rather than being gated on a count, which is the stronger form of the
+same property - a `when:` has to be remembered on every task, and a loop over
+an empty list cannot run at all.
 
 `tests/go/repo/untrusted_zone_offswitch_test.go` holds both halves of that in
 place - that every zone resource keys off its machines, and that every zone
@@ -520,21 +524,22 @@ looks guarded.
 `dmz_count: 0`, all inert, none of them dangerous, and none of them obvious to
 whoever finds them later:
 
-- the `vnetdmz` vnet
-- its subnet
-- the second Talos image in `local-iso`
+- each zone's vnet (`vnetdmz0`, `vnetdmz1`, ...)
+- each of their subnets
+- the second Talos image in `local-iso`, once no zone is left
 
 Clearing them is a hypervisor operation, listed before deleted because the
 subnet id is generated and should be read rather than guessed:
 
 ```sh
 # What is actually there
-pvesh get /cluster/sdn/vnets/vnetdmz/subnets --output-format json
+pvesh get /cluster/sdn/vnets --output-format json | grep vnetdmz
+pvesh get /cluster/sdn/vnets/<vnet from the listing>/subnets --output-format json
 pvesm list local-iso | grep '/dmz-'
 
 # Remove, innermost first, then apply the SDN change
-pvesh delete /cluster/sdn/vnets/vnetdmz/subnets/<id from the listing>
-pvesh delete /cluster/sdn/vnets/vnetdmz
+pvesh delete /cluster/sdn/vnets/<vnet>/subnets/<id from the listing>
+pvesh delete /cluster/sdn/vnets/<vnet>
 pvesh set /cluster/sdn
 
 pvesm free local-iso:iso/<image from the listing>
@@ -554,10 +559,10 @@ enforced NetworkPolicy is what lets the hypervisor grant recorded in
 that record names Flannel as the reason it could not be. The untrusted workload
 motivated the upgrade; it does not own it.
 
-**The zone's addressing stays too.** `dmz_cidr`, the gateway and the VNI are
-derived from the site's octet rather than chosen, so they cost nothing while
-unused and they are the same values if a zone ever comes back. Deleting them
-would be deleting arithmetic.
+**The zones' addressing stays too.** Each subnet, gateway and VNI is derived
+from the site's octet and the zone's position in the sorted list rather than
+chosen, so they cost nothing while unused. A zone that returns under the same
+name returns to the same addresses. Deleting that would be deleting arithmetic.
 
 ## Outcome
 

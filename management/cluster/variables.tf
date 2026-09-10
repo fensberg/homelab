@@ -142,19 +142,20 @@ locals {
   control_plane_band = 100
   worker_band        = 200
 
-  # The untrusted zone: its own /24, not a band inside the node subnet.
+  # The untrusted zones: one subnet each, not a band inside the node subnet.
   #
-  # A band would put the machine that takes inbound UDP from strangers on the
-  # same L2 as every control plane, where the only thing between it and the
-  # Talos API is a certificate. A separate subnet is what makes "a zone subnet
-  # with policy on it" - the property docs/epochs/03-workload.md audits an
-  # escape against - true rather than aspirational.
+  # A band would put the machine that takes inbound traffic from strangers on
+  # the same L2 as every control plane. A subnet each - rather than one shared
+  # by every untrusted workload - is because two untrusted workloads on one
+  # segment can reach each other, and what shares a kernel is the whole reason
+  # either gets a machine of its own.
   #
-  # No new overlay route is needed: hypervisor-prep advertises the site's whole
-  # /16 precisely so a new subnet here costs no further route approval.
-  dmz_cidr    = "10.${local.octet}.30.0/24"
-  dmz_gateway = cidrhost(local.dmz_cidr, 1)
-  dmz_band    = 100
+  # 30 upwards is the range 02-abstraction.md reserves for tenants with their
+  # own ranges, which is exactly what a zone is. No new overlay route is needed:
+  # hypervisor-prep advertises the site's whole /16.
+  dmz_first_subnet = 30
+  dmz_max_zones    = 10
+  dmz_band         = 100
 
   # The one number every other identifier is derived from.
   host_octets = [for i in range(local.node_count) : local.control_plane_band + i]
@@ -234,36 +235,58 @@ locals {
     }
   }
 
-  # The untrusted zone's machines, keyed like every other tier.
+  # The untrusted zones, keyed by the workload each exists for.
   #
-  # Counted rather than assumed: an estate with no untrusted workload has no
-  # business running a machine dedicated to one, and zero is the number every
-  # site starts at.
-  dmz_count  = try(local.site.dmz_count, 0)
-  dmz_octets = [for i in range(local.dmz_count) : local.dmz_band + i]
+  # Sorted, so a zone's subnet does not move when another is added or removed.
+  # An address that shifts under a workload because a neighbour was deprecated
+  # is a firewall rule silently pointing at somebody else.
+  #
+  # This has to agree with ResolveSiteNetwork in
+  # scripts/contractor/internal/config/config.go, the same contract every other
+  # tier here already implements twice.
+  dmz_zones_in   = try(local.site.dmz_zones, {})
+  dmz_zone_names = sort(keys(local.dmz_zones_in))
 
-  dmz = {
-    for i, h in local.dmz_octets : tostring(h) => {
-      host_octet = h
-      ip         = cidrhost(local.dmz_cidr, h)
-      name       = format("%s-dmz-%d", local.site_name, h)
-
-      # Banded away from the cluster nodes so a VM id reads back as its zone as
-      # well as its address: octet 10 gives 10300-10399 here against 10100 and
-      # 10200 for the tiers that are inside the cluster's own subnet.
-      vm_id = local.octet * 1000 + 300 + i
-
-      hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[i % length(local.hypervisors)].hostname : ""
+  dmz_zones = {
+    for i, zone in local.dmz_zone_names : zone => {
+      name  = zone
+      index = i
+      cidr  = "10.${local.octet}.${local.dmz_first_subnet + i}.0/24"
+      # Indexed rather than named: a Proxmox vnet id is capped at eight
+      # characters, which "minecraft" alone already exceeds.
+      vnet = "vnetdmz${i}"
+      # Banded so a second zone at one site cannot collide with a first zone at
+      # another: the node vnet tops out at 11000+octet, and these start at
+      # 12100.
+      vni = 12000 + local.octet * 100 + i
+      # Absent means one. A zone with no machine is a subnet and a VXLAN
+      # identifier nothing sits on.
+      nodes = try(local.dmz_zones_in[zone].node_count, 0) > 0 ? local.dmz_zones_in[zone].node_count : 1
     }
   }
+
+  # Every zone's machines, flattened and keyed so one can be removed without
+  # renumbering the rest.
+  dmz = merge([
+    for zone, z in local.dmz_zones : {
+      for j in range(z.nodes) : "${zone}-${local.dmz_band + j}" => {
+        zone       = zone
+        host_octet = local.dmz_band + j
+        ip         = cidrhost(z.cidr, local.dmz_band + j)
+        name       = "${local.site_name}-${zone}-${local.dmz_band + j}"
+        vm_id      = local.octet * 1000 + 300 + z.index * 10 + j
+        hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[(z.index + j) % length(local.hypervisors)].hostname : ""
+      }
+    }
+  ]...)
 
   dmz_keys  = sort(keys(local.dmz))
   dmz_ips   = [for k in local.dmz_keys : local.dmz[k].ip]
   dmz_names = [for k in local.dmz_keys : local.dmz[k].name]
 
-  # Only the hypervisors actually hosting an untrusted machine pull the second
+  # Only hypervisors actually hosting an untrusted machine pull the second
   # image. A ~4.5GB decompressed disk image on a node with nothing to run it is
-  # a cost with no purpose, and the set is empty while dmz_count is 0.
+  # a cost with no purpose, and the set is empty when no zone is declared.
   dmz_hypervisors = distinct([for k in local.dmz_keys : local.dmz[k].hypervisor])
 
   # Ordered views, for the places that genuinely need a list: the first node is
@@ -436,9 +459,8 @@ output "site_network" {
     # workers are: a tier nothing consumes is a tier tflint cannot see, and this
     # one has its own subnet, so leaving it out would make the estate's own
     # description of its addressing incomplete in the place it matters most.
-    dmz_cidr    = local.dmz_cidr
-    dmz_gateway = local.dmz_gateway
-    dmz_ips     = local.dmz_ips
-    dmz_names   = local.dmz_names
+    dmz_zones = local.dmz_zones
+    dmz_ips   = local.dmz_ips
+    dmz_names = local.dmz_names
   }
 }

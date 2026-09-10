@@ -378,7 +378,7 @@ func TestResolveSiteNetwork_NegativeWorkerCount(t *testing.T) {
 func TestEveryMachineClassIsInAllMachineIPs(t *testing.T) {
 	site := validSite()
 	site.WorkerCount = 2
-	site.DMZCount = 1
+	site.DMZZones = map[string]DMZZone{"valheim": {}}
 	cfg := &Config{Sites: map[string]Site{"site0": site}}
 
 	net, err := ResolveSiteNetwork(cfg, "site0")
