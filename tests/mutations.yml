@@ -528,6 +528,27 @@ mutations:
       point of enumerating surfaces from the repository is that a surface
       cannot leave the list by being forgotten, only by being covered.
 
+  - guard: TestEveryGuardThatDiscoversItsSubjectAssertsItFoundSome
+    file: tests/go/repo/suppliers_test.go
+    reads_source: true
+    find: "\t\tt.Fatal(\"no image references found under clusters/, so this test proves nothing\")"
+    replace: "\t\t_ = checked // the floor used to be asserted here"
+    mentions: "never assert they found any"
+    why: >
+      This is the first entry to mutate Go source, and it is legitimate for a
+      reason the refusal above now states: the guard READS these files as text
+      rather than executing them, and runGuard points the repo root at the
+      scratch tree, so the mutation is fully visible to it.
+
+      What it proves is that removing a floor from a guard is noticed. The
+      floor is the only thing standing between "walked the tree and everything
+      is fine" and "walked nothing and said the same" - three defects in this
+      estate came from that distinction being invisible - and a floor is
+      exactly the kind of line that looks like dead weight to somebody tidying
+      up. suppliers_test.go is the right subject because its floor guards the
+      supply chain: without it, an image walk that stops matching reports every
+      image approved and digest-pinned.
+
   - guard: TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem
     file: clusters/management/infrastructure/controllers/actions-runner-controller.yaml
     find: "      runAsNonRoot: true"
@@ -550,27 +571,6 @@ mutations:
       node-targeted command refuses on first use. The runtime guard in
       writeTalosconfigTo catches it at the moment of use; this catches the
       branch that removed it, which is cheaper by a whole diagnostic.
-
-  - guard: TestEveryGuardThatDiscoversItsSubjectAssertsItFoundSome
-    file: tests/go/repo/suppliers_test.go
-    reads_source: true
-    find: "\t\tt.Fatal(\"no image references found under clusters/, so this test proves nothing\")"
-    replace: "\t\t_ = checked // the floor used to be asserted here"
-    mentions: "never assert they found any"
-    why: >
-      This is the first entry to mutate Go source, and it is legitimate for a
-      reason the refusal above now states: the guard READS these files as text
-      rather than executing them, and runGuard points the repo root at the
-      scratch tree, so the mutation is fully visible to it.
-
-      What it proves is that removing a floor from a guard is noticed. The
-      floor is the only thing standing between "walked the tree and everything
-      is fine" and "walked nothing and said the same" - three defects in this
-      estate came from that distinction being invisible - and a floor is
-      exactly the kind of line that looks like dead weight to somebody tidying
-      up. suppliers_test.go is the right subject because its floor guards the
-      supply chain: without it, an image walk that stops matching reports every
-      image approved and digest-pinned.
 
 # Guards that cannot be proved by mutation, and why.
 #
