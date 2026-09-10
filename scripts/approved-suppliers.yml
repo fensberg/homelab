@@ -73,6 +73,33 @@ registries:
       point of use like every other image here. Added for one component, on the
       same narrow ground as registry.k8s.io above.
 
+  - host: docker.io
+    reason: >-
+      Docker Official Images, for the base layer of images this estate builds
+      itself.
+
+      The runner image needed no new registry because it starts FROM the
+      Actions runner on ghcr.io. An image for a self-hosted application has no
+      such starting point: it needs an ordinary Linux userland, and the
+      SteamCMD-delivered software it will carry needs glibc and 32-bit
+      libraries, so a distribution base rather than a distroless one.
+
+      Docker Official Images are the most scrutinised supply chain in
+      containers - built from published Dockerfiles, rebuilt on CVE, and
+      maintained jointly by Docker and each upstream project. Every image taken
+      from here is pinned by digest at its point of use like every other, so
+      what is actually being approved is the party, not a moving tag.
+
+      Considered and rejected: registry.k8s.io/build-image/debian-base, which is
+      on a registry already approved and would have avoided this pull request
+      entirely. It is a build base for Kubernetes components, used off-label,
+      chosen for the sole reason that it dodges a supplier decision - which is
+      the reasoning this file exists to refuse.
+
+      Anonymous pulls here are rate-limited per IP. That is a build-time
+      annoyance rather than a runtime one: nothing in the cluster pulls from
+      docker.io, because what this estate builds is published to its own
+      registry and pulled from there.
 # Helm chart sources. Charts are as much a supply chain as images - a chart
 # decides what images get deployed, so an unapproved chart repository is an
 # unapproved registry one level up.
