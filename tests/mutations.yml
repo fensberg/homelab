@@ -662,6 +662,20 @@ mutations:
       becomes the source of truth while still claiming to be a copy - the
       estate would then be running a version no file in it names.
 
+  - guard: TestTheCNIReachesEveryNodeIncludingTaintedOnes
+    file: clusters/bootstrap/cilium.yaml
+    find: "      tolerations:\n        - operator: Exists\n\n      volumes:"
+    replace: "      tolerations:\n        - key: node-role.kubernetes.io/control-plane\n          operator: Exists\n\n      volumes:"
+    mentions: "does not tolerate every taint"
+    why: >
+      Narrowed to a real, plausible toleration rather than deleted, because
+      that is what the regression actually looks like: a keyed toleration reads
+      as more careful than a blanket one, and is the change somebody would make
+      believing they were tightening things. It silently excludes every taint
+      nobody thought to name - which, once the untrusted zone exists, is the
+      DMZ node. That node would never reach Ready, and it would look like a
+      broken machine rather than a missing line in a chart's values.
+
 # Guards that cannot be proved by mutation, and why.
 #
 # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in

@@ -356,6 +356,46 @@ deciding where the certificates come from - cert-manager, or Cilium's own
 cronJob method - because the one thing that must not happen is baking them into
 git.
 
+### Which machines get which half, and the node that does not exist yet
+
+Asked during review, and worth answering in the record because the split is not
+obvious from the diff.
+
+**`cluster.network.cni.name` and `cluster.proxy.disabled` are set once, on the
+control plane's config.** They are cluster-level facts rather than machine
+ones - they decide which bootstrap manifests Talos renders, and only a control
+plane renders those. This is the same convention `allowSchedulingOnControlPlanes`
+already follows a few lines above, for the reason that file already gives: a
+worker repeating it would be a second declaration of one fact, and two
+declarations of one fact eventually disagree.
+
+**KubePrism is machine-level, and every machine gets it.** It lives in
+`local.machine_patches`, which is built from
+`all_machines = merge(local.control_plane, local.workers)`, and both the
+control-plane and worker configurations consume it. That is not incidental: an
+agent on a worker has exactly the same problem as one on a control plane, since
+without kube-proxy there is no ClusterIP anywhere in the cluster to reach the
+API through.
+
+**Workers get Cilium because the agent is a DaemonSet.** There is nothing to
+configure per worker.
+
+**The DMZ node does not exist yet, and its readiness is already decided.** It is
+planned as a dedicated worker carrying a `NoSchedule` taint, with the toleration
+held only by workloads in the untrusted zone. A CNI has to ignore that: a node
+with no agent has no pod network, never reaches `Ready`, and never joins the
+cluster - so tainting it without a tolerating CNI would produce a machine that
+silently never arrives. Cilium's agent DaemonSet carries
+`tolerations: [{operator: Exists}]`, which covers it, and
+`TestTheCNIReachesEveryNodeIncludingTaintedOnes` now holds that in place before
+the node exists to test against.
+
+Worth naming the shape, because this repository has refused a blanket
+`operator: Exists` toleration before - on an unpinned debug image proposed for a
+control plane. The distinction is real rather than convenient: there, the
+toleration widened where untrusted code could run; here, it is the condition on
+a machine having a network at all.
+
 **The general shape is worth keeping.** "Render a chart and commit the result"
 is a reasonable pattern and this estate now uses it, but a chart is a program
 and some charts generate secrets when you run them. Any future use of this

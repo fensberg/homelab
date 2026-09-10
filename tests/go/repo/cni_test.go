@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // The CNI this estate runs is not the one Talos ships, and four things have to
@@ -176,5 +178,76 @@ func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
 	if found == 0 {
 		t.Fatalf("%s contains no quay.io/cilium image references, so this test proves nothing.\n\n"+
 			"Either the manifest is empty or the images moved registry.", cniMani)
+	}
+}
+
+// Every node gets an agent, including one that is tainted.
+//
+// This is the DMZ node's readiness, asserted before that node exists.
+//
+// docs/epochs/03-workload.md puts the untrusted workload on a dedicated worker
+// carrying a NoSchedule taint, with the toleration held only by workloads in
+// that zone - deliberately, so the scheduler cannot quietly widen the blast
+// radius by putting something else there. A CNI is the one thing that must
+// ignore that rule: a node with no agent has no pod network, never reaches
+// Ready, and never joins the cluster at all.
+//
+// So the agent DaemonSet tolerating every taint is load-bearing rather than
+// sloppy. This estate has refused a blanket `operator: Exists` toleration
+// before - on an unpinned debug image proposed for a control plane - and the
+// distinction is worth stating: there it was a convenience that widened where
+// untrusted code could run, here it is the condition on a machine having a
+// network. If a chart version or a values change ever drops it, the DMZ node
+// will simply never come up, and nothing else in this repository would say why.
+func TestTheCNIReachesEveryNodeIncludingTaintedOnes(t *testing.T) {
+	var checked int
+
+	for _, doc := range strings.Split(readRepoFile(t, cniMani), "\n---\n") {
+		var d struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+			Spec struct {
+				Template struct {
+					Spec struct {
+						Tolerations []struct {
+							Key      string `yaml:"key"`
+							Operator string `yaml:"operator"`
+						} `yaml:"tolerations"`
+					} `yaml:"spec"`
+				} `yaml:"template"`
+			} `yaml:"spec"`
+		}
+		if err := yaml.Unmarshal([]byte(doc), &d); err != nil {
+			continue // not a document this test has anything to say about
+		}
+		if d.Kind != "DaemonSet" || d.Metadata.Name != "cilium" {
+			continue
+		}
+		checked++
+
+		blanket := false
+		for _, tol := range d.Spec.Template.Spec.Tolerations {
+			// No key plus Exists is "tolerate everything". A keyed toleration
+			// covers one taint, which is exactly the regression this catches:
+			// it looks correct and silently excludes the zone it was not told
+			// about.
+			if tol.Key == "" && tol.Operator == "Exists" {
+				blanket = true
+			}
+		}
+		if !blanket {
+			t.Errorf("%s: the cilium DaemonSet does not tolerate every taint.\n\n"+
+				"A tainted node would get no agent, and a node with no CNI never "+
+				"reaches Ready - so it would never join the cluster. The untrusted "+
+				"zone in docs/epochs/03-workload.md is a NoSchedule-tainted worker, "+
+				"so this is the line that lets it exist at all.", cniMani)
+		}
+	}
+
+	if checked == 0 {
+		t.Fatalf("%s contains no DaemonSet named cilium, so this test proves nothing.\n\n"+
+			"Either the manifest is empty or the agent was renamed.", cniMani)
 	}
 }
