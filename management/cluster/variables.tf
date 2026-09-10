@@ -261,6 +261,11 @@ locals {
   dmz_ips   = [for k in local.dmz_keys : local.dmz[k].ip]
   dmz_names = [for k in local.dmz_keys : local.dmz[k].name]
 
+  # Only the hypervisors actually hosting an untrusted machine pull the second
+  # image. A ~4.5GB decompressed disk image on a node with nothing to run it is
+  # a cost with no purpose, and the set is empty while dmz_count is 0.
+  dmz_hypervisors = distinct([for k in local.dmz_keys : local.dmz[k].hypervisor])
+
   # Ordered views, for the places that genuinely need a list: the first node is
   # the cluster endpoint and the NodePort host, and the health data source takes
   # every address. Sorted by key, which for three-digit octets is numeric order.

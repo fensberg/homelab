@@ -57,6 +57,40 @@ resource "proxmox_download_file" "talos_disk_image" {
   overwrite = false
 }
 
+# The same Talos release without the overlay extension, for the untrusted zone.
+#
+# A separate resource rather than a second entry in the one above, because the
+# two are pulled for different reasons and onto different sets of hypervisors:
+# every hypervisor hosting a cluster node needs the first, and only a
+# hypervisor hosting an untrusted machine needs this.
+#
+# THE FILE NAME CARRIES "dmz" AND IT HAS TO.
+#
+# The resource above records that the schematic is deliberately absent from the
+# file name, and that this once left a template running old bytes because the
+# datastore path never changed. With one schematic that was a subtlety. With
+# two at the same Talos version it would be a collision: both would want
+# local-iso:iso/talos-<version>-nocloud-amd64.iso, and whichever downloaded
+# second would either fail or quietly overwrite the other - putting the
+# overlay-carrying image under the machine whose entire purpose is not to have
+# it, with nothing anywhere reporting the swap.
+resource "proxmox_download_file" "dmz_disk_image" {
+  for_each = toset(local.dmz_hypervisors)
+
+  content_type = "iso"
+  datastore_id = "local-iso"
+  node_name    = each.value
+  url          = "https://factory.talos.dev/image/${local.dmz_schematic_id}/${local.talos_version}/nocloud-amd64.raw.xz"
+
+  file_name               = "talos-${local.talos_version}-dmz-nocloud-amd64.iso"
+  decompression_algorithm = "zst"
+
+  # Same reason as the image above: the provider compares the compressed
+  # advertised size against the decompressed stored size and forces a
+  # destroy-and-reimport on every plan without this.
+  overwrite = false
+}
+
 # One template VM per hypervisor, built once from the downloaded disk image.
 # This is the only place file_id-based disk creation happens - it requires
 # Terraform to SSH into the node and run pvesm/qm commands directly (see
