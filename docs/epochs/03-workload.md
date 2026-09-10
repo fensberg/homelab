@@ -949,6 +949,68 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### The join code was empty because PlayFab Party wanted PulseAudio
+
+The cluster came up clean and the game server ran: world generated, 183
+locations placed, PlayFab login succeeded. And the join code was blank.
+
+```text
+New session server "..." that has join code ,  now 0 player(s)
+Server '...' begin PlayFab create and join network for server
+[30s] PlayFab reconnect server '...'
+```
+
+Nothing in that loop names a cause, and the parts that worked are exactly the
+parts that make the real cause hard to see. **PlayFab login is managed code
+over HTTPS and needs nothing special; only the relay network needs the native
+runtime.** So the server authenticates, reports itself logged in, registers a
+session - and then silently cannot do the one thing crossplay exists for.
+
+`libparty.so` could not load:
+
+```text
+== /valheim/valheim_server_Data/Plugins/libparty.so
+        libpulse.so.0 => not found
+        libpulse-simple.so.0 => not found
+        libpulse-mainloop-glib.so.0 => not found
+```
+
+PlayFab Party is a combined **voice and data** SDK shipped as one library, so it
+links PulseAudio even on a headless server with no sound device and no voice
+feature in use. `libatomic1` was already installed - the community's known list
+for this is libpulse, libatomic1 and glibc 2.29+, and this image had two of the
+three.
+
+#### What was checked first, and was wrong
+
+The NetworkPolicy, because it was the obvious suspect and this epoch had just
+written it. It allows every port and protocol outbound to the public internet,
+so it was never a candidate - established by reading it rather than by
+reasoning about it, which cost one minute against a rebuild cycle.
+
+The vendor documentation was no help either, and would not have been: this is
+not a Valheim behaviour, it is a property of running Valheim in a container
+built from a slim base. The answer was in two issue threads on community
+container images, found by searching for the exact log line.
+
+#### The guard is a build step, not a test
+
+Nothing a test in this repository can reach knows what a Debian image resolves
+at runtime, so the image now proves it itself: after the game files are copied,
+the build runs `ldd` against `libparty.so` and fails if anything is unresolved,
+naming the libraries.
+
+That placement is the whole point. The failure it replaces produces an image
+that **starts, runs, and serves a world nobody can join**, retrying forever,
+with no error mentioning a library anywhere. A build that stops and says which
+libraries are missing costs a minute; the version it replaces cost an evening.
+
+Deliberately not installed: the wayland, cairo, pango and dbus libraries that
+`libdecor` also reports missing. That is Unity's desktop windowing stack,
+shipped in every engine build and never loaded headless - installing it would
+buy megabytes of attack surface to silence a scan that is correctly reporting
+something harmless.
+
 ### Six Python linters, no Python, and a required check that hung
 
 `Analyze (Super-Linter)` normally finishes in about two minutes. Intermittently
