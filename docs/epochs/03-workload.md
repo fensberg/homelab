@@ -32,6 +32,14 @@ if the estate cannot host these, the tier has not done its job.
   ([a guide to dedicated servers](https://www.valheimgame.com/support/a-guide-to-dedicated-servers/)).
   This one sets the constraints, because it needs inbound **UDP 2456-2458**.
 
+  > **Both halves of that sentence are wrong, and the correction is in
+  > [Superseded: isolation is proportional to exposure and blast radius](#superseded-isolation-is-proportional-to-exposure-and-blast-radius).**
+  > The ports are 2456-2457, and the crossplay backend uses a relay so no
+  > inbound path is needed at all. It is left here because this claim is what
+  > set the constraints for everything below it, and a requirement that drove a
+  > design is worth reading beside the correction rather than being quietly
+  > replaced.
+
 ### Cilium is still required, for one of the two reasons given
 
 Worth stating precisely, because one of the two arguments for Cilium was
@@ -69,6 +77,11 @@ nodes go Ready, so it cannot arrive through Flux the way everything else does,
 which means a cluster rebuild rather than a converge.
 
 ### The overlay grants everything to everyone, which is why enrolling players is not an option
+
+> **Superseded in its premise.** This section reasons from the game server
+> needing an inbound port forward. It does not - see the correction under
+> Decisions. The mechanism it argues for is still what the zone is; what
+> changed is which workload earns one, and it is no longer this one.
 
 Recorded here because it is the strongest argument for the port-forward
 decision below, and because it is true of the estate **today** rather than only
@@ -115,6 +128,11 @@ believed and isolation that exists.
 
 ### Why the game server decides the network design
 
+> **Superseded in its premise.** This section reasons from the game server
+> needing an inbound port forward. It does not - see the correction under
+> Decisions. The mechanism it argues for is still what the zone is; what
+> changed is which workload earns one, and it is no longer this one.
+
 Cloudflare Tunnel's public hostname routing is HTTP and TCP; it cannot carry
 arbitrary UDP, and public UDP is Spectrum, which is enterprise-priced. Cloudflare
 Zero Trust _can_ carry UDP over WARP private networking, but every player would
@@ -129,6 +147,11 @@ which is a materially different posture from anything built so far, and the
 reason the isolation question below is not optional.
 
 ### The isolation this requires
+
+> **Superseded in its premise.** This section reasons from the game server
+> needing an inbound port forward. It does not - see the correction under
+> Decisions. The mechanism it argues for is still what the zone is; what
+> changed is which workload earns one, and it is no longer this one.
 
 The intent is that the game server is walled off from everything else, and
 today that is not achievable. The cluster runs Flannel, which **does not enforce
@@ -262,156 +285,250 @@ See also #315, which is the security half of the same component.
 
 _Record as made._
 
-### The untrusted zone is a node, the workload is a container, and the isolation is three layers
+### Superseded: isolation is proportional to exposure and blast radius
 
-**Chose:** the game server runs as an ordinary pod, reconciled by Flux, on a
-**dedicated Talos worker in the untrusted zone that does not join the overlay
-network**.
-**Rejected:** a pod on a shared worker with only NetworkPolicy; a plain virtual
-machine running the game server directly; and an LXC container on the
-hypervisor.
-**Because:** this was derived by working backwards from what a compromise
-reaches, which is the only way the layers can be justified individually.
+The decision this replaces read the problem as **untrusted code**, and built
+from there: a game server is code nobody here wrote, therefore it is suspect,
+therefore it gets a machine of its own. That reasoning produced a design which
+is still correct in its mechanism and wrong in its default, and it is worth
+saying exactly where it went wrong because the same mistake is easy to repeat.
 
-#### What a compromised pod reaches today
+**Provenance is almost never the threat here.** The operator's own framing, and
+it is the right one: "The code itself is hardly ever the threat because we're
+vetting it. The traffic and the blast radius is the threat." Nothing
+self-hosted here is novel software written by a stranger with intent. It is
+Home Assistant, a game server from Steam, a fork of somebody's published
+project. The code is vetted. What is not vetted is who is allowed to send it
+packets, and what those packets reach if they win.
 
-Assume the process is taken. A game server accepting inbound UDP from strangers
-is a live category, not a hypothetical.
+So the axis is two questions, and neither is about who wrote it:
 
-- **The Kubernetes API**, by service address, from any pod.
-- **The state database**, holding this estate's own OpenTofu state.
-- **The hypervisor's API**, because the cluster reaches it over a flat network -
-  recorded in [`02-abstraction.md`](02-abstraction.md).
-- **The overlay network, which is the worst of the four.** Every node carries
-  the tailscale extension from the single shared schematic, and the tailnet
-  policy is the default `{"src": ["*"], "dst": ["*:*"]}`. A compromised pod on
-  an overlay-joined node therefore reaches the hypervisor, the workstation and
-  every other site.
+- **Exposure** - what can send this traffic?
+- **Blast radius** - if that traffic wins, what does it reach, and what does it
+  hold?
 
-The API server is the obvious worry and it is the second worst. Overlay
-membership is the real exposure, because nothing narrows what the mesh grants.
+Vetted code compromised through hostile traffic is exactly as compromised as
+malicious code would have been. The isolation still earns its place. "We do not
+trust this binary" was simply never the reason.
 
-#### Three layers, each answering a different question
+#### Which produces a tiering, not a zone
 
-**NetworkPolicy answers "what may it talk to."** Necessary, and insufficient
-alone: it says nothing about a container escape, because the escape does not
-traverse the network.
+| Tier                           | For                                       | Gets                                            |
+| ------------------------------ | ----------------------------------------- | ----------------------------------------------- |
+| **Shared workers** _(default)_ | Most things. LAN-reachable, small radius. | A namespace each and NetworkPolicy between them |
+| **Dedicated zone**             | High exposure **or** high blast radius    | Its own subnet, vnet, machine and taint         |
+| **Case by case**               | Workloads whose reach is the point        | Argued in its own record                        |
 
-**A dedicated node answers "what shares its kernel."** This is the layer that
-decides against a shared worker, and the reason is specific rather than
-general - the thing it would share a kernel with is the CI runner, which holds
-vault credentials and reaches the estate.
+**Shared workers is the default and the zone is the exception.** The previous
+decision implied the reverse, and the reverse does not survive contact with
+what this estate is for: a model where every third-party application gets a
+virtual machine stops at about five workloads on the memory this hypervisor
+has, and the plan is ten or twenty. Most of them are LAN-only with a small
+radius, and a namespace with an enforced policy is the proportionate answer.
 
-**Omitting the overlay answers "what does the machine itself reach."** This is
-the layer that is not currently expressible, and it has a real cost: the
-tailscale extension is in the one shared schematic, so an untrusted node
-requires a **second Talos schematic without it** - a second image, a second
-`proxmox_download_file`, and #97 applying to both. Recorded as a cost rather
-than discovered later, because it is the least obvious consequence of the
-decision and the most likely to be dropped for convenience.
+That tier is now possible for the first time. NetworkPolicy between namespaces
+on shared workers was not enforcement under Flannel - it was decoration - which
+is the argument that put Cilium in.
 
-#### Why not a plain virtual machine
+#### The examples, classified
 
-Stronger on paper - no kubelet, no cluster credentials, not a member at all -
-and it loses on everything else. Talos is a Kubernetes operating system and
-cannot do it, so this means adding a **second operating system** to the estate
-with its own image, patching and provisioning path. It also means managing the
-machine by hand or by Ansible, which makes it a pet and puts an interactive
-management path into the one machine that should be least reachable. The
-estate's rule applies directly: either the automation works or it does not, and
-a shortcut is not the answer.
+| Workload                 | Exposure                             | Blast radius                                                                                      |
+| ------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| A game server, crossplay | Outbound relay only, nothing inbound | A world save                                                                                      |
+| Home automation          | LAN, possibly WAN through a tunnel   | **Physical** - locks, heating, cameras - and it must reach every device on the LAN to work at all |
+| A mail relay fork        | Inbound SMTP from the whole internet | Mail, and it is the one carrying edited code                                                      |
 
-#### What an escape actually obtains, which is the test that matters
+**Home automation is the case that breaks the zone**, and it is worth keeping
+in the record because it is the highest-stakes thing on the list and the zone
+would fail it. Its blast radius is physical, and the containment the zone
+provides - a subnet that reaches nothing - is precisely what stops it working,
+because reaching every device on the LAN _is_ the application. It needs an
+argument about what it may reach outward and who may reach it, not a subnet
+that isolates it from its own purpose.
 
-The fail-closed principle is not "the attacker cannot get in", it is "what they
-obtain is worthless". Audited against the chosen design, an escape onto the
-untrusted node yields:
+**The mail relay is the zone's real first tenant.** Inbound SMTP from the
+internet, mail at stake, and custom code on top. Every part of the original
+three-layer argument applies to it, and applies more strongly than it ever did
+to a game.
 
-- **No shell, no SSH, no package manager.** Talos has none.
-- **Kubelet credentials scoped by Node authorization and NodeRestriction**, so
-  the node may read secrets of pods bound to it - which, with only untrusted
-  workloads scheduled there, are that workload's own.
-- **No etcd membership**, because workers are not members.
-- **No overlay**, by the schematic.
-- **A zone subnet with policy on it.**
-- **The Talos API behind mTLS**, for which the container holds no certificate.
+#### What the zone still is, and why it was worth building
 
-A machine that reaches nothing and can read its own secrets. That is the
-property being bought, and each of the three layers above is load-bearing for
-one line of it.
+Unchanged in mechanism, and the record below it stands: a dedicated machine on
+its own subnet and vnet, from an image without the overlay extension, tainted
+so nothing else lands there. The three layers still answer three different
+questions - what it may talk to, what shares its kernel, what the machine
+itself can reach - and the audit of what an escape obtains still holds.
 
-#### The dedication has to be enforced, not conventional
+What changed is when to reach for it. It is not where workloads go. It is what
+a workload gets when its exposure or its blast radius earns it, and the
+per-workload zone model means the next one that does costs a config entry.
 
-The audit holds only while the node runs untrusted workloads **and nothing
-else**. If the scheduler places anything else there, the blast radius grows and
-nothing announces it.
+#### The game server moves to the shared workers
 
-So it is a **taint with `NoSchedule`, and a toleration carried only by workloads
-in the untrusted zone** - not a `nodeSelector` convention and not a note in this
-record. This repository has already shipped one policy that applied cleanly and
-enforced nothing; the distinction between isolation that exists and isolation
-somebody believes in is the whole subject of this epoch.
+By the axis above it is the least demanding thing on the list: no inbound path
+at all under crossplay, and a world save as its entire blast radius. A
+dedicated machine for it was proportionate to a threat model that turned out
+not to describe it.
 
-#### Consequences for naming, and for capacity
+One thing follows it there and is not optional. The shared workers are where
+the CI runner lives, and that runner holds a vault token with read and write
+over the whole vault. **Blast radius is not only what a workload holds - it is
+what is reachable from where it sits.** The game server's own radius is
+trivial; its neighbour's is the estate.
 
-The machine is `<site>-dmz-100` at `10.<site>.30.100`, per the addressing
-decision in [`02-abstraction.md`](02-abstraction.md). **The workload gets no
-machine name at all** - it is a namespace and a Deployment, named in Kubernetes.
-That separation is why the environment never needed to appear in a VM name.
+That is not an argument for a zone, and two answers were considered before
+landing on neither.
 
-On capacity: a dedicated node wants roughly 4-6 GiB, and only about 8 GiB
-remains after epoch 02's two workers. That is tight until the build VM's 16 GiB
-returns, which is expected, and it sequences correctly - the workers are epoch
-02 and this is epoch 03.
+**A node anti-affinity** between the workload and the runner. Rejected on
+shape: the rule is written on every workload, against the runner, so it is N
+rules and forgetting one silently puts something on the same kernel as a token
+with read and write over the whole vault. Fail-open, and it gets worse as
+workloads are added.
 
-**Corrected once the real numbers were looked up rather than estimated.** The
-published guidance for five players is 4 GiB on a fresh vanilla world, and
-**6-8 GiB** once the map is explored and bases are established; the CPU wants
-**four cores above 3.0 GHz**, because world generation and physics lean on
-single-thread performance and clock speed matters far more than core count.
-The first version of this branch guessed two cores and 4 GiB, and both were
-low.
+**A worker dedicated to CI**, tainted, with the runner tolerating it. Much
+better shape - one rule, written once, on the thing that actually holds the
+credential, and a forgotten toleration means a workload does not land there
+rather than that it does. It is the taint-over-convention argument this epoch
+already made, applied to the privileged side: **isolate the crown jewels, not
+each visitor from them**, because the privileged things can be enumerated and
+future workloads cannot.
 
-Two things that estimate did not account for, and which the machine's
-allocation now does:
+**Separated, but by adding workload nodes rather than by reserving a CI one.**
 
-- **The VM is not all game.** Talos, the kubelet, the Cilium agent and the
-  OpenEBS provisioner take roughly a gigabyte before the server starts, so a
-  6 GiB machine offers about 5 GiB to the workload.
-- **Memory here is a hard allocation.** There is no balloon device, for the
-  reason recorded beside it - a deflated node keeps scheduling against memory
-  that no longer exists - so this is taken from the estate rather than shared
-  with it.
+The density objection to a dedicated CI worker was real: the estate is
+deliberately being packed, CI is bursty, and holding a machine idle for it
+fights what this epoch is for. That objection dissolves once the split is
+described from the other side. CI keeps the workers that already exist and are
+already sized for it; the workloads get nodes of their own, which is capacity
+being added for work that is about to run rather than capacity standing by.
 
-#### The capacity estimate above was wrong, and the hypervisor was measured
+Same separation, and the memory is spent on the things being packed instead of
+on the thing that idles.
 
-The paragraph opening this section - "only about 8 GiB remains" - was written
-before the machines it describes existed. Measured on the host instead of
-estimated: **62 GiB total, roughly 36 GiB committed to running machines, and
-about 23 GiB available.** Three control planes at 4 GiB, two workers at 8 GiB
-and the development machine at 8 GiB account for the commitment.
+So the classes are:
 
-So the zone is not tight at all, and the sequencing worry in that paragraph -
-that this had to wait for a build VM's memory to return - does not apply. It is
-left above rather than deleted because a wrong number that was acted on is
-worth seeing next to the measurement that corrected it.
+| Node class        | Runs                                             | Taint                         |
+| ----------------- | ------------------------------------------------ | ----------------------------- |
+| **Control plane** | etcd and the API                                 | Untainted today; see epoch 02 |
+| **Privileged**    | CI, and anything else holding estate credentials | Tolerated only by that work   |
+| **Workload**      | Things found on the internet and self-hosted     | Tolerated only by workloads   |
 
-The machine is set at **four cores and 8 GiB**: the top of the published band
-rather than the middle. The failure mode of being short is a server that
-degrades once a world is established and players have built on it - which is
-both the moment it is hardest to take offline for a resize and the moment
-anyone would mind most. With 23 GiB available, taking 8 now costs nothing that
-taking 6 would have saved, and it removes a future outage from the plan.
+#### And it needs a guard, because a declaration nobody checks is a convention
 
-The rule that produced this is worth keeping: **measure the estate before
-budgeting against it.** Two numbers in this section were estimates, both were
-wrong, and one command settled both.
+The operator's requirement, and it is the right one: privileged work must not
+end up on a machine running things somebody found on the internet.
 
-Two things this does **not** solve, both already named above. The world save is
-on OpenEBS Local PV Hostpath and therefore pinned to a node - now a node
-specifically chosen to be destroyable. And the tailnet's allow-all policy
-remains the reason any new device on the mesh has full reach; keeping this node
-off the overlay sidesteps it rather than fixing it.
+Placement by convention fails the way every convention here has. A workload
+added without the right toleration does not fail - it schedules somewhere, and
+the somewhere is decided by whatever the scheduler finds convenient. Nothing
+reports it, and the first sign is an incident.
+
+The guard has two halves, and both are needed because each alone is
+satisfiable while the property is false:
+
+- **Every workload manifest places itself on workload nodes**, by toleration and
+  node selection. A workload with neither is one the scheduler may put beside
+  the vault token.
+- **Nothing privileged tolerates the workload taint.** The reverse direction,
+  and the one that would otherwise be missed: it is the privileged side moving
+  that puts the two together, and CI already carries tolerations for reasons of
+  its own.
+
+It lands with the node classes rather than before them. There is nothing to
+assert while `environments/` is empty and both classes are one undifferentiated
+pool - a guard written now would pass by finding nothing, which this repository
+has a test specifically to refuse.
+
+#### Is there actually a vector? Walked, rather than assumed
+
+Four answers were written for this before anybody asked how the attack would
+work. That question turns out to settle it, and it should have come first.
+
+**Pod to pod: no.** The runner's token is a Kubernetes Secret mounted into the
+runner's own mount namespace. A neighbouring pod cannot read it off disk, and
+cannot read it through the API either - RBAC does not grant it, and a workload
+with `automountServiceAccountToken: false` has no identity to ask with.
+
+**Escape to the node: yes, and it is the only one.** The kubelet stores mounted
+secrets under `/var/lib/kubelet/pods/<uid>/volumes/kubernetes.io~secret/`, which
+root on the host can read. The kubelet's own credential reaches the same place
+by Node authorization. So the chain is: remote code execution in the workload,
+then a container escape to node root, then the token.
+
+**The second step is the hard one.** Talos has no shell, no package manager and
+a read-only root, and enforces Pod Security - a workload running non-root
+without `privileged` or `hostPath` needs a kernel vulnerability to escape, not a
+misconfiguration.
+
+Two things lower it further, and both are recent:
+
+- Nothing on these workers is internet-**inbound** now that crossplay removed
+  the port forward. The chain has no obvious place to start.
+- The self-hosted runner does not execute pull-request code. `pr-validation`
+  runs on GitHub-hosted runners, and the integration lane is deliberately not
+  reachable from a pull request.
+
+**So: real but narrow.** Two hard steps, one of them a kernel exploit.
+
+#### Which makes the response proportionate rather than urgent
+
+The consequence is total - read and write over the whole vault is the estate -
+and self-hosted software does get remote code execution. That asymmetry is what
+makes it worth something rather than nothing.
+
+- **It does not block a workload.** A relay-only game server running non-root
+  does not start the chain.
+- **The separation is taken when workload nodes are added anyway**, where it
+  costs a taint and a toleration. It was never worth a machine standing idle,
+  which is what the first three answers each talked themselves into.
+- **Narrowing the token is the higher-value fix**, and it is the one this
+  estate's own rule points at: narrow what a credential may **do** before
+  hardening where it is **kept**. Kernel isolation lowers the probability;
+  narrowing lowers the consequence, and a lowered consequence keeps holding
+  after the isolation has failed and after everyone has stopped watching.
+
+The guard above still lands with the node classes. What changed is that it is
+enforcing a proportionate decision rather than an escalating one.
+
+#### Which splits isolation into two dials rather than one
+
+Worth stating separately, because the zone conflates them and the CI question
+is what pulls them apart:
+
+| Dial                  | Answers                          | Bought with                          |
+| --------------------- | -------------------------------- | ------------------------------------ |
+| **Kernel isolation**  | What shares its kernel?          | A dedicated node and a taint         |
+| **Network isolation** | What can it reach, and reach it? | Its own subnet and vnet, plus policy |
+
+They are independent, and most things want neither:
+
+- **CI** would want the first and not the second. Its blast radius is the whole
+  estate, so sharing a kernel with nothing has real value - but it must reach
+  the hypervisor, the API server and the vault, so a subnet isolating it would
+  stop it working.
+- **A mail relay taking inbound SMTP** wants both.
+- **A game server on a relay** wants neither, which is how it ends up on the
+  shared workers.
+
+The zone as built is both dials at once. That is right for what earns it, and
+it is why CI would get a node rather than a zone if it gets anything.
+
+#### How the original decision went wrong, since it is repeatable
+
+Three of the four claims that produced it came from a summary rather than from
+the vendor, and the fourth followed from them:
+
+- The port range was given as UDP 2456-2458. Iron Gate's guide says the server
+  uses the given port and port+1, so 2456-2457. The third port is widely
+  repeated and is not in the documentation.
+- The inbound port forward was treated as unavoidable. The crossplay backend
+  uses a relay: the server connects outbound and no forward is needed.
+- From those, "the first genuinely inbound path into this estate", which was
+  the sentence carrying the whole design.
+
+The requirement doing the most architectural work is the one to verify first,
+and it cost one page of vendor documentation to check - read after the design
+was built rather than before it.
 
 ### Cilium arrives from OpenTofu, between bootstrap and the health gate
 
