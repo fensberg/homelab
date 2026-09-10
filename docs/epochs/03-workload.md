@@ -949,6 +949,62 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### A failed teardown left a backend file that deadlocked the estate
+
+The worst of the run, because it broke both directions at once and named the
+wrong subsystem while doing it.
+
+After a teardown that had already succeeded, `demolish` found no local state.
+That is the normal state of a sterilized workspace, but the code reads it as
+"state must be where a successful ignition puts it" - in Postgres, inside the
+cluster - so it copies `backend_pg.tf` into place and inits against the
+database. The cluster was gone, so the init failed, the destroy halted, and
+**the backend file it had just written stayed there.**
+
+`backend_pg.tf` declares a backend for the whole module, so every later
+`tofu init` in that workspace picked it up. With no `-backend-config` alongside
+it, tofu fell back to dialling localhost:
+
+```text
+PHASE 2 : OVERLAY
+Mint a tagged auth key for the hypervisor to join the overlay network.
+  -> tofu init
+Error: dial tcp [::1]:5432: connect: connection refused
+```
+
+A phase whose entire job is minting a tailnet key, failing on Postgres, which it
+does not use. And the file is gitignored, so nothing about the working tree
+looked wrong.
+
+**Both routes out were closed simultaneously.** The destroy could not run
+because it could not find a cluster; the rebuild could not run because the
+destroy had poisoned the workspace on its way out. Neither error mentioned the
+other, and the file linking them appears in no listing.
+
+#### Two things were wrong, not one
+
+The leak is the defect. `attachToStateInPostgres` now removes the file when the
+init it wraps fails, which is the whole reason it exists as a function rather
+than four inline lines, and both halves are tested.
+
+The second is the message. It led with restoring the age-encrypted break-glass
+backup, and offered "remove whatever is left in Proxmox by hand" - a manual
+step this estate refuses on principle - when **the likeliest cause by far is
+that there is nothing left to destroy.** A teardown that already succeeded takes
+the cluster and its state together, and from inside there is no way to tell that
+apart from a cluster that is merely unreachable. The message now says so, names
+`task clean-secrets` as the ordinary recovery, and keeps the break-glass path
+for the case that actually needs it: machines still running with no state left
+to describe them.
+
+#### The shape
+
+An operation that writes a file speculatively owns removing it on every failure
+path. This one wrote a _backend configuration_, which is the highest-blast-radius
+kind of speculative file in an OpenTofu workspace - it silently redirects where
+every future command believes state lives, including commands that have no
+opinion about state at all.
+
 ### A secretRef naming a secret nobody creates fails closed, three layers away
 
 The rebuild after those two fixes got the whole way to a healthy cluster - six

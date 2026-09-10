@@ -57,7 +57,7 @@ files:
     uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/migrate.go
-    uncovered: 2
+    uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/overlay.go
     uncovered: 1
