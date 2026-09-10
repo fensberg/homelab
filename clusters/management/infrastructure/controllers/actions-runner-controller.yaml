@@ -73,6 +73,48 @@ spec:
         cpu: 50m
         memory: 128Mi
     priorityClassName: critical
+
+    # Require the properties rather than inherit them (#272).
+    #
+    # Nothing here changes what the pod does today: the image is
+    # gcr.io/distroless/static:nonroot with `USER 65532:65532`, so it already
+    # runs unprivileged. That is the problem. A property that comes from an
+    # image is invisible to this repository - an upstream base-image change
+    # takes it away, the pod keeps starting, and nothing anywhere says the
+    # property stopped holding. Asserted, the same change fails to start, which
+    # is the outcome this estate prefers everywhere: worthless over unreachable,
+    # and loud over silently degraded.
+    #
+    # Both paths were read out of the pinned chart's own values.yaml (0.14.2)
+    # and confirmed against templates/deployment.yaml, because a Helm value at
+    # a path the chart does not read is accepted in silence. `podSecurityContext`
+    # lands on the pod and `securityContext` on the container; both are `{}` by
+    # default and both are wrapped in `{{- with }}`, so an empty map renders
+    # nothing at all.
+    #
+    # runAsNonRoot without runAsUser is deliberate. The image already carries a
+    # numeric USER, so naming a uid here would be a second declaration of the
+    # same fact - and the one that goes stale. This asserts the property and
+    # lets the image keep supplying the number.
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+
+    # readOnlyRootFilesystem is the one that turns a hardening into an outage
+    # if the process writes anywhere at runtime, so it is set on evidence
+    # rather than on principle: the chart mounts an emptyDir at /tmp
+    # unconditionally, which exists for exactly one reason, and the image is
+    # distroless static holding a single Go binary with no shell to write
+    # anything else. If that reading is wrong the Deployment fails visibly
+    # within a minute and this is the line to remove first.
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+
     affinity:
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:

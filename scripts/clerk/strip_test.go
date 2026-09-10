@@ -122,3 +122,59 @@ func TestBrokenGoFallsBackRatherThanRefusing(t *testing.T) {
 		t.Errorf("fallback did not separate:\ncode=%q prose=%q", code, prose)
 	}
 }
+
+// Every language this repository writes must actually have its comments taken
+// away, and the marker has to match what the files really use.
+//
+// THE FAILURE THIS CATCHES IS SILENT. Picking the wrong marker does not error
+// and does not produce an empty result: nothing matches, every comment is
+// treated as code, and the blind pass is handed a fully-commented file while
+// believing it was given a bare one. Both halves of the clerk go quiet at once
+// - the first pass reads the reasoning it was designed not to see, and the
+// prose side is empty so the comparison pass has nothing of that file to check.
+//
+// It happened. `.tf` and `.hcl` were listed with the `//` languages, and this
+// repository writes HCL with `#` - 879 whole-line `#` comments in
+// management/cluster and not a single `//`. Every OpenTofu file the clerk has
+// ever read was read with its commentary attached.
+func TestSplitTakesCommentsAwayInEveryLanguageWritten(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		path    string
+		comment string
+		code    string
+	}{
+		// The one that was wrong. HCL accepts three comment forms and this
+		// repository uses the first essentially always.
+		{"HCL with a hash", "management/cluster/talos.tf", "# why this resource exists", `resource "talos_machine_secrets" "this" {}`},
+		{"HCL with slashes", "management/cluster/talos.tf", "// also legal HCL", `resource "talos_machine_secrets" "this" {}`},
+		{"YAML", "clusters/management/infrastructure/controllers/openebs.yaml", "# why this value", "chart: openebs"},
+		{"shell", "scripts/install-dependencies.sh", "# why this step", "set -euo pipefail"},
+		{"Go", "scripts/clerk/strip.go", "// why this function", "package main"},
+		{"TypeScript", "web/app.ts", "// why this export", "export const a = 1;"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := tc.comment + "\n" + tc.code + "\n"
+			code, prose, ok := split(tc.path, body)
+			if !ok {
+				t.Fatalf("split(%s) reported the file as entirely prose", tc.path)
+			}
+			if !strings.Contains(prose, strings.TrimLeft(tc.comment, "#/ ")) {
+				t.Errorf("the comment never reached the prose side.\n  prose: %q", prose)
+			}
+			if strings.Contains(code, "why this") || strings.Contains(code, "also legal") {
+				t.Errorf(`the comment is still in the code the blind pass reads:
+
+  %q
+
+That pass exists to read the code WITHOUT being told what it is for. Handed the
+commentary, it reads the code looking for what the comment promised, and the
+comparison pass then has nothing of this file to check - both halves go quiet
+at once, and neither reports anything.`, code)
+			}
+			if !strings.Contains(code, strings.Fields(tc.code)[0]) {
+				t.Errorf("the code itself was blanked out:\n  %q", code)
+			}
+		})
+	}
+}

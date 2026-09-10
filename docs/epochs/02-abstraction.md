@@ -1638,14 +1638,46 @@ and its trigger are recorded beside the count in `compute.tf`.
    the priority class sets the order the scheduler admits and preempts by, and
    a required affinity is only safe when the thing it constrains can preempt
    its way to a slot. What each pinned chart was read for is recorded below.
-2. **Taint the control planes.** `allowSchedulingOnControlPlanes = false`, with
-   tolerations for the two things that stay. It had to come after step 1, and
-   step 1 has now found it a second blocker - the OpenEBS helper pod, below.
+2. ~~**Taint the control planes.**~~ - **moved to epoch 03**, 2026-09-07. The
+   reasoning is below, under "The taint belongs to whoever owns the storage".
 3. ~~**Three `PriorityClass` objects**~~ - **done**, in the same change as
    step 1. Values are local rather than the built-in `system-cluster-critical`
    the table above names; the reason is in `priority-classes.yaml`.
 4. ~~**Proxmox pools by role**~~ - **done**, and the premise of this entry was
    wrong. See "Pools edit no machine at all" below.
+5. **A second runner scale set**, so `interactive` and `batch` CI have separate
+   `maxRunners` interlocks and a lint job cannot queue behind an integration
+   run for a slot. This entry was missing from this list until 2026-09-07 while
+   being present in "What this epoch therefore builds" above - the list said
+   four things where the plan said five, and a work order that disagrees with
+   itself is how a step gets skipped without anybody deciding to skip it.
+
+### The taint belongs to whoever owns the storage
+
+Step 2 is moved to epoch 03 rather than deferred inside this one, because the
+thing blocking it is not scheduling and never was.
+
+Two blockers were recorded against it and only one survives. The OpenEBS helper
+pod was retracted above: it builds its own tolerations from the taints on the
+node it is provisioning for, so it follows a volume onto a tainted control plane
+with nothing set. What remains is the state database. `tofu-state-1`, `-2` and
+`-3` sit on Local PV Hostpath, which pins each volume to the node whose
+directory holds it. Tainting the control planes has CloudNativePG try to
+reschedule the database onto workers, and **the data does not follow it**.
+
+So the taint cannot land until there is an answer to "where does stateful data
+live when a machine it is on becomes ineligible", and that question is epoch
+03's by the existing division of labour - `03-workload.md` already records the
+same trap for a Valheim world. Keeping the taint here would have epoch 02 close
+on a step whose real prerequisite is owned by another epoch, which is the shape
+that produces a step nobody does.
+
+What epoch 02 keeps is the part that needed no answer: a **required**
+anti-control-plane affinity on everything that can move, which is already
+landed. That gets the same placement outcome for those workloads without
+touching the ones with state underneath them. The taint's remaining value is
+that it also covers anything added later without an affinity - real, and worth
+having, and not worth blocking an epoch on.
 
 ### Pools edit no machine at all, and the role could not have been granted
 
@@ -1934,6 +1966,74 @@ in both directions: `kube-proxy` requests zero and uses something, and the API
 server reserves 512 MiB whether or not it wants it. Closing that gap needs
 metrics, which is epoch 04, and no amount of care with `kubectl get` substitutes
 for it.
+
+### Asserted or inherited: what reading three charts for their security context found
+
+The instruction from #237 - read the pinned chart's own `values.yaml` before
+trusting a path - was applied again for #272, and turned up three things that
+the issue itself had got wrong. Recorded because two of them are corrections to
+a written claim, and a wrong claim in a record is worse than no claim.
+
+**CloudNativePG 0.23.0 was not "partial".** Its chart already ships
+`runAsNonRoot: true`, `allowPrivilegeEscalation: false`,
+`readOnlyRootFilesystem: true`, uid/gid 10001, RuntimeDefault seccomp and
+`drop: [ALL]` as defaults. #272 read the values file's layout rather than its
+values. The manifest now restates them anyway, and the reason is worth keeping
+separate from the reason for the other two: not to harden anything, but so a
+chart upgrade that quietly dropped a default produces a visible disagreement
+instead of a silent downgrade in a version bump that looks like every other one.
+
+**The OpenEBS provisioner runs as root**, which #272 asserted was true of
+nothing here. `docker.io/openebs/provisioner-localpv:4.6.0` declares no `USER`,
+so it is uid 0. Asserting `runAsNonRoot` there would not harden it, it would
+stop the component that hands out the volumes the state database sits on. Filed
+as #315 with the experiment that would settle whether it needs uid 0.
+
+**`localpv.securityContext` is read by no template in the subchart.** It is in
+`values.yaml` and appears nowhere in `templates/`. This is the third time in
+this epoch the same trap has been found - a value at a path nothing reads is
+accepted in silence - and the first time it has been found in a path that a
+written issue was already recommending. The general form is worth stating
+plainly: **a knob existing in `values.yaml` is not evidence that the chart reads
+it.** The only proof is the template that consumes it.
+
+The guard is `TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem`
+in `tests/go/repo/workload_placement_test.go`, sharing the table that already
+records which chart version each path was checked against. A chart bump reopens
+the question rather than carrying the old answer forward, and a workload that
+asserts nothing must say in prose why - because an omission and a considered
+exemption are otherwise the same silence.
+
+### The talosconfig named one endpoint and no nodes
+
+The complaint in #235 was that every node-targeted `talosctl` command refused
+on first use, because the Talos provider leaves `nodes` empty and nothing set
+it. Fixing it
+turned up a second fault in the same three lines: `endpoints` was
+`[local.node_ips[0]]`, a single machine. Every control plane proxies the Talos
+API, so naming one bought nothing and lost the credential precisely when that
+machine was the one being diagnosed - which is the case a diagnostic exists for.
+
+Both are now set to `local.node_ips`. Workers are deliberately excluded from
+`nodes`: the commands this credential exists for are the quorum ones, and those
+are meaningless on a worker, so including them would make every `talosctl etcd`
+call answer three times and error twice.
+
+It is guarded twice, on purpose and at different moments.
+`writeTalosconfigTo` re-reads what OpenTofu rendered and refuses to hand over a
+talosconfig naming no nodes, which catches a provider that stopped honouring the
+argument; `TestTheRenderedTalosconfigNamesNodesAndEveryEndpoint` catches the
+branch that removed it, which is cheaper by a whole incident. The static one
+asserts only that `nodes` is set to _something_ - pinning the expression would
+be a change detector that fails on every rename and passes while the behaviour
+rots.
+
+**Still open: the kubeconfig has the same shape and a harder fix.**
+`cluster_endpoint` is `https://${local.node_ips[0]}:6443`, baked into the
+machine configuration, so a rendered kubeconfig points at one control plane too.
+Unlike the talosconfig this cannot be fixed by setting another argument - it
+needs a virtual IP or a load balancer in front of the API, and the address band
+at `.20.0/24` was reserved for exactly that. Filed as #316 rather than fixed here.
 
 ## Gotchas
 

@@ -22,10 +22,15 @@ earlier epoch whose decisions you are about to touch.
   alerts, no scaling thresholds — see epoch 04. There is no metrics-server, so
   `kubectl top` does not work and the demand factor the capacity plan rests on
   is unverified.
-- **Not partitioned:** `Taints: <none>` on every node, so there is no workload
-  tier — CI runs on the machines holding etcd quorum, and the largest memory
-  request any pod can have accepted is about 1.9 GiB. This has cost one killed
-  job (#236). The measurements and the model are in
+- **Partitioned by affinity, not by taint:** `Taints: <none>` on every node
+  still, but CI and all three operators now carry a **required**
+  anti-control-plane node affinity and a priority class, so nothing this
+  repository deploys lands on the machines holding etcd quorum. That is the part
+  that needed no storage answer. The taint itself moved to epoch 03 with the
+  state database it is blocked on — see
+  [03-workload.md](03-workload.md#storage-which-is-the-quieter-problem). Before
+  this, CI ran on the control planes and it cost one killed job (#236). The
+  measurements and the model are in
   [02-abstraction.md](02-abstraction.md#known-driver-the-estate-runs-at-a-few-percent-and-the-fuse-is-memory).
 - **Not replaceable:** a control-plane node cannot be replaced on its own yet.
   Identity is keyed correctly as of epoch 01, so a single-node change is now

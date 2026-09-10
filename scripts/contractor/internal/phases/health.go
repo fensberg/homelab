@@ -797,5 +797,69 @@ func looksLikeTalosconfig(raw string) bool {
 }
 
 func writeTalosconfigTo(ctx *run.Context, dest string) error {
-	return writeRenderedCredential(ctx, dest, "talosconfig", looksLikeTalosconfig)
+	if err := writeRenderedCredential(ctx, dest, "talosconfig", looksLikeTalosconfig); err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(dest)
+	if err != nil {
+		return fmt.Errorf("re-reading the rendered talosconfig: %w", err)
+	}
+	return namesNodes(string(raw))
+}
+
+// namesNodes refuses a talosconfig that would make the operator supply an
+// address the estate already knows.
+//
+// The Talos provider leaves `nodes` empty unless the configuration sets it, and
+// an empty one is not a broken file - it is a working credential on which every
+// node-targeted command refuses on first use:
+//
+//	nodes are not set for the command: please use `--nodes` flag or
+//	configuration file to set the nodes to run the command against
+//
+// That was paid every time for the life of the estate (#235). It is checked
+// here rather than trusted to the HCL because this is the moment the credential
+// is handed over, and because the failure it prevents is silent: a talosconfig
+// missing `nodes` is well-formed, passes every shape check, and only announces
+// itself when somebody is mid-diagnostic and least wants the detour.
+//
+// Refusing rather than warning is the fail-closed choice the estate makes
+// everywhere: a credential that cannot answer a question is worse than no
+// credential, because it looks like one.
+func namesNodes(raw string) error {
+	lines := strings.Split(raw, "\n")
+	for i, line := range lines {
+		field := strings.TrimSpace(line)
+		if !strings.HasPrefix(field, "nodes:") {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(field, "nodes:"))
+		if rest != "" && rest != "[]" {
+			return nil // nodes: [192.0.2.100]
+		}
+		if rest == "[]" {
+			continue // Explicitly empty, and a later context may still name some.
+		}
+		// A bare `nodes:` opens a block sequence, so the value is on the lines
+		// below it and indented further. Anything else - end of file, the next
+		// key, a dedent - means the sequence is empty, which reads identically
+		// to the inline empty form and is just as useless.
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		for _, next := range lines[i+1:] {
+			if strings.TrimSpace(next) == "" {
+				continue
+			}
+			deeper := len(next) - len(strings.TrimLeft(next, " \t"))
+			if deeper > indent && strings.HasPrefix(strings.TrimSpace(next), "-") {
+				return nil
+			}
+			break
+		}
+	}
+	return errors.New(
+		"the rendered talosconfig names no nodes, so every node-targeted command " +
+			"will refuse until one is passed with -n.\n\n" +
+			"The estate knows its own node addresses. Set `nodes` on " +
+			"data.talos_client_configuration in management/cluster/talos.tf, " +
+			"beside `endpoints`.")
 }

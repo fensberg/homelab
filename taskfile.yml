@@ -506,7 +506,12 @@ tasks:
     # routing table. The credential authenticates to Talos rather than to
     # Kubernetes and can reboot or reset a machine, so there is deliberately no
     # form that leaves it on disk.
-    #   task talosctl SITE=site0 -- talosctl -n 10.10.10.100 get links
+    #   task talosctl SITE=site0 -- talosctl etcd status
+    #
+    # No -n: the rendered credential names the control planes as both its
+    # endpoints and its nodes, so the quorum commands work with no flags. A
+    # worker still needs an explicit -n, because a default that included them
+    # would make every etcd command answer three times and error twice.
     #
     # Same per-invocation setup cost as `task kubectl` above, and the same
     # answer: put several questions in one call rather than paying for each.
