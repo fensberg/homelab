@@ -1,0 +1,22 @@
+---
+# The workload's own namespace, and the boundary every policy below hangs off.
+#
+# One namespace per workload rather than a shared one. It is what NetworkPolicy
+# selects on, what RBAC scopes to, and what pruning removes when the workload is
+# deprecated - three separate reasons that happen to want the same boundary.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: valheim
+  labels:
+    # Selected by the policies beside this file. A label rather than the name,
+    # because a policy that matches on namespace name cannot be reused by the
+    # next workload without editing it.
+    homelab.fensberg.com/workload: valheim
+    # Restricted, which is the strictest of the three Pod Security levels: no
+    # privilege escalation, no host namespaces, a non-root user, and a seccomp
+    # profile. The image already runs as uid 10000 and needs none of what this
+    # forbids, so this costs nothing and closes the container-escape primitives
+    # that would otherwise be available to an exploit.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
