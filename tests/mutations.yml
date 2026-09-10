@@ -363,6 +363,29 @@ mutations:
       neither. One misspelt key is the whole distance between configured and
       configured-looking, and nothing else in this repository would notice.
 
+  - guard: TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem
+    file: clusters/management/infrastructure/controllers/actions-runner-controller.yaml
+    find: "      runAsNonRoot: true"
+    replace: "      runAsNonRoot: false"
+    mentions: "runAsNonRoot"
+    why: >
+      The controller does not run as root because its base image says
+      USER 65532, and nothing in this repository can see that change. Remove
+      the assertion and the property becomes something an upstream rebuild can
+      take away with no diff here, no event, and a pod that keeps starting.
+
+  - guard: TestTheRenderedTalosconfigNamesNodesAndEveryEndpoint
+    file: management/cluster/talos.tf
+    find: "  nodes                = local.node_ips"
+    replace: "  nodes                = []"
+    mentions: "nodes"
+    why: >
+      The Talos provider leaves `nodes` empty unless told otherwise, and an
+      empty one is not a broken credential - it is a working one on which every
+      node-targeted command refuses on first use. The runtime guard in
+      writeTalosconfigTo catches it at the moment of use; this catches the
+      branch that removed it, which is cheaper by a whole diagnostic.
+
   - guard: TestEveryHelmReleaseSaysWhereItsPodSpecLives
     file: clusters/management/infrastructure/controllers/undescribed-chart.yaml
     create: |
@@ -548,29 +571,6 @@ mutations:
       up. suppliers_test.go is the right subject because its floor guards the
       supply chain: without it, an image walk that stops matching reports every
       image approved and digest-pinned.
-
-  - guard: TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem
-    file: clusters/management/infrastructure/controllers/actions-runner-controller.yaml
-    find: "      runAsNonRoot: true"
-    replace: "      runAsNonRoot: false"
-    mentions: "runAsNonRoot"
-    why: >
-      The controller does not run as root because its base image says
-      USER 65532, and nothing in this repository can see that change. Remove
-      the assertion and the property becomes something an upstream rebuild can
-      take away with no diff here, no event, and a pod that keeps starting.
-
-  - guard: TestTheRenderedTalosconfigNamesNodesAndEveryEndpoint
-    file: management/cluster/talos.tf
-    find: "  nodes                = local.node_ips"
-    replace: "  nodes                = []"
-    mentions: "nodes"
-    why: >
-      The Talos provider leaves `nodes` empty unless told otherwise, and an
-      empty one is not a broken credential - it is a working one on which every
-      node-targeted command refuses on first use. The runtime guard in
-      writeTalosconfigTo catches it at the moment of use; this catches the
-      branch that removed it, which is cheaper by a whole diagnostic.
 
 # Guards that cannot be proved by mutation, and why.
 #
