@@ -544,6 +544,31 @@ func selectPhases(phase, from, verb string) ([]string, error) {
 		if !slices.Contains(seq, phase) {
 			return nil, fmt.Errorf("unknown phase '%s'. Valid phases: %v", phase, seq)
 		}
+		// A single phase still needs the workspace it reads from, and asking
+		// the operator to produce it is asking for something impossible.
+		//
+		// Every phase but render and sterilize reads files render writes -
+		// the rendered config, the Ansible inventory, the site's network
+		// vars. Sterilize removes all of them on every exit, INCLUDING a
+		// successful one, because a rendered credential's short life is the
+		// safeguard rather than an inconvenience around it.
+		//
+		// Those two facts together made `-phase <anything>` unrunnable, and
+		// the failure was worse than a plain error because the advice was
+		// impossible to follow: `-phase hypervisor` halted with "run the
+		// Render phase first", and `-phase render` sterilized its own output
+		// before the process exited, so the operator could run the two in
+		// sequence forever and get the same halt. registry.go's own comment
+		// tells a reader to add a hypervisor with `-phase hypervisor`, which
+		// could never have worked.
+		//
+		// Prepending render fixes it in the only direction that does not
+		// weaken the safeguard: the files exist for one process rather than
+		// being left behind for the next one. Sterilize still runs at the end
+		// of that process.
+		if needsRenderedWorkspace(phase) && slices.Contains(seq, "render") {
+			return []string{"render", phase}, nil
+		}
 		return []string{phase}, nil
 	case from != "":
 		i := slices.Index(seq, from)
@@ -553,6 +578,28 @@ func selectPhases(phase, from, verb string) ([]string, error) {
 		return slices.Clone(seq[i:]), nil
 	default:
 		return slices.Clone(seq), nil
+	}
+}
+
+// needsRenderedWorkspace reports whether a phase reads files the Render phase
+// writes, and therefore cannot run on its own.
+//
+// Stated as the exception rather than the rule, deliberately. Every phase that
+// touches the estate needs a rendered config to know where the estate IS, so
+// the honest default is that a phase needs it; listing the two that do not is
+// shorter and, more usefully, fails in the safe direction when a phase is
+// added. A new phase nobody thought about gets render prepended, which costs a
+// second. The other default would give it the bug this function exists to fix.
+//
+// render is excluded because it is the thing being depended on, and sterilize
+// because its whole job is removing what render wrote - running render first
+// would mean rendering secrets in order to delete them.
+func needsRenderedWorkspace(phase string) bool {
+	switch phase {
+	case "render", "sterilize":
+		return false
+	default:
+		return true
 	}
 }
 

@@ -319,6 +319,45 @@ mutations:
       string "DoesNotExist" passes just as happily once the operator has been
       flipped.
 
+  - guard: TestEveryMachineClassIsAssignedAPool
+    file: management/cluster/pools.tf
+    find: "  for_each = local.workers"
+    replace: "  for_each = local.control_plane"
+    mentions: "never placed in a pool"
+    why: >
+      The pools break by addition rather than by deletion - a new class of
+      machine is written beside the others and nothing says where it belongs,
+      so the hypervisor grows an ungrouped machine and the grouping quietly
+      stops being true of everything. This mutation is the shape that failure
+      actually takes: the workers keep a pool assignment, so nothing looks
+      missing, but no line in pool_members iterates local.workers any more.
+
+  - guard: TestPoolIdsAreScopedToTheSite
+    file: management/cluster/pools.tf
+    find: 'pool_id = "${local.site_name}-workers"'
+    replace: 'pool_id = "workers"'
+    mentions: "does not include the site"
+    why: >
+      Pools are datacenter-scoped, so a bare `workers` collides the moment two
+      sites share a Proxmox cluster - and Proxmox answers a collision by
+      adopting the other estate's machines into this pool rather than by
+      failing. The config supports several sites by design, so the collision is
+      expressible rather than theoretical, and it is silent.
+
+  - guard: TestPoolMembershipNamesTheFunctionInTheResourceName
+    file: management/cluster/pools.tf
+    find: 'resource "proxmox_pool_membership" "workers"'
+    replace: 'resource "proxmox_pool_membership" "by_function"'
+    mentions: "named for the grouping rather than for a function"
+    why: >
+      The plan comment renders a resource name and redacts the for_each key,
+      because a key can be a hypervisor's real hostname and nothing downstream
+      can tell a safe key from an unsafe one. So the function has to live in
+      the name: the first version of this file keyed membership by function and
+      produced nine identical "<redacted>" rows on the change whose entire
+      purpose is that somebody can see which machine is which. This guard is
+      what stops the tidier, unreadable form coming back.
+
   - guard: TestRunnerPodsAreNotBestEffort
     file: clusters/management/infrastructure/configs/runner-scale-set.yaml
     find: "memory: 2Gi"

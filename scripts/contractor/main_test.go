@@ -43,13 +43,78 @@ func TestSelectPhases_DoesNotAliasThePackageSequence(t *testing.T) {
 	}
 }
 
-func TestSelectPhases_SinglePhase(t *testing.T) {
+// -phase runs the named phase and its prerequisite, and nothing else.
+//
+// It used to return the named phase alone, which read as the narrower and
+// therefore safer answer and was in fact unrunnable: every phase but render
+// and sterilize reads files render writes, and sterilize removes them on every
+// exit including a successful one. So `-phase compute` halted asking for a
+// render the operator could not usefully perform - `-phase render` deletes its
+// own output before the process ends.
+//
+// What must stay true is that it does not become a full run. Two phases, the
+// second of which is the one asked for.
+func TestSelectPhases_SinglePhaseRunsItsPrerequisiteAndNothingElse(t *testing.T) {
 	got, err := selectPhases("compute", "", "break-ground")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(got) != 1 || got[0] != "compute" {
-		t.Errorf("got %v, want exactly [compute]", got)
+	if len(got) != 2 || got[0] != "render" || got[1] != "compute" {
+		t.Errorf("got %v, want exactly [render compute]", got)
+	}
+}
+
+// render and sterilize are the two that must NOT gain a prerequisite.
+//
+// render is the thing being depended on, so prepending it to itself would run
+// it twice. sterilize exists to remove what render wrote, and rendering
+// secrets in order to delete them is the kind of thing that looks harmless
+// until somebody asks why a teardown pulled credentials out of the vault.
+func TestSelectPhases_RenderAndSterilizeGainNoPrerequisite(t *testing.T) {
+	for _, phase := range []string{"render", "sterilize"} {
+		got, err := selectPhases(phase, "", "break-ground")
+		if err != nil {
+			t.Fatalf("unexpected error for %q: %v", phase, err)
+		}
+		if len(got) != 1 || got[0] != phase {
+			t.Errorf("selectPhases(%q) = %v, want exactly [%s]", phase, got, phase)
+		}
+	}
+}
+
+// Every phase a sequence offers must be runnable on its own.
+//
+// Enumerated from the sequences rather than listed here, so a phase added
+// later is covered without anybody remembering to add it - which is the
+// failure that produced this bug. registry.go's own comment told a reader to
+// add a hypervisor with `-phase hypervisor`, and that had never worked.
+func TestEveryPhaseIsRunnableOnItsOwn(t *testing.T) {
+	verbs := map[string][]string{
+		"break-ground": phases.AllPhases,
+		"converge":     phases.ConvergePhases,
+		"plan":         phases.PlanPhases,
+	}
+	for verb, seq := range verbs {
+		for _, phase := range seq {
+			got, err := selectPhases(phase, "", verb)
+			if err != nil {
+				t.Errorf("%s -phase %s: %v", verb, phase, err)
+				continue
+			}
+			if got[len(got)-1] != phase {
+				t.Errorf("%s -phase %s selected %v, which does not end in the phase asked for", verb, phase, got)
+			}
+			if phase == "render" || phase == "sterilize" {
+				continue
+			}
+			if len(got) < 2 || got[0] != "render" {
+				t.Errorf(`%s -phase %s selected %v, which does not render first.
+
+Every phase but render and sterilize reads what render writes, and sterilize
+removes it on every exit - so a phase without it cannot run, and the operator
+cannot fix that by rendering separately.`, verb, phase, got)
+			}
+		}
 	}
 }
 
@@ -96,8 +161,8 @@ func TestSelectPhases_PhaseWinsOverFrom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(got) != 1 || got[0] != "verify" {
-		t.Errorf("got %v, want exactly [verify] - the narrower flag must win", got)
+	if len(got) != 2 || got[1] != "verify" {
+		t.Errorf("got %v, want exactly [render verify] - the narrower flag must win", got)
 	}
 }
 
