@@ -731,6 +731,27 @@ mutations:
       motivation belongs. The machinery should read the same whoever moves in
       next.
 
+  - guard: TestTheWorkloadBucketIsReleasedBeforeAnythingCanDeleteIt
+    file: scripts/contractor/internal/phases/sterilize.go
+    reads_source: true
+    find: "\tforgetWorkloadBucket(ctx)\n\temptyObjectStorage(ctx)"
+    replace: "\temptyObjectStorage(ctx)\n\tforgetWorkloadBucket(ctx)"
+    mentions: "before it releases the workload bucket"
+    why: >
+      reads_source, because this guard reads sterilize.go as text rather than
+      executing it - the order of two calls is a property of the file, and the
+      scratch copy is the file it reads.
+
+      Reordered rather than deleted, because that is the version somebody
+      writes while looking at a stuck teardown instead of at this file: the
+      destroy halted on a bucket Cloudflare would not delete, emptying is
+      visibly the thing that unsticks it, and moving it earlier looks like
+      fixing the order rather than deleting the backups.
+
+      It still reads as correct afterwards. Both calls are present, both run,
+      and the teardown completes - which is exactly why the order needs a guard
+      rather than a comment.
+
 # Guards that cannot be proved by mutation, and why.
 #
 # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in

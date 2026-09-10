@@ -161,6 +161,54 @@ node. When that node is replaced - which every image change does, since an image
 change means a rebuild - the world goes with it. Whatever this epoch does about
 workloads has to answer that before anyone plays on it.
 
+#### Settled: the workload's state goes to a bucket the teardown keeps
+
+The framing above - that the world save is pinned to a node - is right about
+the consequence and wrong about the mechanism, and the correction is on #330.
+
+An image change does not replace the node VMs. They clone from a template by
+`vm_id` and carry no `lifecycle` block, and #97 already records that an image
+change cannot reach a running estate at all. What loses the data is that the
+delivery mechanism is a **rebuild**: a demolish followed by an ignition, and
+demolish destroys every disk by design. That is the contract - "TNT is TNT" -
+so no disk-lifecycle trick can help, and teaching the teardown to skip a volume
+would make a destructive operation partial, which this estate refuses.
+
+Three options, and only one survives.
+
+**Network storage from the hypervisor** - NFS or iSCSI to a dataset - survives
+a rebuild and hands the untrusted machine a direct path to the one thing on the
+estate that is not disposable. Rejected on the zone's own terms.
+
+**A preserve-on-teardown flag** makes `demolish` partial and leaves a volume
+nothing tracks. Rejected.
+
+**Object storage, in a bucket of its own.** Taken. It needs only outbound
+egress from the zone, which the workload has anyway and which opens no path
+into the estate - the same direction its own traffic already goes.
+
+The bucket is `<state bucket>-workloads`, derived rather than configured so it
+needs no vault item and cannot drift from the bucket beside it. Sterilize
+**forgets** it before the destroy, and the next ignition adopts it back.
+
+That forgetting is a deliberate exception to the rule in `teardown.go` - that
+losing track of something which outlives the VMs leaves a real thing nothing
+tracks. It does, for exactly as long as there is no estate to track it.
+Adoption closes the window, and the alternatives are a teardown that stops
+part-way on a bucket Cloudflare will not delete, or one that succeeds by
+deleting the backups.
+
+The order of those two steps is the safety, and
+`TestTheWorkloadBucketIsReleasedBeforeAnythingCanDeleteIt` holds it: released
+first, a failure to release stops short of deleting anything; reversed, the
+deletion has already happened by the time anyone finds out. The mutation
+proving it reorders rather than deletes, because reordering is what somebody
+writes while looking at a stuck teardown instead of at this file.
+
+**What this does not do** is make the node's local disk durable. It is not, and
+it should not be - the machine is chosen to be destroyable. Anything that must
+outlive a rebuild goes to the bucket; the disk is a working copy.
+
 #### Inherited from epoch 02: tainting the control planes
 
 Moved here on 2026-09-07, because it is the same question wearing a different

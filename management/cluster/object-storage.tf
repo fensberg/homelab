@@ -40,6 +40,38 @@ resource "cloudflare_r2_bucket" "homelab" {
   # asserted here for it to disagree with.
 }
 
+# The workload bucket, and its whole point is that it outlives this estate.
+#
+# The bucket above holds backups OF this estate, so the teardown empties it
+# deliberately - they describe something that is about to stop existing. This
+# one holds backups of what RUNS on the estate, which is the opposite: a world
+# save, or anything else a workload accumulates that people would mind losing.
+#
+# A cluster rebuild is the normal way a Talos version reaches these machines
+# (#97), and a rebuild is a demolish followed by an ignition. So "survives a
+# teardown" is not an edge case here, it is the routine path - see #330 and the
+# storage section of docs/epochs/03-workload.md.
+#
+# The name is derived rather than configured. It needs no vault item of its
+# own, cannot drift from the bucket it sits beside, and keeps a real name out
+# of this file.
+#
+# Sterilize forgets this resource before the destroy runs, and the next
+# ignition adopts it back. That is deliberate and it is the exception to the
+# rule stated in teardown.go - that forgetting something which outlives the VMs
+# leaves a real thing nothing tracks. It does, for exactly as long as there is
+# no estate to track it, and adoption is what closes that window.
+resource "cloudflare_r2_bucket" "workloads" {
+  account_id = local.object_storage_account.account_id
+  name       = "${local.object_storage.bucket}-workloads"
+
+  # No location, same reason as above.
+}
+
+output "workload_storage_bucket" {
+  value = cloudflare_r2_bucket.workloads.name
+}
+
 output "object_storage_bucket" {
   value = cloudflare_r2_bucket.homelab.name
 }

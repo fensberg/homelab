@@ -69,7 +69,7 @@ files:
     uncovered: 6
     covered_by: e2e
   - path: contractor/internal/phases/teardown.go
-    uncovered: 3
+    uncovered: 4
     covered_by: e2e
   - path: contractor/internal/phases/verify.go
     uncovered: 1
