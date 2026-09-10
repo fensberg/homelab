@@ -142,6 +142,20 @@ locals {
   control_plane_band = 100
   worker_band        = 200
 
+  # The untrusted zone: its own /24, not a band inside the node subnet.
+  #
+  # A band would put the machine that takes inbound UDP from strangers on the
+  # same L2 as every control plane, where the only thing between it and the
+  # Talos API is a certificate. A separate subnet is what makes "a zone subnet
+  # with policy on it" - the property docs/epochs/03-workload.md audits an
+  # escape against - true rather than aspirational.
+  #
+  # No new overlay route is needed: hypervisor-prep advertises the site's whole
+  # /16 precisely so a new subnet here costs no further route approval.
+  dmz_cidr    = "10.${local.octet}.30.0/24"
+  dmz_gateway = cidrhost(local.dmz_cidr, 1)
+  dmz_band    = 100
+
   # The one number every other identifier is derived from.
   host_octets = [for i in range(local.node_count) : local.control_plane_band + i]
 
@@ -219,6 +233,33 @@ locals {
       hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[i % length(local.hypervisors)].hostname : ""
     }
   }
+
+  # The untrusted zone's machines, keyed like every other tier.
+  #
+  # Counted rather than assumed: an estate with no untrusted workload has no
+  # business running a machine dedicated to one, and zero is the number every
+  # site starts at.
+  dmz_count  = try(local.site.dmz_count, 0)
+  dmz_octets = [for i in range(local.dmz_count) : local.dmz_band + i]
+
+  dmz = {
+    for i, h in local.dmz_octets : tostring(h) => {
+      host_octet = h
+      ip         = cidrhost(local.dmz_cidr, h)
+      name       = format("%s-dmz-%d", local.site_name, h)
+
+      # Banded away from the cluster nodes so a VM id reads back as its zone as
+      # well as its address: octet 10 gives 10300-10399 here against 10100 and
+      # 10200 for the tiers that are inside the cluster's own subnet.
+      vm_id = local.octet * 1000 + 300 + i
+
+      hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[i % length(local.hypervisors)].hostname : ""
+    }
+  }
+
+  dmz_keys  = sort(keys(local.dmz))
+  dmz_ips   = [for k in local.dmz_keys : local.dmz[k].ip]
+  dmz_names = [for k in local.dmz_keys : local.dmz[k].name]
 
   # Ordered views, for the places that genuinely need a list: the first node is
   # the cluster endpoint and the NodePort host, and the health data source takes
@@ -331,6 +372,28 @@ locals {
   # this is that change, and every node is rebuilt by it either way.
   schematic_id = "6e810eb45767cfabcdb7a45e389eee803045af7a9467faebde5c91164861883a"
 
+  # The same image without the overlay extension, for the untrusted zone.
+  #
+  # This is the layer that answers "what does the machine itself reach", and it
+  # cannot be a configuration setting: every node carrying the tailscale
+  # extension from one shared schematic is how a compromised pod on any of them
+  # reaches the hypervisor, the workstation and every other site, because the
+  # tailnet policy is still the default allow-all. Leaving the extension out of
+  # the image is the only form of that answer which a machine cannot talk its
+  # way back into.
+  #
+  # Minted from the schematic above with siderolabs/tailscale removed and
+  # siderolabs/util-linux-tools kept; the Factory ids are content-addressed, so
+  # this one is exactly that customization and nothing else. Verified against
+  # factory.talos.dev/schematics/<id>, which returns the customization it was
+  # minted from.
+  #
+  # Both ids resolve their extensions from talos_version above, so the two
+  # images move together rather than drifting apart on a version bump - and #97
+  # applies to both: an image change reaches a running estate only through a
+  # rebuild.
+  dmz_schematic_id = "70d243b7e2cbe699e4db5e73356a2add6b4bb8e34eadba9db22c823110e79099"
+
   gitops_target_path = "clusters/management"
 
   # --- state database ------------------------------------------------------
@@ -363,5 +426,14 @@ output "site_network" {
     worker_ips       = local.worker_ips
     worker_names     = local.worker_names
     worker_placement = local.worker_placement
+
+    # The untrusted zone is reported alongside the rest for the same reason the
+    # workers are: a tier nothing consumes is a tier tflint cannot see, and this
+    # one has its own subnet, so leaving it out would make the estate's own
+    # description of its addressing incomplete in the place it matters most.
+    dmz_cidr    = local.dmz_cidr
+    dmz_gateway = local.dmz_gateway
+    dmz_ips     = local.dmz_ips
+    dmz_names   = local.dmz_names
   }
 }
