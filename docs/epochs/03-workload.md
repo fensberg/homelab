@@ -949,6 +949,60 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### The relay is not the only path, and "nothing on the LAN" was too strong
+
+The crossplay reasoning in this record concluded that the game server needs no
+inbound path because players reach it through PlayFab's relay. That held. What
+it missed is that the relay is where a connection _starts_, not necessarily where
+it stays: a few seconds after a player joins, PlayFab Party upgrades to a direct
+path to the player's own address.
+
+For a player in the same house as the hypervisor, that address is on the LAN,
+and the egress exclusion of `192.168.0.0/16` refused it. Every join failed
+identically, on the imported world and on a freshly generated one, with versions
+matched:
+
+```text
+Server: New peer connected,sending global keys
+PlayFab network error ... code '63': failed to establish or maintain a connection
+Failed to send, suspend TX on playfab/...
+```
+
+It took a long time to find, and the time went into theories rather than
+evidence: stale lobbies, MTU, version skew, the imported save, `ingress: []`.
+Each was ruled out properly and none of them was it. What found it was Cilium's
+own drop monitor on the node, filtered to the pod's address, during a join:
+
+```text
+xx drop (Policy denied) ... 10.244.3.22:59135 -> 192.168.10.117:59079 udp
+```
+
+Egress, to the operator's laptop. **The tool that enforces the policy is also the
+tool that reports what it denied**, and it should have been the first thing
+asked rather than the sixth.
+
+#### The rule, and why it is this narrow
+
+Egress UDP to `192.168.0.0/16`, destination ports 49152-65535 only - the dynamic
+range client ports are drawn from. Every well-known LAN service stays closed:
+DNS, SNMP, UPnP/SSDP, mDNS, and all of TCP. What a compromised server gains is
+the ability to send datagrams to high ports on household devices; what it does
+not gain is querying the router, opening ports on it through UPnP, or reaching
+any login.
+
+That is a real change to the isolation reasoning and is written as one. The
+policy's comment used to say the server "cannot reach anything on the LAN"; it
+now says the LAN is closed except for this rule.
+
+#### A test that was designed wrong
+
+A phone-hotspot join was proposed as decisive, on the claim that a remote peer's
+direct path would use a public address the policy allows. It does not: Party
+tries the client's local address as well, and hotspots hand out private
+addresses too. The hotspot join failing was therefore read as ruling the LAN out
+when it did not. Recorded because the error was in the design of the experiment,
+not its result, and that kind is the easiest to repeat.
+
 ### One name, because two names for one thing become two things
 
 The first world came up advertising itself as "combat berries delphine" while
