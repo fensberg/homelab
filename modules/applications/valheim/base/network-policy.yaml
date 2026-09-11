@@ -68,8 +68,8 @@ spec:
     #                    workload would be attacked through
     #
     # So a compromised server can reach the internet, which it must, and cannot
-    # reach the API server, the hypervisor, the state database, another
-    # workload, or anything on the LAN.
+    # reach the API server, the hypervisor, the state database or another
+    # workload. The LAN is closed except for the one narrow rule below.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -78,3 +78,39 @@ spec:
               - 172.16.0.0/12
               - 192.168.0.0/16
               - 169.254.0.0/16
+
+    # One narrow way onto the LAN: UDP, to the dynamic port range only.
+    #
+    # PlayFab Party connects players through the relay and then, a few seconds
+    # later, upgrades to a direct path to the player's own address. For a player
+    # in the same house as the hypervisor that address is on the LAN, and the
+    # exclusion above refused it. Cilium's drop monitor caught it exactly:
+    #
+    #   xx drop (Policy denied) ... 10.244.3.22:59135 -> 192.168.10.117:59079 udp
+    #
+    # with 192.168.10.117 being the operator's laptop. The server logged it as
+    # "Failed to send, suspend TX" followed by PlayFab error 63, and the player
+    # was disconnected five seconds after joining, every time, on every world.
+    #
+    # 49152-65535 is the dynamic range Windows picks client ports from, which is
+    # where the port above came from. Keeping to it means every well-known
+    # service on the LAN stays closed: DNS (53), SNMP (161), UPnP/SSDP (1900),
+    # mDNS (5353), and every TCP service - SSH, web consoles, file shares. So a
+    # compromised server gains the ability to send datagrams to high ports on
+    # household devices, and not the ability to query the router, open ports on
+    # it through UPnP, or log in to anything.
+    #
+    # Players outside the house are unaffected either way. Party tries their
+    # private address too, but that address is not routable from here, so the
+    # attempt fails and Party stays on the relay.
+    #
+    # The /16 matches the exclusion above rather than naming the house subnet,
+    # because the subnet is a site value that lives in the vault, and a fork's
+    # LAN is somewhere else. See docs/epochs/03-workload.md.
+    - to:
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: UDP
+          port: 49152
+          endPort: 65535
