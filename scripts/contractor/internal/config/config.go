@@ -114,6 +114,19 @@ type Workload struct {
 	// so a different value is not a rename: the old world stays on the volume,
 	// untouched and unloaded, and an empty one is generated beside it.
 	Name string `json:"name"`
+	// What the server is called in the listing, when that has to differ from
+	// the world.
+	//
+	// Empty means "the same as Name", which is the ordinary case and the one
+	// this collapsed into when the two were briefly a single field. They are
+	// separated again because they turned out not to be one thing: the world
+	// name is welded to a file on disk and cannot move, while the listing name
+	// is a lever - and with the two fused there was no way to change the
+	// listing without abandoning the world.
+	//
+	// So the default keeps them equal without anybody maintaining that, and the
+	// lever exists when it is needed.
+	ServerName string `json:"server_name"`
 	// Genuinely secret.
 	Password string `json:"password"`
 }

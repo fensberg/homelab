@@ -57,19 +57,22 @@ resource "kubernetes_secret" "valheim_server" {
     namespace = kubernetes_namespace.valheim.metadata[0].name
   }
 
-  # TWO KEYS, ONE VALUE, AND THAT IS THE POINT.
+  # ONE NAME BY DEFAULT, TWO WHEN THEY HAVE TO DIFFER.
   #
-  # The server takes a name for the listing and a name for the save file as
-  # separate arguments, so the Secret keeps them separate - the image should not
-  # have to care that this estate happens to supply one value for both. If a
-  # reason ever appears to split them, it is a config change and nothing here or
-  # in the image moves.
+  # These were two vault items, then one, and are now one with an override. The
+  # round trip is worth recording because both ends were wrong for the same
+  # reason - each was a guess about whether the listing name and the world name
+  # are one thing.
   #
-  # What collapsed is the SOURCE. Two vault items meant two things to keep in
-  # step, and they promptly fell out of step: the server list advertised a
-  # randomly generated name while the world on disk was called something else
-  # entirely, which reads as a misconfiguration to everybody who looks at it.
-  # One name is the honest model of what an operator actually wants.
+  # Two items drifted, because keeping them equal was something to remember: the
+  # listing advertised a generated name over a world called something else.
+  # Collapsing them fixed that and removed a lever nobody had needed yet - and
+  # the first time one was needed, the only way to change the listing name was
+  # to change the world name, which does not rename a world but abandons it.
+  #
+  # They are not one thing. The world name is welded to a file on disk. The
+  # listing name is free. An empty server_name means "the same as the world",
+  # so the common case needs no maintenance and the lever is there when it is.
   #
   # Neither is a credential - the listing name is broadcast to anyone who joins.
   # It lives in the vault for the reason site names do: this repository is meant
@@ -80,7 +83,7 @@ resource "kubernetes_secret" "valheim_server" {
   # way. A pod half-configured from a ConfigMap and half from a Secret is two
   # things to check when the wrong world loads.
   data = {
-    server-name = local.valheim.name
+    server-name = local.valheim.server_name != "" ? local.valheim.server_name : local.valheim.name
     world-name  = local.valheim.name
     password    = local.valheim.password
   }

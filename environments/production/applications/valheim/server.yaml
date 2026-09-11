@@ -19,9 +19,41 @@ data:
   # forward; anything else falls back to the Steam backend, which needs one.
   VALHEIM_CROSSPLAY: "true"
 
-  # Listed in the public server browser. Off, because the join code is how
-  # people get in and a server nobody can enumerate is one nobody probes.
-  VALHEIM_PUBLIC: "0"
+  # Listed in the cross-platform server browser.
+  #
+  # Off was the original setting and the reasoning was sound - the join code is
+  # how people get in, and a server nobody can enumerate is one nobody probes.
+  # It is on now because the join code stopped working and this is the leading
+  # suspect for why.
+  #
+  # The server mints a code, registers its lobby, then calls FindLobbies to
+  # check the code is not already taken. That callback throws:
+  #
+  #   Session "Messiah" registered with join code 260034
+  #   NullReferenceException
+  #     at ZPlayFabMatchmaking.OnCheckJoinCodeSuccess (FindLobbiesResult result)
+  #
+  # A lobby that is not publicly searchable is a good way for that query to come
+  # back empty, and an empty result is exactly the shape that makes a handler
+  # indexing into it throw. If that is right, "0" was not leaving one path open -
+  # it was breaking the only one.
+  #
+  # Ruled out first, each by evidence rather than argument: a stale lobby (a
+  # full teardown with a gap produced the same code), server health (lobby
+  # refreshing, world loaded, 65,422 ZDOs), and version skew (client and server
+  # both 1.0.7, network version 39). Unexplained: one boot produced a different
+  # code under identical configuration and that one worked.
+  #
+  # WHAT THIS COSTS, said plainly. The server name becomes enumerable by anyone
+  # rather than merely reachable. The password still gates entry and Valheim
+  # requires one on a public server. The workload's exposure was already a relay
+  # that strangers can reach and its blast radius is still a world save, so the
+  # isolation reasoning in docs/epochs/03-workload.md is unchanged by this.
+  #
+  # This is an experiment with a stated hypothesis, not a preference. If the
+  # join code starts resolving, that confirms it; revert when the upstream null
+  # reference is fixed.
+  VALHEIM_PUBLIC: "1"
 
   # Seconds between world saves. The server's own default is 1800; twenty
   # minutes is a smaller amount of progress to lose to a crash.
