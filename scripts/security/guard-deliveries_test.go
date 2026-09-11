@@ -113,7 +113,7 @@ func TestAnUnapprovedSupplierIsFoundWithNoCacheAtAll(t *testing.T) {
 //
 // It ran from the repository root as a git hook, so relative paths worked and
 // nothing recorded that the working directory was an input. CI runs it as
-// `go run -C scripts/gatehouse .` - each program is its own module, so there
+// `go run -C scripts/security .` - each program is its own module, so there
 // is nothing at the root to resolve a package path against - which puts the
 // working directory inside the module. The gate failed with "no such file or
 // directory" instead of a verdict, on the pull request that introduced it.
@@ -128,7 +128,7 @@ func TestTheGateFindsTheRepositoryFromAnyDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: elsewhere\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	deep := filepath.Join(root, "scripts", "gatehouse", "internal")
+	deep := filepath.Join(root, "scripts", "security", "internal")
 	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatal(err)
 	}

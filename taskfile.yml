@@ -103,7 +103,7 @@ tasks:
     # a commit created through the Git Data API with an installation token
     # comes back signed with GitHub's own key. See scripts/signedpush.
     #
-    # A plain `git push` is refused by the pre-push hook (scripts/gatehouse),
+    # A plain `git push` is refused by the pre-push hook (scripts/security),
     # because it produces unsigned commits. It used to merely be documented,
     # which was not enough - see that command's header.
     cmds:
@@ -135,8 +135,8 @@ tasks:
     # commit-msg, not pre-commit: git does not run pre-commit for a merge at
     # all, so a guard there would miss the case entirely.
     cmds:
-      - go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
-      - ./toolshed/gatehouse guard-merge
+      - go build -C scripts/security -o ../../toolshed/security .
+      - ./toolshed/security guard-merge
 
   push-guard:
     desc: "Refuse a plain git push that would update a branch (pre-push hook)"
@@ -148,8 +148,8 @@ tasks:
     # Not internal: pre-commit invokes it as a command, so `task` must be
     # willing to run it from the CLI.
     cmds:
-      - go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
-      - ./toolshed/gatehouse guard-push
+      - go build -C scripts/security -o ../../toolshed/security .
+      - ./toolshed/security guard-push
 
   delivery-guard:
     desc: "Refuse a commit while an unapproved third-party hook is installed (pre-commit)"
@@ -167,8 +167,8 @@ tasks:
     #
     # Not internal: pre-commit invokes it as a command.
     cmds:
-      - go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
-      - ./toolshed/gatehouse guard-deliveries
+      - go build -C scripts/security -o ../../toolshed/security .
+      - ./toolshed/security guard-deliveries
 
   clear-branches:
     desc: "List local branches whose work has landed. Add -- -apply to delete them."

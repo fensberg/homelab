@@ -131,8 +131,8 @@ mutations:
 
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
     file: githooks/pre-commit
-    find: "./toolshed/gatehouse guard-deliveries"
-    replace: "true # the gatehouse used to run here"
+    find: "./toolshed/security guard-deliveries"
+    replace: "true # security used to run here"
     mentions: "does not run"
     why: >
       The shim is the only thing that runs before pre-commit clones and
@@ -1056,7 +1056,7 @@ unprovable:
   - path: tests/go/repo/no_gh_dependency_test.go
     reason: go-source
   # Same again. Proved by hand with -count=1: adding an unpinned endpoint var
-  # to scripts/gatehouse made it name proveAPI, and removing it went green.
+  # to scripts/security made it name proveAPI, and removing it went green.
   # Two earlier attempts at that proof did NOT fire, which was the guard being
   # right - any test assigning the variable satisfies it, and pointAt's restore
   # closure is an assignment too.

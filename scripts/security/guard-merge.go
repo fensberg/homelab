@@ -75,7 +75,7 @@ func guardMerge(args []string) int {
 		return 0
 	}
 
-	fmt.Print(`gatehouse: this would be a merge commit, and it cannot be published.
+	fmt.Print(`security: this would be a merge commit, and it cannot be published.
 
 signedpush replays a branch as a linear chain so GitHub can sign each commit,
 and a merge commit has two parents. It would be refused at push time - after

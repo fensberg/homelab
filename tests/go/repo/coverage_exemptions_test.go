@@ -65,7 +65,7 @@ func uncoveredByFile(t *testing.T) map[string]int {
 	// anywhere else was invisible. The operator's question is the one that
 	// matters here: "I want to know if in two weeks we've built a function that
 	// itself has no coverage." For six of the seven modules the answer was no -
-	// including the gatehouse, whose functions refuse unsigned pushes and
+	// including security, whose functions refuse unsigned pushes and
 	// unapproved deliveries, and signedpush, which reads the App private key.
 	//
 	// Paths are prefixed with the module, so two modules with an internal/run

@@ -14,7 +14,7 @@
 # a rewritten branch and a replaced pull request, because a commit subject
 # cannot be amended once `signedpush` has published it.
 #
-# No gatehouse call, unlike the pre-commit shim. That guard exists because
+# No security call, unlike the pre-commit shim. That guard exists because
 # pre-commit installs and executes third-party environments before running any
 # hook, and it must be intercepted first. Nothing new is installed at
 # commit-msg time - the environment pre-commit needs was built minutes earlier

@@ -15,7 +15,7 @@
 //
 //	clear-branches  local branches whose work has already landed
 //
-// WHY IT IS NOT PART OF THE GATEHOUSE. The gatehouse decides what may come in
+// WHY IT IS NOT PART OF SECURITY. Security decides what may come in
 // and what may go out; it refuses things. This takes away things nobody
 // refused. One role, one program - and a guard that also deletes is a guard
 // somebody will be reluctant to run.
