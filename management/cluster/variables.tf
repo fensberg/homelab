@@ -427,8 +427,9 @@ locals {
   # Fleet-level rather than per-site: one repository drives every cluster, and
   # a workload is deployed by Flux rather than placed on a machine.
   valheim = try(local.config.workloads.valheim, {
-    name     = ""
-    password = ""
+    name        = ""
+    server_name = ""
+    password    = ""
   })
 
   gitops_target_path = "clusters/management"

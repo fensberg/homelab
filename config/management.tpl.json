@@ -25,6 +25,7 @@
   "workloads": {
     "valheim": {
       "name": "{{ op://homelab/valheim/name }}",
+      "server_name": "{{ op://homelab/valheim/server_name }}",
       "password": "{{ op://homelab/valheim/password }}"
     }
   },
