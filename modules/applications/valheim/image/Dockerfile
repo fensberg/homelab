@@ -18,6 +18,11 @@
 # something a game server should be able to do at runtime.
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS fetch
 
+# bash with pipefail, so a failure on the left of a pipe fails the step rather
+# than being hidden by whatever is on the right of it (hadolint DL4006). Once
+# per stage, because a SHELL instruction does not survive a FROM.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # lib32gcc-s1 is not optional: SteamCMD is a 32-bit binary, on a 64-bit base.
 # It fails with a bare "No such file or directory" without it, which reads as a
 # missing download rather than a missing library.
@@ -148,7 +153,7 @@ RUN set -eu; \
 # installation rather than an empty directory SteamCMD called a success.
 RUN set -eu; \
 	manifest="/valheim/steamapps/appmanifest_${VALHEIM_APP_ID}.acf"; \
-	installed="$(sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$manifest" | head -n 1)"; \
+	installed="$(sed -n '/^[[:space:]]*"buildid"/{s/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p;q;}' "$manifest")"; \
 	if [ -z "$installed" ]; then \
 		echo "no build ID in $manifest, so what was installed is unknown" >&2; \
 		exit 1; \
@@ -161,6 +166,11 @@ RUN set -eu; \
 
 # --- run --------------------------------------------------------------------
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+
+# bash with pipefail, so a failure on the left of a pipe fails the step rather
+# than being hidden by whatever is on the right of it (hadolint DL4006). Once
+# per stage, because a SHELL instruction does not survive a FROM.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # ca-certificates for the relay's TLS, libatomic1 because the server links
 # against it, and PulseAudio because PlayFab Party does.
