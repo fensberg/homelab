@@ -175,3 +175,62 @@ tool. Read the pin, or take the version out of versions.env and say why.`,
 			m[1])
 	}
 }
+
+// No workflow restates a version that scripts/versions.env pins.
+//
+// WHAT THIS GUARDS. versions.env has claimed this test existed since it was
+// written - "tests/go/repo/versions_test.go asserts that no consumer restates a
+// key" - and it did not (#165). Four workflows carried their own
+// `go-version: "1.26.7"`, including deploy-infrastructure, the lane that
+// reaches real hardware. They agreed with the pin that day. Nothing kept them
+// agreeing, and the same drift had already happened once here: CI validated on
+// OpenTofu 1.10.6 for as long as the pin said 1.12.6, because a workflow
+// declared its own copy.
+//
+// The rule is shape, not value: every `<tool>-version:` input to a setup action
+// reads the pin through the environment the versions action exports. Checking
+// values instead would miss a restatement that happens to agree today, which is
+// the exact state all four were in.
+func TestNoWorkflowRestatesAPinnedVersion(t *testing.T) {
+	root := repoRoot(t)
+	input := regexp.MustCompile(`(?m)^\s*((?:go|node|python|java|dotnet|tofu|opentofu|terraform|helm|kubectl)[-_]version):\s*(.*?)\s*$`)
+
+	var files []string
+	for _, glob := range []string{".github/workflows/*.yml", ".github/workflows/*.yaml", ".github/actions/*/action.yml"} {
+		m, err := filepath.Glob(filepath.Join(root, glob))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, m...)
+	}
+
+	found := 0
+	for _, f := range files {
+		body, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rel, _ := filepath.Rel(root, f)
+		for _, m := range input.FindAllStringSubmatch(string(body), -1) {
+			found++
+			key, value := m[1], m[2]
+			if len(value) < 3 || value[:3] != "${{" {
+				t.Errorf(`%s restates a pinned version: %s: %s
+
+Read it from scripts/versions.env instead. Add the step
+
+    - name: Read pinned versions
+      uses: ./.github/actions/versions
+
+after the checkout, and write %s: ${{ env.<KEY> }}. A literal agrees with the
+pin only until the pin moves, and nothing says when it stops agreeing.`, rel, key, value, key)
+			}
+		}
+	}
+
+	// A floor rather than zero: finding one input would still mean the pattern
+	// had stopped matching most of them.
+	if found < 5 {
+		t.Fatalf("found only %d version input(s) across %d workflow file(s) - the pattern has stopped matching, so this guard proves nothing", found, len(files))
+	}
+}

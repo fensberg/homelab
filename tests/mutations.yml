@@ -88,6 +88,19 @@
 floor: 32
 
 mutations:
+  - guard: TestNoWorkflowRestatesAPinnedVersion
+    file: .github/workflows/integration-tests.yml
+    find: "go-version: ${{ env.GO_VERSION }}"
+    replace: 'go-version: "1.26.7"'
+    mentions: "restates a pinned version"
+    why: >
+      The literal agrees with scripts/versions.env on the day it is written,
+      which is exactly why it is dangerous: nothing reports the day it stops
+      agreeing. Four workflows carried one, including the lane that reaches
+      real hardware, while the pin file's header claimed this test existed.
+      The same drift had already put CI on a different OpenTofu from the one
+      that converged the estate.
+
   - guard: TestFluxSourcesOnlyNameSecretsThisRepositoryCreates
     file: clusters/management/infrastructure/configs/flux-production.yaml
     find: "  # NO secretRef, and that is deliberate rather than an omission."
