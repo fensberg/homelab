@@ -1069,6 +1069,60 @@ debug logging so the next hang names the linter it stopped in, and a ten-minute
 timeout against a two-minute run. The first attempt blamed the last line printed,
 and being last is not being responsible.
 
+### Sixteen allowlists, and the one file that owns them now
+
+Chasing the hang above meant reading the egress policy, and the reading was the
+finding: **no single place answered "may this job call out, and to what".** Each
+job declared its own `allowed-endpoints` inline, sixteen lists across nine
+workflow files, with nothing aggregating them. Adding an endpoint to one
+workflow was invisible to any review not already reading that file.
+
+The operator's rule, in their own words: "We always only have 1 source of truth.
+We re-use modules where we can. Each of those workflows should point towards that
+one file and that one file says which path supports which workflow. If a workflow
+isn't stated it ISNT ALLOWED ANY. That's failed closed."
+
+`scripts/approved-suppliers.yml` owns it now, under `egress:` - one entry per
+job, named `<workflow file>/<job key>`, carrying the policy and, for a blocking
+job, the exact hosts. The ten `audit` jobs carry their reason there too, instead
+of in a comment above the step that nobody finds while deciding whether a new job
+needs an allowlist.
+
+**The workflows still carry a copy, and the reason is a platform constraint
+rather than a preference.** harden-runner installs its policy in its pre-step,
+which GitHub runs at the start of the job before any step of it - which is also
+why the building code requires it to be the job's first step. So nothing read
+from the repository can reach it at runtime: not a file, not a local action
+(which needs a checkout that has not happened), not an earlier step's output.
+The only alternative is a gate job publishing the lists as outputs, which every
+lane would then wait behind - the same trade this repository already refused for
+`scripts/versions.env`. So the copy stays, mechanical, and a guard makes it
+trustworthy.
+
+`security guard-egress` is that guard, and it is a guard rather than a test
+because it refuses rather than observes: `task validate` and the pre-push hook
+run it before anything is published, and `tests/go/repo` runs the same verb so
+CI answers the question too. Egress is also security's own subject - what leaves
+the site.
+
+It fails five ways, and the third is the one that matters:
+
+- a job that hardens the runner and is not named in the suppliers list
+- a job with no harden-runner step at all
+- a policy that is not the declared one
+- a blocking job whose hosts differ from the declared set, in either direction
+- an entry naming a job that no longer exists
+
+**It walks every job in every workflow rather than the jobs it was told about.**
+That is the general rule the operator stated alongside it - "whenever we build
+something it looses it's protection ... every guard [must] walk the ENTIRE repo
+and if we build something new and we forget to cover it then it FAILS" - and it
+is why an undeclared job is refused rather than skipped. A guard written against
+a list is correct on the day it is written and covers nothing built afterwards,
+while still passing. #384 carries the audit of every other guard against the same
+three questions: does it discover its subjects, does an undeclared one fail, and
+does it prove it examined anything at all.
+
 ### The relay is not the only path, and "nothing on the LAN" was too strong
 
 The crossplay reasoning in this record concluded that the game server needs no
@@ -1342,6 +1396,40 @@ So the lane produced no summary anywhere - not as a pull request comment, by a
 deliberate decision, and not in the job summary either, by omission - while a
 comment in the configuration assured the reader otherwise. Both warnings had
 been printing on every run for as long as the lane has existed.
+
+#### The linter warning was not the cause, and the instrument could not work
+
+Both halves of the section above were wrong, and the second mistake is the more
+useful one.
+
+The six Python linters were switched off, and **the hang came back**. Being last
+is not being responsible: that warning prints while configuration is still being
+read, so "hangs just after it" only ever meant "hangs early".
+
+Debug logging was then added so the next hang would name the linter it stopped
+in. It cannot, and could never have. Super-Linter hands every linter to GNU
+`parallel`, which holds all of their output until the last one finishes - in a
+passing run all ninety jobs print within the same two hundred milliseconds, at
+the end - so a hung run prints nothing past the hand-off, whatever is stuck, and
+the buffer dies with the container. **A buffered log's last line dates the
+silence, not the fault.**
+
+What Harden Runner actually records, read end to end for a hung run and a
+passing one an hour apart: its Armour module killed and blocked nothing, it
+reports no agent errors and no tampering, and the insights page holds no process
+events at all at this tier - so neither source can name the stuck process. The
+only refused call in any run is Checkov's startup call to `api0.prismacloud.io`,
+and it is refused in the passing runs too, 115 times since the policy was
+written. A change to silence that call was drafted and then held: "the one
+anomaly" and "the cause" are not the same claim. The operator's words, which are
+the lesson: "Shouldn't we... look at harden runner and see what it actually says
+before going in blind?"
+
+The instrument that would answer it is a snapshot taken from outside the
+container - `ps -eo pid,etime,args --forest` started in the background before the
+linter step and printed by an `if: always()` step, which works because a
+background process outlives its step and the post-steps still run after a
+timeout. It is not built; #365 carries it.
 
 ### A failed teardown left a backend file that deadlocked the estate
 

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 32
+floor: 33
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -879,19 +879,33 @@ mutations:
       moment a server will not start. The guard therefore asserts the message
       rather than the exit code, because the message is the whole contribution.
 
-# Guards that cannot be proved by mutation, and why.
-#
-# Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
-# tests/go/repo must appear either as a `guard:` above or here. That is what
-# was missing when six guards were added in one session and none of their
-# proofs was committed - the ledger held only what somebody remembered to put
-# in it, which is the failure mode of the rule it replaced.
-#
-# An entry may name a `test:` or a whole `path:`.
-#
-# The number of `owed: true` entries may not exceed this, and it may only go
-# down. That is what makes the debt bounded rather than a shrug: a new guard
-# cannot be added to the owed list without another one leaving it.
+  # Guards that cannot be proved by mutation, and why.
+  #
+  # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
+  # tests/go/repo must appear either as a `guard:` above or here. That is what
+  # was missing when six guards were added in one session and none of their
+  # proofs was committed - the ledger held only what somebody remembered to put
+  # in it, which is the failure mode of the rule it replaced.
+  #
+  # An entry may name a `test:` or a whole `path:`.
+  #
+  # The number of `owed: true` entries may not exceed this, and it may only go
+  # down. That is what makes the debt bounded rather than a shrug: a new guard
+  # cannot be added to the owed list without another one leaving it.
+
+  - guard: TestEveryJobsEgressIsDeclaredInTheSuppliersList
+    file: .github/workflows/sensitive-paths.yml
+    find: "            api.github.com:443"
+    replace: "            api.github.com:443\n            evil.example.com:443"
+    mentions: "which the suppliers list does not declare for it"
+    why: >
+      A job quietly gaining an endpoint is what this whole mapping exists to
+      refuse, and it is the change most likely to look routine in a diff: one
+      more line in a list of hosts, in a file somebody is reading for another
+      reason. scripts/approved-suppliers.yml says which job may reach what, and
+      a workflow that reaches further than its entry has widened this estate's
+      outbound surface with nothing to say so.
+
 owed_ceiling: 55
 
 unprovable:

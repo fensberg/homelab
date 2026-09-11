@@ -294,6 +294,289 @@ endpoints:
     hosts:
       - generativelanguage.googleapis.com:443
 
+# Which job may call out, and to what.
+#
+# THE ONE PLACE THAT ANSWERS IT. The lists above say who this estate may take
+# delivery from at all; this says which job is permitted to reach which of
+# them. It was written down in sixteen separate allowlists across nine
+# workflows, so no single place answered "may this job call out, and where to" -
+# and adding an endpoint to one workflow was invisible to any review not
+# already reading that file.
+#
+# FAIL CLOSED. `security guard-egress` walks every job in every workflow. A job
+# that hardens the runner and is not named here is refused, so a new job starts
+# with no egress rather than with an allowlist nobody examined, and a job whose
+# workflow list differs from the one here - in either direction - is refused
+# too. Deleting an entry does not quietly widen anything; it fails the build.
+#
+# WHY THE WORKFLOW STILL CARRIES THE LIST. harden-runner installs its policy in
+# its pre-step, which GitHub runs before any step of the job, and the building
+# code requires it to be the job's first step. So nothing - no file read, no
+# local action, no earlier step - can hand it a value at runtime, and the only
+# alternative would be a gate job every lane waits behind. The workflow's copy
+# is therefore mechanical, this file owns it, and the guard refuses drift.
+#
+#   policy: block   the job may reach exactly the hosts listed, and nothing else
+#   policy: audit   the job's egress is recorded, not restricted, and the reason
+#                   it cannot be a list is written here rather than in a comment
+#                   somebody has to go and find
+
+egress:
+  - job: clerk.yml/read
+    policy: block
+    hosts:
+      - api.github.com:443
+      - generativelanguage.googleapis.com:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+
+  - job: codeql.yml/analyze
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+      - uploads.github.com:443
+
+  - job: dependency-review.yml/dependency-review
+    policy: block
+    hosts:
+      - api.deps.dev:443
+      - api.github.com:443
+      - api.securityscorecards.dev:443
+      - github.com:443
+
+  - job: deploy-infrastructure.yml/changes
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
+  - job: deploy-infrastructure.yml/plan
+    policy: audit
+    reason: >-
+      The endpoints are not known until this has run against a real
+      estate, and a guessed allowlist on a job that touches real
+      infrastructure is worse than an audited one. Transcribe the
+      observed destinations after the first real run, then flip to
+      block.
+
+  - job: deploy-infrastructure.yml/apply
+    policy: audit
+    reason: >-
+      Applies whatever environments/ and modules/ turn out to need -
+      Proxmox, Cloudflare, Tailscale, object storage, the state
+      Postgres, the OpenTofu registry - and none of those hosts are
+      known yet. A guessed allowlist on the one job with write access to
+      real infrastructure is worse than an audited one.
+
+  - job: deploy-infrastructure.yml/converge
+    policy: audit
+    reason: >-
+      Reaches 1Password, Proxmox, Tailscale, Cloudflare, the Kubernetes
+      API and the OpenTofu registry, and several of those addresses are
+      deliberately not in git. Transcribe the observed endpoints after
+      the first real run, then flip to block.
+
+  - job: deploy-infrastructure.yml/aftermath
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+
+  - job: deploy-infrastructure.yml/plan-estate
+    policy: audit
+    reason: >-
+      Plans a real site, so it reaches the same set the apply and
+      converge jobs do, and that set is not known until a real run. The
+      same resolution as those jobs: transcribe what a run observes,
+      then flip to block.
+
+  - job: deploy-infrastructure.yml/plan-absence
+    policy: block
+    hosts:
+      - api.github.com:443
+
+  - job: expediter.yml/deliver
+    policy: audit
+    reason: >-
+      SteamCMD reaches Valve's content servers, the rotating set of
+      hosts recorded under game-server-delivery above, so an allowlist
+      would break on Valve's schedule rather than this estate's.
+
+  - job: inspector.yml/tally
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+
+  - job: integration-tests.yml/test
+    policy: audit
+    reason: >-
+      Talks to 1Password, Proxmox, Cloudflare, Tailscale, the Kubernetes
+      API and the OpenTofu registry, several of them addresses this
+      repository deliberately keeps out of git. Guessing them risks
+      breaking the run or rubber-stamping a list nobody checked.
+
+  - job: pr-validation.yml/format
+    policy: block
+    hosts:
+      - api.github.com:443
+      - codeload.github.com:443
+      - dl.google.com:443
+      - files.pythonhosted.org:443
+      - github.com:443
+      - go.dev:443
+      - nodejs.org:443
+      - objects.githubusercontent.com:443
+      - proxy.golang.org:443
+      - pypi.org:443
+      - raw.githubusercontent.com:443
+      - registry.npmjs.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
+
+  - job: pr-validation.yml/shellcheck
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+
+  - job: pr-validation.yml/validate
+    policy: block
+    hosts:
+      - api.github.com:443
+      - get.opentofu.org:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - raw.githubusercontent.com:443
+      - registry.opentofu.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+
+  - job: pr-validation.yml/test
+    policy: block
+    hosts:
+      - api.github.com:443
+      - get.opentofu.org:443
+      - github.com:443
+      - go.dev:443
+      - nodejs.org:443
+      - objects.githubusercontent.com:443
+      - proxy.golang.org:443
+      - registry.npmjs.org:443
+      - registry.opentofu.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
+
+  - job: pr-validation.yml/analyze
+    policy: block
+    hosts:
+      - api.github.com:443
+      - files.pythonhosted.org:443
+      - ghcr.io:443
+      - github.com:443
+      - mirror.gcr.io:443
+      - objects.githubusercontent.com:443
+      - pkg-containers.githubusercontent.com:443
+      - proxy.golang.org:443
+      - pypi.org:443
+      - raw.githubusercontent.com:443
+      - registry.npmjs.org:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
+
+  - job: pr-validation.yml/semgrep
+    policy: audit
+    reason: >-
+      semgrep ci reaches its rule registry at a set of hosts this
+      repository has never observed. Guessing them risks either breaking
+      the scan or rubber-stamping an allowlist nobody checked; run audit
+      first, then transcribe what it logged.
+
+  - job: pr-validation.yml/trivy
+    policy: block
+    hosts:
+      - api.github.com:443
+      - ghcr.io:443
+      - github.com:443
+      - mirror.gcr.io:443
+      - objects.githubusercontent.com:443
+      - pkg-containers.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+
+  - job: pr-validation.yml/secrets
+    policy: audit
+    reason: >-
+      TruffleHog verifies a candidate secret by presenting it to the API
+      of whichever vendor issued it, and a leaked key belongs to whoever
+      it belongs to. An allowlist would not fail loudly - it would
+      quietly turn verified findings into unverified ones, which is the
+      opposite of what this lane is for.
+
+  - job: runner-image.yml/build
+    policy: audit
+    reason: >-
+      Builds the runner image, reaching the package archives, language
+      toolchains and action downloads its Dockerfile installs, a set
+      this repository has never transcribed. What bounds it is that the
+      job produces an artifact pinned by digest and pulled from this
+      estate's own registry.
+
+  - job: scorecard.yml/scorecard
+    policy: block
+    hosts:
+      - api.deps.dev:443
+      - api.github.com:443
+      - api.osv.dev:443
+      - api.scorecard.dev:443
+      - api.securityscorecards.dev:443
+      - fulcio.sigstore.dev:443
+      - github.com:443
+      - oss-fuzz-build-logs.storage.googleapis.com:443
+      - rekor.sigstore.dev:443
+      - tuf-repo-cdn.sigstore.dev:443
+      - www.bestpractices.dev:443
+
+  - job: security-patrol.yml/patrol
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+
+  - job: sensitive-paths.yml/tripwire
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+
+  - job: workload-images.yml/build
+    policy: audit
+    reason: >-
+      SteamCMD reaches Valve's content servers, the rotating set
+      recorded under game-server-delivery above. What bounds this is not
+      the network: the job produces an artifact pinned by digest and
+      pulled from this estate's own registry.
+
 # Declared exemptions.
 #
 # A gap that is written down is a decision; a gap the guard quietly skips is a

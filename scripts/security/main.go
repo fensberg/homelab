@@ -52,6 +52,7 @@ func verbs() []verb {
 	return []verb{
 		{"guard-deliveries", "refuse a delivery from an unapproved supplier", guardDeliveries},
 		{"guard-standing-order", "refuse an expediter pull request that changes more than the pin", guardStandingOrder},
+		{"guard-egress", "refuse a job whose outbound reach is not what the suppliers list declares", guardEgress},
 		{"guard-push", "refuse a plain git push that would update a branch", guardPush},
 		{"guard-merge", "refuse a merge commit that signedpush could not publish", guardMerge},
 		{"patrol", "check from outside that the estate is still answering", patrol},

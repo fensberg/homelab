@@ -170,6 +170,20 @@ tasks:
       - go build -C scripts/security -o ../../toolshed/security .
       - ./toolshed/security guard-deliveries
 
+  egress-guard:
+    desc: "Refuse a workflow job whose outbound reach is not what the suppliers list declares"
+    # scripts/approved-suppliers.yml owns which job may call out and to what.
+    # The workflows carry a copy because harden-runner reads its policy in a
+    # pre-step, before any step of the job runs, so nothing in the repository
+    # can hand it a value at runtime. This is what makes the copy trustworthy.
+    #
+    # It walks every job in every workflow rather than a list of them: a job
+    # that is not declared is refused, so a new one starts with no egress
+    # instead of with an allowlist nobody examined.
+    cmds:
+      - go build -C scripts/security -o ../../toolshed/security .
+      - ./toolshed/security guard-egress
+
   clear-branches:
     desc: "List local branches whose work has landed. Add -- -apply to delete them."
     # A dry run by default, and the deletion it eventually does is recoverable:
@@ -323,6 +337,9 @@ tasks:
           go vet -C "$dir" ./...
           go build -C "$dir" -o /dev/null .
         done
+      # Who may call out, and to what. One entry per job in
+      # scripts/approved-suppliers.yml, and a job that is not there is refused.
+      - task: egress-guard
       # Every tier, not just the untagged one. The integration, api and e2e
       # tiers are build-tagged, so a bare `go vet ./...` does not compile them
       # at all - a change to a shared struct can break them and still pass

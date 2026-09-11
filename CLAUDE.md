@@ -474,22 +474,31 @@ depends on it and uses them.
 - **Egress is deny-by-default, and ten jobs are not.** Every job pins
   `harden-runner`; most are `egress-policy: block` with an explicit allowlist,
   so a compromised action or linter cannot exfiltrate quietly. Ten are
-  `audit`, which blocks nothing and only records:
+  `audit`, which blocks nothing and only records.
 
-  | Workflow                    | Job                                        |
-  | --------------------------- | ------------------------------------------ |
-  | `pr-validation.yml`         | `secrets`, `semgrep`                       |
-  | `deploy-infrastructure.yml` | `plan`, `apply`, `converge`, `plan-estate` |
-  | `integration-tests.yml`     | `test`                                     |
-  | `runner-image.yml`          | `build`                                    |
-  | `workload-images.yml`       | `build`                                    |
-  | `expediter.yml`             | `deliver`                                  |
+  **Which job may reach what is declared once**, in `scripts/approved-suppliers.yml`
+  under `egress:`: one entry per job, carrying the policy and - for a blocking
+  job - the exact hosts. It was restated in sixteen allowlists across nine
+  workflows, so no single place answered the question and adding an endpoint to
+  one workflow was invisible to any review not already reading that file. This
+  table used to be a seventeenth copy and is now that file.
 
-  The last two fetch from Valve, whose content servers are a set of hosts it
-  changes, so an allowlist would break on Valve's schedule rather than this
-  estate's. `workload-images.yml` was `audit` without a reason and missing from
-  this table until the expediter was added beside it - the same undocumented
-  drift the paragraph below describes, found by counting.
+  `security guard-egress` walks **every** job in **every** workflow and refuses
+  one the list does not name, so a new job starts with no egress rather than
+  with an allowlist nobody examined. It refuses drift in either direction, and
+  refuses an entry for a job that no longer exists.
+
+  The workflow still carries its allowlist because harden-runner installs its
+  policy in a pre-step, which GitHub runs before any step of the job - so
+  nothing read from the repository can reach it at runtime, short of a gate job
+  every lane waits behind. The copy is mechanical; the suppliers list owns it.
+
+  The two image builds - `workload-images.yml` and `expediter.yml` - fetch from
+  Valve, whose content servers are a set of hosts it changes, so an allowlist
+  would break on Valve's schedule rather than this estate's. `workload-images.yml`
+  was `audit` with no reason recorded anywhere until the expediter was added
+  beside it - the same undocumented drift the paragraph below describes, found
+  by counting.
 
   This paragraph used to claim there was exactly one exception, the TruffleHog
   lane, and named the reason: verification works by calling the API of whichever
@@ -509,9 +518,11 @@ depends on it and uses them.
   allowlist would be long and brittle - but a case nobody wrote down is not a
   decision, it is a gap. See the epoch record.
 
-  **The rule is now: `block`, or `audit` with a comment on the job saying why.**
-  A guard whose exceptions are undocumented cannot be reviewed, and this one had
-  seven.
+  **The rule is now: `block`, or `audit` with the reason written beside that
+  job's entry in the suppliers list.** A guard whose exceptions are undocumented
+  cannot be reviewed, and this one had seven - and a reason kept in a comment
+  above the step is one nobody finds when they are deciding whether a new job
+  needs an allowlist.
 
 - `integration-tests.yml` — the test tiers that need a real estate, on the
   self-hosted runner: nightly, plus manual dispatch. Not reachable from a
