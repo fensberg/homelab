@@ -471,9 +471,9 @@ depends on it and uses them.
 - `scorecard.yml` — repository posture, weekly and on merges to `main`. It
   grades the repository rather than the diff, so a pull request cannot change
   its answer.
-- **Egress is deny-by-default, and eight jobs are not.** Every job pins
+- **Egress is deny-by-default, and ten jobs are not.** Every job pins
   `harden-runner`; most are `egress-policy: block` with an explicit allowlist,
-  so a compromised action or linter cannot exfiltrate quietly. Eight are
+  so a compromised action or linter cannot exfiltrate quietly. Ten are
   `audit`, which blocks nothing and only records:
 
   | Workflow                    | Job                                        |
@@ -482,6 +482,14 @@ depends on it and uses them.
   | `deploy-infrastructure.yml` | `plan`, `apply`, `converge`, `plan-estate` |
   | `integration-tests.yml`     | `test`                                     |
   | `runner-image.yml`          | `build`                                    |
+  | `workload-images.yml`       | `build`                                    |
+  | `expediter.yml`             | `deliver`                                  |
+
+  The last two fetch from Valve, whose content servers are a set of hosts it
+  changes, so an allowlist would break on Valve's schedule rather than this
+  estate's. `workload-images.yml` was `audit` without a reason and missing from
+  this table until the expediter was added beside it - the same undocumented
+  drift the paragraph below describes, found by counting.
 
   This paragraph used to claim there was exactly one exception, the TruffleHog
   lane, and named the reason: verification works by calling the API of whichever

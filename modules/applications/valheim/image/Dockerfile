@@ -67,6 +67,11 @@ RUN curl -fsSL -o steamcmd.tar.gz https://media.steampowered.com/client/steamcmd
 # is the right place for it to fail.
 ARG VALHEIM_APP_ID=896660
 
+# The Steam build this image is meant to contain, when the expediter asks for
+# one. Declared before the download so that a new value is a cache miss there,
+# rather than a build quietly reusing the previous game files.
+ARG VALHEIM_BUILDID=""
+
 # Retried, because SteamCMD fails this way intermittently and the failure is
 # not about this image.
 #
@@ -127,6 +132,32 @@ RUN set -eu; \
 		echo "steamcmd reported success but the server binary is not there" >&2; \
 		exit 1; \
 	fi
+
+# The build Steam actually served, checked against the one that was asked for.
+#
+# The expediter reads the public build ID from Steam, builds this image, and
+# labels it with that ID - which it then records beside the digest in git, and
+# compares against on its next check. That record is only worth anything if
+# the label is true. If Valve publishes again between the check and the
+# download, Steam serves the newer build and the label would describe files
+# that are not in the image. So the build stops instead, and the next check
+# asks again.
+#
+# Without VALHEIM_BUILDID - a build by hand, or the image workflow - this only
+# requires that a build ID exists, which proves the download produced a real
+# installation rather than an empty directory SteamCMD called a success.
+RUN set -eu; \
+	manifest="/valheim/steamapps/appmanifest_${VALHEIM_APP_ID}.acf"; \
+	installed="$(sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$manifest" | head -n 1)"; \
+	if [ -z "$installed" ]; then \
+		echo "no build ID in $manifest, so what was installed is unknown" >&2; \
+		exit 1; \
+	fi; \
+	if [ -n "${VALHEIM_BUILDID}" ] && [ "$installed" != "${VALHEIM_BUILDID}" ]; then \
+		echo "asked for Steam build ${VALHEIM_BUILDID} and was served $installed - Valve published mid-build; the next check will ask again" >&2; \
+		exit 1; \
+	fi; \
+	echo "installed Steam build $installed"
 
 # --- run --------------------------------------------------------------------
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
@@ -206,6 +237,11 @@ RUN set -eu; \
 	fi
 
 RUN mkdir -p /data && chown valheim:valheim /data
+
+# Which Steam build is inside, readable from the registry without pulling the
+# image. Checked against what was installed in the fetch stage above.
+ARG VALHEIM_BUILDID=""
+LABEL org.opencontainers.image.version="${VALHEIM_BUILDID}"
 
 USER 10000
 WORKDIR /valheim

@@ -4,9 +4,10 @@
 // Security is a role rather than a place, and a role can hold more than one
 // responsibility: everything arriving is checked against who is allowed to
 // deliver, everything leaving is checked against how it is allowed to leave,
-// and the estate is patrolled from outside. Four verbs across those three:
+// and the estate is patrolled from outside. Five verbs across those three:
 //
 //	guard-deliveries  what comes in - third-party code installed as a commit hook
+//	guard-standing-order  what the expediter may deliver - the game server's pin, nothing else
 //	guard-push        what goes out - unsigned commits reaching a branch
 //	guard-merge       what cannot go out - a merge commit signedpush cannot replay
 //	patrol            the estate itself, watched from outside
@@ -50,6 +51,7 @@ type verb struct {
 func verbs() []verb {
 	return []verb{
 		{"guard-deliveries", "refuse a delivery from an unapproved supplier", guardDeliveries},
+		{"guard-standing-order", "refuse an expediter pull request that changes more than the pin", guardStandingOrder},
 		{"guard-push", "refuse a plain git push that would update a branch", guardPush},
 		{"guard-merge", "refuse a merge commit that signedpush could not publish", guardMerge},
 		{"patrol", "check from outside that the estate is still answering", patrol},
