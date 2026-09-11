@@ -30,7 +30,21 @@ metadata:
   name: flux-production
   namespace: flux-system
 spec:
-  interval: 10m
+  # A minute, matching flux-system rather than the ten it used to be.
+  #
+  # The two sources had it backwards. flux-system tracks a branch that moves
+  # several times a day and polls every 60 seconds; this one tracks tags that
+  # move only when somebody deliberately releases - and is therefore the one an
+  # operator is standing over, having just pushed a tag, waiting to see it land.
+  #
+  # Ten minutes of nothing is indistinguishable from a release that did not
+  # work. It was read that way three times in one evening: each time the tag was
+  # correct, the manifests were correct, and the source simply had not re-polled
+  # yet, so the fix looked like a failure and got "fixed" again on top.
+  #
+  # The cost is a git ls-remote a minute against a repository this estate
+  # already polls a minute for the branch, which is nothing.
+  interval: 1m
   ref:
     semver: ">=0.0.0"
   # NO secretRef, and that is deliberate rather than an omission.
