@@ -1077,10 +1077,10 @@ job declared its own `allowed-endpoints` inline, sixteen lists across nine
 workflow files, with nothing aggregating them. Adding an endpoint to one
 workflow was invisible to any review not already reading that file.
 
-The operator's rule, in their own words: "We always only have 1 source of truth.
-We re-use modules where we can. Each of those workflows should point towards that
-one file and that one file says which path supports which workflow. If a workflow
-isn't stated it ISNT ALLOWED ANY. That's failed closed."
+The operator's rule: one source of truth, shared modules wherever there can be
+one, and every workflow pointing at the single file that says which path
+supports which workflow - with a workflow that file does not name allowed
+nothing at all. In their words, "That's failed closed."
 
 `scripts/approved-suppliers.yml` owns it now, under `egress:` - one entry per
 job, named `<workflow file>/<job key>`, carrying the policy and, for a blocking
