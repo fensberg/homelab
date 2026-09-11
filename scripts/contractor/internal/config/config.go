@@ -98,13 +98,22 @@ type SourceControl struct {
 // second site ever runs its own copy, this is where that becomes a decision
 // rather than an assumption.
 type Workload struct {
-	// What players see. Not a secret in any real sense - it is broadcast to
-	// anyone who joins - but it lives here so a fork picks its own without
-	// editing a manifest, for the same reason site names do.
-	ServerName string `json:"server_name"`
-	// Which save file loads. Changing it starts a new world rather than
-	// renaming one.
-	WorldName string `json:"world_name"`
+	// One value, used as both the name players see in the server list and the
+	// name of the save file on disk.
+	//
+	// They were two fields and are now one, because two names for one thing is
+	// a way to end up with two different things. The server list said one
+	// name while the world on disk was called another, which reads as a
+	// misconfiguration every time somebody looks at it.
+	//
+	// Not a secret in any real sense - it is broadcast to anyone who joins -
+	// but it lives in the vault so a fork picks its own without editing a
+	// manifest, for the same reason site names do.
+	//
+	// CHANGING IT STARTS A NEW WORLD. The save file is looked up by this name,
+	// so a different value is not a rename: the old world stays on the volume,
+	// untouched and unloaded, and an empty one is generated beside it.
+	Name string `json:"name"`
 	// Genuinely secret.
 	Password string `json:"password"`
 }

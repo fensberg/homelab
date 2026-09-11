@@ -949,6 +949,56 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### One name, because two names for one thing become two things
+
+The first world came up advertising itself as "combat berries delphine" while
+the save file on disk was called something else entirely. Nothing was broken -
+both values were exactly what the vault held - and it looked wrong to everybody
+who saw it, which is its own kind of broken.
+
+The cause was the shape rather than the values. `server_name` and `world_name`
+were two vault items, so keeping them equal was a thing somebody had to
+remember, and the default state of two fields nobody deliberately aligned is
+misaligned. Valheim generates a name when one is not supplied, so the drift had
+a source of its own.
+
+They are now one item, `op://homelab/valheim/name`, used for both.
+
+**The Secret still carries two keys.** The server takes the listing name and the
+save-file name as separate arguments, and the image has no business knowing that
+this estate happens to supply one value for both. Splitting them again later is a
+config change that touches nothing here and nothing in the image. What collapsed
+is the source, not the interface - which is the distinction worth keeping, because
+collapsing the interface would have been the easier and worse change.
+
+#### The hazard in this change is the world, and it is worth stating
+
+The save file is looked up **by name**. A different value is not a rename: the
+old world stays on the volume, untouched and unloaded, and an empty one is
+generated beside it. So the vault item has to hold the existing world's name
+exactly, and getting it wrong presents as "the server came up fine and everyone
+has lost everything".
+
+The comment on `Workload.Name` says so where somebody editing the field will
+read it, rather than here where they will not.
+
+#### This Secret is written by OpenTofu, so a tag is not enough
+
+Worth writing down because it breaks the mental model the rest of the epoch
+builds. Every other workload change is a merge and a tag, and Flux does the
+rest. This one is not: `kubernetes_secret.valheim_server` is created by the
+ignition tier, because a workload cannot be handed a password by a manifest in a
+public repository.
+
+So changing a name is `contractor converge`, not a reconcile. And a changed
+Secret does not restart anything on its own - the pod reads its environment once
+at start - so the rollout has to be asked for. Two steps that no other workload
+change in this epoch needs, and both of them silent when skipped: the converge
+looks successful and the pod keeps serving the old name.
+
+That asymmetry is a cost of having no workload secret store, and it disappears
+with OpenBao (#345).
+
 ### What the build guard bought, on its first run
 
 The image that carries the PulseAudio libraries built green, and the `ldd` step
