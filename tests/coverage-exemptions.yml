@@ -191,7 +191,7 @@ files:
     uncovered: 1
     covered_by: nothing
   - path: collector/clear-branches.go
-    uncovered: 8
+    uncovered: 6
     covered_by: nothing
   - path: collector/main.go
     uncovered: 3

@@ -179,9 +179,13 @@ tasks:
     #   task clear-branches            say what would go
     #   task clear-branches -- -apply  take them away
     #
-    # Deliberately not run by anything automatically. Refuse collection is
-    # idempotent and safe to miss, so a schedule buys nothing a person running
-    # it when the branch picker gets annoying does not.
+    # It also runs by itself after every pull, from githooks/post-merge, in a
+    # quieter mode that only takes local branches. It used to be run by hand
+    # only, on the theory that a person would run it when the branch picker got
+    # annoying; the picker got annoying and nobody did. Branches on GitHub are
+    # only ever taken with an explicit -remote:
+    #
+    #   task clear-branches -- -apply -remote
     cmds:
       - go build -C scripts/collector -o ../../toolshed/collector .
       - ./toolshed/collector clear-branches {{.CLI_ARGS}}

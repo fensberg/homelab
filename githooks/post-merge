@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Take away finished branches after a pull.
+#
+# The collector used to be run by hand only, on the reasoning that a person
+# would run it when the branch picker got annoying. The branch picker got
+# annoying and nobody ran it: on 2026-09-11 an operator's checkout still held
+# branches from pull requests merged two weeks earlier, every one of which the
+# collector would have recognised. A pull is the moment finished branches
+# appear, so that is when this runs.
+#
+# It must never cost the pull anything. git ignores this hook's exit status -
+# the merge has already happened by the time it runs - and the collector's
+# hook mode touches only local branches, prints only what it took, and gives up
+# after thirty seconds rather than hold a terminal open. What it takes is
+# recoverable for ninety days from the sha it prints.
+#
+# The one thing it does say out loud is that it could not run. A collector that
+# is silently absent is how the picker filled up in the first place.
+set -uo pipefail
+
+root="$(git rev-parse --show-toplevel)" || exit 0
+cd "$root" || exit 0
+
+if ! go build -C scripts/collector -o ../../toolshed/collector . 2>/dev/null; then
+	echo "collector: could not build scripts/collector, so finished branches were not taken away" >&2
+	exit 0
+fi
+./toolshed/collector clear-branches -hook || true

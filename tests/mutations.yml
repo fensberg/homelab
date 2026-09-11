@@ -88,6 +88,18 @@
 floor: 32
 
 mutations:
+  - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
+    file: githooks/post-merge
+    find: '	echo "collector: could not build scripts/collector, so finished branches were not taken away" >&2'
+    replace: "	: # nothing said"
+    mentions: "said nothing about it"
+    why: >
+      A post-merge hook that cannot build the collector and exits quietly is
+      indistinguishable from one with nothing to collect. That silent absence
+      is precisely how finished branches piled up in an operator's checkout
+      for two weeks before this hook existed, with a collector that would have
+      recognised every one of them.
+
   - guard: TestNoWorkflowRestatesAPinnedVersion
     file: .github/workflows/integration-tests.yml
     find: "go-version: ${{ env.GO_VERSION }}"
