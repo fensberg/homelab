@@ -14,8 +14,15 @@ replaces. So the patch lives here as a file, and applying it is one command
 run from the repository root:
 
 ```sh
-git apply .github/patches/<name>.patch && git rm .github/patches/<name>.patch
+git apply --index .github/patches/<name>.patch && git rm .github/patches/<name>.patch
 ```
+
+`--index` because a patch can add or rename a file, and plain `git apply`
+writes a new file into the working tree without staging it. The commit that
+follows then carries the edits and silently omits the new workflow - a
+half-applied patch that looks whole. With `--index` everything the patch
+touches is staged, renames included, and it also refuses to apply over
+uncommitted edits to those files rather than mixing them in.
 
 One command, and it finishes the job. Applying and then remembering to delete
 is two steps where one will do, and the second is exactly the kind a computer
