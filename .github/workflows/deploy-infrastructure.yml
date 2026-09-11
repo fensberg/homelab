@@ -113,11 +113,32 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # A tag is always a workload-tier production release. management/ is
-          # never released by tag - the estate has one version, the running one.
+          # THE WORKLOAD TIER HAS WORK ONLY WHEN ITS DIRECTORY EXISTS (#370).
+          #
+          # The apply job cds into environments/<env>/infrastructure/. No such
+          # directory has ever existed - this workflow's own header says both
+          # halves have never run - yet every tag used to be declared "a
+          # workload-tier production release", unconditionally. GitHub does not
+          # evaluate path filters on tag pushes, so each v* tag started an
+          # apply job that waited for production approval and would then have
+          # failed on the missing directory. Those waiting runs are what kept
+          # the security patrol red.
+          #
+          # So the target directory is part of the question. management/ is
+          # never released by tag - the estate has one version, the running
+          # one.
           if [ "${EVENT}" = "push" ] && [ "${REF_TYPE}" = "tag" ]; then
+            target="environments/production/infrastructure"
+          else
+            target="environments/staging/infrastructure"
+          fi
+
+          if [ "${EVENT}" = "push" ] && [ "${REF_TYPE}" = "tag" ]; then
+            work=false
+            [ -d "${target}" ] && work=true
+            [ "${work}" = "false" ] && echo "::notice::${target}/ does not exist at this tag, so there is no workload infrastructure to apply"
             echo "management=false" >> "$GITHUB_OUTPUT"
-            echo "workload=true" >> "$GITHUB_OUTPUT"
+            echo "workload=${work}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -130,7 +151,17 @@ jobs:
           echo "changed files:"; echo "${files}"
           mgmt=false; work=false
           grep -qE '^(management/|config/management\.tpl\.json$)' <<<"${files}" && mgmt=true
-          grep -qE '^(environments/|modules/)' <<<"${files}" && work=true
+          # The same paths the trigger filters on, not a broader guess at them.
+          # This used to match any file under environments/ or modules/, so a
+          # change to an application module - the game server's Deployment -
+          # counted as infrastructure work, and the job then cd'd into a
+          # directory that is not there. Two gates answering one question
+          # differently, and the looser one ran.
+          grep -qE '^(environments/[^/]+/infrastructure/|modules/infrastructure/)' <<<"${files}" && work=true
+          if [ "${work}" = "true" ] && [ ! -d "${target}" ]; then
+            echo "::notice::infrastructure paths changed, but ${target}/ does not exist, so there is nothing to apply"
+            work=false
+          fi
           echo "management=${mgmt}" >> "$GITHUB_OUTPUT"
           echo "workload=${work}" >> "$GITHUB_OUTPUT"
 
@@ -371,10 +402,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.7"
+          go-version: ${{ env.GO_VERSION }}
           # No cache. scripts/contractor has zero external dependencies, so the
           # cache saves nothing - and on a self-hosted runner it persists
           # between jobs, which is a poisoning surface for no benefit.
@@ -710,10 +744,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.7"
+          go-version: ${{ env.GO_VERSION }}
           cache: false
 
       - name: Plan

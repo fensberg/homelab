@@ -49,6 +49,10 @@ jobs:
       matrix:
         workload: [valheim]
     steps:
+      # Audit, not block: SteamCMD reaches Valve's content servers, a set of
+      # hosts Valve changes (approved-suppliers.yml records it), so an
+      # allowlist would break on Valve's schedule. The expediter's build job
+      # carries the same setting for the same reason.
       - name: Harden Runner
         with:
           # audit, and the reason is in scripts/approved-suppliers.yml under
