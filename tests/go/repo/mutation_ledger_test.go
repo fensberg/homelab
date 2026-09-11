@@ -130,6 +130,18 @@ func scratchRepo(t *testing.T) string {
 			t.Fatalf("writing %s: %v", rel, err)
 		}
 	}
+
+	// Then every outstanding patch is applied and removed, as the operator
+	// would. The guards judge a protected file as it is going to be
+	// (patches_test.go), so the copy they are proved against has to be that
+	// tree too.
+	//
+	// Without this a mutation and a patch touching the same line collide: the
+	// mutation lands first, the patch's context no longer matches, and the
+	// guard fails because the hand-over "does not apply" - red for a reason
+	// unrelated to the entry, which the ledger rightly refuses as proof.
+	// Renaming a program a workflow invokes is enough to cause it.
+	applyOutstandingPatches(t, dir)
 	return dir
 }
 
@@ -355,18 +367,15 @@ func TestNoTestIsSatisfiedByAComment(t *testing.T) {
 	}
 
 	bin := testBinary(t)
+	// scratchRepo materialises the tree as it will be and removes the
+	// patches, which matters twice over here: an outstanding patch's context
+	// lines include comments, so it would not apply to a comment-stripped file
+	// and every workflow guard would fail for that reason instead of the one
+	// being tested.
 	before := scratchRepo(t)
-
-	// Materialise the workflows as they will be, then remove the patches: an
-	// outstanding patch's context lines include comments, so it would not
-	// apply to a comment-stripped file and every workflow guard would fail for
-	// that reason instead of the one being tested.
-	applyOutstandingPatches(t, before)
-
 	baseline := runAll(t, bin, before)
 
 	after := scratchRepo(t)
-	applyOutstandingPatches(t, after)
 	stripped := stripComments(t, after)
 	if stripped == 0 {
 		t.Fatal("no comment was stripped from anything, so this test compared a tree " +

@@ -87,7 +87,13 @@ func intendedWorkflow(t *testing.T, name string) string {
 		if !patchTouches(t, p, rel) {
 			continue
 		}
-		cmd := exec.Command("git", "apply", p)
+		// Only the workflow hunks, because the scratch tree holds only
+		// workflows. A patch may also carry another protected file - the
+		// sensitive-paths list, when a program it protects is renamed - and
+		// without this `git apply` fails on that file's absence and the helper
+		// reports every workflow the patch touches as stale. The same shape as
+		// the multi-workflow failure above, one directory further out.
+		cmd := exec.Command("git", "apply", "--include=.github/workflows/*", p)
 		cmd.Dir = dir
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("%s is outstanding and does not apply to %s: %v\n%s\n\n"+
@@ -98,6 +104,100 @@ func intendedWorkflow(t *testing.T, name string) string {
 		}
 	}
 
+	out, err := os.ReadFile(filepath.Join(dir, rel))
+	if err != nil {
+		t.Fatalf("reading the patched %s: %v", rel, err)
+	}
+	return string(out)
+}
+
+// intendedWorkflows returns every workflow as it is going to be: the files in
+// .github/workflows with every outstanding patch applied, including workflows
+// a patch adds and none that a patch renames away.
+//
+// intendedWorkflow answers for one existing file. A property of the whole set
+// needs this instead, because a workflow that only exists inside a patch is
+// exactly where a new violation would sit unseen.
+func intendedWorkflows(t *testing.T) map[string]string {
+	t.Helper()
+	root := repoRoot(t)
+	dir := t.TempDir()
+	wf := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wf, 0o755); err != nil {
+		t.Fatalf("preparing a scratch tree: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, ".github", "workflows"))
+	if err != nil {
+		t.Fatalf("listing the workflows: %v", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		src, err := os.ReadFile(filepath.Join(root, ".github", "workflows", e.Name()))
+		if err != nil {
+			t.Fatalf("reading %s: %v", e.Name(), err)
+		}
+		if err := os.WriteFile(filepath.Join(wf, e.Name()), src, 0o644); err != nil {
+			t.Fatalf("preparing a scratch tree: %v", err)
+		}
+	}
+	for _, p := range outstandingPatches(t) {
+		cmd := exec.Command("git", "apply", "--include=.github/workflows/*", p)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s is outstanding and does not apply to the workflows: %v\n%s", filepath.Base(p), err, out)
+		}
+	}
+	out := map[string]string{}
+	patched, err := os.ReadDir(wf)
+	if err != nil {
+		t.Fatalf("listing the patched workflows: %v", err)
+	}
+	for _, e := range patched {
+		if e.IsDir() {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(wf, e.Name()))
+		if err != nil {
+			t.Fatalf("reading the patched %s: %v", e.Name(), err)
+		}
+		out[e.Name()] = string(body)
+	}
+	return out
+}
+
+// intendedFile returns one protected file that is not a workflow as it will be
+// once every outstanding patch touching it is applied - the sensitive-paths
+// list being the case that needed it.
+//
+// Only that file's hunks are applied (--include), so the scratch tree needs
+// nothing else in it.
+func intendedFile(t *testing.T, rel string) string {
+	t.Helper()
+	root := repoRoot(t)
+	body, err := os.ReadFile(filepath.Join(root, rel))
+	if err != nil {
+		t.Fatalf("reading %s: %v", rel, err)
+	}
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(rel)), 0o755); err != nil {
+		t.Fatalf("preparing a scratch tree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, rel), body, 0o644); err != nil {
+		t.Fatalf("preparing a scratch tree: %v", err)
+	}
+	for _, p := range outstandingPatches(t) {
+		if !patchTouches(t, p, rel) {
+			continue
+		}
+		cmd := exec.Command("git", "apply", "--include="+rel, p)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s is outstanding and does not apply to %s: %v\n%s",
+				filepath.Base(p), rel, err, out)
+		}
+	}
 	out, err := os.ReadFile(filepath.Join(dir, rel))
 	if err != nil {
 		t.Fatalf("reading the patched %s: %v", rel, err)

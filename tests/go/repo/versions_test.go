@@ -195,23 +195,30 @@ func TestNoWorkflowRestatesAPinnedVersion(t *testing.T) {
 	root := repoRoot(t)
 	input := regexp.MustCompile(`(?m)^\s*((?:go|node|python|java|dotnet|tofu|opentofu|terraform|helm|kubectl)[-_]version):\s*(.*?)\s*$`)
 
-	var files []string
-	for _, glob := range []string{".github/workflows/*.yml", ".github/workflows/*.yaml", ".github/actions/*/action.yml"} {
-		m, err := filepath.Glob(filepath.Join(root, glob))
-		if err != nil {
-			t.Fatal(err)
-		}
-		files = append(files, m...)
+	// Workflows as they are going to be, outstanding patches applied - so a
+	// fix still in .github/patches counts, and so does a violation inside a
+	// workflow that only exists in one. Composite actions are not behind the
+	// boundary and are read as they are.
+	sources := map[string]string{}
+	for name, body := range intendedWorkflows(t) {
+		sources[filepath.Join(".github", "workflows", name)] = body
 	}
-
-	found := 0
-	for _, f := range files {
+	actions, err := filepath.Glob(filepath.Join(root, ".github", "actions", "*", "action.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range actions {
 		body, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
 		rel, _ := filepath.Rel(root, f)
-		for _, m := range input.FindAllStringSubmatch(string(body), -1) {
+		sources[rel] = string(body)
+	}
+
+	found := 0
+	for rel, body := range sources {
+		for _, m := range input.FindAllStringSubmatch(body, -1) {
 			found++
 			key, value := m[1], m[2]
 			if len(value) < 3 || value[:3] != "${{" {
@@ -231,6 +238,6 @@ pin only until the pin moves, and nothing says when it stops agreeing.`, rel, ke
 	// A floor rather than zero: finding one input would still mean the pattern
 	// had stopped matching most of them.
 	if found < 5 {
-		t.Fatalf("found only %d version input(s) across %d workflow file(s) - the pattern has stopped matching, so this guard proves nothing", found, len(files))
+		t.Fatalf("found only %d version input(s) across %d file(s) - the pattern has stopped matching, so this guard proves nothing", found, len(sources))
 	}
 }
