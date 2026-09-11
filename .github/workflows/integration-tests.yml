@@ -85,6 +85,10 @@ jobs:
           # checked - the same reasoning, and the same resolution, as
           # deploy-infrastructure.yml. Transcribe the observed destinations
           # after the first real run, then flip to block.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: audit
 
       - name: Checkout Code

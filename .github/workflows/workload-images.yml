@@ -65,6 +65,10 @@ jobs:
           # that is pinned by digest and pulled from this estate's own registry,
           # so what reaches the cluster is a specific set of bytes somebody can
           # point at, whatever the build did to obtain them.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: audit
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
 
