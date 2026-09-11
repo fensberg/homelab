@@ -949,6 +949,25 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### What the build guard bought, on its first run
+
+The image that carries the PulseAudio libraries built green, and the `ldd` step
+added with them passed silently in the middle of it - stage 5 of 8, no output,
+no delay.
+
+That is worth one paragraph precisely because there is nothing to see. The guard
+exists so that the _next_ time a native dependency goes missing - a Valheim
+update relinking against something new, a base image dropping a package, a
+Debian rename - the build stops and names the library, rather than publishing an
+image that starts, generates a world, logs in to PlayFab and serves a game
+nobody can join.
+
+The failure it replaces produced every signal of health. The pod was Running and
+Ready. The health gate passed. Flux reported reconciled. Nothing anywhere was
+red, and the only symptom was a blank field in a log line and a thirty-second
+loop. **A check that fires at build time converts that into a red build with the
+answer in it.**
+
 ### Two unrelated flakes, and a wrong diagnosis worth recording
 
 #### SteamCMD fails its first app_update often enough to need retries

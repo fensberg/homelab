@@ -61,7 +61,7 @@ spec:
           # arguments - but it is a failure. The build workflow prints the new
           # digest into its job summary for this line.
           # renovate: datasource=docker depName=ghcr.io/fensberg/homelab-valheim
-          image: ghcr.io/fensberg/homelab-valheim@sha256:8508de483caa2db5cc1efc7ac0be5047bc12da591043c0277deb3ee18ff4720b
+          image: ghcr.io/fensberg/homelab-valheim@sha256:b45c00df5e14adc8db4e1f1500331a90e03c83e0e1d5ce992fc4e40f75906a99
 
           securityContext:
             allowPrivilegeEscalation: false
