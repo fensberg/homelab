@@ -10,11 +10,13 @@
 // last entry. None of them warn, so no formatter, linter or schema validator
 // in this pipeline has anything to say about it.
 //
-// That is not hypothetical. A merge produced a duplicated
-// VALIDATE_TERRAGRUNT in .github/super-linter.vars and every one of the
-// eleven pre-commit hooks passed the file; it was found by diffing two
-// resolutions of the same merge against each other. This package is what
-// stops the next one needing that kind of luck.
+// That is not hypothetical. A merge produced a duplicated VALIDATE_TERRAGRUNT
+// in the aggregate linter's variables file - since deleted with the aggregate
+// itself (#365) - and every one of the pre-commit hooks passed the file; it was
+// found by diffing two resolutions of the same merge against each other. This
+// package is what stops the next one needing that kind of luck, and the class
+// it guards is not specific to that file: the formats named above are the ones
+// this repository still configures itself in.
 package repo
 
 import (
