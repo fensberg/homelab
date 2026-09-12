@@ -15,18 +15,27 @@
 //
 //	clear-branches  local branches whose work has already landed
 //
-// WHY IT IS NOT PART OF THE GATEHOUSE. The gatehouse decides what may come in
+// WHY IT IS NOT PART OF SECURITY. Security decides what may come in
 // and what may go out; it refuses things. This takes away things nobody
 // refused. One role, one program - and a guard that also deletes is a guard
 // somebody will be reluctant to run.
 //
-// WHAT IT DELIBERATELY DOES NOT COLLECT, established by looking rather than by
-// guessing (2026-09-07): remote branches (GitHub deletes the head branch on
-// merge - one branch exists, and it is main), scratch signing refs (signedpush
-// removes its own, and none had leaked), workflow artifacts and run logs
-// (GitHub expires both). Published container image versions are the one thing
-// that will need collecting next: nine exist, one per runner-image build, and
-// nothing removes any of them.
+// WHAT IT DOES NOT COLLECT, established by looking rather than by guessing
+// (2026-09-07): scratch signing refs (signedpush removes its own, and none had
+// leaked), workflow artifacts and run logs (GitHub expires both). Published
+// container image versions are the one thing that will need collecting next:
+// one exists per image build, and nothing removes any of them.
+//
+// Remote branches were on that list, on the grounds that GitHub deletes a head
+// branch on merge and only main existed. Both halves stopped being true: GitHub
+// deletes on MERGE only, so a pull request closed without merging keeps its
+// branch forever, and a workflow can push a branch and never open a pull
+// request for it. By 2026-09-11 there were two of each kind - so clear-branches
+// now takes finished remote branches too, but only when asked with -remote,
+// because a remote branch is shared in a way a local one is not.
+//
+// It runs by itself after every pull (githooks/post-merge), which is the other
+// thing the first version got wrong: see clear-branches.go.
 package main
 
 import (

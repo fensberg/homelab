@@ -949,6 +949,231 @@ rest of the estate, rather than the count of modules going up.
 
 ## Gotchas
 
+### The expediter, and what building it turned up
+
+Valheim 1.0 shipped on 2026-09-09 and patched twice in the next two days.
+Clients update themselves through Steam and refuse a server on an older build,
+so each patch stranded every player until the server image was rebuilt - and a
+rebuild meant a person dispatching a build, copying a digest out of a log,
+editing a manifest, opening, merging and tagging. Six steps, none of them a
+decision. The log also prints the local image id right beside the manifest
+digest, so the transcription had a wrong answer sitting next to the right one.
+
+**The expediter** does all six. It asks Steam for the public build of app
+896660, compares it with the build recorded beside the pinned digest, and when
+they differ builds the image for exactly that build, opens a pull request
+changing those two lines, merges it once every required check passes, and tags
+the next release. The name is the construction role that chases orders with
+suppliers and gets material to site; Valve was already an approved supplier, and
+the estate already spoke of taking delivery.
+
+#### A standing order, bounded by a check it cannot skip
+
+`main` requires a pull request with a code owner's approval and has no bypass
+actors, and a pull request opened with `GITHUB_TOKEN` never triggers the checks
+that would let it merge. So the expediter needs its own GitHub App, and for a
+patch to reach players without waiting on a person, that App has to be allowed
+past the review.
+
+It is allowed past the review and **nothing else**. It is a bypass actor on the
+ruleset that requires review, and not on the ruleset that requires checks. One
+of those checks is `security guard-standing-order`, which refuses any pull
+request by the expediter that changes anything but the digest and the recorded
+build, or that moves the digest to a different image repository - the change
+that reads exactly like a routine update in a diff. Construction has the word:
+a standing order is approval given once for one specified recurring item, not
+for whatever the holder feels like buying.
+
+Two properties hold it together. Without the bypass, the merge is refused and
+the pull request waits for a review, so the same machinery degrades to a person
+at the end. Without the `EXPEDITER_LOGIN` variable, the workflow does not attempt
+the merge at all, so the bypass is never used while the check bounding it has no
+holder to judge.
+
+Why not an existing role: the foreman's key lives inside the cluster, so giving
+it the bypass would let a cluster compromise merge to `main` without review; the
+clerk's whole design is that it has no lever; and the inspector signs off on
+work rather than bringing material.
+
+#### The image says which build it holds, and refuses to lie about it
+
+The Dockerfile takes the Steam build as a build argument and refuses to build
+if Steam serves a different one - which happens if Valve publishes between the
+check and the download. Without that, the label and the record in git would
+describe files that are not in the image, and the next comparison would be
+against a fiction.
+
+#### Security is security again
+
+The program that guards deliveries, pushes and merges and patrols the estate
+was `security` first, became `gatehouse` while its only job was the gate, and is
+`security` again now that the name had stopped fitting: a gatehouse is a
+building, and a building does not patrol. The epoch 01 record keeps the old
+name, because that rename is history.
+
+#### The patrol was right that something was wrong, and wrong about what
+
+It had failed every scheduled run for two days, saying "5 run(s) queued longer
+than 30m, oldest 53h56m - work is not being picked up". The runner was healthy.
+All five were `waiting`: deploy runs gated on environments nobody approved, and
+a nightly gated the same way (#204). The patrol exists for work nothing will
+start, not for approvals GitHub already notifies someone about, so `waiting` no
+longer counts. **The right alarm for the wrong reason is worse than none,
+because it teaches the reader to stop reading.**
+
+Fixing that exposed a second defect it would otherwise have created. The
+nightly check asked about every scheduled run in the repository, and the patrol
+is itself a scheduled workflow. It was correct only because the patrol was
+failing too; once green, its own successes would have satisfied the check that
+exists to notice the nightly stopped. It asks about the drift check's workflow
+alone now. And an unreachable API had produced "the estate is answering for
+itself" over a patrol that had asked nothing, because a check that could not
+look returned "skip" and skips did not count. Not knowing counts against health
+now.
+
+The cadence claim went with it (#221). The schedule is hourly on paper and four
+to five hours apart in practice, which GitHub documents and nothing here can
+change; the workflow now says five, because a switch believed to have one-hour
+windows gets thresholds tuned to a check that is not happening.
+
+#### Where the waiting runs came from
+
+Every `v*` tag started a deploy that waited for production approval and would
+then have failed, because the classifier declared every tag "a workload-tier
+production release" without asking whether the directory it applies exists
+(#370). GitHub does not evaluate path filters on tag pushes, so nothing else
+stopped it. The classifier now asks both questions - did infrastructure paths
+change, and does the directory the job would enter exist - and was run against
+five scenarios before it shipped.
+
+The same workflow's converge-failure path pushed a revert branch and never
+opened the pull request for it, which left a branch nothing explained. That is issue 380, filed rather than fixed here because the fix needs its own token decision.
+
+#### The refuse collector worked; nothing ran it
+
+Every branch in the operator's picker belonged to a merged pull request, and
+the collector recognised each one. It had been left for a person to run "when
+the branch picker gets annoying", and the picker got annoying and nobody did.
+It runs after every pull now. It was also about to stop seeing old pull requests
+at a hard cap of five hundred, would have collected a branch reused for an open
+follow-up, and claimed remote branches needed no collecting when GitHub only
+deletes them on merge.
+
+#### Two restatements, one instrument
+
+Four workflows restated the Go version, and the pin file had claimed for its
+whole life that a test prevented exactly that; the test exists now, and checks
+shape rather than value, so a restatement that happens to agree today still
+fails (#165). And Super-Linter's hang (#365) is instrumented rather than fixed:
+debug logging so the next hang names the linter it stopped in, and a ten-minute
+timeout against a two-minute run. The first attempt blamed the last line printed,
+and being last is not being responsible.
+
+#### Too eager, and too blunt
+
+The first version ran every fifteen minutes and released whenever it finished.
+The operator read it and objected to both halves, correctly.
+
+**Ninety-six runs a day.** Each one installed a 32-bit library, downloaded
+SteamCMD, let it self-update and logged in anonymously to Valve, to ask one
+question that changes a few times a year. It cost no money - the repository is
+public and the job runs on GitHub's machines rather than the estate's - but it
+was two or three hours of compute daily, ninety-six anonymous logins, and
+ninety-six entries of noise in the Actions list. The immediacy it bought was
+fictional anyway: #221 records the scheduler dropping runs for four and five
+hours at a time.
+
+**So the work is split by what it costs.** `expediter check` is one HTTPS call
+to Steam's news API. `deliver` is the expensive half and runs only when check
+says to look. The catch is that **Steam publishes no cheap first-party way to
+ask a dedicated server's build id**: `ISteamApps/UpToDateCheck` refuses appid
+896660, and refuses CS2's 740 the same way, and the server appid's news feed
+carries press articles - one of them a 2021 piece about a boat mod. What does
+work is the CLIENT appid's announcement feed, where Valve posts the hotfixes
+that strand players. That makes check a doorbell rather than a receipt, so
+SteamCMD stays the authority in `deliver`, and a daily authoritative pass runs
+whatever the doorbell said - a missed post must never be the only reason this
+estate believes it is current.
+
+**And a release at any hour is a restart at any hour.** Production reconciles
+from the tag, the deployment is `Recreate`, and everybody connected is dropped.
+The operator's question was the right one: it is five o'clock and we are
+playing, so is everyone kicked off? Two facts make it cleanly answerable.
+Merging changes nothing live - staging does not run this workload and
+production follows tags - so only the tag disturbs anyone. And the moment that
+tag lands is a choice. It now lands at 4am America/Chicago: the pull request
+opens as soon as the delivery exists, sits where it can be seen, and merges
+itself in the window. Merging it earlier by hand pulls it forward, and a
+dispatch forces the whole chain. There is deliberately no approval button - the
+expediter exists so that nobody has to press one.
+
+**GitHub's scheduler speaks only UTC**, so 4am local is 09:00 UTC in summer and
+10:00 UTC in winter. Both are asked and `expediter release-due` decides which
+one is really 4am today, with the zone database compiled into the binary so a
+runner image without tzdata cannot silently turn the gate into UTC.
+
+Worth recording because it is the shape this repository keeps rewarding: the
+first version of that program's test asserted that on the morning the clocks go
+back, both candidate hours are 4am. They are not - the change happens at 2am
+local, so 09:00 UTC is already 3am CST. **The code was right and the test was
+wrong**, and the test said so before anything shipped. It now asserts the
+property rather than the examples: exactly one of the two hours is 4am, on every
+day of the year.
+
+### Sixteen allowlists, and the one file that owns them now
+
+Chasing the hang above meant reading the egress policy, and the reading was the
+finding: **no single place answered "may this job call out, and to what".** Each
+job declared its own `allowed-endpoints` inline, sixteen lists across nine
+workflow files, with nothing aggregating them. Adding an endpoint to one
+workflow was invisible to any review not already reading that file.
+
+The operator's rule: one source of truth, shared modules wherever there can be
+one, and every workflow pointing at the single file that says which path
+supports which workflow - with a workflow that file does not name allowed
+nothing at all. In their words, "That's failed closed."
+
+`scripts/approved-suppliers.yml` owns it now, under `egress:` - one entry per
+job, named `<workflow file>/<job key>`, carrying the policy and, for a blocking
+job, the exact hosts. The ten `audit` jobs carry their reason there too, instead
+of in a comment above the step that nobody finds while deciding whether a new job
+needs an allowlist.
+
+**The workflows still carry a copy, and the reason is a platform constraint
+rather than a preference.** harden-runner installs its policy in its pre-step,
+which GitHub runs at the start of the job before any step of it - which is also
+why the building code requires it to be the job's first step. So nothing read
+from the repository can reach it at runtime: not a file, not a local action
+(which needs a checkout that has not happened), not an earlier step's output.
+The only alternative is a gate job publishing the lists as outputs, which every
+lane would then wait behind - the same trade this repository already refused for
+`scripts/versions.env`. So the copy stays, mechanical, and a guard makes it
+trustworthy.
+
+`security guard-egress` is that guard, and it is a guard rather than a test
+because it refuses rather than observes: `task validate` and the pre-push hook
+run it before anything is published, and `tests/go/repo` runs the same verb so
+CI answers the question too. Egress is also security's own subject - what leaves
+the site.
+
+It fails five ways, and the third is the one that matters:
+
+- a job that hardens the runner and is not named in the suppliers list
+- a job with no harden-runner step at all
+- a policy that is not the declared one
+- a blocking job whose hosts differ from the declared set, in either direction
+- an entry naming a job that no longer exists
+
+**It walks every job in every workflow rather than the jobs it was told about.**
+That is the general rule the operator stated alongside it - "whenever we build
+something it looses it's protection ... every guard [must] walk the ENTIRE repo
+and if we build something new and we forget to cover it then it FAILS" - and it
+is why an undeclared job is refused rather than skipped. A guard written against
+a list is correct on the day it is written and covers nothing built afterwards,
+while still passing. #384 carries the audit of every other guard against the same
+three questions: does it discover its subjects, does an undeclared one fail, and
+does it prove it examined anything at all.
+
 ### The relay is not the only path, and "nothing on the LAN" was too strong
 
 The crossplay reasoning in this record concluded that the game server needs no
@@ -1222,6 +1447,40 @@ So the lane produced no summary anywhere - not as a pull request comment, by a
 deliberate decision, and not in the job summary either, by omission - while a
 comment in the configuration assured the reader otherwise. Both warnings had
 been printing on every run for as long as the lane has existed.
+
+#### The linter warning was not the cause, and the instrument could not work
+
+Both halves of the section above were wrong, and the second mistake is the more
+useful one.
+
+The six Python linters were switched off, and **the hang came back**. Being last
+is not being responsible: that warning prints while configuration is still being
+read, so "hangs just after it" only ever meant "hangs early".
+
+Debug logging was then added so the next hang would name the linter it stopped
+in. It cannot, and could never have. Super-Linter hands every linter to GNU
+`parallel`, which holds all of their output until the last one finishes - in a
+passing run all ninety jobs print within the same two hundred milliseconds, at
+the end - so a hung run prints nothing past the hand-off, whatever is stuck, and
+the buffer dies with the container. **A buffered log's last line dates the
+silence, not the fault.**
+
+What Harden Runner actually records, read end to end for a hung run and a
+passing one an hour apart: its Armour module killed and blocked nothing, it
+reports no agent errors and no tampering, and the insights page holds no process
+events at all at this tier - so neither source can name the stuck process. The
+only refused call in any run is Checkov's startup call to `api0.prismacloud.io`,
+and it is refused in the passing runs too, 115 times since the policy was
+written. A change to silence that call was drafted and then held: "the one
+anomaly" and "the cause" are not the same claim. The operator's words, which are
+the lesson: "Shouldn't we... look at harden runner and see what it actually says
+before going in blind?"
+
+The instrument that would answer it is a snapshot taken from outside the
+container - `ps -eo pid,etime,args --forest` started in the background before the
+linter step and printed by an `if: always()` step, which works because a
+background process outlives its step and the post-steps still run after a
+timeout. It is not built; #365 carries it.
 
 ### A failed teardown left a backend file that deadlocked the estate
 

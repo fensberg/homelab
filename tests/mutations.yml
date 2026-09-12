@@ -85,9 +85,34 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 32
+floor: 59
 
 mutations:
+  - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
+    file: githooks/post-merge
+    find: '	echo "collector: could not build scripts/collector, so finished branches were not taken away" >&2'
+    replace: "	: # nothing said"
+    mentions: "said nothing about it"
+    why: >
+      A post-merge hook that cannot build the collector and exits quietly is
+      indistinguishable from one with nothing to collect. That silent absence
+      is precisely how finished branches piled up in an operator's checkout
+      for two weeks before this hook existed, with a collector that would have
+      recognised every one of them.
+
+  - guard: TestNoWorkflowRestatesAPinnedVersion
+    file: .github/workflows/inspector.yml
+    find: "go-version: ${{ env.GO_VERSION }}"
+    replace: 'go-version: "1.26.7"'
+    mentions: "restates a pinned version"
+    why: >
+      The literal agrees with scripts/versions.env on the day it is written,
+      which is exactly why it is dangerous: nothing reports the day it stops
+      agreeing. Four workflows carried one, including the lane that reaches
+      real hardware, while the pin file's header claimed this test existed.
+      The same drift had already put CI on a different OpenTofu from the one
+      that converged the estate.
+
   - guard: TestFluxSourcesOnlyNameSecretsThisRepositoryCreates
     file: clusters/management/infrastructure/configs/flux-production.yaml
     find: "  # NO secretRef, and that is deliberate rather than an omission."
@@ -131,8 +156,8 @@ mutations:
 
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
     file: githooks/pre-commit
-    find: "./toolshed/gatehouse guard-deliveries"
-    replace: "true # the gatehouse used to run here"
+    find: "./toolshed/security guard-deliveries"
+    replace: "true # security used to run here"
     mentions: "does not run"
     why: >
       The shim is the only thing that runs before pre-commit clones and
@@ -538,8 +563,8 @@ mutations:
 
   - guard: TestTheCoverageShimDiesWithTheWorkflowStepThatNeedsIt
     file: tests/coverage-baseline.json
-    find: '"go/attestation": 26,'
-    replace: '"go": 34,\n    "go/attestation": 26,'
+    find: '"go/attestation": 26.6,'
+    replace: '"go": 34,\n    "go/attestation": 26.6,'
     mentions: "floor for nothing"
     why: >
       A bare "go" key is a floor for nothing once the workflow sweeps every
@@ -854,19 +879,33 @@ mutations:
       moment a server will not start. The guard therefore asserts the message
       rather than the exit code, because the message is the whole contribution.
 
-# Guards that cannot be proved by mutation, and why.
-#
-# Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
-# tests/go/repo must appear either as a `guard:` above or here. That is what
-# was missing when six guards were added in one session and none of their
-# proofs was committed - the ledger held only what somebody remembered to put
-# in it, which is the failure mode of the rule it replaced.
-#
-# An entry may name a `test:` or a whole `path:`.
-#
-# The number of `owed: true` entries may not exceed this, and it may only go
-# down. That is what makes the debt bounded rather than a shrug: a new guard
-# cannot be added to the owed list without another one leaving it.
+  # Guards that cannot be proved by mutation, and why.
+  #
+  # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
+  # tests/go/repo must appear either as a `guard:` above or here. That is what
+  # was missing when six guards were added in one session and none of their
+  # proofs was committed - the ledger held only what somebody remembered to put
+  # in it, which is the failure mode of the rule it replaced.
+  #
+  # An entry may name a `test:` or a whole `path:`.
+  #
+  # The number of `owed: true` entries may not exceed this, and it may only go
+  # down. That is what makes the debt bounded rather than a shrug: a new guard
+  # cannot be added to the owed list without another one leaving it.
+
+  - guard: TestEveryJobsEgressIsDeclaredInTheSuppliersList
+    file: .github/workflows/sensitive-paths.yml
+    find: "            api.github.com:443"
+    replace: "            api.github.com:443\n            evil.example.com:443"
+    mentions: "which the suppliers list does not declare for it"
+    why: >
+      A job quietly gaining an endpoint is what this whole mapping exists to
+      refuse, and it is the change most likely to look routine in a diff: one
+      more line in a list of hosts, in a file somebody is reading for another
+      reason. scripts/approved-suppliers.yml says which job may reach what, and
+      a workflow that reaches further than its entry has widened this estate's
+      outbound surface with nothing to say so.
+
 owed_ceiling: 55
 
 unprovable:
@@ -1056,7 +1095,7 @@ unprovable:
   - path: tests/go/repo/no_gh_dependency_test.go
     reason: go-source
   # Same again. Proved by hand with -count=1: adding an unpinned endpoint var
-  # to scripts/gatehouse made it name proveAPI, and removing it went green.
+  # to scripts/security made it name proveAPI, and removing it went green.
   # Two earlier attempts at that proof did NOT fire, which was the guard being
   # right - any test assigning the variable satisfies it, and pointAt's restore
   # closure is an assignment too.

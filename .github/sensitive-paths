@@ -36,5 +36,5 @@ scripts/contractor/internal/phases/restore.go   # The only place that reads the 
 scripts/contractor/internal/phases/encryption.go# Sets TF_ENCRYPTION. Wrong here writes plaintext state to a database that ships off-site.
 scripts/contractor/internal/phases/sterilize.go # Wipes every secret on exit. Skipping a file leaves secrets on disk and still reports success.
 scripts/contractor/internal/phases/teardown.go  # Destroys real infrastructure. The ordering stops state being wiped before the VMs it describes.
-scripts/gatehouse/                          # Refuses unapproved deliveries and unsigned pushes. Weakening either looks like an ordinary edit.
+scripts/security/                          # Refuses unapproved deliveries and unsigned pushes. Weakening either looks like an ordinary edit.
 scripts/signedpush/                         # Reads the GitHub App private key. Reaching this mints tokens for this repository.

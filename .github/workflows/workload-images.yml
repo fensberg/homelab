@@ -49,6 +49,10 @@ jobs:
       matrix:
         workload: [valheim]
     steps:
+      # Audit, not block: SteamCMD reaches Valve's content servers, a set of
+      # hosts Valve changes (approved-suppliers.yml records it), so an
+      # allowlist would break on Valve's schedule. The expediter's build job
+      # carries the same setting for the same reason.
       - name: Harden Runner
         with:
           # audit, and the reason is in scripts/approved-suppliers.yml under
@@ -61,6 +65,10 @@ jobs:
           # that is pinned by digest and pulled from this estate's own registry,
           # so what reaches the cluster is a specific set of bytes somebody can
           # point at, whatever the build did to obtain them.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: audit
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
 

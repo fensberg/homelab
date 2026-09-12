@@ -56,6 +56,10 @@ jobs:
           # guessed, which is the same method the Semgrep lane's comment in
           # pr-validation.yml describes: run it, read what it actually
           # reached for, then allow exactly that.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: block
           allowed-endpoints: >
             api.deps.dev:443

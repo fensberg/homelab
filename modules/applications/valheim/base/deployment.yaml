@@ -11,6 +11,17 @@ metadata:
   namespace: valheim
   labels:
     app.kubernetes.io/name: valheim
+  annotations:
+    # The Steam build the pinned image below contains, recorded beside it by
+    # the expediter so its next check has something to compare against. The
+    # two lines change together and nothing else here does - which is exactly
+    # what its standing order permits and what security guard-standing-order
+    # refuses to let it exceed.
+    #
+    # "unknown" for the image pinned by hand before the expediter existed: its
+    # build was never recorded, so the first check will take a delivery and
+    # replace both lines, which also proves the whole path end to end.
+    homelab.fensberg.com/steam-build: "unknown"
 spec:
   replicas: 1
   # Recreate, not RollingUpdate. The volume is ReadWriteOnce and the world is a
@@ -53,14 +64,16 @@ spec:
           # around it. Changing what the server runs means changing this line,
           # which is a commit, which is a release.
           #
-          # Re-pin it whenever the image rebuilds. The entrypoint that turns
-          # these environment variables into the server's arguments lives in
-          # the image, so a digest published before it existed does not have
-          # it. That failure is loud rather than subtle - the older entrypoint
-          # is the server binary itself, which exits complaining about missing
-          # arguments - but it is a failure. The build workflow prints the new
-          # digest into its job summary for this line.
-          # renovate: datasource=docker depName=ghcr.io/fensberg/homelab-valheim
+          # The expediter keeps it current. When Valve publishes a new build
+          # of the server - and players' clients update themselves and refuse
+          # an older server - it builds the image, opens a pull request
+          # changing this line and the steam-build annotation above, merges it
+          # under its standing order once every required check passes, and
+          # tags the release. See .github/workflows/expediter.yml.
+          #
+          # This carries no Renovate annotation, deliberately. The build that
+          # makes this digest already knows it; asking a bot to watch this
+          # estate's own registry to rediscover it would be circular (#375).
           image: ghcr.io/fensberg/homelab-valheim@sha256:6b17c2f9c6e02147eca047a92a5b9af3454c38d1bf8edc6d3a0634338dc98b05
 
           securityContext:

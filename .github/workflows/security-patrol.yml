@@ -1,9 +1,9 @@
-name: "Gatehouse Patrol"
+name: "Security Patrol"
 
-# The gatehouse's third responsibility: the estate, watched from outside it.
+# Site security's patrol: the estate, watched from outside it.
 #
 # Renamed from "Estate Canary" alongside the program it runs - scripts/canary
-# became scripts/gatehouse's `patrol` verb, on the reasoning that guarding
+# became scripts/security's `patrol` verb, on the reasoning that guarding
 # deliveries, guarding pushes and watching the perimeter are one role wearing
 # three names rather than three separate things. This file kept the old name
 # after that change landed, which is exactly the failure the construction
@@ -13,7 +13,11 @@ name: "Gatehouse Patrol"
 # art and renaming it away would obscure rather than clarify - this still is
 # a dead-man's-switch, watched from outside, for the same reason a canary is
 # carried into a mine rather than tested at the entrance. What changed is
-# only which noun names the workflow: gatehouse patrol, not canary.
+# only which noun names the workflow: security patrol, not canary.
+#
+# And then "gatehouse patrol" became "security patrol", because a gatehouse is
+# a building and a building does not patrol. The role was security before it
+# was the gatehouse; see scripts/security/main.go.
 #
 # Everything else that reports on this estate runs inside it, and all of it
 # was blind to the failure that actually happened: the estate stopped being
@@ -31,9 +35,24 @@ name: "Gatehouse Patrol"
 
 on:
   schedule:
-    # Hourly. The threshold for a stuck queue is thirty minutes, so this notices
-    # within the hour - and no more often than that, because a canary that runs
-    # constantly is itself a thing that costs money and makes noise.
+    # REQUESTED hourly. It does not run hourly, and every threshold below is
+    # set against what actually happens rather than what is requested (#221).
+    #
+    # GitHub delays scheduled workflows under load and drops them when the delay
+    # grows long enough. Observed on this repository over two weeks: runs
+    # between four and five hours apart, never at a predictable minute - for
+    # example 00:12, 04:43, 09:43, 14:27 on 2026-09-11. That is documented
+    # behaviour and cannot be configured away from here.
+    #
+    # So this notices a stuck queue within about FIVE hours, not one. That is
+    # still the difference between five hours and the three days the original
+    # failure went unseen, and it is worth having - but it has to be said as five,
+    # because a switch believed to have one-hour windows gets thresholds tuned to
+    # a check that is not happening.
+    #
+    # What this cannot do is report its own death: if the schedule stops
+    # entirely, nothing here notices. That needs a watcher outside GitHub, which
+    # is a new supplier and its own decision - left recorded on #221.
     - cron: "17 * * * *"
   workflow_dispatch:
 
@@ -42,7 +61,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: gatehouse-patrol
+  group: security-patrol
   # Safe to cancel, unlike a converge: this reads and changes nothing, so a
   # newer answer is strictly better than an older one still in flight.
   cancel-in-progress: true
@@ -53,7 +72,7 @@ defaults:
 
 jobs:
   patrol:
-    name: "Gatehouse Patrol"
+    name: "Security Patrol"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
@@ -62,6 +81,10 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
@@ -83,7 +106,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
-          # scripts/gatehouse has no dependencies, so there is nothing to cache.
+          # scripts/security has no dependencies, so there is nothing to cache.
           cache: false
 
       - name: Ask whether the estate is answering for itself
@@ -93,5 +116,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
-          ./toolshed/gatehouse patrol | tee "$GITHUB_STEP_SUMMARY"
+          go build -C scripts/security -o ../../toolshed/security .
+          ./toolshed/security patrol | tee "$GITHUB_STEP_SUMMARY"

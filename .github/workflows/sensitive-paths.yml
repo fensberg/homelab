@@ -67,6 +67,10 @@ jobs:
       - name: Harden the runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
@@ -84,11 +88,32 @@ jobs:
       # external dependencies, so there is nothing to cache and nothing to
       # fetch - which is also why the blocked egress policy above needs no
       # module proxy in its allowlist.
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.7"
+          go-version: ${{ env.GO_VERSION }}
           cache: false
+
+      # The expediter's standing order, enforced here because this job is a
+      # required check and the ruleset requiring checks has no bypass - so the
+      # expediter, which may skip review, cannot skip this.
+      #
+      # It refuses any pull request authored by the expediter that changes more
+      # than the game server's image digest and the Steam build recorded beside
+      # it, or that points the digest at a different image repository. For every
+      # other author it says so and passes; people are held to review, not to
+      # this. With EXPEDITER_LOGIN unset there is no standing order, and the
+      # expediter's own workflow refuses to merge anything.
+      - name: Hold the expediter to its standing order
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          EXPEDITER_LOGIN: ${{ vars.EXPEDITER_LOGIN }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: go run -C scripts/security . guard-standing-order -base "$BASE" -head "$HEAD"
 
       - name: Which sensitive paths were touched
         id: sensor

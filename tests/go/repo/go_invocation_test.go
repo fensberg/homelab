@@ -64,18 +64,25 @@ func filesThatInvokeGo(t *testing.T) map[string]string {
 		filepath.Join(root, ".pre-commit-config.yaml"),
 	)
 
+	// Workflows are read as they will be once any outstanding patch is
+	// applied, for the reason patches_test.go gives: the agent cannot write
+	// one, so the fix arrives as a patch, and this test would otherwise be red
+	// for the whole hand-over window and block it.
+	//
+	// As a set rather than file by file, so a workflow a patch renames is
+	// judged under its new name and not its old one - the old file still sits
+	// in the tree until the patch is applied, invoking a program that has
+	// already moved.
 	out := make(map[string]string, len(paths))
+	for name, body := range intendedWorkflows(t) {
+		out[filepath.Join(".github", "workflows", name)] = body
+	}
 	for _, p := range paths {
 		rel, err := filepath.Rel(root, p)
 		if err != nil {
 			rel = p
 		}
-		// A workflow is read as it will be once any outstanding patch is
-		// applied, for the reason patches_test.go gives: the agent cannot
-		// write one, so the fix arrives as a patch, and this test would
-		// otherwise be red for the whole hand-over window and block it.
 		if filepath.Dir(rel) == filepath.Join(".github", "workflows") {
-			out[rel] = intendedWorkflow(t, filepath.Base(rel))
 			continue
 		}
 		body, err := os.ReadFile(p)

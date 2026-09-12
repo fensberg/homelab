@@ -170,7 +170,7 @@ files:
   #
   # This file covered scripts/contractor alone, so a function with no coverage
   # anywhere else was invisible. Six of the seven modules were in that state,
-  # including the gatehouse - whose functions refuse unsigned pushes and
+  # including security - whose functions refuse unsigned pushes and
   # unapproved deliveries - and signedpush, which reads the App private key.
   #
   # Every one is `covered_by: nothing`, and that is the honest answer rather
@@ -191,21 +191,24 @@ files:
     uncovered: 1
     covered_by: nothing
   - path: collector/clear-branches.go
-    uncovered: 8
+    uncovered: 6
     covered_by: nothing
   - path: collector/main.go
     uncovered: 3
     covered_by: nothing
-  - path: gatehouse/guard-deliveries.go
-    uncovered: 4
-    covered_by: nothing
-  - path: gatehouse/guard-push.go
-    uncovered: 2
-    covered_by: nothing
-  - path: gatehouse/main.go
+  - path: expediter/main.go
     uncovered: 3
     covered_by: nothing
-  - path: gatehouse/patrol.go
+  - path: security/guard-deliveries.go
+    uncovered: 4
+    covered_by: nothing
+  - path: security/guard-push.go
+    uncovered: 2
+    covered_by: nothing
+  - path: security/main.go
+    uncovered: 3
+    covered_by: nothing
+  - path: security/patrol.go
     uncovered: 7
     covered_by: nothing
   - path: inspector/comment.go

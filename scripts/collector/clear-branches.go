@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 )
 
 // WHY THE ADVICE EVERYONE GIVES DOES NOT WORK HERE.
@@ -44,26 +46,59 @@ import (
 // for 109 of the 149 finished branches, and nothing local could have known.
 const _ = "see the comment above"
 
-// clearBranches is deliberately a dry run unless told otherwise, and the
-// deletion it eventually performs is recoverable.
+// clearBranches is a dry run unless told otherwise, and the deletion it
+// eventually performs is recoverable.
 //
 // `git branch -D` leaves the commits in the reflog for ninety days, so every
 // branch removed here is one `git branch <name> <sha>` away - and the sha is
 // printed beside each, so recovering one needs nothing looked up. It has to be
 // -D rather than -d for the squash reason above: git does not believe these
 // branches are merged, so the safe form refuses all of them.
+//
+// THREE WAYS TO RUN IT.
+//
+//	(default)        say what would go, change nothing
+//	-apply           take finished local branches away
+//	-apply -remote   also take away finished branches on GitHub
+//	-hook            what githooks/post-merge runs after every pull
+//
+// -hook is -apply with the noise removed. It exists because this verb was
+// deliberately never run automatically, on the reasoning that a person would
+// run it when the branch picker got annoying - and the branch picker got
+// annoying, and nobody ran it, because nobody should have to remember a
+// command to take out rubbish a computer can recognise. After a pull is the
+// moment finished branches appear, so that is when it runs. It never touches
+// GitHub, prints only what it took, and gives up quietly on anything slow
+// rather than holding up the pull that invoked it.
 func clearBranches(args []string) int {
 	fs := flag.NewFlagSet("clear-branches", flag.ExitOnError)
 	apply := fs.Bool("apply", false, "Delete them. Without this, say what would go and change nothing.")
+	remote := fs.Bool("remote", false, "Also consider branches on GitHub whose pull request is finished. Deletes them only with -apply.")
+	hook := fs.Bool("hook", false, "Run as the post-merge hook: take finished local branches away, print only what went, never touch GitHub.")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if *hook {
+		*apply, *remote = true, false
+		// A hook must not hold up the pull that invoked it. Everything it runs
+		// shares this deadline, and a timeout degrades to collecting less.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		runCtx = ctx
+	}
+	say := func(format string, a ...any) {
+		if !*hook {
+			fmt.Printf(format, a...)
+		}
+	}
 
 	// Refresh remote-tracking refs first, or "upstream gone" is answered from
-	// whatever this checkout last happened to hear. A fetch reads and never
-	// writes to the remote.
-	if _, err := git("fetch", "--prune", "--quiet"); err != nil {
-		fmt.Fprintln(os.Stderr, "collector: could not fetch, so this is judged on stale information:", err)
+	// whatever this checkout last happened to hear. A pull has just fetched, so
+	// the hook skips it. A fetch reads and never writes to the remote.
+	if !*hook {
+		if _, err := git("fetch", "--prune", "--quiet"); err != nil {
+			fmt.Fprintln(os.Stderr, "collector: could not fetch, so this is judged on stale information:", err)
+		}
 	}
 
 	current, err := git("rev-parse", "--abbrev-ref", "HEAD")
@@ -72,8 +107,11 @@ func clearBranches(args []string) int {
 		return 1
 	}
 
-	merged, closed := pullRequestBranches()
-	if merged == nil {
+	merged, closed, open, prErr := pullRequestBranches()
+	if prErr != nil {
+		// Said even from the hook: a collector that cannot see squash-merges
+		// keeps nearly everything, and staying quiet about that is how the
+		// branch picker filled up in the first place.
 		fmt.Fprintln(os.Stderr, "collector: could not ask GitHub about pull requests, so"+
 			" branches whose work was squash-merged are being kept. Authenticate gh and run again to clear those.")
 	}
@@ -86,7 +124,7 @@ func clearBranches(args []string) int {
 
 	var finishedRows, keep []string
 	for _, b := range branches {
-		why, done := finished(b.name, current, b.track, insideMain(b.name), merged[b.name], closed[b.name])
+		why, done := finished(b.name, current, b.track, insideMain(b.name), merged[b.name], closed[b.name], open[b.name])
 		switch {
 		case done:
 			finishedRows = append(finishedRows, strings.Join([]string{b.name, b.sha, why}, "\x00"))
@@ -106,16 +144,11 @@ func clearBranches(args []string) int {
 	// progress or work abandoned, and only the person who wrote it knows which.
 	// Naming them with their age is what lets that judgement be made at all.
 	if len(keep) > 0 {
-		fmt.Printf("kept, because nothing says this work is finished:\n\n")
+		say("kept, because nothing says this work is finished:\n\n")
 		for _, row := range keep {
-			fmt.Printf("  %s\n", row)
+			say("  %s\n", row)
 		}
-		fmt.Println()
-	}
-
-	if len(finishedRows) == 0 {
-		fmt.Printf("nothing to collect: %d branch(es) are still in use\n", len(keep))
-		return 0
+		say("\n")
 	}
 
 	for _, row := range finishedRows {
@@ -132,13 +165,59 @@ func clearBranches(args []string) int {
 		fmt.Printf("  collected      %-52s %-20s %s\n", name, why, short(sha))
 	}
 
-	fmt.Printf("\n%d finished, %d still in use\n", len(finishedRows), len(keep))
+	if *remote && prErr == nil {
+		collectRemote(*apply, merged, closed, open)
+	}
+
+	if len(finishedRows) == 0 {
+		say("nothing to collect locally: %d branch(es) are still in use\n", len(keep))
+		return 0
+	}
+	say("\n%d finished, %d still in use\n", len(finishedRows), len(keep))
 	if !*apply {
 		fmt.Print("\nNothing was changed. To take them away:\n\n    task clear-branches -- -apply\n")
 		return 0
 	}
-	fmt.Println("\nEach is recoverable for ninety days: git branch <name> <sha>")
+	fmt.Println("Each is recoverable for ninety days: git branch <name> <sha>")
 	return 0
+}
+
+// collectRemote takes away branches on GitHub whose pull request is finished.
+//
+// GitHub's "automatically delete head branches" only fires on a MERGE. A pull
+// request closed without merging keeps its branch forever, and so does a branch
+// a workflow pushed without ever opening a pull request. The header of this
+// program used to say remote branches needed no collecting because GitHub
+// deleted them; that was true on the day it was written and stopped being true
+// the first time a pull request was closed instead of merged.
+//
+// Deleting one is recoverable: GitHub keeps the pull request's head as
+// refs/pull/N/head, and the pull request page offers "Restore branch".
+func collectRemote(apply bool, merged, closed, open map[string]bool) {
+	names, err := remoteBranches()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "collector: could not list remote branches:", err)
+		return
+	}
+	fmt.Println("\non GitHub:")
+	for _, name := range names {
+		why, done := finishedRemote(name, merged[name], closed[name], open[name])
+		switch {
+		case !done && why != "":
+			fmt.Printf("  kept           %-52s %s\n", name, why)
+		case done && !apply:
+			fmt.Printf("  would collect  %-52s %s\n", name, why)
+		case done:
+			if _, err := gh("api", "--method", "DELETE", "repos/{owner}/{repo}/git/refs/heads/"+name); err != nil {
+				fmt.Fprintf(os.Stderr, "  FAILED         %-52s %v\n", name, err)
+				continue
+			}
+			fmt.Printf("  collected      %-52s %s\n", name, why)
+		}
+	}
+	if !apply {
+		fmt.Print("\nTo take the finished ones away:\n\n    task clear-branches -- -apply -remote\n")
+	}
 }
 
 // finished decides whether a branch is done with, and says which answer decided
@@ -149,13 +228,18 @@ func clearBranches(args []string) int {
 // gone" and "GitHub says the pull request merged" are different amounts of
 // evidence, and somebody watching a hundred branches disappear is entitled to
 // see which one applied to each.
-func finished(name, current, track string, insideMain, mergedPR, closedPR bool) (why string, done bool) {
+func finished(name, current, track string, insideMain, mergedPR, closedPR, openPR bool) (why string, done bool) {
 	switch {
 	case name == current:
 		// Never the branch you are standing on, whatever else is true of it.
 		return "", false
 	case name == "main":
 		return "", false
+	case openPR:
+		// A branch name can carry more than one pull request - a follow-up is
+		// opened from the same branch after the first one merged - and an open
+		// one means the work is not finished, whatever an older one says.
+		return "pull request open", false
 	case track == "[gone]":
 		return "upstream gone", true
 	case insideMain:
@@ -170,6 +254,26 @@ func finished(name, current, track string, insideMain, mergedPR, closedPR bool) 
 		return "pull request closed", true
 	default:
 		return "no pull request, not in main", false
+	}
+}
+
+// finishedRemote is the rule for a branch on GitHub, which is narrower than the
+// local one because the branch is shared.
+func finishedRemote(name string, mergedPR, closedPR, openPR bool) (why string, done bool) {
+	switch {
+	case name == "main" || strings.HasPrefix(name, "epoch/"):
+		return "", false
+	case openPR:
+		return "pull request open", false
+	case mergedPR:
+		return "pull request merged", true
+	case closedPR:
+		return "pull request closed", true
+	default:
+		// Something pushed this and never explained it. Keeping it keeps the
+		// only evidence of why - the converge-failure revert branch that exists
+		// with no pull request is the example that prompted this.
+		return "no pull request", false
 	}
 }
 
@@ -202,28 +306,57 @@ func localBranches() ([]localBranch, error) {
 	return branches, nil
 }
 
+// remoteBranches lists the branches on origin, as of the last fetch.
+func remoteBranches() ([]string, error) {
+	out, err := git("for-each-ref", "--format=%(refname:lstrip=3)", "refs/remotes/origin")
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" && line != "HEAD" {
+			names = append(names, line)
+		}
+	}
+	return names, nil
+}
+
 func insideMain(name string) bool {
 	_, err := git("merge-base", "--is-ancestor", name, "origin/main")
 	return err == nil
 }
 
 // pullRequestBranches asks GitHub which head branches belong to a pull request
-// that merged, and which to one that was closed without merging. A nil merged
-// map means the question could not be asked at all.
+// that merged, one that was closed without merging, and one still open.
+//
+// EVERY page. This was `gh pr list --limit 500`, which at about 380 pull
+// requests covered everything and would have stopped covering everything
+// within weeks - after which each branch whose pull request had fallen off the
+// end would be kept as "no pull request", silently, with the command still
+// succeeding. The REST pulls endpoint paginates, and --paginate follows it to
+// the end.
 //
 // This shells out to gh, which tests/go/repo forbids in scripts/contractor for
 // a good reason: gh is on every developer's machine and in no image, so the
 // dependency passes review and fails in CI. That reasoning does not reach here.
-// This verb only ever runs on a developer's machine, by hand, against their own
+// This verb only ever runs on a developer's machine, against their own
 // checkout - it is in no workflow - and a missing gh degrades to keeping more
 // branches rather than to failing.
-func pullRequestBranches() (merged, closed map[string]bool) {
-	out, err := gh("pr", "list", "--state", "all", "--limit", "500",
-		"--json", "headRefName,state", "--jq", `.[] | "\(.state)\t\(.headRefName)"`)
+func pullRequestBranches() (merged, closed, open map[string]bool, err error) {
+	out, err := gh("api", "--paginate", "repos/{owner}/{repo}/pulls?state=all&per_page=100",
+		"--jq", `.[] | "\(if .merged_at then "MERGED" elif .state == "closed" then "CLOSED" else "OPEN" end)\t\(.head.ref)"`)
 	if err != nil {
-		return nil, map[string]bool{}
+		return map[string]bool{}, map[string]bool{}, map[string]bool{}, err
 	}
-	merged, closed = map[string]bool{}, map[string]bool{}
+	merged, closed, open = parsePullRequests(out)
+	return merged, closed, open, nil
+}
+
+// parsePullRequests reads "STATE<tab>branch" lines. A branch name that appears
+// under more than one state is recorded under each, because a reused name is
+// exactly the case where the difference matters.
+func parsePullRequests(out string) (merged, closed, open map[string]bool) {
+	merged, closed, open = map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, line := range strings.Split(out, "\n") {
 		state, name, ok := strings.Cut(strings.TrimSpace(line), "\t")
 		if !ok || name == "" {
@@ -234,9 +367,11 @@ func pullRequestBranches() (merged, closed map[string]bool) {
 			merged[name] = true
 		case "CLOSED":
 			closed[name] = true
+		case "OPEN":
+			open[name] = true
 		}
 	}
-	return merged, closed
+	return merged, closed, open
 }
 
 func short(sha string) string {
@@ -253,9 +388,19 @@ func short(sha string) string {
 // while every caller passed a constant, the rule is asking the right question:
 // a helper that will run whatever it is handed is one refactor away from
 // running whatever it is given. Two names cost nothing and cannot drift.
-func git(args ...string) (string, error) { return runOutput(exec.Command("git", args...), "git", args) }
+//
+// Both run under runCtx, which is Background for a person at a terminal and a
+// thirty-second deadline for the post-merge hook, so a slow network degrades
+// to collecting less rather than to a pull that will not finish.
+var runCtx = context.Background()
 
-func gh(args ...string) (string, error) { return runOutput(exec.Command("gh", args...), "gh", args) }
+func git(args ...string) (string, error) {
+	return runOutput(exec.CommandContext(runCtx, "git", args...), "git", args)
+}
+
+func gh(args ...string) (string, error) {
+	return runOutput(exec.CommandContext(runCtx, "gh", args...), "gh", args)
+}
 
 // runOutput says what the command said when it fails. signedpush learned this
 // the expensive way: a wrapper that swallows a subprocess's stderr turns a

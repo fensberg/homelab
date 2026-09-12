@@ -103,7 +103,7 @@ tasks:
     # a commit created through the Git Data API with an installation token
     # comes back signed with GitHub's own key. See scripts/signedpush.
     #
-    # A plain `git push` is refused by the pre-push hook (scripts/gatehouse),
+    # A plain `git push` is refused by the pre-push hook (scripts/security),
     # because it produces unsigned commits. It used to merely be documented,
     # which was not enough - see that command's header.
     cmds:
@@ -135,8 +135,8 @@ tasks:
     # commit-msg, not pre-commit: git does not run pre-commit for a merge at
     # all, so a guard there would miss the case entirely.
     cmds:
-      - go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
-      - ./toolshed/gatehouse guard-merge
+      - go build -C scripts/security -o ../../toolshed/security .
+      - ./toolshed/security guard-merge
 
   push-guard:
     desc: "Refuse a plain git push that would update a branch (pre-push hook)"
@@ -148,8 +148,8 @@ tasks:
     # Not internal: pre-commit invokes it as a command, so `task` must be
     # willing to run it from the CLI.
     cmds:
-      - go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
-      - ./toolshed/gatehouse guard-push
+      - go build -C scripts/security -o ../../toolshed/security .
+      - ./toolshed/security guard-push
 
   delivery-guard:
     desc: "Refuse a commit while an unapproved third-party hook is installed (pre-commit)"
@@ -167,8 +167,22 @@ tasks:
     #
     # Not internal: pre-commit invokes it as a command.
     cmds:
-      - go build -C scripts/gatehouse -o ../../toolshed/gatehouse .
-      - ./toolshed/gatehouse guard-deliveries
+      - go build -C scripts/security -o ../../toolshed/security .
+      - ./toolshed/security guard-deliveries
+
+  egress-guard:
+    desc: "Refuse a workflow job whose outbound reach is not what the suppliers list declares"
+    # scripts/approved-suppliers.yml owns which job may call out and to what.
+    # The workflows carry a copy because harden-runner reads its policy in a
+    # pre-step, before any step of the job runs, so nothing in the repository
+    # can hand it a value at runtime. This is what makes the copy trustworthy.
+    #
+    # It walks every job in every workflow rather than a list of them: a job
+    # that is not declared is refused, so a new one starts with no egress
+    # instead of with an allowlist nobody examined.
+    cmds:
+      - go build -C scripts/security -o ../../toolshed/security .
+      - ./toolshed/security guard-egress
 
   clear-branches:
     desc: "List local branches whose work has landed. Add -- -apply to delete them."
@@ -179,9 +193,13 @@ tasks:
     #   task clear-branches            say what would go
     #   task clear-branches -- -apply  take them away
     #
-    # Deliberately not run by anything automatically. Refuse collection is
-    # idempotent and safe to miss, so a schedule buys nothing a person running
-    # it when the branch picker gets annoying does not.
+    # It also runs by itself after every pull, from githooks/post-merge, in a
+    # quieter mode that only takes local branches. It used to be run by hand
+    # only, on the theory that a person would run it when the branch picker got
+    # annoying; the picker got annoying and nobody did. Branches on GitHub are
+    # only ever taken with an explicit -remote:
+    #
+    #   task clear-branches -- -apply -remote
     cmds:
       - go build -C scripts/collector -o ../../toolshed/collector .
       - ./toolshed/collector clear-branches {{.CLI_ARGS}}
@@ -319,6 +337,9 @@ tasks:
           go vet -C "$dir" ./...
           go build -C "$dir" -o /dev/null .
         done
+      # Who may call out, and to what. One entry per job in
+      # scripts/approved-suppliers.yml, and a job that is not there is refused.
+      - task: egress-guard
       # Every tier, not just the untagged one. The integration, api and e2e
       # tiers are build-tagged, so a bare `go vet ./...` does not compile them
       # at all - a change to a shared struct can break them and still pass

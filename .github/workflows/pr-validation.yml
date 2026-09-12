@@ -77,6 +77,10 @@ jobs:
         with:
           # pre-commit builds a Go toolchain for actionlint and a Node one
           # for prettier, which is why this list is the longest in the file.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
@@ -132,7 +136,7 @@ jobs:
           cache: false
 
       - name: Refuse an unapproved supplier before anything is downloaded
-        run: go run -C scripts/gatehouse . guard-deliveries -before-install
+        run: go run -C scripts/security . guard-deliveries -before-install
 
       # Every `language: system` hook is skipped here, and each is owned by a
       # lane that has what it needs. This one installs pre-commit and nothing
@@ -184,6 +188,10 @@ jobs:
         with:
           # action-shellcheck downloads the pinned shellcheck binary
           # straight from its GitHub release.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
@@ -241,6 +249,10 @@ jobs:
           # archive from storage.googleapis.com. dl.google.com, which used to
           # be listed here, appears nowhere in setup-go's source - a full
           # grep of every file that touches a URL found no reference to it.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
@@ -418,6 +430,10 @@ jobs:
           # lane, which already builds a Node toolchain for prettier under
           # block. Nothing here is new traffic - it is two existing lanes'
           # traffic in one job.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
@@ -456,7 +472,7 @@ jobs:
       # Every Go module under scripts/, discovered rather than listed.
       #
       # This step named scripts/contractor and nothing else, so the tests of
-      # signedpush, gatehouse, attestation, clerk, inspector and collector had
+      # signedpush, security, attestation, clerk, inspector and collector had
       # never run in CI - including the guards that refuse an unsigned push and
       # the program that reads the App private key. Two of those modules were
       # absent from the taskfile's lists as well, so their tests had never run
@@ -576,7 +592,12 @@ jobs:
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
-    timeout-minutes: 20
+    #
+    # Ten, not twenty (#365). The lane finishes in about two minutes when it
+    # works and hangs indefinitely when it does not, so twenty bought eighteen
+    # minutes of waiting to learn the same thing. Ten keeps a wide margin over a
+    # normal run and makes a hang fail while somebody is still watching.
+    timeout-minutes: 10
     permissions:
       contents: read
       statuses: write
@@ -593,6 +614,10 @@ jobs:
           # bundled Go is older than go.mod's pinned version (scripts/contractor
           # pins go 1.26, deliberately - see the root CLAUDE.md - so this is
           # not a version to relax to dodge the network requirement).
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
@@ -657,6 +682,10 @@ jobs:
           # rubber-stamping an allowlist nobody checked. See the Format lane
           # above for how that list gets built the right way: run audit
           # first, then transcribe the real destinations it logged.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: audit
 
       - name: Checkout Code
@@ -704,6 +733,10 @@ jobs:
         with:
           # Trivy pulls its misconfiguration database as an OCI artifact,
           # from ghcr.io with a Google mirror as fallback.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
@@ -768,6 +801,10 @@ jobs:
           # leaked key belongs to whoever it belongs to. An allowlist here
           # would not fail loudly; it would quietly turn verified findings into
           # unverified ones, which is the opposite of what this lane is for.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
           egress-policy: audit
 
       - name: Checkout Code

@@ -36,13 +36,30 @@ import (
 	"time"
 )
 
-// A check is one question with one answer. Each returns a short status line;
-// an error means the estate is unhealthy, not that the check misfired - a
-// check that cannot run says so by returning a skip.
+// A check is one question with one answer. Each returns a short status line.
+//
+// Four answers, and the two that are not "ok" are not alike. "fail" is the
+// estate being unhealthy. "unknown" is the patrol being unable to look - GitHub
+// did not answer - and it counts against health exactly as a failure does,
+// because a patrol that saw nothing must not print that everything is fine. It
+// used to be a "skip", which did not count, so an unreachable API produced
+// "the estate is answering for itself" over a patrol that had asked nothing.
+// "skip" is kept for the one honest case: there is nothing to check yet.
 type result struct {
 	name   string
-	status string // "ok", "fail", "skip"
+	status string // "ok", "fail", "unknown", "skip"
 	detail string
+}
+
+// unhealthy counts the results that stand against the estate being healthy.
+func unhealthy(results []result) int {
+	var n int
+	for _, r := range results {
+		if r.status == "fail" || r.status == "unknown" {
+			n++
+		}
+	}
+	return n
 }
 
 func patrol(args []string) int {
@@ -51,6 +68,7 @@ func patrol(args []string) int {
 		repo         = fs.String("repo", envOr("GITHUB_REPOSITORY", ""), "owner/name to inspect")
 		queuedFor    = fs.Duration("max-queued", 30*time.Minute, "how long a run may sit queued before that is a fault")
 		nightlyEvery = fs.Duration("nightly-within", 30*time.Hour, "the scheduled tier must have finished within this")
+		nightly      = fs.String("nightly-workflow", "integration-tests.yml", "the workflow file whose scheduled runs are the drift check")
 	)
 	_ = fs.Parse(args)
 
@@ -65,21 +83,18 @@ func patrol(args []string) int {
 
 	results := []result{
 		c.noRunStuckInTheQueue(*queuedFor),
-		c.scheduledTierIsActuallyRunning(*nightlyEvery),
+		c.scheduledTierIsActuallyRunning(*nightly, *nightlyEvery),
 		c.lastConvergeDidNotFail(),
 	}
 
-	var failed int
 	fmt.Println("estate canary")
 	fmt.Println(strings.Repeat("-", 60))
 	for _, r := range results {
-		mark := map[string]string{"ok": "[ok]  ", "fail": "[FAIL]", "skip": "[skip]"}[r.status]
+		mark := map[string]string{"ok": "[ok]  ", "fail": "[FAIL]", "unknown": "[????]", "skip": "[skip]"}[r.status]
 		fmt.Printf("%s %-34s %s\n", mark, r.name, r.detail)
-		if r.status == "fail" {
-			failed++
-		}
 	}
 	fmt.Println(strings.Repeat("-", 60))
+	failed := unhealthy(results)
 
 	if failed > 0 {
 		fmt.Printf("\n%d check(s) failed. The estate is not answering for itself.\n", failed)
@@ -105,9 +120,23 @@ type run struct {
 	Event      string    `json:"event"`
 }
 
-func (c *client) runs(query string) ([]run, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/actions/runs?per_page=100&%s", c.repo, query)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+// runsURL is where a question about runs is asked. With a workflow file it is
+// asked about that workflow only; without one, about the whole repository.
+//
+// The difference is load-bearing for the nightly check - see
+// scheduledTierIsActuallyRunning - which is why it is a function with a test
+// rather than a format string inline.
+func runsURL(repo, workflow, query string) string {
+	if workflow != "" {
+		return fmt.Sprintf("https://api.github.com/repos/%s/actions/workflows/%s/runs?per_page=100&%s", repo, workflow, query)
+	}
+	return fmt.Sprintf("https://api.github.com/repos/%s/actions/runs?per_page=100&%s", repo, query)
+}
+
+// runs asks GitHub about runs: in one workflow when workflow is non-empty,
+// across the repository when it is empty.
+func (c *client) runs(workflow, query string) ([]run, error) {
+	req, err := http.NewRequest(http.MethodGet, runsURL(c.repo, workflow, query), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -135,32 +164,48 @@ func (c *client) runs(query string) ([]run, error) {
 	return page.Runs, nil
 }
 
+// stuckStatuses are the states that mean nothing will start the work.
+//
+// `waiting` is deliberately absent. It means waiting for a person to approve a
+// deployment environment, and GitHub already notifies whoever can. Counting it
+// kept this patrol red for two days on 2026-09-09 to 11 with "work is not being
+// picked up" while the runner was healthy and five runs sat waiting for
+// approvals - the right alarm for the wrong reason, which is worse than none,
+// because it teaches whoever reads it to stop reading.
+var stuckStatuses = map[string]bool{"queued": true, "pending": true}
+
+// stuck counts the runs nobody can start that have been waiting past the
+// limit, and reports the longest.
+func stuck(runs []run, now time.Time, limit time.Duration) (count int, worst time.Duration) {
+	for _, r := range runs {
+		if !stuckStatuses[r.Status] {
+			continue
+		}
+		if age := now.Sub(r.CreatedAt); age > limit {
+			count++
+			if age > worst {
+				worst = age
+			}
+		}
+	}
+	return count, worst
+}
+
 // The check that would have caught the runner deprecation, the dead listener
 // before it, and the next cause nobody has met yet. It asks about the symptom
 // rather than any one mechanism: work is not being picked up.
 func (c *client) noRunStuckInTheQueue(limit time.Duration) result {
 	const name = "no run stuck in the queue"
-	stuck := map[string]bool{"queued": true, "pending": true, "waiting": true}
 
-	var worst time.Duration
-	var count int
-	for _, status := range []string{"queued", "pending", "waiting"} {
-		runs, err := c.runs("status=" + status)
+	var all []run
+	for status := range stuckStatuses {
+		runs, err := c.runs("", "status="+status)
 		if err != nil {
-			return result{name, "skip", "could not ask GitHub: " + err.Error()}
+			return result{name, "unknown", "could not ask GitHub: " + err.Error()}
 		}
-		for _, r := range runs {
-			if !stuck[r.Status] {
-				continue
-			}
-			if age := time.Since(r.CreatedAt); age > limit {
-				count++
-				if age > worst {
-					worst = age
-				}
-			}
-		}
+		all = append(all, runs...)
 	}
+	count, worst := stuck(all, time.Now(), limit)
 	if count > 0 {
 		return result{name, "fail", fmt.Sprintf(
 			"%d run(s) queued longer than %s, oldest %s.\n"+
@@ -171,20 +216,34 @@ func (c *client) noRunStuckInTheQueue(limit time.Duration) result {
 	return result{name, "ok", "nothing queued beyond " + limit.Round(time.Minute).String()}
 }
 
-// A scheduled workflow that stops running is invisible: there is no failed run
-// to notice, only an absence. This looks for the absence.
-func (c *client) scheduledTierIsActuallyRunning(within time.Duration) result {
-	const name = "scheduled tier still completing"
-	runs, err := c.runs("event=schedule")
-	if err != nil {
-		return result{name, "skip", "could not ask GitHub: " + err.Error()}
-	}
+// newestSuccess is when a run in the list last finished successfully, or the
+// zero time if none has.
+func newestSuccess(runs []run) time.Time {
 	var newest time.Time
 	for _, r := range runs {
 		if r.Status == "completed" && r.Conclusion == "success" && r.UpdatedAt.After(newest) {
 			newest = r.UpdatedAt
 		}
 	}
+	return newest
+}
+
+// A scheduled workflow that stops running is invisible: there is no failed run
+// to notice, only an absence. This looks for the absence.
+//
+// It asks about ONE workflow, the drift check, and that is the whole point. It
+// used to ask about every scheduled run in the repository, and this patrol is
+// itself a scheduled workflow - so the moment the patrol went green, its own
+// successes would have satisfied the one check that exists to notice the
+// nightly had stopped. It was only right before because the patrol was failing
+// too.
+func (c *client) scheduledTierIsActuallyRunning(workflow string, within time.Duration) result {
+	const name = "scheduled tier still completing"
+	runs, err := c.runs(workflow, "event=schedule")
+	if err != nil {
+		return result{name, "unknown", "could not ask GitHub: " + err.Error()}
+	}
+	newest := newestSuccess(runs)
 	if newest.IsZero() {
 		return result{name, "fail", "no scheduled run has ever succeeded, so nothing is confirming drift is being checked"}
 	}
@@ -200,9 +259,9 @@ func (c *client) scheduledTierIsActuallyRunning(within time.Duration) result {
 // A converge that failed left the estate part-way to a state somebody merged.
 func (c *client) lastConvergeDidNotFail() result {
 	const name = "last converge did not fail"
-	runs, err := c.runs("branch=main&event=push")
+	runs, err := c.runs("", "branch=main&event=push")
 	if err != nil {
-		return result{name, "skip", "could not ask GitHub: " + err.Error()}
+		return result{name, "unknown", "could not ask GitHub: " + err.Error()}
 	}
 	sort.Slice(runs, func(i, j int) bool { return runs[i].CreatedAt.After(runs[j].CreatedAt) })
 	for _, r := range runs {
@@ -227,6 +286,6 @@ func envOr(key, fallback string) string {
 }
 
 func fatal(msg string) {
-	fmt.Fprintln(os.Stderr, "gatehouse patrol: "+msg)
+	fmt.Fprintln(os.Stderr, "security patrol: "+msg)
 	os.Exit(2)
 }

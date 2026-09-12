@@ -164,7 +164,7 @@ func guardDeliveries(args []string) int {
 	//
 	// The hook runs this from the root, so relative paths worked and nothing
 	// said they were load-bearing. CI runs it as
-	// `go run -C scripts/gatehouse .` - because each program is its own
+	// `go run -C scripts/security .` - because each program is its own
 	// module and there is nothing at the root to resolve a package path
 	// against - which puts the working directory inside the module, and the
 	// gate failed with "no such file or directory" instead of a verdict.
@@ -213,7 +213,7 @@ func guardDeliveries(args []string) int {
 }
 
 func refuse(msg string) int {
-	fmt.Fprintln(os.Stderr, "gatehouse guard-deliveries: "+msg)
+	fmt.Fprintln(os.Stderr, "security guard-deliveries: "+msg)
 	return 1
 }
 
