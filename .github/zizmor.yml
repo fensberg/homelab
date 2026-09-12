@@ -1,0 +1,44 @@
+# zizmor's exemptions, and the condition that removes each one.
+#
+# Same rule as .codespellrc and .checkov.yaml: an entry names what would make it
+# unnecessary, so this file stays a set of decisions rather than an accumulation
+# nobody can audit. tests/go/repo/zizmor_test.go checks that each one is still
+# real, so an exemption cannot outlive the thing it was written for.
+rules:
+  # zizmor wants `uses: $/.github/actions/versions` - GitHub's self-repository
+  # syntax, generally available since 2026-07-30 - in place of the relative
+  # `uses: ./.github/actions/versions` these eight workflows use to read
+  # scripts/versions.env through the local composite action.
+  #
+  # It is right that $/ is the better form. It resolves at the commit being run
+  # rather than against whatever the workspace happens to hold, so it does not
+  # depend on a checkout having already happened, and it cannot be redirected by
+  # a caller's checkout if one of these ever becomes a reusable workflow. None
+  # is today - nothing here declares workflow_call - so the two resolve
+  # identically and the finding is latent rather than live. zizmor scores it low
+  # for that reason.
+  #
+  # It is not taken because THE TWO WORKFLOW LINTERS IN THIS REPOSITORY DISAGREE
+  # ABOUT IT. actionlint, which pre-commit pins and the Format lane runs, refuses
+  # $/ outright - "invalid format because ref is missing" - and its newest
+  # release (v1.7.12, March 2026) predates GitHub's announcement by four months.
+  # So adopting $/ turns the Workflow Scan lane green by turning the Format lane
+  # red, and the only way to have both would be an actionlint ignore covering the
+  # rule that validates the format of every `uses:` in the repository. Silencing
+  # a check that reads every action reference, to satisfy a cosmetic finding
+  # about eight of them, is a worse trade than this exemption.
+  #
+  # Removed when: actionlint ships a release that accepts $/. Then bump the
+  # actionlint rev in .pre-commit-config.yaml, run `zizmor --fix .github/workflows`,
+  # and delete this block - the fix is mechanical and zizmor applies it itself.
+  # Tracked as #387, which carries the upstream state and the ordered steps.
+  self-repository:
+    ignore:
+      - clerk.yml
+      - deploy-infrastructure.yml
+      - expediter.yml
+      - inspector.yml
+      - integration-tests.yml
+      - pr-validation.yml
+      - security-patrol.yml
+      - sensitive-paths.yml

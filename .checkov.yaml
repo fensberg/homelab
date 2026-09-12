@@ -1,14 +1,14 @@
-# Checkov config, read automatically from the repo root (CHECKOV_FILE_NAME
-# in .github/super-linter.vars is unset, which defaults to this filename).
+# Checkov config, read automatically from the repository root.
 #
-# Checkov is one of the tools Super-Linter's own docs list as always
-# scanning the whole workspace regardless of FILTER_REGEX_EXCLUDE - so
-# excluding clusters/management/flux-system/ (Flux's own generated install
-# and sync manifest, committed verbatim - see super-linter.vars for the full
-# reasoning) needs Checkov's own skip-path mechanism instead. It is not ours
-# to edit, and the broad ClusterRole permissions it flags are inherent to
-# how a GitOps controller has to work, not a misconfiguration in code we
-# control.
+# The Policy Scan lane runs `checkov --directory .` and this is what it obeys.
+# It used to be read through Super-Linter, which is gone (#365); the exclusions
+# below are unchanged and the reasoning that lived in that file now lives here,
+# because a config deferring to a deleted file explains nothing.
+#
+# clusters/management/flux-system/ is Flux's own generated install and sync
+# manifest, committed verbatim. It is not ours to edit, and the broad
+# ClusterRole permissions Checkov flags in it are inherent to how a GitOps
+# controller has to work rather than a misconfiguration in code we control.
 # HEALTHCHECK, which Kubernetes ignores.
 #
 # CKV_DOCKER_2 wants a HEALTHCHECK instruction in every image. Nothing built

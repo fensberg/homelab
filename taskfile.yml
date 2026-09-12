@@ -6,7 +6,6 @@ vars:
 
   # Keep this tag in step with the SHA pinned in pr-validation.yml. They are
   # the same release, and the point of running it locally is that it is.
-  LINT_IMAGE: ghcr.io/super-linter/super-linter:slim-v8.7.0
 
 # The single entrypoint is scripts/contractor, a Go program. Every task below
 # builds it fresh (fast, and always current source - no stale binary to
@@ -124,10 +123,10 @@ tasks:
       - go build -C scripts/contractor -o ../../toolshed/contractor .
       - ./toolshed/contractor survey {{.CLI_ARGS}}
 
-  merge-guard:
+  enforce-merge:
     desc: "Refuse a merge commit signedpush could not publish (commit-msg hook)"
     # Wired into commit-msg rather than offered as advice, for the same reason
-    # push-guard is: knowing the rule was not enough. signedpush already
+    # enforce-push is: knowing the rule was not enough. signedpush already
     # refuses a merge at push time and says to rebase, and that refusal arrives
     # after the tests have run on the commit and when clearing it costs a
     # rebase, a recreated ref and a closed pull request (#260).
@@ -135,10 +134,10 @@ tasks:
     # commit-msg, not pre-commit: git does not run pre-commit for a merge at
     # all, so a guard there would miss the case entirely.
     cmds:
-      - go build -C scripts/security -o ../../toolshed/security .
-      - ./toolshed/security guard-merge
+      - go build -C scripts/superintendent -o ../../toolshed/superintendent .
+      - ./toolshed/superintendent enforce-merge
 
-  push-guard:
+  enforce-push:
     desc: "Refuse a plain git push that would update a branch (pre-push hook)"
     # Wired into the pre-push hook rather than offered as advice. `git push`
     # producing unsigned commits was documented and it was not enough - a
@@ -148,8 +147,8 @@ tasks:
     # Not internal: pre-commit invokes it as a command, so `task` must be
     # willing to run it from the CLI.
     cmds:
-      - go build -C scripts/security -o ../../toolshed/security .
-      - ./toolshed/security guard-push
+      - go build -C scripts/superintendent -o ../../toolshed/superintendent .
+      - ./toolshed/superintendent enforce-push
 
   delivery-guard:
     desc: "Refuse a commit while an unapproved third-party hook is installed (pre-commit)"
@@ -507,19 +506,25 @@ tasks:
       - go test -C tests/go -tags=e2e -timeout 90m -v ./e2e/...
 
   lint:
-    desc: "The slow analysis lane: checkov, tflint, ansible-lint, shellcheck"
+    desc: "The slow analysis lane, locally: checkov, hadolint, zizmor, codespell"
+    # The same four tools the pull request lanes run, from the same pins in
+    # scripts/versions.env, installed by ./scripts/install-dependencies.sh.
+    #
+    # This used to be one container running thirty checks behind one status.
+    # It hung intermittently for its whole timeout, three times in two days,
+    # and each hang blocked whatever pull request was in flight - so the
+    # aggregate went and its checks were re-homed one by one (#365). Running
+    # the tools directly also means a failure names the tool that failed.
     cmds:
-      # Needs Docker and takes a couple of minutes, which is why `fix` and
-      # `validate` exist separately - between them they catch most of what
-      # this would, in a fraction of the time. Worth running before opening a
-      # pull request, not before every commit.
-      - >-
-        docker run --rm
-        -e RUN_LOCAL=true
-        -e DEFAULT_BRANCH=main
-        --env-file .github/super-linter.vars
-        -v "{{.USER_WORKING_DIR}}:/tmp/lint"
-        {{.LINT_IMAGE}}
+      # Policy scanning. Configuration is .checkov.yaml at the root, found
+      # automatically, and every exclusion in it carries its reasoning.
+      - checkov --directory . --quiet --compact
+      # Every Dockerfile this estate builds, discovered rather than listed.
+      - git ls-files '*Dockerfile' '*/Dockerfile' | xargs -r hadolint
+      # The workflows, which are the part of this repository holding a token.
+      - zizmor .github/workflows
+      # Prose and code alike.
+      - codespell
 
   destroy:
     desc: "Builds break-ground, then tells you how to tear a site down - see comment"

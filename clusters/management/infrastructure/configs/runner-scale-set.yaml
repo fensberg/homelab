@@ -219,13 +219,19 @@ spec:
                 - matchExpressions:
                     - key: node-role.kubernetes.io/control-plane
                       operator: DoesNotExist
-        # runAsUser is set explicitly, and it has to be. The image's own USER
-        # is the name "runner", not a number, and the kubelet refuses a pod
-        # with runAsNonRoot: true and a non-numeric image user - it cannot
-        # verify a name is not root, so it will not start the container at
-        # all. 1001 is that account's uid, read out of the published image's
-        # /etc/passwd rather than assumed; the image build asserts it still
-        # holds, so an upstream renumbering fails there instead of here.
+        # runAsUser is set explicitly, and for now it still has to be. The
+        # image PINNED ABOVE has a non-numeric USER - the name "runner" - and
+        # the kubelet refuses a pod with runAsNonRoot: true and a non-numeric
+        # image user, because it cannot verify a name is not root. 1001 is that
+        # account's uid, read out of the published image's /etc/passwd rather
+        # than assumed; the image build asserts it still holds, so an upstream
+        # renumbering fails there instead of here.
+        #
+        # The Dockerfile now declares USER 1001 instead, which is what the
+        # listener above relies on to need no pin at all. This one cannot drop
+        # yet: the digest above predates that change, so removing the pin
+        # before the digest is bumped would stop the runner starting. #389 carries
+        # that follow-up and the order it has to happen in.
         securityContext:
           runAsNonRoot: true
           runAsUser: 1001

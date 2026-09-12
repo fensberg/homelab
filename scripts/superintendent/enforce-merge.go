@@ -20,7 +20,7 @@
 //
 // WHO THIS APPLIES TO, which is the question that got the push guard wrong
 // once already. It is not "is this the agent". It is the same property
-// question guard-push asks, one stage earlier: an UNSIGNED merge commit is the
+// question enforce-push asks, one stage earlier: an UNSIGNED merge commit is the
 // dead end, because only a party that cannot sign locally needs signedpush to
 // publish it.
 //
@@ -31,8 +31,8 @@
 //   - The agent holds no user account by design, so it cannot sign locally at
 //     all and must publish through signedpush, which cannot carry a merge.
 //
-// One honest difference from guard-push, since it changes what this can claim.
-// guard-push inspects commits that exist and asks whether a signature is
+// One honest difference from enforce-push, since it changes what this can claim.
+// enforce-push inspects commits that exist and asks whether a signature is
 // present. At commit-msg time the commit does not exist yet, so this has to
 // predict from `commit.gpgsign`. That is not an escape hatch - setting it true
 // without a working key makes `git commit` fail outright rather than pass this
@@ -67,7 +67,7 @@ func signsLocally() bool {
 	return strings.EqualFold(strings.TrimSpace(string(out)), "true")
 }
 
-func guardMerge(args []string) int {
+func enforceMerge(args []string) int {
 	if !mergeInProgress() {
 		return 0
 	}
@@ -75,7 +75,7 @@ func guardMerge(args []string) int {
 		return 0
 	}
 
-	fmt.Print(`security: this would be a merge commit, and it cannot be published.
+	fmt.Print(`superintendent: this would be a merge commit, and it cannot be published.
 
 signedpush replays a branch as a linear chain so GitHub can sign each commit,
 and a merge commit has two parents. It would be refused at push time - after

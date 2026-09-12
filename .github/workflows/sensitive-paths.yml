@@ -113,7 +113,7 @@ jobs:
           EXPEDITER_LOGIN: ${{ vars.EXPEDITER_LOGIN }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: go run -C scripts/security . guard-standing-order -base "$BASE" -head "$HEAD"
+        run: go run -C scripts/superintendent . enforce-standing-order -base "$BASE" -head "$HEAD"
 
       - name: Which sensitive paths were touched
         id: sensor

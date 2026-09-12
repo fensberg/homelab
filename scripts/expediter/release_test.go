@@ -111,7 +111,7 @@ func TestReleaseDueVerbJudgesTheInstantItIsGiven(t *testing.T) {
 		t.Errorf("an early instant is not an error, it is an answer: exited %d", rc)
 	}
 	if rc := releaseDue([]string{"-at", "the small hours"}); rc == 0 {
-		t.Error("an unparseable instant was accepted")
+		t.Error("an unparsable instant was accepted")
 	}
 	if rc := releaseDue([]string{"-zone", "America/Chigard", "-at", "2026-07-15T09:00:00Z"}); rc == 0 {
 		t.Error("an unknown zone was accepted")
