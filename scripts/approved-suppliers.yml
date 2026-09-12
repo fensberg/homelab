@@ -510,22 +510,43 @@ egress:
       - storage.googleapis.com:443
       - sum.golang.org:443
 
-  - job: pr-validation.yml/analyze
+  - job: pr-validation.yml/dockerfiles
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+
+  - job: pr-validation.yml/policy
     policy: block
     hosts:
       - api.github.com:443
       - files.pythonhosted.org:443
-      - ghcr.io:443
       - github.com:443
-      - mirror.gcr.io:443
       - objects.githubusercontent.com:443
-      - pkg-containers.githubusercontent.com:443
-      - proxy.golang.org:443
       - pypi.org:443
-      - raw.githubusercontent.com:443
-      - registry.npmjs.org:443
-      - storage.googleapis.com:443
-      - sum.golang.org:443
+      - release-assets.githubusercontent.com:443
+
+  - job: pr-validation.yml/spelling
+    policy: block
+    hosts:
+      - api.github.com:443
+      - files.pythonhosted.org:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - pypi.org:443
+      - release-assets.githubusercontent.com:443
+
+  - job: pr-validation.yml/workflowscan
+    policy: block
+    hosts:
+      - api.github.com:443
+      - files.pythonhosted.org:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - pypi.org:443
+      - release-assets.githubusercontent.com:443
 
   - job: pr-validation.yml/semgrep
     policy: audit
@@ -604,6 +625,50 @@ egress:
       recorded under game-server-delivery above. What bounds this is not
       the network: the job produces an artifact pinned by digest and
       pulled from this estate's own registry.
+
+# Analysis tools this repository installs and runs directly.
+#
+# These replaced Super-Linter (#365), which bundled thirty checks behind one
+# status and one supplier. Each is now taken from its publisher, pinned in
+# scripts/versions.env, and owned by exactly one lane - which is the convention
+# everywhere else here and the thing the aggregate was always the exception to.
+#
+# Being honest about what this section is: the scanners that came before these -
+# TruffleHog, Semgrep, Trivy - are NOT declared anywhere in this file, and
+# neither are the GitHub Actions every workflow uses. #385 covers that gap, and
+# this section is the shape its answer should take, not a complete list of what
+# the estate runs.
+
+tools:
+  - source: bridgecrewio/checkov
+    version: CHECKOV_VERSION
+    reason: >-
+      Policy scanning for Kubernetes manifests, Dockerfiles, OpenTofu and
+      GitHub Actions workflows. It is the only tool here that has produced a
+      finding nothing else caught - CKV_GHA_7, on the expediter's dispatch
+      input. Its configuration is .checkov.yaml at the repository root, which
+      predates this and carries the reasoning for every exclusion in it.
+  - source: hadolint/hadolint
+    version: HADOLINT_VERSION
+    reason: >-
+      Dockerfile linting, for the two images this estate builds. Taken as a
+      single static binary from the publisher's own release and verified
+      against HADOLINT_SHA256 - the same pattern as TruffleHog, because a
+      checksum beside the version is what makes a downloaded binary a pin
+      rather than a hope.
+  - source: zizmorcore/zizmor
+    version: ZIZMOR_VERSION
+    reason: >-
+      Static analysis for GitHub Actions workflows, which are the part of this
+      repository that runs with a token. It caught the expediter's App token
+      inheriting every permission the installation held, which nothing else
+      here would have said a word about.
+  - source: codespell-project/codespell
+    version: CODESPELL_VERSION
+    reason: >-
+      Spelling, across prose and code alike. The cheapest check in the set and
+      the one most likely to be the only reader of a comment nobody has opened
+      in a year.
 
 # Declared exemptions.
 #

@@ -146,8 +146,9 @@ jobs:
       #
       # tofu-fmt and go-fmt: no pinned binary here. ubuntu-latest ships some Go
       # toolchain, not necessarily the one this repo pins. The Validate lane
-      # installs a pinned tofu and runs `tofu fmt -check`; Go formatting is
-      # enforced by Super-Linter's Go analysis in the Analyze lane.
+      # installs both pinned and runs `tofu fmt -check` and `gofmt -l` there.
+      # Go formatting used to be enforced by the aggregate's Go analysis, which
+      # went in #365 - leaving it owned by nothing until Validate took it.
       #
       # delivery-guard: already ran, above, somewhere it could still refuse.
       # As a hook it would answer nothing new - this runner's cache was built
@@ -166,13 +167,14 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure --color always
 
   # -----------------------------------------------------------------
-  # LANE 2: Shell scripts - the sole owner of ShellCheck. Super-Linter
-  # bundles its own shellcheck invocation (BASH), switched off in
-  # super-linter.vars for the same one-owner-per-check reason Trivy was
-  # pulled out: this repo has two shell scripts, so a dedicated lane costs
-  # nothing and is one less shared version/config surface to keep in sync.
-  # BASH_EXEC (execute-bit checking) stays in Super-Linter - it isn't
-  # shellcheck and doesn't overlap with this.
+  # LANE 2: Shell scripts - the sole owner of ShellCheck. A dedicated lane
+  # for the same one-owner-per-check reason every other lane here has one:
+  # this repo has a handful of shell scripts, so it costs nothing and leaves
+  # no shared version or config surface to keep in sync.
+  #
+  # The execute-bit check that used to sit beside it inside the aggregate is
+  # now check-shebang-scripts-are-executable in .pre-commit-config.yaml (#365).
+  # It is not shellcheck and does not overlap with this.
   # -----------------------------------------------------------------
   shellcheck:
     name: "Shell Lint (ShellCheck)"
@@ -207,9 +209,10 @@ jobs:
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
         with:
-          # Pinned to match the shellcheck version Super-Linter slim-v8.7.0
-          # bundles, so a lint that passes here would also have passed
-          # there - one version to reason about, not two.
+          # Pinned explicitly, because a lane that takes whatever the action
+          # ships is a lane whose findings change without a commit. The value
+          # was chosen to match what the aggregate bundled when this lane was
+          # split out of it, so its verdicts did not move that day.
           version: "v0.11.0"
           check_together: "yes"
 
@@ -362,14 +365,12 @@ jobs:
               -schema-location default -schema-location "${schema}" -
           done
 
-      # Not Super-Linter's Go linting: in diff mode, when a PR's changed Go
-      # files span more than one package directory, Super-Linter hands them
-      # to golangci-lint as a flat file list, which go/packages rejects with
-      # "named files must all be in one directory" - a confirmed upstream
-      # bug (super-linter/super-linter#6294), not anything about this code.
-      # go vet/build here works on whole packages, so it is not exposed to
-      # that bug, and it is not diff-limited either. VALIDATE_GO and
-      # VALIDATE_GO_MODULES are off in super-linter.vars accordingly.
+      # Go vetting and building belong here, on whole packages and not
+      # diff-limited. The aggregate that used to offer Go linting handed
+      # changed files to golangci-lint as a flat list, which go/packages
+      # rejects when they span more than one directory - a confirmed upstream
+      # bug (super-linter/super-linter#6294). That tool is gone (#365); this
+      # lane was already the honest owner and now it is the only one.
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -392,24 +393,36 @@ jobs:
       # Test lane instead, which already has both the endpoints and the
       # module cache.
 
-  # -----------------------------------------------------------------
-  # LANE 4: Does it behave?
-  # -----------------------------------------------------------------
-  # Validate above proves the code resolves. This proves it does the right
-  # thing: the Go unit tests, the config-contract tests that hold
-  # scripts/contractor and management/cluster/registry.tf to the same rules, the
-  # OpenTofu invariant tests, and the JavaScript/TypeScript tier.
-  #
-  # Everything here is hermetic - no 1Password, no hypervisor, no cluster.
-  # The tiers that need a real estate live in integration-tests.yml, on a
-  # self-hosted runner, and cannot be triggered by a pull request. That
-  # separation is the point: a fork PR runs this lane in full and still cannot
-  # reach a credential or a machine.
-  #
-  # One lane rather than three because the three steps share a checkout and
-  # most of a toolchain, and splitting them would triple the install time to
-  # buy a slightly more specific red X. The step names carry that information
-  # already.
+      # -----------------------------------------------------------------
+      # LANE 4: Does it behave?
+      # -----------------------------------------------------------------
+      # Validate above proves the code resolves. This proves it does the right
+      # thing: the Go unit tests, the config-contract tests that hold
+      # scripts/contractor and management/cluster/registry.tf to the same rules, the
+      # OpenTofu invariant tests, and the JavaScript/TypeScript tier.
+      #
+      # Everything here is hermetic - no 1Password, no hypervisor, no cluster.
+      # The tiers that need a real estate live in integration-tests.yml, on a
+      # self-hosted runner, and cannot be triggered by a pull request. That
+      # separation is the point: a fork PR runs this lane in full and still cannot
+      # reach a credential or a machine.
+      #
+      # One lane rather than three because the three steps share a checkout and
+      # most of a toolchain, and splitting them would triple the install time to
+      # buy a slightly more specific red X. The step names carry that information
+      # already.
+      # Formatting, with the pinned toolchain. The pre-commit hook skips this
+      # in the Format lane because ubuntu-latest's Go is not necessarily the
+      # one this repository pins, so it is checked here where it is.
+      - name: Check Go formatting
+        run: |
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
   test:
     name: "Test (go, tofu, vitest)"
     runs-on: ubuntu-latest
@@ -568,8 +581,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # The type checker, not a linter: it reads the same tsconfig.json a
-      # developer's editor does, and it is the owner of TypeScript
-      # correctness here - see .github/super-linter.vars.
+      # developer's editor does, and it is the sole owner of TypeScript
+      # correctness in this repository.
       - name: Typecheck (tsc)
         run: pnpm typecheck
 
@@ -582,38 +595,26 @@ jobs:
           bash scripts/coverage-gate.sh js "$pct"
 
   # -----------------------------------------------------------------
-  # LANE 5: Static analysis - the slow one
+  # LANES 5-8: Static analysis, one tool each
   # -----------------------------------------------------------------
-  # checkov, ansible-lint, tflint, shellcheck, markdownlint, yamllint,
-  # PSScriptAnalyzer, zizmor. Every formatter it would otherwise duplicate is
-  # switched off in .github/super-linter.vars; the reasoning lives there.
-  analyze:
-    name: "Analyze (Super-Linter)"
+  # These four were one lane running one image that bundled thirty checks
+  # behind a single status. It hung intermittently for its whole timeout,
+  # three times in two days, and each hang blocked whatever pull request was
+  # in flight (#365). Each tool is now taken from its publisher, pinned in
+  # scripts/versions.env, declared in scripts/approved-suppliers.yml, and owned
+  # by exactly one lane - so a failure names the tool that failed.
+  policy:
+    name: "Policy Scan (Checkov)"
     runs-on: ubuntu-latest
-    # Bounded so a stuck job cannot bill a metered vendor for six hours,
-    # which is what GitHub's default timeout allows.
-    #
-    # Ten, not twenty (#365). The lane finishes in about two minutes when it
-    # works and hangs indefinitely when it does not, so twenty bought eighteen
-    # minutes of waiting to learn the same thing. Ten keeps a wide margin over a
-    # normal run and makes a hang fail while somebody is still watching.
+    # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+    # is what GitHub's default timeout allows.
     timeout-minutes: 10
     permissions:
       contents: read
-      statuses: write
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
-          # The slim image carries its own linters, but three of them fetch
-          # data at run time rather than shipping it: Super-Linter bundles
-          # Trivy, which pulls its vulnerability database as an OCI artifact
-          # from mirror.gcr.io (redirected to storage.googleapis.com);
-          # checkov checks pypi on startup; and the Go linters auto-download
-          # a matching toolchain via GOPROXY/GOSUMDB whenever the image's
-          # bundled Go is older than go.mod's pinned version (scripts/contractor
-          # pins go 1.26, deliberately - see the root CLAUDE.md - so this is
-          # not a version to relax to dodge the network requirement).
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
           # The copy lives here because harden-runner reads its policy in a
@@ -622,40 +623,162 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             files.pythonhosted.org:443
-            ghcr.io:443
             github.com:443
-            mirror.gcr.io:443
             objects.githubusercontent.com:443
-            pkg-containers.githubusercontent.com:443
-            proxy.golang.org:443
             pypi.org:443
-            raw.githubusercontent.com:443
-            registry.npmjs.org:443
-            storage.googleapis.com:443
-            sum.golang.org:443
+            release-assets.githubusercontent.com:443
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      # The same file `task lint` passes to the container, so a local run and
-      # CI are configured identically. See .github/super-linter.vars.
-      - name: Load Super-Linter configuration
-        run: grep -v "^#" .github/super-linter.vars | grep . >> "$GITHUB_ENV"
+      # Versions come from scripts/versions.env, which is the only place one
+      # is written. See .github/actions/versions for why this is a step
+      # rather than a setup job.
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
 
-      - name: Run Super-Linter
-        uses: super-linter/super-linter/slim@4ce20838b8ab83717e78138c5b3a1407148e0918 # v8.7.0
+      - name: Install checkov (pinned)
+        run: python3 -m pip install --user --break-system-packages "checkov==${CHECKOV_VERSION}"
+
+      # --skip-download, deliberately. Checkov asks api0.prismacloud.io for
+      # policy metadata on startup, that host is not on the allowlist above and
+      # will not be, and the attempt is simply time spent waiting for a
+      # connection this estate refuses. The checks themselves are local.
+      #
+      # Configuration is .checkov.yaml at the repository root, read
+      # automatically, and every exclusion in it carries its reasoning.
+      - name: Run Checkov
+        run: checkov --directory . --quiet --compact --skip-download
+
+  dockerfiles:
+    name: "Dockerfile Scan (hadolint)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
+      # A single static binary from the publisher's own release, verified
+      # against the checksum pinned beside its version - the same pattern the
+      # TruffleHog lane uses, because a download with no checksum is a hope.
+      - name: Install hadolint (pinned, checksum-verified)
+        run: |
+          curl -fsSL -o hadolint \
+            "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+          echo "${HADOLINT_SHA256}  hadolint" | sha256sum -c -
+          sudo install -m 0755 hadolint /usr/local/bin/hadolint
+          rm hadolint
+
+      # Every Dockerfile this estate builds, discovered rather than listed, so
+      # a new image is covered the moment it exists.
+      - name: Run hadolint
+        run: git ls-files '*Dockerfile' '*/Dockerfile' | xargs -r hadolint
+
+  workflowscan:
+    name: "Workflow Scan (zizmor)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            files.pythonhosted.org:443
+            github.com:443
+            objects.githubusercontent.com:443
+            pypi.org:443
+            release-assets.githubusercontent.com:443
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
+      - name: Install zizmor (pinned)
+        run: python3 -m pip install --user --break-system-packages "zizmor==${ZIZMOR_VERSION}"
+
+      # The workflows are the part of this repository that runs with a token,
+      # which is why this lane exists at all: it caught the expediter's App
+      # token inheriting every permission its installation held. The token
+      # below is what lets its online audits ask about the actions in use.
+      - name: Run zizmor
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # CI lints the diff. A local run lints everything, because RUN_LOCAL
-          # forces it - which is why this is here and not in the shared file.
-          VALIDATE_ALL_CODEBASE: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: zizmor .github/workflows
 
-  # -----------------------------------------------------------------
-  # LANE 6: Static Application Security Testing (SAST)
-  # -----------------------------------------------------------------
+  spelling:
+    name: "Spelling (codespell)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            files.pythonhosted.org:443
+            github.com:443
+            objects.githubusercontent.com:443
+            pypi.org:443
+            release-assets.githubusercontent.com:443
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
+      - name: Install codespell (pinned)
+        run: python3 -m pip install --user --break-system-packages "codespell==${CODESPELL_VERSION}"
+
+      # Prose and code alike. It reads the epoch records, which is how it
+      # caught a quotation carrying the operator's own typos into the history.
+      - name: Run codespell
+        run: codespell
+
   semgrep:
     name: "Logic Scan (Semgrep)"
     runs-on: ubuntu-latest
@@ -707,15 +830,13 @@ jobs:
 
   # -----------------------------------------------------------------
   # LANE 7: Infrastructure Misconfigurations + Dependency Vulnerabilities
-  # (IaC + vuln) - the sole owner of Trivy. Super-Linter bundles its own
-  # Trivy invocation, but VALIDATE_TRIVY is switched off in
-  # super-linter.vars so it never runs there: two Trivy invocations with
-  # two different configs is exactly the failure mode that put an
-  # unformatted 11k-line file on a PR that pre-commit had already passed
-  # (see the "owned by" comments in super-linter.vars). scan-type "fs"
-  # with scanners vuln+misconfig covers what Super-Linter's bundled Trivy
-  # was doing (gomod vulnerability scanning + Kubernetes/Terraform
-  # misconfiguration scanning) in a single pass; secret scanning is
+  # (IaC + vuln) - the sole owner of Trivy. It was pulled out of the
+  # aggregate that also bundled Trivy, because two invocations with two
+  # different configs is exactly the failure mode that put an unformatted
+  # 11k-line file on a PR that pre-commit had already passed. scan-type "fs"
+  # with scanners vuln+misconfig covers gomod vulnerability scanning and
+  # Kubernetes/Terraform misconfiguration scanning in a single pass; secret
+  # scanning is
   # deliberately left off scanners here because Secrets Scan (TruffleHog)
   # already owns that.
   # -----------------------------------------------------------------
@@ -763,8 +884,8 @@ jobs:
           exit-code: "1"
           severity: "CRITICAL,HIGH"
           # clusters/management/flux-system/ is Flux's own generated install
-          # manifest, committed verbatim (see super-linter.vars for the full
-          # reasoning). Its ClusterRoles need broad permissions to reconcile
+          # manifest, committed verbatim (.checkov.yaml carries the full
+          # reasoning, and excludes it for the same reason). Its ClusterRoles need broad permissions to reconcile
           # arbitrary resource types - that is how Flux has to work, not a
           # misconfiguration in code we control - so this is excluded from
           # scanning entirely rather than suppressing the specific rule IDs

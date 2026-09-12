@@ -49,7 +49,7 @@ name: "Expediter"
 # WHAT KEEPS IT HONEST. The standing order is the expediter's GitHub App being a
 # bypass actor on the ruleset that requires a review - and only that one. The
 # ruleset requiring checks has no bypass, so its pull request must pass all of
-# them, including `security guard-standing-order` in the Sensitive Paths lane,
+# them, including `superintendent enforce-standing-order` in the Sensitive
 # which refuses any pull request by the expediter that changes anything but
 # those two lines or points the digest at a different image repository. The
 # review is skipped; the checks are not.
@@ -375,7 +375,7 @@ jobs:
               "" \
               "## What happens next" \
               "" \
-              "Every required check runs, including \`security guard-standing-order\`, which refuses this pull request if it changes anything but the digest and the recorded build." \
+              "Every required check runs, including \`superintendent enforce-standing-order\`, which refuses this pull request if it changes anything but the digest and the recorded build." \
               "" \
               "**It merges and is tagged at 4am America/Chicago**, because the rollout drops everybody who is connected and production reconciles from the tag. Merge it yourself if you want it sooner - nothing here waits for an approval." \
               "" \
@@ -514,7 +514,7 @@ jobs:
         run: |
           set -euo pipefail
           # Armed only when the check that bounds the order is: with no
-          # EXPEDITER_LOGIN, guard-standing-order has nobody to hold to it, so
+          # EXPEDITER_LOGIN, enforce-standing-order has nobody to hold to it, so
           # nothing is merged under the bypass.
           if [ -z "$HOLDER" ]; then
             gh pr comment "$PR" --repo "$REPO" --body "Every required check passed. No standing order is configured (EXPEDITER_LOGIN is unset), so this waits for a review."
