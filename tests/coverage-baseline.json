@@ -54,23 +54,24 @@
     "zero: deleting one looks like tidying away a test that never fails."
   ],
   "baselines": {
-    "go/attestation": 26,
+    "go/attestation": 26.6,
     "go/clerk": 56,
-    "go/collector": 7,
+    "go/collector": 30.4,
     "go/contractor": 39.2,
-    "go/security": 31,
-    "go/inspector": 75,
-    "go/signedpush": 36,
+    "go/expediter": 72.4,
+    "go/security": 60.4,
+    "go/inspector": 75.8,
+    "go/signedpush": 40.4,
     "js": 0
   },
   "tiers": {
-    "unit": 391,
-    "contract": 123,
+    "unit": 453,
+    "contract": 149,
     "integration": 14,
     "api": 9,
     "e2e": 2,
     "js": 9,
-    "tofu": 11,
+    "tofu": 12,
     "fuzz": 8
   }
 }

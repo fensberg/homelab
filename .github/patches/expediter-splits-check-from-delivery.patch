@@ -1,0 +1,547 @@
+diff --git a/.github/workflows/expediter.yml b/.github/workflows/expediter.yml
+index 8466b1d..ef8d9a7 100644
+--- a/.github/workflows/expediter.yml
++++ b/.github/workflows/expediter.yml
+@@ -14,30 +14,45 @@ name: "Expediter"
+ # copying a digest out of a log, editing a manifest, opening, merging and
+ # tagging - six steps, none of them a decision, and each one a way to get it
+ # wrong (the log prints the local image id right beside the manifest digest).
+-# The version itself is deliberately not pinned in the Dockerfile, for the
+-# reason it gives there; this is what makes that affordable.
+ #
+-# WHAT IT MAY DO, AND WHAT KEEPS IT THERE.
++# THREE JOBS, BECAUSE THEY COST WILDLY DIFFERENT AMOUNTS.
+ #
+-#   check-deliveries  ask Steam for the public build; compare it with the one
+-#                     recorded beside the pinned digest
+-#   take-delivery     build the image for exactly that build, open a pull
+-#                     request changing the digest and the recorded build
+-#   (merge, release)  once every required check passes, merge under its
+-#                     standing order and tag the release
++#   check    one HTTPS call to Steam's news API. Has Valve posted anything?
++#   deliver  the expensive half, and only when check says to look: SteamCMD for
++#            the real build id, then a 2 GB download, a build, a push, and a
++#            pull request changing the pinned digest and the recorded build
++#   release  at 4am local, merge what is waiting and tag it
+ #
+-# The standing order is the expediter's GitHub App being a bypass actor on the
+-# ruleset that requires a review - and only that one. The ruleset requiring
+-# checks has no bypass, so its pull request must pass all of them, including
+-# `security guard-standing-order` in the Sensitive Paths lane, which refuses any
+-# pull request by the expediter that changes anything but those two lines or
+-# points the digest at a different image repository. The review is skipped; the
+-# checks are not.
++# The first version of this ran the whole check every fifteen minutes, which
++# meant installing a 32-bit library and SteamCMD ninety-six times a day to ask
++# one question that changes a few times a year. The operator's objection was
++# exactly right, and the split is the answer to it.
+ #
+-# Without the bypass the merge is refused and the pull request waits for a
+-# review, which is the same machinery with a person at the end. Without the
+-# EXPEDITER_LOGIN variable it does not attempt the merge at all, so the bypass
+-# is never used while the check that bounds it is unarmed.
++# WHY CHECK IS A DOORBELL AND NOT A RECEIPT. Steam has no cheap first-party way
++# to ask for a dedicated server's build id - ISteamApps/UpToDateCheck refuses
++# every dedicated-server appid, and the server appid's news feed carries press
++# articles rather than Valve's own posts. The client appid's announcement feed
++# does carry them, so that is the doorbell, and SteamCMD in `deliver` remains
++# the authority. A missed post must therefore never be the only reason this
++# estate believes it is current: the daily pass below takes the authoritative
++# route whatever the doorbell said.
++#
++# WHY THE RELEASE WAITS FOR 4AM. Production reconciles from the tag, the
++# deployment's strategy is Recreate, and a rollout drops everybody who is
++# connected. Merging changes nothing - staging does not run this workload and
++# production follows tags - so the pull request may be opened and merged the
++# moment it exists; only the tag disturbs anyone. It therefore lands at 4am
++# local, when it disturbs nobody, and the operator can merge earlier by hand
++# whenever they want it sooner. There is no approval button on purpose: the
++# whole point of the expediter is that nobody has to press one.
++#
++# WHAT KEEPS IT HONEST. The standing order is the expediter's GitHub App being a
++# bypass actor on the ruleset that requires a review - and only that one. The
++# ruleset requiring checks has no bypass, so its pull request must pass all of
++# them, including `security guard-standing-order` in the Sensitive Paths lane,
++# which refuses any pull request by the expediter that changes anything but
++# those two lines or points the digest at a different image repository. The
++# review is skipped; the checks are not.
+ #
+ # Configuration, all on the repository rather than in this file so a fork
+ # brings its own:
+@@ -51,16 +66,24 @@ name: "Expediter"
+ 
+ on:
+   schedule:
+-    # Requested every fifteen minutes. GitHub's scheduler delays and drops
+-    # scheduled runs under load - the security patrol sees gaps of four to five
+-    # hours - so treat this as "within a few hours" rather than fifteen
+-    # minutes, and dispatch it by hand when a patch has just landed.
+-    - cron: "*/15 * * * *"
+-  # A dispatch by hand always takes a delivery, even of a build already
+-  # pinned: after a Dockerfile change, or when Valve has just published and the
+-  # scheduler is hours behind. Deliberately no inputs - Checkov's CKV_GHA_7
+-  # refuses any, because an input lets whoever dispatches steer what is built,
+-  # and the event itself already says everything this needs to know.
++    # The doorbell, hourly. Off the hour because every other scheduler on the
++    # platform fires on it, and GitHub drops scheduled runs under load.
++    - cron: "7 * * * *"
++    # The authoritative pass, once a day at 08:00 UTC - 3am or 2am in Chicago,
++    # so a delivery it finds is built and checked before the release window an
++    # hour or two later. This is what catches a post the doorbell missed.
++    - cron: "0 8 * * *"
++    # The release window: 4am in Chicago is 09:00 UTC in summer and 10:00 UTC in
++    # winter. GitHub's scheduler speaks UTC only, so both are asked and
++    # `expediter release-due` says which one is really 4am today. Exactly one of
++    # them is, on every day of the year including the two the clocks change on,
++    # which that program's tests assert day by day.
++    - cron: "0 9 * * *"
++    - cron: "0 10 * * *"
++  # A dispatch by hand runs the whole chain now, ignoring both the doorbell and
++  # the hour: for when Valve has just published and everybody is locked out.
++  # Deliberately no inputs - Checkov's CKV_GHA_7 refuses any, because an input
++  # lets whoever dispatches steer what is built, and the event says enough.
+   workflow_dispatch:
+ 
+ permissions:
+@@ -76,27 +99,99 @@ defaults:
+   run:
+     shell: bash
+ 
++env:
++  PIN: modules/applications/valheim/base/deployment.yaml
++  APP_ID: "896660"
++  REPO: ${{ github.repository }}
++  IMAGE: ghcr.io/${{ github.repository }}-valheim
++
+ jobs:
++  check:
++    name: "Check deliveries"
++    # Not on the release crons: those have nothing to check, they only take what
++    # is already waiting.
++    if: >-
++      github.event_name == 'workflow_dispatch' ||
++      github.event.schedule == '7 * * * *' ||
++      github.event.schedule == '0 8 * * *'
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    outputs:
++      look: ${{ steps.ask.outputs.look }}
++    steps:
++      - name: Harden Runner
++        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          allowed-endpoints: >
++            api.github.com:443
++            api.steampowered.com:443
++            github.com:443
++            go.dev:443
++            objects.githubusercontent.com:443
++            proxy.golang.org:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
++            sum.golang.org:443
++
++      - name: Checkout Code
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++
++      # Versions come from scripts/versions.env, which is the only place one
++      # is written. See .github/actions/versions for why this is a step
++      # rather than a setup job.
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      - name: Setup Go
++        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
++        with:
++          go-version: ${{ env.GO_VERSION }}
++          cache: false
++
++      - name: Ask whether Valve has published anything
++        id: ask
++        env:
++          # The daily pass and a hand dispatch skip the doorbell entirely and go
++          # straight to the authority, so a post nobody saw cannot strand the
++          # server for longer than a day.
++          AUTHORITATIVE: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 8 * * *' }}
++        run: |
++          set -euo pipefail
++          if [ "$AUTHORITATIVE" = "true" ]; then
++            echo "taking the authoritative route: SteamCMD decides, not the news feed"
++            echo "look=true" >> "$GITHUB_OUTPUT"
++            exit 0
++          fi
++          # A window longer than the gap between checks, so a post made just
++          # after one run is still fresh at the next.
++          verdict="$(go run -C scripts/expediter . check -within 90m)"
++          echo "look=$([ "$verdict" = look ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
++
+   deliver:
+-    name: "Check deliveries, take delivery"
++    name: "Take delivery"
++    needs: check
++    if: needs.check.outputs.look == 'true'
+     runs-on: ubuntu-latest
+     # Bounded so a stuck run cannot bill forever. The longest honest path is a
+-    # 2 GB download, a build, and a full set of required checks.
+-    timeout-minutes: 75
++    # 2 GB download, a build and a push; waiting for checks belongs to the
++    # release job, so this no longer has to cover that too.
++    timeout-minutes: 45
+     permissions:
+       contents: read
+       packages: write
+-    env:
+-      PIN: modules/applications/valheim/base/deployment.yaml
+-      APP_ID: "896660"
+-      REPO: ${{ github.repository }}
+-      IMAGE: ghcr.io/${{ github.repository }}-valheim
+     steps:
+       # Audit, not block, and this is why: SteamCMD reaches Valve's content
+       # servers, which are a changing set of hosts - approved-suppliers.yml
+       # records that Valve moves them - so an allowlist would break on Valve's
+       # schedule rather than this estate's. The same reasoning, and the same
+-      # setting, as the image build this replaces.
++      # setting, as the image build beside it.
+       - name: Harden Runner
+         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+         with:
+@@ -111,10 +206,8 @@ jobs:
+         with:
+           persist-credentials: false
+ 
+-      - name: Check deliveries
+-        id: check
+-        env:
+-          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
++      - name: Ask SteamCMD what the build actually is
++        id: build
+         run: |
+           set -euo pipefail
+ 
+@@ -147,7 +240,7 @@ jobs:
+           recorded="$(sed -n 's/^[[:space:]]*[a-z0-9.-]*\/steam-build:[[:space:]]*"\([^"]*\)".*/\1/p' "$PIN" | head -n 1)"
+           echo "Steam's public build: ${build}; recorded beside the pin: ${recorded:-nothing}"
+ 
+-          if [ "$build" = "$recorded" ] && [ "${FORCE}" != "true" ]; then
++          if [ "$build" = "$recorded" ]; then
+             echo "no delivery: the server already runs build ${build}" >> "$GITHUB_STEP_SUMMARY"
+             echo "deliver=false" >> "$GITHUB_OUTPUT"
+             exit 0
+@@ -159,13 +252,13 @@ jobs:
+             echo "recorded=${recorded}"
+           } >> "$GITHUB_OUTPUT"
+ 
+-      - name: Take delivery
++      - name: Build the image for exactly that build
+         id: image
+-        if: steps.check.outputs.deliver == 'true'
++        if: steps.build.outputs.deliver == 'true'
+         env:
+           TOKEN: ${{ secrets.GITHUB_TOKEN }}
+           ACTOR: ${{ github.actor }}
+-          BUILD: ${{ steps.check.outputs.build }}
++          BUILD: ${{ steps.build.outputs.build }}
+         run: |
+           set -euo pipefail
+           echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+@@ -192,19 +285,16 @@ jobs:
+ 
+       - name: Mint the expediter's token
+         id: token
+-        if: steps.check.outputs.deliver == 'true'
++        if: steps.build.outputs.deliver == 'true'
+         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+         with:
+           client-id: ${{ secrets.EXPEDITER_BOT_APP_ID }}
+           private-key: ${{ secrets.EXPEDITER_BOT_PRIVATE_KEY }}
+           # Only what the steps below use, not everything the App was granted
+-          # at installation (zizmor's github-app audit). Contents to commit,
+-          # merge and tag; pull requests to open, comment on and merge; checks
+-          # and statuses to watch the required checks.
++          # at installation (zizmor's github-app audit). Contents to commit the
++          # pin; pull requests to open one.
+           permission-contents: write
+           permission-pull-requests: write
+-          permission-checks: read
+-          permission-statuses: read
+           # This repository only - the token cannot reach anything else the
+           # App happens to be installed on.
+           owner: ${{ github.repository_owner }}
+@@ -216,11 +306,11 @@ jobs:
+       # refused - the same reasoning scripts/signedpush documents.
+       - name: Submit it
+         id: submit
+-        if: steps.check.outputs.deliver == 'true'
++        if: steps.build.outputs.deliver == 'true'
+         env:
+           GH_TOKEN: ${{ steps.token.outputs.token }}
+-          BUILD: ${{ steps.check.outputs.build }}
+-          RECORDED: ${{ steps.check.outputs.recorded }}
++          BUILD: ${{ steps.build.outputs.build }}
++          RECORDED: ${{ steps.build.outputs.recorded }}
+           DIGEST: ${{ steps.image.outputs.digest }}
+           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+         run: |
+@@ -228,11 +318,10 @@ jobs:
+           branch="expediter/valheim-steam-${BUILD}"
+ 
+           # A delivery already submitted is picked up again, not submitted
+-          # twice - a run that timed out waiting for checks left it open.
++          # twice - the release window may not have come round yet.
+           pr="$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq '.[0].number // empty')"
+           if [ -n "$pr" ]; then
+             echo "pull request #${pr} already carries this delivery"
+-            echo "pr=${pr}" >> "$GITHUB_OUTPUT"
+             exit 0
+           fi
+ 
+@@ -286,42 +375,141 @@ jobs:
+               "" \
+               "## What happens next" \
+               "" \
+-              "Every required check runs, including \`security guard-standing-order\`, which refuses this pull request if it changes anything but the digest and the recorded build. If they pass and the expediter holds its standing order, it merges this and tags the release. If it does not, this waits for a review." \
++              "Every required check runs, including \`security guard-standing-order\`, which refuses this pull request if it changes anything but the digest and the recorded build." \
++              "" \
++              "**It merges and is tagged at 4am America/Chicago**, because the rollout drops everybody who is connected and production reconciles from the tag. Merge it yourself if you want it sooner - nothing here waits for an approval." \
+               "" \
+               "Taken by the expediter: ${RUN_URL}")")"
+-          pr="${url##*/}"
+-          echo "opened #${pr}" >> "$GITHUB_STEP_SUMMARY"
++          echo "opened ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
++
++  release:
++    name: "Release what is waiting"
++    # After deliver when there is one, on its own when the window comes round
++    # and something is already waiting. always(), because a skipped deliver is
++    # the ordinary case at 4am.
++    needs: [check, deliver]
++    if: >-
++      always() && !cancelled() &&
++      (github.event_name == 'workflow_dispatch' ||
++       github.event.schedule == '0 9 * * *' ||
++       github.event.schedule == '0 10 * * *')
++    runs-on: ubuntu-latest
++    timeout-minutes: 40
++    steps:
++      - name: Harden Runner
++        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++            go.dev:443
++            objects.githubusercontent.com:443
++            proxy.golang.org:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
++            sum.golang.org:443
++
++      - name: Checkout Code
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++
++      # Versions come from scripts/versions.env, which is the only place one
++      # is written. See .github/actions/versions for why this is a step
++      # rather than a setup job.
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      - name: Setup Go
++        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
++        with:
++          go-version: ${{ env.GO_VERSION }}
++          cache: false
++
++      # 4am in Chicago, decided by the program rather than by which cron fired,
++      # so the hour is right on both sides of the daylight-saving change.
++      - name: Is it the hour
++        id: window
++        env:
++          DISPATCHED: ${{ github.event_name == 'workflow_dispatch' }}
++        run: |
++          set -euo pipefail
++          if [ "$DISPATCHED" = "true" ]; then
++            echo "dispatched by hand: releasing now rather than waiting for the window"
++            echo "due=true" >> "$GITHUB_OUTPUT"
++            exit 0
++          fi
++          verdict="$(go run -C scripts/expediter . release-due)"
++          echo "due=$([ "$verdict" = due ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
++
++      - name: Mint the expediter's token
++        id: token
++        if: steps.window.outputs.due == 'true'
++        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
++        with:
++          client-id: ${{ secrets.EXPEDITER_BOT_APP_ID }}
++          private-key: ${{ secrets.EXPEDITER_BOT_PRIVATE_KEY }}
++          # Contents to merge and tag; pull requests to find, comment on and
++          # merge; checks and statuses to see whether the required checks passed.
++          permission-contents: write
++          permission-pull-requests: write
++          permission-checks: read
++          permission-statuses: read
++          owner: ${{ github.repository_owner }}
++          repositories: ${{ github.event.repository.name }}
++
++      - name: Find what is waiting
++        id: waiting
++        if: steps.window.outputs.due == 'true'
++        env:
++          GH_TOKEN: ${{ steps.token.outputs.token }}
++        run: |
++          set -euo pipefail
++          # The oldest open delivery, so two waiting are taken in the order they
++          # were submitted rather than newest first.
++          pr="$(gh pr list --repo "$REPO" --state open --json number,headRefName \
++            --jq '[.[] | select(.headRefName | startswith("expediter/valheim-steam-"))] | sort_by(.number) | .[0].number // empty')"
++          if [ -z "$pr" ]; then
++            echo "nothing is waiting to be released" >> "$GITHUB_STEP_SUMMARY"
++            echo "pr=" >> "$GITHUB_OUTPUT"
++            exit 0
++          fi
+           echo "pr=${pr}" >> "$GITHUB_OUTPUT"
++          gh pr view "$pr" --repo "$REPO" --json title --jq '"releasing #'"$pr"': \(.title)"'
+ 
+       - name: Wait for every required check
+-        if: steps.check.outputs.deliver == 'true'
++        if: steps.waiting.outputs.pr != ''
+         env:
+           GH_TOKEN: ${{ steps.token.outputs.token }}
+-          PR: ${{ steps.submit.outputs.pr }}
++          PR: ${{ steps.waiting.outputs.pr }}
+         run: |
+           set -euo pipefail
+-          # Checks register a few seconds after the pull request opens, and
+-          # asking before then is answered "no checks reported".
+-          # gh answers 0 when every check has passed and 8 while any is still
+-          # pending; either means they are registered.
++          # Checks register a few seconds after a pull request opens, and asking
++          # before then is answered "no checks reported". gh answers 0 when
++          # every check has passed and 8 while any is still pending; either
++          # means they are registered.
+           for _ in $(seq 1 20); do
+             rc=0
+             gh pr checks "$PR" --repo "$REPO" --required >/dev/null 2>&1 || rc=$?
+             if [ "$rc" -eq 0 ] || [ "$rc" -eq 8 ]; then break; fi
+             sleep 15
+           done
+-          if ! timeout 50m gh pr checks "$PR" --repo "$REPO" --required --watch --interval 30 --fail-fast; then
++          if ! timeout 25m gh pr checks "$PR" --repo "$REPO" --required --watch --interval 30 --fail-fast; then
+             gh pr comment "$PR" --repo "$REPO" --body "A required check did not pass, so the expediter is leaving this for a person. If it was the Super-Linter hang (#365), re-running that job is usually enough; merging is then an ordinary review."
+             exit 1
+           fi
+ 
+       - name: Merge under the standing order
+         id: merge
+-        if: steps.check.outputs.deliver == 'true'
++        if: steps.waiting.outputs.pr != ''
+         env:
+           GH_TOKEN: ${{ steps.token.outputs.token }}
+-          PR: ${{ steps.submit.outputs.pr }}
+-          BUILD: ${{ steps.check.outputs.build }}
++          PR: ${{ steps.waiting.outputs.pr }}
+           HOLDER: ${{ vars.EXPEDITER_LOGIN }}
+         run: |
+           set -euo pipefail
+@@ -333,26 +521,28 @@ jobs:
+             echo "merged=false" >> "$GITHUB_OUTPUT"
+             exit 0
+           fi
++          build="$(gh pr view "$PR" --repo "$REPO" --json headRefName --jq '.headRefName | sub("^expediter/valheim-steam-"; "")')"
+           # An explicit message, kept inside commitlint's line limits, rather
+           # than whatever the repository's squash default assembles from the
+           # pull request body - which carries a table and long lines.
+           if ! gh pr merge "$PR" --repo "$REPO" --squash \
+-            --subject "feat: take delivery of Valheim server build ${BUILD} (#${PR})" \
+-            --body "Merged by the expediter under its standing order, after every required check passed."; then
++            --subject "feat: take delivery of Valheim server build ${build} (#${PR})" \
++            --body "Merged by the expediter under its standing order, in the 4am release window, after every required check passed."; then
+             gh pr comment "$PR" --repo "$REPO" --body "Every required check passed, but the merge was refused. The expediter is probably not a bypass actor on the review ruleset - without that this waits for a review, which is the fallback working as designed."
+             exit 1
+           fi
+           echo "merged=true" >> "$GITHUB_OUTPUT"
++          echo "build=${build}" >> "$GITHUB_OUTPUT"
+ 
+       # Production reconciles from the highest v* tag, so a merged delivery
+       # changes nothing until it is tagged. The tag is the next patch version,
+-      # on the merge commit.
+-      - name: Release it
++      # on the merge commit - and it is the only step here that disturbs anyone.
++      - name: Tag the release
+         if: steps.merge.outputs.merged == 'true'
+         env:
+           GH_TOKEN: ${{ steps.token.outputs.token }}
+-          PR: ${{ steps.submit.outputs.pr }}
+-          BUILD: ${{ steps.check.outputs.build }}
++          PR: ${{ steps.waiting.outputs.pr }}
++          BUILD: ${{ steps.merge.outputs.build }}
+         run: |
+           set -euo pipefail
+           merged="$(gh pr view "$PR" --repo "$REPO" --json mergeCommit --jq .mergeCommit.oid)"
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index a060165..ce2f92e 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -261,6 +261,7 @@ endpoints:
+       so what reaches the cluster is a specific set of bytes somebody can point
+       at, whatever the build did to obtain them.
+     hosts:
++      - api.steampowered.com:443
+       - media.steampowered.com:443
+       - steamcdn-a.akamaihd.net:443
+ 
+@@ -402,12 +403,39 @@ egress:
+     hosts:
+       - api.github.com:443
+ 
++  - job: expediter.yml/check
++    policy: block
++    hosts:
++      - api.github.com:443
++      - api.steampowered.com:443
++      - github.com:443
++      - go.dev:443
++      - objects.githubusercontent.com:443
++      - proxy.golang.org:443
++      - release-assets.githubusercontent.com:443
++      - storage.googleapis.com:443
++      - sum.golang.org:443
++
+   - job: expediter.yml/deliver
+     policy: audit
+     reason: >-
+       SteamCMD reaches Valve's content servers, the rotating set of
+       hosts recorded under game-server-delivery above, so an allowlist
+-      would break on Valve's schedule rather than this estate's.
++      would break on Valve's schedule rather than this estate's. Only
++      this one of the expediter's three jobs downloads game files: the
++      doorbell above and the release below are both blocked to a list.
++
++  - job: expediter.yml/release
++    policy: block
++    hosts:
++      - api.github.com:443
++      - github.com:443
++      - go.dev:443
++      - objects.githubusercontent.com:443
++      - proxy.golang.org:443
++      - release-assets.githubusercontent.com:443
++      - storage.googleapis.com:443
++      - sum.golang.org:443
+ 
+   - job: inspector.yml/tally
+     policy: block

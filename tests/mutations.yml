@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 33
+floor: 59
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -563,8 +563,8 @@ mutations:
 
   - guard: TestTheCoverageShimDiesWithTheWorkflowStepThatNeedsIt
     file: tests/coverage-baseline.json
-    find: '"go/attestation": 26,'
-    replace: '"go": 34,\n    "go/attestation": 26,'
+    find: '"go/attestation": 26.6,'
+    replace: '"go": 34,\n    "go/attestation": 26.6,'
     mentions: "floor for nothing"
     why: >
       A bare "go" key is a floor for nothing once the workflow sweeps every

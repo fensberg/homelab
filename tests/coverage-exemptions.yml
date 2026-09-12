@@ -196,6 +196,9 @@ files:
   - path: collector/main.go
     uncovered: 3
     covered_by: nothing
+  - path: expediter/main.go
+    uncovered: 3
+    covered_by: nothing
   - path: security/guard-deliveries.go
     uncovered: 4
     covered_by: nothing

@@ -1069,6 +1069,57 @@ debug logging so the next hang names the linter it stopped in, and a ten-minute
 timeout against a two-minute run. The first attempt blamed the last line printed,
 and being last is not being responsible.
 
+#### Too eager, and too blunt
+
+The first version ran every fifteen minutes and released whenever it finished.
+The operator read it and objected to both halves, correctly.
+
+**Ninety-six runs a day.** Each one installed a 32-bit library, downloaded
+SteamCMD, let it self-update and logged in anonymously to Valve, to ask one
+question that changes a few times a year. It cost no money - the repository is
+public and the job runs on GitHub's machines rather than the estate's - but it
+was two or three hours of compute daily, ninety-six anonymous logins, and
+ninety-six entries of noise in the Actions list. The immediacy it bought was
+fictional anyway: #221 records the scheduler dropping runs for four and five
+hours at a time.
+
+**So the work is split by what it costs.** `expediter check` is one HTTPS call
+to Steam's news API. `deliver` is the expensive half and runs only when check
+says to look. The catch is that **Steam publishes no cheap first-party way to
+ask a dedicated server's build id**: `ISteamApps/UpToDateCheck` refuses appid
+896660, and refuses CS2's 740 the same way, and the server appid's news feed
+carries press articles - one of them a 2021 piece about a boat mod. What does
+work is the CLIENT appid's announcement feed, where Valve posts the hotfixes
+that strand players. That makes check a doorbell rather than a receipt, so
+SteamCMD stays the authority in `deliver`, and a daily authoritative pass runs
+whatever the doorbell said - a missed post must never be the only reason this
+estate believes it is current.
+
+**And a release at any hour is a restart at any hour.** Production reconciles
+from the tag, the deployment is `Recreate`, and everybody connected is dropped.
+The operator's question was the right one: it is five o'clock and we are
+playing, so is everyone kicked off? Two facts make it cleanly answerable.
+Merging changes nothing live - staging does not run this workload and
+production follows tags - so only the tag disturbs anyone. And the moment that
+tag lands is a choice. It now lands at 4am America/Chicago: the pull request
+opens as soon as the delivery exists, sits where it can be seen, and merges
+itself in the window. Merging it earlier by hand pulls it forward, and a
+dispatch forces the whole chain. There is deliberately no approval button - the
+expediter exists so that nobody has to press one.
+
+**GitHub's scheduler speaks only UTC**, so 4am local is 09:00 UTC in summer and
+10:00 UTC in winter. Both are asked and `expediter release-due` decides which
+one is really 4am today, with the zone database compiled into the binary so a
+runner image without tzdata cannot silently turn the gate into UTC.
+
+Worth recording because it is the shape this repository keeps rewarding: the
+first version of that program's test asserted that on the morning the clocks go
+back, both candidate hours are 4am. They are not - the change happens at 2am
+local, so 09:00 UTC is already 3am CST. **The code was right and the test was
+wrong**, and the test said so before anything shipped. It now asserts the
+property rather than the examples: exactly one of the two hours is 4am, on every
+day of the year.
+
 ### Sixteen allowlists, and the one file that owns them now
 
 Chasing the hang above meant reading the egress policy, and the reading was the
