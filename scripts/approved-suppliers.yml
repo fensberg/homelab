@@ -261,6 +261,7 @@ endpoints:
       so what reaches the cluster is a specific set of bytes somebody can point
       at, whatever the build did to obtain them.
     hosts:
+      - api.steampowered.com:443
       - media.steampowered.com:443
       - steamcdn-a.akamaihd.net:443
 
@@ -402,12 +403,39 @@ egress:
     hosts:
       - api.github.com:443
 
+  - job: expediter.yml/check
+    policy: block
+    hosts:
+      - api.github.com:443
+      - api.steampowered.com:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - proxy.golang.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
+
   - job: expediter.yml/deliver
     policy: audit
     reason: >-
       SteamCMD reaches Valve's content servers, the rotating set of
       hosts recorded under game-server-delivery above, so an allowlist
-      would break on Valve's schedule rather than this estate's.
+      would break on Valve's schedule rather than this estate's. Only
+      this one of the expediter's three jobs downloads game files: the
+      doorbell above and the release below are both blocked to a list.
+
+  - job: expediter.yml/release
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - proxy.golang.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
 
   - job: inspector.yml/tally
     policy: block
