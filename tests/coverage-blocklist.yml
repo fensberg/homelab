@@ -67,8 +67,8 @@ blocked:
   # modules and the taskfile's list disagreed for months.
   - ci:task validate # 294
   - ci:task test # 295
-  - ci:task push-guard # 296
-  - ci:task merge-guard # 297
+  - ci:task enforce-push # 296
+  - ci:task enforce-merge # 297
 
   # Estate surfaces nothing claims. Enumerated from the repository itself:
   # every workload Flux deploys, every concern an outside vendor serves, and

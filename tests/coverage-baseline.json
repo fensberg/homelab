@@ -59,8 +59,9 @@
     "go/collector": 30.4,
     "go/contractor": 39.2,
     "go/expediter": 72.4,
-    "go/security": 60.4,
+    "go/security": 53.7,
     "go/inspector": 75.8,
+    "go/superintendent": 72.1,
     "go/signedpush": 40.4,
     "js": 0
   },

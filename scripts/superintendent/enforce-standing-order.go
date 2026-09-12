@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// guard-standing-order holds the expediter to the one thing it may change.
+// enforce-standing-order holds the expediter to the one thing it may change.
 //
 // The expediter watches Valve for a new build of the game server, builds it,
 // and opens a pull request pinning the new digest. So that a Steam patch does
@@ -31,8 +31,8 @@ import (
 // order: every pull request is judged by review as usual, and the expediter's
 // workflow refuses to merge anything - so the bypass is never used with this
 // check unarmed.
-func guardStandingOrder(args []string) int {
-	fs := flag.NewFlagSet("guard-standing-order", flag.ExitOnError)
+func enforceStandingOrder(args []string) int {
+	fs := flag.NewFlagSet("enforce-standing-order", flag.ExitOnError)
 	author := fs.String("author", os.Getenv("PR_AUTHOR"), "the pull request's author login")
 	holder := fs.String("expediter", os.Getenv("EXPEDITER_LOGIN"), "the login the standing order was given to")
 	base := fs.String("base", "", "the pull request's base commit")
@@ -48,18 +48,18 @@ func guardStandingOrder(args []string) int {
 		fmt.Printf("%s holds no standing order; this pull request is reviewed as usual\n", *author)
 		return 0
 	case *base == "" || *head == "":
-		fmt.Fprintln(os.Stderr, "security guard-standing-order: -base and -head are required to judge a pull request under the order")
+		fmt.Fprintln(os.Stderr, "superintendent enforce-standing-order: -base and -head are required to judge a pull request under the order")
 		return 2
 	}
 
 	files, err := exec.Command("git", "diff", "--name-only", *base, *head).Output()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "security guard-standing-order: could not diff the pull request:", err)
+		fmt.Fprintln(os.Stderr, "superintendent enforce-standing-order: could not diff the pull request:", err)
 		return 2
 	}
 	diff, err := exec.Command("git", "diff", "--unified=0", *base, *head).Output()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "security guard-standing-order: could not diff the pull request:", err)
+		fmt.Fprintln(os.Stderr, "superintendent enforce-standing-order: could not diff the pull request:", err)
 		return 2
 	}
 

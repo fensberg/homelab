@@ -173,7 +173,7 @@ var skipDirs = map[string]bool{
 	"node_modules": true,
 	"coverage":     true,
 	// Flux's own generated install manifest, committed verbatim - the same
-	// exclusion .checkov.yaml and super-linter.vars already make.
+	// exclusion .checkov.yaml already makes.
 	"flux-system": true,
 }
 

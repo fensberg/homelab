@@ -84,7 +84,7 @@ by the PyYAML behind pre-commit's `check-yaml`. No formatter, linter or
 schema validator in this pipeline has anything to say about it.
 
 That is not hypothetical: a merge produced a duplicated `VALIDATE_TERRAGRUNT`
-in `.github/super-linter.vars`, all eleven pre-commit hooks passed the file,
+by the linters then in use, all eleven pre-commit hooks passed the file,
 and it was found only by diffing two resolutions of the same merge against
 each other. The same merge duplicated a `variable "config_path"` block in
 `variables.tf`, which `tofu validate` did catch — so that half stays

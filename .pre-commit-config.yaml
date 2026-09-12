@@ -3,10 +3,10 @@
 #
 # The rule that keeps this honest: EACH CHECK HAS EXACTLY ONE OWNER. Formatting
 # is owned here, pinned to exact versions, and CI runs this same file rather
-# than its own copy of the same tools. Analysis - checkov, kubeconform, tflint,
-# shellcheck, ansible-lint, PSScriptAnalyzer - is owned by Super-Linter, and
-# every formatter it would otherwise duplicate is switched off in
-# .github/super-linter.vars.
+# than its own copy of the same tools. Analysis is owned by four pinned tools
+# with one CI lane each - checkov, hadolint, zizmor and codespell - plus the
+# ShellCheck, Trivy, Semgrep and TruffleHog lanes beside them. One aggregate
+# used to own all of that and was replaced for the reason #365 records.
 #
 # Nothing appears in both places. Two copies of prettier, on two versions, is
 # what put formatting errors on a pull request that this file had just passed.
@@ -25,6 +25,12 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
+      # The execute bit, which had no owner outside the aggregate that went in
+      # #365: Super-Linter's BASH_EXEC checked that a script with a shebang is
+      # executable, and nothing else here did. A shell script committed without
+      # it fails only when something tries to run it - a git hook that silently
+      # never runs is exactly the failure githooks/ exists to prevent.
+      - id: check-shebang-scripts-are-executable
       - id: check-merge-conflict
       - id: detect-private-key
       - id: check-yaml
@@ -57,9 +63,9 @@ repos:
   # was the one check in this repository that could only ever fail in CI - a
   # missing space after a `#` cost a full push, wait and read cycle to find.
   #
-  # VALIDATE_MARKDOWN is switched off in .github/super-linter.vars accordingly.
-  # One owner and one pinned version, which is what that file's own header asks
-  # for; the Format job runs this same file, so the CI backstop survives.
+  # So markdownlint is owned here and nowhere else: one owner and one pinned
+  # version, with the Format job running this same file, so the CI backstop
+  # survives without a second copy on a second version.
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.20.0
     hooks:
@@ -89,7 +95,7 @@ repos:
       # cost milliseconds, and because a guard that runs after the thing it
       # guards has already run is a report. Ordering alone does not achieve
       # that - pre-commit runs every hook and reports at the end - so fail_fast
-      # goes with it, the same pairing push-guard uses.
+      # goes with it, the same pairing enforce-push uses.
       #
       # Kept here as well as in githooks/pre-commit, which is the one that
       # actually closes the hole: git invokes that shim before pre-commit has
@@ -134,19 +140,19 @@ repos:
       #
       # commit-msg is the stage because git does not run pre-commit for merges.
       # The guard refuses only an UNSIGNED merge, which is the same property
-      # question push-guard asks: somebody who signs locally publishes with
+      # question enforce-push asks: somebody who signs locally publishes with
       # plain git and needs no replay, so a merge from them is fine.
-      - id: merge-guard
+      - id: enforce-merge
         name: refuse a merge commit signedpush cannot publish (commit-msg)
-        entry: task merge-guard
+        entry: task enforce-merge
         language: system
         stages: [commit-msg]
         pass_filenames: false
         always_run: true
 
-      - id: push-guard
+      - id: enforce-push
         name: refuse a plain git push (pre-push)
-        entry: task push-guard
+        entry: task enforce-push
         language: system
         pass_filenames: false
         always_run: true

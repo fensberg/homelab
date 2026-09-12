@@ -135,13 +135,13 @@ func TestTheVerbJudgesARealPullRequest(t *testing.T) {
 	args := func(head string) []string {
 		return []string{"-author", "expediter[bot]", "-expediter", "expediter[bot]", "-base", base, "-head", head}
 	}
-	if code := guardStandingOrder(args(delivery)); code != 0 {
+	if code := enforceStandingOrder(args(delivery)); code != 0 {
 		t.Errorf("a digest-and-build change was refused (exit %d)", code)
 	}
-	if code := guardStandingOrder(args(overreach)); code != 1 {
+	if code := enforceStandingOrder(args(overreach)); code != 1 {
 		t.Errorf("a change that also set runAsUser: 0 was allowed (exit %d) - that is the overreach the order exists to stop", code)
 	}
-	if code := guardStandingOrder([]string{"-author", "a-person", "-expediter", "expediter[bot]", "-base", base, "-head", overreach}); code != 0 {
+	if code := enforceStandingOrder([]string{"-author", "a-person", "-expediter", "expediter[bot]", "-base", base, "-head", overreach}); code != 0 {
 		t.Errorf("a person's pull request was judged under the order (exit %d); people are reviewed, not held to it", code)
 	}
 }

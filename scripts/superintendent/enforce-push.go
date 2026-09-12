@@ -148,16 +148,16 @@ func hasSignature(sha string) (bool, error) {
 	return false, nil
 }
 
-func guardPush(args []string) int {
+func enforcePush(args []string) int {
 	_ = args // git supplies the ref through the environment, not argv
-	if err := guardPushRun(os.Getenv(remoteRefEnv)); err != nil {
+	if err := enforcePushRun(os.Getenv(remoteRefEnv)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func guardPushRun(ref string) error {
+func enforcePushRun(ref string) error {
 	switch {
 	case strings.HasPrefix(ref, scratchPrefix):
 		// signedpush moving objects into place. This is the supported path.

@@ -977,7 +977,7 @@ past the review.
 
 It is allowed past the review and **nothing else**. It is a bypass actor on the
 ruleset that requires review, and not on the ruleset that requires checks. One
-of those checks is `security guard-standing-order`, which refuses any pull
+of those checks is `superintendent enforce-standing-order`, which refuses any pull
 request by the expediter that changes anything but the digest and the recorded
 build, or that moves the digest to a different image repository - the change
 that reads exactly like a routine update in a diff. Construction has the word:
@@ -1732,3 +1732,70 @@ is a reasonable pattern and this estate now uses it, but a chart is a program
 and some charts generate secrets when you run them. Any future use of this
 pattern checks the output for `kind: Secret` before committing, and the reason
 that check exists is this one.
+
+### Two roles, and four tools instead of one
+
+Two changes that arrived together because the operator asked for them together,
+and both are about the same thing: a name that had stopped describing what was
+underneath it.
+
+#### Security guards; the superintendent enforces
+
+`scripts/security` held five verbs, and three of them were not security's work.
+Refusing an unsigned push, refusing a merge commit `signedpush` cannot replay,
+and holding the expediter to its standing order are not questions about who may
+deliver to this estate or where its traffic may go. They are questions about
+whether the work in front of you follows the process everybody agreed to.
+
+The operator's words: **"guard-standing-order should really be in the same verb
+as push guard and merge guard. It's making sure we're all working on a given
+policy. That honestly seems like a different role - like process manager or
+something."** And, on the naming: **"superintendent (or super) and no 'guard'
+anything. 'enforce-push' is fine but guard is security."**
+
+So `scripts/superintendent` now holds `enforce-push`, `enforce-merge` and
+`enforce-standing-order`, and security keeps `guard-deliveries`, `guard-egress`
+and `patrol`. "Guard" means one thing again: the gate, the perimeter, and what
+leaves. The split is a rename across two git hooks, the taskfile, a CI lane, the
+sensitive-path list and the coverage floors, which is why it landed as its own
+piece of work rather than being folded into the change that prompted it.
+
+#### One tool that did thirty checks, replaced by four that do one each
+
+Super-Linter hung for its entire timeout three times in two days, each time on a
+required check, each time blocking whatever pull request was in flight, and once
+costing a force-merge. Two sessions went into diagnosing it: reading Harden
+Runner's own record end to end, comparing hung runs against passing ones, ruling
+out an Azure guest-agent call, and establishing that its debug logging could
+never name the stuck linter because `parallel` buffers every linter's output
+until the last one finishes.
+
+The operator stopped it: **"I'm tired of dealing with super linter. We're not
+going to waste more time fixing a broken tool and instead build an enterprise
+CI / CD pipeline using dedicated tools for dedicated things instead of an
+all-in-one."**
+
+That is the right call and it is also this repository's own rule - each check
+has exactly one owner - which the aggregate had always been the exception to.
+
+**The replacement is 1:1 by construction.** Of the eleven linters it ran here,
+six were already owned elsewhere (merge-conflict markers, JSON, YAML, commitlint
+and gitleaks by pre-commit; `PRE_COMMIT` was it running pre-commit, which the
+Format lane already does). Four became dedicated lanes: Checkov, hadolint,
+zizmor and codespell, each pinned in `scripts/versions.env` and declared under
+`tools:` in `scripts/approved-suppliers.yml`.
+
+**Two checks turned out to have had no owner but the aggregate**, and enumerating
+them is the only reason they were noticed:
+
+- `BASH_EXEC`, the execute bit on a script with a shebang. Nothing else checked
+  it, and a git hook that is not executable never runs - silently. It is now
+  `check-shebang-scripts-are-executable` in the pre-commit config.
+- **Go formatting.** The Format lane deliberately skips `go-fmt` because
+  ubuntu-latest's Go is not the pinned one, and the aggregate's Go analysis was
+  what covered it in CI. The Validate lane, which installs the pinned toolchain
+  and already owns Go correctness, now runs `gofmt -l`.
+
+That is what "replace without dropping anything" costs: the enumeration, not the
+rewiring. Anything that lands nowhere is a check being deleted, and that has to
+be a decision somebody makes rather than a side effect of removing a tool.
