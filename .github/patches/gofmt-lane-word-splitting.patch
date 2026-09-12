@@ -1,0 +1,24 @@
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 189b150..487db1e 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -414,9 +414,18 @@ jobs:
+       # Formatting, with the pinned toolchain. The pre-commit hook skips this
+       # in the Format lane because ubuntu-latest's Go is not necessarily the
+       # one this repository pins, so it is checked here where it is.
++      #
++      # NUL-delimited and piped rather than $(git ls-files) spliced into the
++      # argument list. Unquoted command substitution splits on whitespace, so a
++      # path containing a space would reach gofmt as two paths that do not
++      # exist; and with no Go files at all it would reach gofmt as no arguments
++      # at all, which makes gofmt read stdin and wait - a lane that hangs for
++      # its whole timeout rather than passing. xargs -0r answers both: NUL is
++      # the one byte a path cannot contain, and -r declines to run the command
++      # on an empty list. actionlint's shellcheck pass (SC2046) is what asked.
+       - name: Check Go formatting
+         run: |
+-          unformatted="$(gofmt -l $(git ls-files '*.go'))"
++          unformatted="$(git ls-files -z '*.go' | xargs -0r gofmt -l)"
+           if [ -n "$unformatted" ]; then
+             echo "::error::these files are not gofmt-clean:"
+             echo "$unformatted"

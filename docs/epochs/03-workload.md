@@ -1799,3 +1799,77 @@ them is the only reason they were noticed:
 That is what "replace without dropping anything" costs: the enumeration, not the
 rewiring. Anything that lands nowhere is a check being deleted, and that has to
 be a decision somebody makes rather than a side effect of removing a tool.
+
+#### What the four lanes said the first time they ran on their own
+
+The enumeration above was about which linters survived. It missed a second
+question, and all four of the new lanes failed on their first real run because of
+it: **re-homing a check means re-homing its configuration, not just its
+invocation.**
+
+`.codespellrc` existed already and ended with a line saying path exclusions live
+in `.github/super-linter.vars` "with the rest of the Super-Linter
+configuration". Deleting the aggregate deleted its `FILTER_REGEX_EXCLUDE`, and
+codespell - now reading its own config, as #313 asked - immediately objected to
+Flux's generated install manifest, Cilium's rendered chart output and two lockfile
+digests. Nothing was wrong with any of them; they were excluded for good reasons
+that had been written down at length in a file that no longer existed. The skip
+list is now in `.codespellrc` with those reasons carried across, which is what #313
+was actually about: the config governs, or it is decoration.
+
+The same run found a genuine one, in a test failure message in
+`scripts/expediter` - the variant spelling of "unparsable", described rather than
+quoted here because the note it replaces recorded that spelling such a fragment
+out literally makes codespell flag the prose instead of the file. It did exactly
+that to this paragraph on the first run. That is the argument for the split in
+miniature. Four real findings had been
+sitting behind an exclusion list nobody could see, and one true finding was
+sitting behind a lane that hung.
+
+**hadolint found a workaround this repository had documented twice and never
+removed.** `DL3066` objects to a non-numeric `USER`, and the runner image used the
+name `runner`. That is not cosmetic here: the kubelet cannot prove a name is not
+root, so it refuses a pod with `runAsNonRoot: true` and a named image user - which
+is exactly why `runner-scale-set.yaml` pins `runAsUser: 1001` by hand, and says so
+in a comment, three blocks below another comment explaining that the listener
+container needs no such pin because _its_ image's USER is already numeric. The
+estate had reasoned it out correctly in both directions and left the image alone.
+The Dockerfile now declares `USER 1001`, and the build-time assertion that the
+account's uid is still 1001 is what makes that safe - `runner` is upstream's
+account and upstream may renumber it, so a name would follow that silently while
+the assertion fails loudly. The manifest's pin stays until the digest is bumped
+to an image built from this Dockerfile; dropping it before then would stop the
+runner starting, so #389 carries that follow-up and the order it needs.
+
+**The two workflow linters in this repository disagree, and the disagreement is
+not resolvable yet.** zizmor's `self-repository` audit wants GitHub's `$/` syntax
+in place of `uses: ./.github/actions/versions`, and it is right that `$/` is
+better - it resolves at the commit being run rather than against whatever the
+workspace holds. actionlint, which pre-commit pins and the Format lane runs,
+refuses `$/` outright: its newest release is v1.7.12 from March 2026 and GitHub
+announced the syntax on 30 July 2026. So the fix turns one required lane green by
+turning another red, and the only way to have both would be an actionlint ignore
+covering the rule that validates the format of every `uses:` in the repository.
+The exemption is in `.github/zizmor.yml`, narrowed to that one audit so every
+other finding at every severity still fails the lane, and
+`tests/go/repo/zizmor_test.go` fails when it stops being earned - because a
+suppressed finding is invisible by construction, and an exemption whose reason has
+expired is the one kind of debt nothing in CI can report. #387 carries the removal
+condition, and #388 the separate fact that the actionlint pin is eleven releases
+behind.
+
+Worth recording that the audit was latent rather than live: nothing here declares
+`workflow_call`, so `./` and `$/` resolve identically today. zizmor scores it low
+for that reason, and the lane was failing on it only because bare `zizmor` exits
+non-zero on any finding at all.
+
+**And the check this piece of work re-homed shipped with a defect that another
+check in the same piece of work caught.** The Go formatting step moved to the
+Validate lane as `gofmt -l $(git ls-files '*.go')`, and actionlint's shellcheck
+pass refused it: unquoted command substitution splits on whitespace, so a path
+with a space in it would reach gofmt as two paths that do not exist. The worse
+half is the one shellcheck does not mention - with no Go files matched at all it
+becomes `gofmt` with no arguments, which reads stdin and waits, so the lane would
+hang for its whole timeout. That is the failure mode this entire piece of work
+exists to remove, re-introduced while removing it. `git ls-files -z | xargs -0r`
+answers both.
