@@ -1,0 +1,107 @@
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 4b9c4ed..e53ff52 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -194,7 +194,14 @@ jobs:
+     # what keeps an outside contributor's branch away from them - the same
+     # boundary pr-validation.yml holds by being hermetic.
+     runs-on: homelab-management
+-    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
++    # NO `environment:`, for the same reason plan-estate has none (#158).
++    #
++    # This one was not in that issue and is the same defect: a plan reads state
++    # and posts a comment. Declaring an environment makes GitHub create a
++    # deployment record for it, and a failed job leaves one failed permanently,
++    # so this lane has been able to assert that staging or production last
++    # failed to deploy when it never deployed at all. The `apply` job below
++    # keeps its environment, which is where the gate belongs.
+     permissions:
+       contents: read
+       pull-requests: write
+@@ -275,7 +282,14 @@ jobs:
+             const counts = m
+               ? `**${m[1]}** to add · **${m[2]}** to change · **${m[3]}** to destroy`
+               : (process.env.EXITCODE === '0' ? 'No changes.' : 'Could not parse a change count.');
++            // A marker as the FIRST line, so the comment can be found again.
++            //
++            // Per DIRECTORY, the way the management plan's is per site: a pull
++            // request touching two directories plans both, and one must not
++            // overwrite the other (#160).
++            const marker = `<!-- workload-plan:${process.env.DIR} -->`;
+             const body = [
++              marker,
+               `### OpenTofu plan — \`${process.env.DIR}\``,
+               '',
+               counts,
+@@ -284,13 +298,39 @@ jobs:
+                 ? '> This plan **destroys** resources. Read the full plan before approving.'
+                 : '',
+               '',
++              // Which commit this describes. A comment that replaces itself in
++              // place is only ever as current as the last run that succeeded,
++              // and nothing else distinguishes a stale one.
++              `Planned at \`${context.sha.slice(0, 8)}\`.`,
++              '',
+               `The full plan is in the [job summary](${context.payload.repository.html_url}/actions/runs/${context.runId}) — it is not posted here, because a plan can contain attribute values nobody remembered to mark sensitive.`,
+             ].join('\n');
++
++            // Replace rather than append.
++            //
++            // This posted unconditionally, so every `synchronize` added another
++            // comment and the oldest sat at the top - on the lane that comments
++            // about changes to real infrastructure. The other two comment paths
++            // in this workflow already replace themselves; this one did not,
++            // and nobody had seen it because the job gates on `environments/`
++            // and `modules/`, which did not exist when it was written. It would
++            // have started spamming on the first pull request of epoch 02,
++            // which is exactly when nobody would remember it was known.
++            //
++            // Delete then create rather than update, for the reason #246 gives
++            // about the management plan: an edited comment keeps the position
++            // it was first posted at while its contents change underneath, so
++            // it ends up sitting beside a push that no longer produced it.
++            const repo = { owner: context.repo.owner, repo: context.repo.repo };
++            const comments = await github.paginate(github.rest.issues.listComments, {
++              ...repo, issue_number: context.issue.number, per_page: 100,
++            });
++            const existing = comments.find(c => c.body.startsWith(marker));
++            if (existing) {
++              await github.rest.issues.deleteComment({ ...repo, comment_id: existing.id });
++            }
+             await github.rest.issues.createComment({
+-              issue_number: context.issue.number,
+-              owner: context.repo.owner,
+-              repo: context.repo.repo,
+-              body,
++              ...repo, issue_number: context.issue.number, body,
+             });
+ 
+   # ---------------------------------------------------------------------
+@@ -744,7 +784,26 @@ jobs:
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       needs.changes.outputs.management == 'true'
+     runs-on: homelab-management
+-    environment: management
++    # NO `environment:`. A plan deploys nothing.
++    #
++    # Declaring one makes GitHub create a DEPLOYMENT RECORD for the job, and a
++    # failed job leaves it failed permanently - nothing here marks one
++    # succeeded, inactive or superseded, so they accumulate (#158). One pull
++    # request showed three "had a problem deploying to management" entries
++    # followed immediately by "This branch was successfully deployed" and "No
++    # deployments", which are GitHub's own statements contradicting each other
++    # on one page.
++    #
++    # The Environments view is GitHub's answer to "what is live right now", and
++    # this estate's was a list of failures with no successful entry after them -
++    # asserting indefinitely that the management environment last failed to
++    # deploy. A status surface nobody maintains trains people to skim past it,
++    # and the next time it is genuinely red it will look the same as it does now.
++    #
++    # Removing it here is the part that is right either way, whatever is decided
++    # about the converge job below: this lane reads state and posts a comment.
++    # It has never deployed anything, so every record it has ever created
++    # described something that did not happen.
+     permissions:
+       contents: read
+       pull-requests: write
