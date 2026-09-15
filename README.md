@@ -18,7 +18,7 @@ homelab/
 │ └── contractor/ # Nine-phase ignition sequence (Go)
 │
 ├── config/
-│ └── management.tpl.json # The one config: sites[], topology, secret references to thing
+│ └── management.tpl.json # The one config: sites[], topology, secret references
 │
 ├── management/ # THE IGNITION TIER (Local Execution)
 │ ├── hypervisor/
