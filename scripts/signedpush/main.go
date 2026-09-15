@@ -200,7 +200,19 @@ recreated with it. See docs/epochs/01-ignition.md.`, branch, baseSHA[:8], branch
 	// One packfile, whatever the diff size. Outside refs/heads/ so no branch
 	// appears mid-operation and no branch ruleset applies to it.
 	scratch := "refs/signing/" + randomSuffix()
-	if _, err := git("push", "--quiet", "origin", "HEAD:"+scratch); err != nil {
+	// NOT --quiet. It suppresses the per-ref status line, which is the only
+	// place the REASON for a rejection appears:
+	//
+	//	! [remote rejected] HEAD -> refs/signing/... (refusing to allow a
+	//	  GitHub App to create or update workflow ... without `workflows`
+	//	  permission)
+	//
+	// Without it a refusal reads as `exit status 1` followed by git's generic
+	// "failed to push some refs", which names nothing. The git() helper below
+	// was given stderr capture specifically so that line could be read, and
+	// --quiet was throwing it away before the helper ever saw it - so the fix
+	// and the thing it was meant to fix had been sitting one argument apart.
+	if _, err := git("push", "origin", "HEAD:"+scratch); err != nil {
 		return fmt.Errorf("staging objects: %w", err)
 	}
 	defer func() {
