@@ -5,8 +5,16 @@
 # Deliberately plain bash, not Go: this script's job includes installing Go
 # itself, so it cannot depend on Go already being present to run.
 #
-# Safe to re-run. Anything already on PATH is left alone - this checks for
-# presence, not for a specific pinned version, same as the tool it replaces.
+# Safe to re-run, and tests/go/repo/install_dependencies_test.go proves it: a
+# second run must not regenerate the signing key, because replacing the one
+# GitHub knows about turns a working setup into refused pushes.
+#
+# Mostly presence rather than version. Anything already on PATH is left alone -
+# with two exceptions that are checked against the pin and REPLACED when they
+# differ, rclone and task, because both are consumed by scripts that depend on
+# their behaviour rather than merely their existence. This header used to say
+# presence-only without qualification, which stopped being true when those two
+# gained version checks.
 set -euo pipefail
 
 info() { printf '  -> %s\n' "$1"; }

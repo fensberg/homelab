@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 84
+floor: 87
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -584,8 +584,8 @@ mutations:
 
   - guard: TestEveryUnitIsExecutedByATestOrIsADeclaredDebt
     file: tests/coverage-blocklist.yml
-    find: "  - shell:scripts/install-dependencies.sh # 292"
-    replace: "  # - shell:scripts/install-dependencies.sh was here"
+    find: "  - ansible:management/hypervisor/hypervisor-prep.yml # 293"
+    replace: "  # - ansible:management/hypervisor/hypervisor-prep.yml was here"
     mentions: "executed by no test"
     why: >
       The regime is fail-closed: a unit nothing executes is a failure unless it
@@ -1257,6 +1257,45 @@ mutations:
       so a controller added or renamed upstream arrives without anybody editing
       this file, which is exactly when a hand-maintained list stops matching.
 
+  - guard: TestSetupSaysPushesWillBeRefusedWithoutARegisteredKey
+    file: scripts/install-dependencies.sh
+    find: "\t\twarn \"could not register the signing key, and pushes WILL be refused without it\""
+    replace: "\t\twarn \"could not register the signing key, which is optional\""
+    mentions: "did not say that pushes will be refused"
+    why: >
+      This step presented registering the key as optional once, and it is
+      not: the all-branches ruleset wants a VERIFIED signature, so a commit
+      signed with a key GitHub does not know is refused exactly like an
+      unsigned one. The operator's editor pushed into that refusal with no
+      readable reason, and it cost an evening. A setup script that
+      understates a requirement is worse than one that says nothing, because
+      it is read as reassurance.
+
+  - guard: TestSetupWiresTheHooksAndSigning
+    file: scripts/install-dependencies.sh
+    find: "\tgit config core.hooksPath githooks"
+    replace: "\t: # hooks left where pre-commit put them"
+    mentions: "core.hooksPath is"
+    why: >
+      core.hooksPath REPLACES .git/hooks rather than merging with it, and
+      this line is the only thing that sets it. Without it git runs the
+      hooks pre-commit generates, the supplier guard in githooks/pre-commit
+      becomes a file nobody invokes, and every shim held to a standard
+      elsewhere is unreachable. Nothing announces that - the commit succeeds
+      and the guard simply never ran.
+
+  - guard: TestSetupIsSafeToReRun
+    file: scripts/install-dependencies.sh
+    find: "if git -C \"$repo_root\" config --get commit.gpgsign | grep -qx true; then\n\tskip \"commit signing already configured\""
+    replace: "if false; then\n\tskip \"commit signing already configured\""
+    mentions: "did not recognise that signing was already set up"
+    why: >
+      Without the already-configured check a re-run generates a new signing
+      key, replacing the one GitHub knows about - which turns a working
+      setup into refused pushes, on a script whose own header promises it is
+      safe to re-run. The person most likely to re-run it is the person who
+      just had a push refused.
+
 owed_ceiling: 55
 
 unprovable:
@@ -1333,6 +1372,14 @@ unprovable:
   # nothing invalidates a cached result.
   - test: TestNoCompiledBinaryIsUntrackedAndUnignored
     reason: working-tree
+  #
+  # The negative case of the signing-key warning: a machine with no GitHub user
+  # account must NOT be warned at, because the agent signs through signedpush
+  # rather than with a key and a warning on every run is one nobody reads.
+  # Mutating the script to warn anyway is the same edit as the positive entry
+  # above, so an entry here would prove that one twice.
+  - test: TestSetupSaysNothingToRegisterWhereThereIsNoAccount
+    reason: meta
 
   # --- owed: provable, not yet proved --------------------------------------
   #
