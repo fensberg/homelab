@@ -241,3 +241,94 @@ git printed something on stderr and it was dropped. That is what turned a
 rejected push into four wrong theories.`, err)
 	}
 }
+
+// A piece of an epoch signs its own commits and leaves the epoch's alone.
+//
+// THE FAILURE THIS REPRODUCES (#342). The base used to be
+// merge-base(origin/main, HEAD), so every commit the epoch branch had added sat
+// above it and was re-signed - identical content, new SHAs. Git's merge base
+// between the piece and the epoch branch then dropped to main, and any change
+// the piece made to lines those commits introduced read as a competing edit.
+// #340 conflicted in three files against a base that already contained exactly
+// the change it was built on.
+func TestAPieceOfAnEpochDoesNotResignTheEpochsCommits(t *testing.T) {
+	dir := repoWithRemote(t)
+	t.Chdir(dir)
+
+	inDir(t, dir, "checkout", "-q", "-b", "epoch/03-workload", "origin/main")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "epoch: the first piece")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "epoch: the second piece")
+	inDir(t, dir, "push", "-q", "origin", "epoch/03-workload")
+	epochTip := inDir(t, dir, "rev-parse", "HEAD")
+
+	inDir(t, dir, "checkout", "-q", "-b", "feat/third-piece")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "the piece's own work")
+
+	base, err := baseForNewBranch()
+	if err != nil {
+		t.Fatalf("baseForNewBranch: %v", err)
+	}
+	if base != epochTip {
+		t.Fatalf(`base is %s, want the epoch tip %s.
+
+Anything above the base is re-signed, so an earlier base means the epoch
+branch's own commits arrive on GitHub with new SHAs. The merge base between
+this piece and the epoch branch then drops to main, and the pull request
+conflicts in files nobody disagreed about.`, base[:8], epochTip[:8])
+	}
+
+	// And the consequence, stated as the thing that actually matters: exactly
+	// one commit gets signed.
+	revs := inDir(t, dir, "rev-list", "--count", base+"..HEAD")
+	if revs != "1" {
+		t.Errorf("%s commit(s) would be signed; only the piece's own should be", revs)
+	}
+}
+
+// A branch cut from main still starts at main.
+//
+// The converse, because a base that is always HEAD would pass the test above
+// and publish nothing at all.
+func TestABranchCutFromMainStartsAtMain(t *testing.T) {
+	dir := repoWithRemote(t)
+	t.Chdir(dir)
+	mainTip := inDir(t, dir, "rev-parse", "origin/main")
+
+	inDir(t, dir, "checkout", "-q", "-b", "fix/mine", "origin/main")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "one")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "two")
+
+	base, err := baseForNewBranch()
+	if err != nil {
+		t.Fatalf("baseForNewBranch: %v", err)
+	}
+	if base != mainTip {
+		t.Errorf("base is %s, want main's tip %s", base[:8], mainTip[:8])
+	}
+	if revs := inDir(t, dir, "rev-list", "--count", base+"..HEAD"); revs != "2" {
+		t.Errorf("%s commit(s) would be signed; both of this branch's should be", revs)
+	}
+}
+
+// A branch whose commits are all already published signs nothing.
+//
+// Reaching for a parent there would sign a commit the remote already holds
+// under a different ref, which is the same identity change the epoch case is
+// about, arriving from the other direction.
+func TestABranchWithNothingNewSignsNothing(t *testing.T) {
+	dir := repoWithRemote(t)
+	t.Chdir(dir)
+	inDir(t, dir, "checkout", "-q", "-b", "epoch/04-observability", "origin/main")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "epoch work")
+	inDir(t, dir, "push", "-q", "origin", "epoch/04-observability")
+
+	inDir(t, dir, "checkout", "-q", "-b", "feat/nothing-yet")
+
+	base, err := baseForNewBranch()
+	if err != nil {
+		t.Fatalf("baseForNewBranch: %v", err)
+	}
+	if base != "HEAD" {
+		t.Errorf("base is %q, want HEAD - there is nothing unpublished to sign", base)
+	}
+}

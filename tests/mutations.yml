@@ -1256,6 +1256,19 @@ unprovable:
   # is not something a find/replace ledger can express.
   - test: TestTheHookShimsAreExecutable
     reason: file-mode
+  #
+  # Asks git what is in the WORKING TREE rather than reading a tracked file.
+  # The ledger copies tracked files to a scratch directory that is not a git
+  # repository, so there is nothing there for `git ls-files --others` to answer
+  # about - and the subject is a megabyte-scale binary, which a `create:` block
+  # cannot express as YAML either.
+  #
+  # Proved by hand instead, both directions: a 9 MB executable copied to
+  # scripts/collector/collector made it name that path, and removing it went
+  # green. Run with -count=1, because this reads the repository at runtime and
+  # nothing invalidates a cached result.
+  - test: TestNoCompiledBinaryIsUntrackedAndUnignored
+    reason: working-tree
 
   # --- owed: provable, not yet proved --------------------------------------
   #
