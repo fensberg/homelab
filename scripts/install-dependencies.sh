@@ -423,6 +423,35 @@ else
 	ok "hadolint installed"
 fi
 
+step "shellcheck (pinned)"
+# Not only for the Shell Lint lane's local equivalent.
+#
+# actionlint finds shellcheck by NAME on PATH and, when it is not there,
+# disables the integration and exits 0 - from its own help: "If empty,
+# shellcheck integration will be disabled". So a machine without it runs
+# `task validate` and the pre-commit actionlint hook unable to report any
+# SC-class finding in a workflow run: block, and they report clean rather than
+# reporting that they did not look (#398).
+#
+# ubuntu-latest ships shellcheck preinstalled, so CI's actionlint had it and
+# the devbox's did not. That is not hypothetical: a Go formatting check was
+# added to the Validate lane, `task fix`, `task validate` and `task test` all
+# exited 0 locally, and CI then failed the Format lane with SC2046 - a real
+# finding, since unquoted command substitution splits on whitespace and, with
+# no files matched at all, gofmt reads stdin and blocks until the job times out.
+if has shellcheck; then
+	skip "shellcheck already present ($(shellcheck --version 2>/dev/null | awk '/^version:/{print $2}'))"
+else
+	info "installing shellcheck ${SHELLCHECK_VERSION}"
+	curl -fsSL -o "$TMP/shellcheck.tar.xz" \
+		"https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+	echo "${SHELLCHECK_SHA256}  ${TMP}/shellcheck.tar.xz" | sha256sum -c -
+	tar -xJf "$TMP/shellcheck.tar.xz" -C "$TMP" \
+		"shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+	sudo install -m 0755 "$TMP/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+	ok "shellcheck installed"
+fi
+
 step "commit signing"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 

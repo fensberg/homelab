@@ -71,8 +71,19 @@ repos:
     hooks:
       - id: markdownlint-cli2
 
+  # actionlint is not a formatter here: it is what decides which workflow syntax
+  # this repository is permitted to use. So the pin is a decision, and this one
+  # had not been made since mid-2024 - eleven releases back (#388). A stale
+  # linter pin silently narrows what the estate can adopt, and nothing reports
+  # that.
+  #
+  # Bumped v1.7.1 -> v1.7.12 having run it, with shellcheck present, over every
+  # workflow here: no new findings. Checked at the same time whether it has
+  # started accepting GitHub's `$/` self-repository syntax, which is what #387
+  # is waiting on. It has not - its newest release predates the announcement by
+  # four months - so that exemption stays and its condition is unchanged.
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.1
+    rev: v1.7.12
     hooks:
       - id: actionlint
 

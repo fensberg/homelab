@@ -728,6 +728,22 @@ tools:
       repository that runs with a token. It caught the expediter's App token
       inheriting every permission the installation held, which nothing else
       here would have said a word about.
+  - source: koalaman/shellcheck
+    version: SHELLCHECK_VERSION
+    reason: >-
+      Shell analysis. This estate already took delivery from this publisher and
+      did not record it: the Shell Lint lane downloads the pinned binary from
+      the same GitHub release through ludeeus/action-shellcheck. Listing it here
+      is writing down a supplier that was already in use rather than admitting a
+      new one.
+
+      It has a second consumer that matters more than the lane. actionlint finds
+      shellcheck by name on PATH and, when it is absent, DISABLES the
+      integration and exits 0 - so on a machine without it `task validate` and
+      the pre-commit hook cannot report any SC-class finding in a workflow's
+      run: block, and report clean instead of reporting that they did not look
+      (#398). Verified as a single static binary against SHELLCHECK_SHA256, the
+      same pattern as hadolint and TruffleHog.
   - source: codespell-project/codespell
     version: CODESPELL_VERSION
     reason: >-

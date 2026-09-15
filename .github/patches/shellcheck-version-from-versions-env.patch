@@ -1,0 +1,32 @@
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 143277d..09e0e2e 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -206,14 +206,22 @@ jobs:
+         with:
+           persist-credentials: false
+ 
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
+       - name: Run ShellCheck
+         uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+         with:
+-          # Pinned explicitly, because a lane that takes whatever the action
+-          # ships is a lane whose findings change without a commit. The value
+-          # was chosen to match what the aggregate bundled when this lane was
+-          # split out of it, so its verdicts did not move that day.
+-          version: "v0.11.0"
++          # Read from scripts/versions.env rather than written here.
++          #
++          # A lane that takes whatever the action ships is a lane whose findings
++          # change without a commit, so the version has always been pinned. What
++          # changed is WHERE: shellcheck is now installed on the devbox too, by
++          # install-dependencies.sh, because actionlint disables its shellcheck
++          # pass entirely when the binary is absent and exits 0 (#398). Two
++          # copies of that version would be free to disagree, which is the
++          # drift scripts/versions.env exists to refuse.
++          version: "v${{ env.SHELLCHECK_VERSION }}"
+           check_together: "yes"
+ 
+   # -----------------------------------------------------------------
