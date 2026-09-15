@@ -37,7 +37,7 @@ resource "proxmox_download_file" "talos_disk_image" {
   content_type = "iso"
   datastore_id = "local-iso"
   node_name    = each.value
-  url          = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/nocloud-amd64.raw.xz"
+  url          = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/${local.image_variant}.raw.xz"
   # Extension is .iso, not .img, on purpose: local-iso's content=iso bucket
   # validates the destination file_name against that content type before
   # Proxmox even fetches the URL, independent of the actual bytes. This is
@@ -85,7 +85,7 @@ resource "proxmox_download_file" "dmz_disk_image" {
   content_type = "iso"
   datastore_id = "local-iso"
   node_name    = each.value
-  url          = "https://factory.talos.dev/image/${local.dmz_schematic_id}/${local.talos_version}/nocloud-amd64.raw.xz"
+  url          = "https://factory.talos.dev/image/${local.dmz_schematic_id}/${local.talos_version}/${local.image_variant}.raw.xz"
 
   file_name               = "dmz-${local.talos_version}.iso"
   decompression_algorithm = "zst"
@@ -334,7 +334,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
     datastore_id = "local-zfs"
 
     dns {
-      servers = ["1.1.1.1", "1.0.0.1"]
+      servers = local.dns_resolvers
     }
 
     ip_config {
@@ -459,7 +459,7 @@ resource "proxmox_virtual_environment_vm" "talos_worker" {
     datastore_id = "local-zfs"
 
     dns {
-      servers = ["1.1.1.1", "1.0.0.1"]
+      servers = local.dns_resolvers
     }
 
     ip_config {

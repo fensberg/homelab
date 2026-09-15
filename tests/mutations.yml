@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 71
+floor: 78
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -549,8 +549,12 @@ mutations:
 
   - guard: TestEveryGoModuleHasACoverageFloor
     file: tests/coverage-baseline.json
-    find: '"go/clerk": 56,'
-    replace: '"go-clerk-was-here": 56,'
+    # Anchored on the KEY rather than on the key and its number. The number is
+    # a ratchet every change that adds tests moves, so an entry naming one
+    # breaks whenever coverage improves - which is the ledger going red for the
+    # opposite of a problem. Found exactly that way when go/clerk went 56 -> 63.8.
+    find: '"go/clerk":'
+    replace: '"go-clerk-was-here":'
     mentions: "has no floor for"
     why: >
       A module with no floor has its coverage measured and compared against
@@ -1061,6 +1065,98 @@ mutations:
       bare word `placeholder`, and the Validate lane fails on a provider
       rather than on anything in the change.
 
+  - guard: TestThePodAndServiceNetworksAreDeclared
+    file: management/cluster/talos.tf
+    find: "          podSubnets     = [local.pod_cidr]"
+    replace: "          # podSubnets removed"
+    mentions: "declares no podSubnets"
+    why: >
+      The cluster's pod and service ranges are its largest address
+      commitment and they were undeclared for the whole life of the estate -
+      correct values, chosen by nobody, absent from an addressing decision
+      that records every other range down to the VM id bands. clusterNetwork
+      is fixed at cluster creation, so a wrong one costs a rebuild rather
+      than an edit, and a value nobody wrote down cannot be reviewed at all.
+
+  - guard: TestThePodAndServiceNetworksCannotCollideWithASite
+    file: management/cluster/variables.tf
+    find: '  pod_cidr     = "10.244.0.0/16"'
+    replace: '  pod_cidr     = "10.0.0.0/8"'
+    mentions: "overlaps the site network"
+    why: >
+      10.0.0.0/8 is the shape a CNI default tends to take and it contains
+      every site subnet this estate can define, because site octets are
+      asserted 1-95. Pods sharing addresses with the machines they run on is
+      routing that works until two things want the same address, and it
+      cannot be corrected without rebuilding the cluster.
+
+  - guard: TestCiliumTakesItsPodAddressesFromKubernetes
+    file: clusters/bootstrap/cilium.yaml
+    find: '  ipam: "kubernetes"'
+    replace: '  ipam: "cluster-pool"'
+    mentions: 'not "kubernetes"'
+    why: >
+      In kubernetes mode Cilium takes pod addresses from the podSubnets this
+      repository declares. In every other mode it allocates from a pool of
+      its own, and its default pool is 10.0.0.0/8 - which swallows every
+      site subnet. The manifest still renders, still installs and still
+      comes up, so the switch is one word with no other signal.
+
+  - guard: TestTheDNSResolversAreDeclaredInOnePlace
+    file: management/cluster/variables.tf
+    find: '  dns_resolvers = ["1.1.1.1", "1.0.0.1"]'
+    replace: "  dns_resolvers        = [\"1.1.1.1\", \"1.0.0.1\"]\n  fallback_dns_servers = [\"9.9.9.9\"]"
+    mentions: "names the resolver"
+    why: >
+      The resolvers were written out four times - twice in cloud-init and
+      twice in Talos's ResolverConfig - which is the duplication the
+      one-place rule already forbids for versions, and it fails the same
+      way: three get updated and the fourth machine class resolves through
+      something nobody meant. It is also the only route a fork has to point
+      the estate at internal resolvers.
+
+  - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
+    file: modules/applications/valheim/base/network-policy.yaml
+    find: "            cidr: 172.16.0.0/12"
+    replace: "            cidr: 10.0.0.0/8"
+    mentions: "permits 10.0.0.0/8"
+    why: >
+      Opening another private range is the obvious response to the next
+      player who cannot connect, and 10.0.0.0/8 is the obvious range because
+      it is the one remaining and looks symmetrical with the two beside it.
+      It is also the space the whole estate is addressed out of, so it hands
+      a public-facing game server a UDP path to the API server, the state
+      database, the hypervisor and every other workload. The manifest stays
+      valid and the cluster does exactly what it was told.
+
+  - guard: TestTheGameServerCanStillReachPlayersOnOrdinaryNetworks
+    file: modules/applications/valheim/base/network-policy.yaml
+    find: "            cidr: 172.16.0.0/12"
+    replace: "            cidr: 198.51.100.0/24"
+    mentions: "no longer permits 172.16.0.0/12"
+    why: >
+      The converse of the guard above, and it needs saying: a check that
+      only ever refuses is satisfied by closing everything. A closed range
+      is a player who joins, spawns and is disconnected seconds later with
+      nothing anywhere naming this policy - which is what 172.16.0.0/12
+      being shut cost every remote player who tried, from a phone hotspot or
+      a hotel.
+
+  - guard: TestEveryChartsImagesAreGovernedOrDeclared
+    file: scripts/approved-suppliers.yml
+    find: "  - chart: openebs\n    pulls_from: docker.io"
+    replace: "  - chart: openebs-was-declared-here\n    pulls_from: docker.io"
+    mentions: "neither pins its images"
+    why: >
+      The registries section asserts that every image comes from an approved
+      registry and is pinned by digest, and the walk behind it only ever
+      reads references written in this repository. A chart pulling its own
+      defaults is invisible to it, so 'no unapproved image is committed
+      here' and 'no unapproved image runs here' produce the same green.
+      Quietly dropping a declaration puts a chart back in that silence - and
+      the one that matters most is the storage provisioner handing out the
+      volumes the state database sits on.
+
 owed_ceiling: 55
 
 unprovable:
@@ -1107,6 +1203,11 @@ unprovable:
   # cmd from the playbook and runs it against a stub, so it tests what ships
   # rather than a copy.
   - path: tests/go/repo/snat_dedupe_test.go
+    reason: shipped-shell
+  # Same form: it pulls the untrusted-zone isolation task's own cmd out of the
+  # playbook and runs it against a stub iptables, so it tests the shell that
+  # ships rather than a copy of it kept here.
+  - path: tests/go/repo/dmz_isolation_test.go
     reason: shipped-shell
   #
   # Asserts a file's executable bit. There is no text to substitute, and a mode
