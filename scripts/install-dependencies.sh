@@ -393,6 +393,36 @@ ok "git hooks wired to githooks/, with the supplier guard ahead of pre-commit"
 # refused, and nothing anywhere saying why. So the registration happens here,
 # and a failure to register is a warning with the exact command rather than a
 # silent gap.
+step "analysis tools (pinned)"
+# The four that replaced Super-Linter (#365). Each is pinned in versions.env
+# and owned by exactly one lane in CI; installing them here is what lets
+# `task lint` run locally exactly what a pull request runs.
+if has checkov && has zizmor && has codespell; then
+	skip "checkov, zizmor and codespell already present"
+else
+	info "installing checkov, zizmor and codespell via pip"
+	python3 -m pip install --user --break-system-packages \
+		"checkov==${CHECKOV_VERSION}" \
+		"zizmor==${ZIZMOR_VERSION}" \
+		"codespell==${CODESPELL_VERSION}"
+	ok "analysis tools installed"
+fi
+
+step "hadolint (pinned)"
+# A single static binary from the publisher's own release, verified against
+# the checksum beside its version - the same pattern as trufflehog, because a
+# download with no checksum is a hope rather than a pin.
+if has hadolint; then
+	skip "hadolint already present ($(hadolint --version 2>&1 | head -1))"
+else
+	info "installing hadolint ${HADOLINT_VERSION}"
+	curl -fsSL -o "$TMP/hadolint" \
+		"https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+	echo "${HADOLINT_SHA256}  ${TMP}/hadolint" | sha256sum -c -
+	sudo install -m 0755 "$TMP/hadolint" /usr/local/bin/hadolint
+	ok "hadolint installed"
+fi
+
 step "commit signing"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 

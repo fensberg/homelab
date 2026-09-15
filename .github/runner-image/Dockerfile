@@ -57,7 +57,13 @@ ARG TOFU_VERSION
 ARG RCLONE_DEB_VERSION
 ARG TARGETARCH=amd64
 
-USER root
+# Numeric on purpose, here and at the bottom of the file. A name means the
+# runtime has to resolve it through /etc/passwd before it can say whether the
+# user is root, and a kubelet asked for runAsNonRoot cannot do that at all -
+# which is the whole reason the scale set had to pin runAsUser by hand. The
+# number is the thing being asserted anyway, so declare the number. hadolint
+# DL3066 says the same.
+USER 0
 
 # Every RUN below that pipes needs pipefail, or the exit status is the last
 # command's alone: `curl ... | gpg --dearmor` would write an empty keyring and
@@ -147,15 +153,18 @@ RUN for b in op tofu age rclone kubectl talosctl jq; do \
         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done
 
-# The scale set pins runAsUser to this number, because the image's USER is the
-# name "runner" and the kubelet will not start a pod with runAsNonRoot: true
-# and a non-numeric user - it cannot prove a name is not root. That makes the
-# uid part of the contract between this image and
-# clusters/management/infrastructure/configs/runner-scale-set.yaml, and
-# nothing at runtime would report them disagreeing: the pod would come up as
-# an unknown uid with no write access to its own home, and the runner would
-# fail for reasons that look nothing like a renumbered account.
+# The uid is part of the contract between this image and
+# clusters/management/infrastructure/configs/runner-scale-set.yaml, and nothing
+# at runtime would report the two disagreeing: the pod would come up as an
+# unknown uid with no write access to its own home, and the runner would fail
+# for reasons that look nothing like a renumbered account.
+#
+# So the number is asserted here rather than assumed, which is also what makes
+# the numeric USER below safe. `runner` is the base image's account, not ours,
+# and upstream is free to renumber it; a name would follow that silently while
+# a number would not. This assertion is what turns that into a loud build
+# failure instead, at the only moment it is cheap to notice.
 RUN echo "the runner account is uid $(id -u runner); the scale set expects 1001" \
     && test "$(id -u runner)" = "1001"
 
-USER runner
+USER 1001

@@ -85,7 +85,7 @@ func inDir(t *testing.T, dir string, f func() int) int {
 // cannot replay and would refuse at push time instead.
 func TestGuardMergeRefusesAnUnpublishableMerge(t *testing.T) {
 	dir := repoMidMerge(t, false)
-	if code := inDir(t, dir, func() int { return guardMerge(nil) }); code == 0 {
+	if code := inDir(t, dir, func() int { return enforceMerge(nil) }); code == 0 {
 		t.Error("a merge commit that signedpush cannot publish was allowed through, so it would be refused at push time instead - after the tests, and at the cost of a rebase and a recreated ref")
 	}
 }
@@ -96,7 +96,7 @@ func TestGuardMergeRefusesAnUnpublishableMerge(t *testing.T) {
 // The push guard was shipped once refusing precisely this party.
 func TestGuardMergeAllowsAMergeThatWillBeSigned(t *testing.T) {
 	dir := repoMidMerge(t, true)
-	if code := inDir(t, dir, func() int { return guardMerge(nil) }); code != 0 {
+	if code := inDir(t, dir, func() int { return enforceMerge(nil) }); code != 0 {
 		t.Error("a locally-signed merge was refused. That party publishes with plain git and needs no replay, so this guard would be an outage for the only people who can comply")
 	}
 }
@@ -109,7 +109,7 @@ func TestGuardMergeIsSilentWhenNoMergeIsHappening(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("merge --abort: %v", err)
 	}
-	if code := inDir(t, dir, func() int { return guardMerge(nil) }); code != 0 {
+	if code := inDir(t, dir, func() int { return enforceMerge(nil) }); code != 0 {
 		t.Error("an ordinary commit was refused, so every commit in the repository now fails")
 	}
 }

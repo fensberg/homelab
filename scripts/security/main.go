@@ -3,14 +3,19 @@
 //
 // Security is a role rather than a place, and a role can hold more than one
 // responsibility: everything arriving is checked against who is allowed to
-// deliver, everything leaving is checked against how it is allowed to leave,
-// and the estate is patrolled from outside. Five verbs across those three:
+// deliver it, everything leaving is checked against where it is allowed to go,
+// and the estate is patrolled from outside. Three verbs across those three:
 //
 //	guard-deliveries  what comes in - third-party code installed as a commit hook
-//	guard-standing-order  what the expediter may deliver - the game server's pin, nothing else
-//	guard-push        what goes out - unsigned commits reaching a branch
-//	guard-merge       what cannot go out - a merge commit signedpush cannot replay
+//	guard-egress      where anything may go out to - the declared endpoints
 //	patrol            the estate itself, watched from outside
+//
+// THREE OTHER VERBS USED TO LIVE HERE and now belong to the superintendent:
+// enforce-push, enforce-merge and enforce-standing-order. None of them is about
+// who may deliver to this estate or where its traffic may go; they are about
+// whether the work in front of you follows the process everybody agreed to,
+// which is a different role. "Guard" is this program's word, and the split
+// keeps it meaning one thing.
 //
 // The verbs are verb phrases and the program is a noun, deliberately: security
 // is who; guarding a delivery and walking a patrol are what they do. The list
@@ -29,8 +34,8 @@
 // three build artifacts to ignore, and three chances to forget one - which is
 // how a binary reached a commit.
 //
-// signedpush is deliberately NOT here. It is what publishes; guard-push exists
-// to refuse what it does. Putting the guard and the thing it constrains in one
+// signedpush is deliberately NOT here, and neither is the verb that refuses
+// what it does - enforce-push went to the superintendent with the other two. Putting the guard and the thing it constrains in one
 // binary is the shape this estate refuses everywhere else - the party that
 // raises a concern must never be the party that resolves it. signedpush also
 // holds the App private key, and nothing that runs on every commit should carry
@@ -51,10 +56,7 @@ type verb struct {
 func verbs() []verb {
 	return []verb{
 		{"guard-deliveries", "refuse a delivery from an unapproved supplier", guardDeliveries},
-		{"guard-standing-order", "refuse an expediter pull request that changes more than the pin", guardStandingOrder},
 		{"guard-egress", "refuse a job whose outbound reach is not what the suppliers list declares", guardEgress},
-		{"guard-push", "refuse a plain git push that would update a branch", guardPush},
-		{"guard-merge", "refuse a merge commit that signedpush could not publish", guardMerge},
 		{"patrol", "check from outside that the estate is still answering", patrol},
 	}
 }

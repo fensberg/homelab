@@ -977,7 +977,7 @@ past the review.
 
 It is allowed past the review and **nothing else**. It is a bypass actor on the
 ruleset that requires review, and not on the ruleset that requires checks. One
-of those checks is `security guard-standing-order`, which refuses any pull
+of those checks is `superintendent enforce-standing-order`, which refuses any pull
 request by the expediter that changes anything but the digest and the recorded
 build, or that moves the digest to a different image repository - the change
 that reads exactly like a routine update in a diff. Construction has the word:
@@ -1732,3 +1732,144 @@ is a reasonable pattern and this estate now uses it, but a chart is a program
 and some charts generate secrets when you run them. Any future use of this
 pattern checks the output for `kind: Secret` before committing, and the reason
 that check exists is this one.
+
+### Two roles, and four tools instead of one
+
+Two changes that arrived together because the operator asked for them together,
+and both are about the same thing: a name that had stopped describing what was
+underneath it.
+
+#### Security guards; the superintendent enforces
+
+`scripts/security` held five verbs, and three of them were not security's work.
+Refusing an unsigned push, refusing a merge commit `signedpush` cannot replay,
+and holding the expediter to its standing order are not questions about who may
+deliver to this estate or where its traffic may go. They are questions about
+whether the work in front of you follows the process everybody agreed to.
+
+The operator's words: **"guard-standing-order should really be in the same verb
+as push guard and merge guard. It's making sure we're all working on a given
+policy. That honestly seems like a different role - like process manager or
+something."** And, on the naming: **"superintendent (or super) and no 'guard'
+anything. 'enforce-push' is fine but guard is security."**
+
+So `scripts/superintendent` now holds `enforce-push`, `enforce-merge` and
+`enforce-standing-order`, and security keeps `guard-deliveries`, `guard-egress`
+and `patrol`. "Guard" means one thing again: the gate, the perimeter, and what
+leaves. The split is a rename across two git hooks, the taskfile, a CI lane, the
+sensitive-path list and the coverage floors, which is why it landed as its own
+piece of work rather than being folded into the change that prompted it.
+
+#### One tool that did thirty checks, replaced by four that do one each
+
+Super-Linter hung for its entire timeout three times in two days, each time on a
+required check, each time blocking whatever pull request was in flight, and once
+costing a force-merge. Two sessions went into diagnosing it: reading Harden
+Runner's own record end to end, comparing hung runs against passing ones, ruling
+out an Azure guest-agent call, and establishing that its debug logging could
+never name the stuck linter because `parallel` buffers every linter's output
+until the last one finishes.
+
+The operator stopped it: **"I'm tired of dealing with super linter. We're not
+going to waste more time fixing a broken tool and instead build an enterprise
+CI / CD pipeline using dedicated tools for dedicated things instead of an
+all-in-one."**
+
+That is the right call and it is also this repository's own rule - each check
+has exactly one owner - which the aggregate had always been the exception to.
+
+**The replacement is 1:1 by construction.** Of the eleven linters it ran here,
+six were already owned elsewhere (merge-conflict markers, JSON, YAML, commitlint
+and gitleaks by pre-commit; `PRE_COMMIT` was it running pre-commit, which the
+Format lane already does). Four became dedicated lanes: Checkov, hadolint,
+zizmor and codespell, each pinned in `scripts/versions.env` and declared under
+`tools:` in `scripts/approved-suppliers.yml`.
+
+**Two checks turned out to have had no owner but the aggregate**, and enumerating
+them is the only reason they were noticed:
+
+- `BASH_EXEC`, the execute bit on a script with a shebang. Nothing else checked
+  it, and a git hook that is not executable never runs - silently. It is now
+  `check-shebang-scripts-are-executable` in the pre-commit config.
+- **Go formatting.** The Format lane deliberately skips `go-fmt` because
+  ubuntu-latest's Go is not the pinned one, and the aggregate's Go analysis was
+  what covered it in CI. The Validate lane, which installs the pinned toolchain
+  and already owns Go correctness, now runs `gofmt -l`.
+
+That is what "replace without dropping anything" costs: the enumeration, not the
+rewiring. Anything that lands nowhere is a check being deleted, and that has to
+be a decision somebody makes rather than a side effect of removing a tool.
+
+#### What the four lanes said the first time they ran on their own
+
+The enumeration above was about which linters survived. It missed a second
+question, and all four of the new lanes failed on their first real run because of
+it: **re-homing a check means re-homing its configuration, not just its
+invocation.**
+
+`.codespellrc` existed already and ended with a line saying path exclusions live
+in `.github/super-linter.vars` "with the rest of the Super-Linter
+configuration". Deleting the aggregate deleted its `FILTER_REGEX_EXCLUDE`, and
+codespell - now reading its own config, as #313 asked - immediately objected to
+Flux's generated install manifest, Cilium's rendered chart output and two lockfile
+digests. Nothing was wrong with any of them; they were excluded for good reasons
+that had been written down at length in a file that no longer existed. The skip
+list is now in `.codespellrc` with those reasons carried across, which is what #313
+was actually about: the config governs, or it is decoration.
+
+The same run found a genuine one, in a test failure message in
+`scripts/expediter` - the variant spelling of "unparsable", described rather than
+quoted here because the note it replaces recorded that spelling such a fragment
+out literally makes codespell flag the prose instead of the file. It did exactly
+that to this paragraph on the first run. That is the argument for the split in
+miniature. Four real findings had been
+sitting behind an exclusion list nobody could see, and one true finding was
+sitting behind a lane that hung.
+
+**hadolint found a workaround this repository had documented twice and never
+removed.** `DL3066` objects to a non-numeric `USER`, and the runner image used the
+name `runner`. That is not cosmetic here: the kubelet cannot prove a name is not
+root, so it refuses a pod with `runAsNonRoot: true` and a named image user - which
+is exactly why `runner-scale-set.yaml` pins `runAsUser: 1001` by hand, and says so
+in a comment, three blocks below another comment explaining that the listener
+container needs no such pin because _its_ image's USER is already numeric. The
+estate had reasoned it out correctly in both directions and left the image alone.
+The Dockerfile now declares `USER 1001`, and the build-time assertion that the
+account's uid is still 1001 is what makes that safe - `runner` is upstream's
+account and upstream may renumber it, so a name would follow that silently while
+the assertion fails loudly. The manifest's pin stays until the digest is bumped
+to an image built from this Dockerfile; dropping it before then would stop the
+runner starting, so #389 carries that follow-up and the order it needs.
+
+**The two workflow linters in this repository disagree, and the disagreement is
+not resolvable yet.** zizmor's `self-repository` audit wants GitHub's `$/` syntax
+in place of `uses: ./.github/actions/versions`, and it is right that `$/` is
+better - it resolves at the commit being run rather than against whatever the
+workspace holds. actionlint, which pre-commit pins and the Format lane runs,
+refuses `$/` outright: its newest release is v1.7.12 from March 2026 and GitHub
+announced the syntax on 30 July 2026. So the fix turns one required lane green by
+turning another red, and the only way to have both would be an actionlint ignore
+covering the rule that validates the format of every `uses:` in the repository.
+The exemption is in `.github/zizmor.yml`, narrowed to that one audit so every
+other finding at every severity still fails the lane, and
+`tests/go/repo/zizmor_test.go` fails when it stops being earned - because a
+suppressed finding is invisible by construction, and an exemption whose reason has
+expired is the one kind of debt nothing in CI can report. #387 carries the removal
+condition, and #388 the separate fact that the actionlint pin is eleven releases
+behind.
+
+Worth recording that the audit was latent rather than live: nothing here declares
+`workflow_call`, so `./` and `$/` resolve identically today. zizmor scores it low
+for that reason, and the lane was failing on it only because bare `zizmor` exits
+non-zero on any finding at all.
+
+**And the check this piece of work re-homed shipped with a defect that another
+check in the same piece of work caught.** The Go formatting step moved to the
+Validate lane as `gofmt -l $(git ls-files '*.go')`, and actionlint's shellcheck
+pass refused it: unquoted command substitution splits on whitespace, so a path
+with a space in it would reach gofmt as two paths that do not exist. The worse
+half is the one shellcheck does not mention - with no Go files matched at all it
+becomes `gofmt` with no arguments, which reads stdin and waits, so the lane would
+hang for its whole timeout. That is the failure mode this entire piece of work
+exists to remove, re-introduced while removing it. `git ls-files -z | xargs -0r`
+answers both.

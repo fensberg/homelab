@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 59
+floor: 61
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -905,6 +905,31 @@ mutations:
       reason. scripts/approved-suppliers.yml says which job may reach what, and
       a workflow that reaches further than its entry has widened this estate's
       outbound surface with nothing to say so.
+
+  - guard: TestZizmorExemptionsAreStillEarned
+    file: .github/zizmor.yml
+    find: "      - clerk.yml"
+    replace: "      - codeql.yml"
+    mentions: "no longer uses a relative"
+    why: >
+      A suppressed finding is invisible by construction, so an exemption that
+      has stopped being about anything is the one kind of debt nothing in CI can
+      report. The self-repository block exists only because actionlint refuses
+      the syntax zizmor asks for; when actionlint ships a release that accepts
+      it, the block becomes pure debt and this guard is the only thing that
+      would ever say so.
+
+  - guard: TestEveryRelativeActionReferenceIsAccountedFor
+    file: .github/zizmor.yml
+    find: "      - clerk.yml"
+    replace: "      # - clerk.yml"
+    mentions: "is not listed in .github/zizmor.yml"
+    why: >
+      A workflow reaching the local composite action without an entry here fails
+      the Workflow Scan lane, which is correct but is a CI-only discovery -
+      zizmor is not installed on every machine that can run `task test`. This
+      names the file locally in seconds instead, which is the difference between
+      a push-and-wait cycle and an edit.
 
 owed_ceiling: 55
 

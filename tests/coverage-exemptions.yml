@@ -202,14 +202,17 @@ files:
   - path: security/guard-deliveries.go
     uncovered: 4
     covered_by: nothing
-  - path: security/guard-push.go
-    uncovered: 2
-    covered_by: nothing
   - path: security/main.go
     uncovered: 3
     covered_by: nothing
   - path: security/patrol.go
     uncovered: 7
+    covered_by: nothing
+  - path: superintendent/enforce-push.go
+    uncovered: 2
+    covered_by: nothing
+  - path: superintendent/main.go
+    uncovered: 3
     covered_by: nothing
   - path: inspector/comment.go
     uncovered: 1

@@ -362,7 +362,7 @@ A GitHub App cannot hold a signing key — SSH and GPG signing keys are
 user-account resources, and the agent deliberately has no user account. What
 an App can do is have GitHub sign for it: a commit created through the Git
 Data API with an installation token comes back signed with GitHub's own key.
-A plain `git push` is refused by the `pre-push` hook (`scripts/security`),
+A plain `git push` is refused by the `pre-push` hook (`scripts/superintendent`),
 because it produces unsigned commits attributed to whatever local git config
 says. That used to be documented and left to discipline, and discipline was not
 enough — a session pushed twice with plain git before anyone noticed, and
@@ -441,7 +441,7 @@ depends on it and uses them.
 
 ## CI
 
-- `pr-validation.yml` — eight lanes, all running in parallel, Format
+- `pr-validation.yml` — eleven lanes, all running in parallel, Format
   included. Formatting is enforced locally first (the git hook
   `./scripts/install-dependencies.sh` wires up via `pre-commit install`) -
   shift left, catch it in seconds on the machine that wrote it. **Format**'s
@@ -451,19 +451,21 @@ depends on it and uses them.
   all. It does not gate the other lanes - a formatting slip no longer delays
   or blocks the lanes that actually check correctness and security, and every
   lane's result lands for every PR at roughly the same time, not staggered
-  behind however long Format took. **Shell Lint** runs ShellCheck directly,
-  pulled out of Super-Linter for the same one-owner-per-check reason as Go
-  and Trivy below. **Validate** proves the code resolves: `tofu validate`
+  behind however long Format took. **Shell Lint** runs ShellCheck directly, its
+  own lane for the same one-owner-per-check reason as Go and Trivy below. **Validate** proves the code resolves: `tofu validate`
   against a placeholder config, and `kustomize build` piped through
   `kubeconform` with the Flux substitutions applied - Go vetting/building
   lives here too, for the same reason. **Test** is the behaviour half of Validate: Go unit and
   contract tests, `tofu test` against the fixture corpus, and the
   JavaScript/TypeScript tier. Everything in it is hermetic, which is what
   lets a fork's pull request run it in full without reaching a credential.
-  **Analyze** is Super-Linter, for
-  everything not already owned by a dedicated lane. **Semgrep**, **Trivy**
-  and **Secrets** are the security lanes, and overlap with each other and
-  with Analyze on purpose - none of them comes out.
+  **Policy Scan** (Checkov), **Dockerfile Scan** (hadolint), **Workflow
+  Scan** (zizmor) and **Spelling** (codespell) are four lanes that were one
+  until #365: Super-Linter bundled them behind a single status, hung
+  intermittently for its whole timeout, and blocked three pull requests in two
+  days. Each tool is now pinned, owned by one lane, and names itself when it
+  fails. **Semgrep**, **Trivy** and **Secrets** are the security lanes, and
+  overlap with each other on purpose - none of them comes out.
 - `codeql.yml` — CodeQL on `actions`, the only language here it supports.
   Workflows are the part of this repository that runs with a token, so that is
   where a finding matters. Moved off GitHub's default setup so it is pinned and
@@ -652,11 +654,13 @@ floor a pull request may not drop below and is free to leave alone.
   human co-author is still correct and still passes.
 - **Each check has exactly one owner.** Formatting belongs to `pre-commit`,
   pinned to exact versions; CI runs that same file rather than its own copy of
-  the same tools. Analysis belongs to Super-Linter, pinned by image SHA, with
-  every formatter it would duplicate switched off in
-  `.github/super-linter.vars`. Nothing is configured in both places - two
-  copies of prettier, on two versions, is what put formatting errors on a pull
-  request that `pre-commit` had just passed.
+  the same tools. Analysis belongs to four pinned tools, one lane each -
+  Checkov, hadolint, zizmor and codespell - taken from their publishers and
+  version-pinned in `scripts/versions.env`. Nothing is configured in both
+  places - two copies of prettier, on two versions, is what put formatting
+  errors on a pull request that `pre-commit` had just passed. The aggregate
+  that used to own this was the one exception to the rule above, and it cost
+  more than the checks it ran were worth (#365).
 - Four verbs, fastest first: `task fix` formats (seconds, no Docker),
   `task validate` proves the OpenTofu and manifests resolve, `task test`
   proves they behave, `task lint` runs the slow analysis image. The first

@@ -1,4 +1,4 @@
-# Words codespell gets wrong here, and why.
+# Words and paths codespell gets wrong here, and why.
 #
 # Same rule as every other ignore list in this repository: an entry names the
 # condition that would remove it, so the file stays a set of decisions rather
@@ -12,8 +12,41 @@
 #          fault, and it will appear again in any nftables or policy-routing
 #          note. Removed when: never.
 #
-# Path exclusions live in .github/super-linter.vars with the rest of the
-# Super-Linter configuration; this file is only for words, so that codespell
-# behaves the same when run by hand as it does in CI.
+# The skip list below was Super-Linter's FILTER_REGEX_EXCLUDE until #365 took
+# that aggregate out. It lives here now for the reason the split was made at
+# all - one owner per check - and because a path exclusion kept in the CI
+# configuration behaves differently from one kept here: codespell run by hand
+# would not honour it, so a clean local run stopped predicting a clean lane.
+#
+# clusters/management/flux-system/ is Flux's own generated install and sync
+# manifest, committed verbatim so it goes through normal review like everything
+# else. It is not ours to edit, so a finding inside it is a finding about
+# Flux's upstream manifest rather than about this codebase; codespell objects
+# to a hyphenated form of "reuse" in one of its comments. Structural validity
+# is still checked by the Validate lane's kubeconform pass, which this does not
+# affect. Removed when: the manifest stops being vendored verbatim.
+#
+# clusters/bootstrap/ is Cilium's chart output, committed verbatim - the same
+# case, excluded for the same reason. codespell objects to one of Kubernetes'
+# CamelCase label-selector operators inside it, reading it as a misspelling of
+# two ordinary words; it is the operator's real name, and nothing edits that
+# file by hand since `task render-cni` regenerates it. Removed when: the
+# rendered output stops being committed.
+#
+# pnpm-lock.yaml and go.sum are generated integrity databases: long runs of
+# base64 and hex, inside which codespell reliably finds "misspellings". Nothing
+# edits either by hand and no linter here has anything useful to say about
+# them. Removed when: never, while they are generated.
+#
+# ./coverage is the test suites' own HTML report, gitignored and so invisible to
+# the CI lane but not to a local run - which is the divergence this file exists
+# to remove. The prettified JavaScript bundled into that report contains a
+# contraction written without its apostrophe. Removed when: the report stops
+# being generated into the working tree.
+#
+# The flagged fragments are described rather than quoted on purpose. An earlier
+# version of this note spelled two of them out literally and codespell promptly
+# flagged the comment instead of the file it was excluding.
 [codespell]
 ignore-words-list = iif
+skip = ./.git,./coverage,./node_modules,./clusters/management/flux-system,./clusters/bootstrap,./pnpm-lock.yaml,*/go.sum,*/node_modules
