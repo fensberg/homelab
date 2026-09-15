@@ -360,7 +360,18 @@ func git(args ...string) (string, error) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		said := strings.TrimSpace(stderr.String())
+		// BOTH streams, because the one that matters is not always stderr.
+		//
+		// A pre-push hook writes its explanation to STDOUT, and Output()
+		// captures stdout into `out` - which this returned only on success, so
+		// a push refused by the hook printed git's generic "failed to push some
+		// refs" and nothing else. The hook had said exactly which test failed
+		// and why; it went into a buffer that was thrown away.
+		//
+		// That is the same defect this function was written to fix, one stream
+		// over: the comment above records a session lost to a discarded stderr,
+		// and stdout was left discarded in the same change.
+		said := strings.TrimSpace(stderr.String() + "\n" + string(out))
 		if said == "" {
 			return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 		}
