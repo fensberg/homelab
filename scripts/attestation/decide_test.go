@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -139,5 +141,169 @@ func TestAnEmptyMarkerMatchesNothing(t *testing.T) {
 	if v := Decide(threads, "", "author"); !v.OpenThread {
 		t.Fatalf("an empty marker matched an unrelated thread, so a digest that failed to "+
 			"compute would be satisfied by whatever conversation happened to exist: %+v", v)
+	}
+}
+
+// A superseded conversation nobody answered is withdrawn; one that was
+// answered stays.
+//
+// THE SITUATION THIS ENDS (#224). #223 carried two unresolved attestation
+// conversations, both anchored to the same file, both saying exactly the same
+// thing, differing only in their digest. Two pushes touched a sensitive path,
+// so two conversations opened, and GitHub's require-conversation-resolution
+// counted both. On a pull request with four pushes it is four.
+//
+// That recreates the failure sensitive-paths.yml was built to replace. The
+// label it got rid of survived pushes, so people applied it without reading;
+// faced with two threads carrying the same title, the same rule and the same
+// file list, the second gets resolved without being read because it looks like
+// the one just read.
+//
+// The digest binding is NOT weakened - a changed diff still opens a new
+// conversation, which is what stops an acknowledgement outliving what it
+// acknowledged. What changes is that the old one is withdrawn rather than left
+// as an obligation, when and only when nobody answered it.
+func TestSupersededConversationsNobodyAnsweredAreWithdrawn(t *testing.T) {
+	const current = "<!-- sensitive-attestation:c59dbc1fa830 -->"
+
+	threads := []Thread{
+		{
+			// An older digest, unresolved. Describes a diff that is gone.
+			FirstCommentBody: "<!-- sensitive-attestation:21452458b457 -->\nread the change",
+			FirstCommentID:   111,
+		},
+		{
+			// An older digest that somebody DID read and resolve. That is the
+			// record of an acknowledgement actually given.
+			FirstCommentBody: "<!-- sensitive-attestation:aaaaaaaaaaaa -->\nread the change",
+			FirstCommentID:   222,
+			Resolved:         true,
+			ResolvedBy:       "a-person",
+			ResolvedByType:   "User",
+		},
+		{
+			// Somebody else's review comment, nothing to do with this gate.
+			FirstCommentBody: "this variable could be clearer",
+			FirstCommentID:   333,
+		},
+		{
+			FirstCommentBody: current + "\nread the change",
+			FirstCommentID:   444,
+		},
+	}
+
+	v := Decide(threads, current, "the-author")
+
+	if len(v.DeleteComments) != 1 || v.DeleteComments[0] != 111 {
+		t.Fatalf(`withdrew %v, want only the unanswered superseded thread (111).
+
+  222 was resolved by a person - that is the record of an acknowledgement and
+      destroying it would lose history.
+  333 is somebody else's review comment and is none of this gate's business.
+  444 is the live conversation, which is the one a human must read.`, v.DeleteComments)
+	}
+	if v.OpenThread {
+		t.Error("a conversation exists for the current digest and another was opened anyway")
+	}
+	if v.Blocked {
+		t.Errorf("the merge was blocked over superseded threads: %s", v.Reason)
+	}
+}
+
+// Withdrawing happens even when there is no current conversation yet.
+//
+// That is the ordinary case on a push that changes the sensitive diff: the old
+// thread is superseded in the same run that opens the new one. Handling only
+// the case where both exist would leave every first-push-after-a-change
+// carrying the old obligation.
+func TestASupersededConversationIsWithdrawnWhenTheNewOneIsOpened(t *testing.T) {
+	v := Decide([]Thread{
+		{FirstCommentBody: "<!-- sensitive-attestation:oldoldoldold -->\nread it", FirstCommentID: 555},
+	}, "<!-- sensitive-attestation:newnewnewnew -->", "the-author")
+
+	if !v.OpenThread {
+		t.Error("no conversation exists for the current digest and none was opened")
+	}
+	if len(v.DeleteComments) != 1 || v.DeleteComments[0] != 555 {
+		t.Errorf("withdrew %v, want the superseded thread 555", v.DeleteComments)
+	}
+}
+
+// Nothing is withdrawn when nothing is superseded.
+//
+// The converse, because a bug that withdrew the LIVE conversation would look
+// exactly like this working: the gate would pass, the page would look tidy, and
+// nobody would ever be asked to read anything.
+func TestTheLiveConversationIsNeverWithdrawn(t *testing.T) {
+	const current = "<!-- sensitive-attestation:c59dbc1fa830 -->"
+	v := Decide([]Thread{
+		{FirstCommentBody: current + "\nread it", FirstCommentID: 777},
+	}, current, "the-author")
+
+	if len(v.DeleteComments) != 0 {
+		t.Fatalf(`withdrew %v with nothing superseded.
+
+If the live conversation can be withdrawn, the gate passes with nobody having
+read anything - which is the whole thing it exists to prevent.`, v.DeleteComments)
+	}
+}
+
+// The withdrawal actually reaches GitHub, as a DELETE on the right comment.
+//
+// Decide says WHICH conversations to withdraw; this is the half that does it,
+// and the two can disagree silently. GitHub has no mutation for deleting a
+// review THREAD, so the thread is taken away by deleting the comment it hangs
+// off - which means a wrong id deletes somebody's review comment instead.
+func TestWithdrawingAConversationDeletesItsFirstComment(t *testing.T) {
+	var method, path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	saved := apiBase
+	apiBase = srv.URL
+	defer func() { apiBase = saved }()
+
+	c := &client{repo: "example/homelab", token: "t", http: srv.Client()}
+	if err := c.deleteComment(111); err != nil {
+		t.Fatalf("deleteComment: %v", err)
+	}
+	if method != http.MethodDelete {
+		t.Errorf("used %s; deleting a review comment is a DELETE", method)
+	}
+	if path != "/repos/example/homelab/pulls/comments/111" {
+		t.Errorf("asked for %q, which is not the review comment it was given", path)
+	}
+}
+
+// A refusal is reported and carries no response body.
+//
+// The body can echo the request, and this output lands in a public Actions
+// log - the same reason post() does not quote one.
+func TestAFailedWithdrawalIsReportedWithoutTheBody(t *testing.T) {
+	const secretish = "ghs_do_not_print_me"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"` + secretish + `"}`))
+	}))
+	defer srv.Close()
+
+	saved := apiBase
+	apiBase = srv.URL
+	defer func() { apiBase = saved }()
+
+	c := &client{repo: "example/homelab", token: "t", http: srv.Client()}
+	err := c.deleteComment(222)
+	if err == nil {
+		t.Fatal("a refused delete reported success, so a superseded conversation " +
+			"would be believed withdrawn while still blocking the merge")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("the error does not name the status: %v", err)
+	}
+	if strings.Contains(err.Error(), secretish) {
+		t.Errorf("the response body reached the error, and this lands in a public log: %v", err)
 	}
 }

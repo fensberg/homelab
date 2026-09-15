@@ -62,6 +62,23 @@ func main() {
 		}
 	}
 
+	// Withdraw the flags nobody answered about content that is gone.
+	//
+	// After the live conversation is opened, so a failure here never leaves a
+	// pull request with no current thread on it. Best effort for the same
+	// reason: a superseded thread left behind is the situation this improves
+	// on rather than a new failure, and refusing the whole gate over one would
+	// be worse than the noise it removes.
+	for _, id := range v.DeleteComments {
+		if err := c.deleteComment(id); err != nil {
+			fmt.Fprintln(os.Stderr, "attestation: could not withdraw a superseded "+
+				"conversation, so it stays open and has to be resolved by hand: "+err.Error())
+			continue
+		}
+		fmt.Printf("attestation: withdrew a superseded conversation (comment %d) - "+
+			"it described a diff this pull request no longer carries, and nobody had answered it\n", id)
+	}
+
 	if v.Blocked {
 		fmt.Fprintln(os.Stderr, "attestation: "+v.Reason)
 		os.Exit(1)
@@ -75,6 +92,11 @@ type client struct {
 	http  *http.Client
 }
 
+// apiBase is a variable so a test can point it somewhere hermetic. Nothing
+// else reassigns it, and the same shape is used by every other program here
+// that talks to GitHub.
+var apiBase = "https://api.github.com"
+
 const threadQuery = `query($owner:String!,$repo:String!,$number:Int!){
   repository(owner:$owner,name:$repo){
     pullRequest(number:$number){
@@ -82,7 +104,7 @@ const threadQuery = `query($owner:String!,$repo:String!,$number:Int!){
       reviewThreads(first:100){nodes{
         isResolved
         resolvedBy{login __typename}
-        comments(first:1){nodes{body}}
+        comments(first:1){nodes{body databaseId}}
       }}
     }
   }
@@ -97,7 +119,7 @@ func (c *client) threads(pr int) ([]Thread, string, error) {
 		"query":     threadQuery,
 		"variables": map[string]any{"owner": owner, "repo": name, "number": pr},
 	})
-	raw, err := c.post("https://api.github.com/graphql", payload)
+	raw, err := c.post(apiBase+"/graphql", payload)
 	if err != nil {
 		return nil, "", err
 	}
@@ -118,7 +140,8 @@ func (c *client) threads(pr int) ([]Thread, string, error) {
 							} `json:"resolvedBy"`
 							Comments struct {
 								Nodes []struct {
-									Body string `json:"body"`
+									Body       string `json:"body"`
+									DatabaseID int64  `json:"databaseId"`
 								} `json:"nodes"`
 							} `json:"comments"`
 						} `json:"nodes"`
@@ -147,6 +170,7 @@ func (c *client) threads(pr int) ([]Thread, string, error) {
 		}
 		if len(n.Comments.Nodes) > 0 {
 			t.FirstCommentBody = n.Comments.Nodes[0].Body
+			t.FirstCommentID = n.Comments.Nodes[0].DatabaseID
 		}
 		threads = append(threads, t)
 	}
@@ -163,8 +187,35 @@ func (c *client) openThread(pr int, head, path, body string) error {
 		"subject_type": "file",
 		"body":         body,
 	})
-	_, err := c.post(fmt.Sprintf("https://api.github.com/repos/%s/pulls/%d/comments", c.repo, pr), payload)
+	_, err := c.post(fmt.Sprintf("%s/repos/%s/pulls/%d/comments", apiBase, c.repo, pr), payload)
 	return err
+}
+
+// deleteComment removes one review comment, and with it the thread it heads.
+//
+// GitHub offers no mutation for deleting a review THREAD, so the thread is
+// taken away by deleting the comment it hangs off. That is only ever done to a
+// conversation this program opened, identified by its own marker, carrying a
+// digest the pull request no longer has, and that nobody resolved.
+func (c *client) deleteComment(id int64) error {
+	url := fmt.Sprintf("%s/repos/%s/pulls/comments/%d", apiBase, c.repo, id)
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		// Not quoted: the body can echo the request, and this lands in a
+		// public Actions log.
+		return fmt.Errorf("DELETE review comment %d: HTTP %d", id, resp.StatusCode)
+	}
+	return nil
 }
 
 func (c *client) post(url string, payload []byte) ([]byte, error) {

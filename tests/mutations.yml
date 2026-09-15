@@ -567,8 +567,12 @@ mutations:
 
   - guard: TestTheCoverageShimDiesWithTheWorkflowStepThatNeedsIt
     file: tests/coverage-baseline.json
-    find: '"go/attestation": 26.6,'
-    replace: '"go": 34,\n    "go/attestation": 26.6,'
+    # Anchored on the KEY, not on its number - the third entry this session to
+    # break because a coverage figure improved, which is #328's complaint in
+    # miniature: a hand-maintained counter every change edits, with other
+    # things pointing at its value.
+    find: '"go/attestation":'
+    replace: '"go": 34,\n    "go/attestation":'
     mentions: "floor for nothing"
     why: >
       A bare "go" key is a floor for nothing once the workflow sweeps every
