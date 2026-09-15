@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 78
+floor: 79
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1157,6 +1157,28 @@ mutations:
       the one that matters most is the storage provisioner handing out the
       volumes the state database sits on.
 
+  - guard: TestNoTerminalTranscriptCarriesARealHostname
+    file: docs/a-pasted-transcript.md
+    create: |
+      # Notes from the run
+
+      Reloading the SDN on the hypervisor:
+
+          root@pve-01:~# pvesh set /cluster/sdn
+          pve-01: reloading network config
+    mentions: "naming the host"
+    why: >
+      A real hostname pasted out of a terminal is how names actually leak into
+      this repository, and it is the one class the forkability guard cannot
+      see: it works on shapes the estate GENERATES, and a bare hostname in
+      prose is just a word. CLAUDE.md names the cause - recording evidence
+      verbatim is the right instinct and is exactly the operation that carries
+      a real name into a public repository without anybody deciding to. It has
+      happened: a hypervisor's name sat in a comment in the Ansible playbook
+      recording a terminal session, green the whole time. A `create` rather
+      than a substitution because the guard has nothing to say until a
+      transcript is PRESENT, and the normal state of the tree is that none is.
+
 owed_ceiling: 55
 
 unprovable:
@@ -1191,6 +1213,12 @@ unprovable:
   - path: tests/go/repo/forkable_test.go
     reason: table
   - path: tests/go/repo/vaultcheck_test.go
+    reason: table
+  # The transcript shapes. A pattern that stops matching reports nothing and
+  # looks exactly like a repository with no transcripts in it, so the shapes
+  # are held to a table of their own - nineteen rows, each a line that must or
+  # must not be read as a pasted terminal session.
+  - test: TestTheTranscriptShapesMatchWhatTheyClaim
     reason: table
   # The floor-spelling checker. assertsAFloor is compiled Go, so the ledger
   # cannot reach its behaviour - and its counterexamples are exactly what a

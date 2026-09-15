@@ -448,6 +448,33 @@ tasks:
           pct="$(go -C "$dir" tool cover -func=coverage-go.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')"
           bash scripts/coverage-gate.sh "go/$module" "$pct"
         done
+      # tests/go, measured over its HELPERS only.
+      #
+      # That module was the one deliberately outside the regime, and the
+      # reasoning was sound as far as it went: measuring how thoroughly the
+      # tests test themselves is a number with no meaning. True of a test
+      # FUNCTION - nothing calls it but the runner, so its statements are
+      # either executed or the test did not run.
+      #
+      # It is not true of the rest of the module (#287). tests/go also holds
+      # helpers with real logic that decide what the guards CONCLUDE, and a bug
+      # in one of those makes a guard wrong rather than absent - which is worse,
+      # because it looks green. duplicates.go is a hundred lines of YAML and
+      # JSON parsing; harness/ decides what a site's control plane IP is and
+      # whether state is readable. Every one of those has been wrong at least
+      # once.
+      #
+      # So the split is by file rather than by module: non-_test.go files get a
+      # floor like any other code, and test functions stay excluded for the
+      # reason already written down. The profile is filtered rather than the
+      # package, because they share one.
+      - |
+        go test -C tests/go -covermode=atomic -coverprofile=coverage-go.out ./...
+        pct="$(awk '!/^mode:/ {
+          split($1, a, ":")
+          if (a[1] !~ /_test\.go$/) { total += $2; if ($3 > 0) covered += $2 }
+        } END { if (total) printf "%.1f", 100 * covered / total; else print "0" }' tests/go/coverage-go.out)"
+        bash scripts/coverage-gate.sh "go/tests-helpers" "$pct"
       - |
         if [ -d node_modules ]; then
           pnpm test:coverage

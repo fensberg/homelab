@@ -95,6 +95,12 @@ toolshed/
 # ignored - one `git add -A` away from being committed, which is how a binary
 # reached a commit here before.
 scripts/*/coverage-go.out
+
+# And the one tests/go now drops, since its helpers gained a floor of their own
+# (#287). Named rather than folded into the glob above because it is not under
+# scripts/, and a glob that quietly stopped covering it is the situation the
+# paragraph above describes.
+tests/go/coverage-go.out
 coverage/
 
 # Go test binaries, if anyone runs `go test -c`
