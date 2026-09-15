@@ -45,10 +45,22 @@ func tracked(root string, paths []string) ([]string, error) {
 
 // A bundle is one slice of the repository, split into what runs and what was
 // claimed about it.
+//
+// The per-path maps are what let the comparison pass pair a file's commentary
+// with an account OF THAT FILE. Both sides used to be one concatenated string,
+// so a change carrying Go, HCL and two epoch records produced a single account
+// written from the Go and the HCL, which was then asked to adjudicate several
+// thousand lines of narrative about tailnets and CoreDNS. It cannot, and every
+// specific claim looks like an addition when held against a summary of
+// something else - so the contradictions were manufactured at the right
+// altitude from the wrong document (#326, #359).
 type bundle struct {
-	code     string         // comments blanked, every line numbered
-	prose    string         // the commentary that was taken out
-	lines    map[string]int // path -> line count, for checking a citation
+	code     string            // comments blanked, every line numbered
+	prose    string            // the commentary that was taken out
+	proseOf  map[string]string // path -> the commentary taken out of it
+	codedOf  map[string]bool   // path -> contributed code to the account
+	bodyOf   map[string]string // path -> the file as written, for checking a claim
+	lines    map[string]int    // path -> line count, for checking a citation
 	included []string
 }
 
@@ -59,7 +71,12 @@ type bundle struct {
 // before the limit rather than truncating through it: a prompt cut mid-function
 // makes the model describe something that does not exist, confidently.
 func read(root string, paths []string, budget int) (*bundle, error) {
-	b := &bundle{lines: map[string]int{}}
+	b := &bundle{
+		lines:   map[string]int{},
+		proseOf: map[string]string{},
+		codedOf: map[string]bool{},
+		bodyOf:  map[string]string{},
+	}
 	var code, prose strings.Builder
 
 	for _, p := range paths {
@@ -83,6 +100,13 @@ func read(root string, paths []string, budget int) (*bundle, error) {
 		}
 		code.WriteString(chunk)
 		prose.WriteString(claimChunk)
+		if runs {
+			b.codedOf[p] = true
+		}
+		if claimChunk != "" {
+			b.proseOf[p] = claims
+		}
+		b.bodyOf[p] = string(body)
 		b.lines[p] = strings.Count(string(body), "\n") + 1
 		b.included = append(b.included, p)
 	}

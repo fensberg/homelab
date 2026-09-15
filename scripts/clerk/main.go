@@ -170,7 +170,7 @@ func walk(name string, args []string, ask func(*asker, *bundle) ([]snag, string,
 		fmt.Fprintf(os.Stderr, "clerk %s: %s\n", name, caveat)
 	}
 
-	kept, dropped := keep(found, b.lines)
+	kept, dropped := keep(found, b.lines, b.bodyOf)
 	// Said out loud, always. "Nothing found" and "eleven findings discarded
 	// because none of them could be checked" are different facts, and only one
 	// of them is reassuring.
@@ -259,7 +259,7 @@ func snagPass(a *asker, b *bundle) ([]snag, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	account, unsound, err := parseBlind(blind)
+	accounts, unsound, err := parseBlind(blind)
 	if err != nil {
 		return nil, "", err
 	}
@@ -268,7 +268,12 @@ func snagPass(a *asker, b *bundle) ([]snag, string, error) {
 		return unsound, "nothing was written about these files, so only the soundness pass ran", nil
 	}
 
-	compared, err := a.ask(comparePrompt + "\n=== the account ===\n" + account + "\n" + b.prose)
+	paired, uncompared := pair(b, accounts)
+	if paired == "" {
+		return unsound, uncomparedNote(uncompared), nil
+	}
+
+	compared, err := a.ask(comparePrompt + "\n" + paired)
 	if err != nil {
 		return nil, "", err
 	}
@@ -276,7 +281,54 @@ func snagPass(a *asker, b *bundle) ([]snag, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	return append(unsound, disagrees...), "", nil
+	return append(unsound, disagrees...), uncomparedNote(uncompared), nil
+}
+
+// pair puts each file's commentary beside an account of that same file.
+//
+// A file with commentary and no account is NOT compared, and is returned so the
+// run can say so. That is most of #326: `split` sends Markdown wholly to the
+// prose side, so an epoch record contributes no code by construction and there
+// is no account of it to disagree with. Handing it the account of the Go beside
+// it manufactured a contradiction every single time, because a specific claim
+// held against a summary of something else always looks like an addition.
+//
+// The cost is real and worth stating: an epoch record can no longer be checked
+// against the code in the same change. That was a capability this estate cares
+// about. It was also never working - the five findings it produced on #317 were
+// all false - so what is lost is the appearance of it.
+func pair(b *bundle, accounts map[string]string) (paired string, uncompared []string) {
+	var out strings.Builder
+	for _, path := range b.included {
+		prose := b.proseOf[path]
+		if strings.TrimSpace(prose) == "" {
+			continue
+		}
+		account := accounts[path]
+		if strings.TrimSpace(account) == "" {
+			uncompared = append(uncompared, path)
+			continue
+		}
+		out.WriteString("\n=== " + path + " ===\n")
+		out.WriteString("--- an account of this file, written blind ---\n" + account + "\n")
+		out.WriteString("--- what was written about this file ---\n" + prose + "\n")
+	}
+	return out.String(), uncompared
+}
+
+// uncomparedNote says which files were not compared and why.
+//
+// Reported rather than passed over in silence, because "this file's commentary
+// was checked and is consistent" and "this file's commentary was never checked"
+// are the same green otherwise - which is the shape this estate refuses
+// everywhere else. The clerk blocks nothing, so the run note is the only
+// surface that can carry it.
+func uncomparedNote(uncompared []string) string {
+	if len(uncompared) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d file(s) carried commentary with no account of their own code to check it against, so it was not compared: %s",
+		len(uncompared), strings.Join(uncompared, ", "))
 }
 
 func handoverVerb(args []string) int {

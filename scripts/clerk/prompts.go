@@ -29,7 +29,9 @@ const blindPrompt = `You are reading source from a repository you have never see
 
 Do two things.
 
-First, work out what this code actually does, and write it down plainly. This is for your own use in a later step; keep it short.
+First, work out what this code actually does, and write it down plainly - ONE ACCOUNT PER FILE, keyed by the path exactly as printed in its "=== path ===" header. This is for your own use in a later step; keep each one short.
+
+Write each account from that file alone. Do not describe the repository, the project, or what the files have in common - an account that could have been written about any file in any project is worse than useless in the step that follows, because every specific claim then looks like an addition to it. If a file leaves you with little to say, say little: "a locals block computing subnet arithmetic from an octet" is a good account. Inventing purpose is not.
 
 Second, list what is not built soundly. Look for things like:
 - code nothing reaches, or a branch that cannot be taken
@@ -46,7 +48,7 @@ Use the rule "unsound-work" for every finding.
 
 Answer with JSON and nothing else, as one object:
 
-  {"account": "<what the code does, plainly>", "findings": [ ... ]}
+  {"accounts": {"<path>": "<what that file does, plainly>", ...}, "findings": [ ... ]}
 ` + findingRules + `
 The code follows, with line numbers.
 `
@@ -86,14 +88,35 @@ The code follows, with line numbers.
 // attacks the manufacture directly, where forbidding one phrasing only renamed
 // it.
 //
-// If a fourth distinct shape appears, the prompt is the wrong lever, and the
-// honest options are narrowing the clerk's task or accepting a false-positive
-// rate as the price of the role. Written down before adding a fourth rule
-// rather than after, so this does not become a scar tissue map of every
-// mistake it ever made.
-const comparePrompt = `Below is an account of what some code does, written by someone who read it with every comment removed. After it is the commentary that was actually written about that code - comments, doc strings and documents.
+// A fourth distinct shape DID appear, twice - #326 and #359 - and the note
+// above is what stopped a fourth rule being written. It was right. Neither was
+// reachable by a rule, because in both the model was obeying the three it had:
+// it quoted a statement from the account, as rule 1 requires, and the statement
+// it quoted was about a different file.
+//
+// The cause was structural and one level up. `read` concatenated every changed
+// file's code into one bundle and every file's commentary into another, so the
+// blind pass wrote ONE account of the whole lot. On a change carrying plan.go,
+// talos.tf, three manifests and two epoch records, that account is written from
+// the Go and the HCL and is then asked to adjudicate several thousand lines of
+// narrative about tailnets, Cilium and CoreDNS. It cannot. And against a
+// summary of something else, EVERY specific claim reads as an addition - which
+// is why the findings were manufactured at the right altitude from the wrong
+// document, and why the more carefully a file was commented the more of them it
+// attracted.
+//
+// So the fix is narrowing, as the note said, and it costs nothing: the blind
+// pass now returns one account PER FILE in the same single call, and this pass
+// is handed them paired - the account of a file beside the commentary of that
+// same file, and nothing else. A file that contributed no code to the account,
+// which is every Markdown record by construction, is not compared at all and is
+// named in the run note instead of being judged against an account of the Go
+// beside it.
+const comparePrompt = `Below are files. For each one you are given an account of what THAT FILE does, written by someone who read it with every comment removed, and beside it the commentary that was actually written about THAT FILE.
 
-Report only where the commentary makes a claim about this code that the account CONTRADICTS. For example: a comment describing a retry where the account describes no retry; a doc string naming a parameter the account says the function does not take.
+Report only where a file's commentary makes a claim that ITS OWN account CONTRADICTS. For example: a comment describing a retry where the account describes no retry; a doc string naming a parameter the account says the function does not take.
+
+NEVER compare one file's commentary against another file's account. They are separate subjects and a disagreement between them is not a disagreement about anything. Each block below is self-contained; judge it on its own and move on.
 
 Three things are never findings.
 

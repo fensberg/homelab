@@ -55,7 +55,7 @@
   ],
   "baselines": {
     "go/attestation": 26.6,
-    "go/clerk": 56,
+    "go/clerk": 63.8,
     "go/collector": 30.4,
     "go/contractor": 39.2,
     "go/expediter": 72.4,
