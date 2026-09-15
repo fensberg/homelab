@@ -122,6 +122,7 @@ func main() {
 	site, phase, from, confirm := o.site, o.phase, o.from, o.confirm
 	commentOut := o.commentOut
 	upgrade, skipOverlay, skipUpgrade := o.upgrade, o.skipOverlay, o.skipUpgrade
+	dryRun := o.dryRun
 	keepOnFailure, whatIf := o.keepOnFailure, o.whatIf
 	converge := verb == "converge"
 	toRun, err := selectPhases(deref(phase), deref(from), verb)
@@ -163,6 +164,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 	ctx.Upgrade = on(upgrade)
 	ctx.SkipOverlay = on(skipOverlay)
 	ctx.SkipUpgrade = on(skipUpgrade)
+	ctx.DryRun = on(dryRun)
 	ctx.KeepOnFailure = on(keepOnFailure)
 
 	// A converge never destroys on failure, and this is not a preference.
@@ -669,6 +671,7 @@ type opts struct {
 	phase, from, confirm, commentOut  *string
 	upgrade, skipOverlay, skipUpgrade *bool
 	keepOnFailure, whatIf             *bool
+	dryRun                            *bool
 }
 
 func flagsFor(verb string) *opts {
@@ -685,6 +688,12 @@ func flagsFor(verb string) *opts {
 		o.skipOverlay = fs.Bool("skip-overlay", false, "Skip the overlay network: no tailnet auth key, no route advertisement.")
 		o.skipUpgrade = fs.Bool("skip-upgrade", false, "Tell the playbook not to run a full apt dist-upgrade on the hypervisor.")
 		o.whatIf = fs.Bool("whatif", false, "Print which phases would run, without running them.")
+
+		// A dry run of the playbook, through the contractor rather than beside
+		// it. `task check-hypervisor` used to invoke ansible-playbook directly
+		// from the taskfile, so it reached none of the preconditions here and
+		// exited 0 having matched no hosts (#322).
+		o.dryRun = fs.Bool("check", false, "Dry-run the phase: show what would change, change nothing.")
 	}
 
 	// Absent from converge deliberately: a converge never destroys on failure,

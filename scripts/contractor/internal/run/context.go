@@ -39,6 +39,7 @@ type Context struct {
 	Upgrade       bool
 	SkipOverlay   bool
 	SkipUpgrade   bool
+	DryRun        bool
 	KeepOnFailure bool
 
 	// Converge means the estate already exists: attach to its state rather

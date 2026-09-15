@@ -162,6 +162,18 @@ underlying error: %w`, ctx.Site, err)
 	// own step 1 exists because of it.
 	reportMachinesInState(ctx, len(net.VMNames))
 
+	// Show the scope, then ask.
+	//
+	// -confirm is not consent to a scope. It runs at the very top of this
+	// function, before Render, and refuses only a mismatch between two flags -
+	// which makes it a guard against a typo by somebody who already holds the
+	// credentials. That is a real and different property, and it is checked
+	// earlier than a prompt can be, which is the right order. What it is not is
+	// being shown what will go and agreeing to it (#213).
+	if err := confirmDestroyScope(ctx); err != nil {
+		return err
+	}
+
 	res := tearDown(ctx)
 	if !res.SafeToSterilize {
 		return fmt.Errorf("teardown did not complete - state and secrets have been left in place on purpose, see the messages above")
@@ -370,4 +382,113 @@ func attachToStateInPostgres(ctx *run.Context, init func() error) error {
 		return err
 	}
 	return nil
+}
+
+// confirmDestroyScope prints everything the teardown will remove and, where
+// there is a human to ask, asks.
+//
+// WHAT THE LIST IS FOR. Losing the machines is recoverable - they are
+// disposable and the estate is built around that. The irreversible line is the
+// OBJECT STORAGE, and it is the one nothing said out loud: Cloudflare will not
+// delete a bucket with objects in it, so the teardown empties it first, and the
+// age-encrypted state dumps that exist specifically to survive a total loss go
+// with it. Eleven objects went that way once (#94). The VM list is context
+// around that one line.
+//
+// WHY THE PROMPT IS CONDITIONAL, and why that is not the escape hatch #213
+// warns about. It is skipped when stdin is not a terminal, because the e2e tier
+// tears down the estate it just built and there is nobody there to answer. The
+// plan is still PRINTED in that case - it lands in the run log, which is where
+// somebody reading afterwards looks. A `-yes` flag would be the thing to avoid:
+// it would exist to be passed habitually, by a human, on the path where the
+// question is worth asking.
+//
+// Only on this path. EmergencyDestroy in sterilize.go tears down what a failed
+// ignition created, unattended, and a prompt there would leave orphaned
+// machines waiting on somebody to answer.
+func confirmDestroyScope(ctx *run.Context) error {
+	fmt.Println()
+	run.Warn("This teardown will remove:")
+
+	if out, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list"); err == nil {
+		resources := 0
+		for _, line := range strings.Split(out, "\n") {
+			if addr := strings.TrimSpace(line); addr != "" {
+				run.Warn("  " + addr)
+				resources++
+			}
+		}
+		if resources == 0 {
+			run.Warn("  (state holds no resources - there may be nothing to destroy)")
+		}
+	} else {
+		// Reported rather than passed over. A scope that could not be read and
+		// a scope that is empty must not look the same at the moment somebody
+		// is deciding whether to proceed with something irreversible.
+		run.Warn("  COULD NOT READ THE STATE, so this list is not the scope: " + err.Error())
+	}
+
+	reportObjectStorageAtRisk(ctx)
+
+	fmt.Println()
+	if !stdinIsATerminal() {
+		run.Warn("not a terminal, so nothing was asked - the scope above is the record")
+		return nil
+	}
+
+	fmt.Printf("Type the site name (%s) to proceed, or anything else to stop: ", ctx.Site)
+	var answer string
+	if _, err := fmt.Scanln(&answer); err != nil {
+		return fmt.Errorf("nothing was typed, so the teardown is refused")
+	}
+	if strings.TrimSpace(answer) != ctx.Site {
+		return fmt.Errorf("%q is not %q, so the teardown is refused and nothing has been touched", answer, ctx.Site)
+	}
+	return nil
+}
+
+// reportObjectStorageAtRisk names the bucket and how much is in it.
+//
+// This is the line that matters. Everything else on the list comes back by
+// running break-ground again; these do not.
+func reportObjectStorageAtRisk(ctx *run.Context) {
+	cfg, err := config.LoadRendered(ctx.ConfigRendered)
+	if err != nil {
+		run.Warn("  object storage: could not read the rendered config, so this cannot say what is in it")
+		return
+	}
+	site, ok := cfg.Sites[ctx.Site]
+	if !ok {
+		return
+	}
+	store := site.ObjectStorage
+	if strings.TrimSpace(store.Bucket) == "" || strings.TrimSpace(store.AccessKeyID) == "" {
+		return
+	}
+
+	remote := "R2:" + store.Bucket
+	size, err := run.CmdOutputEnv(ctx.ClusterDir, r2Env(cfg.ObjectStorage, store), "rclone", "--log-level", "ERROR", "size", remote)
+	if err != nil {
+		run.Warn("  object storage: " + store.Bucket + " - could not be read, so this cannot say how many state backups are in it")
+		return
+	}
+	summary := strings.Join(strings.Fields(strings.ReplaceAll(size, "\n", " ")), " ")
+	if strings.Contains(summary, "Total objects: 0") {
+		run.Warn("  object storage: " + store.Bucket + " is empty")
+		return
+	}
+	run.Warn("  object storage: " + store.Bucket + " - " + summary)
+	run.Warn("  THESE ARE THE AGE-ENCRYPTED STATE BACKUPS, and they are the only copies.")
+	run.Warn("  Cloudflare will not delete a bucket with objects in it, so the teardown")
+	run.Warn("  empties it first. They exist to survive a total loss and this is the")
+	run.Warn("  operation most likely to precede one.")
+}
+
+// stdinIsATerminal reports whether there is a human to ask.
+//
+// os.Stat rather than a dependency: every program under scripts/ is
+// dependency-free, and this is one bit of information.
+func stdinIsATerminal() bool {
+	info, err := os.Stdin.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }

@@ -233,9 +233,22 @@ tasks:
 
   check-hypervisor:
     desc: "Dry-run the playbook: show what would change, change nothing"
-    dir: management/hypervisor
+    # Through the contractor, not beside it.
+    #
+    # This was a bare ansible-playbook line, so it reached none of the
+    # program's preconditions - and with no inventory.yml, which is the NORMAL
+    # state of this workspace because Sterilize wipes it on every exit, it
+    # matched no hosts, skipped the play, printed an empty recap and exited 0
+    # (#322).
+    #
+    # A dry run that examined nothing is indistinguishable from a dry run that
+    # found nothing to change, on the one command an operator uses specifically
+    # to gain confidence before touching a hypervisor. Going through the
+    # contractor renders the inventory first, proves the host is reachable, and
+    # refuses a play that matched nothing.
     cmds:
-      - ansible-playbook -i inventory.yml hypervisor-prep.yml --check --diff
+      - task: build
+      - ./toolshed/contractor break-ground -site {{.SITE}} -phase hypervisor -check
 
   backup-state:
     desc: "Encrypt the current state and push it to Cloudflare R2"

@@ -68,6 +68,12 @@ type activeRun struct {
 	Status     string   `json:"status"`
 	HeadBranch string   `json:"headBranch"`
 	Jobs       []string `json:"-"`
+
+	// Stale is set when this run's status could not be confirmed against the
+	// run itself. It is kept rather than dropped - "I could not ask" is not
+	// "nothing is pending" - and the halt says so instead of printing a
+	// command that may be refused.
+	Stale bool `json:"-"`
 }
 
 // unfinished is every status in which a run still has work that could start.
@@ -134,8 +140,15 @@ Underlying error: %w`, deployWorkflow, site, err)
 
 	var names []string
 	for _, r := range pending {
-		names = append(names, fmt.Sprintf("#%d (%s, %s) - gh run cancel %d",
-			r.Number, r.HeadBranch, r.Status, r.DatabaseID))
+		line := fmt.Sprintf("#%d (%s, %s) - gh run cancel %d",
+			r.Number, r.HeadBranch, r.Status, r.DatabaseID)
+		if r.Stale {
+			// Say so rather than printing a command that may be refused. An
+			// operator who runs five commands and has all five rejected learns
+			// to distrust the halt, not the runs.
+			line += "   (status could not be confirmed, so this may already have finished)"
+		}
+		names = append(names, line)
 	}
 	return fmt.Errorf(`%d deploy run(s) would converge %s during this ignition.
 
@@ -188,7 +201,34 @@ func fetchActiveRuns() ([]activeRun, error) {
 		if !unfinished[r.Status] {
 			continue
 		}
+
+		// Ask the run itself, because the listing lies.
+		//
+		// The first real use of this guard halted an ignition on five runs,
+		// printed a `gh run cancel` for each, and every one was refused with
+		// "Cannot cancel a workflow run that is completed" (#362). The listing
+		// reported them queued and waiting; GitHub considered them concluded.
+		// The likeliest cause is the shape this estate produces constantly - a
+		// run whose runner never materialised, because the runner is a pod
+		// inside the cluster being rebuilt.
+		//
+		// The halt was RIGHT in principle and useless in practice, and that is
+		// the worse of the two failures: a gate that fires on stale data and
+		// then hands over commands that do not work teaches the operator to
+		// route around it, which is strictly worse than not having it.
+		//
+		// A conclusion is the authoritative answer whatever the status says, so
+		// both are read and either one concludes the run.
+		status, conclusion, confirmed := confirmRunStatus(slug, r.ID)
+		if confirmed && (!unfinished[status] || strings.TrimSpace(conclusion) != "") {
+			continue
+		}
 		a := activeRun{Number: r.Number, DatabaseID: r.ID, Status: r.Status, HeadBranch: r.HeadBranch}
+		if confirmed {
+			a.Status = status
+		} else {
+			a.Stale = true
+		}
 
 		// Best-effort. A run whose jobs cannot be read keeps an empty list,
 		// which pendingForSite treats as pending - the safe reading.
@@ -205,6 +245,32 @@ func fetchActiveRuns() ([]activeRun, error) {
 		runs = append(runs, a)
 	}
 	return runs, nil
+}
+
+// confirmRunStatus re-reads one run and reports what GitHub says about it now.
+//
+// confirmed is false when the run could not be read at all, which is kept
+// separate from "it is still pending" on purpose: the two are different facts
+// and only one of them justifies dropping a run from the halt.
+func confirmRunStatus(slug string, id int64) (status, conclusion string, confirmed bool) {
+	var run struct {
+		Status     string `json:"status"`
+		Conclusion string `json:"conclusion"`
+	}
+	if err := getJSON(fmt.Sprintf("%s/repos/%s/actions/runs/%d", githubAPI, slug, id), &run); err != nil {
+		return "", "", false
+	}
+
+	// An empty status is not an answer, and it is the shape an unexpected
+	// response takes: JSON that parses into this struct and fills nothing.
+	// Reading that as "concluded" would drop a genuinely pending run from the
+	// halt, which is the one direction this must never fail in - a converge
+	// acquiring a runner partway through an ignition applies against a
+	// half-built estate.
+	if strings.TrimSpace(run.Status) == "" {
+		return "", "", false
+	}
+	return run.Status, run.Conclusion, true
 }
 
 // githubAPI is a variable so a test can point it somewhere hermetic. Nothing

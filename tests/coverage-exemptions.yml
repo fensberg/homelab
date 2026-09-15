@@ -39,7 +39,7 @@ files:
   # coverage profile because that tier is build-tagged and needs a real
   # hypervisor, which is the point of it rather than a shortcoming.
   - path: contractor/internal/ansible/ansible.go
-    uncovered: 2
+    uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/attach.go
     uncovered: 1
@@ -50,8 +50,16 @@ files:
   - path: contractor/internal/phases/compute.go
     uncovered: 6
     covered_by: e2e
+  # Two more than before, both of them the destroy plan added for #213 and #94:
+  # confirmDestroyScope reads `tofu state list` against a real estate's state,
+  # and reportObjectStorageAtRisk runs rclone against the site's R2 bucket to
+  # count what is in it. Neither has an answer without an estate. The decision
+  # they exist to inform - whether the operator is shown the object storage
+  # before it is emptied - is asserted by
+  # TestTheTeardownNamesTheObjectStorageBeforeEmptyingIt, and the one piece of
+  # pure logic in the pair, stdinIsATerminal, is covered.
   - path: contractor/internal/phases/destroy.go
-    uncovered: 3
+    uncovered: 5
     covered_by: e2e
   - path: contractor/internal/phases/hypervisor.go
     uncovered: 1

@@ -58,6 +58,22 @@ func Hypervisor(ctx *run.Context) error {
 		extraVars = append(extraVars, "-e", "do_dist_upgrade=false")
 	}
 
+	if ctx.DryRun {
+		// --diff as well as --check, because "what would change" is the whole
+		// question a dry run is asked and a bare --check answers it with a
+		// count. Both go through this function rather than through a taskfile
+		// line invoking ansible-playbook directly, so the dry run reaches every
+		// precondition above it: a rendered inventory, a reachable hypervisor,
+		// and a refusal if the play matches nothing (#322).
+		extraVars = append(extraVars, "--check", "--diff")
+		run.Info("dry-running the playbook: nothing will be changed")
+		if err := ansible.RunPlaybook(ctx.HypervisorDir, extraVars); err != nil {
+			return err
+		}
+		run.Ok("dry run complete - nothing was changed")
+		return nil
+	}
+
 	run.Info("running the playbook")
 	if err := ansible.RunPlaybook(ctx.HypervisorDir, extraVars); err != nil {
 		return err
