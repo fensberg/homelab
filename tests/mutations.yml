@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 61
+floor: 62
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -930,6 +930,21 @@ mutations:
       zizmor is not installed on every machine that can run `task test`. This
       names the file locally in seconds instead, which is the difference between
       a push-and-wait cycle and an edit.
+
+  - guard: TestEveryDependabotEcosystemGroupsItsUpdates
+    file: .github/dependabot.yml
+    find: "      test-toolchain:\n        applies-to: version-updates"
+    replace: "      test-toolchain:\n        applies-to: security-updates"
+    mentions: 'want "version-updates"'
+    why: >
+      Ungrouped, Dependabot opens one pull request per dependency and every one
+      of them rewrites the same lockfile, so merging the first leaves the rest
+      conflicted - which is a bot manufacturing merge conflicts for a person who
+      did not ask for any. The group is what serialises them. Scoping it to
+      version-updates is the half that is easy to lose: without that line the
+      group also swallows security updates, and a patched vulnerability starts
+      waiting for the rest of the week's routine bumps instead of arriving on
+      its own.
 
 owed_ceiling: 55
 

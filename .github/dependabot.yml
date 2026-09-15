@@ -1,4 +1,23 @@
 version: 2
+
+# Every ecosystem here groups its routine bumps into one pull request, because
+# a lockfile has exactly one writer. @playwright/test and @types/node were
+# proposed separately, both rewrote pnpm-lock.yaml, and merging the first left
+# the second conflicted - the bot generating work for a human to undo. Grouping
+# makes a day's bumps one lockfile rewrite rather than a race between several.
+#
+# Two things are deliberately left OUT of every group, and arrive on their own:
+#
+# - Security updates. `applies-to: version-updates` scopes each group to the
+#   routine bumps, so a patched vulnerability is still its own pull request,
+#   unbatched and not queued behind whatever else is in flight. Speed matters
+#   more than tidiness there, and exactly the reverse holds for the routine ones.
+# - Majors. A breaking change should be read on its own, and bundling one with
+#   six patch bumps is how it gets waved through.
+#
+# Grouping does not weaken the supply-chain posture: cooldown still applies per
+# package, and a grouped pull request lists every version it moves. What it
+# removes is the race, not the review.
 updates:
   # cooldown on every ecosystem: a package published minutes ago has had no
   # chance for anyone to notice it's malicious or broken. Waiting out a
@@ -11,6 +30,14 @@ updates:
       interval: daily
     cooldown:
       default-days: 7
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: gomod
     directory: /scripts/contractor
@@ -18,6 +45,14 @@ updates:
       interval: daily
     cooldown:
       default-days: 7
+    groups:
+      contractor-go:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   # versions.tf pins every provider version with a ~> constraint. Dependabot
   # bumps within that constraint the same way it would a package's semver
@@ -29,28 +64,57 @@ updates:
       interval: daily
     cooldown:
       default-days: 7
+    groups:
+      providers:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   # The test-only Go module, tracked separately from /scripts/contractor because
   # it is a separate module with a completely different dependency profile:
   # break-ground has none at all, and this one has Terratest's ~280. Keeping them
   # apart is what stops a Terratest bump ever appearing as a pull request
   # against the program that can destroy infrastructure.
+  #
+  # The separation survives grouping: a group is scoped to one ecosystem entry,
+  # so this one can never collect a dependency from the contractor's module.
   - package-ecosystem: gomod
     directory: /tests/go
     schedule:
       interval: daily
     cooldown:
       default-days: 7
+    groups:
+      tests-go:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   # The JavaScript/TypeScript test toolchain. devDependencies only - there is
   # no application here yet - so a bump can break the Test lane but can never
   # reach anything that runs against real infrastructure.
+  #
+  # This is the entry the conflict came from: one lockfile, several proposals.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: daily
     cooldown:
       default-days: 7
+    groups:
+      test-toolchain:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
 # What Dependabot has no ecosystem for at all, so it isn't a config gap here:
 # - Ansible Galaxy collections (management/hypervisor/requirements.yml)
