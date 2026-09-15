@@ -177,3 +177,82 @@ tier that is hard to write quietly stops being written.`, tier, counts[tier], fl
 		}
 	}
 }
+
+// The tiers declared in tests/README.md are exactly the ones measured.
+//
+// WHAT THIS CLOSES. Everything built here makes each tier fail closed - units
+// enumerated from the filesystem, estate surfaces from the repository,
+// uncovered functions from the coverage profile - and all of it answers
+// *within* a tier. Nothing checked that the LIST of tiers was complete, which
+// is an allow list in exactly the way this repository spent a day removing
+// everywhere else (#310).
+//
+// It had already drifted, which is the useful part: tests/README.md declared
+// five tiers while the census counted eight. tofu, js and fuzz were measured,
+// floored and reported every run, and absent from the one place a reader looks
+// to find out what tiers exist.
+//
+// WHAT IT CANNOT DO, said plainly. It cannot make anybody think of a MISSING
+// pillar - nothing can. Disaster recovery, upgrade and migration, capacity, and
+// failure injection are all pillars this estate has no tier for, and no check
+// will produce them. What this makes impossible is a pillar that exists and is
+// not written down, which is the half that is mechanisable.
+func TestTheDeclaredTiersAreTheMeasuredOnes(t *testing.T) {
+	readme := readRepoFile(t, "tests/README.md")
+
+	// The bold name in the first column of the tiers table.
+	rows := regexp.MustCompile(`(?m)^\|\s*\*\*([a-z0-9-]+)\*\*\s*\|`).FindAllStringSubmatch(readme, -1)
+	declared := map[string]bool{}
+	for _, m := range rows {
+		declared[m[1]] = true
+	}
+
+	const atLeastFiveTiers = 5
+	if len(declared) < atLeastFiveTiers {
+		t.Fatalf(`only %d tier(s) were read out of tests/README.md, and this repository
+has more than that.
+
+The table's shape has changed, so this check has stopped reading the thing it
+claims to check - which looks exactly like a repository whose tiers all agree.`,
+			len(declared))
+	}
+
+	var baseline struct {
+		Tiers map[string]int `json:"tiers"`
+	}
+	if err := json.Unmarshal([]byte(readRepoFile(t, "tests/coverage-baseline.json")), &baseline); err != nil {
+		t.Fatalf("parsing tests/coverage-baseline.json: %v", err)
+	}
+
+	counts := census(t)
+
+	for tier := range declared {
+		if _, floored := baseline.Tiers[tier]; !floored {
+			t.Errorf(`tests/README.md declares the tier %q and tests/coverage-baseline.json
+has no floor for it.
+
+So nothing stops that tier going to zero. A tier with a name and no number is
+a tier nobody is counting.`, tier)
+		}
+		if counts[tier] == 0 {
+			t.Errorf(`tests/README.md declares the tier %q and the census counts no tests
+in it.
+
+Either the tier is aspirational, in which case saying so is better than listing
+it beside seven that exist, or the census cannot see it - which means its tests
+are being counted as some other tier, or not at all.`, tier)
+		}
+	}
+
+	for tier := range baseline.Tiers {
+		if !declared[tier] {
+			t.Errorf(`the tier %q is floored in tests/coverage-baseline.json and counted by
+the census, and tests/README.md does not mention it.
+
+That is the allow-list failure one level up: the table is where somebody looks
+to find out what tiers exist, and a tier missing from it is invisible in
+exactly the way a missing check is. Add a row saying what it answers and what
+it may touch.`, tier)
+		}
+	}
+}

@@ -426,12 +426,16 @@ fi
 step "shellcheck (pinned)"
 # Not only for the Shell Lint lane's local equivalent.
 #
-# actionlint finds shellcheck by NAME on PATH and, when it is not there,
-# disables the integration and exits 0 - from its own help: "If empty,
-# shellcheck integration will be disabled". So a machine without it runs
-# `task validate` and the pre-commit actionlint hook unable to report any
-# SC-class finding in a workflow run: block, and they report clean rather than
-# reporting that they did not look (#398).
+# actionlint finds shellcheck by NAME on PATH and, when it is not there, it
+# disables the integration and exits 0. Its own help says so: with an empty
+# value, "shellcheck integration will be disabled". So a machine without the
+# binary runs `task validate` and the pre-commit actionlint hook unable to
+# report any SC-class finding in a workflow run: block, and they report clean
+# rather than reporting that they did not look (#398).
+#
+# (Written as one sentence rather than starting a line with the tool's name
+# and a space, which ShellCheck reads as a directive and then refuses to
+# parse - SC1072, caught by this very lane on the commit that added it.)
 #
 # ubuntu-latest ships shellcheck preinstalled, so CI's actionlint had it and
 # the devbox's did not. That is not hypothetical: a Go formatting check was

@@ -129,8 +129,8 @@ func intConstants(f *ast.File) map[string]bool {
 // integer floor and fails the test when it falls short.
 //
 // The phrasings already in this package are all accepted, deliberately:
-// `checked == 0`, `len(x) == 0`, `checked < 3`, and `checked < atLeast` where
-// `atLeast` is a constant integer declared in the same file. Requiring one
+// `checked == 0`, `len(x) == 0`, `checked < 3`, and `checked < atLeastThisMany` where
+// `atLeastThisMany` is a constant integer declared in the same file. Requiring one
 // spelling would mean rewriting working guards to satisfy a checker, which is
 // the tail wagging the dog - what matters is that a floor exists, not how it
 // reads.
@@ -324,7 +324,7 @@ func TestAFloorIsRecognisedHoweverItIsSpelled(t *testing.T) {
 		},
 		{
 			name: "named constant declared in the function",
-			src:  `const atLeast = 10` + "\n" + `if checked < atLeast { t.Fatalf("only %d", checked) }`,
+			src:  `const atLeastThisMany = 10` + "\n" + `if checked < atLeastThisMany { t.Fatalf("only %d", checked) }`,
 			want: true,
 		},
 		{
