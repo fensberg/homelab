@@ -138,3 +138,50 @@ a number that makes the gap look larger than it is.`, chart)
 		}
 	}
 }
+
+// Every Flux controller the generated manifest ships is pinned by this overlay.
+//
+// `gotk-components.yaml` is written wholesale by `flux bootstrap` and pins its
+// controllers by TAG. The kustomization beside it replaces each tag with a
+// digest, and the transformer matches on image NAME - so a controller the
+// overlay does not name keeps its tag and runs unpinned.
+//
+// `task render-flux-digests` now reads the tags out of the generated manifest
+// rather than a list, so a new controller is picked up automatically (#104).
+// This is the half that fails when it is not: a controller added upstream, or
+// one renamed, goes from pinned to mutable with the manifest still building and
+// every other check still green.
+func TestEveryFluxControllerIsPinnedHere(t *testing.T) {
+	components := readRepoFile(t, "clusters/management/flux-system/gotk-components.yaml")
+	overlay := readRepoFile(t, "clusters/management/flux-system/kustomization.yaml")
+
+	shipped := map[string]bool{}
+	for _, m := range regexp.MustCompile(`ghcr\.io/fluxcd/([a-z-]+):v[0-9.]+`).
+		FindAllStringSubmatch(components, -1) {
+		shipped[m[1]] = true
+	}
+
+	const atLeastFourControllers = 4
+	if len(shipped) < atLeastFourControllers {
+		t.Fatalf(`found %d controller image(s) in gotk-components.yaml, and Flux ships
+at least four.
+
+The parse has stopped matching, so a controller running unpinned would be
+invisible to this - which is the same green as everything being pinned.`, len(shipped))
+	}
+
+	for name := range shipped {
+		if !strings.Contains(overlay, "ghcr.io/fluxcd/"+name+"\n") &&
+			!strings.Contains(overlay, "ghcr.io/fluxcd/"+name+" ") {
+			t.Errorf(`gotk-components.yaml ships ghcr.io/fluxcd/%s and the kustomization
+does not pin it.
+
+kustomize's image transformer matches on NAME, so a controller it does not name
+keeps the mutable tag the generated manifest carries - on the component that
+applies everything else in the cluster. The overlay still builds and nothing
+else objects.
+
+Run: task render-flux-digests`, name)
+		}
+	}
+}

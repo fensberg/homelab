@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 82
+floor: 84
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1226,6 +1226,36 @@ mutations:
       on the lane that comments about changes to real infrastructure - and
       the one path that had this defect went unnoticed for months because
       its job gates on directories that did not exist yet.
+
+  - guard: TestATalosImagePathCarriesItsSchematic
+    file: management/cluster/compute.tf
+    find: '  file_name               = "talos-${local.talos_version}-${substr(local.schematic_id, 0, 8)}.iso"'
+    replace: '  file_name               = "talos-${local.talos_version}.iso"'
+    mentions: "does not carry its schematic id"
+    why: >
+      A schematic id says which extensions are baked into a Talos image, and the
+      download resource is identified by its datastore path. With the schematic
+      absent from that path, re-minting one - the only way to add, remove or
+      move an extension - is not a change: no diff, no fetch, and the
+      replace_triggered_by on the template has nothing to fire on. The bump then
+      looks applied, with a clean plan and a successful apply, while every node
+      keeps the old extensions. That is how a known-vulnerable Tailscale reached
+      every machine in the estate and stayed there, and the failure is silence
+      rather than an error.
+
+  - guard: TestEveryFluxControllerIsPinnedHere
+    file: clusters/management/flux-system/kustomization.yaml
+    find: "  - name: ghcr.io/fluxcd/source-controller"
+    replace: "  - name: ghcr.io/fluxcd/source-controller-was-here"
+    mentions: "does not pin it"
+    why: >
+     kustomize's image transformer matches on image NAME, so a controller the
+     overlay does not name keeps the mutable tag the generated manifest carries
+     - on the component that applies everything else in the cluster. The
+     overlay still builds, `task validate` still passes, and nothing else
+     objects. gotk-components.yaml is rewritten wholesale by `flux bootstrap`,
+     so a controller added or renamed upstream arrives without anybody editing
+     this file, which is exactly when a hand-maintained list stops matching.
 
 owed_ceiling: 55
 

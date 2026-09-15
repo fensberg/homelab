@@ -203,3 +203,59 @@ Read it from there.`, path, m[1], trimmed)
 			"one, or it is not a single source", declared)
 	}
 }
+
+// A Talos image's datastore path changes when its schematic does.
+//
+// WHAT WAS WRONG. `proxmox_download_file` is identified by its datastore path,
+// and the path was `talos-<version>.iso`. A schematic id says WHICH extensions
+// are baked into the image, so re-minting one - the only way to add, remove or
+// move an extension - produced no plan diff at all: same name, same resource,
+// nothing to do (#97). The new image was never fetched, and the
+// `replace_triggered_by` on the template could not fire, because the thing it
+// triggers on had not changed.
+//
+// Confirmed at the time by a real plan against a live estate that showed only a
+// tailnet key being replaced.
+//
+// WHY A GUARD. The failure is silence. A schematic bump looks applied - the
+// config says the new id, the plan is clean, the apply succeeds - and every
+// node keeps the old extensions. There is nothing red anywhere, which is how it
+// survived long enough to be found by reading a plan for something else.
+//
+// This asserts the identity only. Whether a rebuilt TEMPLATE reaches machines
+// that are already running is node lifecycle, which epoch 05 owns and this does
+// not claim.
+func TestATalosImagePathCarriesItsSchematic(t *testing.T) {
+	compute := readRepoFile(t, "management/cluster/compute.tf")
+
+	names := regexp.MustCompile(`(?m)^\s*file_name\s*=\s*"([^"]+)"`).FindAllStringSubmatch(compute, -1)
+	const bothImages = 2
+	if len(names) < bothImages {
+		t.Fatalf(`found %d file_name declaration(s) in compute.tf, and there are two -
+the estate's image and the untrusted zone's.
+
+The parse has stopped matching, so an image whose path cannot change is no
+longer being checked for.`, len(names))
+	}
+
+	for _, m := range names {
+		name := m[1]
+		if !strings.Contains(name, "schematic_id") {
+			t.Errorf(`the image path %q does not carry its schematic id.
+
+The resource is identified by that path, so re-minting a schematic is not a
+change: the image is never re-fetched, and the replace_triggered_by on the
+template has nothing to fire on. A schematic bump then looks applied - clean
+plan, successful apply - while every node keeps the old extensions.
+
+That is how a known-vulnerable Tailscale reached every machine in the estate
+and stayed there.`, name)
+		}
+		if !strings.Contains(name, "talos_version") {
+			t.Errorf(`the image path %q does not carry the Talos version.
+
+The version resolves every extension's build, so two images from one schematic
+on different Talos releases are different bytes at the same path.`, name)
+		}
+	}
+}
