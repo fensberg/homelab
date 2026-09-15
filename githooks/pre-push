@@ -20,8 +20,35 @@ go build -C scripts/security -o ../../toolshed/security .
 # and its siblings are unset - and the push guard, which fails closed when it
 # cannot tell which ref a push would update, refuses every push. Found by
 # breaking exactly that.
-exec pre-commit hook-impl \
-	--config=.pre-commit-config.yaml \
-	--hook-type=pre-push \
-	--hook-dir "$root/githooks" \
-	-- "$@"
+# Dispatch to pre-commit the way its own generated hook does, rather than
+# assuming `pre-commit` is on PATH.
+#
+# The generated hook tries an interpreter first and falls back to the command;
+# these shims only ever did the command. That drops two things (#257):
+#
+#   1. The module fallback. `pip install --user pre-commit` puts the module in
+#      site-packages while leaving ~/.local/bin off PATH on plenty of systems,
+#      so `pre-commit` is not a command and `python3 -mpre_commit` is.
+#   2. The diagnostic. `pre-commit: command not found` says what happened;
+#      "did you forget to activate your virtualenv" says what to do about it.
+#
+# Both failures are loud either way - no pre-commit means a non-zero exit and a
+# refused commit - so this is about the second of the two being actionable, not
+# about anything passing that should not.
+args=(
+	hook-impl
+	--config=.pre-commit-config.yaml
+	--hook-type=pre-push
+	--hook-dir "$root/githooks"
+	--
+	"$@"
+)
+if command -v pre-commit >/dev/null 2>&1; then
+	exec pre-commit "${args[@]}"
+elif python3 -c 'import pre_commit' >/dev/null 2>&1; then
+	exec python3 -mpre_commit "${args[@]}"
+else
+	echo 'pre-commit not found. Did you forget to activate your virtualenv?' >&2
+	echo 'Install it with ./scripts/install-dependencies.sh' >&2
+	exit 1
+fi

@@ -88,14 +88,59 @@ func discovers(fn *ast.FuncDecl) bool {
 	return found
 }
 
-// assertsAFloor reports whether the function compares some count against an
-// integer literal and fails the test when it falls short.
+// intConstants collects the names in a file that are declared as constant
+// integers, at file scope or inside any function.
 //
-// The three phrasings already in this package are all accepted, deliberately:
-// `checked == 0`, `len(x) == 0`, and `checked < 3`. Requiring one spelling
-// would mean rewriting working guards to satisfy a checker, which is the tail
-// wagging the dog - what matters is that a floor exists, not how it reads.
-func assertsAFloor(fn *ast.FuncDecl) bool {
+// It exists so a floor may be written as a named constant. The checker has no
+// type information - the files are parsed, not type-checked - so a bare
+// identifier is otherwise indistinguishable from a variable holding anything
+// at all. Reading the `const` declarations is the cheapest way to tell, and it
+// is exact for the form that matters: a literal assigned to a name in the same
+// file the guard is written in.
+//
+// A constant declared in another file of this package is not found, and that
+// is deliberate rather than an oversight. Widening the search to the package
+// would let a floor be satisfied by a name whose value a reader of the guard
+// cannot see, which is the opposite of what the floor is for.
+func intConstants(f *ast.File) map[string]bool {
+	names := map[string]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		decl, ok := n.(*ast.GenDecl)
+		if !ok || decl.Tok != token.CONST {
+			return true
+		}
+		for _, spec := range decl.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for i, name := range vs.Names {
+				if i < len(vs.Values) && isIntLiteral(vs.Values[i]) {
+					names[name.Name] = true
+				}
+			}
+		}
+		return true
+	})
+	return names
+}
+
+// assertsAFloor reports whether the function compares some count against an
+// integer floor and fails the test when it falls short.
+//
+// The phrasings already in this package are all accepted, deliberately:
+// `checked == 0`, `len(x) == 0`, `checked < 3`, and `checked < atLeast` where
+// `atLeast` is a constant integer declared in the same file. Requiring one
+// spelling would mean rewriting working guards to satisfy a checker, which is
+// the tail wagging the dog - what matters is that a floor exists, not how it
+// reads.
+//
+// The named form was refused until #364. That contradicted the paragraph above
+// in the direction that matters: it pushed guards toward a magic number and
+// away from a name explaining what the number means. `scanned < 10` and
+// `scanned < atLeastTenWorkflows` assert exactly the same property, and only
+// one of them tells the next reader why ten.
+func assertsAFloor(fn *ast.FuncDecl, consts map[string]bool) bool {
 	found := false
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		if found {
@@ -114,7 +159,7 @@ func assertsAFloor(fn *ast.FuncDecl) bool {
 		default:
 			return true
 		}
-		if !isIntLiteral(cmp.X) && !isIntLiteral(cmp.Y) {
+		if !isIntFloor(cmp.X, consts) && !isIntFloor(cmp.Y, consts) {
 			return true
 		}
 		if failsTheTest(ifStmt.Body) {
@@ -124,6 +169,16 @@ func assertsAFloor(fn *ast.FuncDecl) bool {
 		return true
 	})
 	return found
+}
+
+// isIntFloor reports whether an operand is an integer floor: a literal, or a
+// name declared as a constant integer in the same file.
+func isIntFloor(e ast.Expr, consts map[string]bool) bool {
+	if isIntLiteral(e) {
+		return true
+	}
+	id, ok := e.(*ast.Ident)
+	return ok && consts[id.Name]
 }
 
 func isIntLiteral(e ast.Expr) bool {
@@ -173,6 +228,7 @@ func TestEveryGuardThatDiscoversItsSubjectAssertsItFoundSome(t *testing.T) {
 		if parseErr != nil {
 			t.Fatalf("parsing %s: %v", e.Name(), parseErr)
 		}
+		consts := intConstants(f)
 		for _, decl := range f.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil || !strings.HasPrefix(fn.Name.Name, "Test") {
@@ -182,7 +238,7 @@ func TestEveryGuardThatDiscoversItsSubjectAssertsItFoundSome(t *testing.T) {
 				continue
 			}
 			discovering++
-			if !assertsAFloor(fn) {
+			if !assertsAFloor(fn, consts) {
 				vacuous = append(vacuous, e.Name()+"  "+fn.Name.Name)
 			}
 		}
@@ -211,8 +267,90 @@ Add a floor and fail on it. Any of the phrasings already used here will do:
         t.Fatal("no <subject> found, so this test proves nothing")
     }
 
+A named constant declared in the same file counts too, and reads better than a
+bare number because it can say what the number means:
+
+    const atLeastOnePerWorkflow = 13
+    if checked < atLeastOnePerWorkflow {
+        t.Fatalf("only %%d checked", checked)
+    }
+
 Prefer a real minimum over zero where you know one - "only %%d were checked" is
 strictly better than "at least one was", because the interesting failure is
 usually a filter that still matches something.`, len(vacuous), strings.Join(vacuous, "\n  "))
+	}
+}
+
+// TestAFloorIsRecognisedHoweverItIsSpelled is the counterexample table for
+// assertsAFloor. It is here rather than in the mutation ledger because the
+// ledger cannot reach Go source: the guards run from a binary compiled once
+// from the real tree, so an edit to a scratch copy never changes what they do.
+//
+// The rows that matter are the last three. A floor written as a named constant
+// was refused before #364 while asserting exactly the same property as the
+// literal beside it, and a bare identifier that is NOT a constant integer must
+// still be refused - otherwise any comparison against any variable would pass
+// for a floor and the guard would stop meaning anything.
+func TestAFloorIsRecognisedHoweverItIsSpelled(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{
+			name: "equality against zero",
+			src:  `if checked == 0 { t.Fatal("nothing checked") }`,
+			want: true,
+		},
+		{
+			name: "less than a literal",
+			src:  `if checked < 3 { t.Fatalf("only %d", checked) }`,
+			want: true,
+		},
+		{
+			name: "len against a literal",
+			src:  `if len(found) == 0 { t.Fatal("nothing found") }`,
+			want: true,
+		},
+		{
+			name: "no comparison at all",
+			src:  `for _, f := range found { _ = f }`,
+			want: false,
+		},
+		{
+			name: "compares but only logs",
+			src:  `if checked == 0 { t.Log("nothing checked") }`,
+			want: false,
+		},
+		{
+			name: "named constant declared in the function",
+			src:  `const atLeast = 10` + "\n" + `if checked < atLeast { t.Fatalf("only %d", checked) }`,
+			want: true,
+		},
+		{
+			name: "named constant declared at file scope",
+			src:  `if checked < atLeastAtFileScope { t.Fatalf("only %d", checked) }`,
+			want: true,
+		},
+		{
+			name: "a variable is not a floor",
+			src:  `expected := len(other)` + "\n" + `if checked < expected { t.Fatalf("only %d", checked) }`,
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "package p\n\nconst atLeastAtFileScope = 10\n\nfunc TestX(t *testing.T) {\n" + tc.src + "\n}\n"
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, "x_test.go", src, 0)
+			if err != nil {
+				t.Fatalf("parsing the fixture: %v", err)
+			}
+			fn := f.Decls[len(f.Decls)-1].(*ast.FuncDecl)
+			if got := assertsAFloor(fn, intConstants(f)); got != tc.want {
+				t.Errorf("assertsAFloor = %v, want %v, for:\n%s", got, tc.want, tc.src)
+			}
+		})
 	}
 }

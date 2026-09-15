@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 62
+floor: 71
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -576,8 +576,8 @@ mutations:
 
   - guard: TestEveryUnitIsExecutedByATestOrIsADeclaredDebt
     file: tests/coverage-blocklist.yml
-    find: "  - shell:githooks/commit-msg"
-    replace: "  # - shell:githooks/commit-msg"
+    find: "  - shell:scripts/install-dependencies.sh # 292"
+    replace: "  # - shell:scripts/install-dependencies.sh was here"
     mentions: "executed by no test"
     why: >
       The regime is fail-closed: a unit nothing executes is a failure unless it
@@ -946,6 +946,121 @@ mutations:
       waiting for the rest of the week's routine bumps instead of arriving on
       its own.
 
+  - guard: TestTheHookShimsRunTheGuardBeforeAnythingThirdParty
+    file: githooks/pre-commit
+    find: "./toolshed/security guard-deliveries"
+    replace: ": # the guard no longer runs"
+    mentions: "the guard never ran"
+    why: >
+      The shim exists for one reason: pre-commit clones and installs seven
+      third-party repositories before it runs any hook, so a supplier guard
+      that is itself a pre-commit hook reports after the code it exists to
+      refuse has already executed - with the vault session's privileges, on
+      the developer's machine. Gating execution is not gating download. A
+      guard that stops running here leaves nothing anywhere else checking.
+
+  - guard: TestAFailingGuardStopsTheHookBeforePreCommit
+    file: githooks/pre-commit
+    find: "set -euo pipefail"
+    replace: "set -uo pipefail"
+    mentions: "exited 0 with a refusing guard"
+    why: >
+      Without set -e the shim reports a refusing supplier guard and then
+      reaches pre-commit anyway, so the commit proceeds and the unapproved
+      delivery is installed. The difference between a guard that refuses and
+      one that comments is a single flag, and it is the flag somebody
+      removes while debugging a hook.
+
+  - guard: TestEveryShimPassesGitsOwnArgumentsThrough
+    file: githooks/commit-msg
+    find: "\t--hook-type=commit-msg"
+    replace: "\t--hook-type=pre-commit"
+    mentions: "did not pass"
+    why: >
+      commit-msg is the stage that runs commitlint, and this repository
+      holds two rules there that CI cannot catch cheaply - no self
+      co-authorship, and a lower-case subject. A published commit subject
+      cannot be amended, because non_fast_forward applies to every branch
+      here, so each violation that reaches a push costs a rewritten branch
+      and a replaced pull request. A shim naming the wrong stage runs the
+      wrong hooks and looks installed.
+
+  - guard: TestTheShimsFallBackToTheModuleAndSayWhenThereIsNeither
+    file: githooks/commit-msg
+    find: "elif python3 -c 'import pre_commit' >/dev/null 2>&1; then"
+    replace: "elif false; then"
+    mentions: "where the module was importable"
+    why: >
+      pre-commit installed with pip --user is reachable as a module and not
+      as a command on any machine that does not have ~/.local/bin on PATH.
+      The hook pre-commit generates handles that; these shims replace it, so
+      dropping the fallback means every hook this repository relies on
+      refuses to run on such a machine - with a message naming a command
+      rather than the virtualenv that is actually missing.
+
+  - guard: TestThePlaceholderConfigRefusesOutputThatIsNotJSON
+    file: .github/scripts/placeholder-config.sh
+    find: 'if ! jq empty "${rendered}" 2>/dev/null; then'
+    replace: "if false; then"
+    mentions: "exited 0 having written"
+    why: >
+      Every other check in that script asks whether a substitution was
+      MISSED. This one asks whether one went too far, which is the case that
+      produced no evidence at all: a marker missing its closing braces lets
+      sed run on to the JSON's own, swallowing the structure between them.
+      No marker survives and no op:// survives, so the script exits 0 with a
+      file that is not JSON - and tofu then fails inside a provider
+      configuration block naming neither the script nor the template.
+
+  - guard: TestThePlaceholderConfigRefusesAnUnresolvedMarker
+    file: .github/scripts/placeholder-config.sh
+    find: 'if grep -q ''{{'' "${rendered}"; then'
+    replace: "if false; then"
+    mentions: "did not say why"
+    why: >
+      A template marker the sweep could not match reaches tofu as the
+      literal text `{{`, which is a value no provider recognises. The
+      refusal is what turns that into an error naming this script and the
+      line, rather than one naming whichever provider happened to read the
+      key first.
+
+  - guard: TestThePlaceholderConfigRefusesAnUnwrappedVaultReference
+    file: .github/scripts/placeholder-config.sh
+    find: 'if grep -q ''op://'' "${rendered}"; then'
+    replace: "if false; then"
+    mentions: "accepted a bare op://"
+    why: >
+      `op inject` substitutes nothing that is not wrapped in braces, so an
+      unwrapped reference is valid JSON that survives every schema check
+      after it and reaches whatever reads that key as the literal string
+      "op://homelab/...". This is the backstop for the hermetic version of
+      the same check, for anything that renders the template without running
+      the test suite.
+
+  - guard: TestThePlaceholderConfigRendersTheRealTemplate
+    file: .github/scripts/placeholder-config.sh
+    find: "\t\"${template}\" >\"${rendered}\""
+    replace: "\t\"${template}\" >/dev/null\n\techo '{}' >\"${rendered}\""
+    mentions: "the template declares"
+    why: >
+      Valid JSON is not enough: `{}` is valid JSON and would satisfy every
+      other check here while carrying none of the keys management/cluster
+      reads. tofu would then fail on a missing attribute and name the HCL
+      rather than the substitution that dropped it, which is the confusing
+      failure this whole file exists to prevent.
+
+  - guard: TestThePlaceholderConfigKeepsTheShapeProvidersCheck
+    file: .github/scripts/placeholder-config.sh
+    find: "\t-e 's#\"([a-z_]*_url|url|endpoint)\": *\"\\{\\{[^}]*\\}\\}\"#\"\\1\": \"https://example.invalid/placeholder\"#' \\"
+    replace: "\t-e 's#__no_such_key__##' \\"
+    mentions: "has no scheme"
+    why: >
+      The flux provider checks the repository URL has a scheme it recognises
+      while validate is still evaluating its configuration block, before any
+      resource is read. Without the URL-shaped pass those keys render as the
+      bare word `placeholder`, and the Validate lane fails on a provider
+      rather than on anything in the change.
+
 owed_ceiling: 55
 
 unprovable:
@@ -980,6 +1095,12 @@ unprovable:
   - path: tests/go/repo/forkable_test.go
     reason: table
   - path: tests/go/repo/vaultcheck_test.go
+    reason: table
+  # The floor-spelling checker. assertsAFloor is compiled Go, so the ledger
+  # cannot reach its behaviour - and its counterexamples are exactly what a
+  # table is for: a named constant must count as a floor, and a bare variable
+  # must not. Both rows are in TestAFloorIsRecognisedHoweverItIsSpelled.
+  - test: TestAFloorIsRecognisedHoweverItIsSpelled
     reason: table
   #
   # Already a mutation proof in the stronger form: it extracts the task's own

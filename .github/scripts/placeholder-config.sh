@@ -52,4 +52,30 @@ if grep -q 'op://' "${rendered}"; then
 	exit 1
 fi
 
+# And the output has to be JSON.
+#
+# Every check above asks whether a substitution was MISSED. None asks whether
+# one went too far, and sed is perfectly capable of that: a marker whose closing
+# braces are absent lets `\{\{[^}]*\}\}` run on to whatever braces come next,
+# which on a one-line template is the JSON's own. The sweep then swallows the
+# structure between them, no marker survives, no op:// survives, and this script
+# exits 0 having written a file that is not JSON.
+#
+# What that costs is the whole reason #288 was filed. `tofu validate` reads this
+# through jsondecode(file(...)), so the failure surfaces inside a provider
+# configuration block naming neither this script nor the template - and the two
+# lanes that depend on it both fail with an error about something else.
+#
+# jq rather than a hand-rolled check: it is in the runner image, preinstalled on
+# GitHub-hosted runners, and installed by install-dependencies.sh, and a JSON
+# parser is exactly the thing not to write a second time.
+if ! jq empty "${rendered}" 2>/dev/null; then
+	echo "${rendered} is not valid JSON, so the substitution damaged the template's structure:" >&2
+	jq empty "${rendered}" >&2 || true
+	echo >&2
+	echo "Look for a {{ marker in ${template} that is missing its closing braces - the" >&2
+	echo "sweep then runs on to the next }} it can find, which is usually the JSON's own." >&2
+	exit 1
+fi
+
 echo "wrote ${rendered}"
