@@ -324,10 +324,12 @@ func guardEgress(args []string) int {
 	}
 
 	var found []jobEgress
+	workflows := 0
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
 			continue
 		}
+		workflows++
 		body, err := os.ReadFile(filepath.Join(*root, workflowsDir, e.Name()))
 		if err != nil {
 			return refuseEgress(fmt.Sprintf("cannot read %s: %v", e.Name(), err))
@@ -348,8 +350,12 @@ func guardEgress(args []string) int {
 		return 1
 	}
 
+	// Counted as they are read, not as directory entries. .github/workflows can
+	// hold a subdirectory of composite action metadata, and counting entries
+	// reported that as a workflow - a summary line claiming more was checked
+	// than was.
 	fmt.Printf("every one of the %d jobs in %d workflows reaches only what the suppliers list declares\n",
-		len(found), len(entries))
+		len(found), workflows)
 	return 0
 }
 
