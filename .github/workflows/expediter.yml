@@ -60,8 +60,16 @@ name: "Expediter"
 #   secrets.EXPEDITER_BOT_APP_ID       the GitHub App's ID or client ID - the
 #                                      token action accepts either
 #   secrets.EXPEDITER_BOT_PRIVATE_KEY  its private key, the .pem exactly as
-#                                      GitHub generated it. NOT base64, which
-#                                      is what the clerk's key wants (#382)
+#                                      GitHub generated it, newlines and all.
+#                                      actions/create-github-app-token cannot
+#                                      parse base64.
+#
+# That is now the ONE convention both Apps here use. The clerk used to insist
+# on base64 of the PEM, so whoever set this App up copied the App that already
+# existed and put base64 where the action wanted a PEM - failing at the token
+# step with a message pointing at neither (#382). scripts/clerk/github.go
+# accepts both shapes now, so the raw PEM below is correct for both and
+# copying either App's setup works.
 #   vars.EXPEDITER_LOGIN               its bot login, e.g. <app-slug>[bot]
 
 on:
@@ -224,14 +232,23 @@ jobs:
           # fail; the Dockerfile learned the same thing.
           "$steam/steamcmd.sh" +quit >/dev/null 2>&1 || true
 
-          build=""
-          for attempt in 1 2 3; do
-            info="$("$steam/steamcmd.sh" +login anonymous +app_info_update 1 +app_info_print "$APP_ID" +quit || true)"
-            build="$(awk '/"branches"/ {b=1} b && /"public"/ {p=1} p && /"buildid"/ {gsub(/[^0-9]/, ""); print; exit}' <<<"$info")"
-            [ -n "$build" ] && break
-            echo "attempt ${attempt}: Steam did not report a public build; retrying" >&2
-            sleep 15
-          done
+          # Through scripts/retry.sh rather than a loop of its own.
+          #
+          # This was a hand-rolled `for attempt in 1 2 3`, and it was the second
+          # implementation of one policy - bounded attempts, never a verdict,
+          # every attempt reported. Two is two places for that to drift and the
+          # third would have been written by somebody who knew about neither.
+          #
+          # The helper refuses anything not on its declared list, so a caller
+          # cannot quietly start retrying a check. steamcmd is on that list
+          # because Valve's app_info lookup reports no public build under load,
+          # which has nothing to do with the change being tested.
+          info=""
+          if scripts/retry.sh 3 15 "$steam/steamcmd.sh" +login anonymous \
+            +app_info_update 1 +app_info_print "$APP_ID" +quit >"$TMPDIR/steam.out" 2>&1; then
+            info="$(cat "$TMPDIR/steam.out")"
+          fi
+          build="$(awk '/"branches"/ {b=1} b && /"public"/ {p=1} p && /"buildid"/ {gsub(/[^0-9]/, ""); print; exit}' <<<"$info")"
           if [ -z "$build" ]; then
             echo "::error::Steam reported no public build for app ${APP_ID}, so there is nothing to compare"
             exit 1

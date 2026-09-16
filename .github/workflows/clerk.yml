@@ -239,7 +239,14 @@ jobs:
         if: steps.touched.outputs.paths != '' && contains(steps.ask.outputs.verbs, 'snag')
         env:
           CLERK_BOT_LLM_KEY: ${{ secrets.CLERK_BOT_LLM_KEY }}
-          CLERK_BOT_APP_ID: ${{ secrets.CLERK_BOT_APP_ID }}
+          # The App's ID from a variable where one exists, falling back to the
+          # secret it has always been. An App ID is not a secret - GitHub
+          # documents it as a variable and the expediter stores it that way -
+          # and the two conventions disagreeing is what #382 is about. The
+          # fallback is what makes converging cost nobody an action: nothing
+          # breaks if the variable is never created.
+          CLERK_BOT_APP_ID: ${{ vars.CLERK_BOT_APP_ID || secrets.CLERK_BOT_APP_ID }}
+          # The .pem as GitHub generated it, or base64 of it. Both parse.
           CLERK_BOT_PRIVATE_KEY: ${{ secrets.CLERK_BOT_PRIVATE_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR: ${{ steps.change.outputs.pr }}
@@ -305,7 +312,14 @@ jobs:
       - name: Say what the run found
         if: always() && steps.touched.outputs.paths != ''
         env:
-          CLERK_BOT_APP_ID: ${{ secrets.CLERK_BOT_APP_ID }}
+          # The App's ID from a variable where one exists, falling back to the
+          # secret it has always been. An App ID is not a secret - GitHub
+          # documents it as a variable and the expediter stores it that way -
+          # and the two conventions disagreeing is what #382 is about. The
+          # fallback is what makes converging cost nobody an action: nothing
+          # breaks if the variable is never created.
+          CLERK_BOT_APP_ID: ${{ vars.CLERK_BOT_APP_ID || secrets.CLERK_BOT_APP_ID }}
+          # The .pem as GitHub generated it, or base64 of it. Both parse.
           CLERK_BOT_PRIVATE_KEY: ${{ secrets.CLERK_BOT_PRIVATE_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR: ${{ steps.change.outputs.pr }}
