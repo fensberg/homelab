@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 96
+floor: 98
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1198,9 +1198,19 @@ mutations:
       repository spent a day removing one level down.
 
   - guard: TestEveryCommentPathReplacesItselfRatherThanAppending
-    file: .github/workflows/deploy-infrastructure.yml
-    find: "            // is not where the push it describes happened.\n            if (existing) {\n              await github.rest.issues.deleteComment({...repo, comment_id: existing.id});\n            }\n"
-    replace: "            // is not where the push it describes happened.\n"
+    file: .github/workflows/github-script/zz-appends-a-comment.js
+    create: |
+      module.exports = async ({ github, context }) => {
+        const marker = '<!-- planted -->';
+        const repo = { owner: context.repo.owner, repo: context.repo.repo };
+        const { data: comments } = await github.rest.issues.listComments({
+          ...repo, issue_number: context.issue.number,
+        });
+        const existing = comments.find(c => c.body.startsWith(marker));
+        await github.rest.issues.createComment({
+          ...repo, issue_number: context.issue.number, body: marker,
+        });
+      };
     mentions: "finds the previous comment and does not"
     why: >
       A comment with no marker cannot be found again on the next push, so
@@ -1451,6 +1461,41 @@ mutations:
       to name two commits - codeql-action's init and analyze are separate
       paths. A commit belongs to the repository, so running two builds of one
       action side by side is exactly the drift consolidation was meant to end.
+
+  - guard: TestEverySharedScriptIsNamedAndEveryNameIsAScript
+    file: .github/workflows/github-script/zz-nobody-runs-this.js
+    create: |
+      module.exports = async () => {};
+    mentions: "is not run by any step"
+    why: >
+      A script beside the shared action runs with a job's token whenever a
+      step names it. One nothing names is code with that reach and no reason
+      to exist, and the next step to name it inherits whatever it does without
+      anybody having read it for that purpose.
+
+  - guard: TestEverySharedScriptIsNamedAndEveryNameIsAScript
+    file: .github/workflows/zz-names-a-missing-script.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+                checkout: "false"
+            - uses: $/.github/workflows/github-script
+              with:
+                name: nothing-by-this-name
+    mentions: "and there is no .github/workflows/github-script/nothing-by-this-name.js"
+    why: >
+      A step naming a script that is not there fails only when its job runs,
+      and the jobs using shared scripts run only on infrastructure changes -
+      so the break would surface on exactly the pull request where a reviewer
+      needed the plan comment.
 
 owed_ceiling: 55
 

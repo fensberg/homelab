@@ -255,6 +255,65 @@ A dedicated lane cannot replace per-job hardening, which was considered:
 harden-runner watches only the runner it is installed on, and every job gets a
 fresh one.
 
+**It passed, and the proof showed more than it asked.** All three jobs were
+green, and the nested run lists "Pre Mobilize" and "Post Mobilize" executing
+harden-runner's own pre and post steps and checkout's cleanup. So under `$/` a
+nested action gets its whole lifecycle - which also settled two wrappers that
+depend on a post-step: `create-github-app-token` revokes its token there, and
+`setup-go` saves its cache there.
+
+**Then every duplicated action got one home.** Six composites under
+`.github/workflows` hold the only literal commit of an action that was written
+more than once: `mobilize` (harden-runner, then checkout through the next one),
+`checkout`, `setup-go`, `upload-sarif`, `github-script` and `app-token`. Actions
+used once stay where they are. `TestEveryActionCommitIsWrittenOnce` refuses a
+second `uses:` line for any action path, and two commits across paths of one
+repository - codeql-action's `init` and `analyze` are separate paths, and may
+not name separate commits.
+
+Three details worth keeping:
+
+- **Checkout is its own action, not only a step of `mobilize`.** The clerk
+  resolves which pull request to read before it knows what to fetch, so it
+  mobilizes with `checkout: "false"` and checks out later. A second harden-runner
+  call would have been wrong, and a checkout written in the clerk would have
+  been a second copy.
+- **`app-token` refuses a call that names no permission.**
+  `create-github-app-token` requests every permission the installation holds
+  when given none, so a wrapper whose permission inputs all default to empty
+  would silently widen any caller that forgot one.
+- **`setup-go` takes no version.** It reads `GO_VERSION` and refuses to run
+  without it, so the wrapper cannot become a way to restate the pin.
+- **Scripts are files, not inputs.** The first `github-script` wrapper took the
+  script as an input and forwarded it as `script: ${{ inputs.script }}`. zizmor
+  and Semgrep both reported that line, and they were right about the effect if
+  not the line: they treat github-script's `script` as a place code runs and
+  check it for template injection, and behind a wrapper they could no longer
+  see the callers' code at all. So the plan-comment scripts moved into files
+  beside the action, callers name one, and there is no `${{ }}` in any of them
+  for injection to hide in.
+
+**Semgrep's `github-actions-mutable-action-tag` rule is excluded.** It exempts
+`./` and `docker://` but not `$/`, so it fires on every job. zizmor's
+`unpinned-uses` already owns pinning under a blanket hash policy and reads
+composite actions as well as workflows - checked with a tag-pinned step in each -
+so the rule was a second owner of one check, and the wrong one.
+
+**The direct control job was dropped from the proof.** It existed so a refusal
+through `mobilize` could be told apart from a probe that sees nothing. With
+that answered, keeping it would be the one place harden-runner is still written
+twice. The lane now keeps `reachable` and `nested`, and asserts that a calling
+step's env reaches a shared script step - the plan comments read their values
+that way and run only on infrastructure changes.
+
+**Scorecard is migrated with publishing still on, knowingly.** OpenSSF's API
+rejects results from a job with steps outside its approved action list, and a
+`$/` step is not on it. Its documented rules also forbid a workflow-level
+`defaults:` block, which `scorecard.yml` has had while runs succeeded, so the
+documentation does not predict what is enforced. Scorecard runs only on `main`,
+so nothing proves this before merge. If it is rejected, the choice is between
+turning publishing off and one declared exception.
+
 ### A language nobody declared is a language nothing checks
 
 Every tool in this estate is bound to a file type — shellcheck to `.sh`, tofu

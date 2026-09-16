@@ -473,8 +473,10 @@ depends on it and uses them.
 - `scorecard.yml` — repository posture, weekly and on merges to `main`. It
   grades the repository rather than the diff, so a pull request cannot change
   its answer.
-- **Egress is deny-by-default, and ten jobs are not.** Every job pins
-  `harden-runner`; most are `egress-policy: block` with an explicit allowlist,
+- **Egress is deny-by-default, and ten jobs are not.** Every job starts with
+  `$/.github/workflows/mobilize`, which runs `harden-runner` and checkout from
+  the one place either commit is written; most are `egress-policy: block` with
+  an explicit allowlist,
   so a compromised action or linter cannot exfiltrate quietly. Ten are
   `audit`, which blocks nothing and only records.
 

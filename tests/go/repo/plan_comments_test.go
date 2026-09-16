@@ -2,6 +2,7 @@ package repo
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -45,55 +46,65 @@ import (
 // the failure is not that one path was missed. It is that a new comment path
 // looks complete without one, and the next one added would go the same way.
 func TestEveryCommentPathReplacesItselfRatherThanAppending(t *testing.T) {
-	body := intendedWorkflow(t, "deploy-infrastructure.yml")
+	// Every script the workflows run, as the tree will be once outstanding
+	// patches land. They were inline `script:` blocks in
+	// deploy-infrastructure.yml, and are files beside
+	// $/.github/workflows/github-script now - so this reads the files, and
+	// would read a new one the moment it existed.
+	scripts := sharedScripts(t)
 
-	// Each github-script block that posts a comment.
-	creates := regexp.MustCompile(`issues\.createComment`).FindAllStringIndex(body, -1)
-	if len(creates) < 3 {
-		t.Fatalf(`found %d createComment call(s), and this workflow has three.
-
-The parse has stopped matching, so a path that appends could be added without
-this noticing.`, len(creates))
+	total := 0
+	var names []string
+	for name := range scripts {
+		names = append(names, name)
 	}
+	sort.Strings(names)
+	for _, name := range names {
+		body := scripts[name]
+		creates := regexp.MustCompile(`issues\.createComment`).FindAllStringIndex(body, -1)
+		total += len(creates)
+		for _, loc := range creates {
+			line := 1 + strings.Count(body[:loc[0]], "\n")
+			// Everything before the post, in the same script. A marker and a
+			// lookup have to appear before it.
+			before := body[:loc[1]]
 
-	for _, loc := range creates {
-		// The script block this call sits in, taken back to the step that
-		// opened it. A marker and a lookup have to appear before the post.
-		start := strings.LastIndex(body[:loc[0]], "- name:")
-		if start < 0 {
-			start = 0
-		}
-		block := body[start:loc[1]]
-		line := 1 + strings.Count(body[:loc[0]], "\n")
-
-		// The PREDICATE, not the word "marker". Looking for that word matches
-		// the prose explaining the mechanism as readily as the mechanism, which
-		// is the change-detector shape this repository refuses by name - and
-		// the mutation ledger caught this check in exactly that state.
-		if !strings.Contains(block, "listComments") {
-			t.Errorf(`deploy-infrastructure.yml:%d posts a comment without looking for an
-earlier one.
+			// The PREDICATE, not the word "marker". Looking for that word
+			// matches the prose explaining the mechanism as readily as the
+			// mechanism, which is the change-detector shape this repository
+			// refuses by name - and the mutation ledger caught this check in
+			// exactly that state.
+			if !strings.Contains(before, "listComments") {
+				t.Errorf(`%s.js:%d posts a comment without looking for an earlier one.
 
 There is then nothing to find it by on the next push, so every run adds
 another. That is noise of the specific kind that makes a reviewer stop reading
-the comments - on the lane that comments about changes to real infrastructure.`, line)
-			continue
-		}
-		if !strings.Contains(block, "body.startsWith(") {
-			t.Errorf(`deploy-infrastructure.yml:%d lists the comments and matches none of
-them against a marker.
+the comments - on the lane that comments about changes to real infrastructure.`, name, line)
+				continue
+			}
+			if !strings.Contains(before, "body.startsWith(") {
+				t.Errorf(`%s.js:%d lists the comments and matches none of them against a
+marker.
 
 Reading the comments and then posting regardless is the same appending
-behaviour with an extra API call in front of it.`, line)
-		}
-		if !strings.Contains(block, "deleteComment") {
-			t.Errorf(`deploy-infrastructure.yml:%d finds the previous comment and does not
-remove it.
+behaviour with an extra API call in front of it.`, name, line)
+			}
+			if !strings.Contains(before, "deleteComment") {
+				t.Errorf(`%s.js:%d finds the previous comment and does not remove it.
 
 Editing in place is the other half of this and was rejected for a stated
 reason (#246): an edited comment keeps the position it was first posted at
 while its contents change underneath, so it ends up sitting beside a push that
-no longer produced it.`, line)
+no longer produced it.`, name, line)
+			}
 		}
+	}
+
+	if total < 3 {
+		t.Fatalf(`found %d createComment call(s) across the shared scripts, and there are
+three plan comments.
+
+The read has stopped matching, so a path that appends could be added without
+this noticing.`, total)
 	}
 }
