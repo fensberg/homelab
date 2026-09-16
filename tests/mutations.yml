@@ -1197,7 +1197,6 @@ mutations:
       exactly the way a missing check is - which is the allow-list failure this
       repository spent a day removing one level down.
 
-
   - guard: TestEveryCommentPathReplacesItselfRatherThanAppending
     file: .github/workflows/deploy-infrastructure.yml
     find: "            // is not where the push it describes happened.\n            if (existing) {\n              await github.rest.issues.deleteComment({...repo, comment_id: existing.id});\n            }\n"
