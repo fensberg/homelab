@@ -127,8 +127,8 @@ jobs:
     outputs:
       look: ${{ steps.ask.outputs.look }}
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
@@ -146,11 +146,6 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
 
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
@@ -158,10 +153,7 @@ jobs:
         uses: ./.github/actions/versions
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
+        uses: $/.github/workflows/setup-go
 
       - name: Ask whether Valve has published anything
         id: ask
@@ -200,19 +192,14 @@ jobs:
       # records that Valve moves them - so an allowlist would break on Valve's
       # schedule rather than this estate's. The same reasoning, and the same
       # setting, as the image build beside it.
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Ask SteamCMD what the build actually is
         id: build
@@ -303,7 +290,7 @@ jobs:
       - name: Mint the expediter's token
         id: token
         if: steps.build.outputs.deliver == 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: $/.github/workflows/app-token
         with:
           client-id: ${{ secrets.EXPEDITER_BOT_APP_ID }}
           private-key: ${{ secrets.EXPEDITER_BOT_PRIVATE_KEY }}
@@ -413,8 +400,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
@@ -431,11 +418,6 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
 
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
@@ -443,10 +425,7 @@ jobs:
         uses: ./.github/actions/versions
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
+        uses: $/.github/workflows/setup-go
 
       # 4am in Chicago, decided by the program rather than by which cron fired,
       # so the hour is right on both sides of the daylight-saving change.
@@ -467,7 +446,7 @@ jobs:
       - name: Mint the expediter's token
         id: token
         if: steps.window.outputs.due == 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: $/.github/workflows/app-token
         with:
           client-id: ${{ secrets.EXPEDITER_BOT_APP_ID }}
           private-key: ${{ secrets.EXPEDITER_BOT_PRIVATE_KEY }}

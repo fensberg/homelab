@@ -472,16 +472,10 @@ egress:
     policy: audit
     reason: >-
       This job exists to show the probe host is reachable when nothing
-      restricts it, so that a refusal in the two block jobs beside it means
-      the policy refused it rather than that the host was down. A block
+      restricts it, so that a refusal in the block job beside it means the
+      policy refused it rather than that the host was down. A block
       policy would defeat the one thing it is for. It reaches the probe host
       and nothing else.
-
-  - job: egress-proof.yml/direct
-    policy: block
-    hosts:
-      - api.github.com:443
-      - github.com:443
 
   - job: egress-proof.yml/nested
     policy: block

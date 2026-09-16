@@ -44,8 +44,8 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Scorecard queries several public datasets to build its grade.
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
@@ -66,11 +66,6 @@ jobs:
             tuf-repo-cdn.sigstore.dev:443
             www.bestpractices.dev:443
 
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: Run OpenSSF Scorecard
         uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
         with:
@@ -79,6 +74,6 @@ jobs:
           publish_results: true
 
       - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        uses: $/.github/workflows/upload-sarif
         with:
           sarif_file: results.sarif

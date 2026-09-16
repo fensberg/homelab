@@ -1,8 +1,8 @@
 # How every job starts: harden the runner, then check out the repository.
 #
-# THE ONE PLACE THESE TWO COMMITS ARE WRITTEN. harden-runner and checkout were
-# restated in 31 and 30 jobs, and those copies agreed only because nobody had
-# made a mistake yet. A job calls this instead:
+# THE ONE PLACE THE HARDEN-RUNNER COMMIT IS WRITTEN. It was restated in 31
+# jobs and the copies agreed only because nobody had made a mistake yet. A job
+# calls this instead:
 #
 #   - uses: $/.github/workflows/mobilize
 #     with:
@@ -10,32 +10,25 @@
 #       allowed-endpoints: >
 #         github.com:443
 #
-# WHY `$/` AND NOT `./`. This was tried once before, as
-# .github/actions/secure-checkout referenced with `./`, and every job failed:
-# "Can't find 'action.yml' ... Did you forget to run actions/checkout before
-# running your local action?" A `./` reference is read out of the workspace,
-# and this is the step that fills the workspace. `$/` resolves against the
-# repository at the running commit, with no checkout, which is the whole
-# reason this can exist now and could not then.
+# PROVEN, NOT ASSUMED. harden-runner installs its policy in a pre-step, and
+# GitHub documents pre-steps as unsupported for local actions. Under `$/` they
+# run: .github/workflows/egress-proof.yml requires a host outside the allowlist
+# to be refused through this action, and its run shows "Pre Mobilize" and
+# "Post Mobilize" executing harden-runner's own pre and post steps.
 #
-# WHY IT LIVES UNDER .github/workflows. This decides what every job may reach
-# and whether the job's token is left on disk. Kept beside the workflows, it is
-# behind the same `workflows` permission the agent does not hold, so changing
-# it takes the same human hand-over as changing a workflow. GitHub loads
-# workflows only from the top of that directory, so it is never run as one.
+# WHY `$/` AND NOT `./`. .github/actions/secure-checkout tried this with `./`
+# and every job failed: "Can't find 'action.yml' ... Did you forget to run
+# actions/checkout before running your local action?" A `./` reference is read
+# out of the workspace, and this is the step that fills it. `$/` resolves
+# against the repository at the running commit with no checkout.
 #
-# WHAT IS NOT YET KNOWN, and what proves it. harden-runner reads its policy and
-# installs its agent in a pre-step (src/setup.ts), and GitHub's metadata docs
-# say `runs.pre` is not supported for local actions. If that pre-step does not
-# run when harden-runner is nested here, every job that uses this goes green
-# with egress unwatched. .github/workflows/egress-proof.yml answers it by
-# requiring a request to a host outside the allowlist to be refused - not by
-# asking harden-runner whether it ran, because it falls back to audit on
-# several errors and would still say so.
+# WHY IT LIVES UNDER .github/workflows. It decides what every job may reach, so
+# it sits behind the same `workflows` permission the agent does not hold.
+# GitHub loads workflows only from the top of that directory.
 name: "Mobilize"
 description: >-
-  Harden the runner, then check out the repository, from the one place either
-  action's commit is written.
+  Harden the runner, then check out the repository - the first step of every
+  job in this repository.
 
 inputs:
   egress-policy:
@@ -50,10 +43,20 @@ inputs:
       scripts/approved-suppliers.yml. `security guard-egress` refuses drift.
     required: false
     default: ""
+  checkout:
+    description: >-
+      "false" for a job that never needs the repository, or that checks out
+      later through $/.github/workflows/checkout once it knows what to fetch.
+    required: false
+    default: "true"
   fetch-depth:
     description: How much history to check out; 0 is all of it.
     required: false
     default: "1"
+  ref:
+    description: What to check out; empty means the commit that triggered the run.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -64,11 +67,21 @@ runs:
         egress-policy: ${{ inputs.egress-policy }}
         allowed-endpoints: ${{ inputs.allowed-endpoints }}
 
-    # persist-credentials is not an input. No job here needs the token left on
-    # disk, and leaving it lets any later step - or anything a later step runs -
-    # push with the job's credentials, silently.
+    # A value other than "true" or "false" is refused rather than read as
+    # false: a typo here would otherwise silently skip the checkout and leave
+    # every later step running against an empty workspace.
+    - name: Refuse an unrecognised checkout value
+      if: inputs.checkout != 'true' && inputs.checkout != 'false'
+      shell: bash
+      env:
+        VALUE: ${{ inputs.checkout }}
+      run: |
+        echo "::error::mobilize was given checkout: '$VALUE'. Use \"true\" or \"false\"."
+        exit 1
+
     - name: Check out the repository
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      if: inputs.checkout == 'true'
+      uses: $/.github/workflows/checkout
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
-        persist-credentials: false
+        ref: ${{ inputs.ref }}

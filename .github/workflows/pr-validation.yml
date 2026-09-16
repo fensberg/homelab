@@ -72,8 +72,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # pre-commit builds a Go toolchain for actionlint and a Node one
           # for prettier, which is why this list is the longest in the file.
@@ -98,11 +98,6 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       # The same .pre-commit-config.yaml a developer runs, at the same pinned
       # versions. That is the point: there is no second copy of prettier here
@@ -130,10 +125,7 @@ jobs:
         uses: ./.github/actions/versions
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
+        uses: $/.github/workflows/setup-go
 
       - name: Refuse an unapproved supplier before anything is downloaded
         run: go run -C scripts/security . guard-deliveries -before-install
@@ -185,8 +177,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # action-shellcheck downloads the pinned shellcheck binary
           # straight from its GitHub release.
@@ -200,11 +192,6 @@ jobs:
             github.com:443
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -241,8 +228,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # get.opentofu.org serves both the installer and the GPG key it
           # verifies the release with. Provider downloads start at the registry
@@ -275,11 +262,6 @@ jobs:
             registry.opentofu.org:443
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -379,13 +361,10 @@ jobs:
       # rejects when they span more than one directory - a confirmed upstream
       # bug (super-linter/super-linter#6294). That tool is gone (#365); this
       # lane was already the honest owner and now it is the only one.
+      # No go.sum: scripts/contractor has zero external dependencies, so
+      # there is nothing meaningful to cache.
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          # No go.sum: scripts/contractor has zero external dependencies, so
-          # there is nothing meaningful to cache.
-          cache: false
+        uses: $/.github/workflows/setup-go
 
       - name: Validate Go
         working-directory: scripts/contractor
@@ -449,8 +428,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Not a guessed list: every entry here is already proven under
           # egress-policy: block by another lane in this same file. The
@@ -479,11 +458,6 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
 
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
@@ -492,9 +466,8 @@ jobs:
 
       # --- Go -------------------------------------------------------------
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: $/.github/workflows/setup-go
         with:
-          go-version: ${{ env.GO_VERSION }}
           # tests/go is the only module here with dependencies to cache;
           # scripts/contractor has none, so there is no go.sum of its own to key on.
           cache-dependency-path: tests/go/go.sum
@@ -629,8 +602,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
@@ -644,11 +617,6 @@ jobs:
             objects.githubusercontent.com:443
             pypi.org:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -676,8 +644,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
@@ -689,11 +657,6 @@ jobs:
             github.com:443
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -721,8 +684,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
@@ -736,11 +699,6 @@ jobs:
             objects.githubusercontent.com:443
             pypi.org:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -764,8 +722,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
@@ -779,11 +737,6 @@ jobs:
             objects.githubusercontent.com:443
             pypi.org:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -812,8 +765,8 @@ jobs:
       # refresh occasionally.
       image: semgrep/semgrep:1.172.0@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Stays audit, not block, until a real run's egress log gives an
           # allowed-endpoints list worth trusting - semgrep ci reaches its
@@ -827,12 +780,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
           fetch-depth: 0
-          persist-credentials: false
       - name: Run Semgrep CI
         # clusters/bootstrap/ is Cilium's chart output, committed verbatim so a
         # version bump is a reviewable diff rather than a one-line pin change.
@@ -841,7 +789,24 @@ jobs:
         # rather than in a root .semgrepignore, because that file REPLACES
         # semgrep's built-in ignore list rather than adding to it, and silently
         # losing those defaults is a bigger hole than the one being closed.
-        run: semgrep ci --exclude=clusters/bootstrap
+        #
+        # One registry rule is excluded, and it duplicates a check with an
+        # owner. github-actions-mutable-action-tag refuses any `uses:` without a
+        # 40-character commit and exempts `./` and `docker://` - but not `$/`,
+        # GitHub's self-repository reference, which resolves to the running
+        # commit and is as immutable as a reference gets. Every job starts with
+        # `uses: $/.github/workflows/mobilize`, so the rule fires on every job.
+        #
+        # Nothing is lost: zizmor's unpinned-uses owns "is this pinned to a
+        # commit" under a blanket hash policy, fails the Workflow Scan lane on a
+        # tag, and reads composite actions as well as workflows - checked with a
+        # tag-pinned step in each. Two owners of one check is the arrangement
+        # this repository refuses anyway.
+        #
+        # Removed when: the rule exempts `^\$/` the way it exempts `^\./`.
+        run: >-
+          semgrep ci --exclude=clusters/bootstrap
+          --exclude-rule=yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         env:
           SEMGREP_RULES: "p/default"
 
@@ -866,8 +831,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Trivy pulls its misconfiguration database as an OCI artifact,
           # from ghcr.io with a Google mirror as fallback.
@@ -884,12 +849,7 @@ jobs:
             objects.githubusercontent.com:443
             pkg-containers.githubusercontent.com:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -930,8 +890,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # DELIBERATELY audit, not block. TruffleHog verifies a candidate
           # secret by presenting it to the API of whichever vendor issued it,
@@ -944,12 +904,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
           fetch-depth: 0
-          persist-credentials: false
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step

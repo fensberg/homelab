@@ -85,8 +85,8 @@ jobs:
       # it began at checkout. Hermetic and credential-free, so the exposure was
       # small, but it is the classification step for the workflow that applies
       # OpenTofu, and "small" is not the standard the other jobs are held to.
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
@@ -96,15 +96,10 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             github.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
           # Deep enough to diff a pull request against its base. This
           # repository is small; the cost is seconds and the alternative is
           # guessing at a merge base.
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Classify the change
         id: filter
@@ -200,8 +195,8 @@ jobs:
       pull-requests: write
     timeout-minutes: 30
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # audit, not block, for the reason the apply job below gives: the
           # endpoints this reaches are not known until it has actually run
@@ -212,11 +207,6 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Determine Target Directory
         run: echo "DIR=environments/staging/infrastructure/" >> "$GITHUB_ENV"
@@ -263,68 +253,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Comment the plan summary on the pull request
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        uses: $/.github/workflows/github-script
         env:
           EXITCODE: ${{ steps.plan.outputs.exitcode }}
           DIR: ${{ env.DIR }}
         with:
-          script: |
-            const fs = require('fs');
-            const plan = fs.readFileSync(`${process.env.DIR}/plan-readable.txt`, 'utf8');
-            const m = plan.match(/Plan: (\d+) to add, (\d+) to change, (\d+) to destroy/);
-            const counts = m
-              ? `**${m[1]}** to add · **${m[2]}** to change · **${m[3]}** to destroy`
-              : (process.env.EXITCODE === '0' ? 'No changes.' : 'Could not parse a change count.');
-            // A marker as the FIRST line, so the comment can be found again.
-            //
-            // Per DIRECTORY, the way the management plan's is per site: a pull
-            // request touching two directories plans both, and one must not
-            // overwrite the other (#160).
-            const marker = `<!-- workload-plan:${process.env.DIR} -->`;
-            const body = [
-              marker,
-              `### OpenTofu plan — \`${process.env.DIR}\``,
-              '',
-              counts,
-              '',
-              m && Number(m[3]) > 0
-                ? '> This plan **destroys** resources. Read the full plan before approving.'
-                : '',
-              '',
-              // Which commit this describes. A comment that replaces itself in
-              // place is only ever as current as the last run that succeeded,
-              // and nothing else distinguishes a stale one.
-              `Planned at \`${context.sha.slice(0, 8)}\`.`,
-              '',
-              `The full plan is in the [job summary](${context.payload.repository.html_url}/actions/runs/${context.runId}) — it is not posted here, because a plan can contain attribute values nobody remembered to mark sensitive.`,
-            ].join('\n');
-
-            // Replace rather than append.
-            //
-            // This posted unconditionally, so every `synchronize` added another
-            // comment and the oldest sat at the top - on the lane that comments
-            // about changes to real infrastructure. The other two comment paths
-            // in this workflow already replace themselves; this one did not,
-            // and nobody had seen it because the job gates on `environments/`
-            // and `modules/`, which did not exist when it was written. It would
-            // have started spamming on the first pull request of epoch 02,
-            // which is exactly when nobody would remember it was known.
-            //
-            // Delete then create rather than update, for the reason #246 gives
-            // about the management plan: an edited comment keeps the position
-            // it was first posted at while its contents change underneath, so
-            // it ends up sitting beside a push that no longer produced it.
-            const repo = { owner: context.repo.owner, repo: context.repo.repo };
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              ...repo, issue_number: context.issue.number, per_page: 100,
-            });
-            const existing = comments.find(c => c.body.startsWith(marker));
-            if (existing) {
-              await github.rest.issues.deleteComment({ ...repo, comment_id: existing.id });
-            }
-            await github.rest.issues.createComment({
-              ...repo, issue_number: context.issue.number, body,
-            });
+          name: workload-plan-comment
 
   # ---------------------------------------------------------------------
   # APPLY - on merge to main, or a tag. Applies a plan made in this run.
@@ -340,8 +274,8 @@ jobs:
     environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
     timeout-minutes: 60
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Stays audit, not block, until this job has actually run: it
           # applies whatever `environments/` and `modules/` turn out to
@@ -356,11 +290,6 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Determine Target Directory
         id: set-env
@@ -432,8 +361,8 @@ jobs:
       matrix:
         site: ${{ fromJSON(needs.changes.outputs.sites) }}
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # audit, not block, for the same reason the apply job gives: this
           # reaches 1Password, Proxmox, Tailscale, Cloudflare, the Kubernetes
@@ -446,22 +375,14 @@ jobs:
           # pre-step, before any step of this job can run.
           egress-policy: audit
 
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: Read pinned versions
         uses: ./.github/actions/versions
 
+      # No cache. scripts/contractor has zero external dependencies, so the
+      # cache saves nothing - and on a self-hosted runner it persists
+      # between jobs, which is a poisoning surface for no benefit.
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          # No cache. scripts/contractor has zero external dependencies, so the
-          # cache saves nothing - and on a self-hosted runner it persists
-          # between jobs, which is a poisoning surface for no benefit.
-          cache: false
+        uses: $/.github/workflows/setup-go
 
       # Built and run directly, not through `task`: task does not proxy SIGINT
       # to the process it supervises (go-task/task#1408).
@@ -534,8 +455,13 @@ jobs:
       issues: write
     timeout-minutes: 10
     steps:
-      - name: Harden the runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      # persist-credentials: false, like every other checkout here. The push
+      # below carries the token on the remote URL for the one command that
+      # needs it, rather than leaving it in .git/config for the rest of the
+      # job - which is what zizmor's artipacked audit is about, and it is
+      # right: a credential in a file outlives the step that wanted it.
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
@@ -547,17 +473,7 @@ jobs:
             github.com:443
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
-
-      # persist-credentials: false, like every other checkout here. The push
-      # below carries the token on the remote URL for the one command that
-      # needs it, rather than leaving it in .git/config for the rest of the
-      # job - which is what zizmor's artipacked audit is about, and it is
-      # right: a credential in a file outlives the step that wanted it.
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Collect the verdicts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -796,8 +712,8 @@ jobs:
       matrix:
         site: ${{ fromJSON(needs.changes.outputs.sites) }}
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
@@ -805,19 +721,11 @@ jobs:
           # pre-step, before any step of this job can run.
           egress-policy: audit
 
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: Read pinned versions
         uses: ./.github/actions/versions
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
+        uses: $/.github/workflows/setup-go
 
       - name: Plan
         id: plan
@@ -829,49 +737,9 @@ jobs:
           ./toolshed/contractor plan -site "$SITE" -comment-out plan-comment.md
 
       - name: Comment the plan on the pull request
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        uses: $/.github/workflows/github-script
         with:
-          script: |
-            // The body is written by `contractor plan`, not assembled here.
-            // Copy that needs a workflow edit to fix is copy that stays wrong,
-            // because the agent cannot edit workflows - the same reason
-            // sensitive-paths.yml builds its comment in a script.
-            const fs = require('fs');
-            const body = fs.readFileSync('plan-comment.md', 'utf8');
-            const marker = body.split('\n')[0];
-
-            // Replace this site's previous plan rather than adding another.
-            // A pull request that planned three times carried three comments
-            // and the reader had to work out which one was current.
-            const {data: comments} = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner, repo: context.repo.repo,
-            });
-            const existing = comments.find(c => c.body.startsWith(marker));
-            const repo = {owner: context.repo.owner, repo: context.repo.repo};
-
-            // Deleted and recreated, not edited in place.
-            //
-            // An edited comment keeps its original position in the timeline, so
-            // a plan that changed with a later push stays anchored beside the
-            // commit that no longer produced it: the body reads "4 to add"
-            // while sitting above the push whose plan said 6. The provenance
-            // line inside the body was the first answer to this and it only
-            // solves half - it tells a reader the comment is current, not where
-            // the change it describes actually happened.
-            //
-            // Still exactly one comment per site. The delete is what keeps this
-            // from becoming the append-per-push behaviour #160 describes; the
-            // marker search above is what finds the one to remove.
-            //
-            // The cost, said out loud: a recreated comment loses any reactions
-            // and any reply thread, and it notifies subscribers again. Neither
-            // matters for a plan nobody replies to, and the second is arguably
-            // wanted - a plan that changed is worth being told about.
-            if (existing) {
-              await github.rest.issues.deleteComment({...repo, comment_id: existing.id});
-            }
-            await github.rest.issues.createComment({...repo, issue_number: context.issue.number, body});
+          name: estate-plan-comment
 
   # ---------------------------------------------------------------------
   # NO PLAN, SAID OUT LOUD - #156.
@@ -905,8 +773,8 @@ jobs:
       pull-requests: write
     timeout-minutes: 5
     steps:
-      - name: Harden the runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
@@ -915,46 +783,11 @@ jobs:
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
+          checkout: "false"
 
       - name: Say that no plan was produced
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        uses: $/.github/workflows/github-script
         env:
           RESULT: ${{ needs.plan-estate.result }}
         with:
-          script: |
-            const marker = '<!-- plan-absence -->';
-            const body = [
-              marker,
-              '## No plan was produced for this change',
-              '',
-              'This pull request changes `management/`, and the plan job ended as' +
-              ' **`' + process.env.RESULT + '`** rather than succeeding. Nothing here' +
-              ' compared the proposed configuration against the estate that exists.',
-              '',
-              'That is not a blocker and is not meant to be. The plan runs on a runner' +
-              ' inside the cluster, so when the cluster is down no plan can be produced -' +
-              ' which is exactly when the pull request rebuilding it needs to merge.' +
-              ' Requiring a plan would deadlock that.',
-              '',
-              'What it means for a reviewer: approving this is approving HCL rather than' +
-              ' its consequences. If the estate is up, re-running the plan job is worth' +
-              ' more than reading the diff again.',
-            ].join('\n');
-
-            // One comment per pull request, replaced rather than appended. The
-            // workload plan comment already does this; the estate plan comment
-            // does not, which is #160.
-            const {data: comments} = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner, repo: context.repo.repo,
-            });
-            const existing = comments.find(c => c.body.startsWith(marker));
-            const repo = {owner: context.repo.owner, repo: context.repo.repo};
-
-            // Deleted and recreated, for the reason given on the plan comment
-            // above: an edited comment stays where it was first posted, which
-            // is not where the push it describes happened.
-            if (existing) {
-              await github.rest.issues.deleteComment({...repo, comment_id: existing.id});
-            }
-            await github.rest.issues.createComment({...repo, issue_number: context.issue.number, body});
+          name: plan-absence-comment

@@ -1,0 +1,32 @@
+# The one place the actions/checkout commit is written.
+#
+# Most jobs reach this through $/.github/workflows/mobilize. A job that cannot
+# know what to fetch until it has run a few steps - the clerk resolves a pull
+# request number from a comment first - calls this directly, later.
+#
+# persist-credentials is not an input. No job here needs the token left on
+# disk, and leaving it lets any later step, or anything a later step runs, push
+# with the job's credentials - silently, because the checkout succeeds either
+# way. tests/go/repo/joblaw_test.go reads through this action to hold that.
+name: "Checkout"
+description: Check out the repository without leaving the job's token on disk.
+
+inputs:
+  fetch-depth:
+    description: How much history to check out; 0 is all of it.
+    required: false
+    default: "1"
+  ref:
+    description: What to check out; empty means the commit that triggered the run.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: ${{ inputs.fetch-depth }}
+        ref: ${{ inputs.ref }}
+        persist-credentials: false
