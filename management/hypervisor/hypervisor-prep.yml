@@ -1208,6 +1208,70 @@
       run_once: true
       tags: [sdn]
 
+    # WHAT AN UNTRUSTED ZONE'S MACHINE ITSELF REACHES.
+    #
+    # The zone exists for node-level compromise: container escape, then node
+    # root, then whatever the node can reach. NetworkPolicy bounds the pods and
+    # governs nothing the node does on host networking, so this is the only
+    # layer that can answer the question for the machine (#378).
+    #
+    # The epoch record's answer was to leave the overlay extension out of the
+    # zone's image, which closes the tailnet. It said nothing about the house
+    # LAN, and the LAN was wide open: each zone's subnet is created with SNAT
+    # exactly like the internal one, and there was no rule anywhere separating
+    # either from 192.168.0.0/16. For a zone meant to hold the least-trusted
+    # work on the estate, the house network is arguably the most important thing
+    # to close, and it was the one thing left open.
+    #
+    # WHAT THIS PERMITS, deliberately, before it drops anything:
+    #
+    #   - the zone's own gateway, which is this hypervisor's address on that
+    #     subnet. The machine cannot route at all without it, and DNS is
+    #     answered there.
+    #   - the zone's own subnet, so machines inside one zone still talk to each
+    #     other. Zones are isolated from the estate, not from themselves.
+    #
+    # Everything else private is dropped: the house LAN, every other site, the
+    # node subnet holding the control plane, and every other untrusted zone.
+    # Egress to the internet is untouched - it is what the SNAT above is for,
+    # and a zone that cannot pull an image or ship a backup is not usable.
+    #
+    # FORWARD rather than INPUT, because this is traffic the hypervisor routes
+    # between subnets rather than traffic addressed to it. Inserted at the top
+    # so it is reached before the accept rules Proxmox maintains, and inserted
+    # in reverse order so the accepts end up above the drop.
+    #
+    # Idempotent by -C before -I, which is the ordinary iptables shape and the
+    # one Proxmox's own SNAT handling notably does not use - see the dedupe
+    # above for what that costs.
+    - name: Close the private estate to each untrusted zone
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          added=0
+          ensure() {
+            if ! iptables -C "$@" 2>/dev/null; then
+              iptables -I "$@"
+              added=$((added + 1))
+            fi
+          }
+          # Reverse order: each -I goes to the top, so the last one inserted is
+          # the first one matched. The two accepts must precede the drop.
+          ensure FORWARD -s {{ item.subnet }} -d 10.0.0.0/8 -j DROP
+          ensure FORWARD -s {{ item.subnet }} -d 172.16.0.0/12 -j DROP
+          ensure FORWARD -s {{ item.subnet }} -d 192.168.0.0/16 -j DROP
+          ensure FORWARD -s {{ item.subnet }} -d {{ item.subnet }} -j ACCEPT
+          ensure FORWARD -s {{ item.subnet }} -d {{ item.gateway }}/32 -j ACCEPT
+          echo "added=$added"
+      register: dmz_isolation
+      changed_when: "'added=0' not in dmz_isolation.stdout"
+      loop: "{{ dmz_zones }}"
+      loop_control:
+        label: "{{ item.name }}"
+      run_once: true
+      tags: [sdn]
+
     # FRR carries the BGP session that EVPN's control plane runs over. It is
     # not needed by a simple zone, so a host converted from one may never have
     # had it started.

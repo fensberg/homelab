@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 62
+floor: 89
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -549,8 +549,12 @@ mutations:
 
   - guard: TestEveryGoModuleHasACoverageFloor
     file: tests/coverage-baseline.json
-    find: '"go/clerk": 56,'
-    replace: '"go-clerk-was-here": 56,'
+    # Anchored on the KEY rather than on the key and its number. The number is
+    # a ratchet every change that adds tests moves, so an entry naming one
+    # breaks whenever coverage improves - which is the ledger going red for the
+    # opposite of a problem. Found exactly that way when go/clerk went 56 -> 63.8.
+    find: '"go/clerk":'
+    replace: '"go-clerk-was-here":'
     mentions: "has no floor for"
     why: >
       A module with no floor has its coverage measured and compared against
@@ -563,8 +567,12 @@ mutations:
 
   - guard: TestTheCoverageShimDiesWithTheWorkflowStepThatNeedsIt
     file: tests/coverage-baseline.json
-    find: '"go/attestation": 26.6,'
-    replace: '"go": 34,\n    "go/attestation": 26.6,'
+    # Anchored on the KEY, not on its number - the third entry this session to
+    # break because a coverage figure improved, which is #328's complaint in
+    # miniature: a hand-maintained counter every change edits, with other
+    # things pointing at its value.
+    find: '"go/attestation":'
+    replace: '"go": 34,\n    "go/attestation":'
     mentions: "floor for nothing"
     why: >
       A bare "go" key is a floor for nothing once the workflow sweeps every
@@ -576,8 +584,8 @@ mutations:
 
   - guard: TestEveryUnitIsExecutedByATestOrIsADeclaredDebt
     file: tests/coverage-blocklist.yml
-    find: "  - shell:githooks/commit-msg"
-    replace: "  # - shell:githooks/commit-msg"
+    find: "  - ansible:management/hypervisor/hypervisor-prep.yml # 293"
+    replace: "  # - ansible:management/hypervisor/hypervisor-prep.yml was here"
     mentions: "executed by no test"
     why: >
       The regime is fail-closed: a unit nothing executes is a failure unless it
@@ -946,6 +954,371 @@ mutations:
       waiting for the rest of the week's routine bumps instead of arriving on
       its own.
 
+  - guard: TestTheHookShimsRunTheGuardBeforeAnythingThirdParty
+    file: githooks/pre-commit
+    find: "./toolshed/security guard-deliveries"
+    replace: ": # the guard no longer runs"
+    mentions: "the guard never ran"
+    why: >
+      The shim exists for one reason: pre-commit clones and installs seven
+      third-party repositories before it runs any hook, so a supplier guard
+      that is itself a pre-commit hook reports after the code it exists to
+      refuse has already executed - with the vault session's privileges, on
+      the developer's machine. Gating execution is not gating download. A
+      guard that stops running here leaves nothing anywhere else checking.
+
+  - guard: TestAFailingGuardStopsTheHookBeforePreCommit
+    file: githooks/pre-commit
+    find: "set -euo pipefail"
+    replace: "set -uo pipefail"
+    mentions: "exited 0 with a refusing guard"
+    why: >
+      Without set -e the shim reports a refusing supplier guard and then
+      reaches pre-commit anyway, so the commit proceeds and the unapproved
+      delivery is installed. The difference between a guard that refuses and
+      one that comments is a single flag, and it is the flag somebody
+      removes while debugging a hook.
+
+  - guard: TestEveryShimPassesGitsOwnArgumentsThrough
+    file: githooks/commit-msg
+    find: "\t--hook-type=commit-msg"
+    replace: "\t--hook-type=pre-commit"
+    mentions: "did not pass"
+    why: >
+      commit-msg is the stage that runs commitlint, and this repository
+      holds two rules there that CI cannot catch cheaply - no self
+      co-authorship, and a lower-case subject. A published commit subject
+      cannot be amended, because non_fast_forward applies to every branch
+      here, so each violation that reaches a push costs a rewritten branch
+      and a replaced pull request. A shim naming the wrong stage runs the
+      wrong hooks and looks installed.
+
+  - guard: TestTheShimsFallBackToTheModuleAndSayWhenThereIsNeither
+    file: githooks/commit-msg
+    find: "elif python3 -c 'import pre_commit' >/dev/null 2>&1; then"
+    replace: "elif false; then"
+    mentions: "where the module was importable"
+    why: >
+      pre-commit installed with pip --user is reachable as a module and not
+      as a command on any machine that does not have ~/.local/bin on PATH.
+      The hook pre-commit generates handles that; these shims replace it, so
+      dropping the fallback means every hook this repository relies on
+      refuses to run on such a machine - with a message naming a command
+      rather than the virtualenv that is actually missing.
+
+  - guard: TestThePlaceholderConfigRefusesOutputThatIsNotJSON
+    file: .github/scripts/placeholder-config.sh
+    find: 'if ! jq empty "${rendered}" 2>/dev/null; then'
+    replace: "if false; then"
+    mentions: "exited 0 having written"
+    why: >
+      Every other check in that script asks whether a substitution was
+      MISSED. This one asks whether one went too far, which is the case that
+      produced no evidence at all: a marker missing its closing braces lets
+      sed run on to the JSON's own, swallowing the structure between them.
+      No marker survives and no op:// survives, so the script exits 0 with a
+      file that is not JSON - and tofu then fails inside a provider
+      configuration block naming neither the script nor the template.
+
+  - guard: TestThePlaceholderConfigRefusesAnUnresolvedMarker
+    file: .github/scripts/placeholder-config.sh
+    find: 'if grep -q ''{{'' "${rendered}"; then'
+    replace: "if false; then"
+    mentions: "did not say why"
+    why: >
+      A template marker the sweep could not match reaches tofu as the
+      literal text `{{`, which is a value no provider recognises. The
+      refusal is what turns that into an error naming this script and the
+      line, rather than one naming whichever provider happened to read the
+      key first.
+
+  - guard: TestThePlaceholderConfigRefusesAnUnwrappedVaultReference
+    file: .github/scripts/placeholder-config.sh
+    find: 'if grep -q ''op://'' "${rendered}"; then'
+    replace: "if false; then"
+    mentions: "accepted a bare op://"
+    why: >
+      `op inject` substitutes nothing that is not wrapped in braces, so an
+      unwrapped reference is valid JSON that survives every schema check
+      after it and reaches whatever reads that key as the literal string
+      "op://homelab/...". This is the backstop for the hermetic version of
+      the same check, for anything that renders the template without running
+      the test suite.
+
+  - guard: TestThePlaceholderConfigRendersTheRealTemplate
+    file: .github/scripts/placeholder-config.sh
+    find: "\t\"${template}\" >\"${rendered}\""
+    replace: "\t\"${template}\" >/dev/null\n\techo '{}' >\"${rendered}\""
+    mentions: "the template declares"
+    why: >
+      Valid JSON is not enough: `{}` is valid JSON and would satisfy every
+      other check here while carrying none of the keys management/cluster
+      reads. tofu would then fail on a missing attribute and name the HCL
+      rather than the substitution that dropped it, which is the confusing
+      failure this whole file exists to prevent.
+
+  - guard: TestThePlaceholderConfigKeepsTheShapeProvidersCheck
+    file: .github/scripts/placeholder-config.sh
+    find: "\t-e 's#\"([a-z_]*_url|url|endpoint)\": *\"\\{\\{[^}]*\\}\\}\"#\"\\1\": \"https://example.invalid/placeholder\"#' \\"
+    replace: "\t-e 's#__no_such_key__##' \\"
+    mentions: "has no scheme"
+    why: >
+      The flux provider checks the repository URL has a scheme it recognises
+      while validate is still evaluating its configuration block, before any
+      resource is read. Without the URL-shaped pass those keys render as the
+      bare word `placeholder`, and the Validate lane fails on a provider
+      rather than on anything in the change.
+
+  - guard: TestThePodAndServiceNetworksAreDeclared
+    file: management/cluster/talos.tf
+    find: "          podSubnets     = [local.pod_cidr]"
+    replace: "          # podSubnets removed"
+    mentions: "declares no podSubnets"
+    why: >
+      The cluster's pod and service ranges are its largest address
+      commitment and they were undeclared for the whole life of the estate -
+      correct values, chosen by nobody, absent from an addressing decision
+      that records every other range down to the VM id bands. clusterNetwork
+      is fixed at cluster creation, so a wrong one costs a rebuild rather
+      than an edit, and a value nobody wrote down cannot be reviewed at all.
+
+  - guard: TestThePodAndServiceNetworksCannotCollideWithASite
+    file: management/cluster/variables.tf
+    find: '  pod_cidr     = "10.244.0.0/16"'
+    replace: '  pod_cidr     = "10.0.0.0/8"'
+    mentions: "overlaps the site network"
+    why: >
+      10.0.0.0/8 is the shape a CNI default tends to take and it contains
+      every site subnet this estate can define, because site octets are
+      asserted 1-95. Pods sharing addresses with the machines they run on is
+      routing that works until two things want the same address, and it
+      cannot be corrected without rebuilding the cluster.
+
+  - guard: TestCiliumTakesItsPodAddressesFromKubernetes
+    file: clusters/bootstrap/cilium.yaml
+    find: '  ipam: "kubernetes"'
+    replace: '  ipam: "cluster-pool"'
+    mentions: 'not "kubernetes"'
+    why: >
+      In kubernetes mode Cilium takes pod addresses from the podSubnets this
+      repository declares. In every other mode it allocates from a pool of
+      its own, and its default pool is 10.0.0.0/8 - which swallows every
+      site subnet. The manifest still renders, still installs and still
+      comes up, so the switch is one word with no other signal.
+
+  - guard: TestTheDNSResolversAreDeclaredInOnePlace
+    file: management/cluster/variables.tf
+    find: '  dns_resolvers = ["1.1.1.1", "1.0.0.1"]'
+    replace: "  dns_resolvers        = [\"1.1.1.1\", \"1.0.0.1\"]\n  fallback_dns_servers = [\"9.9.9.9\"]"
+    mentions: "names the resolver"
+    why: >
+      The resolvers were written out four times - twice in cloud-init and
+      twice in Talos's ResolverConfig - which is the duplication the
+      one-place rule already forbids for versions, and it fails the same
+      way: three get updated and the fourth machine class resolves through
+      something nobody meant. It is also the only route a fork has to point
+      the estate at internal resolvers.
+
+  - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
+    file: modules/applications/valheim/base/network-policy.yaml
+    find: "            cidr: 172.16.0.0/12"
+    replace: "            cidr: 10.0.0.0/8"
+    mentions: "permits 10.0.0.0/8"
+    why: >
+      Opening another private range is the obvious response to the next
+      player who cannot connect, and 10.0.0.0/8 is the obvious range because
+      it is the one remaining and looks symmetrical with the two beside it.
+      It is also the space the whole estate is addressed out of, so it hands
+      a public-facing game server a UDP path to the API server, the state
+      database, the hypervisor and every other workload. The manifest stays
+      valid and the cluster does exactly what it was told.
+
+  - guard: TestTheGameServerCanStillReachPlayersOnOrdinaryNetworks
+    file: modules/applications/valheim/base/network-policy.yaml
+    find: "            cidr: 172.16.0.0/12"
+    replace: "            cidr: 198.51.100.0/24"
+    mentions: "no longer permits 172.16.0.0/12"
+    why: >
+      The converse of the guard above, and it needs saying: a check that
+      only ever refuses is satisfied by closing everything. A closed range
+      is a player who joins, spawns and is disconnected seconds later with
+      nothing anywhere naming this policy - which is what 172.16.0.0/12
+      being shut cost every remote player who tried, from a phone hotspot or
+      a hotel.
+
+  - guard: TestEveryChartsImagesAreGovernedOrDeclared
+    file: scripts/approved-suppliers.yml
+    find: "  - chart: openebs\n    pulls_from: docker.io"
+    replace: "  - chart: openebs-was-declared-here\n    pulls_from: docker.io"
+    mentions: "neither pins its images"
+    why: >
+      The registries section asserts that every image comes from an approved
+      registry and is pinned by digest, and the walk behind it only ever
+      reads references written in this repository. A chart pulling its own
+      defaults is invisible to it, so 'no unapproved image is committed
+      here' and 'no unapproved image runs here' produce the same green.
+      Quietly dropping a declaration puts a chart back in that silence - and
+      the one that matters most is the storage provisioner handing out the
+      volumes the state database sits on.
+
+  - guard: TestNoTerminalTranscriptCarriesARealHostname
+    file: docs/a-pasted-transcript.md
+    create: |
+      # Notes from the run
+
+      Reloading the SDN on the hypervisor:
+
+          root@pve-01:~# pvesh set /cluster/sdn
+          pve-01: reloading network config
+    mentions: "naming the host"
+    why: >
+      A real hostname pasted out of a terminal is how names actually leak into
+      this repository, and it is the one class the forkability guard cannot
+      see: it works on shapes the estate GENERATES, and a bare hostname in
+      prose is just a word. CLAUDE.md names the cause - recording evidence
+      verbatim is the right instinct and is exactly the operation that carries
+      a real name into a public repository without anybody deciding to. It has
+      happened: a hypervisor's name sat in a comment in the Ansible playbook
+      recording a terminal session, green the whole time. A `create` rather
+      than a substitution because the guard has nothing to say until a
+      transcript is PRESENT, and the normal state of the tree is that none is.
+
+  - guard: TestTheDeclaredTiersAreTheMeasuredOnes
+    file: tests/README.md
+    find: "| **fuzz**        | What happens on input nobody thought of?"
+    replace: "| **fuzzing**     | What happens on input nobody thought of?"
+    mentions: "has no floor for it"
+    why: >
+      The tier table is the one place a reader looks to find out what tiers
+      exist, and nothing checked it against what is actually measured. It had
+      already drifted: five tiers declared against eight counted, so tofu, js
+      and fuzz were floored and reported on every run while being absent from
+      the table. A tier that loses its row goes back to being invisible in
+      exactly the way a missing check is - which is the allow-list failure this
+      repository spent a day removing one level down.
+
+  - guard: TestEveryCommentPathReplacesItselfRatherThanAppending
+    file: .github/workflows/deploy-infrastructure.yml
+    find: "            // is not where the push it describes happened.\n            if (existing) {\n              await github.rest.issues.deleteComment({...repo, comment_id: existing.id});\n            }\n"
+    replace: "            // is not where the push it describes happened.\n"
+    mentions: "finds the previous comment and does not"
+    why: >
+      A comment with no marker cannot be found again on the next push, so
+      every run adds another and the oldest sits at the top. That is noise
+      of the specific kind that makes a reviewer stop reading the comments,
+      on the lane that comments about changes to real infrastructure - and
+      the one path that had this defect went unnoticed for months because
+      its job gates on directories that did not exist yet.
+
+  - guard: TestATalosImagePathCarriesItsSchematic
+    file: management/cluster/compute.tf
+    find: '  file_name               = "talos-${local.talos_version}-${substr(local.schematic_id, 0, 8)}.iso"'
+    replace: '  file_name               = "talos-${local.talos_version}.iso"'
+    mentions: "does not carry its schematic id"
+    why: >
+      A schematic id says which extensions are baked into a Talos image, and the
+      download resource is identified by its datastore path. With the schematic
+      absent from that path, re-minting one - the only way to add, remove or
+      move an extension - is not a change: no diff, no fetch, and the
+      replace_triggered_by on the template has nothing to fire on. The bump then
+      looks applied, with a clean plan and a successful apply, while every node
+      keeps the old extensions. That is how a known-vulnerable Tailscale reached
+      every machine in the estate and stayed there, and the failure is silence
+      rather than an error.
+
+  - guard: TestEveryFluxControllerIsPinnedHere
+    file: clusters/management/flux-system/kustomization.yaml
+    find: "  - name: ghcr.io/fluxcd/source-controller"
+    replace: "  - name: ghcr.io/fluxcd/source-controller-was-here"
+    mentions: "does not pin it"
+    why: >
+      kustomize's image transformer matches on image NAME, so a controller the
+      overlay does not name keeps the mutable tag the generated manifest carries
+      - on the component that applies everything else in the cluster. The
+      overlay still builds, `task validate` still passes, and nothing else
+      objects. gotk-components.yaml is rewritten wholesale by `flux bootstrap`,
+      so a controller added or renamed upstream arrives without anybody editing
+      this file, which is exactly when a hand-maintained list stops matching.
+
+  - guard: TestSetupSaysPushesWillBeRefusedWithoutARegisteredKey
+    file: scripts/install-dependencies.sh
+    find: "\t\twarn \"could not register the signing key, and pushes WILL be refused without it\""
+    replace: "\t\twarn \"could not register the signing key, which is optional\""
+    mentions: "did not say that pushes will be refused"
+    why: >
+      This step presented registering the key as optional once, and it is
+      not: the all-branches ruleset wants a VERIFIED signature, so a commit
+      signed with a key GitHub does not know is refused exactly like an
+      unsigned one. The operator's editor pushed into that refusal with no
+      readable reason, and it cost an evening. A setup script that
+      understates a requirement is worse than one that says nothing, because
+      it is read as reassurance.
+
+  - guard: TestSetupWiresTheHooksAndSigning
+    file: scripts/install-dependencies.sh
+    find: "\tgit config core.hooksPath githooks"
+    replace: "\t: # hooks left where pre-commit put them"
+    mentions: "core.hooksPath is"
+    why: >
+      core.hooksPath REPLACES .git/hooks rather than merging with it, and
+      this line is the only thing that sets it. Without it git runs the
+      hooks pre-commit generates, the supplier guard in githooks/pre-commit
+      becomes a file nobody invokes, and every shim held to a standard
+      elsewhere is unreachable. Nothing announces that - the commit succeeds
+      and the guard simply never ran.
+
+  - guard: TestSetupIsSafeToReRun
+    file: scripts/install-dependencies.sh
+    find: "if git -C \"$repo_root\" config --get commit.gpgsign | grep -qx true; then\n\tskip \"commit signing already configured\""
+    replace: "if false; then\n\tskip \"commit signing already configured\""
+    mentions: "did not recognise that signing was already set up"
+    why: >
+      Without the already-configured check a re-run generates a new signing
+      key, replacing the one GitHub knows about - which turns a working
+      setup into refused pushes, on a script whose own header promises it is
+      safe to re-run. The person most likely to re-run it is the person who
+      just had a push refused.
+
+  - guard: TestThereIsOnlyOneRetryAndANewOneIsRefused
+    file: .github/workflows/workload-images.yml
+    find: "jobs:"
+    replace: "jobs:\n  for attempt in 1 2 3; do\n"
+    mentions: "hand-rolls a retry"
+    why: >
+      There is one retry policy - bounded attempts, never a verdict, every
+      attempt reported - and it had three implementations. Three is three
+      places for it to drift, and the fourth gets written by somebody who
+      knew about none of them. This discovers a retry-shaped loop anywhere
+      in the repository rather than checking a list of files, so a
+      hand-rolled one cannot be added somewhere nobody thought to look.
+
+  - guard: TestNoGuardSkipsWithoutSayingWhyItIsHonest
+    file: tests/go/repo/cni_test.go
+    find: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {"
+    replace: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {\n\tt.Skip(\"undeclared\")"
+    reads_source: true
+    mentions: "skip without a declared reason"
+    why: >
+      A skip is fail-open: the run is green and nothing distinguishes 'I
+      looked and found nothing' from 'I could not look'. This repository has
+      had to repair that shape in a plan summary, a dry run and a registry
+      check, each time after somebody noticed rather than because anything
+      said so. A new guard that skips must declare what TRUE thing the skip
+      reports, and the default is refusal.
+
+  - guard: TestNoGuardDropsAnErrorFromItsOwnSubject
+    file: tests/go/repo/cni_test.go
+    find: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {"
+    replace: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {\n\tif err := error(nil); err != nil {\n\t\treturn\n\t}"
+    reads_source: true
+    mentions: "drop an error from the thing being guarded"
+    why: >
+      The quiet half of failing open. A guard that could not read its
+      subject and carried on leaves every later assertion running against a
+      smaller set than it claims to check, and it looks like ordinary Go
+      rather than like a skip. The count per file may only fall, so a new
+      drop cannot be added without somebody writing the number down.
+
 owed_ceiling: 55
 
 unprovable:
@@ -971,6 +1344,12 @@ unprovable:
     reason: meta
   - path: tests/go/repo/preconditions_are_called_test.go
     reason: meta
+  # A check on a declaration list rather than on the estate: it asserts that
+  # every declared retry implementation still exists, so mutating what it reads
+  # means mutating another guard's declaration, which that guard's own entry
+  # already proves.
+  - test: TestEveryDeclaredRetryStillExists
+    reason: meta
   #
   # A pure function whose test table already contains the failing case. The
   # counterexample is the proof, and it is read where the function is rather
@@ -981,17 +1360,60 @@ unprovable:
     reason: table
   - path: tests/go/repo/vaultcheck_test.go
     reason: table
+  # The transcript shapes. A pattern that stops matching reports nothing and
+  # looks exactly like a repository with no transcripts in it, so the shapes
+  # are held to a table of their own - nineteen rows, each a line that must or
+  # must not be read as a pasted terminal session.
+  - test: TestTheTranscriptShapesMatchWhatTheyClaim
+    reason: table
+  # The floor-spelling checker. assertsAFloor is compiled Go, so the ledger
+  # cannot reach its behaviour - and its counterexamples are exactly what a
+  # table is for: a named constant must count as a floor, and a bare variable
+  # must not. Both rows are in TestAFloorIsRecognisedHoweverItIsSpelled.
+  - test: TestAFloorIsRecognisedHoweverItIsSpelled
+    reason: table
   #
   # Already a mutation proof in the stronger form: it extracts the task's own
   # cmd from the playbook and runs it against a stub, so it tests what ships
   # rather than a copy.
   - path: tests/go/repo/snat_dedupe_test.go
     reason: shipped-shell
+  # Same form: it pulls the untrusted-zone isolation task's own cmd out of the
+  # playbook and runs it against a stub iptables, so it tests the shell that
+  # ships rather than a copy of it kept here.
+  - path: tests/go/repo/dmz_isolation_test.go
+    reason: shipped-shell
+  # Same form again: these run scripts/retry.sh itself against a stub command
+  # whose failures are scripted, so they test the shell that ships rather than
+  # a copy of its logic kept beside them.
+  - path: tests/go/repo/retry_test.go
+    reason: shipped-shell
   #
   # Asserts a file's executable bit. There is no text to substitute, and a mode
   # is not something a find/replace ledger can express.
   - test: TestTheHookShimsAreExecutable
     reason: file-mode
+  #
+  # Asks git what is in the WORKING TREE rather than reading a tracked file.
+  # The ledger copies tracked files to a scratch directory that is not a git
+  # repository, so there is nothing there for `git ls-files --others` to answer
+  # about - and the subject is a megabyte-scale binary, which a `create:` block
+  # cannot express as YAML either.
+  #
+  # Proved by hand instead, both directions: a 9 MB executable copied to
+  # scripts/collector/collector made it name that path, and removing it went
+  # green. Run with -count=1, because this reads the repository at runtime and
+  # nothing invalidates a cached result.
+  - test: TestNoCompiledBinaryIsUntrackedAndUnignored
+    reason: working-tree
+  #
+  # The negative case of the signing-key warning: a machine with no GitHub user
+  # account must NOT be warned at, because the agent signs through signedpush
+  # rather than with a key and a warning on every run is one nobody reads.
+  # Mutating the script to warn anyway is the same edit as the positive entry
+  # above, so an entry here would prove that one twice.
+  - test: TestSetupSaysNothingToRegisterWhereThereIsNoAccount
+    reason: meta
 
   # --- owed: provable, not yet proved --------------------------------------
   #

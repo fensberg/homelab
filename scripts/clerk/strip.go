@@ -4,6 +4,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -38,10 +39,14 @@ func split(path, body string) (code, prose string, ok bool) {
 		return splitGo(path, body)
 	case ".md", ".markdown", ".txt":
 		return "", body, false
-	case ".yml", ".yaml", ".sh", ".bash", ".toml", ".env", ".cfg", ".conf":
-		return blankLines(body, "#")
+	case ".yml", ".yaml":
+		return blankLines(body, yamlBlockScalars(body), "#")
+	case ".sh", ".bash":
+		return blankLines(body, shellHeredocs(body), "#")
+	case ".toml", ".env", ".cfg", ".conf":
+		return blankLines(body, nil, "#")
 	case ".ts", ".js":
-		return blankLines(body, "//")
+		return blankLines(body, nil, "//")
 	// HCL accepts `#`, `//` and `/* */`, and this repository writes `#`
 	// essentially always: 879 whole-line `#` comments across management/cluster
 	// and not one `//` at the time this was fixed.
@@ -54,7 +59,7 @@ func split(path, body string) (code, prose string, ok bool) {
 	// theirs to check either. Both halves of the clerk were silently off for
 	// the language most of this estate's infrastructure is written in.
 	case ".tf", ".hcl":
-		return blankLines(body, "#", "//")
+		return blankLines(body, nil, "#", "//")
 	default:
 		// Unknown, so nothing is asserted about it. Sending it whole to the
 		// code side is the conservative error: the comparison pass may be
@@ -74,7 +79,7 @@ func splitGo(path, body string) (string, string, bool) {
 	if err != nil {
 		// Unparsable Go is still worth reading; fall back rather than
 		// refusing, and accept the weaker separation.
-		return blankLines(body, "//")
+		return blankLines(body, nil, "//")
 	}
 
 	file := fset.File(tree.Pos())
@@ -98,7 +103,7 @@ func splitGo(path, body string) (string, string, bool) {
 	return string(out), prose.String(), true
 }
 
-// blankLines blanks whole-line comments only.
+// blankLines blanks whole-line comments only, outside any protected region.
 //
 // Deliberately not trailing comments: a `#` or `//` later in a line is as
 // likely to be inside a string, a URL or a colour as it is to start a comment,
@@ -110,7 +115,18 @@ func splitGo(path, body string) (string, string, bool) {
 // as code, and the separation this whole file exists to perform simply does
 // not happen. There is no error and no empty result to notice - the blind pass
 // is handed a commented file and answers as if it had been given a bare one.
-func blankLines(body string, markers ...string) (string, string, bool) {
+//
+// PROTECTED is the half added by #255. A line-prefix stripper has no notion of
+// anywhere a `#` is DATA, and this repository has two such places. The clerk
+// reported `tests/mutations.yml:49` as commentary no account supported - and it
+// was right that nothing supported it, because the line is one context line of
+// a deliberately unappliable diff, carried inside a YAML block scalar. Its
+// entire purpose is to describe something that does not exist.
+//
+// That failure is deterministic and recurs on every run over that file, which
+// is every pull request that adds a guard. A model being wrong occasionally is
+// the price of the role; a mechanical fault firing every time is not.
+func blankLines(body string, protected map[int]bool, markers ...string) (string, string, bool) {
 	starts := func(line string) bool {
 		for _, m := range markers {
 			if strings.HasPrefix(line, m) {
@@ -122,6 +138,9 @@ func blankLines(body string, markers ...string) (string, string, bool) {
 	lines := strings.Split(body, "\n")
 	var prose strings.Builder
 	for i, line := range lines {
+		if protected[i] {
+			continue
+		}
 		if starts(strings.TrimSpace(line)) {
 			prose.WriteString(strings.TrimSpace(line))
 			prose.WriteString("\n")
@@ -129,4 +148,113 @@ func blankLines(body string, markers ...string) (string, string, bool) {
 		}
 	}
 	return strings.Join(lines, "\n"), prose.String(), true
+}
+
+// A block scalar header: `|`, `>`, either with an optional chomping indicator
+// and an optional explicit indentation indicator in either order, introduced by
+// a mapping key or a sequence entry and ending the line but for a comment.
+var blockScalarHeader = regexp.MustCompile(`(?::|^\s*-)[ \t]*[|>]([1-9]?)([+-]?)([1-9]?)[ \t]*(?:#.*)?$`)
+
+// yamlBlockScalars returns the line indices holding the CONTENT of a YAML
+// block scalar, where a leading `#` is data rather than a comment.
+//
+// Scanned rather than parsed, and the distinction is worth being exact about
+// because #255 is a story about guessing. What is guessed here is nothing: a
+// block scalar's extent is a lexical property of YAML - content is every line
+// indented further than the key that introduced it, up to the first line that
+// is not - and that is decidable without interpreting a single value. What was
+// guessed BEFORE was whether a `#` began a comment, which is not decidable
+// that way at all, and that is the guess this removes.
+//
+// A parser would be the better answer if one were free. It is not: all nine Go
+// programs under scripts/ carry no third-party dependency, deliberately, and
+// adding one to the party that reads pull requests is a supply-chain decision
+// that belongs in its own change rather than inside a bug fix.
+func yamlBlockScalars(body string) map[int]bool {
+	lines := strings.Split(body, "\n")
+	protected := map[int]bool{}
+
+	for i := 0; i < len(lines); i++ {
+		m := blockScalarHeader.FindStringSubmatch(lines[i])
+		if m == nil {
+			continue
+		}
+		headerIndent := indentOf(lines[i])
+
+		// An explicit indentation indicator is relative to the parent node.
+		// Either capture group may hold it, since YAML permits `|2-` and `|-2`.
+		content := -1
+		for _, digits := range []string{m[1], m[3]} {
+			if digits != "" {
+				content = headerIndent + int(digits[0]-'0')
+			}
+		}
+
+		j := i + 1
+		for ; j < len(lines); j++ {
+			if strings.TrimSpace(lines[j]) == "" {
+				continue // A blank line never ends a block scalar.
+			}
+			indent := indentOf(lines[j])
+			if content < 0 {
+				// No explicit indicator, so the first non-empty line sets it.
+				if indent <= headerIndent {
+					break
+				}
+				content = indent
+			}
+			if indent < content {
+				break
+			}
+		}
+		for k := i + 1; k < j; k++ {
+			protected[k] = true
+		}
+		i = j - 1
+	}
+	return protected
+}
+
+// A heredoc introducer: `<<` or `<<-`, then the delimiter, quoted or not.
+// The quotes are not required to match, because Go's regexp engine has no
+// backreferences - and a mismatched pair is not shell anybody writes, so
+// accepting one costs nothing a real script would notice.
+var heredocHeader = regexp.MustCompile(`<<([-~]?)[ \t]*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+
+// shellHeredocs returns the line indices holding the body of a shell heredoc.
+//
+// The same shape as a YAML block scalar and named in #255 alongside it: this
+// repository writes heredocs full of YAML and of shell, so a `#` inside one is
+// routinely data. `.sh` went through the identical line-prefix stripper.
+func shellHeredocs(body string) map[int]bool {
+	lines := strings.Split(body, "\n")
+	protected := map[int]bool{}
+
+	for i := 0; i < len(lines); i++ {
+		m := heredocHeader.FindStringSubmatch(lines[i])
+		if m == nil {
+			continue
+		}
+		dashed, delim := m[1] != "", m[2]
+
+		j := i + 1
+		for ; j < len(lines); j++ {
+			end := lines[j]
+			if dashed {
+				end = strings.TrimLeft(end, " \t")
+			}
+			if end == delim {
+				break
+			}
+		}
+		for k := i + 1; k < j && k < len(lines); k++ {
+			protected[k] = true
+		}
+		i = j
+	}
+	return protected
+}
+
+func indentOf(line string) int {
+	return len(line) - len(strings.TrimLeft(line, " \t"))
 }

@@ -54,8 +54,8 @@
     "zero: deleting one looks like tidying away a test that never fails."
   ],
   "baselines": {
-    "go/attestation": 26.6,
-    "go/clerk": 56,
+    "go/attestation": 34.2,
+    "go/clerk": 63.8,
     "go/collector": 30.4,
     "go/contractor": 39.2,
     "go/expediter": 72.4,
@@ -63,6 +63,7 @@
     "go/inspector": 75.8,
     "go/superintendent": 72.1,
     "go/signedpush": 40.4,
+    "go/tests-helpers": 50.9,
     "js": 0
   },
   "tiers": {

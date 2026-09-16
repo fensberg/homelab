@@ -178,3 +178,161 @@ at once, and neither reports anything.`, code)
 		})
 	}
 }
+
+// A `#` inside a YAML block scalar is data, and must not reach the prose side.
+//
+// THE CASE THIS IS BUILT FROM. The clerk reported, on #254:
+//
+//	tests/mutations.yml:49 - The commentary mentions 'context that does not
+//	exist either', but the account does not mention any such context.
+//
+// The flagged text is one context line of a deliberately unappliable diff,
+// carried as the `create:` payload of a ledger entry. Nothing in any account
+// supports it because nothing should - describing a workflow line that does not
+// exist is the whole point of that fixture.
+//
+// Deterministic, and it fires on every pull request that adds a guard.
+func TestAHashInsideAYAMLBlockScalarIsNotCommentary(t *testing.T) {
+	body := `mutations:
+  - guard: TestEveryOutstandingPatchStillApplies
+    file: .github/patches/a-patch-that-cannot-apply.patch
+    create: |
+      diff --git a/.github/workflows/codeql.yml b/.github/workflows/codeql.yml
+      @@ -1,3 +1,3 @@
+      -name: "A line this workflow has never contained"
+       # context that does not exist either
+    mentions: "does not apply"
+
+# A real comment, outside the scalar.
+floor: 62
+`
+
+	code, prose, ok := split("tests/mutations.yml", body)
+	if !ok {
+		t.Fatal("a YAML file should go to both sides")
+	}
+
+	if strings.Contains(prose, "context that does not exist either") {
+		t.Errorf(`the diff's context line reached the prose side:
+
+%s
+It is the payload of a fixture whose purpose is to describe something absent,
+so the comparison pass is asked to find an account supporting a claim that is
+not a claim. It cannot, and reports a contradiction every single run.`, prose)
+	}
+	if !strings.Contains(code, "context that does not exist either") {
+		t.Error("the diff's context line was blanked out of the code side, so the " +
+			"blind pass can no longer see what the fixture actually contains")
+	}
+	if !strings.Contains(prose, "A real comment, outside the scalar.") {
+		t.Errorf("a genuine comment outside the block scalar stopped being "+
+			"recognised as commentary, which switches the comparison pass off for "+
+			"the rest of the file:\n\n%s", prose)
+	}
+	if strings.Contains(code, "A real comment, outside the scalar.") {
+		t.Error("a genuine comment survived into the code side, so the blind pass " +
+			"is no longer blind")
+	}
+	if lines(code) != lines(body) {
+		t.Errorf("the code side has %d lines and the file has %d. Every citation "+
+			"the model makes is a line number, and they have to mean the same thing "+
+			"in both.", lines(code), lines(body))
+	}
+}
+
+// Block scalar spelling varies, and every spelling has to be recognised.
+//
+// A header this misses is a region left unprotected, which is the original bug
+// arriving through a different door - and it would do so silently, because an
+// unprotected region looks exactly like a file with no block scalars in it.
+func TestEveryBlockScalarSpellingIsRecognised(t *testing.T) {
+	for _, header := range []string{"|", "|-", "|+", ">", ">-", ">+", "|2", "|-2", "|2-", "| # trailing"} {
+		t.Run(header, func(t *testing.T) {
+			body := "root:\n  key: " + header + "\n    # payload\n  next: value\n"
+			_, prose, _ := split("x.yml", body)
+			if strings.Contains(prose, "payload") {
+				t.Errorf("a %q block scalar's contents reached the prose side:\n%s", header, prose)
+			}
+		})
+	}
+
+	// And the converse: what looks like a header but is not must not protect
+	// anything, or a real comment stops being read as one.
+	body := "key: value | not a header\n  # a real comment\n"
+	_, prose, _ := split("x.yml", body)
+	if !strings.Contains(prose, "a real comment") {
+		t.Errorf("a pipe in the middle of a value was read as a block scalar header, "+
+			"so the comment after it was protected and never reached the prose side:\n%s", prose)
+	}
+}
+
+// The scalar ends where the indentation says it does.
+//
+// Protecting too much is the same defect pointed the other way: every comment
+// after a block scalar would stop being commentary, and the comparison pass
+// would go quiet for the rest of the file without saying so.
+func TestABlockScalarEndsAtTheFirstLineThatDedents(t *testing.T) {
+	body := `first:
+  why: |
+    # inside
+    still inside
+
+    blank lines do not end it
+    # also inside
+  # outside again
+second: value
+# and at the root
+`
+	_, prose, _ := split("x.yml", body)
+	for _, inside := range []string{"# inside", "# also inside"} {
+		if strings.Contains(prose, inside) {
+			t.Errorf("%q was treated as commentary:\n%s", inside, prose)
+		}
+	}
+	for _, outside := range []string{"# outside again", "# and at the root"} {
+		if !strings.Contains(prose, outside) {
+			t.Errorf(`%q was not treated as commentary:
+
+%s
+The block scalar has swallowed the rest of the file, so every comment after it
+is invisible to the comparison pass - which reports nothing and looks clean.`, outside, prose)
+		}
+	}
+}
+
+// A `#` inside a shell heredoc is data too.
+//
+// Named in #255 alongside the YAML case and the same shape: this repository
+// writes heredocs full of YAML and of shell, and `.sh` went through the
+// identical line-prefix stripper.
+func TestAHashInsideAShellHeredocIsNotCommentary(t *testing.T) {
+	body := `#!/usr/bin/env bash
+# a real comment
+cat <<'EOF' > out.yml
+# this is data
+key: value
+EOF
+# another real comment
+cat <<-INDENTED
+	# also data
+	INDENTED
+`
+	code, prose, _ := split("x.sh", body)
+
+	for _, data := range []string{"# this is data", "# also data"} {
+		if strings.Contains(prose, data) {
+			t.Errorf("%q reached the prose side from inside a heredoc:\n%s", data, prose)
+		}
+		if !strings.Contains(code, data) {
+			t.Errorf("%q was blanked out of the code side, so the blind pass cannot "+
+				"see what the script actually writes", data)
+		}
+	}
+	for _, comment := range []string{"# a real comment", "# another real comment"} {
+		if !strings.Contains(prose, comment) {
+			t.Errorf("%q stopped being recognised as commentary:\n%s", comment, prose)
+		}
+	}
+}
+
+func lines(s string) int { return strings.Count(s, "\n") }

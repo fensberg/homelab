@@ -118,8 +118,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SITE: ${{ inputs.site || 'site0' }}
         run: |
-          go build -C scripts/contractor -o contractor .
-          ./scripts/contractor/contractor break-ground -site "$SITE" -phase render -keep-on-failure
+          go build -C scripts/contractor -o ../../toolshed/contractor .
+          ./toolshed/contractor break-ground -site "$SITE" -phase render -keep-on-failure
 
       - name: API contract tests
         if: ${{ inputs.tier == 'api' || inputs.tier == 'both' }}
@@ -159,7 +159,7 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SITE: ${{ inputs.site || 'site0' }}
-        run: ./scripts/contractor/contractor break-ground -site "$SITE" -phase backup -keep-on-failure
+        run: ./toolshed/contractor break-ground -site "$SITE" -phase backup -keep-on-failure
 
       # Run through the contractor, not beside it.
       #
@@ -187,7 +187,7 @@ jobs:
           HOMELAB_TEST_SITE: ${{ inputs.site || 'site0' }}
           SITE: ${{ inputs.site || 'site0' }}
         run: >-
-          ./scripts/contractor/contractor kubeconfig -site "$SITE" --
+          ./toolshed/contractor kubeconfig -site "$SITE" --
           go test -C tests/go -tags=integration -timeout 20m -v ./integration/...
 
       # always(), because the whole point is that no secret survives this job
@@ -198,4 +198,4 @@ jobs:
         if: always()
         env:
           SITE: ${{ inputs.site || 'site0' }}
-        run: ./scripts/contractor/contractor break-ground -site "$SITE" -phase sterilize
+        run: ./toolshed/contractor break-ground -site "$SITE" -phase sterilize

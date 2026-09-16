@@ -165,10 +165,8 @@ everybody. The branch has to be deleted and recreated, and the pull request
 recreated with it. See docs/epochs/01-ignition.md.`, branch, baseSHA[:8], branch, branch)
 		}
 	} else {
-		// A new branch forks from wherever it actually diverged, not from
-		// whatever main happens to be now.
-		if baseSHA, err = git("merge-base", "origin/main", "HEAD"); err != nil {
-			return fmt.Errorf("finding the merge base with origin/main: %w", err)
+		if baseSHA, err = baseForNewBranch(); err != nil {
+			return err
 		}
 	}
 
@@ -200,7 +198,19 @@ recreated with it. See docs/epochs/01-ignition.md.`, branch, baseSHA[:8], branch
 	// One packfile, whatever the diff size. Outside refs/heads/ so no branch
 	// appears mid-operation and no branch ruleset applies to it.
 	scratch := "refs/signing/" + randomSuffix()
-	if _, err := git("push", "--quiet", "origin", "HEAD:"+scratch); err != nil {
+	// NOT --quiet. It suppresses the per-ref status line, which is the only
+	// place the REASON for a rejection appears:
+	//
+	//	! [remote rejected] HEAD -> refs/signing/... (refusing to allow a
+	//	  GitHub App to create or update workflow ... without `workflows`
+	//	  permission)
+	//
+	// Without it a refusal reads as `exit status 1` followed by git's generic
+	// "failed to push some refs", which names nothing. The git() helper below
+	// was given stderr capture specifically so that line could be read, and
+	// --quiet was throwing it away before the helper ever saw it - so the fix
+	// and the thing it was meant to fix had been sitting one argument apart.
+	if _, err := git("push", "origin", "HEAD:"+scratch); err != nil {
 		return fmt.Errorf("staging objects: %w", err)
 	}
 	defer func() {
@@ -348,7 +358,18 @@ func git(args ...string) (string, error) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		said := strings.TrimSpace(stderr.String())
+		// BOTH streams, because the one that matters is not always stderr.
+		//
+		// A pre-push hook writes its explanation to STDOUT, and Output()
+		// captures stdout into `out` - which this returned only on success, so
+		// a push refused by the hook printed git's generic "failed to push some
+		// refs" and nothing else. The hook had said exactly which test failed
+		// and why; it went into a buffer that was thrown away.
+		//
+		// That is the same defect this function was written to fix, one stream
+		// over: the comment above records a session lost to a discarded stderr,
+		// and stdout was left discarded in the same change.
+		said := strings.TrimSpace(stderr.String() + "\n" + string(out))
 		if said == "" {
 			return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 		}
@@ -489,4 +510,61 @@ which no force can repair here because non_fast_forward covers every branch.
 
 Commit them, or stash them, then publish. If you expected these to be committed
 already, a commit failed and said so somewhere you did not look.`, dirty)
+}
+
+// baseForNewBranch picks the commit a not-yet-published branch starts from.
+//
+// It is the nearest commit that is ALREADY PUBLISHED, wherever it was
+// published - not the merge base with main.
+//
+// THE BUG THIS REPLACES (#342). A piece branch cut from an epoch branch arrived
+// on GitHub carrying re-signed copies of that epoch branch's commits: identical
+// content, different SHAs. Git's merge base between the piece and the epoch
+// branch therefore dropped to main, and any change the piece made to lines
+// those commits introduced read as a competing edit. The pull request showed
+// conflicts in files nobody disagreed about - three of them on #340, against a
+// base that already contained exactly the change it was built on.
+//
+// It gets worse as an epoch progresses and is invisible until it is not. The
+// first piece is usually purely ADDITIVE relative to the epoch branch, and git
+// resolves identical additions cleanly; the failure needs a piece that MODIFIES
+// what an earlier piece added, which is what the second piece in any epoch
+// usually does.
+//
+// WHY THIS QUESTION RATHER THAN THE TARGET BRANCH. signedpush does not know
+// what a branch will target and cannot find out before the pull request exists,
+// so "base on the merge-base with the target" was never available to it.
+// "Which of these commits does the remote not already have" is answerable right
+// here, needs no flag, and is the property that actually matters - a commit the
+// remote holds must keep the identity the remote knows it by.
+//
+// A branch cut from another unmerged FEATURE branch is excluded by this too.
+// That case is refused outright by refuseStacked, for reasons of its own.
+func baseForNewBranch() (string, error) {
+	unpublished, err := git("rev-list", "HEAD", "--not", "--remotes=origin")
+	if err != nil {
+		return "", fmt.Errorf("finding which commits the remote does not have: %w", err)
+	}
+
+	lines := strings.Fields(unpublished)
+	if len(lines) == 0 {
+		// Every commit is already on the remote under some other ref, so there
+		// is nothing to sign and the branch just needs creating.
+		return "HEAD", nil
+	}
+
+	// rev-list is newest first, so the last entry is the oldest unpublished
+	// commit and its parent is where this branch begins.
+	oldest := lines[len(lines)-1]
+	if base, parentErr := git("rev-parse", oldest+"^"); parentErr == nil {
+		return base, nil
+	}
+
+	// A root commit has no parent. Fall back to where this always started
+	// from, which is right for the only branch that can be in that position.
+	base, mbErr := git("merge-base", "origin/main", "HEAD")
+	if mbErr != nil {
+		return "", fmt.Errorf("finding the merge base with origin/main: %w", mbErr)
+	}
+	return base, nil
 }

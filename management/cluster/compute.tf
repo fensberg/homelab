@@ -37,13 +37,27 @@ resource "proxmox_download_file" "talos_disk_image" {
   content_type = "iso"
   datastore_id = "local-iso"
   node_name    = each.value
-  url          = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/nocloud-amd64.raw.xz"
+  url          = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/${local.image_variant}.raw.xz"
   # Extension is .iso, not .img, on purpose: local-iso's content=iso bucket
   # validates the destination file_name against that content type before
   # Proxmox even fetches the URL, independent of the actual bytes. This is
   # the same disk image either way - the extension just has to lie to get
   # stored where compressed non-ISO images are allowed to live.
-  file_name               = "talos-${local.talos_version}.iso"
+  # The SCHEMATIC is in the name, not just the version.
+  #
+  # This resource is identified by its datastore path, and the path was
+  # `talos-<version>.iso`. So re-minting a schematic - which is how an extension
+  # is added, removed or moved - produced NO PLAN DIFF at all: same name, same
+  # resource, nothing to do. The new image was never fetched, and the
+  # replace_triggered_by on the template below could not fire, because the thing
+  # it triggers on had not changed (#97). Confirmed by a real plan against a
+  # live estate that showed only a tailnet key being replaced.
+  #
+  # A prefix of the id rather than the whole thing: the ids are
+  # content-addressed and 64 characters, and the datastore path is read by a
+  # human at a `qm` prompt more often than by anything else. Eight hex
+  # characters distinguish every schematic this estate will ever mint.
+  file_name               = "talos-${local.talos_version}-${substr(local.schematic_id, 0, 8)}.iso"
   decompression_algorithm = "zst"
 
   # Without this, the provider compares the URL's advertised size (the
@@ -85,9 +99,12 @@ resource "proxmox_download_file" "dmz_disk_image" {
   content_type = "iso"
   datastore_id = "local-iso"
   node_name    = each.value
-  url          = "https://factory.talos.dev/image/${local.dmz_schematic_id}/${local.talos_version}/nocloud-amd64.raw.xz"
+  url          = "https://factory.talos.dev/image/${local.dmz_schematic_id}/${local.talos_version}/${local.image_variant}.raw.xz"
 
-  file_name               = "dmz-${local.talos_version}.iso"
+  # Same reason as the image above: without the schematic in the path, a
+  # re-minted schematic is not a change and the untrusted zone's nodes keep the
+  # old bytes (#97).
+  file_name               = "dmz-${local.talos_version}-${substr(local.dmz_schematic_id, 0, 8)}.iso"
   decompression_algorithm = "zst"
 
   # Same reason as the image above: the provider compares the compressed
@@ -246,10 +263,15 @@ resource "proxmox_virtual_environment_vm" "talos_template" {
   }
 
   lifecycle {
-    # file_id is a stable string ("local-iso:iso/talos-<version>-....iso") -
-    # the datastore path doesn't change even when the schematic (hence the
-    # actual image bytes at that path) does, since neither is part of the
-    # file name. Without this, replacing the disk image resource silently
+    # file_id is a stable string ("local-iso:iso/talos-<version>-<schematic>.iso")
+    # and this template's OS disk is materialized from it once, so replacing the
+    # image behind that path changes no attribute here.
+    #
+    # The schematic is in the path now (#97). It was not, so the path did not
+    # change when the image bytes did - which meant the download resource itself
+    # never changed and this trigger had nothing to fire on. Both halves are
+    # needed: the identity so the image is re-fetched, and this so the template
+    # is rebuilt from it. Without this, replacing the disk image resource silently
     # leaves this template's already-materialized OS disk on the old bytes:
     # confirmed by a real apply that changed the schematic and still showed
     # "0 to change" here. replace_triggered_by forces the rebuild on any
@@ -334,7 +356,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
     datastore_id = "local-zfs"
 
     dns {
-      servers = ["1.1.1.1", "1.0.0.1"]
+      servers = local.dns_resolvers
     }
 
     ip_config {
@@ -459,7 +481,7 @@ resource "proxmox_virtual_environment_vm" "talos_worker" {
     datastore_id = "local-zfs"
 
     dns {
-      servers = ["1.1.1.1", "1.0.0.1"]
+      servers = local.dns_resolvers
     }
 
     ip_config {

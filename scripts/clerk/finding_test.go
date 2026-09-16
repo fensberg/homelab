@@ -29,7 +29,7 @@ func TestUncheckableFindingsAreDropped(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			kept, dropped := keep([]snag{c.in}, wasRead)
+			kept, dropped := keep([]snag{c.in}, wasRead, nil)
 			if len(kept) != 0 {
 				t.Fatalf("kept an uncheckable finding: %+v", kept)
 			}
@@ -42,7 +42,7 @@ func TestUncheckableFindingsAreDropped(t *testing.T) {
 
 func TestACheckableFindingSurvives(t *testing.T) {
 	in := snag{ruleDisagrees, "docs/epochs/01.md", 12, "claims the button is idempotent; nothing here retries"}
-	kept, dropped := keep([]snag{in}, wasRead)
+	kept, dropped := keep([]snag{in}, wasRead, nil)
 	if len(kept) != 1 || len(dropped) != 0 {
 		t.Fatalf("kept=%v dropped=%v", kept, dropped)
 	}
@@ -52,7 +52,7 @@ func TestACheckableFindingSurvives(t *testing.T) {
 func TestTheSameFindingTwiceIsReportedOnce(t *testing.T) {
 	one := snag{ruleUnsound, "scripts/clerk/llm.go", 10, "nothing reaches this"}
 	two := snag{ruleUnsound, "scripts/clerk/llm.go", 44, "nothing reaches this"}
-	kept, dropped := keep([]snag{one, two}, wasRead)
+	kept, dropped := keep([]snag{one, two}, wasRead, nil)
 	if len(kept) != 1 {
 		t.Errorf("kept %d, want the duplicate collapsed", len(kept))
 	}
@@ -69,7 +69,7 @@ func TestWhatWasDroppedIsReportedRatherThanSwallowed(t *testing.T) {
 	_, dropped := keep([]snag{
 		{ruleUnsound, "nope.go", 1, "x"},
 		{"invented", "scripts/clerk/llm.go", 1, "y"},
-	}, wasRead)
+	}, wasRead, nil)
 	if len(dropped) != 2 {
 		t.Fatalf("dropped %d reasons, want one per discarded finding", len(dropped))
 	}

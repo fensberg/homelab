@@ -132,6 +132,75 @@ locals {
   octet     = local.site.octet
   site_cidr = "10.${local.octet}.0.0/16"
 
+  # The Talos image variant the Factory is asked for.
+  #
+  # `nocloud` is the platform - it makes Talos read its configuration from a
+  # cloud-init datasource, which is how compute.tf hands each node its address -
+  # and `amd64` is the architecture. Both were correct and undeclared, spelled
+  # into two image URLs where nothing said they were a choice (#360).
+  #
+  # Defensible on x86 Proxmox and not universal: a fork on arm64 hardware, or
+  # one handing configuration to nodes some other way, changes this line. That
+  # it is one line is the point.
+  image_variant = "nocloud-amd64"
+
+  # Where every machine in the estate resolves names.
+  #
+  # DECLARED ONCE because it was declared four times - twice in compute.tf's
+  # cloud-init and twice in talos.tf's ResolverConfig - which is the same
+  # duplication the one-place rule already forbids for versions, and it drifts
+  # the same way. Four copies of a value is not a value, it is four chances for
+  # three of them to be right (#360).
+  #
+  # AND BECAUSE IT IS A DECISION NOBODY WROTE DOWN. Two things are being chosen
+  # here and neither was ever stated. Every name this estate looks up is
+  # resolved by one third party, so the estate's name resolution has that
+  # party's availability as a dependency; and the queries themselves - which is
+  # every host the cluster ever contacts - are visible to them. Both are
+  # defensible and neither is obvious, which is exactly the class of choice that
+  # should not live as a literal repeated in two files.
+  #
+  # THE PATH FOR A FORK, which is the other half of #360: change this line. A
+  # network with internal resolvers, split-horizon DNS, or a policy against
+  # public upstreams needs nothing else - every machine the estate builds reads
+  # from here. tests/go/repo/cluster_network_test.go refuses a restatement.
+  #
+  # Not moved into the vault template: a resolver address is not a secret, and
+  # putting it there would make a fork edit a vault item to change a routing
+  # decision that belongs in code where it can be reviewed.
+  dns_resolvers = ["1.1.1.1", "1.0.0.1"]
+
+  # The two largest address commitments in the estate, declared rather than
+  # defaulted.
+  #
+  # These were nowhere. talos.tf set no clusterNetwork fields, so the cluster
+  # ran on whatever Talos defaults to - correct values, chosen by nobody, and
+  # absent from the addressing decision in docs/epochs/02-abstraction.md that
+  # records every other range down to the VM id bands. A value nobody wrote
+  # down cannot be reviewed, and a reviewer checking the scheme for collisions
+  # would have found no pod network to check against (#240).
+  #
+  # Set to what the live cluster already resolves to, so declaring them changes
+  # nothing today and makes the current state reviewable. Confirmed against the
+  # running estate: `kubectl describe node` reports PodCIDR 10.244.1.0/24 out of
+  # the /16 below, and services at 10.96.0.0/12.
+  #
+  # WHY THIS IS NOT AN EDIT LATER. clusterNetwork is fixed at cluster creation.
+  # Getting it wrong costs a rebuild rather than an apply, which makes "we never
+  # decided it" a worse position than it looks.
+  #
+  # WHAT IT CAPS. A /16 handing out a /24 per node is 256 nodes, whatever the
+  # node subnet allows. Not a live constraint, and it is the wall that binds
+  # first at scale - ahead of anything in the node addressing.
+  #
+  # WHY THESE RANGES AND NOT WIDER ONES. Both sit above 10.95.0.0, and the site
+  # octet is asserted 1-95, so no site's /16 can reach either. Widening the pod
+  # range downward - to 10.0.0.0/8, which is the shape a CNI default tends to
+  # take - would swallow every site subnet the addressing decision defines.
+  # TestThePodAndServiceNetworksCannotCollideWithASite refuses that.
+  pod_cidr     = "10.244.0.0/16"
+  service_cidr = "10.96.0.0/12"
+
   # Talos control plane. Infrastructure sits in .0.0/24 and a load-balancer
   # pool is reserved at .20.0/24 for epoch 02.
   node_cidr    = "10.${local.octet}.10.0/24"
@@ -398,6 +467,27 @@ locals {
   # and OpenEBS Local PV Hostpath needs no iSCSI. The record above said that was
   # worth doing on its own "when the only thing being tested is the image" -
   # this is that change, and every node is rebuilt by it either way.
+  #
+  # HOW TO MINT ONE, because a 64-character literal with no instructions is a
+  # value a fork cannot change and cannot even verify (#360). POST the
+  # customization to the Factory and it answers with the id, which is a content
+  # address of exactly that customization:
+  #
+  #     curl -X POST --data-binary @- https://factory.talos.dev/schematics <<'YAML'
+  #     customization:
+  #       systemExtensions:
+  #         officialExtensions:
+  #           - siderolabs/tailscale
+  #           - siderolabs/util-linux-tools
+  #     YAML
+  #
+  # And to read back what an id contains, which is the half that makes the
+  # literal below reviewable rather than merely present:
+  #
+  #     curl -s https://factory.talos.dev/schematics/<id>
+  #
+  # Changing this forces a re-download and rebuilds every node, so it is a
+  # change to make on its own - see the paragraph above.
   schematic_id = "6e810eb45767cfabcdb7a45e389eee803045af7a9467faebde5c91164861883a"
 
   # The same image without the overlay extension, for the untrusted zone.

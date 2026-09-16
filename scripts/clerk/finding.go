@@ -38,7 +38,8 @@ type snag struct {
 	Message string `json:"message"`
 }
 
-// keep drops every finding that cannot be checked in ten seconds.
+// keep drops every finding that cannot be checked in ten seconds, and every
+// finding that CAN be checked mechanically and turns out to be false.
 //
 // This is the citation rule, enforced rather than requested. A finding that
 // names no file, or names a file that was never read, or points past the end
@@ -48,7 +49,7 @@ type snag struct {
 //
 // Silently dropping would be its own blind spot, so the count of what was
 // dropped is returned and reported.
-func keep(found []snag, lines map[string]int) (kept []snag, dropped []string) {
+func keep(found []snag, lines map[string]int, bodies map[string]string) (kept []snag, dropped []string) {
 	seen := map[string]bool{}
 
 	for _, s := range found {
@@ -62,6 +63,14 @@ func keep(found []snag, lines map[string]int) (kept []snag, dropped []string) {
 		case s.Line < 1 || s.Line > lines[s.Path]:
 			dropped = append(dropped, fmt.Sprintf("%s:%d is outside the file (%d lines)", s.Path, s.Line, lines[s.Path]))
 		default:
+			// A claim a parser can settle is settled here rather than by the
+			// operator. See verify.go: this only ever fires where the answer is
+			// certain, because dropping a true finding is worse than showing a
+			// false one.
+			if why, wrong := falsified(s, bodies[s.Path]); wrong {
+				dropped = append(dropped, fmt.Sprintf("%s:%d %s", s.Path, s.Line, why))
+				continue
+			}
 			key := fmt.Sprintf("%s|%s|%s", s.Rule, s.Path, s.Message)
 			if seen[key] {
 				dropped = append(dropped, fmt.Sprintf("%s:%d repeats an earlier finding", s.Path, s.Line))
@@ -125,17 +134,29 @@ func (s snag) fingerprint() string {
 // The account is not shown to anybody. It exists so the second pass can be
 // asked about the commentary without ever seeing the code, which is what stops
 // it reading the claim and then finding the claim.
-func parseBlind(answer string) (account string, found []snag, err error) {
+func parseBlind(answer string) (accounts map[string]string, found []snag, err error) {
 	text := unfence(answer)
 	var wrapper struct {
-		Account  string `json:"account"`
-		Findings []snag `json:"findings"`
+		Accounts map[string]string `json:"accounts"`
+		Findings []snag            `json:"findings"`
 	}
 	if err := json.Unmarshal([]byte(text), &wrapper); err != nil {
-		return "", nil, fmt.Errorf("the first pass did not answer with an account and findings: %w", err)
+		return nil, nil, fmt.Errorf("the first pass did not answer with accounts and findings: %w", err)
 	}
-	if strings.TrimSpace(wrapper.Account) == "" {
-		return "", nil, fmt.Errorf("the first pass returned no account, so there is nothing to compare the commentary against")
+
+	// Empty entries are dropped here rather than downstream, so "there is no
+	// account of this file" is one condition with one spelling. An account that
+	// is present but blank and one that was never written are the same fact
+	// about what the comparison pass can honestly do, and keeping them distinct
+	// only produces two ways to get it wrong.
+	kept := map[string]string{}
+	for path, account := range wrapper.Accounts {
+		if strings.TrimSpace(account) != "" {
+			kept[path] = account
+		}
 	}
-	return wrapper.Account, wrapper.Findings, nil
+	if len(kept) == 0 {
+		return nil, nil, fmt.Errorf("the first pass returned no account of any file, so there is nothing to compare the commentary against")
+	}
+	return kept, wrapper.Findings, nil
 }

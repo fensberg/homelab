@@ -20,17 +20,22 @@ import (
 // program was printing CI's path to somebody standing at a workstation, in the
 // message they would be reading precisely because everything else was gone.
 //
-// This is the interim guard. The real fix is one build output, filed
-// separately - a guard that says "use the other path here" is a note about the
-// duplication rather than a cure for it.
+// This was the interim guard, and it is no longer interim: the workflows build
+// to toolshed/ like everything else now, so there is ONE build output and the
+// path it names is the only one there is (#215).
+//
+// The two workflow exemptions are gone with it, which is the point. Every
+// exemption is a place the next person has to work out which of two correct
+// paths applies, and a guard that says "use the other path here" was a note
+// about the duplication rather than a cure for it.
 func TestRecoveryInstructionsNameTheWorkstationBinary(t *testing.T) {
 	root := repoRoot(t)
 
-	// Workflows build to scripts/contractor/contractor themselves, so the path
-	// is right there and only there. .gitignore names it for the same reason.
 	exempt := map[string]bool{
-		".github/workflows/deploy-infrastructure.yml": true,
-		".github/workflows/integration-tests.yml":     true,
+		// .gitignore keeps the old build path while any branch predating the
+		// toolshed move is still open - see the trigger written beside it and
+		// TestNoCompiledBinaryIsUntrackedAndUnignored, which catches what that
+		// window lets through.
 		".gitignore": true,
 
 		// The mutation ledger has to hold the broken form: its entry for this
@@ -38,6 +43,9 @@ func TestRecoveryInstructionsNameTheWorkstationBinary(t *testing.T) {
 		// guard and the proof that it works cannot both refuse to contain the
 		// thing being guarded against.
 		filepath.Join("tests", "mutations.yml"): true,
+
+		// This file names the path in order to refuse it.
+		filepath.Join("tests", "go", "repo", "recovery_paths_test.go"): true,
 	}
 
 	var checked int
@@ -63,12 +71,22 @@ func TestRecoveryInstructionsNameTheWorkstationBinary(t *testing.T) {
 			return nil
 		}
 
-		body, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
+		// A workflow is read AS IT WILL BE once any outstanding patch is
+		// applied. The agent cannot write one, so a fix to a workflow arrives
+		// as a patch - and a guard red for the whole of that window blocks the
+		// hand-over it is part of.
+		var text string
+		if dir := filepath.Dir(rel); dir == filepath.Join(".github", "workflows") {
+			text = intendedWorkflow(t, d.Name())
+		} else {
+			body, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			text = string(body)
 		}
 		checked++
-		if strings.Contains(string(body), "./scripts/contractor/"+"contractor") {
+		if strings.Contains(text, "./scripts/contractor/"+"contractor") {
 			t.Errorf("%s tells a reader to run ./scripts/contractor/contractor, which only exists in CI.\n\n"+
 				"`task build` puts the binary in toolshed/, so that is what a workstation has - and every "+
 				"message a human reads is read on a workstation. Use ./toolshed/contractor.", rel)

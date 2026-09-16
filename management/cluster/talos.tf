@@ -36,7 +36,7 @@ locals {
       yamlencode({
         apiVersion  = "v1alpha1"
         kind        = "ResolverConfig"
-        nameservers = [{ address = "1.1.1.1" }, { address = "1.0.0.1" }]
+        nameservers = [for server in local.dns_resolvers : { address = server }]
       }),
       yamlencode({
         machine = {
@@ -95,7 +95,7 @@ locals {
       yamlencode({
         apiVersion  = "v1alpha1"
         kind        = "ResolverConfig"
-        nameservers = [{ address = "1.1.1.1" }, { address = "1.0.0.1" }]
+        nameservers = [for server in local.dns_resolvers : { address = server }]
       }),
       # KubePrism, declared rather than assumed.
       #
@@ -265,6 +265,14 @@ data "talos_machine_configuration" "controlplane" {
           cni = {
             name = "none"
           }
+
+          # Declared rather than defaulted - see variables.tf for why these two
+          # numbers are the estate's largest address commitment and the reason
+          # they had to be written down (#240). They are the values Talos was
+          # already choosing, so this changes nothing about a cluster built
+          # today and makes what it chose reviewable.
+          podSubnets     = [local.pod_cidr]
+          serviceSubnets = [local.service_cidr]
         }
         proxy = {
           disabled = true

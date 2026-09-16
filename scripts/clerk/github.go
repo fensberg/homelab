@@ -38,21 +38,43 @@ import (
 // lever. COMMENT is weightless by construction.
 const commentOnly = "COMMENT"
 
-// parseAppKey reads the App private key as it travels: base64 of the PEM.
+// parseAppKey reads the App private key in either shape it is stored in.
 //
-// Base64 because the value passes through a JSON config and an environment
-// variable, and a PEM's newlines survive neither reliably. That is a property
-// of the journey rather than a security measure, which is why the estate's
-// existing config validation says so in the same words.
+// TWO CONVENTIONS, AND FOLLOWING ONE USED TO BREAK THE OTHER (#382). This
+// estate has two GitHub Apps and they wanted their keys stored differently:
+// the clerk took base64 of the PEM on one line, and the expediter takes the raw
+// PEM, because actions/create-github-app-token cannot parse base64. Whoever set
+// up the second App naturally copied the first, which put base64 where the
+// action wanted PEM and failed at the token step with a message pointing at
+// neither.
+//
+// Base64 was never a security measure - it is a property of the journey, since
+// a PEM's newlines do not survive a JSON config or an environment variable
+// reliably. GitHub Actions secrets carry newlines perfectly well, so on that
+// path the encoding buys nothing, and the estate converges on the shape GitHub
+// documents: the raw PEM, masked exactly as stored.
+//
+// So this accepts a PEM directly and keeps base64 as the fallback. Both work,
+// nobody has to know which App they are configuring, and the reverse mistake -
+// a raw PEM where base64 was wanted, which this program's own tests record as
+// "expensive to diagnose elsewhere in this estate" - stops being a mistake at
+// all.
+//
+// The error when NEITHER parses names both shapes, because "not base64" is a
+// misleading thing to tell somebody who correctly pasted a PEM.
 func parseAppKey(encoded string) (*rsa.PrivateKey, error) {
-	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
-	if err != nil {
-		return nil, fmt.Errorf("the private key is not base64. The downloaded .pem is stored base64-encoded on a single line")
-	}
+	trimmed := strings.TrimSpace(encoded)
 
-	block, _ := pem.Decode(raw)
+	// A PEM as GitHub issues it, which is what the documented shape looks like.
+	block, _ := pem.Decode([]byte(trimmed))
 	if block == nil {
-		return nil, fmt.Errorf("the private key is valid base64 but is not a PEM block. Check that the encoded file was the .pem GitHub generated")
+		raw, err := base64.StdEncoding.DecodeString(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("the private key is neither a PEM block nor base64 of one. Store the .pem GitHub generated as it is, newlines and all")
+		}
+		if block, _ = pem.Decode(raw); block == nil {
+			return nil, fmt.Errorf("the private key is valid base64 but is not a PEM block. Check that the encoded file was the .pem GitHub generated")
+		}
 	}
 
 	// GitHub issues PKCS#1; PKCS#8 is accepted so a key converted by openssl

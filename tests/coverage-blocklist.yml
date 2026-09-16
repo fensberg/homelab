@@ -41,7 +41,7 @@
 # this repository refuses those by name. Six of the seven shell scripts were in
 # exactly that state, including the gate that enforces coverage, the script
 # that sets up every machine, and all three git hooks.
-ceiling: 21
+ceiling: 16
 
 blocked:
   # Shell. Nothing runs these; the tests that mention them read their source.
@@ -49,11 +49,6 @@ blocked:
   # scripts/coverage-gate.sh came off this list in the same change that added
   # it, because it was the entry that mattered most: it decides whether every
   # other coverage number is acceptable, and nothing had ever executed it.
-  - shell:.github/scripts/placeholder-config.sh # 288
-  - shell:githooks/commit-msg # 289
-  - shell:githooks/pre-commit # 290
-  - shell:githooks/pre-push # 291
-  - shell:scripts/install-dependencies.sh # 292
 
   # Ansible. There is no test tier for it at all - `task check-hypervisor` is a
   # dry run against real hardware, not a test.

@@ -5,8 +5,16 @@
 # Deliberately plain bash, not Go: this script's job includes installing Go
 # itself, so it cannot depend on Go already being present to run.
 #
-# Safe to re-run. Anything already on PATH is left alone - this checks for
-# presence, not for a specific pinned version, same as the tool it replaces.
+# Safe to re-run, and tests/go/repo/install_dependencies_test.go proves it: a
+# second run must not regenerate the signing key, because replacing the one
+# GitHub knows about turns a working setup into refused pushes.
+#
+# Mostly presence rather than version. Anything already on PATH is left alone -
+# with two exceptions that are checked against the pin and REPLACED when they
+# differ, rclone and task, because both are consumed by scripts that depend on
+# their behaviour rather than merely their existence. This header used to say
+# presence-only without qualification, which stopped being true when those two
+# gained version checks.
 set -euo pipefail
 
 info() { printf '  -> %s\n' "$1"; }
@@ -421,6 +429,39 @@ else
 	echo "${HADOLINT_SHA256}  ${TMP}/hadolint" | sha256sum -c -
 	sudo install -m 0755 "$TMP/hadolint" /usr/local/bin/hadolint
 	ok "hadolint installed"
+fi
+
+step "shellcheck (pinned)"
+# Not only for the Shell Lint lane's local equivalent.
+#
+# actionlint finds shellcheck by NAME on PATH and, when it is not there, it
+# disables the integration and exits 0. Its own help says so: with an empty
+# value, "shellcheck integration will be disabled". So a machine without the
+# binary runs `task validate` and the pre-commit actionlint hook unable to
+# report any SC-class finding in a workflow run: block, and they report clean
+# rather than reporting that they did not look (#398).
+#
+# (Written as one sentence rather than starting a line with the tool's name
+# and a space, which ShellCheck reads as a directive and then refuses to
+# parse - SC1072, caught by this very lane on the commit that added it.)
+#
+# ubuntu-latest ships shellcheck preinstalled, so CI's actionlint had it and
+# the devbox's did not. That is not hypothetical: a Go formatting check was
+# added to the Validate lane, `task fix`, `task validate` and `task test` all
+# exited 0 locally, and CI then failed the Format lane with SC2046 - a real
+# finding, since unquoted command substitution splits on whitespace and, with
+# no files matched at all, gofmt reads stdin and blocks until the job times out.
+if has shellcheck; then
+	skip "shellcheck already present ($(shellcheck --version 2>/dev/null | awk '/^version:/{print $2}'))"
+else
+	info "installing shellcheck ${SHELLCHECK_VERSION}"
+	curl -fsSL -o "$TMP/shellcheck.tar.xz" \
+		"https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+	echo "${SHELLCHECK_SHA256}  ${TMP}/shellcheck.tar.xz" | sha256sum -c -
+	tar -xJf "$TMP/shellcheck.tar.xz" -C "$TMP" \
+		"shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+	sudo install -m 0755 "$TMP/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+	ok "shellcheck installed"
 fi
 
 step "commit signing"

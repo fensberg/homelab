@@ -43,20 +43,46 @@ func TestParseAppKeyRoundTrips(t *testing.T) {
 	}
 }
 
-// The two ways this is got wrong, each with its own message.
+// A raw PEM is accepted, because the estate has two Apps and two conventions.
 //
-// Both were expensive to diagnose elsewhere in this estate: a raw PEM pasted
-// where base64 was wanted, and base64 of the wrong file entirely. Valid
-// encoding is not evidence of valid content - base64 of anything decodes
-// cleanly - so the second case has to be caught separately from the first.
-func TestParseAppKeyRejectsTheTwoLikelyMistakes(t *testing.T) {
-	_, encoded := testKeyPair(t)
-	rawPEM, _ := base64.StdEncoding.DecodeString(encoded)
+// This used to be an ERROR, and the error was the defect (#382). The clerk took
+// base64 of the PEM; the expediter takes the raw PEM, because
+// actions/create-github-app-token cannot parse base64. Whoever set up the
+// second App copied the first, and the failure named neither convention.
+//
+// Base64 was never a security measure - a PEM's newlines do not survive a JSON
+// config or an environment variable reliably, and that is the whole reason -
+// so on the path where newlines DO survive, it buys nothing. Accepting both
+// means nobody has to know which App they are configuring.
+func TestParseAppKeyAcceptsARawPEM(t *testing.T) {
+	want, encoded := testKeyPair(t)
+	rawPEM, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("decoding the fixture: %v", err)
+	}
 
+	got, err := parseAppKey(string(rawPEM))
+	if err != nil {
+		t.Fatalf(`a raw PEM was refused: %v
+
+That is the shape GitHub documents and the shape actions/create-github-app-token
+requires, so refusing it means the two Apps in this estate are configured
+differently and copying one to set up the other fails.`, err)
+	}
+	if !got.Equal(want) {
+		t.Error("the parsed key is not the key that was encoded")
+	}
+}
+
+// What is still wrong is still refused, and says which shapes were tried.
+//
+// "Not base64" is a misleading thing to tell somebody who correctly pasted a
+// PEM, so the message names both.
+func TestParseAppKeyRejectsTheTwoLikelyMistakes(t *testing.T) {
 	cases := []struct {
 		name, input, wants string
 	}{
-		{"the raw PEM, not base64 of it", string(rawPEM), "not base64"},
+		{"neither a PEM nor base64", "not a key at all !!", "neither a PEM block nor base64"},
 		{"base64 of something else", base64.StdEncoding.EncodeToString([]byte("hello")), "not a PEM block"},
 	}
 	for _, c := range cases {

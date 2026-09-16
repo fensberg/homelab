@@ -8,15 +8,42 @@ it at all.
 
 ## The tiers
 
+<!-- prettier-ignore-start -->
+
 | Tier            | Answers                                                                   | May touch                       | Runs on a PR |
 | --------------- | ------------------------------------------------------------------------- | ------------------------------- | ------------ |
 | **unit**        | Does this function do what it says?                                       | Nothing outside the process     | Yes          |
 | **contract**    | Do two implementations of one rule agree?                                 | Files in this repository        | Yes          |
+| **tofu**        | Does the config refuse what it should refuse?                             | Files in this repository        | Yes          |
+| **js**          | Does the TypeScript do what it says?                                      | Nothing outside the process     | Yes          |
+| **fuzz**        | What happens on input nobody thought of?                                  | Nothing outside the process     | Yes (seeds)  |
 | **integration** | Does the built estate still look right, and did last night's backup work? | A real, already-built estate    | No           |
 | **api**         | Does the vendor's API still behave as assumed?                            | A real vendor API               | No           |
 | **e2e**         | Can this build an estate from nothing?                                    | Creates and destroys real infra | No           |
 
-The line that matters is between the first two and the last three. Everything
+<!-- prettier-ignore-end -->
+
+**This table is data, not prose.** `TestTheDeclaredTiersAreTheMeasuredOnes`
+reads the bold name in each row and requires it to match the tiers
+`tests/coverage-baseline.json` floors and the census actually counts, in both
+directions. A tier declared here with no tests is red, and a tier the census
+counts that nobody declared is red too.
+
+That is not decoration. Everything in this repository makes each tier fail
+closed - units enumerated from the filesystem, estate surfaces from the
+repository, uncovered functions from the coverage profile - and all of it
+answers _within_ a tier. Nothing checked that the list of tiers was complete,
+which is an allow list in exactly the way this repository spent a day removing
+everywhere else (#310). It had already drifted: this table declared five tiers
+while the census counted eight, so `tofu`, `js` and `fuzz` were measured,
+floored, and absent from the one place a reader looks to find out what tiers
+exist.
+
+Asking the question deliberately is still the only thing that finds a MISSING
+pillar - nothing can make somebody think of one. What this makes impossible is
+a pillar that exists and is not written down.
+
+The line that matters is between the hermetic tiers and the last three. Everything
 above it is hermetic: no 1Password, no hypervisor, no cluster, no credentials
 of any kind. That is what lets `pr-validation.yml` run it in full on a pull
 request from a fork without exposing anything. Everything below it needs a

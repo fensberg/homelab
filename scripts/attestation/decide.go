@@ -10,11 +10,20 @@ package main
 
 import "fmt"
 
+// attestationMarkerPrefix identifies a conversation this program opened,
+// whatever digest it carries. The full marker is this plus the digest and
+// " -->".
+const attestationMarkerPrefix = "<!-- sensitive-attestation:"
+
 // Thread is one review conversation, reduced to what the decision needs.
 type Thread struct {
 	FirstCommentBody string
 	Resolved         bool
 	ResolvedBy       string
+	// FirstCommentID is the REST id of the comment the thread hangs off.
+	// Deleting that comment removes the thread, which is the only way to take
+	// one away - GitHub has no mutation for deleting a review thread itself.
+	FirstCommentID int64
 	// ResolvedByType is GraphQL's __typename for the actor: "User" or "Bot".
 	// Empty when GitHub did not say, which is treated as unknown rather than
 	// as human.
@@ -31,6 +40,38 @@ type Verdict struct {
 	// Blocked is true when the merge must not proceed.
 	Blocked bool
 	Reason  string
+	// DeleteComments are the first-comment ids of conversations that describe
+	// content this pull request no longer carries and that nobody answered.
+	//
+	// WHY THESE GO. The digest binds an acknowledgement to content, so a push
+	// that changes the sensitive part of the diff opens a NEW conversation and
+	// leaves the old one behind. That much is correct and must not be weakened:
+	// it is what stops an acknowledgement outliving what it acknowledged.
+	//
+	// But leaving one behind is not the same as requiring it to be resolved,
+	// and GitHub's require-conversation-resolution counts both (#224). #223
+	// carried two threads on the same file, saying the same thing, differing
+	// only in their digest. Four pushes would have been four.
+	//
+	// That recreates exactly the failure sensitive-paths.yml replaced. The
+	// label it got rid of survived pushes, so people applied it without
+	// reading; faced with two threads carrying the same title, the same rule
+	// and the same file list, the second gets resolved without being read,
+	// because it looks like the one just read. And the worse version is
+	// available: resolve only the SUPERSEDED one, read nothing current, and
+	// believe the acknowledgement has been given.
+	//
+	// A superseded thread nobody resolved describes content that no longer
+	// exists, so resolving it asserts nothing true and deleting it loses
+	// nothing. A superseded thread that WAS resolved is the record of an
+	// acknowledgement actually given, and stays.
+	//
+	// This is not a machine resolving an acknowledgement. Nothing is marked
+	// answered; an unanswered flag about absent content is withdrawn, and a
+	// human still resolves exactly one conversation - the live one. Arguably
+	// it strengthens the rule, because there is then only one thread and it is
+	// unambiguously the current one.
+	DeleteComments []int64
 }
 
 // Decide answers the question the workflow exists to ask.
@@ -67,10 +108,18 @@ type Verdict struct {
 // pull request.
 func Decide(threads []Thread, marker, prAuthor string) Verdict {
 	var found *Thread
+	var superseded []int64
 	for i := range threads {
-		if contains(threads[i].FirstCommentBody, marker) {
-			found = &threads[i]
-			break
+		switch {
+		case contains(threads[i].FirstCommentBody, marker):
+			if found == nil {
+				found = &threads[i]
+			}
+		case contains(threads[i].FirstCommentBody, attestationMarkerPrefix):
+			// One of ours, for a digest this pull request no longer carries.
+			if !threads[i].Resolved && threads[i].FirstCommentID != 0 {
+				superseded = append(superseded, threads[i].FirstCommentID)
+			}
 		}
 	}
 
@@ -79,7 +128,8 @@ func Decide(threads []Thread, marker, prAuthor string) Verdict {
 		// merge, through GitHub's resolution rule - and refusing here as well
 		// would leave a red check that no event could ever turn green.
 		return Verdict{
-			OpenThread: true,
+			OpenThread:     true,
+			DeleteComments: superseded,
 			Reason: "This change touches a sensitive path. A review conversation has been " +
 				"opened on the file: read the change, then resolve it. The merge is " +
 				"blocked until somebody does.",
@@ -87,18 +137,19 @@ func Decide(threads []Thread, marker, prAuthor string) Verdict {
 	}
 
 	if !found.Resolved {
-		return Verdict{Reason: "The review conversation acknowledging this change is " +
-			"still open, and the merge is blocked until it is resolved."}
+		return Verdict{DeleteComments: superseded,
+			Reason: "The review conversation acknowledging this change is " +
+				"still open, and the merge is blocked until it is resolved."}
 	}
 
 	if found.ResolvedBy == "" {
-		return Verdict{Blocked: true,
+		return Verdict{Blocked: true, DeleteComments: superseded,
 			Reason: "The conversation is resolved but GitHub reports nobody as having " +
 				"resolved it, so this cannot be shown to be a real acknowledgement."}
 	}
 
 	if isMachine(found.ResolvedBy, found.ResolvedByType) {
-		return Verdict{Blocked: true, Reason: fmt.Sprintf(
+		return Verdict{Blocked: true, DeleteComments: superseded, Reason: fmt.Sprintf(
 			"The acknowledgement was closed by %s, which is a machine. Reading a "+
 				"change and deciding it is safe is a human act - a bot closing this "+
 				"conversation has acknowledged nothing, it has only made the page look "+
@@ -107,7 +158,8 @@ func Decide(threads []Thread, marker, prAuthor string) Verdict {
 	}
 	_ = prAuthor
 
-	return Verdict{Reason: fmt.Sprintf("Acknowledged by %s.", found.ResolvedBy)}
+	return Verdict{DeleteComments: superseded,
+		Reason: fmt.Sprintf("Acknowledged by %s.", found.ResolvedBy)}
 }
 
 // isMachine reports whether an actor is a bot.

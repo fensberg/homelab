@@ -52,6 +52,71 @@
 # An image must come from one of these AND be pinned by digest. A tag is a
 # mutable pointer: `:latest` today and `:latest` next month are different
 # software with the same name, and nothing in git records that it moved.
+#
+# WHAT THIS GOVERNS, AND WHAT IT DOES NOT. This covers image references WRITTEN
+# IN THIS REPOSITORY. `TestClusterImagesComeFromApprovedRegistriesAndArePinned`
+# walks clusters/** and modules/** and checks what it finds spelled out there.
+#
+# It does not cover an image a Helm chart pulls by its own default, because
+# there is no reference here to read - the chart carries it. That gap is not
+# hypothetical and is not small: the OpenEBS localpv provisioner, which hands
+# out the volumes this estate's own OpenTofu state database sits on, is pulled
+# from docker.io by TAG rather than by digest, and nothing in this file said so
+# (#319).
+#
+# This header used to claim the wider property. That is the failure this
+# repository has already had to repair twice: "no unapproved image is committed
+# here" and "no unapproved image runs here" produce the same green, and the
+# prose asserted the second while the check did the first. Anyone reading it
+# would reasonably have concluded the cluster was covered.
+#
+# So the uncovered ones are now DECLARED rather than absent, in
+# `chart_images_not_governed_here` below, and
+# `TestEveryChartsImagesAreGovernedOrDeclared` fails on a chart that appears in
+# neither place. An entry is a debt with a named condition, not an exemption:
+# pinning a chart's images in our own HelmRelease values brings them into the
+# walk with no new machinery, which is what the estate already does for the
+# runner image.
+
+# Charts whose images this repository does not pin, and therefore does not
+# govern.
+#
+# Each names what it pulls and from where, so the gap is countable. Removing an
+# entry means the chart's images are now set in our own values and the walk
+# above covers them.
+chart_images_not_governed_here:
+  - chart: openebs
+    pulls_from: docker.io
+    what: >-
+      localpv-provisioner and the short-lived helper pod it creates. The
+      subchart's values.yaml carries `registry: "docker.io/"` and a tag, and
+      neither is overridden here. This is the storage provisioner, so it is the
+      one on this list that matters most: it hands out the volumes the state
+      database runs on.
+    closed_by: >-
+      Setting the image registry and digest in the openebs HelmRelease's own
+      values, the way the runner image is pinned.
+
+  - chart: cloudnative-pg
+    pulls_from: ghcr.io
+    what: >-
+      The operator image the chart defaults to. The registry is approved, which
+      is the half this list already covered; what is not covered is the digest -
+      the chart resolves a tag at install time and nothing here records which
+      bytes ran.
+    closed_by: >-
+      Setting the operator image digest in the cloudnative-pg HelmRelease's own
+      values.
+
+  - chart: gha-runner-scale-set-controller
+    pulls_from: ghcr.io
+    what: >-
+      The ARC controller image the chart defaults to. Same shape as
+      cloudnative-pg above: approved registry, unrecorded digest. This one
+      creates and destroys every runner pod in the estate.
+    closed_by: >-
+      Setting the controller image digest in the actions-runner-controller
+      HelmRelease's own values.
 
 registries:
   - host: ghcr.io
@@ -663,6 +728,22 @@ tools:
       repository that runs with a token. It caught the expediter's App token
       inheriting every permission the installation held, which nothing else
       here would have said a word about.
+  - source: koalaman/shellcheck
+    version: SHELLCHECK_VERSION
+    reason: >-
+      Shell analysis. This estate already took delivery from this publisher and
+      did not record it: the Shell Lint lane downloads the pinned binary from
+      the same GitHub release through ludeeus/action-shellcheck. Listing it here
+      is writing down a supplier that was already in use rather than admitting a
+      new one.
+
+      It has a second consumer that matters more than the lane. actionlint finds
+      shellcheck by name on PATH and, when it is absent, DISABLES the
+      integration and exits 0 - so on a machine without it `task validate` and
+      the pre-commit hook cannot report any SC-class finding in a workflow's
+      run: block, and report clean instead of reporting that they did not look
+      (#398). Verified as a single static binary against SHELLCHECK_SHA256, the
+      same pattern as hadolint and TruffleHog.
   - source: codespell-project/codespell
     version: CODESPELL_VERSION
     reason: >-

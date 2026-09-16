@@ -100,16 +100,47 @@ spec:
     # household devices, and not the ability to query the router, open ports on
     # it through UPnP, or log in to anything.
     #
-    # Players outside the house are unaffected either way. Party tries their
-    # private address too, but that address is not routable from here, so the
-    # attempt fails and Party stays on the relay.
+    # WHICH PRIVATE RANGES ARE OPEN IS A PRODUCT DECISION, NOT A HARDENING ONE.
     #
-    # The /16 matches the exclusion above rather than naming the house subnet,
-    # because the subnet is a site value that lives in the vault, and a fork's
-    # LAN is somewhere else. See docs/epochs/03-workload.md.
+    # Party offers the player's LOCAL address as a candidate alongside their
+    # public one, so the set of private ranges permitted here is the set of
+    # networks a player may sit on. This said the opposite for a while:
+    #
+    #   Players outside the house are unaffected either way. Party tries their
+    #   private address too, but that address is not routable from here, so the
+    #   attempt fails and Party stays on the relay.
+    #
+    # That was an assumption written as a finding, and docs/epochs/03-workload.md
+    # records two sections later that the one remote join attempted - from a
+    # phone hotspot - failed (#392). An iPhone Personal Hotspot hands out
+    # 172.20.10.x, which is inside 172.16.0.0/12 and was denied here. The player
+    # joins, spawns, and is disconnected seconds later with nothing naming this
+    # policy - indistinguishable from their own connection being bad. Hotel and
+    # corporate networks live in the same /12.
+    #
+    # So 172.16.0.0/12 is open on the same terms as the house LAN.
+    #
+    # 10.0.0.0/8 STAYS CLOSED, AND IT IS THE INTERESTING ONE. It is the range
+    # this estate is built on - node subnets at 10.<octet>.0.0/16, services at
+    # 10.96.0.0/12, pods at 10.244.0.0/16 - so a player on a 10.x network cannot
+    # be given a direct path without reopening the exact thing this policy
+    # exists to close. The isolation boundary wins and that player stays on the
+    # relay. That is a worse experience for them and it is the correct trade.
+    #
+    # Widening to 10.0.0.0/8 is the obvious-looking fix for the next player who
+    # cannot connect, looks symmetrical with the two ranges beside it, and
+    # nothing about the manifest would object - so it is refused by
+    # TestTheGameServerCannotBeGivenAPathIntoTheEstate rather than by this
+    # paragraph, and that guard is proved in tests/mutations.yml.
+    #
+    # Both ranges are written whole rather than naming the house subnet, because
+    # the subnet is a site value that lives in the vault and a fork's LAN is
+    # somewhere else. See docs/epochs/03-workload.md.
     - to:
         - ipBlock:
             cidr: 192.168.0.0/16
+        - ipBlock:
+            cidr: 172.16.0.0/12
       ports:
         - protocol: UDP
           port: 49152
