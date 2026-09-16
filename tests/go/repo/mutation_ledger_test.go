@@ -142,7 +142,49 @@ func scratchRepo(t *testing.T) string {
 	// unrelated to the entry, which the ledger rightly refuses as proof.
 	// Renaming a program a workflow invokes is enough to cause it.
 	applyOutstandingPatches(t, dir)
+
+	// And then the copy becomes a git repository, so that the guards being
+	// proved can enumerate it the same way they enumerate the real tree.
+	//
+	// This is what lets trackedFiles be the single enumeration primitive. Before
+	// it, `git ls-files` here exited 128 - "not a git repository" - so guards
+	// that needed to run under the ledger had to walk from the root with a
+	// hand-written skip list instead, and that list was the stale artifact the
+	// walk was supposed to avoid.
+	//
+	// After the patches, not before: a patch may add or remove files, and the
+	// index has to describe the tree the guards are actually judged against.
+	//
+	// No commit and no user identity are needed - `git ls-files` reads the
+	// index.
+	cmd := exec.Command("git", "init", "-q")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init in the scratch tree: %v\n%s", err, out)
+	}
+	indexScratchTree(t, dir)
 	return dir
+}
+
+// indexScratchTree makes `git ls-files` in the scratch tree describe the tree
+// as it is right now.
+//
+// It has to run again after a mutation, not only after the copy. An entry that
+// PLANTS a file writes something the index has never seen, so a guard
+// enumerating tracked files would not find it and would pass - reporting that
+// the planted violation is fine. That is the precise failure the ledger exists
+// to catch, and it caught it here: TestEveryHelmReleaseSaysWhereItsPodSpecLives
+// went green against an undescribed chart the moment its enumeration changed.
+//
+// -f because a tracked file is tracked even if .gitignore matches it, and
+// dropping one would quietly shrink the universe under test.
+func indexScratchTree(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("git", "add", "-A", "-f")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("indexing the scratch tree: %v\n%s", err, out)
+	}
 }
 
 var (
@@ -319,6 +361,7 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 					t.Fatalf("writing the mutated %s: %v", m.File, err)
 				}
 			}
+			indexScratchTree(t, scratch)
 
 			ok, out := runGuard(t, bin, scratch, m.Guard)
 			if ok {

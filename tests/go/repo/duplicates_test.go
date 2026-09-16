@@ -164,54 +164,21 @@ func repoRoot(t *testing.T) string {
 	return root
 }
 
-// Directories that hold files this repository did not write and does not
-// edit. A finding inside any of them is a finding about somebody else's
-// generated output, which nobody here can act on.
-var skipDirs = map[string]bool{
-	".git":         true,
-	".terraform":   true,
-	"node_modules": true,
-	"coverage":     true,
-	// Flux's own generated install manifest, committed verbatim - the same
-	// exclusion .checkov.yaml already makes.
-	"flux-system": true,
-}
-
-// Generated integrity databases and machine-written state. Same reasoning.
-var skipFiles = map[string]bool{
-	"pnpm-lock.yaml": true,
-	"go.sum":         true,
-}
-
 func TestRepositoryHasNoDuplicateKeys(t *testing.T) {
 	root := repoRoot(t)
 	checked := 0
 
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if skipFiles[d.Name()] {
-			return nil
-		}
-
-		dupes, checkErr := Check(path)
+	for _, rel := range trackedMatching(t, authoredHere) {
+		dupes, checkErr := Check(filepath.Join(root, rel))
 		if checkErr != nil {
 			// A parse failure is not this test's business to report - the
 			// format's own validator owns that, and saying it twice would
 			// put two owners on one check.
-			return nil
+			continue
 		}
-		rel, _ := filepath.Rel(root, path)
-		if strings.HasSuffix(path, ".json") || strings.HasSuffix(path, ".yaml") ||
-			strings.HasSuffix(path, ".yml") || strings.HasSuffix(path, ".vars") ||
-			strings.HasSuffix(path, ".env") {
+		if strings.HasSuffix(rel, ".json") || strings.HasSuffix(rel, ".yaml") ||
+			strings.HasSuffix(rel, ".yml") || strings.HasSuffix(rel, ".vars") ||
+			strings.HasSuffix(rel, ".env") {
 			checked++
 		}
 		for _, d := range dupes {
@@ -221,15 +188,12 @@ Every parser this project uses keeps the last one and reports nothing, so
 this would not have failed anything else. If both copies are wanted, they
 are not - one of them is dead.`, rel, d.Key, d.Count, orTopLevel(d.Path))
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the repository: %v", err)
 	}
 
 	// A walk that silently matched nothing would pass forever.
 	if checked < 10 {
-		t.Fatalf("only %d files were checked; the walk or the extension list is wrong", checked)
+		t.Fatalf("only %d files were checked; the enumeration or the extension "+
+			"list is wrong", checked)
 	}
 	t.Logf("checked %d config files for duplicate keys", checked)
 }

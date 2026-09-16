@@ -160,7 +160,73 @@ Explicitly out of scope (and which epoch owns it instead):
 
 ## Decisions
 
-_To be filled in as the epoch runs._
+### One enumeration primitive, and the walk root was the stale part
+
+Guards discovered their subjects two ways and the two disagreed. Some asked
+`git ls-files`; others walked from the repository root with a hand-written
+`skipDirs` map. That fork was not a matter of style. The walk existed because
+the mutation ledger proves a guard against a _copy_ of the tracked files, that
+copy was not a git repository, and `git ls-files` there exited 128 — so any
+guard that had to survive the ledger could not use it.
+
+The reason turned out to be removable: the ledger now runs `git init` and
+`git add` in the scratch tree, which costs milliseconds. `trackedFiles` in
+`tests/go/repo/tracked_test.go` is now the single primitive, and `skipDirs` is
+deleted.
+
+**What that changed conceptually.** "Walk the whole repository" was already the
+rule here, and several guards satisfied it by walking from a named subtree —
+`clusters/`, `scripts/`, `tests/go/repo` — which buys nothing, because moving
+the subject silently shrinks what the guard covers while it stays green. The
+sharper rule, and the one the primitive enforces by taking no directory
+argument at all: **hardcode what a guard asserts about, never where it looks.**
+A declaration list naming specific paths is correct; a walk root never is.
+
+It also answers acceptance test 3 for one of the four files. The exclusion
+question is now split in two. Generated directories — `node_modules`,
+`coverage`, `.terraform` — are untracked, so `.gitignore` answers for them and
+it is maintained for its own reasons rather than as a guard's private list.
+What remains is `notAuthoredHere`: files this repository _tracks_ but did not
+write (Flux's generated install, `go.sum`, `pnpm-lock.yaml`). That is a claim
+about specific subjects, so naming paths in it is right, and a guard requires
+every entry to still exist.
+
+**A defect the ledger caught during the change.** Entries that PLANT a file
+went green against the planted violation, because the plant happened after the
+index was written and an untracked file is invisible to `git ls-files`. The
+index has to describe the tree at the moment the guard runs, not at the moment
+the copy was made. That is the ledger doing exactly its job: the guard would
+otherwise have passed while covering less, which is the failure this whole
+regime exists to make loud.
+
+### A language nobody declared is a language nothing checks
+
+Every tool in this estate is bound to a file type — shellcheck to `.sh`, tofu
+to `.tf`, vitest to `.ts`, hadolint to Dockerfiles. That follows from #365: the
+one aggregate that held a default opinion about unfamiliar files was removed
+because it hung more often than it caught anything, and each replacement is a
+dedicated tool with a dedicated subject.
+
+The cost was never written down. Adding a `.rs` or a `.py` here produced
+silence — not vetted, not built, not linted, no coverage floor, no mutation
+proof — and nothing reported it, because no check had heard of the extension.
+`approved-suppliers.yml` was not the backstop either: nothing reads its
+`tools:` section, which its own header admits (#385).
+
+`tests/languages.yml` now declares what reads each kind of file, and
+`languages_test.go` enumerates every tracked file and refuses a kind that is
+not named. **The bar is deliberately not "a new language must arrive with
+tooling"** — that would be worked around. It is that somebody must write down
+that it has none, at which point the hole is countable and the ceiling may only
+fall.
+
+Its limits are stated in the guard rather than left to be discovered: a
+language sharing an extension with a declared one is invisible to it, and so is
+a declared kind whose named reader has quietly stopped running. The one
+reachable gap — an extensionless script naming an interpreter nothing here can
+check — is closed separately by reading shebangs, because `githooks/` is
+executable code that runs on every commit and its files have no extension to
+classify.
 
 ## Outcome
 

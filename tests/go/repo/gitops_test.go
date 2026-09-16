@@ -103,41 +103,19 @@ var gitCredentialTokens = []string{
 
 func TestNoGitCredentialIsCreatedForFlux(t *testing.T) {
 	root := repoRoot(t)
-	checked := 0
 
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	for _, rel := range openTofuSources(t) {
+		body, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".tf") && !strings.HasSuffix(path, ".tftest.hcl") {
-			return nil
-		}
-		checked++
-		body, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
+			t.Fatalf("reading %s: %v", rel, err)
 		}
 		if tok, hit := firstMatch(string(body), gitCredentialTokens); hit {
-			rel, _ := filepath.Rel(root, path)
 			t.Errorf(`%s references %q.
 
 Anything OpenTofu reads is a value OpenTofu writes to state. A source-control
 token there is a live credential recoverable from a leaked state file, and
 Flux does not need one to clone a public repository over https.`, rel, tok)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the repository: %v", err)
-	}
-	if checked < 5 {
-		t.Fatalf("only %d OpenTofu files were checked; the walk is wrong", checked)
 	}
 }
 

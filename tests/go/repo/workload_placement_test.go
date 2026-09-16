@@ -2,8 +2,6 @@ package repo
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -398,7 +396,6 @@ func declaredPriorityClasses(t *testing.T) map[string]bool {
 // like adding a chart that is fine. That is the shape of every guard this
 // repository has had to repair: silence and success were indistinguishable.
 func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
-	root := repoRoot(t)
 	described := map[string]bool{}
 	for _, w := range workloadPods {
 		described[w.File+"#"+w.Release] = true
@@ -406,36 +403,21 @@ func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
 
 	var undescribed []string
 	seen := 0
-	clusters := filepath.Join(root, "clusters")
-	err := filepath.WalkDir(clusters, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			// flux-system holds Flux's own generated install, which is not a
-			// HelmRelease at all and is checked separately below.
-			if skipDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".yaml") {
-			return nil
-		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return relErr
-		}
+	// Still scoped to clusters/ - the workload tier under environments/ is a
+	// separate subject with its own describing table, and widening this to it
+	// is #405 rather than a side effect of changing how files are listed.
+	// authoredHere drops flux-system, which holds Flux's own generated install:
+	// not a HelmRelease at all, and checked separately below.
+	for _, rel := range trackedMatching(t, func(rel string) bool {
+		return authoredHere(rel) && strings.HasPrefix(rel, "clusters/") &&
+			strings.HasSuffix(rel, ".yaml")
+	}) {
 		for name := range readHelmReleases(t, rel) {
 			seen++
 			if !described[rel+"#"+name] {
 				undescribed = append(undescribed, rel+" -> "+name)
 			}
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking clusters/: %v", err)
 	}
 
 	// This is the fail-closed half of the table above: a HelmRelease nobody
