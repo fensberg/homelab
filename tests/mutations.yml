@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 91
+floor: 94
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1349,6 +1349,62 @@ mutations:
       on every commit and every push. Without this, adopting a new language is
       as quiet as naming a file. Planted for the same reason as above: there is
       nothing in the tree to edit into a foreign shebang.
+
+  - guard: TestEveryJobHardensTheRunnerFirst
+    file: .github/workflows/zz-starts-with-an-unhardened-action.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/actions/versions
+    mentions: "whose own first step is"
+    why: >
+      A job may now begin with a composite action from this repository instead
+      of with harden-runner itself, which is what lets harden-runner be written
+      once. That permission is only safe while the action's OWN first step is
+      harden-runner - otherwise every step inside it runs unmonitored and the
+      job still looks like it starts correctly. Planted, because no workflow in
+      the tree starts with an unhardened action to edit into one.
+
+  - guard: TestEveryJobHardensTheRunnerFirst
+    file: .github/workflows/zz-starts-with-a-missing-action.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/does-not-exist
+    mentions: "that action cannot be read"
+    why: >
+      An action this guard cannot read is an action it cannot say is hardened.
+      Treating an unreadable reference as acceptable would turn a typo in the
+      path, or an action deleted while a job still names it, into a job that
+      passes the first-step rule by being unexaminable.
+
+  - guard: TestEveryCheckoutRefusesToPersistCredentials
+    file: .github/actions/versions/action.yml
+    find: |
+      steps:
+          - name: Export pinned versions
+    replace: |
+      steps:
+          - name: Checkout
+            uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          - name: Export pinned versions
+    mentions: "(inside ./.github/actions/versions)"
+    why: >
+      Moving checkout into a composite action must not be a way to stop this
+      rule applying. A job that calls an action which checks out has checked
+      out just the same, and a token left on disk there is reachable by every
+      later step of the job. Reading only the job's own steps would have made
+      the consolidation quietly exempt every job from it.
 
 owed_ceiling: 55
 

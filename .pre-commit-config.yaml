@@ -86,6 +86,14 @@ repos:
     rev: v1.7.12
     hooks:
       - id: actionlint
+        # Only the workflows themselves. GitHub loads workflows from the top
+        # of .github/workflows alone, and a subdirectory there holds composite
+        # action metadata - mobilize/action.yml - kept beside the workflows so
+        # it sits behind the same `workflows` permission. actionlint's hook
+        # matches the whole tree and reads an action.yml as a workflow with no
+        # `on` or `jobs`, which is a finding about the wrong file type rather
+        # than about the action. zizmor audits it as the composite action it is.
+        exclude: ^\.github/workflows/[^/]+/
 
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.8.0-1
