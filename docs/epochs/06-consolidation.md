@@ -199,6 +199,47 @@ the copy was made. That is the ledger doing exactly its job: the guard would
 otherwise have passed while covering less, which is the failure this whole
 regime exists to make loud.
 
+### One writable home for an action's commit
+
+`actions/checkout` was pinned in 30 steps, `harden-runner` in 31,
+`actions/setup-go` in 12 — 91 pinned references across 14 repositories. They all
+agreed, and nothing required them to. `joblaw_test.go` matches on the action name
+and a bare `@`, so it asserts harden-runner is first and checkout is present; a
+lane whose checkout had drifted to another commit satisfied it completely.
+zizmor's `unpinned-uses` asks the other question — commit rather than tag — and
+is equally silent about two commits disagreeing.
+
+**The first design was a comparison and it was not good enough.** Refusing
+divergence between 91 copies still leaves 91 places somebody may edit, and it
+reports a conflict without saying which side is right. The requirement that
+replaced it: one place a commit may be written, and that place cannot contain
+duplicates.
+
+`tests/action-pins.yml` is that place. It is keyed by **repository**, not by
+action path, so `github/codeql-action/init` and `.../analyze` share one row and
+cannot be pinned to two commits — keying by path would have permitted that
+silently.
+
+**The copies cannot go away, and that is a platform fact rather than a
+compromise.** GitHub resolves `uses:` before any expression context exists, so
+`${{ }}` is unavailable there at any price. That is precisely why
+`.github/actions/versions` can centralise `scripts/versions.env` and cannot do
+this: the composite action works by writing to `$GITHUB_ENV` for _later steps_,
+and `uses:` is not a later step. Wrapping each action in a local composite would
+remove the literal, at the cost of editing thirteen workflows under a protected
+path. So the occurrences stay; their authority does not.
+
+**The direction of the fix was chosen for who can apply it.** An updater bumps
+the workflows, the guard fails naming both commits, and the repair is one row in
+`tests/` — a file the agent can push. Rendering workflows _from_ the declaration
+would have been tidier and would have turned every routine dependency bump into
+operator work, because `.github/workflows/` is protected.
+
+The version comment is checked alongside the commit. A correct commit under a
+stale `# vN` is the quieter failure and the more misleading one, since the
+comment is what a reviewer reads instead of the hash, and nothing read those
+comments before.
+
 ### A language nobody declared is a language nothing checks
 
 Every tool in this estate is bound to a file type — shellcheck to `.sh`, tofu

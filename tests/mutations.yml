@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 91
+floor: 94
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1349,6 +1349,49 @@ mutations:
       on every commit and every push. Without this, adopting a new language is
       as quiet as naming a file. Planted for the same reason as above: there is
       nothing in the tree to edit into a foreign shebang.
+
+  - guard: TestEveryActionCommitMatchesTheOneDeclaration
+    file: .github/workflows/codeql.yml
+    find: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+    replace: "actions/checkout@0000000000000000000000000000000000000000"
+    mentions: "and tests/action-pins.yml declares"
+    why: >
+      actions/checkout is pinned in 30 steps, harden-runner in 31, and they
+      agreed only because nobody had made a mistake yet - the guard reading
+      them matched the action NAME and a bare @, and zizmor only asks whether
+      a reference is a commit rather than a tag. One lane running a different
+      build of checkout than the other twenty-nine is invisible without this,
+      and the realistic cause is a half-merged dependency bump rather than
+      anything anybody would call a change.
+
+  - guard: TestEveryActionPinRowIsComplete
+    file: tests/action-pins.yml
+    find: "sha: 3d3c42e5aac5ba805825da76410c181273ba90b1"
+    replace: "sha: 3d3c42e"
+    mentions: "not a full 40-character commit"
+    why: >
+      A row is what every one of the 91 references is compared against, so a
+      malformed row does not fail loudly - it quietly compares against
+      something no workflow can match, or worse, against an abbreviated commit
+      that is ambiguous by construction. The declaration has to be well formed
+      before it can be authoritative.
+
+  - guard: TestTheActionDeclarationNamesEachActionOnce
+    file: tests/action-pins.yml
+    find: |
+      actions/create-github-app-token:
+    replace: |
+      actions/checkout:
+          sha: 3d3c42e5aac5ba805825da76410c181273ba90b1
+          version: v7.0.1
+        actions/create-github-app-token:
+    mentions: "declares actions/checkout 2 times"
+    why: >
+      This file's whole purpose is that one action has one commit. YAML keeps
+      the last duplicate key and discards the first without a word, so a
+      repeated row means the decision somebody is reading is not the decision
+      in force - and every check downstream compares against the survivor.
+      The parsed form cannot show this, so the guard reads the text.
 
 owed_ceiling: 55
 
