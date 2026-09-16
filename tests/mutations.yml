@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 94
+floor: 96
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -101,9 +101,9 @@ mutations:
       recognised every one of them.
 
   - guard: TestNoWorkflowRestatesAPinnedVersion
-    file: .github/workflows/inspector.yml
-    find: "go-version: ${{ env.GO_VERSION }}"
-    replace: 'go-version: "1.26.7"'
+    file: .github/workflows/pr-validation.yml
+    find: "node-version: ${{ env.NODE_VERSION }}"
+    replace: 'node-version: "24.19.0"'
     mentions: "restates a pinned version"
     why: >
       The literal agrees with scripts/versions.env on the day it is written,
@@ -1405,6 +1405,52 @@ mutations:
       out just the same, and a token left on disk there is reachable by every
       later step of the job. Reading only the job's own steps would have made
       the consolidation quietly exempt every job from it.
+
+  - guard: TestEveryActionCommitIsWrittenOnce
+    file: .github/workflows/zz-second-copy-of-checkout.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                persist-credentials: false
+    mentions: "is written in 2 places"
+    why: >
+      harden-runner was pinned in 31 jobs and checkout in 30, agreeing only
+      because nobody had yet made a mistake. The shared actions under
+      .github/workflows hold the one literal each, and this is what stops a
+      new job reaching past them and writing a second copy - which would pass
+      every other check, since it names the right commit today. Planted,
+      because once consolidated there is no second copy in the tree to edit.
+
+  - guard: TestEveryActionCommitIsWrittenOnce
+    file: .github/workflows/zz-second-codeql-commit.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+            - uses: github/codeql-action/autobuild@1111111111111111111111111111111111111111 # v0.0.0
+    mentions: "pinned to 2 different commits"
+    why: >
+      Writing each action PATH once still allows two paths of one repository
+      to name two commits - codeql-action's init and analyze are separate
+      paths. A commit belongs to the repository, so running two builds of one
+      action side by side is exactly the drift consolidation was meant to end.
 
 owed_ceiling: 55
 

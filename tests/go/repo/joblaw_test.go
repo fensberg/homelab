@@ -102,39 +102,56 @@ action from this repository referenced with $/.`, file, job, firstIdent(steps[0]
 // job's own steps would have made moving checkout into an action a way to stop
 // this rule applying without anybody deciding it should.
 func TestEveryCheckoutRefusesToPersistCredentials(t *testing.T) {
+	checkouts := 0
 	forEachJob(t, func(t *testing.T, file, job string, steps []map[string]any) {
-		check := func(where string, steps []map[string]any) {
+		var walk func(where string, steps []map[string]any, seen map[string]bool)
+		walk = func(where string, steps []map[string]any, seen map[string]bool) {
 			for _, step := range steps {
 				uses, _ := step["uses"].(string)
-				if !strings.Contains(uses, "actions/checkout@") {
-					continue
-				}
-				with, _ := step["with"].(map[string]any)
-				if v, ok := with["persist-credentials"]; !ok || v != false {
-					t.Errorf(`%s: job %q checks out without persist-credentials: false%s.
+				if strings.Contains(uses, "actions/checkout@") {
+					checkouts++
+					with, _ := step["with"].(map[string]any)
+					if v, ok := with["persist-credentials"]; !ok || v != false {
+						t.Errorf(`%s: job %q checks out without persist-credentials: false%s.
 
 The job's token stays on disk for every later step otherwise, and anything one
 of those steps runs can push with it. Nothing here needs it, and leaving it out
 is silent - the checkout succeeds either way.`, file, job, where)
+					}
+					continue
 				}
+				action, ok := sameRepoAction(uses)
+				if !ok {
+					continue
+				}
+				// Through every level, not one. A job reaches checkout through
+				// mobilize, which reaches it through checkout - reading a
+				// single level down would find no checkout at all and pass.
+				if seen[action] {
+					t.Errorf("%s: job %q reaches %s twice on one path, which is a cycle", file, job, uses)
+					continue
+				}
+				inner, err := localActionSteps(t, action)
+				if err != nil {
+					t.Errorf("%s: job %q uses %s, which cannot be read: %v", file, job, uses, err)
+					continue
+				}
+				next := map[string]bool{action: true}
+				for k := range seen {
+					next[k] = true
+				}
+				walk(where+" (inside "+uses+")", inner, next)
 			}
 		}
-
-		check("", steps)
-		for _, step := range steps {
-			uses, _ := step["uses"].(string)
-			action, ok := sameRepoAction(uses)
-			if !ok {
-				continue
-			}
-			inner, err := localActionSteps(t, action)
-			if err != nil {
-				t.Errorf("%s: job %q uses %s, which cannot be read: %v", file, job, uses, err)
-				continue
-			}
-			check(" (inside "+uses+")", inner)
-		}
+		walk("", steps, map[string]bool{})
 	})
+
+	// Every job checks out, one way or another. Finding none means the walk
+	// stopped descending - the exact failure the recursion above exists for -
+	// and a rule that inspected nothing has asserted nothing.
+	if checkouts == 0 {
+		t.Fatal("no checkout was found in any job, at any depth, so this checked nothing")
+	}
 }
 
 // sameRepoAction reports the repository path a same-repository action

@@ -42,7 +42,13 @@ const fewestPlausibleTrackedFiles = 100
 // trackedFiles lists every file git tracks, relative to the repository root.
 func trackedFiles(t *testing.T) []string {
 	t.Helper()
-	root := repoRoot(t)
+	return trackedFilesIn(t, repoRoot(t))
+}
+
+// trackedFilesIn lists the tracked files of a tree other than the repository
+// itself - the scratch tree a guard judges when patches are outstanding.
+func trackedFilesIn(t *testing.T, root string) []string {
+	t.Helper()
 
 	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
 	if err != nil {
