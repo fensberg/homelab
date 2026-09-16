@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 98
+floor: 100
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1496,6 +1496,30 @@ mutations:
       and the jobs using shared scripts run only on infrastructure changes -
       so the break would surface on exactly the pull request where a reviewer
       needed the plan comment.
+
+  - guard: TestEveryCheckoutRefusesToPersistCredentials
+    file: .github/workflows/checkout/action.yml
+    find: "persist-credentials: false"
+    replace: "persist-credentials: true"
+    mentions: "(inside $/.github/workflows/mobilize) (inside $/.github/workflows/checkout)"
+    why: >
+      Every job now reaches checkout two levels down - through mobilize, then
+      checkout - so the token-on-disk rule only holds if the guard descends
+      that far. Reading one level would reach mobilize, find no checkout step
+      in it, and pass every job while the one checkout in the repository left
+      the token behind. The mention requires the two-level path specifically.
+
+  - guard: TestTheFormatLaneRefusesASupplierBeforeInstallingAnything
+    file: .github/workflows/setup-go/action.yml
+    find: "go-version: ${{ env.GO_VERSION }}"
+    replace: 'go-version: "1.26.7"'
+    mentions: "sets up Go without reading GO_VERSION"
+    why: >
+      The Format lane no longer writes a Go version at all; it trusts the
+      shared setup-go to read the pin. That trust is only safe while the
+      shared action actually does, and a literal there agrees with
+      scripts/versions.env exactly until the pin moves - on the lane that runs
+      the supplier gate before anything is installed.
 
 owed_ceiling: 55
 
