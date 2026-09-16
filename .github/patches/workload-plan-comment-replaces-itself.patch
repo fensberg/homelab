@@ -1,24 +1,8 @@
 diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
-index 4b9c4ed..e53ff52 100644
+index 4b9c4ed..27b2930 100644
 --- a/.github/workflows/deploy-infrastructure.yml
 +++ b/.github/workflows/deploy-infrastructure.yml
-@@ -194,7 +194,14 @@ jobs:
-     # what keeps an outside contributor's branch away from them - the same
-     # boundary pr-validation.yml holds by being hermetic.
-     runs-on: homelab-management
--    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
-+    # NO `environment:`, for the same reason plan-estate has none (#158).
-+    #
-+    # This one was not in that issue and is the same defect: a plan reads state
-+    # and posts a comment. Declaring an environment makes GitHub create a
-+    # deployment record for it, and a failed job leaves one failed permanently,
-+    # so this lane has been able to assert that staging or production last
-+    # failed to deploy when it never deployed at all. The `apply` job below
-+    # keeps its environment, which is where the gate belongs.
-     permissions:
-       contents: read
-       pull-requests: write
-@@ -275,7 +282,14 @@ jobs:
+@@ -275,7 +275,14 @@ jobs:
              const counts = m
                ? `**${m[1]}** to add · **${m[2]}** to change · **${m[3]}** to destroy`
                : (process.env.EXITCODE === '0' ? 'No changes.' : 'Could not parse a change count.');
@@ -33,7 +17,7 @@ index 4b9c4ed..e53ff52 100644
                `### OpenTofu plan — \`${process.env.DIR}\``,
                '',
                counts,
-@@ -284,13 +298,39 @@ jobs:
+@@ -284,13 +291,39 @@ jobs:
                  ? '> This plan **destroys** resources. Read the full plan before approving.'
                  : '',
                '',
@@ -77,31 +61,3 @@ index 4b9c4ed..e53ff52 100644
              });
  
    # ---------------------------------------------------------------------
-@@ -744,7 +784,26 @@ jobs:
-       github.event.pull_request.head.repo.full_name == github.repository &&
-       needs.changes.outputs.management == 'true'
-     runs-on: homelab-management
--    environment: management
-+    # NO `environment:`. A plan deploys nothing.
-+    #
-+    # Declaring one makes GitHub create a DEPLOYMENT RECORD for the job, and a
-+    # failed job leaves it failed permanently - nothing here marks one
-+    # succeeded, inactive or superseded, so they accumulate (#158). One pull
-+    # request showed three "had a problem deploying to management" entries
-+    # followed immediately by "This branch was successfully deployed" and "No
-+    # deployments", which are GitHub's own statements contradicting each other
-+    # on one page.
-+    #
-+    # The Environments view is GitHub's answer to "what is live right now", and
-+    # this estate's was a list of failures with no successful entry after them -
-+    # asserting indefinitely that the management environment last failed to
-+    # deploy. A status surface nobody maintains trains people to skim past it,
-+    # and the next time it is genuinely red it will look the same as it does now.
-+    #
-+    # Removing it here is the part that is right either way, whatever is decided
-+    # about the converge job below: this lane reads state and posts a comment.
-+    # It has never deployed anything, so every record it has ever created
-+    # described something that did not happen.
-     permissions:
-       contents: read
-       pull-requests: write

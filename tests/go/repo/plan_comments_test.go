@@ -6,62 +6,31 @@ import (
 	"testing"
 )
 
-// Every comment this workflow posts replaces itself, and no plan lane creates
-// a deployment record.
+// Every comment this workflow posts replaces itself rather than appending.
 //
-// Both are surfaces that said something untrue, and both are the shape that
-// teaches a reader to stop looking at a surface - which costs far more than the
-// thing being reported.
+// A surface that accumulates is one that teaches a reader to stop looking at
+// it, which costs far more than the thing being reported.
 
-// A job's `environment:` line, and the job it belongs to.
-var jobHeading = regexp.MustCompile(`(?m)^  ([a-z][a-z0-9-]*):\s*$`)
-
-// A plan reads state and reports. It deploys nothing, so it must create no
-// deployment record.
+// WHY THERE IS NO "a plan lane declares no environment" CHECK HERE.
 //
-// Declaring `environment:` makes GitHub create one for the job, and a failed
-// job leaves it failed permanently: nothing marks one succeeded, inactive or
-// superseded, so they accumulate (#158). One pull request showed three "had a
-// problem deploying to management" entries followed immediately by "This branch
-// was successfully deployed" and "No deployments" - GitHub's own statements,
-// contradicting each other on one page.
+// There was one, briefly, for #158 - deployment records accumulate on a lane
+// that never deploys, and the issue called removing the environment "a
+// straightforward removal regardless". It is not, and the estate already knew
+// why: TestNoPullRequestJobReachesTheSelfHostedRunnerUnguarded REQUIRES an
+// environment on exactly these jobs.
 //
-// This asserts only the part that is right whatever is decided about the
-// converge job: a lane that has never deployed anything should not be leaving
-// records that say it did.
-func TestNoPlanLaneCreatesADeploymentRecord(t *testing.T) {
-	body := intendedWorkflow(t, "deploy-infrastructure.yml")
-
-	jobs := splitJobs(body)
-	if len(jobs) < 4 {
-		t.Fatalf(`found %d job(s) in deploy-infrastructure.yml, and it has more.
-
-The parse has stopped matching, so every job it no longer sees is one this
-check silently stopped reading.`, len(jobs))
-	}
-
-	checked := 0
-	for name, block := range jobs {
-		if !strings.Contains(name, "plan") {
-			continue
-		}
-		checked++
-		if regexp.MustCompile(`(?m)^\s+environment:\s*\S`).MatchString(block) {
-			t.Errorf(`the job %q declares an environment.
-
-It is a plan. It reads state, posts a comment, and changes nothing - so every
-deployment record it creates describes something that did not happen, and a
-failed run leaves one saying the management environment last failed to deploy,
-indefinitely.
-
-A status surface nobody maintains trains people to skim past it, and the next
-time it is genuinely red it will look the same as it does now.`, name)
-		}
-	}
-	if checked == 0 {
-		t.Fatal("no plan job was found, so this test read nothing")
-	}
-}
+// `plan` and `plan-estate` run on the self-hosted runner from a `pull_request`
+// event. The fork guard excludes a fork; it does not exclude a branch pushed to
+// this repository, and that set includes every collaborator, every bot with
+// push access, and anything holding a leaked token. A GitHub environment with
+// required reviewers is the only mechanism that makes such a branch wait for a
+// human before it executes on a runner holding a vault token.
+//
+// So the environment on those lanes is doing two jobs, and #158 accounts for
+// one of them. Removing it trades a misleading status surface for a real hole.
+// The issue is reopened with that, and the honest options are marking the
+// deployment inactive when the job finishes, or changing what the Environments
+// view is expected to mean - not removal.
 
 // Every comment the workflow posts is found and replaced, not appended.
 //
@@ -127,25 +96,4 @@ while its contents change underneath, so it ends up sitting beside a push that
 no longer produced it.`, line)
 		}
 	}
-}
-
-// splitJobs returns each top-level job's block, keyed by name.
-func splitJobs(body string) map[string]string {
-	headings := jobHeading.FindAllStringSubmatchIndex(body, -1)
-	jobs := map[string]string{}
-
-	// Only what follows the `jobs:` key; the top-level `on:` and `env:` blocks
-	// have the same shape at a different depth.
-	jobsAt := strings.Index(body, "\njobs:")
-	for i, h := range headings {
-		if h[0] < jobsAt {
-			continue
-		}
-		end := len(body)
-		if i+1 < len(headings) {
-			end = headings[i+1][0]
-		}
-		jobs[body[h[2]:h[3]]] = body[h[0]:end]
-	}
-	return jobs
 }

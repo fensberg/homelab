@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 87
+floor: 86
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1197,22 +1197,6 @@ mutations:
       exactly the way a missing check is - which is the allow-list failure this
       repository spent a day removing one level down.
 
-  - guard: TestNoPlanLaneCreatesADeploymentRecord
-    file: .github/workflows/deploy-infrastructure.yml
-    find: "  plan-absence:\n    name: Plan absence\n    needs: [changes, plan-estate]"
-    replace: "  plan-absence:\n    name: Plan absence\n    environment: management\n    needs: [changes, plan-estate]"
-    mentions: "declares an environment"
-    why: >
-      Declaring an environment on a job makes GitHub create a DEPLOYMENT
-      RECORD for it, and a failed job leaves that record failed permanently
-      - nothing marks one succeeded, inactive or superseded, so they
-      accumulate. One pull request carried three 'had a problem deploying to
-      management' entries followed immediately by 'This branch was
-      successfully deployed' and 'No deployments', which are GitHub's own
-      statements contradicting each other on one page. A plan deploys
-      nothing, so every record it leaves describes something that did not
-      happen, and a status surface nobody maintains trains people to skim
-      past it.
 
   - guard: TestEveryCommentPathReplacesItselfRatherThanAppending
     file: .github/workflows/deploy-infrastructure.yml
