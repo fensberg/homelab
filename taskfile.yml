@@ -256,6 +256,72 @@ tasks:
       - task: build
       - ./toolshed/contractor break-ground -site {{.SITE}} -phase backup
 
+  apply-patches:
+    desc: "Apply every outstanding handover patch, or none of them"
+    # The agent cannot write .github/workflows/, so a workflow change arrives as
+    # a patch and somebody has to apply it. That was a hand-typed loop in a pull
+    # request body, and it cost the operator two failed pushes and a divergent
+    # branch across one afternoon: a patch was renamed between the instruction
+    # being written and being run, the chain half-applied, and the tree ended up
+    # in a state neither side could see.
+    #
+    # ALL OR NONE. The whole point. `git apply --index` on a chain with `&&`
+    # stops at the first failure and leaves whatever already applied staged -
+    # which is the worst outcome, because it looks finished. This checks every
+    # patch applies BEFORE applying any, so the tree is either untouched or
+    # fully patched.
+    #
+    # It deliberately does not commit or push. What the change says and when it
+    # goes out are the operator's, and a verb that committed on their behalf
+    # would be the agent reaching through the boundary the patches exist for.
+    cmds:
+      - |
+        set -euo pipefail
+        shopt -s nullglob
+        patches=(.github/patches/*.patch)
+        if [ ${#patches[@]} -eq 0 ]; then
+          echo "no patches outstanding - nothing to apply"
+          exit 0
+        fi
+
+        # A dirty tree is how the last one went wrong: a half-applied patch from
+        # a previous attempt is indistinguishable from work in progress, and
+        # applying over it produces a tree nobody can reason about.
+        if ! git diff --quiet || ! git diff --cached --quiet; then
+          echo "the working tree has uncommitted changes, so this is refused." >&2
+          echo >&2
+          echo "A patch applied over an edited tree cannot be told apart from one" >&2
+          echo "applied twice. Commit what you have, or discard it with:" >&2
+          echo >&2
+          echo "    git reset --hard @{upstream}" >&2
+          exit 1
+        fi
+
+        echo "checking ${#patches[@]} patch(es) apply before touching anything"
+        for p in "${patches[@]}"; do
+          if ! git apply --check "$p"; then
+            echo >&2
+            echo "$p does not apply, so NOTHING has been applied." >&2
+            echo >&2
+            echo "The likeliest cause is that this checkout is behind. Try:" >&2
+            echo >&2
+            echo "    git fetch origin && git reset --hard @{upstream}" >&2
+            exit 1
+          fi
+        done
+
+        for p in "${patches[@]}"; do
+          git apply --index "$p"
+          git rm -q "$p"
+          echo "  applied and removed $(basename "$p")"
+        done
+
+        echo
+        echo "${#patches[@]} patch(es) applied and staged. Nothing is committed."
+        echo "Read the diff, then commit and push as you would any change:"
+        echo
+        echo "    git diff --cached"
+
   render-flux-digests:
     desc: "Re-resolve Flux's controller digests from the tags the manifest carries"
     cmds:
