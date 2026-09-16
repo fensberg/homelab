@@ -14,8 +14,27 @@ replaces. So the patch lives here as a file, and applying it is one command
 run from the repository root:
 
 ```sh
+task apply-patches
+```
+
+It applies every outstanding patch and removes each one, **all or none**. Check
+the result with `git diff --cached`, then commit and push as you would any
+change; it deliberately does not do either for you.
+
+Underneath it is the same pair of commands, per patch:
+
+```sh
 git apply --index .github/patches/<name>.patch && git rm .github/patches/<name>.patch
 ```
+
+**Do not run that chain by hand across several patches.** `&&` stops at the
+first failure and leaves whatever already applied staged, which is the worst
+outcome because it looks finished. That happened: a patch was renamed between
+the instruction being written and being run, the chain half-applied, and the
+branch diverged from its remote with a commit nobody could see the shape of.
+`task apply-patches` checks every patch applies BEFORE applying any, and
+refuses a dirty tree - because a half-applied patch from a previous attempt
+cannot be told apart from work in progress.
 
 `--index` because a patch can add or rename a file, and plain `git apply`
 writes a new file into the working tree without staging it. The commit that
