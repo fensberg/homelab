@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 86
+floor: 89
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1279,6 +1279,46 @@ mutations:
       safe to re-run. The person most likely to re-run it is the person who
       just had a push refused.
 
+  - guard: TestThereIsOnlyOneRetryAndANewOneIsRefused
+    file: .github/workflows/workload-images.yml
+    find: "jobs:"
+    replace: "jobs:\n  for attempt in 1 2 3; do\n"
+    mentions: "hand-rolls a retry"
+    why: >
+      There is one retry policy - bounded attempts, never a verdict, every
+      attempt reported - and it had three implementations. Three is three
+      places for it to drift, and the fourth gets written by somebody who
+      knew about none of them. This discovers a retry-shaped loop anywhere
+      in the repository rather than checking a list of files, so a
+      hand-rolled one cannot be added somewhere nobody thought to look.
+
+  - guard: TestNoGuardSkipsWithoutSayingWhyItIsHonest
+    file: tests/go/repo/cni_test.go
+    find: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {"
+    replace: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {\n\tt.Skip(\"undeclared\")"
+    reads_source: true
+    mentions: "skip without a declared reason"
+    why: >
+      A skip is fail-open: the run is green and nothing distinguishes 'I
+      looked and found nothing' from 'I could not look'. This repository has
+      had to repair that shape in a plan summary, a dry run and a registry
+      check, each time after somebody noticed rather than because anything
+      said so. A new guard that skips must declare what TRUE thing the skip
+      reports, and the default is refusal.
+
+  - guard: TestNoGuardDropsAnErrorFromItsOwnSubject
+    file: tests/go/repo/cni_test.go
+    find: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {"
+    replace: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {\n\tif err := error(nil); err != nil {\n\t\treturn\n\t}"
+    reads_source: true
+    mentions: "drop an error from the thing being guarded"
+    why: >
+      The quiet half of failing open. A guard that could not read its
+      subject and carried on leaves every later assertion running against a
+      smaller set than it claims to check, and it looks like ordinary Go
+      rather than like a skip. The count per file may only fall, so a new
+      drop cannot be added without somebody writing the number down.
+
 owed_ceiling: 55
 
 unprovable:
@@ -1303,6 +1343,12 @@ unprovable:
   - path: tests/go/repo/mutation_ledger_test.go
     reason: meta
   - path: tests/go/repo/preconditions_are_called_test.go
+    reason: meta
+  # A check on a declaration list rather than on the estate: it asserts that
+  # every declared retry implementation still exists, so mutating what it reads
+  # means mutating another guard's declaration, which that guard's own entry
+  # already proves.
+  - test: TestEveryDeclaredRetryStillExists
     reason: meta
   #
   # A pure function whose test table already contains the failing case. The
@@ -1336,6 +1382,11 @@ unprovable:
   # playbook and runs it against a stub iptables, so it tests the shell that
   # ships rather than a copy of it kept here.
   - path: tests/go/repo/dmz_isolation_test.go
+    reason: shipped-shell
+  # Same form again: these run scripts/retry.sh itself against a stub command
+  # whose failures are scripted, so they test the shell that ships rather than
+  # a copy of its logic kept beside them.
+  - path: tests/go/repo/retry_test.go
     reason: shipped-shell
   #
   # Asserts a file's executable bit. There is no text to substitute, and a mode

@@ -83,7 +83,26 @@ func TestNoCompiledBinaryIsUntrackedAndUnignored(t *testing.T) {
 	out, err := exec.Command("git", "-C", root, "ls-files",
 		"--others", "--exclude-standard", "-z").Output()
 	if err != nil {
-		t.Skipf("not a git checkout, so there is nothing to ask git about: %v", err)
+		// NOT a skip, except in the one place where it is provably right.
+		//
+		// This skipped on any git error at all, which is fail-open: a guard
+		// that cannot ask its question reports the same green as one that
+		// asked and found nothing. "I could not look" and "there is nothing
+		// there" are different facts and only one is reassuring.
+		//
+		// The mutation ledger copies tracked files into a scratch directory
+		// that is deliberately not a git repository, and it announces that by
+		// setting repoRootEnv. That case is known, named, and the only one.
+		// Anywhere else, a checkout git will not answer about is a broken
+		// environment and saying so is the point.
+		if os.Getenv(repoRootEnv) != "" {
+			t.Skip("inner run: the ledger's scratch tree is not a git repository, " +
+				"so there is no working tree to ask about")
+		}
+		t.Fatalf(`git could not list untracked files in %s: %v
+
+This guard cannot answer its question here, and a guard that cannot look must
+say so rather than pass. If this is a checkout, something is wrong with it.`, root, err)
 	}
 
 	for _, path := range strings.Split(string(out), "\x00") {

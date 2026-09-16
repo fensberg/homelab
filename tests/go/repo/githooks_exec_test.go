@@ -151,7 +151,13 @@ func (f *hookFixture) isolatePATH(t *testing.T, tools ...string) {
 	for _, tool := range tools {
 		target, err := exec.LookPath(tool)
 		if err != nil {
-			t.Skipf("%s is not on PATH, so this fixture cannot be built", tool)
+			// A failure, not a skip. These are bash, env and git - if one of
+			// them is absent the whole suite is meaningless, and skipping
+			// would report that as a passing guard.
+			t.Fatalf(`%s is not on PATH, so this fixture cannot be built and the hook
+shims are not being tested at all.
+
+Skipping here would report an untested shim as a passing one.`, tool)
 		}
 		if err := os.Symlink(target, filepath.Join(binDir, tool)); err != nil && !os.IsExist(err) {
 			t.Fatalf("linking %s: %v", tool, err)
