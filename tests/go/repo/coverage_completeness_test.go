@@ -85,31 +85,18 @@ func testSources(t *testing.T) map[string]string {
 	t.Helper()
 	root := repoRoot(t)
 	out := map[string]string{}
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	for _, rel := range trackedMatching(t, func(rel string) bool {
+		if !authoredHere(rel) {
+			return false
+		}
+		return strings.HasSuffix(rel, "_test.go") || strings.HasSuffix(rel, ".test.ts") ||
+			strings.HasSuffix(rel, ".spec.ts") || strings.HasSuffix(rel, ".tftest.hcl")
+	}) {
+		body, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
-			return err
+			t.Fatalf("reading %s: %v", rel, err)
 		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasSuffix(name, "_test.go") && !strings.HasSuffix(name, ".test.ts") &&
-			!strings.HasSuffix(name, ".spec.ts") && !strings.HasSuffix(name, ".tftest.hcl") {
-			return nil
-		}
-		body, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
-		}
-		rel, _ := filepath.Rel(root, path)
 		out[rel] = string(body)
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking for test sources: %v", err)
 	}
 	if len(out) == 0 {
 		t.Fatal("found no test files at all, so every unit would look uncovered")
@@ -117,70 +104,17 @@ func testSources(t *testing.T) map[string]string {
 	return out
 }
 
-// tracked lists repository files matching a predicate.
+// tracked lists this repository's own files matching a predicate.
 //
-// A walk with skipDirs rather than `git ls-files`, because the mutation ledger
-// runs this guard against a copy of the tracked files that is not itself a git
-// repository - asking git there fails with exit 128 and the guard reports the
-// harness instead of the code. Found by the ledger refusing the entry.
+// It used to walk from the root with a skipDirs map, because the mutation
+// ledger's scratch tree was not a git repository and `git ls-files` there
+// exited 128. The ledger runs `git init` in that copy now, so this is the same
+// enumeration everything else uses.
 func tracked(t *testing.T, keep func(rel string) bool) []string {
 	t.Helper()
-	root := repoRoot(t)
-	var matched []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return relErr
-		}
-		if keep(rel) {
-			matched = append(matched, rel)
-		}
-		return nil
+	return trackedMatching(t, func(rel string) bool {
+		return authoredHere(rel) && keep(rel)
 	})
-	if err != nil {
-		t.Fatalf("walking the repository: %v", err)
-	}
-	// A filter that matches nothing is a test that proves nothing, and the two
-	// are indistinguishable from the outside: every caller here loops over what
-	// comes back and asserts something about each entry, so an empty slice runs
-	// zero assertions and reports success.
-	//
-	// That is the failure this estate keeps finding in other places - a plan
-	// summarising "no changes" from a document it never parsed, a dry run
-	// exiting 0 having matched no hosts - and it is reachable here by ordinary
-	// maintenance rather than by anything exotic. A directory gets renamed, an
-	// extension changes, a path moves under a directory this skips: the filter
-	// stops matching, every caller goes quiet, and nothing says so.
-	//
-	// Refused in the helper rather than left to each caller. Three tests in
-	// suppliers_test.go already do this by hand with a `checked == 0` guard,
-	// which is the right instinct applied one test at a time - and the ones
-	// that forgot are exactly the ones nobody would notice.
-	//
-	// If a caller genuinely wants to assert that NOTHING matches, it wants a
-	// different function: "check each of these" and "prove there are none of
-	// these" are different assertions, and only the first is what this is for.
-	if len(matched) == 0 {
-		t.Fatal(`the file filter matched nothing, so this test asserts nothing.
-
-Every caller loops over what this returns, so an empty result is not "the
-repository is clean" - it is zero assertions and a green check. Something the
-filter names has almost certainly moved or been renamed.
-
-If proving a set is EMPTY is the actual intent, that is a different assertion
-and wants its own helper rather than this one.`)
-	}
-	sort.Strings(matched)
-	return matched
 }
 
 var assertsSomething = regexp.MustCompile(`(?m)^\s*(validation\s*\{|precondition\s*\{|postcondition\s*\{|check\s+")`)

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 89
+floor: 91
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1319,6 +1319,37 @@ mutations:
       rather than like a skip. The count per file may only fall, so a new
       drop cannot be added without somebody writing the number down.
 
+  - guard: TestEveryKindOfFileIsGovernedOrDeclaredUngoverned
+    file: scripts/undeclared-language.rs
+    create: |
+      fn main() {
+          println!("nothing in this estate reads this file");
+      }
+    mentions: 'covers ".rs"'
+    why: >
+      Every tool here is bound to a file type, so a language nobody declared
+      is a language nothing checks - not linted, not built, not covered, not
+      proved, and silent about all of it. The aggregate that used to hold a
+      default opinion about unfamiliar files went in #365, which makes this
+      the only thing standing between a new extension and no checks at all.
+      Planted rather than substituted because the guard has nothing to say
+      until an undeclared kind is PRESENT, and no file in the tree can be
+      edited into being a different language.
+
+  - guard: TestEveryShebangNamesADeclaredInterpreter
+    file: githooks/undeclared-interpreter
+    create: |
+      #!/usr/bin/env python3
+      print("nothing here lints this")
+    mentions: "names an interpreter this estate has no tooling for"
+    why: >
+      The one case the extension check cannot reach. An extensionless file is
+      classified by its own name, so declaring githooks/pre-push says nothing
+      about what it is written in - and githooks/ is executable code that runs
+      on every commit and every push. Without this, adopting a new language is
+      as quiet as naming a file. Planted for the same reason as above: there is
+      nothing in the tree to edit into a foreign shebang.
+
 owed_ceiling: 55
 
 unprovable:
@@ -1349,6 +1380,17 @@ unprovable:
   # means mutating another guard's declaration, which that guard's own entry
   # already proves.
   - test: TestEveryDeclaredRetryStillExists
+    reason: meta
+  # The tracked-file enumeration every other guard walks, and the list of
+  # tracked paths this repository did not author. Both are checks on the
+  # harness rather than on the estate: breaking what they read means editing
+  # the enumeration itself, and a guard proving its own source was edited
+  # proves nothing about the property. Their failure modes are instead pinned
+  # from the other side - every guard that enumerates would go vacuous, and the
+  # vacuity floors those guards carry are each proved by their own entry.
+  - test: TestTheTrackedEnumerationSeesTheWholeRepository
+    reason: meta
+  - test: TestEveryUnauthoredPathStillExists
     reason: meta
   #
   # A pure function whose test table already contains the failing case. The

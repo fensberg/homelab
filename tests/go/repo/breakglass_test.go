@@ -39,28 +39,15 @@ var breakGlassTokens = []string{
 
 func TestBreakGlassIdentityIsNeverReferencedByOpenTofu(t *testing.T) {
 	root := repoRoot(t)
-	checked := 0
 
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	sources := openTofuSources(t)
+
+	for _, rel := range sources {
+		body, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".tf") && !strings.HasSuffix(path, ".tftest.hcl") {
-			return nil
-		}
-		checked++
-		body, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
+			t.Fatalf("reading %s: %v", rel, err)
 		}
 		if tok, found := firstMatch(string(body), breakGlassTokens); found {
-			rel, _ := filepath.Rel(root, path)
 			t.Errorf(`%s references %q.
 
 The break-glass identity must never be an OpenTofu value. Anything Terraform
@@ -70,13 +57,6 @@ decrypts the backups of that state protects nothing.
 
 It is read by scripts/contractor in Go, through op, and only during a restore.`, rel, tok)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the repository: %v", err)
-	}
-	if checked < 5 {
-		t.Fatalf("only %d OpenTofu files were checked; the walk is wrong", checked)
 	}
 }
 

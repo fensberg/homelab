@@ -1,0 +1,170 @@
+# What reads each kind of file this repository tracks.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  A LANGUAGE NOBODY DECLARED IS A LANGUAGE NOTHING CHECKS.
+#
+#  Every tool in this estate is bound to a file type: shellcheck to .sh, tofu
+#  to .tf, vitest to .ts. That is deliberate - the one aggregate that held a
+#  default opinion about unfamiliar files was removed in #365 because it hung
+#  more often than it caught anything. The cost of that trade is this file.
+#
+#  Adding a .rs, a .py or a .rb to this repository buys nothing but silence:
+#  not vetted, not built, not linted, no coverage floor, no mutation proof.
+#  Nothing turns red, because no check has ever heard of it.
+#
+#  So tests/go/repo/languages_test.go enumerates every tracked file and refuses
+#  any kind that is not named below. The point is NOT that a new language must
+#  arrive with tooling. It is that it must arrive with somebody writing down
+#  that it has none.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# A "kind" is how the guard classifies a file, in this order:
+#   - an extensionless file is its own basename       (Dockerfile, CODEOWNERS)
+#   - a dotfile with no further dot is its own name   (.gitignore)
+#   - anything else is its extension                  (.go, .tf)
+#
+# GOVERNED entries say what actually reads the file. Write the tool, not the
+# category: "a linter runs" is the sentence this file exists to stop anybody
+# writing. If nothing executes or parses it, it is not governed - move it down.
+#
+# `optional: true` marks a kind that is legitimately absent some of the time -
+# .github/patches is empty between hand-overs, and a guard that went red every
+# time the last patch was applied would be teaching people to ignore it. Use it
+# only where absence is the NORMAL state of a working repository, never to
+# quiet a kind that simply left.
+#
+# UNGOVERNED entries are a debt, and the ceiling below may only fall. There is
+# no `reason:` field here for the same reason tests/coverage-blocklist.yml has
+# none: a well-reasoned exemption stops being a debt anybody intends to pay.
+# `what` says what the files are so the entry can be recognised, and nothing
+# more.
+
+governed:
+  - kind: ".go"
+    read_by: >-
+      go vet and go build over every module (task validate), gofmt via
+      pre-commit, go test with a per-module floor in
+      tests/coverage-baseline.json, and the mutation ledger for anything under
+      tests/go/repo.
+  - kind: ".tf"
+    read_by: >-
+      tofu validate against the placeholder config and tofu fmt via pre-commit
+      (task validate), plus checkov in the slow lane.
+  - kind: ".hcl"
+    read_by: >-
+      Two different files, both read: registry.tftest.hcl by tofu test (task
+      test:tofu), and .terraform.lock.hcl by tofu init and by the guard that
+      requires every provider to be pinned.
+  - kind: ".sh"
+    read_by: >-
+      shellcheck and shfmt via pre-commit and the Shell Lint lane, with each
+      unit required to be executed by a test
+      (TestEveryShellUnitIsCovered).
+  - kind: ".ts"
+    read_by: "pnpm typecheck (tsc) and vitest, with a coverage floor under the js key."
+  - kind: ".mts"
+    read_by: "pnpm typecheck; vitest's own config, loaded on every run."
+  - kind: ".js"
+    read_by: >-
+      prettier via pre-commit, and commitlint loads commitlint.config.js on
+      every commit - a broken one fails the commit-msg hook.
+  - kind: ".yaml"
+    read_by: >-
+      prettier and check-yaml via pre-commit, kubectl kustomize and kubeconform
+      for manifests (task validate), checkov for policy, and
+      TestRepositoryHasNoDuplicateKeys.
+  - kind: ".yml"
+    read_by: >-
+      As .yaml, plus actionlint and zizmor over .github/workflows and the
+      egress guard over every job.
+  - kind: ".json"
+    read_by: >-
+      prettier via pre-commit and TestRepositoryHasNoDuplicateKeys; the config
+      template is additionally parsed by the Render phase.
+  - kind: ".md"
+    read_by: "markdownlint-cli2 and prettier via pre-commit, and codespell."
+  - kind: ".mod"
+    read_by: "go build and go vet; go.mod is parsed by the toolchain on every command."
+  - kind: ".sum"
+    read_by: >-
+      The Go toolchain verifies every dependency against it on build. Machine
+      written, never edited by hand.
+  - kind: ".env"
+    read_by: >-
+      scripts/versions.env is sourced by the provisioning script, the runner
+      image build and the composite action, and
+      TestEveryPinnedVersionIsUsed reads it.
+  - kind: ".toml"
+    read_by: "gitleaks, which loads .gitleaks.toml on every pre-commit run."
+  - kind: ".cfg"
+    read_by: "ansible, which loads ansible.cfg when the hypervisor play runs."
+  - kind: "Dockerfile"
+    read_by: >-
+      hadolint over every Dockerfile the estate builds (task lint, discovered
+      with git ls-files), and docker build in the image lanes.
+  - kind: ".gitignore"
+    read_by: >-
+      git itself, and now the guards: the tracked-file enumeration every check
+      walks is defined by what this does not exclude.
+  - kind: ".prettierignore"
+    read_by: "prettier, on every pre-commit run."
+  - kind: ".codespellrc"
+    read_by: "codespell, in task lint and the slow lane."
+  - kind: ".gitattributes"
+    read_by: "git, on every checkout and diff."
+  - kind: "CODEOWNERS"
+    read_by: >-
+      GitHub, which requests the review this repository's merge rules require.
+      TestCodeownersCoversTheSensitivePaths checks it here.
+  - kind: ".patch"
+    optional: true
+    read_by: >-
+      tests/go/repo/patches_test.go applies every outstanding patch against a
+      clean tree and requires the result to parse, and the mutation ledger
+      judges protected files as they will be once applied.
+  - kind: "sensitive-paths"
+    read_by: >-
+      .github/scripts/sensitive-paths.sh in CI and
+      tests/go/repo/sensitivepaths_test.go, which requires every entry to exist
+      and carry a reason.
+
+# Interpreters an executable script here may name.
+#
+# The kind list above classifies an extensionless file by its own basename, so
+# declaring `pre-push` says nothing about the language inside it - and githooks/
+# is executable code that runs on every commit and every push. A shebang is the
+# only honest signal there, so every one must name an interpreter this estate
+# can actually check.
+interpreters:
+  - name: bash
+    read_by: "shellcheck and shfmt, via pre-commit and the Shell Lint lane."
+  - name: sh
+    read_by: "shellcheck and shfmt, as bash."
+
+# Kinds nothing reads. Each is a hole; the count below may only fall.
+ungoverned:
+  - kind: ".disabled"
+    what: >-
+      management/cluster/backend_pg.tf.disabled - OpenTofu deliberately does
+      not load it, which is the point of the suffix, so tofu validate never
+      sees it and it can drift from the live backend silently.
+  - kind: "LICENSE"
+    what: "The licence text."
+  - kind: "commit-msg"
+    what: >-
+      githooks/ - four extensionless shell scripts. They have shebangs and
+      shellcheck is not run over them, which is the gap the shebang half of
+      languages_test.go now reports separately.
+  - kind: "post-merge"
+    what: "githooks/, as above."
+  - kind: "pre-commit"
+    what: "githooks/, as above."
+  - kind: "pre-push"
+    what: "githooks/, as above."
+  - kind: "f14a06cf713fd7f9"
+    what: >-
+      A Go fuzz corpus entry under scripts/clerk/testdata. Written by the
+      toolchain, replayed by go test, never edited.
+
+# The number of ungoverned entries above. It may only fall.
+ungoverned_ceiling: 7
