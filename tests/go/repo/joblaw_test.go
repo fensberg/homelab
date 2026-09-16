@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -152,8 +154,14 @@ func localActionSteps(t *testing.T, dir string) ([]map[string]any, error) {
 	root := repoRoot(t)
 	for _, name := range []string{"action.yml", "action.yaml"} {
 		body, err := os.ReadFile(filepath.Join(root, dir, name))
-		if err != nil {
+		// Only absence means "try the other spelling". Any other failure to
+		// read is not evidence the action is elsewhere, and treating it as
+		// such would pass a job whose first action nobody could inspect.
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
+		}
+		if err != nil {
+			return nil, err
 		}
 		var doc struct {
 			Runs struct {
