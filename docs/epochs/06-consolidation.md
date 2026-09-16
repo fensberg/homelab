@@ -199,6 +199,62 @@ the copy was made. That is the ledger doing exactly its job: the guard would
 otherwise have passed while covering less, which is the failure this whole
 regime exists to make loud.
 
+### harden-runner and checkout, written once
+
+`step-security/harden-runner` is pinned in 31 jobs and `actions/checkout` in 30.
+The first attempt at consolidating them was a guard requiring every copy to
+match a declaration file. It was reverted: it enforced agreement between 91
+copies while keeping all of them, and the declaration was a 92nd place the
+commit was written. It was also chosen for the wrong reason - it avoided a patch
+to a protected path - which this estate has already said is not a reason.
+
+**This had been tried before, and the record of why it failed was wrong.**
+`.github/actions/secure-checkout` combined both steps on 2026-08-19 and was
+deleted the same day with a commit message citing "clarity and
+maintainability". The real reason is in that run's annotations: every job
+failed with "Can't find 'action.yml' ... Did you forget to run actions/checkout
+before running your local action?" It was referenced with `./`, which is read
+out of the workspace, and it was the step that fills the workspace.
+
+**`$/` removes that constraint and nothing else.** GitHub's self-repository
+reference, generally available since 2026-07-30, resolves an action at the
+running commit with no checkout. So one composite action can now run first.
+
+It lives at `.github/workflows/mobilize/action.yml` rather than under
+`.github/actions/`, because it decides what every job may reach and whether a
+token is left on disk. Beside the workflows it sits behind the `workflows`
+permission the agent deliberately lacks, so changing it takes the same human
+hand-over as changing a workflow. GitHub loads workflows only from the top of
+that directory, so it is never run as one. The cost is that actionlint's hook
+reads the whole tree and mistakes action metadata for a workflow; the hook now
+reads top-level files only. zizmor audits it correctly as a composite action.
+
+**The blocker #387 recorded was narrower than stated.** It said the only way to
+satisfy both zizmor and actionlint about `$/` was an actionlint ignore covering
+the format check for every `uses:`. actionlint's ignore matches the message,
+and the message names the reference, so it can be scoped to references into
+`.github/workflows`. Tested: with the exemption in place, `uses: someone/else@`
+is still reported.
+
+**One thing no document settles, so a lane settles it.** harden-runner installs
+its policy in a pre-step (`src/setup.ts`; the main step never reads
+`egress-policy`), and GitHub documents `runs.pre` as unsupported for local
+actions. If the pre-step does not run when harden-runner is nested, every job
+moved onto the action is unwatched and green. harden-runner's own report is not
+evidence either: it falls back to audit on several errors and carries on.
+
+So nothing is migrated until `.github/workflows/egress-proof.yml` answers it.
+Three jobs, because one proves nothing on its own: the probe host must answer
+under audit (so a refusal is the policy, not an outage), must be refused under
+block with harden-runner direct (so the method can see a known block), and must
+be refused under block with harden-runner inside `mobilize`. Each also requires
+an allowed host to answer, so refusing everything cannot pass as blocking
+correctly. It stays afterwards as standing proof that a block policy blocks.
+
+A dedicated lane cannot replace per-job hardening, which was considered:
+harden-runner watches only the runner it is installed on, and every job gets a
+fresh one.
+
 ### A language nobody declared is a language nothing checks
 
 Every tool in this estate is bound to a file type — shellcheck to `.sh`, tofu
