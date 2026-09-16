@@ -1,0 +1,74 @@
+# How every job starts: harden the runner, then check out the repository.
+#
+# THE ONE PLACE THESE TWO COMMITS ARE WRITTEN. harden-runner and checkout were
+# restated in 31 and 30 jobs, and those copies agreed only because nobody had
+# made a mistake yet. A job calls this instead:
+#
+#   - uses: $/.github/workflows/mobilize
+#     with:
+#       egress-policy: block
+#       allowed-endpoints: >
+#         github.com:443
+#
+# WHY `$/` AND NOT `./`. This was tried once before, as
+# .github/actions/secure-checkout referenced with `./`, and every job failed:
+# "Can't find 'action.yml' ... Did you forget to run actions/checkout before
+# running your local action?" A `./` reference is read out of the workspace,
+# and this is the step that fills the workspace. `$/` resolves against the
+# repository at the running commit, with no checkout, which is the whole
+# reason this can exist now and could not then.
+#
+# WHY IT LIVES UNDER .github/workflows. This decides what every job may reach
+# and whether the job's token is left on disk. Kept beside the workflows, it is
+# behind the same `workflows` permission the agent does not hold, so changing
+# it takes the same human hand-over as changing a workflow. GitHub loads
+# workflows only from the top of that directory, so it is never run as one.
+#
+# WHAT IS NOT YET KNOWN, and what proves it. harden-runner reads its policy and
+# installs its agent in a pre-step (src/setup.ts), and GitHub's metadata docs
+# say `runs.pre` is not supported for local actions. If that pre-step does not
+# run when harden-runner is nested here, every job that uses this goes green
+# with egress unwatched. .github/workflows/egress-proof.yml answers it by
+# requiring a request to a host outside the allowlist to be refused - not by
+# asking harden-runner whether it ran, because it falls back to audit on
+# several errors and would still say so.
+name: "Mobilize"
+description: >-
+  Harden the runner, then check out the repository, from the one place either
+  action's commit is written.
+
+inputs:
+  egress-policy:
+    description: >-
+      block or audit, exactly as scripts/approved-suppliers.yml declares for the
+      calling job. No default: harden-runner refuses an empty policy, which is
+      the right answer for a job that did not say.
+    required: true
+  allowed-endpoints:
+    description: >-
+      The calling job's allowlist, copied from its entry in
+      scripts/approved-suppliers.yml. `security guard-egress` refuses drift.
+    required: false
+    default: ""
+  fetch-depth:
+    description: How much history to check out; 0 is all of it.
+    required: false
+    default: "1"
+
+runs:
+  using: composite
+  steps:
+    - name: Harden the runner
+      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      with:
+        egress-policy: ${{ inputs.egress-policy }}
+        allowed-endpoints: ${{ inputs.allowed-endpoints }}
+
+    # persist-credentials is not an input. No job here needs the token left on
+    # disk, and leaving it lets any later step - or anything a later step runs -
+    # push with the job's credentials, silently.
+    - name: Check out the repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: ${{ inputs.fetch-depth }}
+        persist-credentials: false

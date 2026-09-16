@@ -1,0 +1,135 @@
+# Proof that egress blocking actually blocks.
+#
+# harden-runner's own report is not evidence. It falls back to egress-policy
+# audit on several errors and carries on, so "harden-runner ran" and "egress
+# was restricted" are different claims, and only the second one matters. The
+# only evidence that a block policy is in force is a request it refused.
+#
+# THE QUESTION THIS WAS WRITTEN TO ANSWER. .github/workflows/mobilize puts
+# harden-runner inside a composite action, so its two commits are written once
+# instead of in every job. harden-runner installs its policy in a pre-step, and
+# GitHub documents `runs.pre` as unsupported for local actions. If the pre-step
+# does not run when nested, every job using mobilize is unwatched and green.
+#
+# THREE JOBS, BECAUSE ONE PROVES NOTHING ON ITS OWN.
+#
+#   reachable  audit, harden-runner direct.   The probe host MUST answer.
+#   direct     block, harden-runner direct.   The probe host MUST be refused.
+#   nested     block, through mobilize.       The probe host MUST be refused.
+#
+# `reachable` is what makes a refusal mean something: without it, a probe host
+# that was simply down would read as a working block. `direct` proves the probe
+# method detects a block harden-runner is known to enforce. Only then does
+# `nested` answer the question. Each job also requires an ALLOWED request to
+# succeed, so "everything failed" cannot pass as "the block worked".
+#
+# The probe host is example.com: reserved by IANA for exactly this kind of use,
+# served by IANA rather than by anyone this estate depends on, and on no job's
+# allowlist anywhere in scripts/approved-suppliers.yml.
+name: "Egress Proof"
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# GitHub's default `bash -e {0}` has no pipefail; naming the shell gets
+# `bash --noprofile --norc -eo pipefail {0}`. tests/go/repo/pipefail_test.go
+# asserts this is present on every workflow.
+defaults:
+  run:
+    shell: bash
+
+env:
+  PROBE: https://example.com
+  ALLOWED: https://github.com
+
+jobs:
+  reachable:
+    name: "Probe host answers when nothing blocks it"
+    runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot run for GitHub's default six hours.
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: The probe host answers
+        run: |
+          if ! curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
+            echo "::error::$PROBE did not answer with nothing blocking it, so a refusal in the other two jobs would prove nothing. Choose a probe host that is reachable from a GitHub-hosted runner."
+            exit 1
+          fi
+          echo "$PROBE answers when unrestricted."
+
+  direct:
+    name: "Block refuses the probe host (harden-runner direct)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner (Block all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: An allowed host answers
+        run: |
+          if ! curl --silent --show-error --max-time 20 --output /dev/null "$ALLOWED"; then
+            echo "::error::$ALLOWED is on this job's allowlist and did not answer. The block is refusing everything, so a refused probe below would not show that it refuses selectively."
+            exit 1
+          fi
+
+      - name: The probe host is refused
+        run: |
+          if curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
+            echo "::error::$PROBE answered under egress-policy: block with harden-runner as the first step. The method this workflow uses cannot see a block that is known to be enforced, so the nested job's result means nothing either."
+            exit 1
+          fi
+          echo "$PROBE was refused, as block requires."
+
+  nested:
+    name: "Block refuses the probe host (harden-runner inside mobilize)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: The repository was checked out
+        run: |
+          if [ ! -f CLAUDE.md ]; then
+            echo "::error::mobilize ran and the workspace holds no checkout."
+            exit 1
+          fi
+
+      - name: An allowed host answers
+        run: |
+          if ! curl --silent --show-error --max-time 20 --output /dev/null "$ALLOWED"; then
+            echo "::error::$ALLOWED is on this job's allowlist and did not answer. The block is refusing everything, so a refused probe below would not show that it refuses selectively."
+            exit 1
+          fi
+
+      - name: The probe host is refused
+        run: |
+          if curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
+            echo "::error::$PROBE answered under egress-policy: block when harden-runner runs inside mobilize. Its policy was not installed - almost certainly because its pre-step does not run for a nested action - so every job using mobilize would be unwatched while reporting green. Do not migrate jobs onto mobilize."
+            exit 1
+          fi
+          echo "$PROBE was refused: harden-runner enforces block when nested in mobilize."
