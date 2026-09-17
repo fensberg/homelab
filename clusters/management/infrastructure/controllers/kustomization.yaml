@@ -9,3 +9,4 @@ resources:
   - cloudnative-pg.yaml
   - openebs.yaml
   - actions-runner-controller.yaml
+  - kube-prometheus-stack.yaml

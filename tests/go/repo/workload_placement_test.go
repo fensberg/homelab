@@ -157,6 +157,70 @@ var workloadPods = []workloadPod{
 		ContainerSecurityKey: "containerSecurityContext",
 	},
 	{
+		What:         "the Prometheus operator",
+		File:         "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml",
+		Release:      "kube-prometheus-stack",
+		ChartVersion: "91.4.1",
+		// kube-prometheus-stack/values.yaml. This chart deploys six pods from
+		// one release, so it takes several entries: the paths differ per
+		// component, and a value at the wrong one is accepted in silence.
+		Values:               []string{"prometheusOperator"},
+		Priority:             "interactive",
+		PodSecurityKey:       "securityContext",
+		ContainerSecurityKey: "containerSecurityContext",
+	},
+	{
+		What:         "Prometheus itself",
+		File:         "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml",
+		Release:      "kube-prometheus-stack",
+		ChartVersion: "91.4.1",
+		Values:       []string{"prometheus", "prometheusSpec"},
+		Priority:     "interactive",
+		// Pod level only. The operator builds the StatefulSet and writes each
+		// container's context itself, so the chart offers no value that would
+		// reach one - checked in templates/prometheus/prometheus.yaml rather
+		// than assumed from the absence of a key.
+		PodSecurityKey: "securityContext",
+	},
+	{
+		What:           "Alertmanager",
+		File:           "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml",
+		Release:        "kube-prometheus-stack",
+		ChartVersion:   "91.4.1",
+		Values:         []string{"alertmanager", "alertmanagerSpec"},
+		Priority:       "interactive",
+		PodSecurityKey: "securityContext",
+	},
+	{
+		What:                 "Grafana",
+		File:                 "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml",
+		Release:              "kube-prometheus-stack",
+		ChartVersion:         "91.4.1",
+		Values:               []string{"grafana"},
+		Priority:             "interactive",
+		PodSecurityKey:       "securityContext",
+		ContainerSecurityKey: "containerSecurityContext",
+	},
+	{
+		What:                 "kube-state-metrics",
+		File:                 "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml",
+		Release:              "kube-prometheus-stack",
+		ChartVersion:         "91.4.1",
+		Values:               []string{"kube-state-metrics"},
+		Priority:             "interactive",
+		PodSecurityKey:       "securityContext",
+		ContainerSecurityKey: "containerSecurityContext",
+	},
+	// node-exporter is the sixth pod of that release and is deliberately NOT
+	// here. It is a DaemonSet that has to run on EVERY node, control planes
+	// included - a node's memory headroom is the number epoch 04 exists to
+	// watch, and the control planes are the tightest machines in the estate.
+	// This table asserts the opposite property, a required affinity that keeps
+	// a pod OFF the control plane, and it has no way to say "everywhere, on
+	// purpose". Its placement, priority, resources and security context are
+	// set in the manifest beside the others; what is missing is a guard that
+	// can express a workload which belongs on every machine.
+	{
 		What:         "the OpenEBS Local PV provisioner",
 		File:         "clusters/management/infrastructure/controllers/openebs.yaml",
 		Release:      "openebs",
