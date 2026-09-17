@@ -204,7 +204,13 @@ files:
   - path: collector/main.go
     uncovered: 3
     covered_by: nothing
-  - path: expediter/main.go
+  - path: procurement/main.go
+    uncovered: 3
+    covered_by: nothing
+  - path: procurement/order-pypi.go
+    uncovered: 2
+    covered_by: nothing
+  - path: procurement/order.go
     uncovered: 3
     covered_by: nothing
   - path: security/guard-deliveries.go

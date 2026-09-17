@@ -116,6 +116,15 @@ func readShim(t *testing.T, hook string) string {
 // lane that has what it needs - tofu-fmt and go-fmt already were. Written as a
 // comment it would hold until the next hook; written here, adding one fails
 // this test with the two names that disagree.
+//
+// ONE EXCEPTION, AND IT IS EARNED NOT DECLARED. A system hook may run in the
+// lane when its entry is `python3 -m <module>` and the lane takes delivery of
+// that module's package from scripts/deliveries.lock before running pre-commit.
+// The pre-commit-hooks checks are that shape (#416): installed by hash rather
+// than cloned by pre-commit, so the lane has exactly what they need. There is
+// no list of such hooks here - the entry, the lock and the lane's own
+// take-delivery step have to agree, and a hook that stops agreeing is refused
+// like any other.
 func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 	cfg := parsePreCommitConfig(t)
 
@@ -137,10 +146,12 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 	}
 
 	system := map[string]bool{}
+	entries := map[string]string{}
 	for _, repo := range cfg.Repos {
 		for _, hook := range repo.Hooks {
 			if hook.Language == "system" && runsAtCommit(hook.Stages) {
 				system[hook.ID] = true
+				entries[hook.ID] = hook.Entry
 			}
 		}
 	}
@@ -166,8 +177,23 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 		}
 	}
 
+	delivered := formatLaneDeliveries(t, body)
+	lock := readRepoFile(t, "scripts/deliveries.lock")
 	for id := range system {
 		if !skipped[id] {
+			if pkg, ok := lockedPythonPackage(entries[id]); ok {
+				if !delivered[pkg] {
+					t.Errorf("hook %q runs `%s`, and the Format lane does not take delivery of %s "+
+						"before running pre-commit.\n\n"+
+						"It will run there and fail with \"No module named\". Add %s to the lane's "+
+						"scripts/take-delivery.sh step, or skip the hook and name its owner.",
+						id, entries[id], pkg, pkg)
+				} else if !strings.Contains(lock, "# [pypi: "+pkg+" ") {
+					t.Errorf("hook %q runs `%s`, and scripts/deliveries.lock has no pypi: section for %s, "+
+						"so the lane's delivery of it fails before any hook runs", id, entries[id], pkg)
+				}
+				continue
+			}
 			t.Errorf("hook %q is a system hook at the pre-commit stage and is not in "+
 				"the Format lane's SKIP list.\n\n"+
 				"It will run there and fail on a binary that lane does not install. "+
@@ -215,7 +241,7 @@ func TestTheFormatLaneRefusesASupplierBeforeInstallingAnything(t *testing.T) {
 	// Everything that fetches or executes third-party code, in the order the
 	// lane would reach it.
 	for _, later := range []string{
-		"pipx install pre-commit",
+		"scripts/take-delivery.sh",
 		"pre-commit run --all-files",
 	} {
 		at := strings.Index(body, later)
@@ -244,6 +270,41 @@ func TestTheFormatLaneRefusesASupplierBeforeInstallingAnything(t *testing.T) {
 			"scripts/versions.env, so it can validate on a different toolchain " +
 			"than the one the estate pins")
 	}
+}
+
+// formatLaneDeliveries is every name the Format lane passes to
+// scripts/take-delivery.sh before it runs pre-commit.
+func formatLaneDeliveries(t *testing.T, workflow string) map[string]bool {
+	t.Helper()
+	start := strings.Index(workflow, "\n  format:\n")
+	if start < 0 {
+		t.Fatal("pr-validation.yml has no format job, so which packages the Format lane installs cannot be read")
+	}
+	lane := workflow[start+1:]
+	if end := regexp.MustCompile(`\n  [a-z0-9_-]+:\n`).FindStringIndex(lane[1:]); end != nil {
+		lane = lane[:end[0]+1]
+	}
+	run := strings.Index(lane, "pre-commit run --all-files")
+	if run < 0 {
+		t.Fatal("the Format lane does not run pre-commit, so nothing it installs can be judged against the hooks")
+	}
+	out := map[string]bool{}
+	for _, m := range regexp.MustCompile(`scripts/take-delivery\.sh((?: [a-z0-9-]+)+)`).FindAllStringSubmatchIndex(lane[:run], -1) {
+		for _, name := range strings.Fields(lane[m[2]:m[3]]) {
+			out[name] = true
+		}
+	}
+	return out
+}
+
+// lockedPythonPackage reads `python3 -m <module>...` and returns the PyPI name
+// the module's top-level package is published under, the way the lock writes it.
+func lockedPythonPackage(entry string) (string, bool) {
+	m := regexp.MustCompile(`^python3 -m ([a-z0-9_]+)(?:\.|\s|$)`).FindStringSubmatch(strings.TrimSpace(entry))
+	if m == nil {
+		return "", false
+	}
+	return strings.ReplaceAll(m[1], "_", "-"), true
 }
 
 // sharedSetupGoReadsThePin reports whether a workflow sets up Go through the

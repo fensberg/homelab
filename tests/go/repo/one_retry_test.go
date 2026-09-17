@@ -10,7 +10,7 @@ import (
 // There is one retry in this estate, and a second one cannot be written.
 //
 // WHY THIS SHAPE. There were three: a hand-rolled `for attempt in 1 2 3` loop
-// in expediter.yml, the bounded HTTP retry in scripts/clerk/llm.go, and the
+// in expediter.yml (now expedite.yml), the bounded HTTP retry in scripts/clerk/llm.go, and the
 // shell helper. Three implementations of one policy is three places for it to
 // drift, and the fourth would have been written the same way the third was -
 // by somebody who did not know the other two existed.

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 107
+floor: 117
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -914,6 +914,142 @@ mutations:
       a workflow that reaches further than its entry has widened this estate's
       outbound surface with nothing to say so.
 
+  # --- deliveries: one lock, one installer, and ordering holds no bypass ----
+
+  - guard: TestNothingInstallsFromPyPIOutsideTakeDelivery
+    file: scripts/install-dependencies.sh
+    find: '"$(dirname "$0")/take-delivery.sh" ansible-core pre-commit pre-commit-hooks checkov zizmor codespell'
+    replace: 'python3 -m pip install --user --break-system-packages "checkov==${CHECKOV_VERSION}"'
+    mentions: "installs from a Python package index outside scripts/take-delivery.sh"
+    why: >
+      A second installer beside take-delivery.sh pins the tool and lets every
+      dependency it pulls in resolve fresh on each install - over a hundred
+      packages for checkov alone - while the lock sits there looking like the
+      thing that decides what arrives (#416).
+
+  - guard: TestOnlyTheExpediteDutyRunsUnderItsCredential
+    file: .github/workflows/orders-under-the-bypass.yml
+    create: |
+      name: "Orders under the bypass"
+      on: workflow_dispatch
+      permissions:
+        contents: read
+      jobs:
+        order:
+          runs-on: ubuntu-latest
+          timeout-minutes: 10
+          steps:
+            - name: Mint the expedite token
+              env:
+                KEY: ${{ secrets.EXPEDITE_BOT_PRIVATE_KEY }}
+              run: echo minted
+            - name: Order the lock
+              run: go run -C scripts/procurement . order
+    mentions: "runs `procurement order`"
+    why: >
+      Ordering writes scripts/deliveries.lock, which decides what every lane
+      and workstation installs. Run under the expedite credential, that
+      decision is taken with a token that may merge without a review - the
+      bypass belongs to the expediting duty, not to procurement.
+
+  - guard: TestOnlyTheExpediteDutyRunsUnderItsCredential
+    file: .github/workflows/another-duty-under-the-bypass.yml
+    create: |
+      name: "Another duty under the bypass"
+      on: workflow_dispatch
+      permissions:
+        contents: read
+      jobs:
+        chore:
+          runs-on: ubuntu-latest
+          timeout-minutes: 10
+          steps:
+            - name: Mint the expedite token
+              env:
+                APP: ${{ secrets.EXPEDITE_BOT_APP_ID }}
+              run: echo minted
+            - name: A procurement verb that is not expediting
+              run: go run -C scripts/procurement . reconcile-suppliers
+    mentions: "which is not an expedite-* verb"
+    why: >
+      Any procurement duty added later arrives with no permission of its own.
+      A workflow that runs it beside the expedite credential widens the
+      standing order to whatever that verb does, and nothing in the verb's own
+      code would say so.
+
+  - guard: TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith
+    file: scripts/take-delivery.sh
+    find: 'if ! echo "${sha}  ${file}" | sha256sum -c --quiet -; then'
+    replace: "if false; then"
+    mentions: "installed a file whose hash the lock does not list"
+    why: >
+      The hash check is the whole of what scripts/deliveries.lock is worth.
+      Without it every lane installs exactly as before and stays green, while
+      a replaced release asset goes onto every runner and workstation.
+
+  - guard: TestTakeDeliveryTakesTheNamedFileOutOfAnArchive
+    file: scripts/take-delivery.sh
+    find: 'found="$(find "$work/$name.d" -type f -name "$name")"'
+    replace: 'found="$(find "$work/$name.d" -type f -name LICENSE)"'
+    mentions: "not the archive's tool"
+    why: >
+      An archive carries a licence and a readme beside the binary. Taking the
+      wrong member installs something that is not the tool under the tool's
+      name, and the lane then fails far from the cause.
+
+  - guard: TestTakeDeliveryHandsPipEveryHashAndEachSharedLineOnce
+    file: scripts/take-delivery.sh
+    find: "--break-system-packages --require-hashes -r"
+    replace: "--break-system-packages -r"
+    mentions: "was not told to require hashes"
+    why: >
+      Without --require-hashes pip treats the hashes as optional, resolves
+      whatever it likes for anything unlisted, and installs it - the lock
+      becomes a list of suggestions.
+
+  - guard: TestTakeDeliveryRefusesWhatTheLockDoesNotDecide
+    file: scripts/take-delivery.sh
+    find: 'echo "refusing $name: it is an installer script and nothing here says how to run it" >&2'
+    replace: 'sh "$file"'
+    mentions: "an installer script ran with flags nobody wrote down"
+    why: >
+      An installer script is code from a supplier. Running one this script
+      has no flags for means running it with whatever defaults it has -
+      including falling back to sudo - rather than refusing.
+
+  - guard: TestEverySystemHookIsSkippedInTheFormatLane
+    file: .pre-commit-config.yaml
+    find: "entry: python3 -m pre_commit_hooks.check_yaml"
+    replace: "entry: python3 -m pre_commit_hooks_extra.check_yaml"
+    mentions: "the Format lane does not take delivery of pre-commit-hooks-extra"
+    why: >
+      A system hook runs in the Format lane only because the lane took
+      delivery of its package from the lock. A hook whose package it did not
+      take fails there with "No module named", which is a red lane saying
+      nothing about the repository.
+
+  - guard: TestSetupWiresTheHooksAndSigning
+    file: scripts/install-dependencies.sh
+    find: '"$(dirname "$0")/take-delivery.sh" ansible-core pre-commit pre-commit-hooks checkov zizmor codespell'
+    replace: '"$(dirname "$0")/take-delivery.sh" ansible-core pre-commit checkov zizmor codespell'
+    mentions: "never takes delivery of pre-commit-hooks"
+    why: >
+      .pre-commit-config.yaml runs pre-commit-hooks as local hooks from this
+      install. A workstation set up without it fails every commit on "No
+      module named pre_commit_hooks" - or, if an old copy is lying around,
+      runs whichever version that was.
+
+  - guard: TestEveryPinnedVersionCanActuallyBeExported
+    file: scripts/versions.env
+    find: "HADOLINT_VERSION=2.15.1"
+    replace: "HADOLINT_SHA256=c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507\nHADOLINT_VERSION=2.15.1"
+    mentions: "A checksum does not belong here at all"
+    why: >
+      versions.env holds decisions. A hash beside a version can be edited by
+      hand and nothing asks whether it was ever the file's; the lock is
+      written only by ordering. Before #416 this key was exported and
+      consumed, and the lane trusted whatever it said.
+
   - guard: TestZizmorExemptionsAreStillEarned
     file: .github/zizmor.yml
     find: "      - clerk.yml"
@@ -1661,7 +1797,7 @@ mutations:
       A setting that reads as a protection and does nothing is a status that
       says something untrue, on exactly the jobs where it would matter most.
 
-owed_ceiling: 55
+owed_ceiling: 54
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -1800,8 +1936,6 @@ unprovable:
   - test: TestEveryJobIsBounded
     owed: true
   - test: TestEveryPhaseHasASourceFileNamedAfterIt
-    owed: true
-  - test: TestEveryPinnedVersionCanActuallyBeExported
     owed: true
   - test: TestEverySensitivePathExists
     owed: true

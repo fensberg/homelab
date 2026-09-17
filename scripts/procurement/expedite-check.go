@@ -107,8 +107,8 @@ func Recent(items []item, feed string, now time.Time, within time.Duration) (ite
 	return newest, found
 }
 
-func check(args []string) int {
-	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+func expediteCheck(args []string) int {
+	fs := flag.NewFlagSet("expedite-check", flag.ContinueOnError)
 	// The CLIENT appid, not the server's. Valve posts patch notes against the
 	// game; the dedicated server appid's feed carries press articles and
 	// nothing from Valve at all.
@@ -132,7 +132,7 @@ func check(args []string) int {
 		// Loud, and not "nothing to do". An unreachable supplier and a supplier
 		// with nothing new look identical in an exit code, and only one of them
 		// means the estate is up to date.
-		fmt.Fprintf(os.Stderr, "expediter check: could not ask Steam whether anything was published: %v\n", err)
+		fmt.Fprintf(os.Stderr, "procurement expedite-check: could not ask Steam whether anything was published: %v\n", err)
 		return 1
 	}
 

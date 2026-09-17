@@ -12,8 +12,9 @@
 //	                        unsigned commits nobody can repair afterwards
 //	enforce-merge           what cannot be published - a merge commit that
 //	                        signedpush is unable to replay
-//	enforce-standing-order  what the expediter may deliver under its standing
-//	                        order - the game server's pin, and nothing else
+//	enforce-standing-order  what procurement's expedite duty may deliver under
+//	                        its standing order - the game server's pin, and
+//	                        nothing else
 //
 // NOT "guard". Security guards: deliveries at the gate, egress leaving the
 // estate, the perimeter. These three are not about who may come in or what may

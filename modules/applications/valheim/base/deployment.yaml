@@ -13,12 +13,12 @@ metadata:
     app.kubernetes.io/name: valheim
   annotations:
     # The Steam build the pinned image below contains, recorded beside it by
-    # the expediter so its next check has something to compare against. The
+    # procurement's expedite duty so its next check has something to compare against. The
     # two lines change together and nothing else here does - which is exactly
     # what its standing order permits and what the superintendent
     # refuses to let it exceed.
     #
-    # "unknown" for the image pinned by hand before the expediter existed: its
+    # "unknown" for the image pinned by hand before expediting existed: its
     # build was never recorded, so the first check will take a delivery and
     # replace both lines, which also proves the whole path end to end.
     homelab.fensberg.com/steam-build: "unknown"
@@ -64,12 +64,12 @@ spec:
           # around it. Changing what the server runs means changing this line,
           # which is a commit, which is a release.
           #
-          # The expediter keeps it current. When Valve publishes a new build
+          # Procurement's expedite duty keeps it current. When Valve publishes a new build
           # of the server - and players' clients update themselves and refuse
           # an older server - it builds the image, opens a pull request
           # changing this line and the steam-build annotation above, merges it
           # under its standing order once every required check passes, and
-          # tags the release. See .github/workflows/expediter.yml.
+          # tags the release. See .github/workflows/expedite.yml.
           #
           # This carries no Renovate annotation, deliberately. The build that
           # makes this digest already knows it; asking a bot to watch this

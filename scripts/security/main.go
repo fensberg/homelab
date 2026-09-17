@@ -6,7 +6,8 @@
 // deliver it, everything leaving is checked against where it is allowed to go,
 // and the estate is patrolled from outside. Three verbs across those three:
 //
-//	guard-deliveries  what comes in - third-party code installed as a commit hook
+//	guard-deliveries  what comes in - a commit hook from an unapproved supplier,
+//	                  or a tool that scripts/deliveries.lock does not pin by hash
 //	guard-egress      where anything may go out to - the declared endpoints
 //	patrol            the estate itself, watched from outside
 //
@@ -55,7 +56,7 @@ type verb struct {
 
 func verbs() []verb {
 	return []verb{
-		{"guard-deliveries", "refuse a delivery from an unapproved supplier", guardDeliveries},
+		{"guard-deliveries", "refuse a delivery from an unapproved supplier, or one the lock does not pin by hash", guardDeliveries},
 		{"guard-egress", "refuse a job whose outbound reach is not what the suppliers list declares", guardEgress},
 		{"patrol", "check from outside that the estate is still answering", patrol},
 	}

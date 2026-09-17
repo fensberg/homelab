@@ -89,6 +89,12 @@ governed:
     read_by: "markdownlint-cli2 and prettier via pre-commit, and codespell."
   - kind: ".mod"
     read_by: "go build and go vet; go.mod is parsed by the toolchain on every command."
+  - kind: ".lock"
+    read_by: >-
+      scripts/deliveries.lock, the only one: security guard-deliveries on every
+      commit and before the Format lane installs anything, and
+      scripts/take-delivery.sh, which installs nothing it does not list by
+      hash. Machine written by task order-deliveries, never edited by hand.
   - kind: ".sum"
     read_by: >-
       The Go toolchain verifies every dependency against it on build. Machine

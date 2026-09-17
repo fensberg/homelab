@@ -34,8 +34,8 @@ func Due(now time.Time, zone string, hour int) (bool, error) {
 	return now.In(loc).Hour() == hour, nil
 }
 
-func releaseDue(args []string) int {
-	fs := flag.NewFlagSet("release-due", flag.ContinueOnError)
+func expediteReleaseDue(args []string) int {
+	fs := flag.NewFlagSet("expedite-release-due", flag.ContinueOnError)
 	zone := fs.String("zone", "America/Chicago", "the zone whose clock the estate keeps")
 	hour := fs.Int("hour", 4, "the hour a delivery may be taken, in that zone")
 	at := fs.String("at", "", "the instant to judge, RFC 3339 (default: now)")
@@ -47,7 +47,7 @@ func releaseDue(args []string) int {
 	if *at != "" {
 		parsed, err := time.Parse(time.RFC3339, *at)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "expediter release-due: -at is not RFC 3339: %v\n", err)
+			fmt.Fprintf(os.Stderr, "procurement expedite-release-due: -at is not RFC 3339: %v\n", err)
 			return 2
 		}
 		now = parsed
@@ -55,7 +55,7 @@ func releaseDue(args []string) int {
 
 	due, err := Due(now, *zone, *hour)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "expediter release-due: %v\n", err)
+		fmt.Fprintf(os.Stderr, "procurement expedite-release-due: %v\n", err)
 		return 1
 	}
 

@@ -1,0 +1,567 @@
+diff --git a/.github/workflows/clerk.yml b/.github/workflows/clerk.yml
+index f05e38f..2d64e66 100644
+--- a/.github/workflows/clerk.yml
++++ b/.github/workflows/clerk.yml
+@@ -266,7 +266,7 @@ jobs:
+           CLERK_BOT_LLM_KEY: ${{ secrets.CLERK_BOT_LLM_KEY }}
+           # The App's ID from a variable where one exists, falling back to the
+           # secret it has always been. An App ID is not a secret - GitHub
+-          # documents it as a variable and the expediter stores it that way -
++          # documents it as a variable and the expedite App stores it that way -
+           # and the two conventions disagreeing is what #382 is about. The
+           # fallback is what makes converging cost nobody an action: nothing
+           # breaks if the variable is never created.
+@@ -339,7 +339,7 @@ jobs:
+         env:
+           # The App's ID from a variable where one exists, falling back to the
+           # secret it has always been. An App ID is not a secret - GitHub
+-          # documents it as a variable and the expediter stores it that way -
++          # documents it as a variable and the expedite App stores it that way -
+           # and the two conventions disagreeing is what #382 is about. The
+           # fallback is what makes converging cost nobody an action: nothing
+           # breaks if the variable is never created.
+diff --git a/.github/workflows/expediter.yml b/.github/workflows/expedite.yml
+similarity index 89%
+rename from .github/workflows/expediter.yml
+rename to .github/workflows/expedite.yml
+index 9d2b05a..96cffa1 100644
+--- a/.github/workflows/expediter.yml
++++ b/.github/workflows/expedite.yml
+@@ -1,10 +1,12 @@
+-name: "Expediter"
++name: "Expedite"
+ 
+-# The expediter: image update automation for the game server.
++# Expediting: image update automation for the game server.
+ #
+-# On a construction site the expediter chases orders with suppliers and gets
+-# material to site when it is needed. They do not build or install anything.
+-# This does the same for one item from one approved supplier: when Valve
++# Expediting is one duty of procurement (scripts/procurement), and the only one
++# that holds elevated permission. On a construction site, expediting chases an
++# order with a supplier and gets material to site when it is needed, without
++# building or installing anything. This does the same for one item from one
++# approved supplier: when Valve
+ # publishes a new build of the Valheim dedicated server, it takes delivery -
+ # builds the image, pins the digest - and submits it.
+ #
+@@ -44,22 +46,27 @@ name: "Expediter"
+ # moment it exists; only the tag disturbs anyone. It therefore lands at 4am
+ # local, when it disturbs nobody, and the operator can merge earlier by hand
+ # whenever they want it sooner. There is no approval button on purpose: the
+-# whole point of the expediter is that nobody has to press one.
++# whole point of expediting is that nobody has to press one.
+ #
+-# WHAT KEEPS IT HONEST. The standing order is the expediter's GitHub App being a
++# WHAT KEEPS IT HONEST. The standing order is the expedite GitHub App being a
+ # bypass actor on the ruleset that requires a review - and only that one. The
+ # ruleset requiring checks has no bypass, so its pull request must pass all of
+ # them, including `superintendent enforce-standing-order` in the Sensitive
+-# which refuses any pull request by the expediter that changes anything but
++# which refuses any pull request by that App that changes anything but
+ # those two lines or points the digest at a different image repository. The
+ # review is skipped; the checks are not.
+ #
++# THE BYPASS BELONGS TO THIS DUTY, NOT TO PROCUREMENT. Procurement's other
++# duties - ordering scripts/deliveries.lock - hold no permission, and
++# tests/go/repo refuses any step here that runs a procurement verb outside
++# expedite-*, so nothing else ever runs under this credential (#416).
++#
+ # Configuration, all on the repository rather than in this file so a fork
+ # brings its own:
+ #
+-#   secrets.EXPEDITER_BOT_APP_ID       the GitHub App's ID or client ID - the
++#   secrets.EXPEDITE_BOT_APP_ID        the GitHub App's ID or client ID - the
+ #                                      token action accepts either
+-#   secrets.EXPEDITER_BOT_PRIVATE_KEY  its private key, the .pem exactly as
++#   secrets.EXPEDITE_BOT_PRIVATE_KEY   its private key, the .pem exactly as
+ #                                      GitHub generated it, newlines and all.
+ #                                      actions/create-github-app-token cannot
+ #                                      parse base64.
+@@ -70,7 +77,9 @@ name: "Expediter"
+ # step with a message pointing at neither (#382). scripts/clerk/github.go
+ # accepts both shapes now, so the raw PEM below is correct for both and
+ # copying either App's setup works.
+-#   vars.EXPEDITER_LOGIN               its bot login, e.g. <app-slug>[bot]
++#   vars.EXPEDITE_BOT_LOGIN            its bot login, e.g. <app-slug>[bot]
++#
++# All three were EXPEDITER_* until #416 renamed the role.
+ 
+ on:
+   schedule:
+@@ -83,7 +92,7 @@ on:
+     - cron: "0 8 * * *"
+     # The release window: 4am in Chicago is 09:00 UTC in summer and 10:00 UTC in
+     # winter. GitHub's scheduler speaks UTC only, so both are asked and
+-    # `expediter release-due` says which one is really 4am today. Exactly one of
++    # `procurement expedite-release-due` says which one is really 4am today. Exactly one of
+     # them is, on every day of the year including the two the clocks change on,
+     # which that program's tests assert day by day.
+     - cron: "0 9 * * *"
+@@ -100,7 +109,7 @@ permissions:
+ # One at a time. Two runs taking the same delivery would open the same pull
+ # request twice and race each other to tag it.
+ concurrency:
+-  group: expediter
++  group: expedite
+   cancel-in-progress: false
+ 
+ defaults:
+@@ -172,7 +181,7 @@ jobs:
+           fi
+           # A window longer than the gap between checks, so a post made just
+           # after one run is still fresh at the next.
+-          verdict="$(go run -C scripts/expediter . check -within 90m)"
++          verdict="$(go run -C scripts/procurement . expedite-check -within 90m)"
+           echo "look=$([ "$verdict" = look ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+ 
+   deliver:
+@@ -289,13 +298,13 @@ jobs:
+           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+           echo "built ${IMAGE}@${digest}" >> "$GITHUB_STEP_SUMMARY"
+ 
+-      - name: Mint the expediter's token
++      - name: Mint the expedite token
+         id: token
+         if: steps.build.outputs.deliver == 'true'
+         uses: $/.github/workflows/app-token
+         with:
+-          client-id: ${{ secrets.EXPEDITER_BOT_APP_ID }}
+-          private-key: ${{ secrets.EXPEDITER_BOT_PRIVATE_KEY }}
++          client-id: ${{ secrets.EXPEDITE_BOT_APP_ID }}
++          private-key: ${{ secrets.EXPEDITE_BOT_PRIVATE_KEY }}
+           # Only what the steps below use, not everything the App was granted
+           # at installation (zizmor's github-app audit). Contents to commit the
+           # pin; pull requests to open one.
+@@ -321,7 +330,7 @@ jobs:
+           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+         run: |
+           set -euo pipefail
+-          branch="expediter/valheim-steam-${BUILD}"
++          branch="expedite/valheim-steam-${BUILD}"
+ 
+           # A delivery already submitted is picked up again, not submitted
+           # twice - the release window may not have come round yet.
+@@ -361,7 +370,7 @@ jobs:
+             "Image:  ${IMAGE}" \
+             "Digest: ${DIGEST}" \
+             "" \
+-            "Taken by the expediter: ${RUN_URL}")"
++            "Taken by expediting: ${RUN_URL}")"
+           # No author, committer or signature field: GitHub signs on the App's
+           # behalf and attributes the commit to it.
+           commit="$(gh api "repos/${REPO}/git/commits" -f message="$message" -f tree="$tree" -f "parents[]=${base}" --jq .sha)"
+@@ -385,7 +394,7 @@ jobs:
+               "" \
+               "**It merges and is tagged at 4am America/Chicago**, because the rollout drops everybody who is connected and production reconciles from the tag. Merge it yourself if you want it sooner - nothing here waits for an approval." \
+               "" \
+-              "Taken by the expediter: ${RUN_URL}")")"
++              "Taken by expediting: ${RUN_URL}")")"
+           echo "opened ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
+ 
+   release:
+@@ -443,16 +452,16 @@ jobs:
+             echo "due=true" >> "$GITHUB_OUTPUT"
+             exit 0
+           fi
+-          verdict="$(go run -C scripts/expediter . release-due)"
++          verdict="$(go run -C scripts/procurement . expedite-release-due)"
+           echo "due=$([ "$verdict" = due ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+ 
+-      - name: Mint the expediter's token
++      - name: Mint the expedite token
+         id: token
+         if: steps.window.outputs.due == 'true'
+         uses: $/.github/workflows/app-token
+         with:
+-          client-id: ${{ secrets.EXPEDITER_BOT_APP_ID }}
+-          private-key: ${{ secrets.EXPEDITER_BOT_PRIVATE_KEY }}
++          client-id: ${{ secrets.EXPEDITE_BOT_APP_ID }}
++          private-key: ${{ secrets.EXPEDITE_BOT_PRIVATE_KEY }}
+           # Contents to merge and tag; pull requests to find, comment on and
+           # merge; checks and statuses to see whether the required checks passed.
+           permission-contents: write
+@@ -472,7 +481,7 @@ jobs:
+           # The oldest open delivery, so two waiting are taken in the order they
+           # were submitted rather than newest first.
+           pr="$(gh pr list --repo "$REPO" --state open --json number,headRefName \
+-            --jq '[.[] | select(.headRefName | startswith("expediter/valheim-steam-"))] | sort_by(.number) | .[0].number // empty')"
++            --jq '[.[] | select(.headRefName | startswith("expedite/valheim-steam-"))] | sort_by(.number) | .[0].number // empty')"
+           if [ -z "$pr" ]; then
+             echo "nothing is waiting to be released" >> "$GITHUB_STEP_SUMMARY"
+             echo "pr=" >> "$GITHUB_OUTPUT"
+@@ -499,7 +508,7 @@ jobs:
+             sleep 15
+           done
+           if ! timeout 25m gh pr checks "$PR" --repo "$REPO" --required --watch --interval 30 --fail-fast; then
+-            gh pr comment "$PR" --repo "$REPO" --body "A required check did not pass, so the expediter is leaving this for a person. If it was the Super-Linter hang (#365), re-running that job is usually enough; merging is then an ordinary review."
++            gh pr comment "$PR" --repo "$REPO" --body "A required check did not pass, so expediting is leaving this for a person. If it was the Super-Linter hang (#365), re-running that job is usually enough; merging is then an ordinary review."
+             exit 1
+           fi
+ 
+@@ -509,25 +518,25 @@ jobs:
+         env:
+           GH_TOKEN: ${{ steps.token.outputs.token }}
+           PR: ${{ steps.waiting.outputs.pr }}
+-          HOLDER: ${{ vars.EXPEDITER_LOGIN }}
++          HOLDER: ${{ vars.EXPEDITE_BOT_LOGIN }}
+         run: |
+           set -euo pipefail
+           # Armed only when the check that bounds the order is: with no
+-          # EXPEDITER_LOGIN, enforce-standing-order has nobody to hold to it, so
++          # EXPEDITE_BOT_LOGIN, enforce-standing-order has nobody to hold to it, so
+           # nothing is merged under the bypass.
+           if [ -z "$HOLDER" ]; then
+-            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed. No standing order is configured (EXPEDITER_LOGIN is unset), so this waits for a review."
++            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed. No standing order is configured (EXPEDITE_BOT_LOGIN is unset), so this waits for a review."
+             echo "merged=false" >> "$GITHUB_OUTPUT"
+             exit 0
+           fi
+-          build="$(gh pr view "$PR" --repo "$REPO" --json headRefName --jq '.headRefName | sub("^expediter/valheim-steam-"; "")')"
++          build="$(gh pr view "$PR" --repo "$REPO" --json headRefName --jq '.headRefName | sub("^expedite/valheim-steam-"; "")')"
+           # An explicit message, kept inside commitlint's line limits, rather
+           # than whatever the repository's squash default assembles from the
+           # pull request body - which carries a table and long lines.
+           if ! gh pr merge "$PR" --repo "$REPO" --squash \
+             --subject "feat: take delivery of Valheim server build ${build} (#${PR})" \
+-            --body "Merged by the expediter under its standing order, in the 4am release window, after every required check passed."; then
+-            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed, but the merge was refused. The expediter is probably not a bypass actor on the review ruleset - without that this waits for a review, which is the fallback working as designed."
++            --body "Merged by expediting under its standing order, in the 4am release window, after every required check passed."; then
++            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed, but the merge was refused. The expedite App is probably not a bypass actor on the review ruleset - without that this waits for a review, which is the fallback working as designed."
+             exit 1
+           fi
+           echo "merged=true" >> "$GITHUB_OUTPUT"
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index d726a82..97a2fc8 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -117,7 +117,8 @@ jobs:
+       #
+       # So the same program runs here first, with -before-install: it answers
+       # only what can be answered with no cache - is every configured
+-      # repository approved - and refuses before pipx is even installed.
++      # repository approved, and does scripts/deliveries.lock say what the
++      # declarations say - and refuses before anything is installed.
+       #
+       # tests/go/repo/hookshim_test.go asserts this step comes before the one
+       # that installs anything. Ordering is the whole property; a gate after
+@@ -131,11 +132,21 @@ jobs:
+       - name: Refuse an unapproved supplier before anything is downloaded
+         run: go run -C scripts/security . guard-deliveries -before-install
+ 
++      # pre-commit, and pre-commit-hooks whose checks .pre-commit-config.yaml
++      # runs as local system hooks, from scripts/deliveries.lock by hash - the
++      # version scripts/versions.env pins, not one restated here (#416). This
++      # used to be `pipx install pre-commit==4.6.2`: a second copy of the
++      # version, and every dependency of pre-commit resolved fresh.
++      - name: Take delivery of pre-commit
++        run: scripts/take-delivery.sh pre-commit pre-commit-hooks
++
+       # Every `language: system` hook is skipped here, and each is owned by a
+-      # lane that has what it needs. This one installs pre-commit and nothing
+-      # else, on purpose - it is the fast lane - so a system hook naming a
+-      # binary it does not have fails with "executable not found", which is a
+-      # red check that says nothing about the repository.
++      # lane that has what it needs. This one installs pre-commit and
++      # pre-commit-hooks and nothing else, on purpose - it is the fast lane -
++      # so a system hook naming a binary it does not have fails with
++      # "executable not found", which is a red check that says nothing about
++      # the repository. The pre-commit-hooks checks are system hooks too, and
++      # run here because this lane took delivery of their package above.
+       #
+       # tofu-fmt and go-fmt: no pinned binary here. ubuntu-latest ships some Go
+       # toolchain, not necessarily the one this repo pins. The Validate lane
+@@ -155,9 +166,7 @@ jobs:
+       - name: Run pre-commit
+         env:
+           SKIP: tofu-fmt,go-fmt,delivery-guard
+-        run: |
+-          pipx install pre-commit==4.6.2
+-          pre-commit run --all-files --show-diff-on-failure --color always
++        run: pre-commit run --all-files --show-diff-on-failure --color always
+ 
+   # -----------------------------------------------------------------
+   # LANE 2: Shell scripts - the sole owner of ShellCheck. A dedicated lane
+@@ -181,8 +190,8 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # action-shellcheck downloads the pinned shellcheck binary
+-          # straight from its GitHub release.
++          # take-delivery.sh downloads the shellcheck release archive from
++          # GitHub and installs it only if its SHA256 matches the lock.
+           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+           # which job may reach what; `security guard-egress` refuses any drift.
+           # The copy lives here because harden-runner reads its policy in a
+@@ -198,20 +207,41 @@ jobs:
+       - name: Read pinned versions
+         uses: ./.github/actions/versions
+ 
++      # From scripts/deliveries.lock by hash. This lane used
++      # ludeeus/action-shellcheck, which downloaded the binary itself and
++      # checked nothing about what arrived (#416). The version is the one
++      # install-dependencies.sh puts on the devbox, where actionlint needs it
++      # too (#398), read from scripts/versions.env rather than written here.
++      - name: Take delivery of shellcheck
++        run: scripts/take-delivery.sh shellcheck
++
++      # The files the action chose, from what git tracks rather than whatever
++      # is on the runner's disk: every script named for a shell, and every
++      # extensionless executable whose shebang names one. All in one run, as
++      # the action's check_together did.
+       - name: Run ShellCheck
+-        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+-        with:
+-          # Read from scripts/versions.env rather than written here.
+-          #
+-          # A lane that takes whatever the action ships is a lane whose findings
+-          # change without a commit, so the version has always been pinned. What
+-          # changed is WHERE: shellcheck is now installed on the devbox too, by
+-          # install-dependencies.sh, because actionlint disables its shellcheck
+-          # pass entirely when the binary is absent and exits 0 (#398). Two
+-          # copies of that version would be free to disagree, which is the
+-          # drift scripts/versions.env exists to refuse.
+-          version: "v${{ env.SHELLCHECK_VERSION }}"
+-          check_together: "yes"
++        run: |
++          set -euo pipefail
++          files=()
++          while IFS= read -r -d '' f; do
++            files+=("$f")
++          done < <(git ls-files -z -- '*.sh' '*.bash' '*.ksh' '*.zsh')
++          while IFS= read -r -d '' f; do
++            case "${f##*/}" in *.*) continue ;; esac
++            [ -x "$f" ] || continue
++            if head -n1 "$f" | grep -Eqs '^#! */[^ ]*/(env *)?[abk]*sh'; then
++              files+=("$f")
++            fi
++          done < <(git ls-files -z)
++          # Nothing found is a refusal, not a pass: it means the selection has
++          # stopped matching this repository, and a clean run would say so
++          # about files it never read.
++          if [ "${#files[@]}" -eq 0 ]; then
++            echo "::error::no shell scripts were found, so nothing was checked"
++            exit 1
++          fi
++          echo "checking ${#files[@]} scripts"
++          shellcheck "${files[@]}"
+ 
+   # -----------------------------------------------------------------
+   # LANE 3: Does it actually work?
+@@ -273,20 +303,11 @@ jobs:
+         uses: ./.github/actions/versions
+ 
+       - name: Install OpenTofu
+-        run: |
+-          curl --proto '=https' --tlsv1.2 -fsSL \
+-            https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+-          chmod +x install-opentofu.sh
+-          # Into directories the runner account owns. The installer's defaults -
+-          # /opt/opentofu, linked from /usr/local/bin - fall back to sudo, and
+-          # this job runs with sudo removed (#410).
+-          mkdir -p "$HOME/.local/bin"
+-          ./install-opentofu.sh --install-method standalone \
+-            --opentofu-version "${TOFU_VERSION}" \
+-            --install-path "$HOME/.local/opentofu" \
+-            --symlink-path "$HOME/.local/bin"
+-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+-          rm install-opentofu.sh
++        # The installer script from scripts/deliveries.lock by hash, run into
++        # directories the runner account owns - this job runs with sudo
++        # removed (#410). Until #416 the script was fetched and executed with
++        # nothing checking what arrived.
++        run: scripts/take-delivery.sh opentofu
+ 
+       # CI has no 1Password credentials and must not have any. The rendered
+       # config is a stand-in with the same shape, which is enough for validate
+@@ -314,19 +335,11 @@ jobs:
+       # "does it behave", and one owner per check is the rule everywhere else
+       # in this file too.
+ 
++      # From scripts/deliveries.lock by hash, into ~/.local/bin - this job runs
++      # with sudo removed (#410). Until #416 this archive was downloaded with no
++      # checksum at all.
+       - name: Install kubeconform
+-        run: |
+-          curl -fsSL -o kubeconform.tar.gz \
+-            "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+-          tar xzf kubeconform.tar.gz kubeconform
+-          # Into a directory the runner account owns, not /usr/local/bin. This job
+-          # runs with sudo removed (#410), so a later step cannot switch egress
+-          # enforcement off - and nothing here ever needed root to install a
+-          # single binary.
+-          mkdir -p "$HOME/.local/bin"
+-          install -m 0755 kubeconform "$HOME/.local/bin/kubeconform"
+-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+-          rm kubeconform.tar.gz kubeconform
++        run: scripts/take-delivery.sh kubeconform
+ 
+       # Build the kustomization and substitute the placeholders before
+       # validating, so what is checked is what Flux will apply. The values are
+@@ -542,20 +555,11 @@ jobs:
+ 
+       # --- OpenTofu --------------------------------------------------------
+       - name: Install OpenTofu
+-        run: |
+-          curl --proto '=https' --tlsv1.2 -fsSL \
+-            https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+-          chmod +x install-opentofu.sh
+-          # Into directories the runner account owns. The installer's defaults -
+-          # /opt/opentofu, linked from /usr/local/bin - fall back to sudo, and
+-          # this job runs with sudo removed (#410).
+-          mkdir -p "$HOME/.local/bin"
+-          ./install-opentofu.sh --install-method standalone \
+-            --opentofu-version "${TOFU_VERSION}" \
+-            --install-path "$HOME/.local/opentofu" \
+-            --symlink-path "$HOME/.local/bin"
+-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+-          rm install-opentofu.sh
++        # The installer script from scripts/deliveries.lock by hash, run into
++        # directories the runner account owns - this job runs with sudo
++        # removed (#410). Until #416 the script was fetched and executed with
++        # nothing checking what arrived.
++        run: scripts/take-delivery.sh opentofu
+ 
+       # Fixture configs from management/cluster/tests/fixtures, never the real
+       # rendered one, so this needs no credentials. The Go contract tests
+@@ -649,8 +653,11 @@ jobs:
+       - name: Read pinned versions
+         uses: ./.github/actions/versions
+ 
+-      - name: Install checkov (pinned)
+-        run: python3 -m pip install --user --break-system-packages "checkov==${CHECKOV_VERSION}"
++      # checkov and every package it pulls in, from scripts/deliveries.lock by
++      # hash (#416). A version pin alone left over a hundred dependencies to
++      # resolve fresh on every run.
++      - name: Install checkov (locked)
++        run: scripts/take-delivery.sh checkov
+ 
+       # --skip-download, deliberately. Checkov asks api0.prismacloud.io for
+       # policy metadata on startup, that host is not on the allowlist above and
+@@ -687,22 +694,11 @@ jobs:
+       - name: Read pinned versions
+         uses: ./.github/actions/versions
+ 
+-      # A single static binary from the publisher's own release, verified
+-      # against the checksum pinned beside its version - the same pattern the
+-      # TruffleHog lane uses, because a download with no checksum is a hope.
+-      - name: Install hadolint (pinned, checksum-verified)
+-        run: |
+-          curl -fsSL -o hadolint \
+-            "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+-          echo "${HADOLINT_SHA256}  hadolint" | sha256sum -c -
+-          # Into a directory the runner account owns, not /usr/local/bin. This job
+-          # runs with sudo removed (#410), so a later step cannot switch egress
+-          # enforcement off - and nothing here ever needed root to install a
+-          # single binary.
+-          mkdir -p "$HOME/.local/bin"
+-          install -m 0755 hadolint "$HOME/.local/bin/hadolint"
+-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+-          rm hadolint
++      # A single static binary from the publisher's own release, installed only
++      # if its SHA256 matches scripts/deliveries.lock, into ~/.local/bin - this
++      # job runs with sudo removed (#410).
++      - name: Install hadolint (locked)
++        run: scripts/take-delivery.sh hadolint
+ 
+       # Every Dockerfile this estate builds, discovered rather than listed, so
+       # a new image is covered the moment it exists.
+@@ -736,11 +732,11 @@ jobs:
+       - name: Read pinned versions
+         uses: ./.github/actions/versions
+ 
+-      - name: Install zizmor (pinned)
+-        run: python3 -m pip install --user --break-system-packages "zizmor==${ZIZMOR_VERSION}"
++      - name: Install zizmor (locked)
++        run: scripts/take-delivery.sh zizmor
+ 
+       # The workflows are the part of this repository that runs with a token,
+-      # which is why this lane exists at all: it caught the expediter's App
++      # which is why this lane exists at all: it caught the expedite App's
+       # token inheriting every permission its installation held. The token
+       # below is what lets its online audits ask about the actions in use.
+       - name: Run zizmor
+@@ -775,8 +771,8 @@ jobs:
+       - name: Read pinned versions
+         uses: ./.github/actions/versions
+ 
+-      - name: Install codespell (pinned)
+-        run: python3 -m pip install --user --break-system-packages "codespell==${CODESPELL_VERSION}"
++      - name: Install codespell (locked)
++        run: scripts/take-delivery.sh codespell
+ 
+       # Prose and code alike. It reads the epoch records, which is how it
+       # caught a quotation carrying the operator's own typos into the history.
+@@ -955,22 +951,11 @@ jobs:
+       # hardcoded to `image:tag`, never `image@sha256:...`). SHA-pinning the
+       # action only pins its orchestration script - it still silently pulls
+       # whatever `latest` resolves to today on the one job in this repo
+-      # that's deliberately not egress-blocked. Installing the CLI directly,
+-      # pinned and checksum-verified, closes that gap the same way tofu and
+-      # kubeconform already are in the Validate lane above.
+-      - name: Install trufflehog (pinned, checksum-verified)
+-        run: |
+-          tarball="trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
+-          curl -fsSLO "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/${tarball}"
+-          echo "${TRUFFLEHOG_SHA256}  ${tarball}" | sha256sum -c -
+-          tar -xzf "${tarball}" trufflehog
+-          # Into a directory the runner account owns, not /usr/local/bin. This job
+-          # runs with sudo removed (#410), so a later step cannot switch egress
+-          # enforcement off - and nothing here ever needed root to install a
+-          # single binary.
+-          mkdir -p "$HOME/.local/bin"
+-          install -m 0755 trufflehog "$HOME/.local/bin/trufflehog"
+-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
++      # that's deliberately not egress-blocked. Taking delivery of the release
++      # archive from scripts/deliveries.lock by hash closes that gap the same
++      # way it does for tofu and kubeconform in the Validate lane above.
++      - name: Install trufflehog (locked)
++        run: scripts/take-delivery.sh trufflehog
+ 
+       # Same flags the marketplace action passed internally. base/head come
+       # straight from the pull_request event - this workflow no longer has a
+diff --git a/.github/workflows/sensitive-paths.yml b/.github/workflows/sensitive-paths.yml
+index 6308f3e..7cc7664 100644
+--- a/.github/workflows/sensitive-paths.yml
++++ b/.github/workflows/sensitive-paths.yml
+@@ -90,20 +90,20 @@ jobs:
+       - name: Setup Go
+         uses: $/.github/workflows/setup-go
+ 
+-      # The expediter's standing order, enforced here because this job is a
++      # The expedite duty's standing order, enforced here because this job is a
+       # required check and the ruleset requiring checks has no bypass - so the
+-      # expediter, which may skip review, cannot skip this.
++      # expedite App, which may skip review, cannot skip this.
+       #
+-      # It refuses any pull request authored by the expediter that changes more
++      # It refuses any pull request authored by that App that changes more
+       # than the game server's image digest and the Steam build recorded beside
+       # it, or that points the digest at a different image repository. For every
+       # other author it says so and passes; people are held to review, not to
+-      # this. With EXPEDITER_LOGIN unset there is no standing order, and the
+-      # expediter's own workflow refuses to merge anything.
+-      - name: Hold the expediter to its standing order
++      # this. With EXPEDITE_BOT_LOGIN unset there is no standing order, and the
++      # expedite workflow refuses to merge anything.
++      - name: Hold expediting to its standing order
+         env:
+           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+-          EXPEDITER_LOGIN: ${{ vars.EXPEDITER_LOGIN }}
++          EXPEDITE_BOT_LOGIN: ${{ vars.EXPEDITE_BOT_LOGIN }}
+           BASE: ${{ github.event.pull_request.base.sha }}
+           HEAD: ${{ github.event.pull_request.head.sha }}
+         run: go run -C scripts/superintendent . enforce-standing-order -base "$BASE" -head "$HEAD"
+diff --git a/.github/workflows/workload-images.yml b/.github/workflows/workload-images.yml
+index e0e8079..95cef05 100644
+--- a/.github/workflows/workload-images.yml
++++ b/.github/workflows/workload-images.yml
+@@ -51,7 +51,7 @@ jobs:
+     steps:
+       # Audit, not block: SteamCMD reaches Valve's content servers, a set of
+       # hosts Valve changes (approved-suppliers.yml records it), so an
+-      # allowlist would break on Valve's schedule. The expediter's build job
++      # allowlist would break on Valve's schedule. The expedite workflow's build job
+       # carries the same setting for the same reason.
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize

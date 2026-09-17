@@ -24,7 +24,7 @@
 # The same split already exists twice in this estate and is the model:
 # scripts/clerk/llm.go retries a 429 or a 5xx and returns immediately on any
 # other 4xx, because "a rejected key is rejected on the third attempt too"; and
-# expediter.yml bounds its Steam lookup at three attempts and then fails
+# expedite.yml bounds its Steam lookup at three attempts and then fails
 # loudly.
 #
 # BOUNDED, ALWAYS. An unbounded retry against a metered vendor is a bill

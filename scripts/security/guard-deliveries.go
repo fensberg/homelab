@@ -15,6 +15,11 @@
 // repository sitting there looks exactly like the seven that belong. Answering
 // that by hand needs somebody to notice a strange directory and know how
 // pre-commit names things, which is not a control.
+//
+// A TOOL IS A DELIVERY TOO. The third question - is every tool with no lockfile
+// of its own ecosystem installed from scripts/deliveries.lock, and does that
+// lock say what the declarations say - lives in guard-deliveries-lock.go. It
+// is asked in both modes, because it reads only committed files.
 package main
 
 import (
@@ -204,12 +209,22 @@ func guardDeliveries(args []string) int {
 		}
 	}
 
-	findings := Check(configured, cached, approved)
-	if len(findings) == 0 {
-		return 0
+	status := 0
+	if findings := Check(configured, cached, approved); len(findings) > 0 {
+		fmt.Fprint(os.Stderr, Explain(findings))
+		status = 1
 	}
-	fmt.Fprint(os.Stderr, Explain(findings))
-	return 1
+	// Security never writes the lock it judges - procurement orders it - so
+	// there is no flag here that repairs a finding, only the command that does.
+	lockFindings, err := checkDeliveriesLock(root)
+	if err != nil {
+		return refuse(err.Error())
+	}
+	if len(lockFindings) > 0 {
+		fmt.Fprint(os.Stderr, explainDeliveriesLock(lockFindings))
+		status = 1
+	}
+	return status
 }
 
 func refuse(msg string) int {

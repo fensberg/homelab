@@ -104,16 +104,16 @@ func TestDueRefusesAZoneItCannotLoad(t *testing.T) {
 
 // The verb itself, including the flag that lets a test name an instant.
 func TestReleaseDueVerbJudgesTheInstantItIsGiven(t *testing.T) {
-	if rc := releaseDue([]string{"-at", "2026-07-15T09:00:00Z"}); rc != 0 {
+	if rc := expediteReleaseDue([]string{"-at", "2026-07-15T09:00:00Z"}); rc != 0 {
 		t.Errorf("a due instant exited %d", rc)
 	}
-	if rc := releaseDue([]string{"-at", "2026-07-15T23:00:00Z"}); rc != 0 {
+	if rc := expediteReleaseDue([]string{"-at", "2026-07-15T23:00:00Z"}); rc != 0 {
 		t.Errorf("an early instant is not an error, it is an answer: exited %d", rc)
 	}
-	if rc := releaseDue([]string{"-at", "the small hours"}); rc == 0 {
+	if rc := expediteReleaseDue([]string{"-at", "the small hours"}); rc == 0 {
 		t.Error("an unparsable instant was accepted")
 	}
-	if rc := releaseDue([]string{"-zone", "America/Chigard", "-at", "2026-07-15T09:00:00Z"}); rc == 0 {
+	if rc := expediteReleaseDue([]string{"-zone", "America/Chigard", "-at", "2026-07-15T09:00:00Z"}); rc == 0 {
 		t.Error("an unknown zone was accepted")
 	}
 }

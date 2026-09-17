@@ -46,7 +46,7 @@ func TestParseAppKeyRoundTrips(t *testing.T) {
 // A raw PEM is accepted, because the estate has two Apps and two conventions.
 //
 // This used to be an ERROR, and the error was the defect (#382). The clerk took
-// base64 of the PEM; the expediter takes the raw PEM, because
+// base64 of the PEM; the expedite App takes the raw PEM, because
 // actions/create-github-app-token cannot parse base64. Whoever set up the
 // second App copied the first, and the failure named neither convention.
 //
