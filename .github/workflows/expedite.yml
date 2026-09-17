@@ -1,10 +1,12 @@
-name: "Expediter"
+name: "Expedite"
 
-# The expediter: image update automation for the game server.
+# Expediting: image update automation for the game server.
 #
-# On a construction site the expediter chases orders with suppliers and gets
-# material to site when it is needed. They do not build or install anything.
-# This does the same for one item from one approved supplier: when Valve
+# Expediting is one duty of procurement (scripts/procurement), and the only one
+# that holds elevated permission. On a construction site, expediting chases an
+# order with a supplier and gets material to site when it is needed, without
+# building or installing anything. This does the same for one item from one
+# approved supplier: when Valve
 # publishes a new build of the Valheim dedicated server, it takes delivery -
 # builds the image, pins the digest - and submits it.
 #
@@ -44,22 +46,27 @@ name: "Expediter"
 # moment it exists; only the tag disturbs anyone. It therefore lands at 4am
 # local, when it disturbs nobody, and the operator can merge earlier by hand
 # whenever they want it sooner. There is no approval button on purpose: the
-# whole point of the expediter is that nobody has to press one.
+# whole point of expediting is that nobody has to press one.
 #
-# WHAT KEEPS IT HONEST. The standing order is the expediter's GitHub App being a
+# WHAT KEEPS IT HONEST. The standing order is the expedite GitHub App being a
 # bypass actor on the ruleset that requires a review - and only that one. The
 # ruleset requiring checks has no bypass, so its pull request must pass all of
 # them, including `superintendent enforce-standing-order` in the Sensitive
-# which refuses any pull request by the expediter that changes anything but
+# which refuses any pull request by that App that changes anything but
 # those two lines or points the digest at a different image repository. The
 # review is skipped; the checks are not.
+#
+# THE BYPASS BELONGS TO THIS DUTY, NOT TO PROCUREMENT. Procurement's other
+# duties - ordering scripts/deliveries.lock - hold no permission, and
+# tests/go/repo refuses any step here that runs a procurement verb outside
+# expedite-*, so nothing else ever runs under this credential (#416).
 #
 # Configuration, all on the repository rather than in this file so a fork
 # brings its own:
 #
-#   secrets.EXPEDITER_BOT_APP_ID       the GitHub App's ID or client ID - the
+#   secrets.EXPEDITE_BOT_APP_ID        the GitHub App's ID or client ID - the
 #                                      token action accepts either
-#   secrets.EXPEDITER_BOT_PRIVATE_KEY  its private key, the .pem exactly as
+#   secrets.EXPEDITE_BOT_PRIVATE_KEY   its private key, the .pem exactly as
 #                                      GitHub generated it, newlines and all.
 #                                      actions/create-github-app-token cannot
 #                                      parse base64.
@@ -70,7 +77,9 @@ name: "Expediter"
 # step with a message pointing at neither (#382). scripts/clerk/github.go
 # accepts both shapes now, so the raw PEM below is correct for both and
 # copying either App's setup works.
-#   vars.EXPEDITER_LOGIN               its bot login, e.g. <app-slug>[bot]
+#   vars.EXPEDITE_BOT_LOGIN            its bot login, e.g. <app-slug>[bot]
+#
+# All three were EXPEDITER_* until #416 renamed the role.
 
 on:
   schedule:
@@ -83,7 +92,7 @@ on:
     - cron: "0 8 * * *"
     # The release window: 4am in Chicago is 09:00 UTC in summer and 10:00 UTC in
     # winter. GitHub's scheduler speaks UTC only, so both are asked and
-    # `expediter release-due` says which one is really 4am today. Exactly one of
+    # `procurement expedite-release-due` says which one is really 4am today. Exactly one of
     # them is, on every day of the year including the two the clocks change on,
     # which that program's tests assert day by day.
     - cron: "0 9 * * *"
@@ -100,7 +109,7 @@ permissions:
 # One at a time. Two runs taking the same delivery would open the same pull
 # request twice and race each other to tag it.
 concurrency:
-  group: expediter
+  group: expedite
   cancel-in-progress: false
 
 defaults:
@@ -172,7 +181,7 @@ jobs:
           fi
           # A window longer than the gap between checks, so a post made just
           # after one run is still fresh at the next.
-          verdict="$(go run -C scripts/expediter . check -within 90m)"
+          verdict="$(go run -C scripts/procurement . expedite-check -within 90m)"
           echo "look=$([ "$verdict" = look ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   deliver:
@@ -289,13 +298,13 @@ jobs:
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "built ${IMAGE}@${digest}" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Mint the expediter's token
+      - name: Mint the expedite token
         id: token
         if: steps.build.outputs.deliver == 'true'
         uses: $/.github/workflows/app-token
         with:
-          client-id: ${{ secrets.EXPEDITER_BOT_APP_ID }}
-          private-key: ${{ secrets.EXPEDITER_BOT_PRIVATE_KEY }}
+          client-id: ${{ secrets.EXPEDITE_BOT_APP_ID }}
+          private-key: ${{ secrets.EXPEDITE_BOT_PRIVATE_KEY }}
           # Only what the steps below use, not everything the App was granted
           # at installation (zizmor's github-app audit). Contents to commit the
           # pin; pull requests to open one.
@@ -321,7 +330,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          branch="expediter/valheim-steam-${BUILD}"
+          branch="expedite/valheim-steam-${BUILD}"
 
           # A delivery already submitted is picked up again, not submitted
           # twice - the release window may not have come round yet.
@@ -361,7 +370,7 @@ jobs:
             "Image:  ${IMAGE}" \
             "Digest: ${DIGEST}" \
             "" \
-            "Taken by the expediter: ${RUN_URL}")"
+            "Taken by expediting: ${RUN_URL}")"
           # No author, committer or signature field: GitHub signs on the App's
           # behalf and attributes the commit to it.
           commit="$(gh api "repos/${REPO}/git/commits" -f message="$message" -f tree="$tree" -f "parents[]=${base}" --jq .sha)"
@@ -385,7 +394,7 @@ jobs:
               "" \
               "**It merges and is tagged at 4am America/Chicago**, because the rollout drops everybody who is connected and production reconciles from the tag. Merge it yourself if you want it sooner - nothing here waits for an approval." \
               "" \
-              "Taken by the expediter: ${RUN_URL}")")"
+              "Taken by expediting: ${RUN_URL}")")"
           echo "opened ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
 
   release:
@@ -443,16 +452,16 @@ jobs:
             echo "due=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          verdict="$(go run -C scripts/expediter . release-due)"
+          verdict="$(go run -C scripts/procurement . expedite-release-due)"
           echo "due=$([ "$verdict" = due ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
-      - name: Mint the expediter's token
+      - name: Mint the expedite token
         id: token
         if: steps.window.outputs.due == 'true'
         uses: $/.github/workflows/app-token
         with:
-          client-id: ${{ secrets.EXPEDITER_BOT_APP_ID }}
-          private-key: ${{ secrets.EXPEDITER_BOT_PRIVATE_KEY }}
+          client-id: ${{ secrets.EXPEDITE_BOT_APP_ID }}
+          private-key: ${{ secrets.EXPEDITE_BOT_PRIVATE_KEY }}
           # Contents to merge and tag; pull requests to find, comment on and
           # merge; checks and statuses to see whether the required checks passed.
           permission-contents: write
@@ -472,7 +481,7 @@ jobs:
           # The oldest open delivery, so two waiting are taken in the order they
           # were submitted rather than newest first.
           pr="$(gh pr list --repo "$REPO" --state open --json number,headRefName \
-            --jq '[.[] | select(.headRefName | startswith("expediter/valheim-steam-"))] | sort_by(.number) | .[0].number // empty')"
+            --jq '[.[] | select(.headRefName | startswith("expedite/valheim-steam-"))] | sort_by(.number) | .[0].number // empty')"
           if [ -z "$pr" ]; then
             echo "nothing is waiting to be released" >> "$GITHUB_STEP_SUMMARY"
             echo "pr=" >> "$GITHUB_OUTPUT"
@@ -499,7 +508,7 @@ jobs:
             sleep 15
           done
           if ! timeout 25m gh pr checks "$PR" --repo "$REPO" --required --watch --interval 30 --fail-fast; then
-            gh pr comment "$PR" --repo "$REPO" --body "A required check did not pass, so the expediter is leaving this for a person. If it was the Super-Linter hang (#365), re-running that job is usually enough; merging is then an ordinary review."
+            gh pr comment "$PR" --repo "$REPO" --body "A required check did not pass, so expediting is leaving this for a person. If it was the Super-Linter hang (#365), re-running that job is usually enough; merging is then an ordinary review."
             exit 1
           fi
 
@@ -509,25 +518,25 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           PR: ${{ steps.waiting.outputs.pr }}
-          HOLDER: ${{ vars.EXPEDITER_LOGIN }}
+          HOLDER: ${{ vars.EXPEDITE_BOT_LOGIN }}
         run: |
           set -euo pipefail
           # Armed only when the check that bounds the order is: with no
-          # EXPEDITER_LOGIN, enforce-standing-order has nobody to hold to it, so
+          # EXPEDITE_BOT_LOGIN, enforce-standing-order has nobody to hold to it, so
           # nothing is merged under the bypass.
           if [ -z "$HOLDER" ]; then
-            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed. No standing order is configured (EXPEDITER_LOGIN is unset), so this waits for a review."
+            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed. No standing order is configured (EXPEDITE_BOT_LOGIN is unset), so this waits for a review."
             echo "merged=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          build="$(gh pr view "$PR" --repo "$REPO" --json headRefName --jq '.headRefName | sub("^expediter/valheim-steam-"; "")')"
+          build="$(gh pr view "$PR" --repo "$REPO" --json headRefName --jq '.headRefName | sub("^expedite/valheim-steam-"; "")')"
           # An explicit message, kept inside commitlint's line limits, rather
           # than whatever the repository's squash default assembles from the
           # pull request body - which carries a table and long lines.
           if ! gh pr merge "$PR" --repo "$REPO" --squash \
             --subject "feat: take delivery of Valheim server build ${build} (#${PR})" \
-            --body "Merged by the expediter under its standing order, in the 4am release window, after every required check passed."; then
-            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed, but the merge was refused. The expediter is probably not a bypass actor on the review ruleset - without that this waits for a review, which is the fallback working as designed."
+            --body "Merged by expediting under its standing order, in the 4am release window, after every required check passed."; then
+            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed, but the merge was refused. The expedite App is probably not a bypass actor on the review ruleset - without that this waits for a review, which is the fallback working as designed."
             exit 1
           fi
           echo "merged=true" >> "$GITHUB_OUTPUT"
