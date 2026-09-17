@@ -180,6 +180,40 @@ charts:
       Rebalances pods that were scheduled correctly and are now in the wrong
       place. A kubernetes-sigs project maintained by SIG Scheduling - the same
       group that owns kube-scheduler, whose decisions this corrects.
+  - url: https://prometheus-community.github.io/helm-charts
+    reason: >-
+      kube-prometheus-stack: Prometheus, Alertmanager, the Prometheus Operator,
+      node-exporter, kube-state-metrics and Grafana, published by the
+      prometheus-community chart maintainers. Prometheus and Alertmanager are
+      CNCF graduated projects and the chart is the assembly the ecosystem
+      actually uses - the alternative is writing the operator's CRDs, RBAC and
+      scrape configuration by hand and maintaining that against every upstream
+      change.
+
+      What it runs with, stated rather than implied. node-exporter is a
+      DaemonSet on every node reading the host's /proc, /sys and root
+      filesystem - it reads far more than it reports, and it is on every
+      machine. kube-state-metrics holds a cluster-wide read on Kubernetes
+      objects, which is metadata rather than Secret contents but is still the
+      shape of the whole estate. The operator creates CRDs and manages
+      Deployments in its own namespace. Grafana is a web UI with its own login,
+      and how it is reached is decided in docs/epochs/04-observability.md
+      rather than left to the chart's default.
+
+      Taken because nothing watches this estate between runs at all: the Health
+      phase is a converge-time gate that stops existing, and the hypervisor
+      spent hours off the overlay with every signal green. Images come from
+      quay.io, registry.k8s.io and docker.io, each already approved, and are
+      pinned by digest at their point of use.
+  - url: https://kubernetes-sigs.github.io/metrics-server
+    reason: >-
+      metrics-server, the resource-metrics API Kubernetes itself defines. A
+      kubernetes-sigs project, published by SIG Instrumentation. Prometheus
+      does not serve metrics.k8s.io, so without this `kubectl top` reports
+      nothing and no Horizontal Pod Autoscaler can be written - the capacity
+      work in docs/epochs/02-abstraction.md rests on numbers nobody can read
+      today. Its privilege is a read of the kubelet's summary API on every
+      node.
   - url: https://helm.cilium.io
     reason: >-
       The pod network, replacing the Flannel that Talos ships and the kube-proxy
