@@ -44,6 +44,12 @@ aarch64) GOARCH=arm64 ;;
 	;;
 esac
 
+# Where scripts/take-delivery.sh puts every tool it installs. On PATH for the
+# rest of this run, because a machine being set up for the first time usually
+# does not have it yet - Debian's ~/.profile adds it only if the directory
+# existed at login - and the steps below call what was just delivered.
+export PATH="$HOME/.local/bin:$PATH"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -127,15 +133,14 @@ else
 fi
 
 step "OpenTofu (pinned)"
-if has tofu; then
-	skip "tofu already present ($(tofu version | head -1))"
-else
-	info "installing tofu ${TOFU_VERSION} via the official install script"
-	curl -fsSL https://get.opentofu.org/install-opentofu.sh -o "$TMP/install-opentofu.sh"
-	chmod +x "$TMP/install-opentofu.sh"
-	"$TMP/install-opentofu.sh" --install-method standalone --opentofu-version "$TOFU_VERSION"
-	ok "tofu ${TOFU_VERSION} installed"
-fi
+# Through the installer script scripts/deliveries.lock pins by hash, rather
+# than whatever get.opentofu.org serves today being run unchecked (#416). Into
+# ~/.local like every delivery, so no sudo, and not skipped when tofu is already
+# present - every locked tool is installed from the lock, every run, so a
+# machine converges on what the lock says rather than on what it once had.
+info "taking delivery of tofu ${TOFU_VERSION}"
+"$(dirname "$0")/take-delivery.sh" opentofu
+ok "tofu ${TOFU_VERSION} installed"
 
 step "1Password CLI"
 if has op; then
@@ -303,14 +308,45 @@ else
 	ok "gh installed"
 fi
 
-step "Ansible"
-if has ansible-playbook; then
-	skip "ansible already present ($(ansible --version | head -1))"
-else
-	info "installing ansible-core via pip"
-	python3 -m pip install --user --break-system-packages "ansible-core==${ANSIBLE_CORE_VERSION}"
-	ok "ansible installed"
+step "Python tools, from the lock"
+# Every Python tool this machine uses, installed from scripts/deliveries.lock
+# by hash (#416), and deliberately NOT skipped when a tool is already present.
+# "Present" is not "at the version the lock pins": a tool installed before the
+# lock existed would otherwise stay at whatever it was, with dependencies
+# nobody checked, while every check here assumed otherwise. pip does nothing
+# when every pin is already satisfied, so running this every time costs a few
+# seconds and is the only way the machine converges on the one version.
+#
+# pre-commit-hooks is here because .pre-commit-config.yaml runs its checks as
+# local hooks from this install; without it every commit fails on "No module
+# named pre_commit_hooks".
+#
+# Into an isolated environment rather than the user site (#423). The first
+# version of this installed them with pip --user, where a package the OS
+# already ships satisfied the lock with no hash compared, and the locked
+# packages replaced Debian's own for every Python program this account runs.
+# Whatever that left behind is removed first - only packages the lock names,
+# and only from the user site - so nothing still shadows the OS.
+user_site="$(python3 -m site --user-site 2>/dev/null || true)"
+leftovers=()
+if [ -n "$user_site" ] && [ -d "$user_site" ]; then
+	locked_names="$("$(dirname "$0")/take-delivery.sh" --print ansible-core pre-commit pre-commit-hooks checkov zizmor codespell | sed 's/==.*//')"
+	for dist in "$user_site"/*.dist-info; do
+		[ -d "$dist" ] || continue
+		name="$(basename "$dist" .dist-info)"
+		name="${name%-*}"
+		if printf '%s\n' "$locked_names" | grep -qx "$(printf '%s' "$name" | tr '[:upper:]_.' '[:lower:]--')"; then
+			leftovers+=("$name")
+		fi
+	done
 fi
+if [ "${#leftovers[@]}" -gt 0 ]; then
+	info "removing ${#leftovers[@]} locked packages an earlier install left in the user site"
+	python3 -m pip uninstall --break-system-packages --yes "${leftovers[@]}"
+fi
+info "installing ansible-core, pre-commit, pre-commit-hooks, checkov, zizmor and codespell from the lock"
+"$(dirname "$0")/take-delivery.sh" ansible-core pre-commit pre-commit-hooks checkov zizmor codespell
+ok "python tools installed at the locked versions"
 
 step "Ansible collections"
 # ansible-core does not bundle community collections the way the full
@@ -322,13 +358,6 @@ ansible-galaxy collection install -r "$(dirname "$0")/../management/hypervisor/r
 ok "ansible collections installed"
 
 step "pre-commit"
-if has pre-commit; then
-	skip "pre-commit already present ($(pre-commit --version))"
-else
-	info "installing pre-commit via pip"
-	python3 -m pip install --user --break-system-packages "pre-commit==${PRE_COMMIT_VERSION}"
-	ok "pre-commit installed"
-fi
 # Installing the tool is not enough on its own: without this, pre-commit only
 # ever runs when invoked by hand (`task fix`), never automatically on `git
 # commit` - which is exactly how an unformatted file landed in a real commit
@@ -367,6 +396,13 @@ info "wiring the git hooks"
 	# without running anything - and it happens here, once, where somebody is
 	# watching, rather than inside a commit.
 	pre-commit install-hooks
+
+	# And drop the clones no hook uses any more. The supplier guard refuses a
+	# cached repository the configuration does not name, so a hook repository
+	# that moved elsewhere - pre-commit-hooks, into scripts/deliveries.lock
+	# (#416) - would otherwise refuse every commit on a machine set up before
+	# the move, with the fix only in the refusal's last paragraph.
+	pre-commit gc
 )
 ok "git hooks wired to githooks/, with the supplier guard ahead of pre-commit"
 
@@ -401,37 +437,15 @@ ok "git hooks wired to githooks/, with the supplier guard ahead of pre-commit"
 # refused, and nothing anywhere saying why. So the registration happens here,
 # and a failure to register is a warning with the exact command rather than a
 # silent gap.
-step "analysis tools (pinned)"
-# The four that replaced Super-Linter (#365). Each is pinned in versions.env
-# and owned by exactly one lane in CI; installing them here is what lets
-# `task lint` run locally exactly what a pull request runs.
-if has checkov && has zizmor && has codespell; then
-	skip "checkov, zizmor and codespell already present"
-else
-	info "installing checkov, zizmor and codespell via pip"
-	python3 -m pip install --user --break-system-packages \
-		"checkov==${CHECKOV_VERSION}" \
-		"zizmor==${ZIZMOR_VERSION}" \
-		"codespell==${CODESPELL_VERSION}"
-	ok "analysis tools installed"
-fi
 
-step "hadolint (pinned)"
-# A single static binary from the publisher's own release, verified against
-# the checksum beside its version - the same pattern as trufflehog, because a
-# download with no checksum is a hope rather than a pin.
-if has hadolint; then
-	skip "hadolint already present ($(hadolint --version 2>&1 | head -1))"
-else
-	info "installing hadolint ${HADOLINT_VERSION}"
-	curl -fsSL -o "$TMP/hadolint" \
-		"https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
-	echo "${HADOLINT_SHA256}  ${TMP}/hadolint" | sha256sum -c -
-	sudo install -m 0755 "$TMP/hadolint" /usr/local/bin/hadolint
-	ok "hadolint installed"
-fi
-
-step "shellcheck (pinned)"
+step "hadolint and shellcheck (pinned)"
+# Single static binaries from their publishers' releases, installed only if
+# their SHA256 matches scripts/deliveries.lock, and deliberately NOT skipped
+# when already present: a binary on PATH says nothing about which file it was.
+# A download is cheap next to a check that runs on a binary nobody verified.
+#
+# Why shellcheck is here at all:
+#
 # Not only for the Shell Lint lane's local equivalent.
 #
 # actionlint finds shellcheck by NAME on PATH and, when it is not there, it
@@ -451,18 +465,9 @@ step "shellcheck (pinned)"
 # exited 0 locally, and CI then failed the Format lane with SC2046 - a real
 # finding, since unquoted command substitution splits on whitespace and, with
 # no files matched at all, gofmt reads stdin and blocks until the job times out.
-if has shellcheck; then
-	skip "shellcheck already present ($(shellcheck --version 2>/dev/null | awk '/^version:/{print $2}'))"
-else
-	info "installing shellcheck ${SHELLCHECK_VERSION}"
-	curl -fsSL -o "$TMP/shellcheck.tar.xz" \
-		"https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
-	echo "${SHELLCHECK_SHA256}  ${TMP}/shellcheck.tar.xz" | sha256sum -c -
-	tar -xJf "$TMP/shellcheck.tar.xz" -C "$TMP" \
-		"shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
-	sudo install -m 0755 "$TMP/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
-	ok "shellcheck installed"
-fi
+info "taking delivery of hadolint ${HADOLINT_VERSION} and shellcheck ${SHELLCHECK_VERSION}"
+"$(dirname "$0")/take-delivery.sh" hadolint shellcheck
+ok "hadolint and shellcheck installed into ~/.local/bin"
 
 step "commit signing"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"

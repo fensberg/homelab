@@ -237,6 +237,7 @@ func runGuard(t *testing.T, bin, root, name string) (passed bool, output string)
 
 func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 	skipIfInner(t)
+	heavy(t, "a check on the checks: it copies the repository and runs a guard per mutation, about a minute")
 
 	l := readLedger(t)
 
@@ -399,6 +400,7 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 // stripping it would break the file rather than test anything.
 func TestNoTestIsSatisfiedByAComment(t *testing.T) {
 	skipIfInner(t)
+	heavy(t, "a check on the checks: it re-runs the whole package with comments stripped, about a minute")
 
 	l := readLedger(t)
 	exempt := map[string]string{}

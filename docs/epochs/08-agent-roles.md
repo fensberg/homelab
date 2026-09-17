@@ -695,6 +695,40 @@ What neither addresses: the clerk still sends the pull request's contents to a
 model, so a pull request can try to steer what it reports. That is a question
 about findings, which can block nothing here, rather than about credentials.
 
+### Procurement, and a bypass that belongs to a duty (#416)
+
+The expediter became `scripts/procurement` when writing the delivery lock
+needed a home. It could not live in `security`: guards and patrols check and
+never decide, and a guard that wrote the file it judged would be judging its
+own work. Choosing and recording what the estate takes delivery of is
+procurement's job on a real site, and the expediter was already one duty of
+that role under a narrower name.
+
+The distinction that shaped the rename came from the operator: procurement
+does not hold the bypass; procurement _expediting_ does. So the duty carries
+the name everywhere the permission lives - `expedite.yml`, the
+`EXPEDITE_BOT_*` secrets and variable, and the `expedite-check` and
+`expedite-release-due` verbs - and `order` carries none of it.
+`superintendent enforce-standing-order` takes `-holder` rather than
+`-expediter`, because it holds whoever the order was given to.
+
+`TestOnlyTheExpediteDutyRunsUnderItsCredential` makes that structural. It finds
+every workflow reading an `EXPEDITE_BOT_` secret rather than naming one, and
+refuses any of them running a procurement verb outside `expedite-*`; it refuses
+`procurement order` in any workflow at all, because ordering is run by a person
+and committed through review.
+
+Delivery branches moved from `expediter/valheim-steam-*` to
+`expedite/valheim-steam-*`. A delivery pull request open at the moment the
+patch lands would be missed by the release job; there was none.
+
+This build also produced the design rule now in `CLAUDE.md`: the lock was
+designed three times while being built, and each pivot threw away working code.
+Work that adds a verb, program, file kind, named role or place of declaration
+starts as a proposal, and a design question found mid-build stops the build.
+The rule held within the same session - two questions surfaced while the
+binaries were being scoped, and both went to the operator before any code.
+
 ## Acceptance tests
 
 1. **The planner finds a trigger that has genuinely fired**, and the issue it

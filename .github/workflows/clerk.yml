@@ -266,7 +266,7 @@ jobs:
           CLERK_BOT_LLM_KEY: ${{ secrets.CLERK_BOT_LLM_KEY }}
           # The App's ID from a variable where one exists, falling back to the
           # secret it has always been. An App ID is not a secret - GitHub
-          # documents it as a variable and the expediter stores it that way -
+          # documents it as a variable and the expedite App stores it that way -
           # and the two conventions disagreeing is what #382 is about. The
           # fallback is what makes converging cost nobody an action: nothing
           # breaks if the variable is never created.
@@ -339,7 +339,7 @@ jobs:
         env:
           # The App's ID from a variable where one exists, falling back to the
           # secret it has always been. An App ID is not a secret - GitHub
-          # documents it as a variable and the expediter stores it that way -
+          # documents it as a variable and the expedite App stores it that way -
           # and the two conventions disagreeing is what #382 is about. The
           # fallback is what makes converging cost nobody an action: nothing
           # breaks if the variable is never created.

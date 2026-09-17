@@ -36,7 +36,7 @@ rules:
     ignore:
       - clerk.yml
       - deploy-infrastructure.yml
-      - expediter.yml
+      - expedite.yml
       - inspector.yml
       - integration-tests.yml
       - pr-validation.yml

@@ -112,6 +112,7 @@ func uncoveredByFile(t *testing.T) map[string]int {
 }
 
 func TestEveryUncoveredFunctionIsDeclared(t *testing.T) {
+	heavy(t, "runs every module's tests with coverage")
 	root := repoRoot(t)
 
 	body, err := os.ReadFile(filepath.Join(root, "tests", "coverage-exemptions.yml"))

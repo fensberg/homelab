@@ -373,6 +373,102 @@ check — is closed separately by reading shebangs, because `githooks/` is
 executable code that runs on every commit and its files have no extension to
 classify.
 
+### One version, one lockfile (#416)
+
+A version pin is half a pin. `checkov==3.3.17` fixed checkov and let the
+hundred-odd packages it pulls in resolve fresh on every install, within
+whatever ranges their maintainers declared; pre-commit's hook repository did
+the same inside a virtualenv nobody could see; and the Format lane restated
+pre-commit's version in the workflow while `versions.env` held another copy.
+Binaries were better only by luck of the hand that wrote each lane: hadolint,
+shellcheck and trufflehog had a checksum beside their version, kubeconform had
+none, and the OpenTofu installer script was fetched and executed as served.
+
+`scripts/deliveries.lock` is now the one place anything is pinned by hash, for
+every tool with no lockfile of its own ecosystem:
+
+- **Versions are decided in `scripts/versions.env` only.** The three
+  `*_SHA256` keys left it: a hash is a fact about what a supplier served for a
+  version, not a decision, and one written by hand could be anything.
+  `.github/actions/versions` now exports only `*_VERSION`, so a checksum key is
+  refused by the test that already refuses a key the action would skip.
+- **How a tool arrives is one field on its `tools:` entry** -
+  `pypi: <package>` or `fetch: <url>` with `{version}` where the publisher puts
+  it. trufflehog, kubeconform and OpenTofu gained entries; all three were in
+  use and never written down.
+- **Ordering writes the lock, security checks it.** `task order-deliveries`
+  runs `procurement order` then `security guard-deliveries`. The PyPI tools
+  are resolved together, once, for CPython 3.12 (ubuntu-latest) and 3.13
+  (Debian 13), and ordering refuses if the two disagree; each section is its
+  tool's closure within that one resolution, with the SHA256 of every file
+  from PyPI's JSON API. A fetched file is downloaded and hashed by ordering
+  itself - one path for every publisher, rather than GitHub's asset digest for
+  some and three checksum formats for the rest. The three hashes that already
+  existed came out identical, and kubeconform's matched the `CHECKSUMS` file
+  its publisher ships.
+- **`scripts/take-delivery.sh` is the only installer.** pip with
+  `--require-hashes`, or a download refused before anything reads it when its
+  hash differs; everything lands in `~/.local` for every caller, so no lane
+  needs sudo (#410). `TestNothingInstallsFromPyPIOutsideTakeDelivery` refuses a
+  second one.
+- **Python tools live in one isolated environment**,
+  `~/.local/share/deliveries/pypi`, created without system site packages, with
+  each tool's own commands linked into `~/.local/bin` and the environment's
+  interpreter there as `delivered-python` (#423). The first version used
+  `pip install --user --break-system-packages`, and the first real workstation
+  run showed two things wrong with it. pip's `--require-hashes` checks what it
+  downloads, not what it finds installed, so Debian's jinja2 satisfied the
+  lock with no hash compared. And the user site precedes the OS's own packages
+  on `sys.path`, so the locked `packaging` 23.2 replaced Debian's 25.0 for
+  every Python program that account ran. `delivered-python` is a two-line
+  wrapper rather than a link, because a symlink to a virtual environment's
+  interpreter starts the system Python without the environment - checked
+  rather than assumed. `install-dependencies.sh` removes what the first
+  version left in the user site, and only packages the lock names.
+- **pre-commit-hooks became local system hooks** running
+  `delivered-python -m pre_commit_hooks.<module>` with the upstream 4.6.0 types, stages,
+  args and excludes, so its version lives in `versions.env` too. The hookshim
+  guard lets such a hook run in the Format lane only when the lane takes
+  delivery of that module's package from the lock before running pre-commit.
+- **ShellCheck in CI** no longer comes through `ludeeus/action-shellcheck`,
+  which downloaded the binary and checked nothing. The lane takes delivery
+  and selects files the way the action did, from what git tracks.
+
+Two decisions taken mid-build, recorded on #416. The kind for a fetched file
+is `fetch:`, not `release:`, because "release" already names the expedite job
+that holds a bypass. And the OpenTofu installer's own hash is locked rather
+than the installer being replaced with the release archive: the operator chose
+it knowing the cost, which is that the lock goes stale whenever OpenTofu edits
+the script, with no version change to explain the refusal. When
+take-delivery.sh refuses `opentofu`, that is the cause, and the fix is to order
+again.
+
+Out of scope, and why: `go.sum`, `pnpm-lock.yaml` and `.terraform.lock.hcl`
+are their ecosystems' own locks; action commits and container digests are
+pinned where they are used; and the runner image's downloads (tofu, rclone,
+kubectl, talosctl) are built by another pipeline and filed as #421.
+
+### A push costs seconds, and only what cannot be undone runs there
+
+Measured while building #416: committing took about a second, and pushing took 160. The `pre-push` hook ran `task validate` and the whole of `task test`, and
+`tests/go/repo` was 143 seconds of it - 54 in the comment-stripping re-run and
+53 in the mutation ledger, both checks on the checks, and both run again by the
+Test lane on the pull request. The push was paying twice for feedback it would
+get anyway, while the operator waited.
+
+The operator set the bar: commit and push together under ten seconds, running
+only what cannot be undone and what is genuinely fast. What a push must stop is
+what no later push repairs - an unsigned commit, a secret, a real name or
+address in a public repository. Everything else is a red check fixed by the next
+push.
+
+So the hook runs `go test -C tests/go -short ./repo`, about three seconds. A
+guard that costs whole seconds calls `heavy(t, why)` and skips under `-short`,
+which is Go's own mechanism for exactly this rather than a list somebody keeps.
+The skip is honest only while something runs those guards, so
+`TestHeavyGuardsRunOnEveryPullRequest` refuses a workflow that passes `-short`,
+and the ledger proves it.
+
 ## Outcome
 
 _To be filled in at close._

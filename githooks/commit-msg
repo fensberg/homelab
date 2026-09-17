@@ -28,21 +28,20 @@ cd "$root"
 # the form that receives the arguments git passes, and here that matters
 # directly - $1 is the path to the message file, and without it commitlint has
 # nothing to read.
-# Dispatch to pre-commit the way its own generated hook does, rather than
-# assuming `pre-commit` is on PATH.
+# Dispatch to pre-commit, found where scripts/take-delivery.sh puts it.
 #
-# The generated hook tries an interpreter first and falls back to the command;
-# these shims only ever did the command. That drops two things (#257):
+# pre-commit, and the delivered-python its checks run with, are installed into
+# an isolated environment and linked into ~/.local/bin (#416, #423). Not every
+# login puts that directory on PATH - Debian's ~/.profile adds it only if it
+# existed when the session started, so the first shell after setup does not
+# have it. Adding it here means a hook finds its tools on that first commit
+# rather than refusing it.
 #
-#   1. The module fallback. `pip install --user pre-commit` puts the module in
-#      site-packages while leaving ~/.local/bin off PATH on plenty of systems,
-#      so `pre-commit` is not a command and `python3 -mpre_commit` is.
-#   2. The diagnostic. `pre-commit: command not found` says what happened;
-#      "did you forget to activate your virtualenv" says what to do about it.
-#
-# Both failures are loud either way - no pre-commit means a non-zero exit and a
-# refused commit - so this is about the second of the two being actionable, not
-# about anything passing that should not.
+# There used to be a second route, `python3 -mpre_commit`, for a pre-commit
+# installed with pip --user and reachable only as a module (#257). It is gone
+# on purpose: the system Python no longer holds pre-commit, and one that did
+# would be a copy nothing locked by hash.
+PATH="$HOME/.local/bin:$PATH"
 args=(
 	hook-impl
 	--config=.pre-commit-config.yaml
@@ -51,12 +50,9 @@ args=(
 	--
 	"$@"
 )
-if command -v pre-commit >/dev/null 2>&1; then
-	exec pre-commit "${args[@]}"
-elif python3 -c 'import pre_commit' >/dev/null 2>&1; then
-	exec python3 -mpre_commit "${args[@]}"
-else
-	echo 'pre-commit not found. Did you forget to activate your virtualenv?' >&2
-	echo 'Install it with ./scripts/install-dependencies.sh' >&2
+if ! command -v pre-commit >/dev/null 2>&1; then
+	echo "pre-commit not found, including in $HOME/.local/bin, so no hook can run." >&2
+	echo 'Take delivery of it with ./scripts/install-dependencies.sh' >&2
 	exit 1
 fi
+exec pre-commit "${args[@]}"

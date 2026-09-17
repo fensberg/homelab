@@ -90,20 +90,20 @@ jobs:
       - name: Setup Go
         uses: $/.github/workflows/setup-go
 
-      # The expediter's standing order, enforced here because this job is a
+      # The expedite duty's standing order, enforced here because this job is a
       # required check and the ruleset requiring checks has no bypass - so the
-      # expediter, which may skip review, cannot skip this.
+      # expedite App, which may skip review, cannot skip this.
       #
-      # It refuses any pull request authored by the expediter that changes more
+      # It refuses any pull request authored by that App that changes more
       # than the game server's image digest and the Steam build recorded beside
       # it, or that points the digest at a different image repository. For every
       # other author it says so and passes; people are held to review, not to
-      # this. With EXPEDITER_LOGIN unset there is no standing order, and the
-      # expediter's own workflow refuses to merge anything.
-      - name: Hold the expediter to its standing order
+      # this. With EXPEDITE_BOT_LOGIN unset there is no standing order, and the
+      # expedite workflow refuses to merge anything.
+      - name: Hold expediting to its standing order
         env:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          EXPEDITER_LOGIN: ${{ vars.EXPEDITER_LOGIN }}
+          EXPEDITE_BOT_LOGIN: ${{ vars.EXPEDITE_BOT_LOGIN }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: go run -C scripts/superintendent . enforce-standing-order -base "$BASE" -head "$HEAD"

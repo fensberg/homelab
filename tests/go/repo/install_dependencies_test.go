@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -34,7 +35,6 @@ var setupTools = []string{
 	"kubectl", "talosctl", "flux", "helm", "age", "age-keygen", "rclone",
 	"task", "ansible", "ansible-playbook", "ansible-galaxy", "python3",
 	"pre-commit", "checkov", "zizmor", "codespell", "hadolint", "shellcheck",
-	"pipx",
 }
 
 // setupFixture is a throwaway repository the script can configure without
@@ -82,6 +82,13 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 		if wErr := os.WriteFile(filepath.Join(repo, "scripts", name), body, 0o755); wErr != nil {
 			t.Fatalf("writing %s: %v", name, wErr)
 		}
+	}
+	// take-delivery.sh downloads and installs for real, and the script calls it
+	// for every locked tool on every run (#416). Stubbed to record what it was
+	// asked for, so the delivery half is observable without a network.
+	if wErr := os.WriteFile(filepath.Join(repo, "scripts", "take-delivery.sh"),
+		[]byte("#!/usr/bin/env bash\necho \"$*\" >>\"$(dirname \"$0\")/deliveries-taken\"\n"), 0o755); wErr != nil {
+		t.Fatal(wErr)
 	}
 	if wErr := os.WriteFile(filepath.Join(repo, "management", "hypervisor", "requirements.yml"),
 		[]byte("collections: []\n"), 0o644); wErr != nil {
@@ -201,6 +208,27 @@ readable reason.`, want.key, got, want.value)
 	}
 	if key := f.gitConfig(t, "user.signingkey"); key == "" {
 		t.Error("no signing key was configured, so commits from this checkout are unsigned")
+	}
+
+	// Every Python tool in the lock reaches the workstation, on a machine where
+	// each is already present. Presence is not the locked version, and
+	// .pre-commit-config.yaml runs pre-commit-hooks as local hooks from this
+	// install - a machine that skipped it fails every commit (#416).
+	taken, _ := os.ReadFile(filepath.Join(f.repo, "scripts", "deliveries-taken"))
+	asked := map[string]bool{}
+	for _, name := range strings.Fields(string(taken)) {
+		asked[name] = true
+	}
+	lock := readFile(t, filepath.Join(repoRoot(t), "scripts", "deliveries.lock"))
+	pypi := regexp.MustCompile(`(?m)^# \[pypi: (\S+) `).FindAllStringSubmatch(lock, -1)
+	if len(pypi) == 0 {
+		t.Fatal("scripts/deliveries.lock has no pypi: section, so this cannot tell whether the workstation takes delivery of them")
+	}
+	for _, m := range pypi {
+		if !asked[m[1]] {
+			t.Errorf("install-dependencies.sh never takes delivery of %s, which scripts/deliveries.lock locks; "+
+				"a machine set up by it runs whatever %s it already had, or none", m[1], m[1])
+		}
 	}
 }
 

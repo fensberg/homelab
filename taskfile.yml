@@ -322,6 +322,30 @@ tasks:
         echo
         echo "    git diff --cached"
 
+  order-deliveries:
+    desc: "Order scripts/deliveries.lock from the versions in versions.env, then have security check it"
+    # Every tool this estate installs that has no lockfile of its own ecosystem,
+    # pinned by version AND by SHA256 (#416). For a Python tool that is its
+    # whole dependency closure - a version pin alone fixes the tool and lets
+    # over a hundred packages float; for a fetched file it is the file itself.
+    #
+    # Versions are decided in scripts/versions.env and nowhere else. How each
+    # tool is delivered is the pypi: or fetch: field on its tools: entry in
+    # scripts/approved-suppliers.yml. Run this after changing either, and
+    # commit the result.
+    #
+    # Two programs, on purpose. Procurement orders - it writes the lock and
+    # decides nothing else. Security then refuses a lock that disagrees with
+    # the declarations, the same check every commit and the Format lane run,
+    # so a lock this writes is one security has already accepted.
+    #
+    # Needs python3 with pip, and network access to PyPI and to each fetch:
+    # address. It installs nothing: pip resolves with --dry-run for each
+    # interpreter the lock serves, and each fetched file is only hashed.
+    cmds:
+      - go run -C scripts/procurement . order
+      - go run -C scripts/security . guard-deliveries -before-install
+
   render-flux-digests:
     desc: "Re-resolve Flux's controller digests from the tags the manifest carries"
     cmds:

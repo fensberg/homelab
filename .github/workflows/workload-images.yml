@@ -51,7 +51,7 @@ jobs:
     steps:
       # Audit, not block: SteamCMD reaches Valve's content servers, a set of
       # hosts Valve changes (approved-suppliers.yml records it), so an
-      # allowlist would break on Valve's schedule. The expediter's build job
+      # allowlist would break on Valve's schedule. The expedite workflow's build job
       # carries the same setting for the same reason.
       - name: Mobilize
         uses: $/.github/workflows/mobilize

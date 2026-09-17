@@ -12,18 +12,77 @@
 # what put formatting errors on a pull request that this file had just passed.
 #
 # Three stages, three different jobs - default_stages keeps them from
-# bleeding into each other. Formatting (above) has no explicit stage, so it
-# inherits pre-commit from the default and runs on every commit. validate
-# (below) sets its own stage explicitly to pre-push, since re-running the
-# same formatter there again would just re-check a diff pre-commit had
-# already checked seconds earlier - no real coverage for the cost of running
-# it twice. commitlint sets its own stage to commit-msg, the only stage that
-# ever sees the message text at all.
+# bleeding into each other. Formatting has no explicit stage, so it inherits
+# pre-commit from the default and runs on every commit. The fast guards
+# (below) set their own stage to pre-push, and hold a budget: a commit and a
+# push together should take under ten seconds, so only what cannot be undone
+# after a push, and what answers in milliseconds, runs there - the rest is the
+# pull request's job. commitlint sets its own stage to commit-msg, the only
+# stage that ever sees the message text at all.
 default_install_hook_types: [pre-commit, pre-push, commit-msg]
 default_stages: [pre-commit]
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+  # The push guard, before every other repository, because pre-commit runs
+  # hooks in the order this file lists them. It sat among the local hooks
+  # below and was first among the pre-push hooks only while no earlier hook
+  # declared that stage here - pre-commit-hooks' checks ran at pre-push too,
+  # from their upstream manifest, where nothing could see the order. Once they
+  # became local hooks with their stages written out (#416), the push guard's
+  # own test saw it run fourth.
+  - repo: local
+    hooks:
+      - id: enforce-push
+        name: refuse a plain git push (pre-push)
+        entry: task enforce-push
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+        fail_fast: true
+        # First among the pre-push hooks, and fail_fast, on purpose: a push
+        # that is going to be refused should cost milliseconds, not the
+        # guards that follow. Ordering alone does not achieve
+        # that - pre-commit runs every hook and reports at the end - so the
+        # two go together. Measured: without fail_fast, a refused push still
+        # ran the whole Go and OpenTofu corpus first.
+        #
+        # A GitHub App cannot hold a signing key, so `task push` has GitHub
+        # sign on its behalf through the Git Data API. A plain `git push`
+        # also works and produces unsigned commits attributed to whatever
+        # local git config says. That was documented in CLAUDE.md and in the
+        # taskfile, and documentation was not enough - a session pushed twice
+        # with plain git before anyone noticed.
+        #
+        # It cannot be repaired after the fact either: non_fast_forward
+        # applies to feature branches here, so an unsigned commit cannot be
+        # rewritten by anybody, agent or admin. The only remedy is a new
+        # branch, which is why this is now refused rather than described.
+        #
+        # The distinction is structural rather than a flag that can be
+        # forgotten: signedpush pushes to refs/signing/<tmp> and asks GitHub
+        # to create the branch commit, while a plain push updates
+        # refs/heads/<branch> directly. See scripts/pushguard.
+
+  # The first checks, from pre-commit-hooks - installed from
+  # scripts/deliveries.lock by hash, not cloned by pre-commit.
+  #
+  # As a hook repository, pre-commit cloned it at a rev: here and pip-installed
+  # its dependencies into a virtualenv of its own, unpinned - and its version
+  # was decided in this file, where nothing else could read it (#416). As local
+  # hooks they run the package scripts/take-delivery.sh put on this
+  # machine, at the version scripts/versions.env pins, so there is one version
+  # and one lock. Each hook keeps the types, stages, args and excludes the
+  # upstream definition gave it at 4.6.0, because a hook that quietly checks
+  # fewer files is the failure this whole repository watches for.
+  #
+  # delivered-python rather than python3 or the console script. The package is
+  # installed into an isolated environment the system Python cannot see
+  # (#423), and delivered-python is that environment's interpreter, linked into
+  # ~/.local/bin beside everything else take-delivery.sh puts there. The
+  # githooks shims add that directory to PATH, so a first shell without it
+  # still runs the check - and the `-m <module>` form is what lets the Format
+  # lane's hook guard see which locked package each hook needs.
+  - repo: local
     hooks:
       # The execute bit, which had no owner outside the aggregate that went in
       # #365: Super-Linter's BASH_EXEC checked that a script with a shebang is
@@ -31,9 +90,26 @@ repos:
       # it fails only when something tries to run it - a git hook that silently
       # never runs is exactly the failure githooks/ exists to prevent.
       - id: check-shebang-scripts-are-executable
+        name: check that scripts with shebangs are executable
+        entry: delivered-python -m pre_commit_hooks.check_shebang_scripts_are_executable
+        language: system
+        types: [text]
+        stages: [pre-commit, pre-push, manual]
       - id: check-merge-conflict
+        name: check for merge conflicts
+        entry: delivered-python -m pre_commit_hooks.check_merge_conflict
+        language: system
+        types: [text]
       - id: detect-private-key
+        name: detect private key
+        entry: delivered-python -m pre_commit_hooks.detect_private_key
+        language: system
+        types: [text]
       - id: check-yaml
+        name: check yaml
+        entry: delivered-python -m pre_commit_hooks.check_yaml
+        language: system
+        types: [yaml]
         # Kubernetes manifests legitimately hold several documents in one file,
         # separated by ---. Without this the hook rejects every Flux manifest.
         args: ["--allow-multiple-documents"]
@@ -43,8 +119,18 @@ repos:
       # hooks rewrote one three times running, each time aborting the commit
       # and needing a re-stage, which is a button nobody should have to press.
       - id: trailing-whitespace
+        name: trim trailing whitespace
+        entry: delivered-python -m pre_commit_hooks.trailing_whitespace_fixer
+        language: system
+        types: [text]
+        stages: [pre-commit, pre-push, manual]
         exclude: '\.patch$'
       - id: end-of-file-fixer
+        name: fix end of files
+        entry: delivered-python -m pre_commit_hooks.end_of_file_fixer
+        language: system
+        types: [text]
+        stages: [pre-commit, pre-push, manual]
         exclude: '\.patch$'
 
   # rbubley's mirror rather than pre-commit's, which is archived on prettier
@@ -169,71 +255,33 @@ repos:
         pass_filenames: false
         always_run: true
 
-      - id: enforce-push
-        name: refuse a plain git push (pre-push)
-        entry: task enforce-push
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
-        fail_fast: true
-        # First among the pre-push hooks, and fail_fast, on purpose: a push
-        # that is going to be refused should cost milliseconds, not the full
-        # validate+test suite that follows. Ordering alone does not achieve
-        # that - pre-commit runs every hook and reports at the end - so the
-        # two go together. Measured: without fail_fast, a refused push still
-        # ran the whole Go and OpenTofu corpus first.
-        #
-        # A GitHub App cannot hold a signing key, so `task push` has GitHub
-        # sign on its behalf through the Git Data API. A plain `git push`
-        # also works and produces unsigned commits attributed to whatever
-        # local git config says. That was documented in CLAUDE.md and in the
-        # taskfile, and documentation was not enough - a session pushed twice
-        # with plain git before anyone noticed.
-        #
-        # It cannot be repaired after the fact either: non_fast_forward
-        # applies to feature branches here, so an unsigned commit cannot be
-        # rewritten by anybody, agent or admin. The only remedy is a new
-        # branch, which is why this is now refused rather than described.
-        #
-        # The distinction is structural rather than a flag that can be
-        # forgotten: signedpush pushes to refs/signing/<tmp> and asks GitHub
-        # to create the branch commit, while a plain push updates
-        # refs/heads/<branch> directly. See scripts/pushguard.
-
-      - id: validate
-        name: task validate (pre-push)
-        entry: task validate
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
-        # Genuinely different work from the formatting hooks above, not a
-        # repeat of it: proves the OpenTofu and manifests actually resolve,
-        # the same three tools the Validate CI lane runs (tofu validate,
-        # kubeconform-adjacent kustomize builds, go vet/build). Catching a
-        # broken config here costs a few local seconds instead of a CI
-        # runner's worth of compute - which is real electricity once this
-        # pipeline is self-hosted, not just a GitHub Actions minute.
-
       - id: test
-        name: task test (pre-push)
-        entry: task test
+        name: the fast guards (pre-push)
+        entry: go test -C tests/go -short ./repo
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-push]
-        # The behaviour half of what `validate` above proves structurally:
-        # Go unit and contract tests, the OpenTofu invariant tests, and the
-        # JS/TS tier. Seconds, entirely hermetic - no 1Password, no
-        # hypervisor - so it costs a push almost nothing and catches the
-        # class of mistake that is most annoying to find in CI: a rule
-        # changed on one side of the config contract and not the other.
+        # Only what cannot be undone and what answers in milliseconds, so a
+        # commit and a push together stay under ten seconds.
         #
-        # pre-push rather than pre-commit for the same reason `validate` is:
-        # this is not a formatter, it is a real check, and running it on
-        # every commit of a branch that gets pushed once would run it many
-        # times over to learn the same thing.
+        # This used to be `task validate` and the whole of `task test`: 160
+        # seconds per push, 107 of them in two checks on the checks - the
+        # mutation ledger and the comment-stripping re-run. Every one of those
+        # already runs on the pull request, so the push was paying twice for
+        # feedback it would get anyway, while the operator sat waiting.
+        #
+        # What a push must stop is what no later push can repair: an unsigned
+        # commit (enforce-push, above), a secret (gitleaks, at commit), a real
+        # name or address reaching a public repository (the forkability and
+        # transcript guards, which are fast and run here). Everything else is
+        # a red check on the pull request, fixed by the next push.
+        #
+        # -short is what keeps it fast: a guard that costs whole seconds calls
+        # heavy() and skips here, saying why. CI's Test lane runs the package
+        # without -short, and TestHeavyGuardsRunOnEveryPullRequest refuses a
+        # workflow that passes it. Validate, the module unit tests, tofu test
+        # and the JS tier run in their lanes and nowhere else.
         #
         # Deliberately NOT the integration, api or e2e tiers. Those need
         # credentials and a real estate; a git hook that could reach either

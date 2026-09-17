@@ -12,7 +12,7 @@ const pinFile = "modules/applications/valheim/base/deployment.yaml"
 
 func digest(c byte) string { return strings.Repeat(string(c), 64) }
 
-// The standing order lets the expediter merge without a review. What keeps that
+// The standing order lets the expedite duty merge without a review. What keeps that
 // safe is that it covers one specified item and nothing else - the game
 // server's image digest and the Steam build it records - so these cases are the
 // whole of the permission, written down.
@@ -133,7 +133,7 @@ func TestTheVerbJudgesARealPullRequest(t *testing.T) {
 	overreach := git("rev-parse", "HEAD")
 
 	args := func(head string) []string {
-		return []string{"-author", "expediter[bot]", "-expediter", "expediter[bot]", "-base", base, "-head", head}
+		return []string{"-author", "expedite[bot]", "-holder", "expedite[bot]", "-base", base, "-head", head}
 	}
 	if code := enforceStandingOrder(args(delivery)); code != 0 {
 		t.Errorf("a digest-and-build change was refused (exit %d)", code)
@@ -141,7 +141,7 @@ func TestTheVerbJudgesARealPullRequest(t *testing.T) {
 	if code := enforceStandingOrder(args(overreach)); code != 1 {
 		t.Errorf("a change that also set runAsUser: 0 was allowed (exit %d) - that is the overreach the order exists to stop", code)
 	}
-	if code := enforceStandingOrder([]string{"-author", "a-person", "-expediter", "expediter[bot]", "-base", base, "-head", overreach}); code != 0 {
+	if code := enforceStandingOrder([]string{"-author", "a-person", "-holder", "expedite[bot]", "-base", base, "-head", overreach}); code != 0 {
 		t.Errorf("a person's pull request was judged under the order (exit %d); people are reviewed, not held to it", code)
 	}
 }

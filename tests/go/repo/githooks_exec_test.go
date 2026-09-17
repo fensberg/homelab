@@ -196,6 +196,7 @@ func (f *hookFixture) ran(t *testing.T) string {
 // environments before it runs any hook, so a guard that runs second is a
 // receipt rather than a refusal.
 func TestTheHookShimsRunTheGuardBeforeAnythingThirdParty(t *testing.T) {
+	heavy(t, "builds and runs each hook shim for real, seconds apiece")
 	root := repoRoot(t)
 	for _, hook := range []string{"pre-commit", "pre-push"} {
 		t.Run(hook, func(t *testing.T) {
@@ -242,6 +243,7 @@ the vault session, which is the whole thing this ordering exists to prevent.`, h
 // removes while debugging. Reading for it is a change detector; running a
 // failing guard is the property.
 func TestAFailingGuardStopsTheHookBeforePreCommit(t *testing.T) {
+	heavy(t, "builds and runs each hook shim for real, seconds apiece")
 	root := repoRoot(t)
 	for _, hook := range []string{"pre-commit", "pre-push"} {
 		t.Run(hook, func(t *testing.T) {
@@ -275,6 +277,7 @@ The guard's whole purpose is to stop before anything third-party is installed.`,
 // which ref is being updated - refused every push. That was found by breaking
 // it. This is the test that would have found it instead.
 func TestEveryShimPassesGitsOwnArgumentsThrough(t *testing.T) {
+	heavy(t, "builds and runs each hook shim for real, seconds apiece")
 	root := repoRoot(t)
 
 	cases := []struct {
@@ -336,56 +339,48 @@ closed without it.`, tc.hook, log)
 	}
 }
 
-// pre-commit reachable as a module but not as a command still works, and an
-// absent pre-commit says what to do about it.
+// A delivered pre-commit is found even when ~/.local/bin is not on PATH, and
+// an absent one says how to get it.
 //
-// The shims stood in for hooks `pre-commit install` generates, and those try an
-// interpreter before falling back to the command. These only ever did the
-// command, which drops the case where `pip install --user pre-commit` has put
-// the module in site-packages while leaving ~/.local/bin off PATH (#257).
-func TestTheShimsFallBackToTheModuleAndSayWhenThereIsNeither(t *testing.T) {
+// scripts/take-delivery.sh links pre-commit into ~/.local/bin (#416, #423),
+// and Debian's ~/.profile adds that directory only if it existed when the
+// session started - so the first shell after setup does not have it. The shims
+// add it themselves. They used to fall back to `python3 -mpre_commit` for the
+// same shape of problem (#257); the system Python no longer holds pre-commit,
+// and a copy that did would be one nothing locked by hash.
+func TestTheShimsFindTheDeliveredPreCommitAndSayWhenThereIsNone(t *testing.T) {
 	root := repoRoot(t)
 
-	t.Run("module fallback", func(t *testing.T) {
+	t.Run("delivered but not on PATH", func(t *testing.T) {
 		f := newHookFixture(t, 0)
-		// No `pre-commit` command anywhere, but a python3 that can import it.
 		f.isolatePATH(t, "bash", "env", "git")
-		stub := `#!/usr/bin/env bash
-if [ "$1" = "-c" ]; then exit 0; fi
-if [ "$1" = "-mpre_commit" ]; then
-  shift
-  echo "pre-commit $*" >> "$HOOK_LOG"
-  exit 0
-fi
-exit 1
-`
-		if err := os.WriteFile(filepath.Join(f.dir, "bin", "python3"), []byte(stub), 0o755); err != nil {
-			t.Fatalf("writing the python3 stub: %v", err)
+		delivered := filepath.Join(f.dir, ".local", "bin")
+		if err := os.MkdirAll(delivered, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		stub := "#!/usr/bin/env bash\necho \"pre-commit $*\" >> \"$HOOK_LOG\"\nexit 0\n"
+		if err := os.WriteFile(filepath.Join(delivered, "pre-commit"), []byte(stub), 0o755); err != nil {
+			t.Fatalf("writing the delivered pre-commit stub: %v", err)
 		}
 
 		cmd := exec.Command("bash", root+"/githooks/commit-msg", ".git/COMMIT_EDITMSG")
 		cmd.Dir = f.dir
 		cmd.Env = f.env
 		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("the shim exited %v where the module was importable\n%s", err, out)
+			t.Fatalf("the shim exited %v where pre-commit was delivered to ~/.local/bin\n%s", err, out)
 		}
 		if !strings.Contains(f.ran(t), "hook-impl") {
-			t.Errorf(`the shim did not fall back to python3 -mpre_commit:
+			t.Errorf(`the shim did not find the pre-commit take-delivery.sh put in ~/.local/bin:
 
 %s
-pre-commit installed with --user is reachable as a module and not as a command
-on plenty of machines, and the generated hook this stands in for handles that.`, f.ran(t))
+The first shell after setup often lacks that directory on PATH, and every hook
+this repository relies on would refuse to run there.`, f.ran(t))
 		}
 	})
 
-	t.Run("neither available", func(t *testing.T) {
+	t.Run("none delivered", func(t *testing.T) {
 		f := newHookFixture(t, 0)
 		f.isolatePATH(t, "bash", "env", "git")
-		// A python3 that cannot import pre_commit.
-		stub := "#!/usr/bin/env bash\nexit 1\n"
-		if err := os.WriteFile(filepath.Join(f.dir, "bin", "python3"), []byte(stub), 0o755); err != nil {
-			t.Fatalf("writing the python3 stub: %v", err)
-		}
 
 		cmd := exec.Command("bash", root+"/githooks/commit-msg", ".git/COMMIT_EDITMSG")
 		cmd.Dir = f.dir
@@ -395,12 +390,12 @@ on plenty of machines, and the generated hook this stands in for handles that.`,
 			t.Fatal("the shim exited 0 with no pre-commit available, so every hook this " +
 				"repository relies on would be silently skipped")
 		}
-		if !strings.Contains(string(out), "virtualenv") {
-			t.Errorf(`the shim did not say what to do about a missing pre-commit:
+		if !strings.Contains(string(out), "install-dependencies.sh") {
+			t.Errorf(`the shim did not say how to get pre-commit:
 
 %s
-"pre-commit: command not found" says what happened; naming the virtualenv says
-what to do about it, and that is the message the generated hook carries.`, out)
+"pre-commit: command not found" says what happened; naming the script that takes
+delivery of it says what to do about it.`, out)
 		}
 	})
 }

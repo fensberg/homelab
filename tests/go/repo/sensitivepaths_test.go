@@ -276,6 +276,7 @@ func TestSensorFileEntryMatchesOnlyItself(t *testing.T) {
 // have to agree about which paths exist, or the list means one thing to the
 // test and another to CI.
 func TestSensorAndParserAgreeOnEveryPath(t *testing.T) {
+	heavy(t, "runs the shell sensor once per listed path, seconds")
 	_, entries := loadSensitivePaths(t)
 	for _, e := range entries {
 		probe := e.Path

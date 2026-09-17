@@ -31,7 +31,7 @@ runs:
       # egress.
       #
       # So the pattern is the security boundary, not a convenience: a key
-      # must end in _VERSION or _SHA256, and a value must begin
+      # must end in _VERSION, and a value must begin
       # alphanumerically and carry nothing but [A-Za-z0-9._+-] - no spaces,
       # slashes, quotes or shell metacharacters, and no leading dash that a
       # consumer might read as a flag. None of the dangerous names can be
@@ -40,6 +40,11 @@ runs:
       # tests/go/repo asserts every key in versions.env matches this, so a
       # key this would silently skip fails the build instead of reaching a
       # job as an empty version.
+      #
+      # _SHA256 used to match too, and #416 removed it. versions.env holds
+      # decisions; a hash is what a supplier served for one, and lives in
+      # scripts/deliveries.lock, where take-delivery.sh reads it. A checksum
+      # key added here is now refused by that same assertion.
       #
       # grep rather than `source`: the file is data, and sourcing it would
       # execute whatever it contained.
@@ -51,6 +56,6 @@ runs:
       # which the pattern does, not to find another way to write anything.
       run: | # zizmor: ignore[github-env]
         set -euo pipefail
-        pins='^[A-Z][A-Z0-9_]*_(VERSION|SHA256)=[A-Za-z0-9][A-Za-z0-9._+-]*$'
+        pins='^[A-Z][A-Z0-9_]*_VERSION=[A-Za-z0-9][A-Za-z0-9._+-]*$'
         echo "exported $(grep -cE "$pins" scripts/versions.env) pinned versions"
         grep -E "$pins" scripts/versions.env >> "$GITHUB_ENV"

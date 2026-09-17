@@ -140,7 +140,7 @@ func TestCheckRefusesRatherThanReportingSilenceWhenSteamFails(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if rc := check([]string{"-url", srv.URL}); rc == 0 {
+	if rc := expediteCheck([]string{"-url", srv.URL}); rc == 0 {
 		t.Fatal("an HTTP 500 from Steam was reported as nothing to do")
 	}
 

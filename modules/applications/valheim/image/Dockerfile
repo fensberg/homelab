@@ -72,8 +72,8 @@ RUN curl -fsSL -o steamcmd.tar.gz https://media.steampowered.com/client/steamcmd
 # is the right place for it to fail.
 ARG VALHEIM_APP_ID=896660
 
-# The Steam build this image is meant to contain, when the expediter asks for
-# one. Declared before the download so that a new value is a cache miss there,
+# The Steam build this image is meant to contain, when the expedite workflow
+# asks for one. Declared before the download so that a new value is a cache miss there,
 # rather than a build quietly reusing the previous game files.
 ARG VALHEIM_BUILDID=""
 
@@ -140,7 +140,7 @@ RUN set -eu; \
 
 # The build Steam actually served, checked against the one that was asked for.
 #
-# The expediter reads the public build ID from Steam, builds this image, and
+# The expedite workflow reads the public build ID from Steam, builds this image, and
 # labels it with that ID - which it then records beside the digest in git, and
 # compares against on its next check. That record is only worth anything if
 # the label is true. If Valve publishes again between the check and the

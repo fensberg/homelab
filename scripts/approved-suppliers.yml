@@ -493,7 +493,7 @@ egress:
     hosts:
       - api.github.com:443
 
-  - job: expediter.yml/check
+  - job: expedite.yml/check
     policy: block
     hosts:
       - api.github.com:443
@@ -506,20 +506,20 @@ egress:
       - storage.googleapis.com:443
       - sum.golang.org:443
 
-  - job: expediter.yml/deliver
+  - job: expedite.yml/deliver
     policy: audit
     reason: >-
       SteamCMD reaches Valve's content servers, the rotating set of
       hosts recorded under game-server-delivery above, so an allowlist
       would break on Valve's schedule rather than this estate's. Only
-      this one of the expediter's three jobs downloads game files: the
+      this one of the expedite workflow's three jobs downloads game files: the
       doorbell above and the release below are both blocked to a list.
 
     root: >-
       Installs lib32gcc-s1 with apt-get, which SteamCMD needs, and builds the
       image with Docker. Both need root or the Docker socket, so
       disable-sudo-and-containers would break the job it exists for.
-  - job: expediter.yml/release
+  - job: expedite.yml/release
     policy: block
     hosts:
       - api.github.com:443
@@ -765,52 +765,123 @@ egress:
 # this section is the shape its answer should take, not a complete list of what
 # the estate runs.
 
+# A tool says how it is delivered with one field, and that field is what puts it
+# in scripts/deliveries.lock (#416):
+#
+#   pypi: <package>   a Python package. `task order-deliveries` resolves every
+#                     such tool together at the version versions.env pins, and
+#                     locks each one's whole dependency closure with the SHA256
+#                     of every file.
+#   fetch: <url>      a file taken from an address - a release binary, an
+#                     archive, an installer script - with {version} where the
+#                     publisher puts it. Ordering downloads it and locks its
+#                     SHA256.
+#
+# scripts/take-delivery.sh installs from the lock and nowhere else, refusing a
+# file whose hash the lock does not list, and `security guard-deliveries`
+# refuses a lock that disagrees with these fields or versions.env.
+
 tools:
   - source: bridgecrewio/checkov
     version: CHECKOV_VERSION
+    pypi: checkov
     reason: >-
       Policy scanning for Kubernetes manifests, Dockerfiles, OpenTofu and
       GitHub Actions workflows. It is the only tool here that has produced a
-      finding nothing else caught - CKV_GHA_7, on the expediter's dispatch
+      finding nothing else caught - CKV_GHA_7, on the expedite workflow's dispatch
       input. Its configuration is .checkov.yaml at the repository root, which
       predates this and carries the reasoning for every exclusion in it.
   - source: hadolint/hadolint
     version: HADOLINT_VERSION
+    fetch: https://github.com/hadolint/hadolint/releases/download/v{version}/hadolint-linux-x86_64
     reason: >-
       Dockerfile linting, for the two images this estate builds. Taken as a
-      single static binary from the publisher's own release and verified
-      against HADOLINT_SHA256 - the same pattern as TruffleHog, because a
-      checksum beside the version is what makes a downloaded binary a pin
-      rather than a hope.
+      single static binary from the publisher's own release and installed only
+      if its SHA256 matches the lock - because a hash beside the version is
+      what makes a downloaded binary a pin rather than a hope.
   - source: zizmorcore/zizmor
     version: ZIZMOR_VERSION
+    pypi: zizmor
     reason: >-
       Static analysis for GitHub Actions workflows, which are the part of this
-      repository that runs with a token. It caught the expediter's App token
+      repository that runs with a token. It caught the expedite App's token
       inheriting every permission the installation held, which nothing else
       here would have said a word about.
   - source: koalaman/shellcheck
     version: SHELLCHECK_VERSION
+    fetch: https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.linux.x86_64.tar.xz
     reason: >-
       Shell analysis. This estate already took delivery from this publisher and
-      did not record it: the Shell Lint lane downloads the pinned binary from
-      the same GitHub release through ludeeus/action-shellcheck. Listing it here
-      is writing down a supplier that was already in use rather than admitting a
-      new one.
+      did not record it: the Shell Lint lane downloaded the binary from the same
+      GitHub release through ludeeus/action-shellcheck, which checked no hash.
+      The lane takes delivery from the lock now (#416), so the one binary is
+      verified everywhere it runs.
 
       It has a second consumer that matters more than the lane. actionlint finds
       shellcheck by name on PATH and, when it is absent, DISABLES the
       integration and exits 0 - so on a machine without it `task validate` and
       the pre-commit hook cannot report any SC-class finding in a workflow's
       run: block, and report clean instead of reporting that they did not look
-      (#398). Verified as a single static binary against SHELLCHECK_SHA256, the
-      same pattern as hadolint and TruffleHog.
+      (#398).
   - source: codespell-project/codespell
     version: CODESPELL_VERSION
+    pypi: codespell
     reason: >-
       Spelling, across prose and code alike. The cheapest check in the set and
       the one most likely to be the only reader of a comment nobody has opened
       in a year.
+  - source: pre-commit/pre-commit
+    version: PRE_COMMIT_VERSION
+    pypi: pre-commit
+    reason: >-
+      The framework that runs every commit hook here, on each workstation and in
+      the Format lane. Already in use and never written down: the Format lane
+      installed it at a version restated in the workflow rather than read from
+      versions.env.
+  - source: pre-commit/pre-commit-hooks
+    version: PRE_COMMIT_HOOKS_VERSION
+    pypi: pre-commit-hooks
+    reason: >-
+      The checks that run before anything else: merge-conflict markers, private
+      keys, YAML that does not parse, trailing whitespace. Declared under hooks:
+      until #416, where pre-commit cloned it and pip-installed its dependencies
+      unpinned into a virtualenv of its own. It is installed from the lock now,
+      and .pre-commit-config.yaml runs its checks as local hooks, so its version
+      is decided in versions.env and nowhere else.
+  - source: ansible/ansible
+    version: ANSIBLE_CORE_VERSION
+    pypi: ansible-core
+    reason: >-
+      Runs management/hypervisor/hypervisor-prep.yml, the only thing that
+      configures a hypervisor. Already installed by
+      scripts/install-dependencies.sh and never written down here.
+  - source: trufflesecurity/trufflehog
+    version: TRUFFLEHOG_VERSION
+    fetch: https://github.com/trufflesecurity/trufflehog/releases/download/v{version}/trufflehog_{version}_linux_amd64.tar.gz
+    reason: >-
+      Secret scanning, in the Secrets lane - the one lane that runs audit rather
+      than block, because verifying a leaked key means calling whichever vendor
+      issued it. Taken from the release archive rather than the marketplace
+      action, which runs a container at `latest`. Already in use and never
+      written down here.
+  - source: yannh/kubeconform
+    version: KUBECONFORM_VERSION
+    fetch: https://github.com/yannh/kubeconform/releases/download/v{version}/kubeconform-linux-amd64.tar.gz
+    reason: >-
+      Validates what Flux will apply against the Kubernetes schemas, in the
+      Validate lane. Already in use, never written down here, and until #416
+      downloaded with no hash at all.
+  - source: opentofu/opentofu
+    version: TOFU_VERSION
+    fetch: https://get.opentofu.org/install-opentofu.sh
+    reason: >-
+      The installer script, not OpenTofu itself: the Validate and Test lanes and
+      the workstation run it to install the pinned version. It is served from
+      one unversioned address, and until #416 it was fetched and executed with
+      nothing checking what arrived. Its hash is locked by the operator's
+      decision, knowing the cost - when OpenTofu edits the script,
+      take-delivery.sh refuses it until somebody orders again. The version
+      beside it is the OpenTofu the script is told to install.
 
 # Declared exemptions.
 #
@@ -861,10 +932,6 @@ tools:
 # Several directories per repository is normal - pre-commit keeps one clone per
 # rev, so a repository whose pin has moved appears more than once.
 hooks:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    reason: >-
-      The maintainers of pre-commit itself. Supplies the checks that run before
-      anything else: merge-conflict markers, private keys, trailing whitespace.
   - repo: https://github.com/rbubley/mirrors-prettier
     reason: >-
       Prettier, from the mirror that is still maintained - pre-commit's own is

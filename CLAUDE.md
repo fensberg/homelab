@@ -241,7 +241,12 @@ belongs in an epoch record.
   secrets and no state are left on the workstation. On failure the run
   destroys infrastructure _before_ wiping state, so nothing is orphaned.
 - **Pin everything.** Actions to commit SHAs, providers to `~>` ranges, Talos
-  to an exact version plus Factory schematic ID.
+  to an exact version plus Factory schematic ID. Tools with no lockfile of
+  their own ecosystem are pinned by version in `scripts/versions.env` and by
+  hash in `scripts/deliveries.lock` - a Python tool's whole dependency closure,
+  a fetched file itself - and installed only by `scripts/take-delivery.sh`.
+  `task order-deliveries` writes the lock (procurement); `security
+guard-deliveries` refuses one that disagrees (#416).
 
 ## The button
 
@@ -506,11 +511,11 @@ depends on it and uses them.
   nothing read from the repository can reach it at runtime, short of a gate job
   every lane waits behind. The copy is mechanical; the suppliers list owns it.
 
-  The two image builds - `workload-images.yml` and `expediter.yml` - fetch from
+  The two image builds - `workload-images.yml` and `expedite.yml` - fetch from
   Valve, whose content servers are a set of hosts it changes, so an allowlist
   would break on Valve's schedule rather than this estate's. `workload-images.yml`
-  was `audit` with no reason recorded anywhere until the expediter was added
-  beside it - the same undocumented drift the paragraph below describes, found
+  was `audit` with no reason recorded anywhere until the expedite workflow was
+  added beside it - the same undocumented drift the paragraph below describes, found
   by counting.
 
   This paragraph used to claim there was exactly one exception, the TruffleHog
@@ -570,6 +575,8 @@ Coverage is a ratchet, not a threshold: `tests/coverage-baseline.json` is a
 floor a pull request may not drop below and is free to leave alone.
 
 ## Conventions
+
+- **Agree the design before building.** Work that adds a verb, a program, a file kind, a named role, or a new place something is declared starts as a proposal, not code. The proposal covers what is being built, the open decisions with two or three options each and their trade-offs, and a recommendation. Nothing is built until the operator agrees. A design question that turns up mid-build stops the build and becomes a question; it does not get answered in code.
 
 - **One role, one program.** The inspector is the party that checks work before
   it may be covered up, and it owns everything that does that: the
@@ -666,17 +673,22 @@ floor a pull request may not drop below and is free to leave alone.
 - **Each check has exactly one owner.** Formatting belongs to `pre-commit`,
   pinned to exact versions; CI runs that same file rather than its own copy of
   the same tools. Analysis belongs to four pinned tools, one lane each -
-  Checkov, hadolint, zizmor and codespell - taken from their publishers and
-  version-pinned in `scripts/versions.env`. Nothing is configured in both
+  Checkov, hadolint, zizmor and codespell - taken from their publishers,
+  version-pinned in `scripts/versions.env` and hash-pinned in
+  `scripts/deliveries.lock`. Nothing is configured in both
   places - two copies of prettier, on two versions, is what put formatting
   errors on a pull request that `pre-commit` had just passed. The aggregate
   that used to own this was the one exception to the rule above, and it cost
   more than the checks it ran were worth (#365).
 - Four verbs, fastest first: `task fix` formats (seconds, no Docker),
   `task validate` proves the OpenTofu and manifests resolve, `task test`
-  proves they behave, `task lint` runs the slow analysis image. The first
-  three run on every push (the `pre-push` hook wires up `validate` and
-  `test`); the fourth is worth running before opening a pull request.
+  proves they behave, `task lint` runs the slow analysis image. All four run
+  in CI on every pull request. **Commit and push together stay under ten
+  seconds:** the `pre-push` hook runs only what cannot be undone once
+  published and the guards that answer in milliseconds
+  (`go test -C tests/go -short ./repo`); a guard costing seconds calls
+  `heavy()` and waits for the pull request. Run `task validate` and
+  `task test` by hand when you want the whole answer before pushing.
   `validate` and `test` are separate on purpose - "does it resolve" and
   "does it do the right thing" are different questions, and one owner per
   check is the rule everywhere else here too.
