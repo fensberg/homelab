@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,7 +88,14 @@ func intendedWorkflow(t *testing.T, name string) string {
 		}
 	}
 
+	// A patch may delete the workflow. That is an answer, not a failure to
+	// read one: a workflow that will not exist holds nothing to assert about.
+	// It is checked explicitly rather than inferred from any error, so a scratch
+	// tree that is simply broken still fails loudly here.
 	out, err := os.ReadFile(filepath.Join(dir, rel))
+	if errors.Is(err, fs.ErrNotExist) {
+		return ""
+	}
 	if err != nil {
 		t.Fatalf("reading the patched %s: %v", rel, err)
 	}

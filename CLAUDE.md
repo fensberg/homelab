@@ -473,12 +473,21 @@ depends on it and uses them.
 - `scorecard.yml` — repository posture, weekly and on merges to `main`. It
   grades the repository rather than the diff, so a pull request cannot change
   its answer.
-- **Egress is deny-by-default, and ten jobs are not.** Every job starts with
-  `$/.github/workflows/mobilize`, which runs `harden-runner` and checkout from
-  the one place either commit is written; most are `egress-policy: block` with
-  an explicit allowlist,
-  so a compromised action or linter cannot exfiltrate quietly. Ten are
-  `audit`, which blocks nothing and only records.
+- **Egress is deny-by-default, eleven jobs are not, and five of those are not
+  even watched.** Every job starts with `$/.github/workflows/mobilize`, which
+  runs `harden-runner` and checkout from the one place either commit is written.
+  Most jobs are `egress-policy: block` with an explicit allowlist, so a
+  compromised action or linter cannot exfiltrate quietly, and they run with
+  sudo removed (`disable-sudo-and-containers`) so no later step can switch the
+  block off (#410). A job that keeps root says why beside its egress entry.
+
+  **On the self-hosted runner harden-runner does nothing.** The scale set's pods
+  are ARC, and there harden-runner only writes its policy for a StepSecurity
+  agent inside the cluster, which this estate does not run. So the four deploy
+  jobs and the integration tests - the jobs holding the vault token - are
+  neither restricted nor recorded, whatever their policy says, and
+  `tests/go/repo/root_test.go` refuses any of them claiming `block`. Controlling
+  their egress has to happen at the cluster's network layer (#411).
 
   **Which job may reach what is declared once**, in `scripts/approved-suppliers.yml`
   under `egress:`: one entry per job, carrying the policy and - for a blocking

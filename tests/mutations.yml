@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 103
+floor: 107
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1574,6 +1574,92 @@ mutations:
       In a run holding secrets a pull request is data, and a worktree of its
       own is what keeps it apart from where things execute. A fetch that does
       not make one leaves the next step one checkout away from #409.
+
+  - guard: TestEveryJobSaysWhetherItKeepsRoot
+    file: .github/workflows/zz-says-nothing-about-root.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+                checkout: "false"
+    mentions: "does not say whether it keeps root"
+    why: >
+      With sudo, any later step in a job can stop harden-runner's agent or
+      flush its rules and then call out, so a block holds only as long as
+      root is gone (#410). A job that does not say is a job whose answer is
+      "keep it" by default, which is the state every job was in.
+
+  - guard: TestEveryJobSaysWhetherItKeepsRoot
+    file: .github/workflows/zz-keeps-root-quietly.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+                disable-sudo-and-containers: "false"
+                checkout: "false"
+    mentions: "keeps root with no reason declared"
+    why: >
+      Keeping root on a GitHub-hosted runner is sometimes right - a Docker
+      action, an image build - but it reopens the way a later step can
+      switch egress enforcement off, so it is an exception somebody has to
+      write down beside the job's egress entry rather than a value in a file.
+
+  - guard: TestEveryJobSaysWhetherItKeepsRoot
+    file: .github/workflows/zz-blocks-on-arc.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: homelab-management
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+                disable-sudo-and-containers: "false"
+                checkout: "false"
+    mentions: "claims egress-policy: block"
+    why: >
+      harden-runner returns before acting on the ARC runner, so block there
+      blocks nothing - and the jobs on that runner hold a token that reads and
+      writes the whole vault. A job that reads as restricted while reaching
+      anything is worse than one that says audit (#411).
+
+  - guard: TestEveryJobSaysWhetherItKeepsRoot
+    file: .github/workflows/zz-disables-sudo-on-arc.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: homelab-management
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: audit
+                disable-sudo-and-containers: "true"
+                checkout: "false"
+    mentions: 'claims disable-sudo-and-containers: "true"'
+    why: >
+      The same early return means sudo is not removed on that runner either.
+      A setting that reads as a protection and does nothing is a status that
+      says something untrue, on exactly the jobs where it would matter most.
 
 owed_ceiling: 55
 

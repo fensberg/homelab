@@ -314,6 +314,36 @@ documentation does not predict what is enforced. Scorecard runs only on `main`,
 so nothing proves this before merge. If it is rejected, the choice is between
 turning publishing off and one declared exception.
 
+### The egress proof is a lane, not a gate, and sudo is the protection that holds
+
+A separate Egress Proof workflow was folded into `pr-validation.yml` as two
+lanes. The question it answered - does a nested harden-runner enforce - needed a
+real runner, so it could never be a Go test, but it did not need its own file.
+
+Making it a gate every lane waits behind was considered, and so was a
+start-of-job check inside `mobilize`, and both were rejected as theater against
+the threat that motivates egress control at all:
+
+- **Every job gets its own VM,** so a gate proves nothing about another job, and
+  a gate in `pr-validation.yml` cannot reach the workflows holding real
+  credentials.
+- **GitHub-hosted runners give passwordless sudo,** so a check at the start of a
+  job is undone by the compromised step it exists to contain: root can stop
+  harden-runner's agent. What makes "enforced at the start" stay true is
+  removing sudo, which `mobilize` now requires every job to decide on (#410).
+- **harden-runner does nothing on the self-hosted ARC runner.** It writes its
+  policy for a StepSecurity cluster agent that is not installed, and a real
+  converge's log records no destinations. The jobs holding the vault token were
+  labelled `audit` and were neither restricted nor recorded. The proposed fix,
+  transcribing their observed destinations and flipping them to `block`, had no
+  log to transcribe and would have blocked nothing. That work belongs at the
+  cluster's network layer (#411), and a guard now refuses any self-hosted job
+  claiming `block` in the meantime.
+
+The lane stays because it is cheap and catches the systemic break: a
+harden-runner bump or a change to how GitHub runs nested actions goes red on the
+pull request that introduces it. It also checks that sudo really is gone.
+
 ### A language nobody declared is a language nothing checks
 
 Every tool in this estate is bound to a file type — shellcheck to `.sh`, tofu

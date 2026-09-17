@@ -42,8 +42,8 @@ import (
 // WHAT THIS DOES NOT PROVE. That harden-runner ENFORCES when nested. It installs
 // its policy in a pre-step, and GitHub documents pre-steps as unsupported for
 // local actions. A job can satisfy this rule and be unwatched. The answer to
-// that is not in the shape of the YAML, so it is not asserted here: it is
-// .github/workflows/egress-proof.yml, which requires a request outside the
+// that is not in the shape of the YAML, so it is not asserted here: it is the
+// Egress Proof lane in pr-validation.yml, which requires a request outside the
 // allowlist to be refused.
 func TestEveryJobHardensTheRunnerFirst(t *testing.T) {
 	forEachJob(t, func(t *testing.T, file, job string, steps []map[string]any) {
