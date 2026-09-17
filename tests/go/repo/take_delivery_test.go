@@ -5,6 +5,8 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,13 +108,23 @@ func (f *deliveryFixture) run(t *testing.T, args ...string) (string, error) {
 	return string(out), err
 }
 
-func (f *deliveryFixture) installed(name string) ([]byte, os.FileInfo) {
+// installed reads what take-delivery.sh put in ~/.local/bin, or nil when it
+// put nothing there. Any other failure to read it is a failure of the test,
+// never an answer of "not installed".
+func (f *deliveryFixture) installed(t *testing.T, name string) ([]byte, os.FileInfo) {
+	t.Helper()
 	path := filepath.Join(f.home, ".local", "bin", name)
 	info, err := os.Stat(path)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
-	body, _ := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("checking whether %s was installed: %v", name, err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading the installed %s: %v", name, err)
+	}
 	return body, info
 }
 
@@ -153,7 +165,7 @@ func TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith(t *testing.T) {
 		if out, err := f.run(t, "tool"); err != nil {
 			t.Fatalf("take-delivery.sh refused the file it was ordered with: %v\n%s", err, out)
 		}
-		body, info := f.installed("tool")
+		body, info := f.installed(t, "tool")
 		if string(body) != string(binary) {
 			t.Fatalf("~/.local/bin/tool is %q, not the file that was served", body)
 		}
@@ -176,7 +188,7 @@ func TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith(t *testing.T) {
 		if !strings.Contains(out, "is not the file scripts/deliveries.lock was ordered with") {
 			t.Errorf("the refusal does not say why:\n%s", out)
 		}
-		if body, _ := f.installed("tool"); body != nil {
+		if body, _ := f.installed(t, "tool"); body != nil {
 			t.Errorf("a refused file was installed anyway: %q", body)
 		}
 	})
@@ -191,10 +203,10 @@ func TestTakeDeliveryTakesTheNamedFileOutOfAnArchive(t *testing.T) {
 	if out, err := f.run(t, "tool"); err != nil {
 		t.Fatalf("take-delivery.sh could not take the tool out of its archive: %v\n%s", err, out)
 	}
-	if body, _ := f.installed("tool"); !strings.Contains(string(body), "from the archive") {
+	if body, _ := f.installed(t, "tool"); !strings.Contains(string(body), "from the archive") {
 		t.Fatalf("~/.local/bin/tool is %q, not the archive's tool", body)
 	}
-	if body, _ := f.installed("LICENSE"); body != nil {
+	if body, _ := f.installed(t, "LICENSE"); body != nil {
 		t.Error("the archive's other files were installed as tools")
 	}
 }

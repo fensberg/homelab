@@ -54,8 +54,10 @@ func TestNothingInstallsFromPyPIOutsideTakeDelivery(t *testing.T) {
 			if commentLine.MatchString(line) || !pythonInstall.MatchString(line) {
 				continue
 			}
-			// This file carries the shapes in order to refuse them.
-			if strings.HasSuffix(rel, "/deliveries_test.go") {
+			// This file carries the shapes in order to refuse them, and the
+			// mutation ledger carries one in order to plant it and watch this
+			// refuse it. Neither is run.
+			if strings.HasSuffix(rel, "/deliveries_test.go") || rel == "tests/mutations.yml" {
 				continue
 			}
 			offenders = append(offenders, rel+":"+strconv.Itoa(n+1)+": "+strings.TrimSpace(line))
