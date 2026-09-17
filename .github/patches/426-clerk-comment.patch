@@ -1,0 +1,24 @@
+diff --git a/.github/workflows/clerk.yml b/.github/workflows/clerk.yml
+index 2d64e66..a7e7048 100644
+--- a/.github/workflows/clerk.yml
++++ b/.github/workflows/clerk.yml
+@@ -305,7 +305,8 @@ jobs:
+         with:
+           sarif_file: snag.sarif
+           category: clerk-snag
+-          # Told, not inferred. The checkout is refs/pull/N/head so that a
++          # Told, not inferred. The reading is of refs/pull/N/head - fetched
++          # as data into a worktree since #409, never checked out - so that a
+           # merged pull request can be read retroactively, and the action
+           # otherwise looks for the merge ref and falls back to a commit it did
+           # not scan - two "git call failed" warnings per run, and an alert
+@@ -319,7 +320,8 @@ jobs:
+         with:
+           sarif_file: handover.sarif
+           category: clerk-handover
+-          # Told, not inferred. The checkout is refs/pull/N/head so that a
++          # Told, not inferred. The reading is of refs/pull/N/head - fetched
++          # as data into a worktree since #409, never checked out - so that a
+           # merged pull request can be read retroactively, and the action
+           # otherwise looks for the merge ref and falls back to a commit it did
+           # not scan - two "git call failed" warnings per run, and an alert

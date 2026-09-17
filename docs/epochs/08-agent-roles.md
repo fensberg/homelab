@@ -729,6 +729,62 @@ starts as a proposal, and a design question found mid-build stops the build.
 The rule held within the same session - two questions surfaced while the
 binaries were being scoped, and both went to the operator before any code.
 
+### What is actually unwalkable, read from the live rules
+
+The question that prompted this: a guard is good, and a guard nobody can walk
+over is better - so which of this estate's rules are which? Audited against the
+GitHub API rather than against what the repository says about itself,
+2026-09-17.
+
+**Three layers, and only the first refuses anybody.**
+
+| Layer                          | Examples                                                                                                                 | Walkable                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| A ruleset                      | signatures and no force-push on every branch, linear history on `main`, review by a code owner, thirteen required checks | No. Every ruleset here carries zero bypass actors that the App can see, and the App reports `current_user_can_bypass: never` |
+| A check inside a required lane | `superintendent enforce-standing-order`, every guard in `tests/go/repo`                                                  | No, as long as the lane's content is trustworthy - see #430                                                                  |
+| A git hook                     | `enforce-push`, `enforce-merge`, the pre-commit checks                                                                   | Yes: `--no-verify`, `SKIP=`, or an unwired `core.hooksPath`                                                                  |
+
+So of the superintendent's three verbs, one is enforced where nobody can reach
+it and two are advisory. That is not a defect in itself - `enforce-push` has a
+server-side backstop, because a plain push produces unsigned commits and
+`required_signatures` refuses those whatever the hook did. The hook exists to
+make the refusal legible and early. `enforce-merge` has no such backstop on a
+feature branch: its worst case is that `signedpush` cannot replay the branch,
+which surfaces at push time rather than as a rule.
+
+**The required checks are one list, deliberately.** They sit on `protected
+branches`, which covers `main` and `epoch/**`; the `main only` ruleset carries
+`required_linear_history` and nothing else. Two lists would be two places to
+keep in step for a narrower result, since every check that guards `main` should
+guard an epoch branch too.
+
+The audit found Format and `dependency-review` running on every pull request and
+required by nothing, which meant a red private-key check, a red gitleaks or a
+refused dependency could merge. Both are now required, and the list is thirteen.
+
+**What the audit could not settle from inside.** Environment protection rules,
+Actions settings and organization rulesets are invisible to the repository, so
+no test here can assert them and nothing notices them changing. Recorded here
+because a setting nobody has written down cannot be reviewed:
+
+- **Actions, default `GITHUB_TOKEN`:** read for `contents` and `packages` only.
+  Every workflow declares its own `permissions:` block on top of that.
+- **Actions, fork pull requests:** approval required for all external
+  contributors - anybody outside the organization.
+- **Environments:** `management`, which gates the converge and holds the vault
+  token, now requires the operator as a reviewer, as `staging` and `production`
+  already did. None of the four restricts which branch may deploy to it (#428).
+- **Organization rulesets:** not readable by the App at all, which is what
+  #430's first option turns on.
+
+**The gap that remains is #430.** A required status check is a name, and for a
+`pull_request` event the workflow producing it is read from the pull request's
+own copy. A pull request that edits `pr-validation.yml` therefore chooses what
+`Test (go, tofu, vitest)` does, and every guard sits behind that check. The
+agent is structurally excluded - no `workflows` permission, so its workflow
+changes arrive as patches - and for a person the control is review plus the
+sensitive-path alarm. Real, and not a guard.
+
 ## Acceptance tests
 
 1. **The planner finds a trigger that has genuinely fired**, and the issue it

@@ -446,7 +446,7 @@ depends on it and uses them.
 
 ## CI
 
-- `pr-validation.yml` — eleven lanes, all running in parallel, Format
+- `pr-validation.yml` — every lane runs in parallel, Format
   included. Formatting is enforced locally first (the git hook
   `./scripts/install-dependencies.sh` wires up via `pre-commit install`) -
   shift left, catch it in seconds on the machine that wrote it. **Format**'s
@@ -550,8 +550,11 @@ depends on it and uses them.
   Proxmox web UI. The destructive e2e tier is absent from CI entirely and is
   run by hand; see `tests/README.md`.
 - `deploy-infrastructure.yml` — applies OpenTofu on a self-hosted runner.
-  Path-filtered to `environments/**` and `modules/**`, so Ignition changes
-  never trigger it. That is intentional.
+  Path-filtered to the infrastructure paths of both tiers:
+  `environments/**/infrastructure/**`, `modules/infrastructure/**`,
+  `management/**` and `config/management.tpl.json`. A change under
+  `management/` converges the estate that already exists; it never ignites
+  one, which is the distinction the invariant above draws.
 
 ## Testing
 
