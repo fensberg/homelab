@@ -1,6 +1,6 @@
 // Proof that a script beside the shared action runs, and sees the caller's env.
 //
-// Run by .github/workflows/egress-proof.yml on every pull request. The plan
+// Run by the egress-blocked job in .github/workflows/pr-validation.yml. The plan
 // comment scripts beside this one read their values from process.env and run
 // only on infrastructure changes, so this is where a break in either half -
 // the file not being readable under $/, or the calling step's env not arriving -

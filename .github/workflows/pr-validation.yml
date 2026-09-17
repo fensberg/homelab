@@ -82,6 +82,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             codeload.github.com:443
@@ -187,6 +188,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             github.com:443
@@ -252,6 +254,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             get.opentofu.org:443
@@ -274,8 +277,15 @@ jobs:
           curl --proto '=https' --tlsv1.2 -fsSL \
             https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
           chmod +x install-opentofu.sh
+          # Into directories the runner account owns. The installer's defaults -
+          # /opt/opentofu, linked from /usr/local/bin - fall back to sudo, and
+          # this job runs with sudo removed (#410).
+          mkdir -p "$HOME/.local/bin"
           ./install-opentofu.sh --install-method standalone \
-            --opentofu-version "${TOFU_VERSION}"
+            --opentofu-version "${TOFU_VERSION}" \
+            --install-path "$HOME/.local/opentofu" \
+            --symlink-path "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           rm install-opentofu.sh
 
       # CI has no 1Password credentials and must not have any. The rendered
@@ -309,7 +319,13 @@ jobs:
           curl -fsSL -o kubeconform.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
           tar xzf kubeconform.tar.gz kubeconform
-          sudo install -m 0755 kubeconform /usr/local/bin/kubeconform
+          # Into a directory the runner account owns, not /usr/local/bin. This job
+          # runs with sudo removed (#410), so a later step cannot switch egress
+          # enforcement off - and nothing here ever needed root to install a
+          # single binary.
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 kubeconform "$HOME/.local/bin/kubeconform"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           rm kubeconform.tar.gz kubeconform
 
       # Build the kustomization and substitute the placeholders before
@@ -444,6 +460,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             get.opentofu.org:443
@@ -529,8 +546,15 @@ jobs:
           curl --proto '=https' --tlsv1.2 -fsSL \
             https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
           chmod +x install-opentofu.sh
+          # Into directories the runner account owns. The installer's defaults -
+          # /opt/opentofu, linked from /usr/local/bin - fall back to sudo, and
+          # this job runs with sudo removed (#410).
+          mkdir -p "$HOME/.local/bin"
           ./install-opentofu.sh --install-method standalone \
-            --opentofu-version "${TOFU_VERSION}"
+            --opentofu-version "${TOFU_VERSION}" \
+            --install-path "$HOME/.local/opentofu" \
+            --symlink-path "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           rm install-opentofu.sh
 
       # Fixture configs from management/cluster/tests/fixtures, never the real
@@ -610,6 +634,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             files.pythonhosted.org:443
@@ -652,6 +677,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             github.com:443
@@ -669,7 +695,13 @@ jobs:
           curl -fsSL -o hadolint \
             "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
           echo "${HADOLINT_SHA256}  hadolint" | sha256sum -c -
-          sudo install -m 0755 hadolint /usr/local/bin/hadolint
+          # Into a directory the runner account owns, not /usr/local/bin. This job
+          # runs with sudo removed (#410), so a later step cannot switch egress
+          # enforcement off - and nothing here ever needed root to install a
+          # single binary.
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 hadolint "$HOME/.local/bin/hadolint"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           rm hadolint
 
       # Every Dockerfile this estate builds, discovered rather than listed, so
@@ -692,6 +724,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             files.pythonhosted.org:443
@@ -730,6 +763,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             files.pythonhosted.org:443
@@ -780,6 +814,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
+          disable-sudo-and-containers: "false"
           fetch-depth: 0
       - name: Run Semgrep CI
         # clusters/bootstrap/ is Cilium's chart output, committed verbatim so a
@@ -841,6 +876,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             ghcr.io:443
@@ -904,6 +940,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
+          disable-sudo-and-containers: "true"
           fetch-depth: 0
 
       # Versions come from scripts/versions.env, which is the only place one
@@ -927,7 +964,13 @@ jobs:
           curl -fsSLO "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/${tarball}"
           echo "${TRUFFLEHOG_SHA256}  ${tarball}" | sha256sum -c -
           tar -xzf "${tarball}" trufflehog
-          sudo install -m 0755 trufflehog /usr/local/bin/trufflehog
+          # Into a directory the runner account owns, not /usr/local/bin. This job
+          # runs with sudo removed (#410), so a later step cannot switch egress
+          # enforcement off - and nothing here ever needed root to install a
+          # single binary.
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 trufflehog "$HOME/.local/bin/trufflehog"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       # Same flags the marketplace action passed internally. base/head come
       # straight from the pull_request event - this workflow no longer has a
@@ -942,3 +985,119 @@ jobs:
             --since-commit "${BASE_SHA}" \
             --branch "${HEAD_SHA}" \
             --fail --no-update --github-actions --results=verified,unknown
+
+  # -----------------------------------------------------------------
+  # EGRESS PROOF: that the shared first step still does what it claims.
+  #
+  # Every job starts with $/.github/workflows/mobilize, which runs harden-runner
+  # and checkout from one place. harden-runner's own report is not evidence -
+  # it falls back to audit on several errors and carries on - so the only proof
+  # a block policy is in force is a request it refused.
+  #
+  # NOT A GATE, deliberately. Each job gets its own VM, so this job passing
+  # says nothing about another job's, and a gate every lane waited behind would
+  # serialise them for a check that cannot vouch for them. What this catches is
+  # the systemic break - a harden-runner bump, or GitHub changing how nested
+  # actions run - on the pull request that introduces it. A start-of-job check
+  # in every job was considered and not built: with sudo, a later step could
+  # undo it, which is why sudo is removed instead (#410).
+  #
+  # THE CONTROL. `egress-reachable` shows the probe host answers when nothing
+  # restricts it, so a refusal in `egress-blocked` is the policy and not an
+  # outage. When this was first proven it also ran harden-runner directly as a
+  # second control; nothing runs it directly any more, and keeping that job
+  # would have been a second place its commit is written.
+  #
+  # The probe host is example.com: reserved by IANA for exactly this kind of
+  # use, and on no job's allowlist anywhere in scripts/approved-suppliers.yml.
+  # -----------------------------------------------------------------
+  egress-reachable:
+    name: "Egress Proof (probe host answers unrestricted)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      PROBE: https://example.com
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          egress-policy: audit
+          disable-sudo-and-containers: "true"
+          checkout: "false"
+
+      - name: The probe host answers
+        run: |
+          if ! curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
+            echo "::error::$PROBE did not answer with nothing blocking it, so a refusal in egress-blocked would prove nothing. Choose a probe host reachable from a GitHub-hosted runner."
+            exit 1
+          fi
+          echo "$PROBE answers when unrestricted."
+
+  egress-blocked:
+    name: "Egress Proof (block holds, sudo is gone)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      PROBE: https://example.com
+      ALLOWED: https://github.com
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+          disable-sudo-and-containers: "true"
+
+      - name: The repository was checked out
+        run: |
+          if [ ! -f CLAUDE.md ]; then
+            echo "::error::mobilize ran and the workspace holds no checkout."
+            exit 1
+          fi
+
+      # The protection that makes a block stay a block. With sudo, any later
+      # step in a job can stop harden-runner's agent or flush its rules and
+      # then call out (#410).
+      - name: Sudo is gone
+        run: |
+          if sudo -n true 2>/dev/null; then
+            echo "::error::sudo still works after mobilize with disable-sudo-and-containers: \"true\". Any step in a blocking job could switch egress enforcement off."
+            exit 1
+          fi
+          echo "sudo is refused, so no later step can dismantle enforcement."
+
+      - name: An allowed host answers
+        run: |
+          if ! curl --silent --show-error --max-time 20 --output /dev/null "$ALLOWED"; then
+            echo "::error::$ALLOWED is on this job's allowlist and did not answer. The block is refusing everything, so a refused probe below would not show that it refuses selectively."
+            exit 1
+          fi
+
+      - name: The probe host is refused
+        run: |
+          if curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
+            echo "::error::$PROBE answered under egress-policy: block through mobilize. harden-runner's policy was not installed, so every job in this repository is unwatched while reporting green."
+            exit 1
+          fi
+          echo "$PROBE was refused: harden-runner enforces block through mobilize."
+
+      # The plan-comment scripts are files beside the shared github-script
+      # action and read their values from process.env set on the calling step.
+      # Those jobs run only on infrastructure changes, so a script that cannot be
+      # read under $/, or env that stopped arriving, is found here first.
+      - name: A calling step's env reaches a script beside the shared action
+        uses: $/.github/workflows/github-script
+        env:
+          PROOF: reached
+        with:
+          name: env-reaches-script

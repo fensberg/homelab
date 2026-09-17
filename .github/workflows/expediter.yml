@@ -135,6 +135,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             api.steampowered.com:443
@@ -200,6 +201,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
+          disable-sudo-and-containers: "false"
 
       - name: Ask SteamCMD what the build actually is
         id: build
@@ -408,6 +410,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             github.com:443

@@ -53,6 +53,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "false"
           allowed-endpoints: >
             api.deps.dev:443
             api.github.com:443

@@ -59,6 +59,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
+          disable-sudo-and-containers: "false"
 
       - name: Log in to the registry
         env:

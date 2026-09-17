@@ -23,7 +23,7 @@
 # runs with a token.
 #
 # `$/` makes the files beside this one readable with no checkout, and a calling
-# step's env reaches the script; .github/workflows/egress-proof.yml asserts both
+# step's env reaches the script; the egress-blocked job in pr-validation.yml asserts both
 # on every pull request, because the jobs using this run only on infrastructure
 # changes and would otherwise be first to find out.
 name: "GitHub Script"

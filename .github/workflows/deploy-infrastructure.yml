@@ -93,6 +93,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             github.com:443
@@ -207,6 +208,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
+          disable-sudo-and-containers: "false"
 
       - name: Determine Target Directory
         run: echo "DIR=environments/staging/infrastructure/" >> "$GITHUB_ENV"
@@ -290,6 +292,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
+          disable-sudo-and-containers: "false"
 
       - name: Determine Target Directory
         id: set-env
@@ -374,6 +377,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
+          disable-sudo-and-containers: "false"
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -468,6 +472,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             github.com:443
@@ -720,6 +725,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
+          disable-sudo-and-containers: "false"
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -781,6 +787,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
           checkout: "false"

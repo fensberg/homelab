@@ -12,7 +12,7 @@
 #
 # PROVEN, NOT ASSUMED. harden-runner installs its policy in a pre-step, and
 # GitHub documents pre-steps as unsupported for local actions. Under `$/` they
-# run: .github/workflows/egress-proof.yml requires a host outside the allowlist
+# run: the Egress Proof lane in pr-validation.yml requires a host outside the allowlist
 # to be refused through this action, and its run shows "Pre Mobilize" and
 # "Post Mobilize" executing harden-runner's own pre and post steps.
 #
@@ -43,6 +43,14 @@ inputs:
       scripts/approved-suppliers.yml. `security guard-egress` refuses drift.
     required: false
     default: ""
+  disable-sudo-and-containers:
+    description: >-
+      "true" removes sudo and container access from the runner account for the
+      rest of the job, so a later step cannot switch egress enforcement off
+      (#410). "false" only where the job genuinely needs root or Docker, with
+      the reason declared beside its egress entry in
+      scripts/approved-suppliers.yml. No default: every job says which.
+    required: true
   checkout:
     description: >-
       "false" for a job that never needs the repository. There is no way to
@@ -62,17 +70,26 @@ runs:
       with:
         egress-policy: ${{ inputs.egress-policy }}
         allowed-endpoints: ${{ inputs.allowed-endpoints }}
+        disable-sudo-and-containers: ${{ inputs.disable-sudo-and-containers }}
 
     # A value other than "true" or "false" is refused rather than read as
-    # false: a typo here would otherwise silently skip the checkout and leave
-    # every later step running against an empty workspace.
-    - name: Refuse an unrecognised checkout value
-      if: inputs.checkout != 'true' && inputs.checkout != 'false'
+    # false. For checkout a typo would silently skip it and leave every later
+    # step running against an empty workspace; for sudo it would silently leave
+    # root in place. harden-runner reads an unrecognised boolean as false, so
+    # the refusal has to happen here.
+    #
+    # This runs after harden-runner rather than before it, because harden-runner
+    # is what makes every later step watched - including this one.
+    - name: Refuse an unrecognised value
+      if: >-
+        (inputs.checkout != 'true' && inputs.checkout != 'false') ||
+        (inputs.disable-sudo-and-containers != 'true' && inputs.disable-sudo-and-containers != 'false')
       shell: bash
       env:
-        VALUE: ${{ inputs.checkout }}
+        CHECKOUT: ${{ inputs.checkout }}
+        SUDO: ${{ inputs.disable-sudo-and-containers }}
       run: |
-        echo "::error::mobilize was given checkout: '$VALUE'. Use \"true\" or \"false\"."
+        echo "::error::mobilize takes checkout and disable-sudo-and-containers as \"true\" or \"false\"; it was given checkout: '$CHECKOUT', disable-sudo-and-containers: '$SUDO'."
         exit 1
 
     - name: Check out the repository
