@@ -201,6 +201,122 @@ Two things fall out of it that a graph does not give:
   way "the graph looks high" is not, and the schedule is what X is expressed
   against.
 
+### What this epoch deploys, and where each answer goes (agreed 2026-09-17)
+
+Four questions were settled with the operator before anything was built.
+
+**The stack is kube-prometheus-stack, with Grafana.** Prometheus, Alertmanager,
+node-exporter, kube-state-metrics and the operator, plus metrics-server beside
+it so `kubectl top` answers at all.
+
+The operator asked the right question about that chart source - why not take
+Prometheus from the Prometheus project - and the answer is that **the project
+publishes no chart**. It publishes the server, Alertmanager and node-exporter,
+as images on quay.io. The charts live in `prometheus-community`, "Prometheus
+Monitoring Community Projects", which is under the umbrella and explicitly not
+the core team; the operator lives in `prometheus-operator`, whose own
+description says it "is an independent project from the Prometheus project".
+So there is no straight-to-source option for a Kubernetes deployment, only
+three assemblies: this chart, the operator's own jsonnet (a toolchain this
+repository does not have), or writing every manifest here and owning upstream's
+RBAC and scrape configuration forever - which also drops the operator and makes
+`podMonitorEnabled` meaningless. The chart is the same shape every other
+component here already arrives in.
+
+**metrics-server does not come from a chart.** kubernetes-sigs publishes a
+single `components.yaml` release manifest beside it, and one Deployment plus an
+APIService needs no Helm indirection. Taken that way, pinned by digest from
+registry.k8s.io, which is already an approved registry - so this epoch adds one
+chart source rather than two. The operator's CRDs are what
+`cloudnative-pg.yaml`'s `podMonitorEnabled: false` has been waiting for.
+Grafana was the arguable half - the decision above says the deliverable is a
+panel schedule rather than a dashboard, and a dashboard tool invites the
+opposite - and it is taken anyway because the load-bearing measurement of this
+epoch, requested against actually used, is an exploration before it is a
+threshold. The discipline stays where it was: the thresholds get written into
+this record, and Grafana is where the question is asked rather than where the
+answer lives.
+
+**Prometheus gets a 20 GiB volume, and that is bounded by the disk that
+exists.** Each worker carries a 32 GiB data disk at `/var/mnt/storage`, which
+is the whole pool `openebs-hostpath` hands out of, already shared with the
+state database. Fifteen days of a cluster this size is 2-5 GiB - roughly 15-20k
+active series at a sample every 15 seconds, at about two bytes a sample - so
+20 GiB is four to five times the estimate and still leaves the disk room. The
+operator asked for 100 GiB on the "go big, then scale down" principle; it does
+not fit without growing every worker's disk through a converge, and a hostpath
+volume cannot be expanded in place anyway, so starting big costs the same
+recreation later that starting modest does. `retentionSize` is set just under
+the volume, so Prometheus evicts rather than filling a disk the database is
+also writing to.
+
+**Grafana comes from Docker Hub, because it comes from nowhere else.** Probed:
+`docker.io/grafana/grafana` answers and the same path on ghcr.io and quay.io
+does not. That needed a supplier decision rather than a shrug, because the
+docker.io entry approved Docker Official Images for build bases and asserted
+that nothing in the cluster pulls from there at runtime - which was already
+untrue, since OpenEBS' provisioner does, and it is the component handing out
+every volume. Grafana Labs is now its own entry beside the Official Images one,
+so it can be removed on its own, and the false sentence is corrected rather
+than left standing. Mirroring the image into this estate's registry was
+considered and deferred: a new mechanism to re-run on every bump, which would
+not change OpenEBS' dependency on the same registry anyway.
+
+**Cost, stated before it is spent.** The control planes are 4 cores and 4 GiB;
+the workers offer about 7.2 GiB allocatable each and run at 35-39% of it. The
+stack is roughly 1.2 GiB with Grafana, on the workers. That is affordable and
+it is also the first thing the new measurements will judge - if the panel
+schedule says this is the wrong tenant for this estate, that is a finding
+rather than an embarrassment.
+
+**An alert becomes a GitHub issue.** A scheduled job on the self-hosted runner
+asks Prometheus what is firing, opens one issue per alert, and closes it when
+the alert clears - so notification is GitHub's job, which already reaches the
+operator, and a firing alert cannot be scrolled past. No new vendor, no
+credential the estate does not already hold, and no inbound path.
+
+Google Chat was the operator's preference and is **not available**: incoming
+webhooks require a Business or Enterprise Workspace account and an
+administrator setting, which this estate does not have. Worth recording what
+was learned in case that changes, because it shapes the adapter rather than
+just the destination: the webhook URL carries `key` and `token` query
+parameters and **is itself the whole credential**, there is no auth header, the
+quota is one request per second per space shared by every webhook in it, a
+message is capped at 32,000 bytes, and `threadKey` is what keeps every firing
+of one alert in a single thread. The delivery step is therefore written as a
+formatter and a destination rather than as "open an issue", so Chat, Discord or
+email later is a URL and a shape, not a redesign.
+
+**The mesh check is node-exporter's textfile collector.** A timer runs
+`contractor survey` on each hypervisor and writes its row of the pairwise
+matrix where node-exporter publishes it; Prometheus scrapes the hypervisors
+over the overlay. One mechanism gives both the matrix this epoch's first driver
+demands and host metrics for the hypervisors, which nothing watches today. A
+Pushgateway was rejected: a stale push and a fresh one look identical unless
+something checks a timestamp, and the fault being watched for is exactly the
+one that stops pushes arriving.
+
+**Grafana is reached through Cloudflare Tunnel, behind Cloudflare Access.**
+The operator chose the tunnel over an overlay-only service. Two consequences,
+recorded because they were accepted rather than discovered: it builds the
+tunnel epoch 03 wants for the website, so part of that epoch lands inside this
+one; and Access goes in front, because the alternative is Grafana's own login
+page on the public internet. Cloudflare is already an approved supplier.
+
+**The tunnel comes early, not late.** The operator asked for Cloudflare Tunnel
+sooner rather than later, so it lands with the deployment rather than after the
+thresholds - Grafana is reachable the day it exists, and epoch 03 inherits a
+tunnel that has been carrying something real.
+
+**The work lands in three pull requests**, in this order: the chart suppliers,
+with the justification for each; the stack deployed with short retention and no
+alerts, so it starts gathering the requested-against-used data; then the panel
+schedule and the thresholds, with alerts wired to them once there is a week of
+data to write them from. The middle step is deliberately a measurement rather
+than a configuration: every threshold in this record is meant to have a
+denominator taken from this estate rather than from an article about somebody
+else's.
+
 ## Deferred
 
 - **Log aggregation**, per Scope above. Trigger: the first incident where
