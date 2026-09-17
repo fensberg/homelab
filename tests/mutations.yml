@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 100
+floor: 103
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -1520,6 +1520,60 @@ mutations:
       shared action actually does, and a literal there agrees with
       scripts/versions.env exactly until the pin moves - on the lane that runs
       the supplier gate before anything is installed.
+
+  - guard: TestNoCheckoutCanBePointedAtOtherCode
+    file: .github/workflows/checkout/action.yml
+    find: "persist-credentials: false"
+    replace: "persist-credentials: false\n        repository: someone/else"
+    mentions: 'gives actions/checkout "repository"'
+    why: >
+      The clerk checked out a pull request's own code in a run holding its
+      App's private key, then built and ran it (#409). The shared checkout's
+      ref input is what made that reusable. Allowing only how deep to fetch -
+      not refusing ref by name - is what stops the same hole returning as
+      repository, or as whatever input checkout grows next.
+
+  - guard: TestNoPrivilegedRunPutsAPullRequestInTheWorkspace
+    file: .github/workflows/zz-privileged-reset.yml
+    create: |
+      name: planted
+      on:
+        issue_comment:
+          types: [created]
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - name: Put the change where things run
+              run: |
+                git fetch origin refs/pull/1/head
+                git worktree add --detach change FETCH_HEAD
+                git reset --hard FETCH_HEAD
+    mentions: 'runs "git reset'
+    why: >
+      A worktree is only a boundary while nothing moves the workspace onto the
+      same commit. On a trigger that runs with secrets for anybody's pull
+      request, replacing the workspace puts unreviewed code where every later
+      step and every ./ action executes from.
+
+  - guard: TestNoPrivilegedRunPutsAPullRequestInTheWorkspace
+    file: .github/workflows/zz-privileged-fetch.yml
+    create: |
+      name: planted
+      on: [workflow_run]
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - name: Fetch the change
+              run: git fetch origin refs/pull/1/head
+    mentions: "without its own worktree"
+    why: >
+      In a run holding secrets a pull request is data, and a worktree of its
+      own is what keeps it apart from where things execute. A fetch that does
+      not make one leaves the next step one checkout away from #409.
 
 owed_ceiling: 55
 

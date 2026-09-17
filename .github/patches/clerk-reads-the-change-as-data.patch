@@ -1,0 +1,169 @@
+diff --git a/.github/workflows/checkout/action.yml b/.github/workflows/checkout/action.yml
+index 8f4e383..e9628b7 100644
+--- a/.github/workflows/checkout/action.yml
++++ b/.github/workflows/checkout/action.yml
+@@ -1,8 +1,14 @@
+ # The one place the actions/checkout commit is written.
+ #
+-# Most jobs reach this through $/.github/workflows/mobilize. A job that cannot
+-# know what to fetch until it has run a few steps - the clerk resolves a pull
+-# request number from a comment first - calls this directly, later.
++# Every job reaches this through $/.github/workflows/mobilize.
++#
++# IT CHECKS OUT THE COMMIT THE RUN IS FOR, AND NOTHING ELSE. There is no `ref`
++# input. It had one, and the one caller that used it - the clerk - checked out a
++# pull request's own code in a run holding the clerk App's private key, then
++# built and ran that code (#409). A shared checkout that any caller can point at
++# any ref is that hole made reusable, which is what CodeQL flagged here. A job
++# that needs to read other code fetches it as data, into its own worktree, and
++# does not run it.
+ #
+ # persist-credentials is not an input. No job here needs the token left on
+ # disk, and leaving it lets any later step, or anything a later step runs, push
+@@ -16,10 +22,6 @@ inputs:
+     description: How much history to check out; 0 is all of it.
+     required: false
+     default: "1"
+-  ref:
+-    description: What to check out; empty means the commit that triggered the run.
+-    required: false
+-    default: ""
+ 
+ runs:
+   using: composite
+@@ -28,5 +30,4 @@ runs:
+       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       with:
+         fetch-depth: ${{ inputs.fetch-depth }}
+-        ref: ${{ inputs.ref }}
+         persist-credentials: false
+diff --git a/.github/workflows/clerk.yml b/.github/workflows/clerk.yml
+index e3ae156..1da16a3 100644
+--- a/.github/workflows/clerk.yml
++++ b/.github/workflows/clerk.yml
+@@ -125,7 +125,11 @@ jobs:
+             release-assets.githubusercontent.com:443
+             storage.googleapis.com:443
+             generativelanguage.googleapis.com:443
+-          checkout: "false"
++          # The commit this workflow runs from, with its history. On
++          # issue_comment that is the default branch, so the pinned versions
++          # and the clerk binary below come from reviewed code, never from the
++          # change being read.
++          fetch-depth: 0
+ 
+       # Heard you. Dependabot reacts rather than replying, and it is the right
+       # shape: an acknowledgement that costs no comment and no notification.
+@@ -187,25 +191,48 @@ jobs:
+           gh api -X POST "repos/$REPO/issues/comments/$COMMENT/reactions" -f content=confused --silent
+           echo "::notice::known commands are '@clerk snag' and '@clerk handover'"
+ 
+-      # refs/pull/N/head rather than the head SHA, and that is what makes a
+-      # RETROACTIVE reading possible.
++      # The change is fetched as DATA, into its own worktree, and nothing in
++      # this job executes from it.
+       #
+-      # An issue_comment run starts on the default branch, so the change has to
+-      # be fetched explicitly either way. But a merged pull request is the
+-      # interesting case: this repository squash-merges, so the head commit is
+-      # not an ancestor of main and its branch is deleted on merge - a checkout
+-      # by SHA would find nothing. GitHub keeps refs/pull/N/head forever, so
+-      # `@clerk snag` works on a pull request that landed months ago exactly as
+-      # it does on one still open.
++      # It used to be checked out as the workspace. The job then ran
++      # ./.github/actions/versions and `go build -C scripts/clerk` from that
++      # checkout, and handed the binary the clerk App's private key (#409). On
++      # issue_comment this workflow runs from the default branch with secrets,
++      # whoever wrote the pull request - the association check above is about
++      # who ASKED, not who wrote the code - so an owner typing `@clerk snag` on
++      # a stranger's fork ran the stranger's code holding a credential that
++      # mints tokens for this repository.
+       #
+-      # That is worth having on purpose rather than by accident: it means the
+-      # clerk can be pointed at work that was merged before it existed.
+-      - name: Checkout Code
++      # Now the workspace is the commit this workflow runs from, the versions
++      # action and the clerk come from there, and the change is only ever read
++      # by -root. The head is checked against what "Resolve the change" saw, so
++      # a push landing between the two steps is refused rather than read.
++      #
++      # refs/pull/N/head rather than the head SHA, and that is what makes a
++      # RETROACTIVE reading possible. This repository squash-merges, so the head
++      # commit is not an ancestor of main and its branch is deleted on merge. A
++      # fetch by SHA would find nothing; GitHub keeps refs/pull/N/head forever,
++      # so `@clerk snag` works on a pull request that landed months ago exactly
++      # as it does on one still open.
++      #
++      # The token rides on the one command that needs it, rather than in
++      # .git/config - public repositories do not need it at all, and a fork of
++      # this estate might be private.
++      - name: Fetch the change to read, not to run
+         if: steps.ask.outputs.verbs != ''
+-        uses: $/.github/workflows/checkout
+-        with:
+-          ref: refs/pull/${{ steps.change.outputs.pr }}/head
+-          fetch-depth: 0
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          PR: ${{ steps.change.outputs.pr }}
++          HEAD: ${{ steps.change.outputs.head }}
++        run: |
++          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
++          git -c "http.extraheader=$auth" fetch --no-tags --quiet origin "refs/pull/$PR/head"
++          fetched="$(git rev-parse FETCH_HEAD)"
++          if [ "$fetched" != "$HEAD" ]; then
++            echo "::error::refs/pull/$PR/head is $fetched, not the $HEAD this run resolved. The pull request moved; ask again."
++            exit 1
++          fi
++          git worktree add --detach change "$HEAD"
+ 
+       - name: Read pinned versions
+         uses: ./.github/actions/versions
+@@ -250,7 +277,7 @@ jobs:
+           PATHS: ${{ steps.touched.outputs.paths }}
+         run: |
+           # shellcheck disable=SC2086 # PATHS is a space-separated path list
+-          ./toolshed/clerk snag -out snag.sarif $PATHS
++          ./toolshed/clerk snag -root change -out snag.sarif $PATHS
+ 
+       # handover asks the question tests/go/repo/forkable_test.go cannot: what
+       # would stop somebody who cloned this and pointed it at their own vault.
+@@ -267,7 +294,7 @@ jobs:
+           PATHS: ${{ steps.touched.outputs.paths }}
+         run: |
+           # shellcheck disable=SC2086 # PATHS is a space-separated path list
+-          ./toolshed/clerk handover -out handover.sarif $PATHS
++          ./toolshed/clerk handover -root change -out handover.sarif $PATHS
+ 
+       # Uploaded separately so each carries its own tool name and its findings
+       # group under it, rather than one run pretending two readings were one.
+diff --git a/.github/workflows/mobilize/action.yml b/.github/workflows/mobilize/action.yml
+index 6283b94..c0fa18e 100644
+--- a/.github/workflows/mobilize/action.yml
++++ b/.github/workflows/mobilize/action.yml
+@@ -45,18 +45,14 @@ inputs:
+     default: ""
+   checkout:
+     description: >-
+-      "false" for a job that never needs the repository, or that checks out
+-      later through $/.github/workflows/checkout once it knows what to fetch.
++      "false" for a job that never needs the repository. There is no way to
++      check out anything but the commit the run is for; see #409.
+     required: false
+     default: "true"
+   fetch-depth:
+     description: How much history to check out; 0 is all of it.
+     required: false
+     default: "1"
+-  ref:
+-    description: What to check out; empty means the commit that triggered the run.
+-    required: false
+-    default: ""
+ 
+ runs:
+   using: composite
+@@ -84,4 +80,3 @@ runs:
+       uses: $/.github/workflows/checkout
+       with:
+         fetch-depth: ${{ inputs.fetch-depth }}
+-        ref: ${{ inputs.ref }}
