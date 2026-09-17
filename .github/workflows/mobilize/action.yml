@@ -1,0 +1,99 @@
+# How every job starts: harden the runner, then check out the repository.
+#
+# THE ONE PLACE THE HARDEN-RUNNER COMMIT IS WRITTEN. It was restated in 31
+# jobs and the copies agreed only because nobody had made a mistake yet. A job
+# calls this instead:
+#
+#   - uses: $/.github/workflows/mobilize
+#     with:
+#       egress-policy: block
+#       allowed-endpoints: >
+#         github.com:443
+#
+# PROVEN, NOT ASSUMED. harden-runner installs its policy in a pre-step, and
+# GitHub documents pre-steps as unsupported for local actions. Under `$/` they
+# run: the Egress Proof lane in pr-validation.yml requires a host outside the allowlist
+# to be refused through this action, and its run shows "Pre Mobilize" and
+# "Post Mobilize" executing harden-runner's own pre and post steps.
+#
+# WHY `$/` AND NOT `./`. .github/actions/secure-checkout tried this with `./`
+# and every job failed: "Can't find 'action.yml' ... Did you forget to run
+# actions/checkout before running your local action?" A `./` reference is read
+# out of the workspace, and this is the step that fills it. `$/` resolves
+# against the repository at the running commit with no checkout.
+#
+# WHY IT LIVES UNDER .github/workflows. It decides what every job may reach, so
+# it sits behind the same `workflows` permission the agent does not hold.
+# GitHub loads workflows only from the top of that directory.
+name: "Mobilize"
+description: >-
+  Harden the runner, then check out the repository - the first step of every
+  job in this repository.
+
+inputs:
+  egress-policy:
+    description: >-
+      block or audit, exactly as scripts/approved-suppliers.yml declares for the
+      calling job. No default: harden-runner refuses an empty policy, which is
+      the right answer for a job that did not say.
+    required: true
+  allowed-endpoints:
+    description: >-
+      The calling job's allowlist, copied from its entry in
+      scripts/approved-suppliers.yml. `security guard-egress` refuses drift.
+    required: false
+    default: ""
+  disable-sudo-and-containers:
+    description: >-
+      "true" removes sudo and container access from the runner account for the
+      rest of the job, so a later step cannot switch egress enforcement off
+      (#410). "false" only where the job genuinely needs root or Docker, with
+      the reason declared beside its egress entry in
+      scripts/approved-suppliers.yml. No default: every job says which.
+    required: true
+  checkout:
+    description: >-
+      "false" for a job that never needs the repository. There is no way to
+      check out anything but the commit the run is for; see #409.
+    required: false
+    default: "true"
+  fetch-depth:
+    description: How much history to check out; 0 is all of it.
+    required: false
+    default: "1"
+
+runs:
+  using: composite
+  steps:
+    - name: Harden the runner
+      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      with:
+        egress-policy: ${{ inputs.egress-policy }}
+        allowed-endpoints: ${{ inputs.allowed-endpoints }}
+        disable-sudo-and-containers: ${{ inputs.disable-sudo-and-containers }}
+
+    # A value other than "true" or "false" is refused rather than read as
+    # false. For checkout a typo would silently skip it and leave every later
+    # step running against an empty workspace; for sudo it would silently leave
+    # root in place. harden-runner reads an unrecognised boolean as false, so
+    # the refusal has to happen here.
+    #
+    # This runs after harden-runner rather than before it, because harden-runner
+    # is what makes every later step watched - including this one.
+    - name: Refuse an unrecognised value
+      if: >-
+        (inputs.checkout != 'true' && inputs.checkout != 'false') ||
+        (inputs.disable-sudo-and-containers != 'true' && inputs.disable-sudo-and-containers != 'false')
+      shell: bash
+      env:
+        CHECKOUT: ${{ inputs.checkout }}
+        SUDO: ${{ inputs.disable-sudo-and-containers }}
+      run: |
+        echo "::error::mobilize takes checkout and disable-sudo-and-containers as \"true\" or \"false\"; it was given checkout: '$CHECKOUT', disable-sudo-and-containers: '$SUDO'."
+        exit 1
+
+    - name: Check out the repository
+      if: inputs.checkout == 'true'
+      uses: $/.github/workflows/checkout
+      with:
+        fetch-depth: ${{ inputs.fetch-depth }}

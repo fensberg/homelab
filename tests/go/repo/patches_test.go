@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,25 +65,7 @@ func intendedWorkflow(t *testing.T, name string) string {
 	// the patch was fine and the scratch tree was incomplete. A helper that
 	// blames the thing it is checking is worse than no helper.
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755); err != nil {
-		t.Fatalf("preparing a scratch tree: %v", err)
-	}
-	entries, err := os.ReadDir(filepath.Join(root, ".github", "workflows"))
-	if err != nil {
-		t.Fatalf("listing the workflows: %v", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		src, err := os.ReadFile(filepath.Join(root, ".github", "workflows", e.Name()))
-		if err != nil {
-			t.Fatalf("reading %s: %v", e.Name(), err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, ".github", "workflows", e.Name()), src, 0o644); err != nil {
-			t.Fatalf("preparing a scratch tree: %v", err)
-		}
-	}
+	copyWorkflowTree(t, root, dir)
 
 	for _, p := range patches {
 		if !patchTouches(t, p, rel) {
@@ -104,7 +88,14 @@ func intendedWorkflow(t *testing.T, name string) string {
 		}
 	}
 
+	// A patch may delete the workflow. That is an answer, not a failure to
+	// read one: a workflow that will not exist holds nothing to assert about.
+	// It is checked explicitly rather than inferred from any error, so a scratch
+	// tree that is simply broken still fails loudly here.
 	out, err := os.ReadFile(filepath.Join(dir, rel))
+	if errors.Is(err, fs.ErrNotExist) {
+		return ""
+	}
 	if err != nil {
 		t.Fatalf("reading the patched %s: %v", rel, err)
 	}
@@ -123,25 +114,7 @@ func intendedWorkflows(t *testing.T) map[string]string {
 	root := repoRoot(t)
 	dir := t.TempDir()
 	wf := filepath.Join(dir, ".github", "workflows")
-	if err := os.MkdirAll(wf, 0o755); err != nil {
-		t.Fatalf("preparing a scratch tree: %v", err)
-	}
-	entries, err := os.ReadDir(filepath.Join(root, ".github", "workflows"))
-	if err != nil {
-		t.Fatalf("listing the workflows: %v", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		src, err := os.ReadFile(filepath.Join(root, ".github", "workflows", e.Name()))
-		if err != nil {
-			t.Fatalf("reading %s: %v", e.Name(), err)
-		}
-		if err := os.WriteFile(filepath.Join(wf, e.Name()), src, 0o644); err != nil {
-			t.Fatalf("preparing a scratch tree: %v", err)
-		}
-	}
+	copyWorkflowTree(t, root, dir)
 	for _, p := range outstandingPatches(t) {
 		cmd := exec.Command("git", "apply", "--include=.github/workflows/*", p)
 		cmd.Dir = dir
@@ -253,5 +226,41 @@ func TestEveryOutstandingPatchStillApplies(t *testing.T) {
 				"patch is indistinguishable from a live one to whoever has to run it.",
 				name, err, out)
 		}
+	}
+}
+
+// copyWorkflowTree mirrors .github/workflows into a scratch tree, subdirectories
+// included.
+//
+// Top-level files used to be enough, because that directory held nothing else.
+// It now also holds the composite actions every job calls - mobilize, checkout
+// and the rest - kept beside the workflows so they sit behind the same
+// permission. A patch editing one of them failed to apply to a scratch tree
+// that did not contain it, and was reported as stale when it was good: a
+// helper blaming the thing it checks, which is the failure this file already
+// records once.
+func copyWorkflowTree(t *testing.T, root, dir string) {
+	t.Helper()
+	src := filepath.Join(root, ".github", "workflows")
+	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(dir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dst, body, 0o644)
+	})
+	if err != nil {
+		t.Fatalf("mirroring .github/workflows into a scratch tree: %v", err)
 	}
 }

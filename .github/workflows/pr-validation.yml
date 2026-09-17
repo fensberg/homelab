@@ -72,8 +72,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # pre-commit builds a Go toolchain for actionlint and a Node one
           # for prettier, which is why this list is the longest in the file.
@@ -82,6 +82,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             codeload.github.com:443
@@ -98,11 +99,6 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       # The same .pre-commit-config.yaml a developer runs, at the same pinned
       # versions. That is the point: there is no second copy of prettier here
@@ -130,10 +126,7 @@ jobs:
         uses: ./.github/actions/versions
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
+        uses: $/.github/workflows/setup-go
 
       - name: Refuse an unapproved supplier before anything is downloaded
         run: go run -C scripts/security . guard-deliveries -before-install
@@ -185,8 +178,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # action-shellcheck downloads the pinned shellcheck binary
           # straight from its GitHub release.
@@ -195,16 +188,12 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             github.com:443
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -241,8 +230,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # get.opentofu.org serves both the installer and the GPG key it
           # verifies the release with. Provider downloads start at the registry
@@ -265,6 +254,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             get.opentofu.org:443
@@ -275,11 +265,6 @@ jobs:
             registry.opentofu.org:443
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -292,8 +277,15 @@ jobs:
           curl --proto '=https' --tlsv1.2 -fsSL \
             https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
           chmod +x install-opentofu.sh
+          # Into directories the runner account owns. The installer's defaults -
+          # /opt/opentofu, linked from /usr/local/bin - fall back to sudo, and
+          # this job runs with sudo removed (#410).
+          mkdir -p "$HOME/.local/bin"
           ./install-opentofu.sh --install-method standalone \
-            --opentofu-version "${TOFU_VERSION}"
+            --opentofu-version "${TOFU_VERSION}" \
+            --install-path "$HOME/.local/opentofu" \
+            --symlink-path "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           rm install-opentofu.sh
 
       # CI has no 1Password credentials and must not have any. The rendered
@@ -327,7 +319,13 @@ jobs:
           curl -fsSL -o kubeconform.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
           tar xzf kubeconform.tar.gz kubeconform
-          sudo install -m 0755 kubeconform /usr/local/bin/kubeconform
+          # Into a directory the runner account owns, not /usr/local/bin. This job
+          # runs with sudo removed (#410), so a later step cannot switch egress
+          # enforcement off - and nothing here ever needed root to install a
+          # single binary.
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 kubeconform "$HOME/.local/bin/kubeconform"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           rm kubeconform.tar.gz kubeconform
 
       # Build the kustomization and substitute the placeholders before
@@ -379,13 +377,10 @@ jobs:
       # rejects when they span more than one directory - a confirmed upstream
       # bug (super-linter/super-linter#6294). That tool is gone (#365); this
       # lane was already the honest owner and now it is the only one.
+      # No go.sum: scripts/contractor has zero external dependencies, so
+      # there is nothing meaningful to cache.
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          # No go.sum: scripts/contractor has zero external dependencies, so
-          # there is nothing meaningful to cache.
-          cache: false
+        uses: $/.github/workflows/setup-go
 
       - name: Validate Go
         working-directory: scripts/contractor
@@ -449,8 +444,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Not a guessed list: every entry here is already proven under
           # egress-policy: block by another lane in this same file. The
@@ -465,6 +460,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             get.opentofu.org:443
@@ -479,11 +475,6 @@ jobs:
             storage.googleapis.com:443
             sum.golang.org:443
 
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
@@ -492,9 +483,8 @@ jobs:
 
       # --- Go -------------------------------------------------------------
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: $/.github/workflows/setup-go
         with:
-          go-version: ${{ env.GO_VERSION }}
           # tests/go is the only module here with dependencies to cache;
           # scripts/contractor has none, so there is no go.sum of its own to key on.
           cache-dependency-path: tests/go/go.sum
@@ -556,8 +546,15 @@ jobs:
           curl --proto '=https' --tlsv1.2 -fsSL \
             https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
           chmod +x install-opentofu.sh
+          # Into directories the runner account owns. The installer's defaults -
+          # /opt/opentofu, linked from /usr/local/bin - fall back to sudo, and
+          # this job runs with sudo removed (#410).
+          mkdir -p "$HOME/.local/bin"
           ./install-opentofu.sh --install-method standalone \
-            --opentofu-version "${TOFU_VERSION}"
+            --opentofu-version "${TOFU_VERSION}" \
+            --install-path "$HOME/.local/opentofu" \
+            --symlink-path "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           rm install-opentofu.sh
 
       # Fixture configs from management/cluster/tests/fixtures, never the real
@@ -629,14 +626,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             files.pythonhosted.org:443
@@ -644,11 +642,6 @@ jobs:
             objects.githubusercontent.com:443
             pypi.org:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -676,24 +669,20 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             github.com:443
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -706,7 +695,13 @@ jobs:
           curl -fsSL -o hadolint \
             "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
           echo "${HADOLINT_SHA256}  hadolint" | sha256sum -c -
-          sudo install -m 0755 hadolint /usr/local/bin/hadolint
+          # Into a directory the runner account owns, not /usr/local/bin. This job
+          # runs with sudo removed (#410), so a later step cannot switch egress
+          # enforcement off - and nothing here ever needed root to install a
+          # single binary.
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 hadolint "$HOME/.local/bin/hadolint"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           rm hadolint
 
       # Every Dockerfile this estate builds, discovered rather than listed, so
@@ -721,14 +716,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             files.pythonhosted.org:443
@@ -736,11 +732,6 @@ jobs:
             objects.githubusercontent.com:443
             pypi.org:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -764,14 +755,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             files.pythonhosted.org:443
@@ -779,11 +771,6 @@ jobs:
             objects.githubusercontent.com:443
             pypi.org:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -812,8 +799,8 @@ jobs:
       # refresh occasionally.
       image: semgrep/semgrep:1.172.0@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Stays audit, not block, until a real run's egress log gives an
           # allowed-endpoints list worth trusting - semgrep ci reaches its
@@ -827,12 +814,8 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
+          disable-sudo-and-containers: "false"
           fetch-depth: 0
-          persist-credentials: false
       - name: Run Semgrep CI
         # clusters/bootstrap/ is Cilium's chart output, committed verbatim so a
         # version bump is a reviewable diff rather than a one-line pin change.
@@ -841,7 +824,24 @@ jobs:
         # rather than in a root .semgrepignore, because that file REPLACES
         # semgrep's built-in ignore list rather than adding to it, and silently
         # losing those defaults is a bigger hole than the one being closed.
-        run: semgrep ci --exclude=clusters/bootstrap
+        #
+        # One registry rule is excluded, and it duplicates a check with an
+        # owner. github-actions-mutable-action-tag refuses any `uses:` without a
+        # 40-character commit and exempts `./` and `docker://` - but not `$/`,
+        # GitHub's self-repository reference, which resolves to the running
+        # commit and is as immutable as a reference gets. Every job starts with
+        # `uses: $/.github/workflows/mobilize`, so the rule fires on every job.
+        #
+        # Nothing is lost: zizmor's unpinned-uses owns "is this pinned to a
+        # commit" under a blanket hash policy, fails the Workflow Scan lane on a
+        # tag, and reads composite actions as well as workflows - checked with a
+        # tag-pinned step in each. Two owners of one check is the arrangement
+        # this repository refuses anyway.
+        #
+        # Removed when: the rule exempts `^\$/` the way it exempts `^\./`.
+        run: >-
+          semgrep ci --exclude=clusters/bootstrap
+          --exclude-rule=yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         env:
           SEMGREP_RULES: "p/default"
 
@@ -866,8 +866,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Trivy pulls its misconfiguration database as an OCI artifact,
           # from ghcr.io with a Google mirror as fallback.
@@ -876,6 +876,7 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             ghcr.io:443
@@ -884,12 +885,7 @@ jobs:
             objects.githubusercontent.com:443
             pkg-containers.githubusercontent.com:443
             release-assets.githubusercontent.com:443
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -930,8 +926,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # DELIBERATELY audit, not block. TruffleHog verifies a candidate
           # secret by presenting it to the API of whichever vendor issued it,
@@ -944,12 +940,8 @@ jobs:
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: audit
-
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
+          disable-sudo-and-containers: "true"
           fetch-depth: 0
-          persist-credentials: false
 
       # Versions come from scripts/versions.env, which is the only place one
       # is written. See .github/actions/versions for why this is a step
@@ -972,7 +964,13 @@ jobs:
           curl -fsSLO "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/${tarball}"
           echo "${TRUFFLEHOG_SHA256}  ${tarball}" | sha256sum -c -
           tar -xzf "${tarball}" trufflehog
-          sudo install -m 0755 trufflehog /usr/local/bin/trufflehog
+          # Into a directory the runner account owns, not /usr/local/bin. This job
+          # runs with sudo removed (#410), so a later step cannot switch egress
+          # enforcement off - and nothing here ever needed root to install a
+          # single binary.
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 trufflehog "$HOME/.local/bin/trufflehog"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       # Same flags the marketplace action passed internally. base/head come
       # straight from the pull_request event - this workflow no longer has a
@@ -987,3 +985,119 @@ jobs:
             --since-commit "${BASE_SHA}" \
             --branch "${HEAD_SHA}" \
             --fail --no-update --github-actions --results=verified,unknown
+
+  # -----------------------------------------------------------------
+  # EGRESS PROOF: that the shared first step still does what it claims.
+  #
+  # Every job starts with $/.github/workflows/mobilize, which runs harden-runner
+  # and checkout from one place. harden-runner's own report is not evidence -
+  # it falls back to audit on several errors and carries on - so the only proof
+  # a block policy is in force is a request it refused.
+  #
+  # NOT A GATE, deliberately. Each job gets its own VM, so this job passing
+  # says nothing about another job's, and a gate every lane waited behind would
+  # serialise them for a check that cannot vouch for them. What this catches is
+  # the systemic break - a harden-runner bump, or GitHub changing how nested
+  # actions run - on the pull request that introduces it. A start-of-job check
+  # in every job was considered and not built: with sudo, a later step could
+  # undo it, which is why sudo is removed instead (#410).
+  #
+  # THE CONTROL. `egress-reachable` shows the probe host answers when nothing
+  # restricts it, so a refusal in `egress-blocked` is the policy and not an
+  # outage. When this was first proven it also ran harden-runner directly as a
+  # second control; nothing runs it directly any more, and keeping that job
+  # would have been a second place its commit is written.
+  #
+  # The probe host is example.com: reserved by IANA for exactly this kind of
+  # use, and on no job's allowlist anywhere in scripts/approved-suppliers.yml.
+  # -----------------------------------------------------------------
+  egress-reachable:
+    name: "Egress Proof (probe host answers unrestricted)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      PROBE: https://example.com
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          egress-policy: audit
+          disable-sudo-and-containers: "true"
+          checkout: "false"
+
+      - name: The probe host answers
+        run: |
+          if ! curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
+            echo "::error::$PROBE did not answer with nothing blocking it, so a refusal in egress-blocked would prove nothing. Choose a probe host reachable from a GitHub-hosted runner."
+            exit 1
+          fi
+          echo "$PROBE answers when unrestricted."
+
+  egress-blocked:
+    name: "Egress Proof (block holds, sudo is gone)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      PROBE: https://example.com
+      ALLOWED: https://github.com
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+          disable-sudo-and-containers: "true"
+
+      - name: The repository was checked out
+        run: |
+          if [ ! -f CLAUDE.md ]; then
+            echo "::error::mobilize ran and the workspace holds no checkout."
+            exit 1
+          fi
+
+      # The protection that makes a block stay a block. With sudo, any later
+      # step in a job can stop harden-runner's agent or flush its rules and
+      # then call out (#410).
+      - name: Sudo is gone
+        run: |
+          if sudo -n true 2>/dev/null; then
+            echo "::error::sudo still works after mobilize with disable-sudo-and-containers: \"true\". Any step in a blocking job could switch egress enforcement off."
+            exit 1
+          fi
+          echo "sudo is refused, so no later step can dismantle enforcement."
+
+      - name: An allowed host answers
+        run: |
+          if ! curl --silent --show-error --max-time 20 --output /dev/null "$ALLOWED"; then
+            echo "::error::$ALLOWED is on this job's allowlist and did not answer. The block is refusing everything, so a refused probe below would not show that it refuses selectively."
+            exit 1
+          fi
+
+      - name: The probe host is refused
+        run: |
+          if curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
+            echo "::error::$PROBE answered under egress-policy: block through mobilize. harden-runner's policy was not installed, so every job in this repository is unwatched while reporting green."
+            exit 1
+          fi
+          echo "$PROBE was refused: harden-runner enforces block through mobilize."
+
+      # The plan-comment scripts are files beside the shared github-script
+      # action and read their values from process.env set on the calling step.
+      # Those jobs run only on infrastructure changes, so a script that cannot be
+      # read under $/, or env that stopped arriving, is found here first.
+      - name: A calling step's env reaches a script beside the shared action
+        uses: $/.github/workflows/github-script
+        env:
+          PROOF: reached
+        with:
+          name: env-reaches-script

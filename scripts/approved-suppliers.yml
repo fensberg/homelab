@@ -424,29 +424,48 @@ egress:
   - job: deploy-infrastructure.yml/plan
     policy: audit
     reason: >-
-      The endpoints are not known until this has run against a real
-      estate, and a guessed allowlist on a job that touches real
-      infrastructure is worse than an audited one. Transcribe the
-      observed destinations after the first real run, then flip to
-      block.
+      Plans the workload tier against a real estate.
 
+      HARDEN-RUNNER DOES NOTHING ON THIS RUNNER. The scale set's pods are
+      detected as ARC, and harden-runner then only writes its policy to
+      stdout for a StepSecurity agent inside the cluster - which this estate
+      does not run. It installs nothing, blocks nothing and records nothing:
+      a real converge's log holds no destinations at all. So `audit` here
+      audits nothing, `block` would block nothing, and there is no observed
+      list to transcribe. Egress for these pods has to be controlled at the
+      cluster's network layer instead (#411); until then it is uncontrolled
+      and unrecorded, and this entry says so rather than implying otherwise.
   - job: deploy-infrastructure.yml/apply
     policy: audit
     reason: >-
-      Applies whatever environments/ and modules/ turn out to need -
-      Proxmox, Cloudflare, Tailscale, object storage, the state
-      Postgres, the OpenTofu registry - and none of those hosts are
-      known yet. A guessed allowlist on the one job with write access to
-      real infrastructure is worse than an audited one.
+      Applies whatever environments/ and modules/ need - Proxmox,
+      Cloudflare, Tailscale, object storage, the state Postgres, the OpenTofu
+      registry.
 
+      HARDEN-RUNNER DOES NOTHING ON THIS RUNNER. The scale set's pods are
+      detected as ARC, and harden-runner then only writes its policy to
+      stdout for a StepSecurity agent inside the cluster - which this estate
+      does not run. It installs nothing, blocks nothing and records nothing:
+      a real converge's log holds no destinations at all. So `audit` here
+      audits nothing, `block` would block nothing, and there is no observed
+      list to transcribe. Egress for these pods has to be controlled at the
+      cluster's network layer instead (#411); until then it is uncontrolled
+      and unrecorded, and this entry says so rather than implying otherwise.
   - job: deploy-infrastructure.yml/converge
     policy: audit
     reason: >-
-      Reaches 1Password, Proxmox, Tailscale, Cloudflare, the Kubernetes
-      API and the OpenTofu registry, and several of those addresses are
-      deliberately not in git. Transcribe the observed endpoints after
-      the first real run, then flip to block.
+      Reaches 1Password, Proxmox, Tailscale, Cloudflare, the Kubernetes API
+      and the OpenTofu registry, several at addresses deliberately not in git.
 
+      HARDEN-RUNNER DOES NOTHING ON THIS RUNNER. The scale set's pods are
+      detected as ARC, and harden-runner then only writes its policy to
+      stdout for a StepSecurity agent inside the cluster - which this estate
+      does not run. It installs nothing, blocks nothing and records nothing:
+      a real converge's log holds no destinations at all. So `audit` here
+      audits nothing, `block` would block nothing, and there is no observed
+      list to transcribe. Egress for these pods has to be controlled at the
+      cluster's network layer instead (#411); until then it is uncontrolled
+      and unrecorded, and this entry says so rather than implying otherwise.
   - job: deploy-infrastructure.yml/aftermath
     policy: block
     hosts:
@@ -458,11 +477,17 @@ egress:
   - job: deploy-infrastructure.yml/plan-estate
     policy: audit
     reason: >-
-      Plans a real site, so it reaches the same set the apply and
-      converge jobs do, and that set is not known until a real run. The
-      same resolution as those jobs: transcribe what a run observes,
-      then flip to block.
+      Plans a real site, so it reaches the same set converge does.
 
+      HARDEN-RUNNER DOES NOTHING ON THIS RUNNER. The scale set's pods are
+      detected as ARC, and harden-runner then only writes its policy to
+      stdout for a StepSecurity agent inside the cluster - which this estate
+      does not run. It installs nothing, blocks nothing and records nothing:
+      a real converge's log holds no destinations at all. So `audit` here
+      audits nothing, `block` would block nothing, and there is no observed
+      list to transcribe. Egress for these pods has to be controlled at the
+      cluster's network layer instead (#411); until then it is uncontrolled
+      and unrecorded, and this entry says so rather than implying otherwise.
   - job: deploy-infrastructure.yml/plan-absence
     policy: block
     hosts:
@@ -490,6 +515,10 @@ egress:
       this one of the expediter's three jobs downloads game files: the
       doorbell above and the release below are both blocked to a list.
 
+    root: >-
+      Installs lib32gcc-s1 with apt-get, which SteamCMD needs, and builds the
+      image with Docker. Both need root or the Docker socket, so
+      disable-sudo-and-containers would break the job it exists for.
   - job: expediter.yml/release
     policy: block
     hosts:
@@ -514,11 +543,18 @@ egress:
   - job: integration-tests.yml/test
     policy: audit
     reason: >-
-      Talks to 1Password, Proxmox, Cloudflare, Tailscale, the Kubernetes
-      API and the OpenTofu registry, several of them addresses this
-      repository deliberately keeps out of git. Guessing them risks
-      breaking the run or rubber-stamping a list nobody checked.
+      Talks to 1Password, Proxmox, Cloudflare, Tailscale, the Kubernetes API
+      and the OpenTofu registry, several at addresses deliberately not in git.
 
+      HARDEN-RUNNER DOES NOTHING ON THIS RUNNER. The scale set's pods are
+      detected as ARC, and harden-runner then only writes its policy to
+      stdout for a StepSecurity agent inside the cluster - which this estate
+      does not run. It installs nothing, blocks nothing and records nothing:
+      a real converge's log holds no destinations at all. So `audit` here
+      audits nothing, `block` would block nothing, and there is no observed
+      list to transcribe. Egress for these pods has to be controlled at the
+      cluster's network layer instead (#411); until then it is uncontrolled
+      and unrecorded, and this entry says so rather than implying otherwise.
   - job: pr-validation.yml/format
     policy: block
     hosts:
@@ -641,6 +677,20 @@ egress:
       quietly turn verified findings into unverified ones, which is the
       opposite of what this lane is for.
 
+  - job: pr-validation.yml/egress-reachable
+    policy: audit
+    reason: >-
+      This job exists to show the probe host is reachable when nothing
+      restricts it, so that a refusal in egress-blocked means the policy
+      refused it rather than that the host was down. A block policy would
+      defeat the one thing it is for. It reaches the probe host and nothing
+      else.
+
+  - job: pr-validation.yml/egress-blocked
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
   - job: runner-image.yml/build
     policy: audit
     reason: >-
@@ -650,6 +700,9 @@ egress:
       job produces an artifact pinned by digest and pulled from this
       estate's own registry.
 
+    root: >-
+      Builds the runner image with Docker, which needs the Docker socket that
+      disable-sudo-and-containers removes.
   - job: scorecard.yml/scorecard
     policy: block
     hosts:
@@ -665,6 +718,11 @@ egress:
       - tuf-repo-cdn.sigstore.dev:443
       - www.bestpractices.dev:443
 
+    root: >-
+      ossf/scorecard-action is a Docker action (`runs: using: docker`), and
+      the runner starts it through the Docker socket that
+      disable-sudo-and-containers removes. The job is blocked to a list, so
+      this is the one blocking job where a later step could still reach root.
   - job: security-patrol.yml/patrol
     policy: block
     hosts:
@@ -690,6 +748,9 @@ egress:
       recorded under game-server-delivery above. What bounds this is not
       the network: the job produces an artifact pinned by digest and
       pulled from this estate's own registry.
+    root: >-
+      Builds the game-server image with Docker, which needs the Docker socket
+      that disable-sudo-and-containers removes.
 
 # Analysis tools this repository installs and runs directly.
 #

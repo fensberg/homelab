@@ -199,6 +199,151 @@ the copy was made. That is the ledger doing exactly its job: the guard would
 otherwise have passed while covering less, which is the failure this whole
 regime exists to make loud.
 
+### harden-runner and checkout, written once
+
+`step-security/harden-runner` is pinned in 31 jobs and `actions/checkout` in 30.
+The first attempt at consolidating them was a guard requiring every copy to
+match a declaration file. It was reverted: it enforced agreement between 91
+copies while keeping all of them, and the declaration was a 92nd place the
+commit was written. It was also chosen for the wrong reason - it avoided a patch
+to a protected path - which this estate has already said is not a reason.
+
+**This had been tried before, and the record of why it failed was wrong.**
+`.github/actions/secure-checkout` combined both steps on 2026-08-19 and was
+deleted the same day with a commit message citing "clarity and
+maintainability". The real reason is in that run's annotations: every job
+failed with "Can't find 'action.yml' ... Did you forget to run actions/checkout
+before running your local action?" It was referenced with `./`, which is read
+out of the workspace, and it was the step that fills the workspace.
+
+**`$/` removes that constraint and nothing else.** GitHub's self-repository
+reference, generally available since 2026-07-30, resolves an action at the
+running commit with no checkout. So one composite action can now run first.
+
+It lives at `.github/workflows/mobilize/action.yml` rather than under
+`.github/actions/`, because it decides what every job may reach and whether a
+token is left on disk. Beside the workflows it sits behind the `workflows`
+permission the agent deliberately lacks, so changing it takes the same human
+hand-over as changing a workflow. GitHub loads workflows only from the top of
+that directory, so it is never run as one. The cost is that actionlint's hook
+reads the whole tree and mistakes action metadata for a workflow; the hook now
+reads top-level files only. zizmor audits it correctly as a composite action.
+
+**The blocker #387 recorded was narrower than stated.** It said the only way to
+satisfy both zizmor and actionlint about `$/` was an actionlint ignore covering
+the format check for every `uses:`. actionlint's ignore matches the message,
+and the message names the reference, so it can be scoped to references into
+`.github/workflows`. Tested: with the exemption in place, `uses: someone/else@`
+is still reported.
+
+**One thing no document settles, so a lane settles it.** harden-runner installs
+its policy in a pre-step (`src/setup.ts`; the main step never reads
+`egress-policy`), and GitHub documents `runs.pre` as unsupported for local
+actions. If the pre-step does not run when harden-runner is nested, every job
+moved onto the action is unwatched and green. harden-runner's own report is not
+evidence either: it falls back to audit on several errors and carries on.
+
+So nothing is migrated until `.github/workflows/egress-proof.yml` answers it.
+Three jobs, because one proves nothing on its own: the probe host must answer
+under audit (so a refusal is the policy, not an outage), must be refused under
+block with harden-runner direct (so the method can see a known block), and must
+be refused under block with harden-runner inside `mobilize`. Each also requires
+an allowed host to answer, so refusing everything cannot pass as blocking
+correctly. It stays afterwards as standing proof that a block policy blocks.
+
+A dedicated lane cannot replace per-job hardening, which was considered:
+harden-runner watches only the runner it is installed on, and every job gets a
+fresh one.
+
+**It passed, and the proof showed more than it asked.** All three jobs were
+green, and the nested run lists "Pre Mobilize" and "Post Mobilize" executing
+harden-runner's own pre and post steps and checkout's cleanup. So under `$/` a
+nested action gets its whole lifecycle - which also settled two wrappers that
+depend on a post-step: `create-github-app-token` revokes its token there, and
+`setup-go` saves its cache there.
+
+**Then every duplicated action got one home.** Six composites under
+`.github/workflows` hold the only literal commit of an action that was written
+more than once: `mobilize` (harden-runner, then checkout through the next one),
+`checkout`, `setup-go`, `upload-sarif`, `github-script` and `app-token`. Actions
+used once stay where they are. `TestEveryActionCommitIsWrittenOnce` refuses a
+second `uses:` line for any action path, and two commits across paths of one
+repository - codeql-action's `init` and `analyze` are separate paths, and may
+not name separate commits.
+
+Three details worth keeping:
+
+- **Checkout is its own action, not only a step of `mobilize`.** The clerk
+  resolves which pull request to read before it knows what to fetch, so it
+  mobilizes with `checkout: "false"` and checks out later. A second harden-runner
+  call would have been wrong, and a checkout written in the clerk would have
+  been a second copy.
+- **`app-token` refuses a call that names no permission.**
+  `create-github-app-token` requests every permission the installation holds
+  when given none, so a wrapper whose permission inputs all default to empty
+  would silently widen any caller that forgot one.
+- **`setup-go` takes no version.** It reads `GO_VERSION` and refuses to run
+  without it, so the wrapper cannot become a way to restate the pin.
+- **Scripts are files, not inputs.** The first `github-script` wrapper took the
+  script as an input and forwarded it as `script: ${{ inputs.script }}`. zizmor
+  and Semgrep both reported that line, and they were right about the effect if
+  not the line: they treat github-script's `script` as a place code runs and
+  check it for template injection, and behind a wrapper they could no longer
+  see the callers' code at all. So the plan-comment scripts moved into files
+  beside the action, callers name one, and there is no `${{ }}` in any of them
+  for injection to hide in.
+
+**Semgrep's `github-actions-mutable-action-tag` rule is excluded.** It exempts
+`./` and `docker://` but not `$/`, so it fires on every job. zizmor's
+`unpinned-uses` already owns pinning under a blanket hash policy and reads
+composite actions as well as workflows - checked with a tag-pinned step in each -
+so the rule was a second owner of one check, and the wrong one.
+
+**The direct control job was dropped from the proof.** It existed so a refusal
+through `mobilize` could be told apart from a probe that sees nothing. With
+that answered, keeping it would be the one place harden-runner is still written
+twice. The lane now keeps `reachable` and `nested`, and asserts that a calling
+step's env reaches a shared script step - the plan comments read their values
+that way and run only on infrastructure changes.
+
+**Scorecard is migrated with publishing still on, knowingly.** OpenSSF's API
+rejects results from a job with steps outside its approved action list, and a
+`$/` step is not on it. Its documented rules also forbid a workflow-level
+`defaults:` block, which `scorecard.yml` has had while runs succeeded, so the
+documentation does not predict what is enforced. Scorecard runs only on `main`,
+so nothing proves this before merge. If it is rejected, the choice is between
+turning publishing off and one declared exception.
+
+### The egress proof is a lane, not a gate, and sudo is the protection that holds
+
+A separate Egress Proof workflow was folded into `pr-validation.yml` as two
+lanes. The question it answered - does a nested harden-runner enforce - needed a
+real runner, so it could never be a Go test, but it did not need its own file.
+
+Making it a gate every lane waits behind was considered, and so was a
+start-of-job check inside `mobilize`, and both were rejected as theater against
+the threat that motivates egress control at all:
+
+- **Every job gets its own VM,** so a gate proves nothing about another job, and
+  a gate in `pr-validation.yml` cannot reach the workflows holding real
+  credentials.
+- **GitHub-hosted runners give passwordless sudo,** so a check at the start of a
+  job is undone by the compromised step it exists to contain: root can stop
+  harden-runner's agent. What makes "enforced at the start" stay true is
+  removing sudo, which `mobilize` now requires every job to decide on (#410).
+- **harden-runner does nothing on the self-hosted ARC runner.** It writes its
+  policy for a StepSecurity cluster agent that is not installed, and a real
+  converge's log records no destinations. The jobs holding the vault token were
+  labelled `audit` and were neither restricted nor recorded. The proposed fix,
+  transcribing their observed destinations and flipping them to `block`, had no
+  log to transcribe and would have blocked nothing. That work belongs at the
+  cluster's network layer (#411), and a guard now refuses any self-hosted job
+  claiming `block` in the meantime.
+
+The lane stays because it is cheap and catches the systemic break: a
+harden-runner bump or a change to how GitHub runs nested actions goes red on the
+pull request that introduces it. It also checks that sudo really is gone.
+
 ### A language nobody declared is a language nothing checks
 
 Every tool in this estate is bound to a file type — shellcheck to `.sh`, tofu

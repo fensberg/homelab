@@ -110,14 +110,15 @@ jobs:
     # is what GitHub's default timeout allows.
     timeout-minutes: 15
     steps:
-      - name: Harden the runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
           egress-policy: block
+          disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
             github.com:443
@@ -125,6 +126,11 @@ jobs:
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             generativelanguage.googleapis.com:443
+          # The commit this workflow runs from, with its history. On
+          # issue_comment that is the default branch, so the pinned versions
+          # and the clerk binary below come from reviewed code, never from the
+          # change being read.
+          fetch-depth: 0
 
       # Heard you. Dependabot reacts rather than replying, and it is the right
       # shape: an acknowledgement that costs no comment and no notification.
@@ -186,36 +192,55 @@ jobs:
           gh api -X POST "repos/$REPO/issues/comments/$COMMENT/reactions" -f content=confused --silent
           echo "::notice::known commands are '@clerk snag' and '@clerk handover'"
 
+      # The change is fetched as DATA, into its own worktree, and nothing in
+      # this job executes from it.
+      #
+      # It used to be checked out as the workspace. The job then ran
+      # ./.github/actions/versions and `go build -C scripts/clerk` from that
+      # checkout, and handed the binary the clerk App's private key (#409). On
+      # issue_comment this workflow runs from the default branch with secrets,
+      # whoever wrote the pull request - the association check above is about
+      # who ASKED, not who wrote the code - so an owner typing `@clerk snag` on
+      # a stranger's fork ran the stranger's code holding a credential that
+      # mints tokens for this repository.
+      #
+      # Now the workspace is the commit this workflow runs from, the versions
+      # action and the clerk come from there, and the change is only ever read
+      # by -root. The head is checked against what "Resolve the change" saw, so
+      # a push landing between the two steps is refused rather than read.
+      #
       # refs/pull/N/head rather than the head SHA, and that is what makes a
-      # RETROACTIVE reading possible.
+      # RETROACTIVE reading possible. This repository squash-merges, so the head
+      # commit is not an ancestor of main and its branch is deleted on merge. A
+      # fetch by SHA would find nothing; GitHub keeps refs/pull/N/head forever,
+      # so `@clerk snag` works on a pull request that landed months ago exactly
+      # as it does on one still open.
       #
-      # An issue_comment run starts on the default branch, so the change has to
-      # be fetched explicitly either way. But a merged pull request is the
-      # interesting case: this repository squash-merges, so the head commit is
-      # not an ancestor of main and its branch is deleted on merge - a checkout
-      # by SHA would find nothing. GitHub keeps refs/pull/N/head forever, so
-      # `@clerk snag` works on a pull request that landed months ago exactly as
-      # it does on one still open.
-      #
-      # That is worth having on purpose rather than by accident: it means the
-      # clerk can be pointed at work that was merged before it existed.
-      - name: Checkout Code
+      # The token rides on the one command that needs it, rather than in
+      # .git/config - public repositories do not need it at all, and a fork of
+      # this estate might be private.
+      - name: Fetch the change to read, not to run
         if: steps.ask.outputs.verbs != ''
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: refs/pull/${{ steps.change.outputs.pr }}/head
-          fetch-depth: 0
-          persist-credentials: false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.change.outputs.pr }}
+          HEAD: ${{ steps.change.outputs.head }}
+        run: |
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.extraheader=$auth" fetch --no-tags --quiet origin "refs/pull/$PR/head"
+          fetched="$(git rev-parse FETCH_HEAD)"
+          if [ "$fetched" != "$HEAD" ]; then
+            echo "::error::refs/pull/$PR/head is $fetched, not the $HEAD this run resolved. The pull request moved; ask again."
+            exit 1
+          fi
+          git worktree add --detach change "$HEAD"
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
 
+      # scripts/clerk has no dependencies, so there is nothing to cache.
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          # scripts/clerk has no dependencies, so there is nothing to cache.
-          cache: false
+        uses: $/.github/workflows/setup-go
 
       - name: Build the clerk
         run: go build -C scripts/clerk -o ../../toolshed/clerk .
@@ -253,7 +278,7 @@ jobs:
           PATHS: ${{ steps.touched.outputs.paths }}
         run: |
           # shellcheck disable=SC2086 # PATHS is a space-separated path list
-          ./toolshed/clerk snag -out snag.sarif $PATHS
+          ./toolshed/clerk snag -root change -out snag.sarif $PATHS
 
       # handover asks the question tests/go/repo/forkable_test.go cannot: what
       # would stop somebody who cloned this and pointed it at their own vault.
@@ -270,13 +295,13 @@ jobs:
           PATHS: ${{ steps.touched.outputs.paths }}
         run: |
           # shellcheck disable=SC2086 # PATHS is a space-separated path list
-          ./toolshed/clerk handover -out handover.sarif $PATHS
+          ./toolshed/clerk handover -root change -out handover.sarif $PATHS
 
       # Uploaded separately so each carries its own tool name and its findings
       # group under it, rather than one run pretending two readings were one.
       - name: Upload the snagging list
         if: always() && hashFiles('snag.sarif') != ''
-        uses: github/codeql-action/upload-sarif@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        uses: $/.github/workflows/upload-sarif
         with:
           sarif_file: snag.sarif
           category: clerk-snag
@@ -290,7 +315,7 @@ jobs:
 
       - name: Upload the handover reading
         if: always() && hashFiles('handover.sarif') != ''
-        uses: github/codeql-action/upload-sarif@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        uses: $/.github/workflows/upload-sarif
         with:
           sarif_file: handover.sarif
           category: clerk-handover

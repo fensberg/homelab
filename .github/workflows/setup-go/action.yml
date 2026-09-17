@@ -1,0 +1,36 @@
+# The one place the actions/setup-go commit is written.
+#
+# The Go version is not an input. It is read from GO_VERSION, which
+# .github/actions/versions exports from scripts/versions.env - the one place a
+# version is pinned. Taking it as an input would give every caller a way to
+# restate it, which is the drift that file exists to refuse. A job that has not
+# exported it is refused rather than handed whatever Go the runner image holds.
+name: "Setup Go"
+description: Install the Go version pinned in scripts/versions.env.
+
+inputs:
+  cache-dependency-path:
+    description: >-
+      A go.sum to key the module cache on. Empty means no cache, which is right
+      for a module with no dependencies - and on a self-hosted runner a cache
+      persists between jobs, which is a poisoning surface for no benefit.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Refuse to guess the Go version
+      shell: bash
+      run: |
+        if [ -z "${GO_VERSION:-}" ]; then
+          echo "::error::GO_VERSION is not set. Run \`uses: ./.github/actions/versions\` before this step; the version is pinned in scripts/versions.env and nowhere else."
+          exit 1
+        fi
+
+    - name: Setup Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: ${{ inputs.cache-dependency-path != '' }}
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}

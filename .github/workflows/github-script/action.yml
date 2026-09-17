@@ -1,0 +1,67 @@
+# The one place the actions/github-script commit is written.
+#
+# CALLERS NAME A SCRIPT; THEY DO NOT PASS ONE. A script handed to this action as
+# an input would reach github-script as `script: ${{ inputs.script }}`, and both
+# zizmor and Semgrep recognise github-script's `script` as a place code runs and
+# check it for template injection. Behind a shared action they no longer can: a
+# `${{ github.event.pull_request.title }}` added to a caller's script later would
+# pass every check here. That was built, both tools reported the forwarding line,
+# and it was replaced with this.
+#
+# So each script is a file in this directory, exporting one async function, and
+# a caller says which:
+#
+#   - uses: $/.github/workflows/github-script
+#     env:
+#       RESULT: ${{ needs.plan-estate.result }}
+#     with:
+#       name: plan-absence-comment
+#
+# There is no `${{ }}` in any script for injection to hide in, values arrive
+# through process.env from the calling step, and Semgrep scans the .js directly.
+# The scripts sit behind the same `workflows` permission as everything that
+# runs with a token.
+#
+# `$/` makes the files beside this one readable with no checkout, and a calling
+# step's env reaches the script; the egress-blocked job in pr-validation.yml asserts both
+# on every pull request, because the jobs using this run only on infrastructure
+# changes and would otherwise be first to find out.
+name: "GitHub Script"
+description: Run one of the scripts beside this action against the GitHub API.
+
+inputs:
+  name:
+    description: >-
+      The script to run - a file in this directory, without the .js. Lower-case
+      letters, digits and hyphens only.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # The name becomes part of a path, so it is checked before it is used as
+    # one: anything else could reach a file outside this directory.
+    - name: Refuse a script that is not one of these
+      shell: bash
+      env:
+        SCRIPT: ${{ inputs.name }}
+      run: |
+        if ! [[ "$SCRIPT" =~ ^[a-z0-9-]+$ ]]; then
+          echo "::error::'$SCRIPT' is not a script name. Use lower-case letters, digits and hyphens."
+          exit 1
+        fi
+        if [ ! -f "$GITHUB_ACTION_PATH/$SCRIPT.js" ]; then
+          echo "::error::There is no $SCRIPT.js beside .github/workflows/github-script/action.yml."
+          exit 1
+        fi
+
+    - name: Run the script
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        SCRIPT: ${{ inputs.name }}
+        SCRIPT_DIR: ${{ github.action_path }}
+      with:
+        script: |
+          const path = require('path');
+          const run = require(path.join(process.env.SCRIPT_DIR, `${process.env.SCRIPT}.js`));
+          await run({ github, context, core });

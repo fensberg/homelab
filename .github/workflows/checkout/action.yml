@@ -1,0 +1,33 @@
+# The one place the actions/checkout commit is written.
+#
+# Every job reaches this through $/.github/workflows/mobilize.
+#
+# IT CHECKS OUT THE COMMIT THE RUN IS FOR, AND NOTHING ELSE. There is no `ref`
+# input. It had one, and the one caller that used it - the clerk - checked out a
+# pull request's own code in a run holding the clerk App's private key, then
+# built and ran that code (#409). A shared checkout that any caller can point at
+# any ref is that hole made reusable, which is what CodeQL flagged here. A job
+# that needs to read other code fetches it as data, into its own worktree, and
+# does not run it.
+#
+# persist-credentials is not an input. No job here needs the token left on
+# disk, and leaving it lets any later step, or anything a later step runs, push
+# with the job's credentials - silently, because the checkout succeeds either
+# way. tests/go/repo/joblaw_test.go reads through this action to hold that.
+name: "Checkout"
+description: Check out the repository without leaving the job's token on disk.
+
+inputs:
+  fetch-depth:
+    description: How much history to check out; 0 is all of it.
+    required: false
+    default: "1"
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: ${{ inputs.fetch-depth }}
+        persist-credentials: false

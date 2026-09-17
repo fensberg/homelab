@@ -1,0 +1,80 @@
+# The one place the actions/create-github-app-token commit is written.
+#
+# EVERY PERMISSION IS EXPLICIT, AND NONE AT ALL IS REFUSED. The action requests
+# only the permissions it is given - and when it is given none, it requests
+# every permission the installation holds
+# (lib/get-permissions-from-inputs.js: "Inherit app permissions if no
+# permissions inputs are set"). A wrapper whose permission inputs all default
+# to empty would turn a caller that forgot to name one into a token with
+# everything, silently. So the first step refuses that.
+#
+# Only the permissions some job here actually requests are inputs. A job that
+# needs another has to add it here, in a reviewed change, rather than reaching
+# for it through the wrapper.
+#
+# The token is revoked in the action's post-step, which runs for an action
+# nested under `$/` - shown by "Post Mobilize" running harden-runner's own.
+name: "App Token"
+description: Mint a GitHub App installation token with explicitly named permissions.
+
+inputs:
+  client-id:
+    description: The App's ID or client ID.
+    required: true
+  private-key:
+    description: The App's private key.
+    required: true
+  owner:
+    description: The installation's owner.
+    required: true
+  repositories:
+    description: The repositories the token may reach.
+    required: true
+  permission-contents:
+    description: read or write, or empty for none.
+    required: false
+    default: ""
+  permission-pull-requests:
+    description: read or write, or empty for none.
+    required: false
+    default: ""
+  permission-checks:
+    description: read or write, or empty for none.
+    required: false
+    default: ""
+  permission-statuses:
+    description: read or write, or empty for none.
+    required: false
+    default: ""
+
+outputs:
+  token:
+    description: The installation token.
+    value: ${{ steps.mint.outputs.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Refuse a token with no named permission
+      if: >-
+        inputs.permission-contents == '' &&
+        inputs.permission-pull-requests == '' &&
+        inputs.permission-checks == '' &&
+        inputs.permission-statuses == ''
+      shell: bash
+      run: |
+        echo "::error::No permission was named. create-github-app-token requests every permission the installation holds when given none, so this refuses rather than mint that token."
+        exit 1
+
+    - name: Mint the token
+      id: mint
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+        owner: ${{ inputs.owner }}
+        repositories: ${{ inputs.repositories }}
+        permission-contents: ${{ inputs.permission-contents }}
+        permission-pull-requests: ${{ inputs.permission-pull-requests }}
+        permission-checks: ${{ inputs.permission-checks }}
+        permission-statuses: ${{ inputs.permission-statuses }}

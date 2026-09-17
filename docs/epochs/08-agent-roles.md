@@ -655,6 +655,46 @@ The parser fix in #255 stays open. Prompt and stripper are different layers and
 the durable answer is both - but the prompt is the one that generalises to
 every language the stripper handles badly, and it costs a paragraph.
 
+### The clerk ran the code it was asked to read (#409)
+
+On `issue_comment`, `clerk.yml` runs from the default branch with repository
+secrets, whoever wrote the pull request being discussed. It checked the pull
+request's head out as the workspace, ran `./.github/actions/versions` and
+`go build -C scripts/clerk` from that checkout, and gave the binary the clerk
+App's private key. Its `if:` requires the **commenter** to be a collaborator,
+which is a statement about who asked, not about who wrote the code - and the
+clerk exists to read other people's work. An owner typing `@clerk snag` on a
+stranger's fork ran the stranger's code holding a credential that mints tokens
+for this repository. Egress was blocked, but `api.github.com` was allowed, and a
+comment is enough to publish a key.
+
+CodeQL said nothing while that checkout sat in the workflow. It raised
+`untrusted-checkout` only once checkout moved into a shared composite action
+taking a `ref` input, where it could no longer see any caller's condition. The
+finding was right about the class and wrong about where the danger was, and it
+was worth reading rather than dismissing.
+
+**The fix separates what runs from what is read.** The workspace is the commit
+the workflow runs from, so the versions action and the clerk binary come from
+reviewed code. The pull request is fetched into its own worktree and passed to
+the clerk with `-root`; its head is checked against what the run resolved, so a
+push in between is refused rather than read. The shared `checkout` and
+`mobilize` actions lost their `ref` input, so no caller can point a checkout at
+other code again.
+
+Two guards hold it. `TestNoCheckoutCanBePointedAtOtherCode` allows a checkout to
+be told only how much history to fetch - an allow list, so the hole cannot
+return as `repository` or whatever input checkout grows next.
+`TestNoPrivilegedRunPutsAPullRequestInTheWorkspace` requires a pull request
+fetched in a privileged run to go into its own worktree and refuses the git
+commands that replace the workspace. The second reads `run:` text and says so:
+a way of moving code into the workspace it does not name passes it. The first is
+the structural half.
+
+What neither addresses: the clerk still sends the pull request's contents to a
+model, so a pull request can try to steer what it reports. That is a question
+about findings, which can block nothing here, rather than about credentials.
+
 ## Acceptance tests
 
 1. **The planner finds a trigger that has genuinely fired**, and the issue it

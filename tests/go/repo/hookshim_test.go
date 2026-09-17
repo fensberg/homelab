@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // The supplier guard has to run before pre-commit, not as one of its hooks.
@@ -231,11 +233,42 @@ func TestTheFormatLaneRefusesASupplierBeforeInstallingAnything(t *testing.T) {
 	// The gate needs a toolchain, and the toolchain has to be the pinned one.
 	// A lane that installs its own Go version is the restatement this
 	// repository has already been bitten by once - see scripts/versions.env.
-	if !strings.Contains(body, "${{ env.GO_VERSION }}") {
+	//
+	// Either directly, or through $/.github/workflows/setup-go - which is how
+	// every lane sets up Go once action commits are written in one place. That
+	// counts only while the shared action reads the pin itself and offers no
+	// way to pass a version in, because a `go-version` input would hand every
+	// caller the restatement back.
+	if !strings.Contains(body, "${{ env.GO_VERSION }}") && !sharedSetupGoReadsThePin(t, body) {
 		t.Error("the Format lane sets up Go without reading GO_VERSION from " +
 			"scripts/versions.env, so it can validate on a different toolchain " +
 			"than the one the estate pins")
 	}
+}
+
+// sharedSetupGoReadsThePin reports whether a workflow sets up Go through the
+// shared action, and that action takes its version only from GO_VERSION.
+func sharedSetupGoReadsThePin(t *testing.T, workflow string) bool {
+	t.Helper()
+	if !strings.Contains(workflow, "uses: $/.github/workflows/setup-go") {
+		return false
+	}
+	body, err := os.ReadFile(filepath.Join(intendedRoot(t), ".github", "workflows", "setup-go", "action.yml"))
+	if err != nil {
+		t.Errorf("a workflow uses $/.github/workflows/setup-go, which cannot be read: %v", err)
+		return false
+	}
+	var doc struct {
+		Inputs map[string]any `yaml:"inputs"`
+	}
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		t.Errorf("parsing .github/workflows/setup-go/action.yml: %v", err)
+		return false
+	}
+	if _, restatable := doc.Inputs["go-version"]; restatable {
+		return false
+	}
+	return strings.Contains(string(body), "go-version: ${{ env.GO_VERSION }}")
 }
 
 // core.hooksPath REPLACES .git/hooks; it does not merge with it.

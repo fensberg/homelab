@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 91
+floor: 107
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -101,9 +101,9 @@ mutations:
       recognised every one of them.
 
   - guard: TestNoWorkflowRestatesAPinnedVersion
-    file: .github/workflows/inspector.yml
-    find: "go-version: ${{ env.GO_VERSION }}"
-    replace: 'go-version: "1.26.7"'
+    file: .github/workflows/pr-validation.yml
+    find: "node-version: ${{ env.NODE_VERSION }}"
+    replace: 'node-version: "24.19.0"'
     mentions: "restates a pinned version"
     why: >
       The literal agrees with scripts/versions.env on the day it is written,
@@ -1198,9 +1198,19 @@ mutations:
       repository spent a day removing one level down.
 
   - guard: TestEveryCommentPathReplacesItselfRatherThanAppending
-    file: .github/workflows/deploy-infrastructure.yml
-    find: "            // is not where the push it describes happened.\n            if (existing) {\n              await github.rest.issues.deleteComment({...repo, comment_id: existing.id});\n            }\n"
-    replace: "            // is not where the push it describes happened.\n"
+    file: .github/workflows/github-script/zz-appends-a-comment.js
+    create: |
+      module.exports = async ({ github, context }) => {
+        const marker = '<!-- planted -->';
+        const repo = { owner: context.repo.owner, repo: context.repo.repo };
+        const { data: comments } = await github.rest.issues.listComments({
+          ...repo, issue_number: context.issue.number,
+        });
+        const existing = comments.find(c => c.body.startsWith(marker));
+        await github.rest.issues.createComment({
+          ...repo, issue_number: context.issue.number, body: marker,
+        });
+      };
     mentions: "finds the previous comment and does not"
     why: >
       A comment with no marker cannot be found again on the next push, so
@@ -1349,6 +1359,307 @@ mutations:
       on every commit and every push. Without this, adopting a new language is
       as quiet as naming a file. Planted for the same reason as above: there is
       nothing in the tree to edit into a foreign shebang.
+
+  - guard: TestEveryJobHardensTheRunnerFirst
+    file: .github/workflows/zz-starts-with-an-unhardened-action.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/actions/versions
+    mentions: "whose own first step is"
+    why: >
+      A job may now begin with a composite action from this repository instead
+      of with harden-runner itself, which is what lets harden-runner be written
+      once. That permission is only safe while the action's OWN first step is
+      harden-runner - otherwise every step inside it runs unmonitored and the
+      job still looks like it starts correctly. Planted, because no workflow in
+      the tree starts with an unhardened action to edit into one.
+
+  - guard: TestEveryJobHardensTheRunnerFirst
+    file: .github/workflows/zz-starts-with-a-missing-action.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/does-not-exist
+    mentions: "that action cannot be read"
+    why: >
+      An action this guard cannot read is an action it cannot say is hardened.
+      Treating an unreadable reference as acceptable would turn a typo in the
+      path, or an action deleted while a job still names it, into a job that
+      passes the first-step rule by being unexaminable.
+
+  - guard: TestEveryCheckoutRefusesToPersistCredentials
+    file: .github/actions/versions/action.yml
+    find: |
+      steps:
+          - name: Export pinned versions
+    replace: |
+      steps:
+          - name: Checkout
+            uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          - name: Export pinned versions
+    mentions: "(inside ./.github/actions/versions)"
+    why: >
+      Moving checkout into a composite action must not be a way to stop this
+      rule applying. A job that calls an action which checks out has checked
+      out just the same, and a token left on disk there is reachable by every
+      later step of the job. Reading only the job's own steps would have made
+      the consolidation quietly exempt every job from it.
+
+  - guard: TestEveryActionCommitIsWrittenOnce
+    file: .github/workflows/zz-second-copy-of-checkout.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                persist-credentials: false
+    mentions: "is written in 2 places"
+    why: >
+      harden-runner was pinned in 31 jobs and checkout in 30, agreeing only
+      because nobody had yet made a mistake. The shared actions under
+      .github/workflows hold the one literal each, and this is what stops a
+      new job reaching past them and writing a second copy - which would pass
+      every other check, since it names the right commit today. Planted,
+      because once consolidated there is no second copy in the tree to edit.
+
+  - guard: TestEveryActionCommitIsWrittenOnce
+    file: .github/workflows/zz-second-codeql-commit.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+            - uses: github/codeql-action/autobuild@1111111111111111111111111111111111111111 # v0.0.0
+    mentions: "pinned to 2 different commits"
+    why: >
+      Writing each action PATH once still allows two paths of one repository
+      to name two commits - codeql-action's init and analyze are separate
+      paths. A commit belongs to the repository, so running two builds of one
+      action side by side is exactly the drift consolidation was meant to end.
+
+  - guard: TestEverySharedScriptIsNamedAndEveryNameIsAScript
+    file: .github/workflows/github-script/zz-nobody-runs-this.js
+    create: |
+      module.exports = async () => {};
+    mentions: "is not run by any step"
+    why: >
+      A script beside the shared action runs with a job's token whenever a
+      step names it. One nothing names is code with that reach and no reason
+      to exist, and the next step to name it inherits whatever it does without
+      anybody having read it for that purpose.
+
+  - guard: TestEverySharedScriptIsNamedAndEveryNameIsAScript
+    file: .github/workflows/zz-names-a-missing-script.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+                checkout: "false"
+            - uses: $/.github/workflows/github-script
+              with:
+                name: nothing-by-this-name
+    mentions: "and there is no .github/workflows/github-script/nothing-by-this-name.js"
+    why: >
+      A step naming a script that is not there fails only when its job runs,
+      and the jobs using shared scripts run only on infrastructure changes -
+      so the break would surface on exactly the pull request where a reviewer
+      needed the plan comment.
+
+  - guard: TestEveryCheckoutRefusesToPersistCredentials
+    file: .github/workflows/checkout/action.yml
+    find: "persist-credentials: false"
+    replace: "persist-credentials: true"
+    mentions: "(inside $/.github/workflows/mobilize) (inside $/.github/workflows/checkout)"
+    why: >
+      Every job now reaches checkout two levels down - through mobilize, then
+      checkout - so the token-on-disk rule only holds if the guard descends
+      that far. Reading one level would reach mobilize, find no checkout step
+      in it, and pass every job while the one checkout in the repository left
+      the token behind. The mention requires the two-level path specifically.
+
+  - guard: TestTheFormatLaneRefusesASupplierBeforeInstallingAnything
+    file: .github/workflows/setup-go/action.yml
+    find: "go-version: ${{ env.GO_VERSION }}"
+    replace: 'go-version: "1.26.7"'
+    mentions: "sets up Go without reading GO_VERSION"
+    why: >
+      The Format lane no longer writes a Go version at all; it trusts the
+      shared setup-go to read the pin. That trust is only safe while the
+      shared action actually does, and a literal there agrees with
+      scripts/versions.env exactly until the pin moves - on the lane that runs
+      the supplier gate before anything is installed.
+
+  - guard: TestNoCheckoutCanBePointedAtOtherCode
+    file: .github/workflows/checkout/action.yml
+    find: "persist-credentials: false"
+    replace: "persist-credentials: false\n        repository: someone/else"
+    mentions: 'gives actions/checkout "repository"'
+    why: >
+      The clerk checked out a pull request's own code in a run holding its
+      App's private key, then built and ran it (#409). The shared checkout's
+      ref input is what made that reusable. Allowing only how deep to fetch -
+      not refusing ref by name - is what stops the same hole returning as
+      repository, or as whatever input checkout grows next.
+
+  - guard: TestNoPrivilegedRunPutsAPullRequestInTheWorkspace
+    file: .github/workflows/zz-privileged-reset.yml
+    create: |
+      name: planted
+      on:
+        issue_comment:
+          types: [created]
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - name: Put the change where things run
+              run: |
+                git fetch origin refs/pull/1/head
+                git worktree add --detach change FETCH_HEAD
+                git reset --hard FETCH_HEAD
+    mentions: 'runs "git reset'
+    why: >
+      A worktree is only a boundary while nothing moves the workspace onto the
+      same commit. On a trigger that runs with secrets for anybody's pull
+      request, replacing the workspace puts unreviewed code where every later
+      step and every ./ action executes from.
+
+  - guard: TestNoPrivilegedRunPutsAPullRequestInTheWorkspace
+    file: .github/workflows/zz-privileged-fetch.yml
+    create: |
+      name: planted
+      on: [workflow_run]
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - name: Fetch the change
+              run: git fetch origin refs/pull/1/head
+    mentions: "without its own worktree"
+    why: >
+      In a run holding secrets a pull request is data, and a worktree of its
+      own is what keeps it apart from where things execute. A fetch that does
+      not make one leaves the next step one checkout away from #409.
+
+  - guard: TestEveryJobSaysWhetherItKeepsRoot
+    file: .github/workflows/zz-says-nothing-about-root.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+                checkout: "false"
+    mentions: "does not say whether it keeps root"
+    why: >
+      With sudo, any later step in a job can stop harden-runner's agent or
+      flush its rules and then call out, so a block holds only as long as
+      root is gone (#410). A job that does not say is a job whose answer is
+      "keep it" by default, which is the state every job was in.
+
+  - guard: TestEveryJobSaysWhetherItKeepsRoot
+    file: .github/workflows/zz-keeps-root-quietly.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: ubuntu-latest
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+                disable-sudo-and-containers: "false"
+                checkout: "false"
+    mentions: "keeps root with no reason declared"
+    why: >
+      Keeping root on a GitHub-hosted runner is sometimes right - a Docker
+      action, an image build - but it reopens the way a later step can
+      switch egress enforcement off, so it is an exception somebody has to
+      write down beside the job's egress entry rather than a value in a file.
+
+  - guard: TestEveryJobSaysWhetherItKeepsRoot
+    file: .github/workflows/zz-blocks-on-arc.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: homelab-management
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: block
+                disable-sudo-and-containers: "false"
+                checkout: "false"
+    mentions: "claims egress-policy: block"
+    why: >
+      harden-runner returns before acting on the ARC runner, so block there
+      blocks nothing - and the jobs on that runner hold a token that reads and
+      writes the whole vault. A job that reads as restricted while reaching
+      anything is worse than one that says audit (#411).
+
+  - guard: TestEveryJobSaysWhetherItKeepsRoot
+    file: .github/workflows/zz-disables-sudo-on-arc.yml
+    create: |
+      name: planted
+      on: push
+      jobs:
+        planted:
+          runs-on: homelab-management
+          timeout-minutes: 1
+          steps:
+            - uses: $/.github/workflows/mobilize
+              with:
+                egress-policy: audit
+                disable-sudo-and-containers: "true"
+                checkout: "false"
+    mentions: 'claims disable-sudo-and-containers: "true"'
+    why: >
+      The same early return means sudo is not removed on that runner either.
+      A setting that reads as a protection and does nothing is a status that
+      says something untrue, on exactly the jobs where it would matter most.
 
 owed_ceiling: 55
 

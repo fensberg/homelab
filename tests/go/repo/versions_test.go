@@ -192,27 +192,26 @@ tool. Read the pin, or take the version out of versions.env and say why.`,
 // values instead would miss a restatement that happens to agree today, which is
 // the exact state all four were in.
 func TestNoWorkflowRestatesAPinnedVersion(t *testing.T) {
-	root := repoRoot(t)
 	input := regexp.MustCompile(`(?m)^\s*((?:go|node|python|java|dotnet|tofu|opentofu|terraform|helm|kubectl)[-_]version):\s*(.*?)\s*$`)
 
-	// Workflows as they are going to be, outstanding patches applied - so a
-	// fix still in .github/patches counts, and so does a violation inside a
-	// workflow that only exists in one. Composite actions are not behind the
-	// boundary and are read as they are.
+	// Every workflow and every composite action, as they are going to be with
+	// outstanding patches applied - so a fix still in .github/patches counts,
+	// and so does a violation inside a file that only exists in one.
+	//
+	// Composites wherever they live, not under .github/actions alone. The Go
+	// setup moved into .github/workflows/setup-go when action commits were
+	// written once, and a guard reading a named directory would have lost every
+	// version input it had without saying so.
+	intended := intendedRoot(t)
 	sources := map[string]string{}
-	for name, body := range intendedWorkflows(t) {
-		sources[filepath.Join(".github", "workflows", name)] = body
-	}
-	actions, err := filepath.Glob(filepath.Join(root, ".github", "actions", "*", "action.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range actions {
-		body, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
+	for _, rel := range trackedFilesIn(t, intended) {
+		if !authoredHere(rel) || !runnable(rel) {
+			continue
 		}
-		rel, _ := filepath.Rel(root, f)
+		body, err := os.ReadFile(filepath.Join(intended, rel))
+		if err != nil {
+			t.Fatalf("reading %s: %v", rel, err)
+		}
 		sources[rel] = string(body)
 	}
 
@@ -235,9 +234,10 @@ pin only until the pin moves, and nothing says when it stops agreeing.`, rel, ke
 		}
 	}
 
-	// A floor rather than zero: finding one input would still mean the pattern
-	// had stopped matching most of them.
-	if found < 5 {
+	// A floor rather than zero. It was five while twelve jobs set up Go for
+	// themselves; with one shared Go setup and one Node setup there are two, and
+	// finding fewer means the pattern stopped matching one of them.
+	if found < 2 {
 		t.Fatalf("found only %d version input(s) across %d file(s) - the pattern has stopped matching, so this guard proves nothing", found, len(sources))
 	}
 }

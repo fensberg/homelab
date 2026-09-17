@@ -66,8 +66,12 @@ governed:
     read_by: "pnpm typecheck; vitest's own config, loaded on every run."
   - kind: ".js"
     read_by: >-
-      prettier via pre-commit, and commitlint loads commitlint.config.js on
-      every commit - a broken one fails the commit-msg hook.
+      commitlint loads commitlint.config.js on every commit - a broken one fails
+      the commit-msg hook. The scripts beside .github/workflows/github-script
+      are scanned by Semgrep, run by the plan-comment jobs and, for
+      env-reaches-script.js, by the Egress Proof lane on every pull request,
+      and read by the guards requiring each to be named and to replace its
+      comment rather than append.
   - kind: ".yaml"
     read_by: >-
       prettier and check-yaml via pre-commit, kubectl kustomize and kubeconform

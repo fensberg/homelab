@@ -12,3 +12,23 @@
 self-hosted-runner:
   labels:
     - homelab-management
+
+# The one refusal actionlint gets wrong, exempted by message rather than by rule.
+#
+# `$/` is GitHub's self-repository reference, generally available since
+# 2026-07-30: it resolves an action at the running commit with no checkout, and
+# it is what lets .github/workflows/mobilize run harden-runner and checkout as a
+# job's first step. actionlint v1.7.12 - still its newest release - predates it
+# and reports "ref is missing".
+#
+# Scoped to that message AND to a reference into .github/workflows, so every
+# other malformed `uses:` in the repository still fails. That was tested rather
+# than assumed: with this in place, `uses: someone/else@` is still reported.
+# #387 had recorded the only alternative as ignoring the format check for every
+# `uses:`, which is not so.
+#
+# Removed when: actionlint ships a release that accepts `$/`. Tracked as #387.
+paths:
+  .github/workflows/*.yml:
+    ignore:
+      - 'specifying action "\$/\.github/workflows/[a-z0-9-]+" in invalid format because ref is missing'
