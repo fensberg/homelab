@@ -682,9 +682,13 @@ floor a pull request may not drop below and is free to leave alone.
   more than the checks it ran were worth (#365).
 - Four verbs, fastest first: `task fix` formats (seconds, no Docker),
   `task validate` proves the OpenTofu and manifests resolve, `task test`
-  proves they behave, `task lint` runs the slow analysis image. The first
-  three run on every push (the `pre-push` hook wires up `validate` and
-  `test`); the fourth is worth running before opening a pull request.
+  proves they behave, `task lint` runs the slow analysis image. All four run
+  in CI on every pull request. **Commit and push together stay under ten
+  seconds:** the `pre-push` hook runs only what cannot be undone once
+  published and the guards that answer in milliseconds
+  (`go test -C tests/go -short ./repo`); a guard costing seconds calls
+  `heavy()` and waits for the pull request. Run `task validate` and
+  `task test` by hand when you want the whole answer before pushing.
   `validate` and `test` are separate on purpose - "does it resolve" and
   "does it do the right thing" are different questions, and one owner per
   check is the rule everywhere else here too.

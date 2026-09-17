@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 117
+floor: 118
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -976,6 +976,16 @@ mutations:
       A workflow that runs it beside the expedite credential widens the
       standing order to whatever that verb does, and nothing in the verb's own
       code would say so.
+
+  - guard: TestHeavyGuardsRunOnEveryPullRequest
+    file: .github/workflows/pr-validation.yml
+    find: "run: go test ./..."
+    replace: "run: go test -short ./..."
+    mentions: "runs Go tests with -short"
+    why: >
+      -short is the push budget. In CI it would skip the mutation ledger, the
+      comment-stripping re-run and every other heavy guard with a green
+      result, and nothing anywhere would run them.
 
   - guard: TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith
     file: scripts/take-delivery.sh

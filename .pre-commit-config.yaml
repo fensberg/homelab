@@ -12,13 +12,13 @@
 # what put formatting errors on a pull request that this file had just passed.
 #
 # Three stages, three different jobs - default_stages keeps them from
-# bleeding into each other. Formatting (above) has no explicit stage, so it
-# inherits pre-commit from the default and runs on every commit. validate
-# (below) sets its own stage explicitly to pre-push, since re-running the
-# same formatter there again would just re-check a diff pre-commit had
-# already checked seconds earlier - no real coverage for the cost of running
-# it twice. commitlint sets its own stage to commit-msg, the only stage that
-# ever sees the message text at all.
+# bleeding into each other. Formatting has no explicit stage, so it inherits
+# pre-commit from the default and runs on every commit. The fast guards
+# (below) set their own stage to pre-push, and hold a budget: a commit and a
+# push together should take under ten seconds, so only what cannot be undone
+# after a push, and what answers in milliseconds, runs there - the rest is the
+# pull request's job. commitlint sets its own stage to commit-msg, the only
+# stage that ever sees the message text at all.
 default_install_hook_types: [pre-commit, pre-push, commit-msg]
 default_stages: [pre-commit]
 repos:
@@ -40,8 +40,8 @@ repos:
         stages: [pre-push]
         fail_fast: true
         # First among the pre-push hooks, and fail_fast, on purpose: a push
-        # that is going to be refused should cost milliseconds, not the full
-        # validate+test suite that follows. Ordering alone does not achieve
+        # that is going to be refused should cost milliseconds, not the
+        # guards that follow. Ordering alone does not achieve
         # that - pre-commit runs every hook and reports at the end - so the
         # two go together. Measured: without fail_fast, a refused push still
         # ran the whole Go and OpenTofu corpus first.
@@ -251,39 +251,33 @@ repos:
         pass_filenames: false
         always_run: true
 
-      - id: validate
-        name: task validate (pre-push)
-        entry: task validate
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
-        # Genuinely different work from the formatting hooks above, not a
-        # repeat of it: proves the OpenTofu and manifests actually resolve,
-        # the same three tools the Validate CI lane runs (tofu validate,
-        # kubeconform-adjacent kustomize builds, go vet/build). Catching a
-        # broken config here costs a few local seconds instead of a CI
-        # runner's worth of compute - which is real electricity once this
-        # pipeline is self-hosted, not just a GitHub Actions minute.
-
       - id: test
-        name: task test (pre-push)
-        entry: task test
+        name: the fast guards (pre-push)
+        entry: go test -C tests/go -short ./repo
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-push]
-        # The behaviour half of what `validate` above proves structurally:
-        # Go unit and contract tests, the OpenTofu invariant tests, and the
-        # JS/TS tier. Seconds, entirely hermetic - no 1Password, no
-        # hypervisor - so it costs a push almost nothing and catches the
-        # class of mistake that is most annoying to find in CI: a rule
-        # changed on one side of the config contract and not the other.
+        # Only what cannot be undone and what answers in milliseconds, so a
+        # commit and a push together stay under ten seconds.
         #
-        # pre-push rather than pre-commit for the same reason `validate` is:
-        # this is not a formatter, it is a real check, and running it on
-        # every commit of a branch that gets pushed once would run it many
-        # times over to learn the same thing.
+        # This used to be `task validate` and the whole of `task test`: 160
+        # seconds per push, 107 of them in two checks on the checks - the
+        # mutation ledger and the comment-stripping re-run. Every one of those
+        # already runs on the pull request, so the push was paying twice for
+        # feedback it would get anyway, while the operator sat waiting.
+        #
+        # What a push must stop is what no later push can repair: an unsigned
+        # commit (enforce-push, above), a secret (gitleaks, at commit), a real
+        # name or address reaching a public repository (the forkability and
+        # transcript guards, which are fast and run here). Everything else is
+        # a red check on the pull request, fixed by the next push.
+        #
+        # -short is what keeps it fast: a guard that costs whole seconds calls
+        # heavy() and skips here, saying why. CI's Test lane runs the package
+        # without -short, and TestHeavyGuardsRunOnEveryPullRequest refuses a
+        # workflow that passes it. Validate, the module unit tests, tofu test
+        # and the JS tier run in their lanes and nowhere else.
         #
         # Deliberately NOT the integration, api or e2e tiers. Those need
         # credentials and a real estate; a git hook that could reach either

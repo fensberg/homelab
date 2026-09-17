@@ -196,6 +196,7 @@ func (f *hookFixture) ran(t *testing.T) string {
 // environments before it runs any hook, so a guard that runs second is a
 // receipt rather than a refusal.
 func TestTheHookShimsRunTheGuardBeforeAnythingThirdParty(t *testing.T) {
+	heavy(t, "builds and runs each hook shim for real, seconds apiece")
 	root := repoRoot(t)
 	for _, hook := range []string{"pre-commit", "pre-push"} {
 		t.Run(hook, func(t *testing.T) {
@@ -242,6 +243,7 @@ the vault session, which is the whole thing this ordering exists to prevent.`, h
 // removes while debugging. Reading for it is a change detector; running a
 // failing guard is the property.
 func TestAFailingGuardStopsTheHookBeforePreCommit(t *testing.T) {
+	heavy(t, "builds and runs each hook shim for real, seconds apiece")
 	root := repoRoot(t)
 	for _, hook := range []string{"pre-commit", "pre-push"} {
 		t.Run(hook, func(t *testing.T) {
@@ -275,6 +277,7 @@ The guard's whole purpose is to stop before anything third-party is installed.`,
 // which ref is being updated - refused every push. That was found by breaking
 // it. This is the test that would have found it instead.
 func TestEveryShimPassesGitsOwnArgumentsThrough(t *testing.T) {
+	heavy(t, "builds and runs each hook shim for real, seconds apiece")
 	root := repoRoot(t)
 
 	cases := []struct {

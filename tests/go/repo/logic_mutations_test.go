@@ -81,6 +81,7 @@ func runContractorTests(t *testing.T, dir string) (passed bool, failed map[strin
 
 func TestEveryDecisionIsAssertedOn(t *testing.T) {
 	skipIfInner(t)
+	heavy(t, "mutates Go decisions and re-runs their tests, several seconds")
 	root := repoRoot(t)
 
 	body, err := os.ReadFile(filepath.Join(root, "tests", "logic-mutations.yml"))

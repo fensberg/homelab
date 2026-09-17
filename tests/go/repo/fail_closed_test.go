@@ -57,6 +57,11 @@ var skipIsHonest = map[string]string{
 		"scratch tree is deliberately not a git repository, so there is no working " +
 		"tree to ask git about. Every other git failure is a Fatal.",
 
+	"heavy_test.go": "a guard that costs seconds skips only under -short, which is the " +
+		"pre-push hook's budget, and says so with its reason. TestHeavyGuardsRunOnEveryPullRequest " +
+		"refuses a CI run with -short, so the skip reports that the guard runs on the pull " +
+		"request - which is true - and never that it runs nowhere.",
+
 	"zizmor_test.go": "the exemption block being gone is a real outcome with a sibling " +
 		"test that covers it - if the block has gone, the relative references should " +
 		"have gone with it, and that is what the next test asserts.",
