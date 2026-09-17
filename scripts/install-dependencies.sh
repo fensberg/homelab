@@ -44,6 +44,12 @@ aarch64) GOARCH=arm64 ;;
 	;;
 esac
 
+# Where scripts/take-delivery.sh puts every tool it installs. On PATH for the
+# rest of this run, because a machine being set up for the first time usually
+# does not have it yet - Debian's ~/.profile adds it only if the directory
+# existed at login - and the steps below call what was just delivered.
+export PATH="$HOME/.local/bin:$PATH"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -314,6 +320,30 @@ step "Python tools, from the lock"
 # pre-commit-hooks is here because .pre-commit-config.yaml runs its checks as
 # local hooks from this install; without it every commit fails on "No module
 # named pre_commit_hooks".
+#
+# Into an isolated environment rather than the user site (#423). The first
+# version of this installed them with pip --user, where a package the OS
+# already ships satisfied the lock with no hash compared, and the locked
+# packages replaced Debian's own for every Python program this account runs.
+# Whatever that left behind is removed first - only packages the lock names,
+# and only from the user site - so nothing still shadows the OS.
+user_site="$(python3 -m site --user-site 2>/dev/null || true)"
+leftovers=()
+if [ -n "$user_site" ] && [ -d "$user_site" ]; then
+	locked_names="$("$(dirname "$0")/take-delivery.sh" --print ansible-core pre-commit pre-commit-hooks checkov zizmor codespell | sed 's/==.*//')"
+	for dist in "$user_site"/*.dist-info; do
+		[ -d "$dist" ] || continue
+		name="$(basename "$dist" .dist-info)"
+		name="${name%-*}"
+		if printf '%s\n' "$locked_names" | grep -qx "$(printf '%s' "$name" | tr '[:upper:]_.' '[:lower:]--')"; then
+			leftovers+=("$name")
+		fi
+	done
+fi
+if [ "${#leftovers[@]}" -gt 0 ]; then
+	info "removing ${#leftovers[@]} locked packages an earlier install left in the user site"
+	python3 -m pip uninstall --break-system-packages --yes "${leftovers[@]}"
+fi
 info "installing ansible-core, pre-commit, pre-commit-hooks, checkov, zizmor and codespell from the lock"
 "$(dirname "$0")/take-delivery.sh" ansible-core pre-commit pre-commit-hooks checkov zizmor codespell
 ok "python tools installed at the locked versions"

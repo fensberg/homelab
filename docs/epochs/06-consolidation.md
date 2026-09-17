@@ -411,8 +411,22 @@ every tool with no lockfile of its own ecosystem:
   hash differs; everything lands in `~/.local` for every caller, so no lane
   needs sudo (#410). `TestNothingInstallsFromPyPIOutsideTakeDelivery` refuses a
   second one.
+- **Python tools live in one isolated environment**,
+  `~/.local/share/deliveries/pypi`, created without system site packages, with
+  each tool's own commands linked into `~/.local/bin` and the environment's
+  interpreter there as `delivered-python` (#423). The first version used
+  `pip install --user --break-system-packages`, and the first real workstation
+  run showed two things wrong with it. pip's `--require-hashes` checks what it
+  downloads, not what it finds installed, so Debian's jinja2 satisfied the
+  lock with no hash compared. And the user site precedes the OS's own packages
+  on `sys.path`, so the locked `packaging` 23.2 replaced Debian's 25.0 for
+  every Python program that account ran. `delivered-python` is a two-line
+  wrapper rather than a link, because a symlink to a virtual environment's
+  interpreter starts the system Python without the environment - checked
+  rather than assumed. `install-dependencies.sh` removes what the first
+  version left in the user site, and only packages the lock names.
 - **pre-commit-hooks became local system hooks** running
-  `python3 -m pre_commit_hooks.<module>` with the upstream 4.6.0 types, stages,
+  `delivered-python -m pre_commit_hooks.<module>` with the upstream 4.6.0 types, stages,
   args and excludes, so its version lives in `versions.env` too. The hookshim
   guard lets such a hook run in the Format lane only when the lane takes
   delivery of that module's package from the lock before running pre-commit.
@@ -433,6 +447,27 @@ Out of scope, and why: `go.sum`, `pnpm-lock.yaml` and `.terraform.lock.hcl`
 are their ecosystems' own locks; action commits and container digests are
 pinned where they are used; and the runner image's downloads (tofu, rclone,
 kubectl, talosctl) are built by another pipeline and filed as #421.
+
+### A push costs seconds, and only what cannot be undone runs there
+
+Measured while building #416: committing took about a second, and pushing took 160. The `pre-push` hook ran `task validate` and the whole of `task test`, and
+`tests/go/repo` was 143 seconds of it - 54 in the comment-stripping re-run and
+53 in the mutation ledger, both checks on the checks, and both run again by the
+Test lane on the pull request. The push was paying twice for feedback it would
+get anyway, while the operator waited.
+
+The operator set the bar: commit and push together under ten seconds, running
+only what cannot be undone and what is genuinely fast. What a push must stop is
+what no later push repairs - an unsigned commit, a secret, a real name or
+address in a public repository. Everything else is a red check fixed by the next
+push.
+
+So the hook runs `go test -C tests/go -short ./repo`, about three seconds. A
+guard that costs whole seconds calls `heavy(t, why)` and skips under `-short`,
+which is Go's own mechanism for exactly this rather than a list somebody keeps.
+The skip is honest only while something runs those guards, so
+`TestHeavyGuardsRunOnEveryPullRequest` refuses a workflow that passes `-short`,
+and the ledger proves it.
 
 ## Outcome
 

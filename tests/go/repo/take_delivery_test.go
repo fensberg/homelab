@@ -75,8 +75,16 @@ func newDeliveryFixture(t *testing.T, lock string) *deliveryFixture {
 			"while [ $# -gt 0 ]; do case \"$1\" in -o) out=\"$2\"; shift 2 ;; *) url=\"$1\"; shift ;; esac; done\n" +
 			"[ -f \"$SERVE/${url##*/}\" ] || exit 22\ncp \"$SERVE/${url##*/}\" \"$out\"\n",
 		// Records the arguments and the requirements file pip was handed.
-		"python3": "#!/usr/bin/env bash\necho \"$*\" >>\"$PIP_ARGS\"\n" +
-			"while [ $# -gt 0 ]; do [ \"$1\" = -r ] && cat \"$2\" >>\"$PIP_ARGS\"; shift; done\n",
+		// The system python3 only creates the environment; the environment's
+		// python - a copy of this stub - records what pip was asked for, and
+		// reports one command per distribution, which it also creates.
+		"python3": "#!/usr/bin/env bash\n" +
+			"if [ \"$1\" = -m ] && [ \"$2\" = venv ]; then mkdir -p \"$3/bin\"; cp \"$0\" \"$3/bin/python\"; exit 0; fi\n" +
+			"if [ \"$1\" = -c ] && [ -z \"$2\" ]; then exit 0; fi\n" +
+			"if [ \"$1\" = -m ] && [ \"$2\" = pip ]; then echo \"$0 $*\" >>\"$PIP_ARGS\"\n" +
+			"  while [ $# -gt 0 ]; do [ \"$1\" = -r ] && cat \"$2\" >>\"$PIP_ARGS\"; shift; done; exit 0; fi\n" +
+			"if [ \"$1\" = -c ]; then d=\"$(dirname \"$0\")\"; printf '#!/bin/sh\\necho %s\\n' \"$3\" >\"$d/$3-cmd\"; chmod +x \"$d/$3-cmd\"; echo \"$3-cmd\"; exit 0; fi\n" +
+			"exit 1\n",
 	}
 	for name, body := range stubs {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
@@ -229,6 +237,26 @@ func TestTakeDeliveryHandsPipEveryHashAndEachSharedLineOnce(t *testing.T) {
 	got := string(asked)
 	if !strings.Contains(got, "--require-hashes") {
 		t.Errorf("pip was not told to require hashes, so it installs whatever it resolves:\n%s", got)
+	}
+	// Into the isolated environment, never the user site (#423): pip accepts a
+	// package the OS already has without comparing its hash, and the user site
+	// replaces the OS's own packages for every Python program the account runs.
+	venvPython := filepath.Join(f.home, ".local", "share", "deliveries", "pypi", "bin", "python")
+	if !strings.HasPrefix(got, venvPython+" ") {
+		t.Errorf("pip did not run from the isolated environment %s:\n%s", venvPython, got)
+	}
+	if strings.Contains(got, "--user") || strings.Contains(got, "--break-system-packages") {
+		t.Errorf("pip installed into the user site, where the OS's packages satisfy the lock unhashed:\n%s", got)
+	}
+	wrapper, err := os.ReadFile(filepath.Join(f.home, ".local", "bin", "delivered-python"))
+	if err != nil || !strings.Contains(string(wrapper), "exec \""+venvPython+"\"") {
+		t.Errorf("~/.local/bin/delivered-python does not run the environment's python: %v\n%s", err, wrapper)
+	}
+	for _, tool := range []string{"alpha", "beta"} {
+		link, err := os.Readlink(filepath.Join(f.home, ".local", "bin", tool+"-cmd"))
+		if err != nil || !strings.HasPrefix(link, filepath.Dir(venvPython)) {
+			t.Errorf("%s's command was not linked from the environment into ~/.local/bin: %q %v", tool, link, err)
+		}
 	}
 	for _, want := range []string{"alpha==1", "beta==2"} {
 		if !strings.Contains(got, want) {

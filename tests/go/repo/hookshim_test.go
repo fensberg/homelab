@@ -118,7 +118,7 @@ func readShim(t *testing.T, hook string) string {
 // this test with the two names that disagree.
 //
 // ONE EXCEPTION, AND IT IS EARNED NOT DECLARED. A system hook may run in the
-// lane when its entry is `python3 -m <module>` and the lane takes delivery of
+// lane when its entry is `delivered-python -m <module>` and the lane takes delivery of
 // that module's package from scripts/deliveries.lock before running pre-commit.
 // The pre-commit-hooks checks are that shape (#416): installed by hash rather
 // than cloned by pre-commit, so the lane has exactly what they need. There is
@@ -297,10 +297,10 @@ func formatLaneDeliveries(t *testing.T, workflow string) map[string]bool {
 	return out
 }
 
-// lockedPythonPackage reads `python3 -m <module>...` and returns the PyPI name
+// lockedPythonPackage reads `delivered-python -m <module>...` and returns the PyPI name
 // the module's top-level package is published under, the way the lock writes it.
 func lockedPythonPackage(entry string) (string, bool) {
-	m := regexp.MustCompile(`^python3 -m ([a-z0-9_]+)(?:\.|\s|$)`).FindStringSubmatch(strings.TrimSpace(entry))
+	m := regexp.MustCompile(`^delivered-python -m ([a-z0-9_]+)(?:\.|\s|$)`).FindStringSubmatch(strings.TrimSpace(entry))
 	if m == nil {
 		return "", false
 	}

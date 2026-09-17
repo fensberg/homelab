@@ -75,9 +75,13 @@ repos:
   # upstream definition gave it at 4.6.0, because a hook that quietly checks
   # fewer files is the failure this whole repository watches for.
   #
-  # python3 -m rather than the console script, so a machine whose ~/.local/bin
-  # is not on PATH still runs the check it was told to - and so the Format
-  # lane's hook guard can see which locked package each hook needs.
+  # delivered-python rather than python3 or the console script. The package is
+  # installed into an isolated environment the system Python cannot see
+  # (#423), and delivered-python is that environment's interpreter, linked into
+  # ~/.local/bin beside everything else take-delivery.sh puts there. The
+  # githooks shims add that directory to PATH, so a first shell without it
+  # still runs the check - and the `-m <module>` form is what lets the Format
+  # lane's hook guard see which locked package each hook needs.
   - repo: local
     hooks:
       # The execute bit, which had no owner outside the aggregate that went in
@@ -87,23 +91,23 @@ repos:
       # never runs is exactly the failure githooks/ exists to prevent.
       - id: check-shebang-scripts-are-executable
         name: check that scripts with shebangs are executable
-        entry: python3 -m pre_commit_hooks.check_shebang_scripts_are_executable
+        entry: delivered-python -m pre_commit_hooks.check_shebang_scripts_are_executable
         language: system
         types: [text]
         stages: [pre-commit, pre-push, manual]
       - id: check-merge-conflict
         name: check for merge conflicts
-        entry: python3 -m pre_commit_hooks.check_merge_conflict
+        entry: delivered-python -m pre_commit_hooks.check_merge_conflict
         language: system
         types: [text]
       - id: detect-private-key
         name: detect private key
-        entry: python3 -m pre_commit_hooks.detect_private_key
+        entry: delivered-python -m pre_commit_hooks.detect_private_key
         language: system
         types: [text]
       - id: check-yaml
         name: check yaml
-        entry: python3 -m pre_commit_hooks.check_yaml
+        entry: delivered-python -m pre_commit_hooks.check_yaml
         language: system
         types: [yaml]
         # Kubernetes manifests legitimately hold several documents in one file,
@@ -116,14 +120,14 @@ repos:
       # and needing a re-stage, which is a button nobody should have to press.
       - id: trailing-whitespace
         name: trim trailing whitespace
-        entry: python3 -m pre_commit_hooks.trailing_whitespace_fixer
+        entry: delivered-python -m pre_commit_hooks.trailing_whitespace_fixer
         language: system
         types: [text]
         stages: [pre-commit, pre-push, manual]
         exclude: '\.patch$'
       - id: end-of-file-fixer
         name: fix end of files
-        entry: python3 -m pre_commit_hooks.end_of_file_fixer
+        entry: delivered-python -m pre_commit_hooks.end_of_file_fixer
         language: system
         types: [text]
         stages: [pre-commit, pre-push, manual]

@@ -16,8 +16,24 @@
 # Where things land, for every caller alike, and never anywhere needing root -
 # the CI lanes run with sudo removed (#410):
 #
-#   pypi   pip install --user, so ~/.local/bin and the user site-packages
+#   pypi   one isolated virtual environment, ~/.local/share/deliveries/pypi,
+#          with each named tool's own commands linked into ~/.local/bin and
+#          the environment's Python there as `delivered-python`
 #   fetch  ~/.local/bin/<name>; an archive gives up the one file named <name>
+#
+# WHY AN ISOLATED ENVIRONMENT (#423). The first version installed into the
+# user site with --break-system-packages, and the first real workstation run
+# showed what that costs. pip's --require-hashes checks what it downloads, not
+# what it finds installed, so a package the OS already ships - jinja2, from
+# Debian - was accepted with no hash compared at all. And the user site comes
+# before the OS's own packages on sys.path, so the locked packaging 23.2
+# replaced Debian's 25.0 for every Python program that account ran, the OS's
+# own included. An environment created without system site packages sees
+# neither: every package in it arrived by hash, and nothing in it is visible to
+# anything else.
+#
+# `delivered-python` is a wrapper rather than a link: a symlink to a virtual
+# environment's Python starts the system interpreter without the environment.
 #
 # Under GitHub Actions, ~/.local/bin is added to GITHUB_PATH, so later steps
 # find what was delivered by name.
@@ -100,8 +116,46 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$bin"
 
 if [ -n "$pypi" ]; then
+	venv="${HOME}/.local/share/deliveries/pypi"
+	# Rebuilt when its interpreter no longer runs - an OS upgrade that moves
+	# python3 leaves an environment pointing at a Python that has gone.
+	if ! "$venv/bin/python" -c '' 2>/dev/null; then
+		rm -rf "$venv"
+		python3 -m venv "$venv"
+	fi
 	printf '%s' "$pypi" | sort -u >"$work/requirements.txt"
-	python3 -m pip install --user --break-system-packages --require-hashes -r "$work/requirements.txt"
+	"$venv/bin/python" -m pip install --require-hashes -r "$work/requirements.txt"
+
+	printf '%s\n' \
+		'#!/bin/sh' \
+		'# Written by scripts/take-delivery.sh: the Python of the environment every' \
+		'# locked Python tool is installed into. Hooks run their checks with it.' \
+		"exec \"$venv/bin/python\" \"\$@\"" >"$bin/delivered-python"
+	chmod 0755 "$bin/delivered-python"
+
+	# Each named tool's own commands, and nothing its dependencies bring: those
+	# are the tool's business, and linking them would put a hundred commands
+	# on PATH that nobody asked for. Read from the files the package itself
+	# installed into bin/, because a command is not always an entry point -
+	# checkov ships a plain script and zizmor a compiled binary.
+	for name in "$@"; do
+		case "$(header "$name")" in "# [pypi: "*) ;; *) continue ;; esac
+		commands="$("$venv/bin/python" -c 'import sys, os
+from importlib.metadata import distribution
+d = distribution(sys.argv[1])
+bindir = os.path.realpath(os.path.join(sys.prefix, "bin"))
+for f in d.files or []:
+    p = os.path.realpath(d.locate_file(f))
+    if os.path.dirname(p) == bindir and not p.endswith(".cmd"):
+        print(os.path.basename(p))' "$name")"
+		if [ -z "$commands" ]; then
+			echo "refusing $name: it installed no command, so there is nothing to put on PATH - is it a library rather than a tool?" >&2
+			exit 1
+		fi
+		for command in $commands; do
+			ln -sf "$venv/bin/$command" "$bin/$command"
+		done
+	done
 fi
 
 for name in "${fetches[@]}"; do

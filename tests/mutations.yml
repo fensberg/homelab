@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 118
+floor: 119
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -997,6 +997,17 @@ mutations:
       Without it every lane installs exactly as before and stays green, while
       a replaced release asset goes onto every runner and workstation.
 
+  - guard: TestTakeDeliveryHandsPipEveryHashAndEachSharedLineOnce
+    file: scripts/take-delivery.sh
+    find: '"$venv/bin/python" -m pip install --require-hashes -r'
+    replace: "python3 -m pip install --user --break-system-packages --require-hashes -r"
+    mentions: "did not run from the isolated environment"
+    why: >
+      In the user site, a package the OS already ships satisfies the lock with
+      no hash compared - Debian's jinja2 did, on the first real run - and the
+      locked packages replace the OS's own for every Python program the
+      account runs (#423).
+
   - guard: TestTakeDeliveryTakesTheNamedFileOutOfAnArchive
     file: scripts/take-delivery.sh
     find: 'found="$(find "$work/$name.d" -type f -name "$name")"'
@@ -1009,8 +1020,8 @@ mutations:
 
   - guard: TestTakeDeliveryHandsPipEveryHashAndEachSharedLineOnce
     file: scripts/take-delivery.sh
-    find: "--break-system-packages --require-hashes -r"
-    replace: "--break-system-packages -r"
+    find: '"$venv/bin/python" -m pip install --require-hashes -r'
+    replace: '"$venv/bin/python" -m pip install -r'
     mentions: "was not told to require hashes"
     why: >
       Without --require-hashes pip treats the hashes as optional, resolves
@@ -1029,8 +1040,8 @@ mutations:
 
   - guard: TestEverySystemHookIsSkippedInTheFormatLane
     file: .pre-commit-config.yaml
-    find: "entry: python3 -m pre_commit_hooks.check_yaml"
-    replace: "entry: python3 -m pre_commit_hooks_extra.check_yaml"
+    find: "entry: delivered-python -m pre_commit_hooks.check_yaml"
+    replace: "entry: delivered-python -m pre_commit_hooks_extra.check_yaml"
     mentions: "the Format lane does not take delivery of pre-commit-hooks-extra"
     why: >
       A system hook runs in the Format lane only because the lane took
@@ -1139,18 +1150,17 @@ mutations:
       and a replaced pull request. A shim naming the wrong stage runs the
       wrong hooks and looks installed.
 
-  - guard: TestTheShimsFallBackToTheModuleAndSayWhenThereIsNeither
+  - guard: TestTheShimsFindTheDeliveredPreCommitAndSayWhenThereIsNone
     file: githooks/commit-msg
-    find: "elif python3 -c 'import pre_commit' >/dev/null 2>&1; then"
-    replace: "elif false; then"
-    mentions: "where the module was importable"
+    find: 'PATH="$HOME/.local/bin:$PATH"'
+    replace: "true"
+    mentions: "where pre-commit was delivered to ~/.local/bin"
     why: >
-      pre-commit installed with pip --user is reachable as a module and not
-      as a command on any machine that does not have ~/.local/bin on PATH.
-      The hook pre-commit generates handles that; these shims replace it, so
-      dropping the fallback means every hook this repository relies on
-      refuses to run on such a machine - with a message naming a command
-      rather than the virtualenv that is actually missing.
+      take-delivery.sh puts pre-commit in ~/.local/bin, and the first shell
+      after setup often lacks that directory on PATH - Debian adds it only
+      if it existed at login. Without the shim adding it, every hook this
+      repository relies on refuses to run on exactly the machine that was
+      just set up.
 
   - guard: TestThePlaceholderConfigRefusesOutputThatIsNotJSON
     file: .github/scripts/placeholder-config.sh
