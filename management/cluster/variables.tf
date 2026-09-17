@@ -512,6 +512,20 @@ locals {
   # rebuild.
   dmz_schematic_id = "70d243b7e2cbe699e4db5e73356a2add6b4bb8e34eadba9db22c823110e79099"
 
+  # --- alerting ------------------------------------------------------------
+  #
+  # Where the estate speaks when something it monitors goes wrong. Fleet-level
+  # for the same reason workloads are: one person reads it, and a second site
+  # would report into the same place rather than somewhere new.
+  #
+  # The webhook URL is the whole credential - an incoming webhook authenticates
+  # by being known - so it is written into a Secret the monitoring namespace
+  # reads and never into a manifest in git.
+  alerting = try(local.config.alerting, {
+    provider    = ""
+    webhook_url = ""
+  })
+
   # --- workloads -----------------------------------------------------------
   #
   # Fleet-level rather than per-site: one repository drives every cluster, and

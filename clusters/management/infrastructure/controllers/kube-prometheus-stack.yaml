@@ -13,15 +13,15 @@
 # `kubectl port-forward` until the pull request that decides exposure lands. No
 # port is opened anywhere, on any machine, by this file.
 #
-# Alerts fire and go nowhere on purpose. The chart's own rules are enabled so
-# that a week of this estate's real behaviour is on record before anybody
-# writes a threshold - which is the deliverable this epoch owes, and the thing
-# that cannot be written from somebody else's blog post.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: monitoring
----
+# WHERE ALERTS GO. Slack, through the receiver Alertmanager ships - no bespoke
+# relay, no credential inside the cluster beyond the webhook URL itself. The
+# monitoring namespace and that secret are created by
+# management/cluster/monitoring.tf, because a secret cannot come from git.
+#
+# The chart's own rules stay enabled, so the first week is still a survey of
+# what this estate actually trips. What changed is that a firing alert is now
+# visible: severity warning and above reaches a person, and everything else is
+# grouped and quiet.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -169,6 +169,10 @@ spec:
       # log, and neither matters while nothing is delivered; when delivery
       # lands, so does the argument for giving it storage.
       alertmanagerSpec:
+        # Mounted at /etc/alertmanager/secrets/<name>/<key>, which is the path
+        # the receivers below read the webhook URL from.
+        secrets:
+          - alerting-webhook
         image:
           registry: quay.io
           repository: prometheus/alertmanager
@@ -187,22 +191,69 @@ spec:
             memory: 64Mi
         priorityClassName: interactive
         affinity: *offControlPlane
-      # Everything routes to a receiver that does nothing, and that is this
-      # epoch's plan rather than an omission: the first week is a survey of
-      # which of the chart's hundred-odd rules this estate actually trips.
-      # Delivery - an alert becoming a GitHub issue - arrives with the
-      # thresholds, once there is evidence for which alerts deserve to reach a
-      # person. An alerting pipeline wired up on day one is one that gets
-      # muted in week one.
+      # The webhook URL, mounted as a file rather than written into this
+      # config. The operator renders the whole Alertmanager configuration into
+      # a secret of its own; a URL written here would be in git on the way
+      # there, and readable by anything that can read that secret once it
+      # arrives. The name matches kubernetes_secret.alerting_webhook in
+      # management/cluster/monitoring.tf, and the path below is where the
+      # operator mounts it.
       config:
         route:
           group_by: ["alertname", "namespace"]
           group_wait: 30s
           group_interval: 5m
-          repeat_interval: 12h
-          receiver: "nowhere"
+          repeat_interval: 4h
+          receiver: "slack"
+          routes:
+            # Watchdog fires forever, by design: it is the dead-man's switch,
+            # and what it proves is that Prometheus, Alertmanager and the path
+            # out of the estate are all working. So it must be delivered -
+            # routing it to nowhere would prove nothing - but not often. Twice
+            # a day is a heartbeat somebody can notice the absence of.
+            #
+            # Noticing an absence is a human job, and that is this
+            # arrangement's weakness rather than a claim about it. The stronger
+            # answer is a dead-man's-snitch service that reports when pings
+            # STOP; security patrol cannot do it, because it deliberately holds
+            # no credential that reaches into the estate.
+            - matchers:
+                - alertname = "Watchdog"
+              receiver: "slack-heartbeat"
+              group_wait: 0s
+              group_interval: 12h
+              repeat_interval: 12h
+            # Info-level alerts are recorded and not sent. They are the ones
+            # the first week exists to survey, and an alert that arrives before
+            # anybody has decided it means something is how a channel becomes
+            # noise.
+            - matchers:
+                - severity = "info"
+              receiver: "nowhere"
+              continue: false
         receivers:
           - name: "nowhere"
+          - name: "slack"
+            slack_configs:
+              - api_url_file: /etc/alertmanager/secrets/alerting-webhook/webhook_url
+                channel: "#alerts"
+                send_resolved: true
+                title: "{{ .Status | toUpper }}: {{ .CommonLabels.alertname }}"
+                text: >-
+                  {{ range .Alerts }}{{ .Annotations.summary }}
+                  {{ .Annotations.description }}
+                  {{ end }}
+          - name: "slack-heartbeat"
+            slack_configs:
+              - api_url_file: /etc/alertmanager/secrets/alerting-webhook/webhook_url
+                channel: "#alerts"
+                send_resolved: false
+                title: "Heartbeat"
+                text: >-
+                  Monitoring is alive: Prometheus is evaluating rules,
+                  Alertmanager is routing them, and the estate can reach
+                  Slack. If this stops arriving, one of those three has
+                  stopped and nothing else will say so.
         inhibit_rules: []
 
     grafana:
@@ -228,6 +279,14 @@ spec:
       grafana.ini:
         auth:
           disable_login_form: true
+        # And basic auth off with it. The chart ships an admin secret holding a
+        # password everybody knows, and disabling the login FORM leaves the
+        # HTTP API accepting that password - a door with the sign taken down.
+        # With both off there is no account to guess at, and reaching the
+        # service at all is the only gate, which is what the exposure pull
+        # request has to replace.
+        auth.basic:
+          enabled: false
         auth.anonymous:
           enabled: true
           org_role: Editor
