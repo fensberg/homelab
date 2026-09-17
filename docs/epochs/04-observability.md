@@ -207,7 +207,27 @@ Four questions were settled with the operator before anything was built.
 
 **The stack is kube-prometheus-stack, with Grafana.** Prometheus, Alertmanager,
 node-exporter, kube-state-metrics and the operator, plus metrics-server beside
-it so `kubectl top` answers at all. The operator's CRDs are what
+it so `kubectl top` answers at all.
+
+The operator asked the right question about that chart source - why not take
+Prometheus from the Prometheus project - and the answer is that **the project
+publishes no chart**. It publishes the server, Alertmanager and node-exporter,
+as images on quay.io. The charts live in `prometheus-community`, "Prometheus
+Monitoring Community Projects", which is under the umbrella and explicitly not
+the core team; the operator lives in `prometheus-operator`, whose own
+description says it "is an independent project from the Prometheus project".
+So there is no straight-to-source option for a Kubernetes deployment, only
+three assemblies: this chart, the operator's own jsonnet (a toolchain this
+repository does not have), or writing every manifest here and owning upstream's
+RBAC and scrape configuration forever - which also drops the operator and makes
+`podMonitorEnabled` meaningless. The chart is the same shape every other
+component here already arrives in.
+
+**metrics-server does not come from a chart.** kubernetes-sigs publishes a
+single `components.yaml` release manifest beside it, and one Deployment plus an
+APIService needs no Helm indirection. Taken that way, pinned by digest from
+registry.k8s.io, which is already an approved registry - so this epoch adds one
+chart source rather than two. The operator's CRDs are what
 `cloudnative-pg.yaml`'s `podMonitorEnabled: false` has been waiting for.
 Grafana was the arguable half - the decision above says the deliverable is a
 panel schedule rather than a dashboard, and a dashboard tool invites the
@@ -216,6 +236,19 @@ epoch, requested against actually used, is an exploration before it is a
 threshold. The discipline stays where it was: the thresholds get written into
 this record, and Grafana is where the question is asked rather than where the
 answer lives.
+
+**Prometheus gets a 20 GiB volume, and that is bounded by the disk that
+exists.** Each worker carries a 32 GiB data disk at `/var/mnt/storage`, which
+is the whole pool `openebs-hostpath` hands out of, already shared with the
+state database. Fifteen days of a cluster this size is 2-5 GiB - roughly 15-20k
+active series at a sample every 15 seconds, at about two bytes a sample - so
+20 GiB is four to five times the estimate and still leaves the disk room. The
+operator asked for 100 GiB on the "go big, then scale down" principle; it does
+not fit without growing every worker's disk through a converge, and a hostpath
+volume cannot be expanded in place anyway, so starting big costs the same
+recreation later that starting modest does. `retentionSize` is set just under
+the volume, so Prometheus evicts rather than filling a disk the database is
+also writing to.
 
 **Cost, stated before it is spent.** The control planes are 4 cores and 4 GiB;
 the workers offer about 7.2 GiB allocatable each and run at 35-39% of it. The
@@ -257,6 +290,11 @@ recorded because they were accepted rather than discovered: it builds the
 tunnel epoch 03 wants for the website, so part of that epoch lands inside this
 one; and Access goes in front, because the alternative is Grafana's own login
 page on the public internet. Cloudflare is already an approved supplier.
+
+**The tunnel comes early, not late.** The operator asked for Cloudflare Tunnel
+sooner rather than later, so it lands with the deployment rather than after the
+thresholds - Grafana is reachable the day it exists, and epoch 03 inherits a
+tunnel that has been carrying something real.
 
 **The work lands in three pull requests**, in this order: the chart suppliers,
 with the justification for each; the stack deployed with short retention and no

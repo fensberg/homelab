@@ -205,15 +205,6 @@ charts:
       spent hours off the overlay with every signal green. Images come from
       quay.io, registry.k8s.io and docker.io, each already approved, and are
       pinned by digest at their point of use.
-  - url: https://kubernetes-sigs.github.io/metrics-server
-    reason: >-
-      metrics-server, the resource-metrics API Kubernetes itself defines. A
-      kubernetes-sigs project, published by SIG Instrumentation. Prometheus
-      does not serve metrics.k8s.io, so without this `kubectl top` reports
-      nothing and no Horizontal Pod Autoscaler can be written - the capacity
-      work in docs/epochs/02-abstraction.md rests on numbers nobody can read
-      today. Its privilege is a read of the kubelet's summary API on every
-      node.
   - url: https://helm.cilium.io
     reason: >-
       The pod network, replacing the Flannel that Talos ships and the kube-proxy
