@@ -250,6 +250,18 @@ recreation later that starting modest does. `retentionSize` is set just under
 the volume, so Prometheus evicts rather than filling a disk the database is
 also writing to.
 
+**Grafana comes from Docker Hub, because it comes from nowhere else.** Probed:
+`docker.io/grafana/grafana` answers and the same path on ghcr.io and quay.io
+does not. That needed a supplier decision rather than a shrug, because the
+docker.io entry approved Docker Official Images for build bases and asserted
+that nothing in the cluster pulls from there at runtime - which was already
+untrue, since OpenEBS' provisioner does, and it is the component handing out
+every volume. Grafana Labs is now its own entry beside the Official Images one,
+so it can be removed on its own, and the false sentence is corrected rather
+than left standing. Mirroring the image into this estate's registry was
+considered and deferred: a new mechanism to re-run on every bump, which would
+not change OpenEBS' dependency on the same registry anyway.
+
 **Cost, stated before it is spent.** The control planes are 4 cores and 4 GiB;
 the workers offer about 7.2 GiB allocatable each and run at 35-39% of it. The
 stack is roughly 1.2 GiB with Grafana, on the workers. That is affordable and

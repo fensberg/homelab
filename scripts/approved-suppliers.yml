@@ -161,10 +161,36 @@ registries:
       chosen for the sole reason that it dodges a supplier decision - which is
       the reasoning this file exists to refuse.
 
-      Anonymous pulls here are rate-limited per IP. That is a build-time
-      annoyance rather than a runtime one: nothing in the cluster pulls from
-      docker.io, because what this estate builds is published to its own
-      registry and pulled from there.
+      Anonymous pulls here are rate-limited per IP, and that IS a runtime
+      exposure rather than only a build-time one. This paragraph used to say
+      the opposite - "nothing in the cluster pulls from docker.io" - and it was
+      already false when written: the entry under
+      chart_images_not_governed_here records OpenEBS' localpv-provisioner
+      coming from here, and that is the component handing out every volume in
+      the cluster. Grafana below makes it two. The real position is that a pull
+      happens on a node reboot or a version bump, on a handful of nodes behind
+      one address, and Docker Hub being unreachable delays a pod start rather
+      than breaking a running one.
+
+  - host: docker.io
+    namespace: grafana
+    reason: >-
+      Grafana Labs' own images, for the dashboard in kube-prometheus-stack.
+      Approved as a second, separate entry rather than by widening the one
+      above, because the one above is about Docker Official Images and this is
+      a vendor namespace - a different kind of trust, and worth being able to
+      remove on its own.
+
+      Grafana publishes nowhere else. Probed rather than assumed:
+      docker.io/grafana/grafana answers, and the same path on ghcr.io and
+      quay.io does not. So the choice was this, mirroring the image into this
+      estate's own registry, or no dashboard at all. Mirroring was rejected for
+      now: it is a new mechanism that needs re-running on every bump, and it
+      would not change OpenEBS' dependency on the same registry.
+
+      Pinned by digest at its point of use like every other image here, which
+      is what makes "Grafana Labs" rather than "whatever :latest resolves to"
+      the thing being approved.
 # Helm chart sources. Charts are as much a supply chain as images - a chart
 # decides what images get deployed, so an unapproved chart repository is an
 # unapproved registry one level up.
