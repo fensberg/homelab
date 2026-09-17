@@ -45,18 +45,14 @@ inputs:
     default: ""
   checkout:
     description: >-
-      "false" for a job that never needs the repository, or that checks out
-      later through $/.github/workflows/checkout once it knows what to fetch.
+      "false" for a job that never needs the repository. There is no way to
+      check out anything but the commit the run is for; see #409.
     required: false
     default: "true"
   fetch-depth:
     description: How much history to check out; 0 is all of it.
     required: false
     default: "1"
-  ref:
-    description: What to check out; empty means the commit that triggered the run.
-    required: false
-    default: ""
 
 runs:
   using: composite
@@ -84,4 +80,3 @@ runs:
       uses: $/.github/workflows/checkout
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
-        ref: ${{ inputs.ref }}
