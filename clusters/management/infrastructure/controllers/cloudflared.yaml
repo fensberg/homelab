@@ -1,0 +1,164 @@
+---
+# The tunnel connector. Dials OUT to Cloudflare and carries traffic from
+# enrolled WARP devices to the routes declared in management/cluster/tunnel.tf.
+#
+# Its namespace and its token are created by OpenTofu (management/cluster/
+# tunnel.tf), for the same reason the monitoring stack's are: a secret needs
+# its namespace to exist, and one owner avoids a race between two.
+#
+# The token lets it serve this one tunnel and nothing else in the Cloudflare
+# account. What it can reach inside the cluster is the policy below.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: tunnel
+  labels:
+    app.kubernetes.io/name: cloudflared
+spec:
+  # Two connectors, so a node drain or an upgrade does not take the tunnel
+  # down. Cloudflare balances between them on its side.
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflared
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cloudflared
+    spec:
+      automountServiceAccountToken: false
+      priorityClassName: interactive
+
+      securityContext:
+        runAsNonRoot: true
+        # The image's own nonroot user.
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudflared
+
+      containers:
+        - name: cloudflared
+          image: docker.io/cloudflare/cloudflared:2026.9.1@sha256:b269e8abd07a5bf6f3f4be65d5050b2174eca89c56a0241a8ff32a16aec454e4
+          # --no-autoupdate: the version is the digest above and changes by
+          # pull request, never by the connector replacing itself.
+          args:
+            - tunnel
+            - --no-autoupdate
+            - --metrics
+            - 0.0.0.0:2000
+            - run
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tunnel-token
+                  key: token
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+
+          ports:
+            - name: metrics
+              containerPort: 2000
+
+          # /ready answers 200 once at least one connection to Cloudflare's
+          # edge is up, so a connector that cannot reach Cloudflare is not
+          # counted as serving.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 4
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+# What the connector may talk to.
+#
+# Out to Cloudflare's edge, and in the cluster to exactly the services the
+# tunnel publishes, on exactly their ports. It never needs to be reached from
+# inside: every connection it carries starts at an enrolled device and arrives
+# through the connection it opened itself.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cloudflared
+  namespace: tunnel
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflared
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Cloudflare's edge: 7844 carries the tunnel (QUIC over UDP, or HTTP/2
+    # over TCP as the fallback), 443 its API. The internet minus every private
+    # range, like the game server's own rule, because the edge is a set of
+    # addresses nobody can enumerate.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - protocol: UDP
+          port: 7844
+        - protocol: TCP
+          port: 7844
+        - protocol: TCP
+          port: 443
+
+    # The game server, on its game and query ports only (#446).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: valheim
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: valheim
+      ports:
+        - protocol: UDP
+          port: 2456
+          endPort: 2457

@@ -20,8 +20,9 @@
   "sites": {
     "site0": {
       "name": "Fixture Site",
-      "octet": 100,
+      "octet": 10,
       "control_plane_count": 3,
+      "worker_count": 1,
       "hypervisor": {
         "provider": "proxmox",
         "vault_provider": "proxmox",
@@ -30,7 +31,7 @@
         "nodes": {
           "node0": {
             "hostname": "fixture-hv0",
-            "ip": "10.100.0.5"
+            "ip": "10.10.0.5"
           }
         }
       },
@@ -55,7 +56,7 @@
   },
   "tunnel": {
     "provider": "cloudflare",
-    "vault_provider": "cloudflare",
+    "vault_provider": "tailscale",
     "api_token": "fixture",
     "secret": "fixture-tunnel-secret-at-least-thirty-two-bytes",
     "members": "someone@example.com"

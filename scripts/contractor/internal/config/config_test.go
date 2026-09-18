@@ -35,7 +35,7 @@ func validSite() Site {
 }
 
 func TestResolveSiteNetwork_HappyPath(t *testing.T) {
-	cfg := &Config{Sites: map[string]Site{"site0": validSite()}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": validSite()}}
 
 	net, err := ResolveSiteNetwork(cfg, "site0")
 	if err != nil {
@@ -67,7 +67,7 @@ func TestResolveSiteNetwork_HappyPath(t *testing.T) {
 func TestResolveSiteNetwork_SlugFallsBackToKeyWhenNameIsBlank(t *testing.T) {
 	site := validSite()
 	site.Name = ""
-	cfg := &Config{Sites: map[string]Site{"site7": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site7": site}}
 
 	net, err := ResolveSiteNetwork(cfg, "site7")
 	if err != nil {
@@ -79,7 +79,7 @@ func TestResolveSiteNetwork_SlugFallsBackToKeyWhenNameIsBlank(t *testing.T) {
 }
 
 func TestResolveSiteNetwork_UnknownSite(t *testing.T) {
-	cfg := &Config{Sites: map[string]Site{"site0": validSite()}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": validSite()}}
 
 	_, err := ResolveSiteNetwork(cfg, "does-not-exist")
 	if err == nil {
@@ -91,7 +91,7 @@ func TestResolveSiteNetwork_UnknownSite(t *testing.T) {
 }
 
 func TestResolveSiteNetwork_NoSites(t *testing.T) {
-	cfg := &Config{Sites: map[string]Site{}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{}}
 
 	_, err := ResolveSiteNetwork(cfg, "site0")
 	if err == nil {
@@ -101,7 +101,7 @@ func TestResolveSiteNetwork_NoSites(t *testing.T) {
 
 func TestResolveSiteNetwork_DuplicateOctet(t *testing.T) {
 	a, b := validSite(), validSite()
-	cfg := &Config{Sites: map[string]Site{"site0": a, "site1": b}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": a, "site1": b}}
 
 	_, err := ResolveSiteNetwork(cfg, "site0")
 	if err == nil {
@@ -116,7 +116,7 @@ func TestResolveSiteNetwork_OctetOutOfRange(t *testing.T) {
 	for _, octet := range []int{0, -1, 96, 200} {
 		site := validSite()
 		site.Octet = octet
-		cfg := &Config{Sites: map[string]Site{"site0": site}}
+		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 		_, err := ResolveSiteNetwork(cfg, "site0")
 		if err == nil {
@@ -138,7 +138,7 @@ func TestResolveSiteNetwork_VendorMismatch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			site := validSite()
 			tt.mutate(&site)
-			cfg := &Config{Sites: map[string]Site{"site0": site}}
+			cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 			_, err := ResolveSiteNetwork(cfg, "site0")
 			if err == nil {
@@ -154,7 +154,7 @@ func TestResolveSiteNetwork_VendorMismatch(t *testing.T) {
 func TestResolveSiteNetwork_MissingVaultProvider(t *testing.T) {
 	site := validSite()
 	site.Hypervisor.VaultProvider = ""
-	cfg := &Config{Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 	_, err := ResolveSiteNetwork(cfg, "site0")
 	if err == nil {
@@ -166,7 +166,7 @@ func TestResolveSiteNetwork_AWSShapedAccessKeyOnNonAWSProvider(t *testing.T) {
 	for _, prefix := range []string{"AKIA", "ASIA"} {
 		site := validSite()
 		site.ObjectStorage.AccessKeyID = prefix + "IOSFODNN7EXAMPLE"
-		cfg := &Config{Sites: map[string]Site{"site0": site}}
+		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 		_, err := ResolveSiteNetwork(cfg, "site0")
 		if err == nil {
@@ -178,7 +178,7 @@ func TestResolveSiteNetwork_AWSShapedAccessKeyOnNonAWSProvider(t *testing.T) {
 func TestResolveSiteNetwork_NoHypervisorNodes(t *testing.T) {
 	site := validSite()
 	site.Hypervisor.Nodes = map[string]Node{}
-	cfg := &Config{Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 	_, err := ResolveSiteNetwork(cfg, "site0")
 	if err == nil {
@@ -189,7 +189,7 @@ func TestResolveSiteNetwork_NoHypervisorNodes(t *testing.T) {
 func TestResolveSiteNetwork_ControlPlaneCountBelowOne(t *testing.T) {
 	site := validSite()
 	site.ControlPlaneCount = 0
-	cfg := &Config{Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 	_, err := ResolveSiteNetwork(cfg, "site0")
 	if err == nil {
@@ -269,7 +269,7 @@ func TestAssertRenderedConfigComplete_NonSecretPlaceholderFieldsIgnored(t *testi
 func TestResolveSiteNetwork_AddressNameAndIDShareOneNumber(t *testing.T) {
 	site := validSite()
 	site.ControlPlaneCount = 3
-	cfg := &Config{Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 	net, err := ResolveSiteNetwork(cfg, "site0")
 	if err != nil {
@@ -287,7 +287,7 @@ func TestResolveSiteNetwork_AddressNameAndIDShareOneNumber(t *testing.T) {
 // A site with no worker_count is the estate epoch 01 shipped, and must stay
 // buildable. Absent means none rather than missing.
 func TestResolveSiteNetwork_NoWorkerCountMeansNoWorkers(t *testing.T) {
-	cfg := &Config{Sites: map[string]Site{"site0": validSite()}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": validSite()}}
 
 	net, err := ResolveSiteNetwork(cfg, "site0")
 	if err != nil {
@@ -303,7 +303,7 @@ func TestResolveSiteNetwork_NoWorkerCountMeansNoWorkers(t *testing.T) {
 func TestResolveSiteNetwork_WorkersUseTheirOwnBandInTheNodeSubnet(t *testing.T) {
 	site := validSite()
 	site.WorkerCount = 2
-	cfg := &Config{Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 	net, err := ResolveSiteNetwork(cfg, "site0")
 	if err != nil {
@@ -336,7 +336,7 @@ func TestResolveSiteNetwork_TheBandsCannotCollide(t *testing.T) {
 	site := validSite()
 	site.ControlPlaneCount = WorkerBand - ControlPlaneBand
 	site.WorkerCount = 1
-	cfg := &Config{Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 	net, err := ResolveSiteNetwork(cfg, "site0")
 	if err != nil {
@@ -355,7 +355,7 @@ func TestResolveSiteNetwork_TheBandsCannotCollide(t *testing.T) {
 func TestResolveSiteNetwork_NegativeWorkerCount(t *testing.T) {
 	site := validSite()
 	site.WorkerCount = -1
-	cfg := &Config{Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 	if _, err := ResolveSiteNetwork(cfg, "site0"); err == nil {
 		t.Fatal("a negative worker_count was accepted")
@@ -379,7 +379,7 @@ func TestEveryMachineClassIsInAllMachineIPs(t *testing.T) {
 	site := validSite()
 	site.WorkerCount = 2
 	site.DMZZones = map[string]DMZZone{"example": {}}
-	cfg := &Config{Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 	net, err := ResolveSiteNetwork(cfg, "site0")
 	if err != nil {
@@ -418,7 +418,7 @@ func TestEveryMachineClassIsInAllMachineIPs(t *testing.T) {
 func TestAllMachineNamesCoversEveryClass(t *testing.T) {
 	site := validSite()
 	site.WorkerCount = 2
-	cfg := &Config{Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 	net, err := ResolveSiteNetwork(cfg, "site0")
 	if err != nil {
@@ -460,7 +460,7 @@ func TestAllMachineNamesCoversEveryClass(t *testing.T) {
 // empty list still builds something if a resource ranges over the wrong thing.
 func TestNoUntrustedWorkloadDerivesNoZone(t *testing.T) {
 	site := validSite()
-	cfg := &Config{Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 	net, err := ResolveSiteNetwork(cfg, "site0")
 	if err != nil {
@@ -482,5 +482,43 @@ func TestNoUntrustedWorkloadDerivesNoZone(t *testing.T) {
 		if strings.Contains(name, "-dmz-") {
 			t.Errorf("AllMachineNames includes %q on a site with no untrusted workload", name)
 		}
+	}
+}
+
+func validTunnel() Tunnel {
+	return Tunnel{
+		Provider:      TunnelProvider,
+		VaultProvider: TunnelProvider,
+		APIToken:      "fixture",
+		Secret:        "fixture-tunnel-secret-at-least-thirty-two-bytes",
+		Members:       "someone@example.com",
+	}
+}
+
+// The tunnel's token decides who may enroll a device and what an enrolled
+// device can reach, so its vendor is held to the same three-way agreement as
+// every site concern, and an empty member list is refused rather than
+// converged into an enrollment rule that admits nobody - or, worse, one the
+// vendor reads as "anyone".
+func TestTheTunnelIsHeldToItsDeclarations(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Tunnel)
+		want   string
+	}{
+		{"another vendor declared", func(tn *Tunnel) { tn.Provider = "tailscale" }, "provider mismatch in tunnel"},
+		{"no attestation", func(tn *Tunnel) { tn.VaultProvider = "" }, "tunnel.vault_provider"},
+		{"another vendor attested", func(tn *Tunnel) { tn.VaultProvider = "tailscale" }, "tunnel.vault_provider"},
+		{"nobody may enroll", func(tn *Tunnel) { tn.Members = "  " }, "tunnel.members is empty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tn := validTunnel()
+			tc.mutate(&tn)
+			cfg := &Config{Tunnel: tn, Sites: map[string]Site{"site0": validSite()}}
+			_, err := ResolveSiteNetwork(cfg, "site0")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want an error containing %q, got %v", tc.want, err)
+			}
+		})
 	}
 }
