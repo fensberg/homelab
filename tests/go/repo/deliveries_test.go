@@ -100,7 +100,7 @@ task order-deliveries, and install it with:
 // cannot step outside this.
 var (
 	procurementVerb = regexp.MustCompile(`(?:go run -C scripts/procurement \.|toolshed/procurement)\s+([a-z][a-z0-9-]*)`)
-	expediteSecret  = regexp.MustCompile(`secrets\.EXPEDITE_BOT_[A-Z_]+`)
+	expediteSecret  = regexp.MustCompile(`secrets\.PROCUREMENT_BOT_[A-Z_]+`)
 )
 
 func TestOnlyTheExpediteDutyRunsUnderItsCredential(t *testing.T) {
@@ -152,7 +152,7 @@ func TestOnlyTheExpediteDutyRunsUnderItsCredential(t *testing.T) {
 	// Floors, so a rename that stops either pattern matching fails here rather
 	// than passing over workflows it can no longer read.
 	if holders == 0 {
-		t.Error("no workflow reads an EXPEDITE_BOT_ secret, so this cannot tell which one holds the " +
+		t.Error("no workflow reads an PROCUREMENT_BOT_ secret, so this cannot tell which one holds the " +
 			"credential - the secret was renamed, and this guard is asserting nothing")
 	}
 	if expediteVerbs == 0 {

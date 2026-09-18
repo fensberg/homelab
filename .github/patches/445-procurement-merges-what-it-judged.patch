@@ -1,0 +1,383 @@
+diff --git a/.github/workflows/clerk.yml b/.github/workflows/clerk.yml
+index 2d64e66..79cce1a 100644
+--- a/.github/workflows/clerk.yml
++++ b/.github/workflows/clerk.yml
+@@ -266,7 +266,7 @@ jobs:
+           CLERK_BOT_LLM_KEY: ${{ secrets.CLERK_BOT_LLM_KEY }}
+           # The App's ID from a variable where one exists, falling back to the
+           # secret it has always been. An App ID is not a secret - GitHub
+-          # documents it as a variable and the expedite App stores it that way -
++          # documents it as a variable and the procurement App stores it that way -
+           # and the two conventions disagreeing is what #382 is about. The
+           # fallback is what makes converging cost nobody an action: nothing
+           # breaks if the variable is never created.
+@@ -339,7 +339,7 @@ jobs:
+         env:
+           # The App's ID from a variable where one exists, falling back to the
+           # secret it has always been. An App ID is not a secret - GitHub
+-          # documents it as a variable and the expedite App stores it that way -
++          # documents it as a variable and the procurement App stores it that way -
+           # and the two conventions disagreeing is what #382 is about. The
+           # fallback is what makes converging cost nobody an action: nothing
+           # breaks if the variable is never created.
+diff --git a/.github/workflows/expedite.yml b/.github/workflows/expedite.yml
+index aeeb50c..84958fd 100644
+--- a/.github/workflows/expedite.yml
++++ b/.github/workflows/expedite.yml
+@@ -23,7 +23,8 @@ name: "Expedite"
+ #   deliver  the expensive half, and only when check says to look: SteamCMD for
+ #            the real build id, then a 2 GB download, a build, a push, and a
+ #            pull request changing the pinned digest and the recorded build
+-#   release  at 4am local, merge what is waiting and tag it
++#   release  at 4am local, merge what is waiting and tag it; or at once, when
++#            the operator merges a delivery by hand
+ #
+ # The first version of this ran the whole check every fifteen minutes, which
+ # meant installing a 32-bit library and SteamCMD ninety-six times a day to ask
+@@ -44,53 +45,58 @@ name: "Expedite"
+ # connected. Merging changes nothing - staging does not run this workload and
+ # production follows tags - so the pull request may be opened and merged the
+ # moment it exists; only the tag disturbs anyone. It therefore lands at 4am
+-# local, when it disturbs nobody, and the operator can merge earlier by hand
+-# whenever they want it sooner. There is no approval button on purpose: the
+-# whole point of expediting is that nobody has to press one.
++# local, when it disturbs nobody. A delivery the operator merges by hand is
++# released in the next window, or at once by dispatching this workflow. There
++# is no approval button on purpose: the whole point of expediting is that
++# nobody has to press one.
+ #
+-# WHAT KEEPS IT HONEST. The standing order is the expedite GitHub App being a
+-# bypass actor on the ruleset that requires a review - and only that one. The
+-# ruleset requiring checks has no bypass, so its pull request must pass all of
+-# them, including `superintendent enforce-standing-order` in the Sensitive
+-# which refuses any pull request by that App that changes anything but
+-# those two lines or points the digest at a different image repository. The
+-# review is skipped; the checks are not.
++# WHAT KEEPS IT HONEST. The standing order is the procurement GitHub App
++# being a bypass actor on the "protected branches" ruleset. That ruleset holds
++# the review rule and the required checks together, so the bypass skips both:
++# a required check cannot bound it. The release job therefore takes only pull
++# requests the App itself opened, runs `superintendent enforce-standing-order`
++# against the exact head commit it is about to merge - refusing anything but
++# the digest and the recorded build, or a digest from another image
++# repository - and merges that commit and no later one. The same check runs in
++# Sensitive Paths so the verdict shows on the pull request, but it is the one
++# here that binds.
+ #
+-# THE BYPASS BELONGS TO THIS DUTY, NOT TO PROCUREMENT. Procurement's other
+-# duties - ordering scripts/deliveries.lock - hold no permission, and
+-# tests/go/repo refuses any step here that runs a procurement verb outside
+-# expedite-*, so nothing else ever runs under this credential (#416).
++# ONE APP, ONE DUTY UNDER IT. The App is procurement's - it is procurement
++# doing the expediting - but only the expedite duty runs under its credential.
++# Procurement's other duties, ordering scripts/deliveries.lock, hold no
++# permission, and tests/go/repo refuses any step here that runs a procurement
++# verb outside expedite-* (#416).
+ #
+ # Configuration, all on the repository rather than in this file so a fork
+ # brings its own:
+ #
+-#   secrets.EXPEDITE_BOT_CLIENT_ID     the GitHub App's Client ID, the one
+-#                                      beginning "Iv", from the App's
+-#                                      settings page. It is passed as
+-#                                      `client-id`, which the pinned token
+-#                                      action documents as "GitHub App Client
+-#                                      ID"; its numeric `app-id` input is
+-#                                      separate. This was EXPEDITE_BOT_APP_ID,
+-#                                      a name for a different value, and
+-#                                      every delivery from 12 September failed
+-#                                      minting a token with "Integration not
+-#                                      found" (#439). The name now says what
+-#                                      the value is, and a guard holds every
+-#                                      token input to that.
+-#   secrets.EXPEDITE_BOT_PRIVATE_KEY   its private key, the .pem exactly as
+-#                                      GitHub generated it, newlines and all.
+-#                                      actions/create-github-app-token cannot
+-#                                      parse base64.
++#   secrets.PROCUREMENT_BOT_CLIENT_ID
++#       The App's Client ID, the one beginning "Iv", from its settings page,
++#       passed as `client-id`. This was EXPEDITE_BOT_APP_ID, and every
++#       delivery from 12 September failed minting a token with "Integration
++#       not found" (#439): what was stored was not an ID of this App at all,
++#       and the name did not say which value belonged there. It does now, and
++#       a guard holds every token input to that.
++#   secrets.PROCUREMENT_BOT_PRIVATE_KEY
++#       Its private key, generated on the same settings page as the Client ID
++#       above - a key from any other App is refused with "A JSON web token
++#       could not be decoded". The .pem exactly as GitHub generated it,
++#       newlines and all; actions/create-github-app-token cannot parse base64.
++#   vars.PROCUREMENT_BOT_LOGIN
++#       Its bot login, <app-slug>[bot].
+ #
+ # That is now the ONE convention both Apps here use. The clerk used to insist
+ # on base64 of the PEM, so whoever set this App up copied the App that already
+ # existed and put base64 where the action wanted a PEM - failing at the token
+ # step with a message pointing at neither (#382). scripts/clerk/github.go
+-# accepts both shapes now, so the raw PEM below is correct for both and
++# accepts both shapes now, so the raw PEM is correct for both and
+ # copying either App's setup works.
+-#   vars.EXPEDITE_BOT_LOGIN            its bot login, e.g. <app-slug>[bot]
+ #
+-# All three were EXPEDITER_* until #416 renamed the role.
++# All three were EXPEDITER_* until #416 renamed the role, and EXPEDITE_BOT_*
++# until the App was named for the role that holds it. The login is the App's
++# slug - the last part of its settings page address - followed by [bot], and a
++# slug that does not match the App exactly means nothing is ever released: the
++# release job takes only pull requests that login opened.
+ 
+ on:
+   schedule:
+@@ -113,6 +119,12 @@ on:
+   # Deliberately no inputs - Checkov's CKV_GHA_7 refuses any, because an input
+   # lets whoever dispatches steer what is built, and the event says enough.
+   workflow_dispatch:
++  # A delivery merged by hand is the operator saying "now", so it is released
++  # the moment it lands rather than at the next 4am. Only the tag runs on this
++  # event: nothing waiting is merged outside the window because of it.
++  push:
++    branches: [main]
++    paths: [modules/applications/valheim/base/deployment.yaml]
+ 
+ permissions:
+   contents: read
+@@ -328,8 +340,8 @@ jobs:
+         if: steps.build.outputs.deliver == 'true'
+         uses: $/.github/workflows/app-token
+         with:
+-          client-id: ${{ secrets.EXPEDITE_BOT_CLIENT_ID }}
+-          private-key: ${{ secrets.EXPEDITE_BOT_PRIVATE_KEY }}
++          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
++          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
+           # Only what the steps below use, not everything the App was granted
+           # at installation (zizmor's github-app audit). Contents to commit the
+           # pin; pull requests to open one.
+@@ -417,7 +429,7 @@ jobs:
+               "" \
+               "Every required check runs, including \`superintendent enforce-standing-order\`, which refuses this pull request if it changes anything but the digest and the recorded build." \
+               "" \
+-              "**It merges and is tagged at 4am America/Chicago**, because the rollout drops everybody who is connected and production reconciles from the tag. Merge it yourself if you want it sooner - nothing here waits for an approval." \
++              "**Merging this releases it.** Merge it yourself and it is tagged at once, and production rolls out within about a minute - which drops everybody who is connected. Leave it and it merges and is tagged at 4am America/Chicago, when that disturbs nobody. Nothing here waits for an approval." \
+               "" \
+               "Taken by expediting: ${RUN_URL}")")"
+           echo "opened ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
+@@ -431,6 +443,7 @@ jobs:
+     if: >-
+       always() && !cancelled() &&
+       (github.event_name == 'workflow_dispatch' ||
++       github.event_name == 'push' ||
+        github.event.schedule == '0 9 * * *' ||
+        github.event.schedule == '0 10 * * *')
+     runs-on: ubuntu-latest
+@@ -470,8 +483,14 @@ jobs:
+         id: window
+         env:
+           DISPATCHED: ${{ github.event_name == 'workflow_dispatch' }}
++          LANDED: ${{ github.event_name == 'push' }}
+         run: |
+           set -euo pipefail
++          if [ "$LANDED" = "true" ]; then
++            echo "a delivery landed on main: releasing it now"
++            echo "due=true" >> "$GITHUB_OUTPUT"
++            exit 0
++          fi
+           if [ "$DISPATCHED" = "true" ]; then
+             echo "dispatched by hand: releasing now rather than waiting for the window"
+             echo "due=true" >> "$GITHUB_OUTPUT"
+@@ -485,8 +504,8 @@ jobs:
+         if: steps.window.outputs.due == 'true'
+         uses: $/.github/workflows/app-token
+         with:
+-          client-id: ${{ secrets.EXPEDITE_BOT_CLIENT_ID }}
+-          private-key: ${{ secrets.EXPEDITE_BOT_PRIVATE_KEY }}
++          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
++          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
+           # Contents to merge and tag; pull requests to find, comment on and
+           # merge; checks and statuses to see whether the required checks passed.
+           permission-contents: write
+@@ -498,17 +517,28 @@ jobs:
+ 
+       - name: Find what is waiting
+         id: waiting
+-        if: steps.window.outputs.due == 'true'
++        if: steps.window.outputs.due == 'true' && github.event_name != 'push'
+         env:
+           GH_TOKEN: ${{ steps.token.outputs.token }}
++          HOLDER: ${{ vars.PROCUREMENT_BOT_LOGIN }}
+         run: |
+           set -euo pipefail
++          # Only what the holder itself opened, from this repository. A branch
++          # name is not an identity: anyone who can push an expedite/ branch
++          # could otherwise put their pull request in front of the bypass.
++          # With no holder configured there is no standing order and nothing
++          # is taken.
++          if [ -z "$HOLDER" ]; then
++            echo "no standing order is configured (PROCUREMENT_BOT_LOGIN is unset), so nothing is released" >> "$GITHUB_STEP_SUMMARY"
++            echo "pr=" >> "$GITHUB_OUTPUT"
++            exit 0
++          fi
+           # The oldest open delivery, so two waiting are taken in the order they
+           # were submitted rather than newest first.
+-          pr="$(gh pr list --repo "$REPO" --state open --json number,headRefName \
+-            --jq '[.[] | select(.headRefName | startswith("expedite/valheim-steam-"))] | sort_by(.number) | .[0].number // empty')"
++          pr="$(gh api "repos/${REPO}/pulls?state=open&per_page=100" \
++            --jq '[.[] | select(.user.login == env.HOLDER and .head.repo.full_name == env.REPO and (.head.ref | startswith("expedite/valheim-steam-")))] | sort_by(.number) | .[0].number // empty')"
+           if [ -z "$pr" ]; then
+-            echo "nothing is waiting to be released" >> "$GITHUB_STEP_SUMMARY"
++            echo "nothing ${HOLDER} opened is waiting to be released" >> "$GITHUB_STEP_SUMMARY"
+             echo "pr=" >> "$GITHUB_OUTPUT"
+             exit 0
+           fi
+@@ -543,47 +573,88 @@ jobs:
+         env:
+           GH_TOKEN: ${{ steps.token.outputs.token }}
+           PR: ${{ steps.waiting.outputs.pr }}
+-          HOLDER: ${{ vars.EXPEDITE_BOT_LOGIN }}
++          HOLDER: ${{ vars.PROCUREMENT_BOT_LOGIN }}
+         run: |
+           set -euo pipefail
+-          # Armed only when the check that bounds the order is: with no
+-          # EXPEDITE_BOT_LOGIN, enforce-standing-order has nobody to hold to it, so
+-          # nothing is merged under the bypass.
+-          if [ -z "$HOLDER" ]; then
+-            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed. No standing order is configured (EXPEDITE_BOT_LOGIN is unset), so this waits for a review."
+-            echo "merged=false" >> "$GITHUB_OUTPUT"
+-            exit 0
++          # The bypass skips the whole "protected branches" ruleset - review
++          # and required checks alike, because they are one ruleset. So the
++          # order is judged here, at the point of use, against the exact commit
++          # about to merge, rather than trusted from a check that ran earlier
++          # with whatever PROCUREMENT_BOT_LOGIN said then.
++          read -r author head target <<<"$(gh api "repos/${REPO}/pulls/${PR}" --jq '"\(.user.login) \(.head.sha) \(.base.ref)"')"
++          if [ -z "$HOLDER" ] || [ "$author" != "$HOLDER" ]; then
++            echo "::error::#${PR} was opened by ${author}, and the standing order is held by '${HOLDER}'. Nothing is merged under the bypass for anyone else."
++            exit 1
++          fi
++          base="$(gh api "repos/${REPO}/compare/${target}...${head}" --jq .merge_base_commit.sha)"
++          git fetch --no-tags --depth=1 origin "$base" "$head"
++          if ! go run -C scripts/superintendent . enforce-standing-order -author "$author" -base "$base" -head "$head"; then
++            gh pr comment "$PR" --repo "$REPO" --body "Refused under the standing order at merge time: this changes more than the image digest and Steam build. It waits for a review."
++            exit 1
+           fi
+           build="$(gh pr view "$PR" --repo "$REPO" --json headRefName --jq '.headRefName | sub("^expedite/valheim-steam-"; "")')"
++          # --admin is how a ruleset bypass actor merges: without it gh refuses
++          # on its own side ("the base branch policy prohibits the merge") and
++          # never asks. --match-head-commit makes GitHub refuse if anything was
++          # pushed after the commit judged above.
++          #
+           # An explicit message, kept inside commitlint's line limits, rather
+           # than whatever the repository's squash default assembles from the
+           # pull request body - which carries a table and long lines.
+-          if ! gh pr merge "$PR" --repo "$REPO" --squash \
++          if ! gh pr merge "$PR" --repo "$REPO" --squash --admin --match-head-commit "$head" \
+             --subject "feat: take delivery of Valheim server build ${build} (#${PR})" \
+             --body "Merged by expediting under its standing order, in the 4am release window, after every required check passed."; then
+-            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed, but the merge was refused. The expedite App is probably not a bypass actor on the review ruleset - without that this waits for a review, which is the fallback working as designed."
++            gh pr comment "$PR" --repo "$REPO" --body "Every required check passed and the change is within the standing order, but GitHub refused the merge. The procurement App is probably not a bypass actor on the \"protected branches\" ruleset; until it is, this waits for a review."
+             exit 1
+           fi
+-          echo "merged=true" >> "$GITHUB_OUTPUT"
+-          echo "build=${build}" >> "$GITHUB_OUTPUT"
++          echo "merged #${PR}: Steam build ${build}" >> "$GITHUB_STEP_SUMMARY"
+ 
+       # Production reconciles from the highest v* tag, so a merged delivery
+       # changes nothing until it is tagged. The tag is the next patch version,
+-      # on the merge commit - and it is the only step here that disturbs anyone.
++      # on the delivery's merge commit - and it is the only step here that
++      # disturbs anyone.
++      #
++      # It releases the newest delivery merged and not yet inside a tag,
++      # whoever merged it. It used to tag only what the step above had just
++      # merged, so a delivery merged by hand - which this file invites -
++      # was never released at all: #444 sat on main while the server stayed
++      # on the old build.
+       - name: Tag the release
+-        if: steps.merge.outputs.merged == 'true'
++        if: steps.window.outputs.due == 'true'
+         env:
+           GH_TOKEN: ${{ steps.token.outputs.token }}
+-          PR: ${{ steps.waiting.outputs.pr }}
+-          BUILD: ${{ steps.merge.outputs.build }}
++          HOLDER: ${{ vars.PROCUREMENT_BOT_LOGIN }}
+         run: |
+           set -euo pipefail
+-          merged="$(gh pr view "$PR" --repo "$REPO" --json mergeCommit --jq .mergeCommit.oid)"
++          if [ -z "$HOLDER" ]; then
++            exit 0
++          fi
++          read -r pr merged ref <<<"$(gh api "repos/${REPO}/pulls?state=closed&sort=updated&direction=desc&per_page=50" \
++            --jq '[.[] | select(.merged_at != null and .user.login == env.HOLDER and .head.repo.full_name == env.REPO and (.head.ref | startswith("expedite/valheim-steam-")))] | sort_by(.merged_at) | last // empty | "\(.number) \(.merge_commit_sha) \(.head.ref)"')"
++          if [ -z "${pr:-}" ]; then
++            echo "no delivery has been merged" >> "$GITHUB_STEP_SUMMARY"
++            exit 0
++          fi
+           last="$(gh api "repos/${REPO}/git/matching-refs/tags/v" --paginate --jq '.[].ref' \
+-            | sed 's#^refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
++            | sed 's#^refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
++          if [ -n "$last" ]; then
++            # "ahead": the merge commit is not inside the last release. Anything
++            # else - identical, behind - means it already shipped; diverged
++            # means the last tag is not on main's history, which is for a person.
++            status="$(gh api "repos/${REPO}/compare/${last}...${merged}" --jq .status)"
++            case "$status" in
++              ahead) ;;
++              identical|behind)
++                echo "#${pr} is already released in ${last}" >> "$GITHUB_STEP_SUMMARY"
++                exit 0 ;;
++              *)
++                echo "::error::${last} and #${pr}'s merge commit have ${status} histories; not tagging over that."
++                exit 1 ;;
++            esac
++          fi
+           last="${last:-v0.0.0}"
+           IFS=. read -r major minor patch <<<"${last#v}"
+           next="v${major}.${minor}.$((patch + 1))"
+           gh api "repos/${REPO}/git/refs" -f ref="refs/tags/${next}" -f sha="$merged" >/dev/null
+-          echo "released ${next}: Steam build ${BUILD}" >> "$GITHUB_STEP_SUMMARY"
+-          gh pr comment "$PR" --repo "$REPO" --body "Released as \`${next}\`. Production reconciles from it within about a minute."
++          echo "released ${next}: Steam build ${ref#expedite/valheim-steam-}" >> "$GITHUB_STEP_SUMMARY"
++          gh pr comment "$pr" --repo "$REPO" --body "Released as \`${next}\`. Production reconciles from it within about a minute."
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 97a2fc8..eccb3af 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -736,7 +736,7 @@ jobs:
+         run: scripts/take-delivery.sh zizmor
+ 
+       # The workflows are the part of this repository that runs with a token,
+-      # which is why this lane exists at all: it caught the expedite App's
++      # which is why this lane exists at all: it caught the procurement App's
+       # token inheriting every permission its installation held. The token
+       # below is what lets its online audits ask about the actions in use.
+       - name: Run zizmor
+diff --git a/.github/workflows/sensitive-paths.yml b/.github/workflows/sensitive-paths.yml
+index 7cc7664..019e20d 100644
+--- a/.github/workflows/sensitive-paths.yml
++++ b/.github/workflows/sensitive-paths.yml
+@@ -90,20 +90,22 @@ jobs:
+       - name: Setup Go
+         uses: $/.github/workflows/setup-go
+ 
+-      # The expedite duty's standing order, enforced here because this job is a
+-      # required check and the ruleset requiring checks has no bypass - so the
+-      # expedite App, which may skip review, cannot skip this.
++      # The expedite duty's standing order, judged here so a person reading
++      # the pull request sees the verdict. This is not what holds the App to
++      # it: the review rule and the required checks share one ruleset, so the
++      # bypass skips both, and expedite.yml judges the order again itself
++      # against the exact commit it merges.
+       #
+       # It refuses any pull request authored by that App that changes more
+       # than the game server's image digest and the Steam build recorded beside
+       # it, or that points the digest at a different image repository. For every
+       # other author it says so and passes; people are held to review, not to
+-      # this. With EXPEDITE_BOT_LOGIN unset there is no standing order, and the
++      # this. With PROCUREMENT_BOT_LOGIN unset there is no standing order, and the
+       # expedite workflow refuses to merge anything.
+       - name: Hold expediting to its standing order
+         env:
+           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+-          EXPEDITE_BOT_LOGIN: ${{ vars.EXPEDITE_BOT_LOGIN }}
++          PROCUREMENT_BOT_LOGIN: ${{ vars.PROCUREMENT_BOT_LOGIN }}
+           BASE: ${{ github.event.pull_request.base.sha }}
+           HEAD: ${{ github.event.pull_request.head.sha }}
+         run: go run -C scripts/superintendent . enforce-standing-order -base "$BASE" -head "$HEAD"
