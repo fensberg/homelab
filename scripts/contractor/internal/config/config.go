@@ -75,6 +75,7 @@ type Config struct {
 	SourceControl SourceControl        `json:"source_control"`
 	StateBackup   StateBackup          `json:"state_backup"`
 	Alerting      Alerting             `json:"alerting"`
+	Tunnel        Tunnel               `json:"tunnel"`
 	Workloads     map[string]Workload  `json:"workloads"`
 	Sites         map[string]Site      `json:"sites"`
 }
@@ -121,6 +122,35 @@ type Alerting struct {
 	// exactly the kind of value a job summary must not carry.
 	WebhookURL string `json:"webhook_url"`
 }
+
+// Tunnel is how enrolled devices reach services inside the estate from off the
+// LAN, without a port forward on the router.
+//
+// Fleet-level, like Alerting: one list of people is allowed in, and the
+// Cloudflare account it lives in is the same one object storage uses.
+//
+// Unlike Alerting it carries the three-way vendor attestation. The API token
+// here can edit the account's Zero Trust configuration - who may enroll a
+// device, and which private routes a device is given - so it is exactly the
+// kind of credential that check exists for: a swapped vault item reaching the
+// wrong vendor's API, or the right vendor's API with the wrong reach.
+type Tunnel struct {
+	// The vendor, in git. Must be "cloudflare".
+	Provider string `json:"provider"`
+	// The vendor, as attested by the vault item carrying the credentials.
+	VaultProvider string `json:"vault_provider"`
+	// Configures the provider only: never written to state.
+	APIToken string `json:"api_token"`
+	// The tunnel's password. Written to state as a resource attribute, so
+	// the contractor generates it (phases/secrets.go) rather than a person.
+	Secret string `json:"secret"`
+	// Who may enroll a device, as comma-separated email addresses. Personal
+	// data, so it lives in the vault rather than in git.
+	Members string `json:"members"`
+}
+
+// TunnelProvider is the one tunnel vendor this code implements.
+const TunnelProvider = "cloudflare"
 
 // Workload is one self-hosted application's vault-backed values.
 //
@@ -428,6 +458,18 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		"overlay_network": site.OverlayNetwork.VaultProvider,
 		"object_storage":  site.ObjectStorage.VaultProvider,
 	}
+	// The tunnel is fleet-level, but held to the same three-way agreement:
+	// its token edits who may enroll and what an enrolled device can reach.
+	if cfg.Tunnel.Provider != TunnelProvider {
+		return nil, fmt.Errorf("provider mismatch in tunnel - the config declares '%s' but this code implements '%s'. Change the code before changing the declaration", cfg.Tunnel.Provider, TunnelProvider)
+	}
+	if strings.TrimSpace(cfg.Tunnel.VaultProvider) != TunnelProvider {
+		return nil, fmt.Errorf("tunnel.vault_provider is '%s', not '%s'. The 1Password item must attest which vendor its credentials belong to", cfg.Tunnel.VaultProvider, TunnelProvider)
+	}
+	if strings.TrimSpace(cfg.Tunnel.Members) == "" {
+		return nil, fmt.Errorf("tunnel.members is empty, so nobody could enroll a device. List at least one email address in the vault")
+	}
+
 	// Sorted so a config with several concerns wrong always reports the
 	// same one first, rather than whichever the map happened to yield.
 	for _, concern := range slices.Sorted(maps.Keys(RequiredProvidersByConcern)) {

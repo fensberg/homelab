@@ -100,7 +100,14 @@ type Config struct {
 		Provider   string `json:"provider"`
 		WebhookURL string `json:"webhook_url"`
 	} `json:"alerting"`
-	Sites map[string]Site_ `json:"sites"`
+	// Fleet-level like alerting: one member list, one Cloudflare account.
+	Tunnel Tunnel_          `json:"tunnel"`
+	Sites  map[string]Site_ `json:"sites"`
+}
+
+type Tunnel_ struct {
+	Provider string `json:"provider"`
+	APIToken string `json:"api_token"`
 }
 
 type Site_ struct {
@@ -200,6 +207,13 @@ func Alerting(t *testing.T) struct {
 } {
 	t.Helper()
 	return LoadConfig(t).Alerting
+}
+
+// Tunnel is the fleet-level tunnel block: the vendor and the token that
+// manages it. The member list is personal data and no test needs it.
+func Tunnel(t *testing.T) Tunnel_ {
+	t.Helper()
+	return LoadConfig(t).Tunnel
 }
 
 func SiteConfig(t *testing.T) Site_ {

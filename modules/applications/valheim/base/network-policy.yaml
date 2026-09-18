@@ -25,13 +25,28 @@ spec:
     - Ingress
     - Egress
 
-  # NOTHING MAY REACH IT. Not a hardening flourish - a consequence of crossplay.
+  # ONE THING MAY REACH IT: the tunnel connector, on the game's two ports.
   #
-  # The server connects outbound to the relay and players reach it through
-  # that, so there is no inbound path to permit and no port forward on the
-  # router. With the Steam backend this would instead be an allowance for
-  # 2456-2457 from anywhere, which is the design this replaced.
-  ingress: []
+  # Under crossplay the server connects outbound to the relay and players
+  # reach it through that, with no inbound path at all. That relay cannot hold
+  # a player whose own network is strict (#446), so enrolled devices can also
+  # reach it through the Cloudflare Tunnel, which arrives from the cloudflared
+  # pods in the `tunnel` namespace and from nowhere else.
+  #
+  # Still no port forward on the router, and nothing from the internet at
+  # large: a packet only gets here if a device on the member list sent it.
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tunnel
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudflared
+      ports:
+        - protocol: UDP
+          port: 2456
+          endPort: 2457
 
   egress:
     # DNS, and only DNS, into the cluster.

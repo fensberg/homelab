@@ -509,6 +509,12 @@ locals {
   # rebuild.
   dmz_schematic_id = "70d243b7e2cbe699e4db5e73356a2add6b4bb8e34eadba9db22c823110e79099"
 
+  # --- tunnel --------------------------------------------------------------
+  # Required rather than defaulted, unlike alerting: its credential is held to
+  # the vendor attestation in registry.tf, and a default would be a way for
+  # that check to pass on a value nobody attested.
+  tunnel = local.config.tunnel
+
   # --- alerting ------------------------------------------------------------
   #
   # Where the estate speaks when something it monitors goes wrong. Fleet-level

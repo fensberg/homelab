@@ -68,6 +68,15 @@ provider "cloudflare" {
   api_token = local.object_storage_account.admin_token
 }
 
+# --- tunnel: Cloudflare Zero Trust --------------------------------------------
+# A token of its own rather than the bucket admin token above. This one edits
+# who may enroll a device and which private routes a device is given; the other
+# creates buckets. One leaking should not hand over the other's reach.
+provider "cloudflare" {
+  alias     = "tunnel"
+  api_token = local.tunnel.api_token
+}
+
 # --- cluster access -----------------------------------------------------------
 # Both of these read the kubeconfig the Talos resources produce. Use the
 # provider's structured output rather than parsing raw YAML: yamldecode() of an

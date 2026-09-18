@@ -386,6 +386,53 @@ no account to guess at and reaching the service is the only gate. That gate is
 `kubectl port-forward` today, and replacing it is the first duty of whatever
 exposes Grafana.
 
+### The tunnel's first consumer is the game server, reached through WARP (agreed 2026-09-18)
+
+The tunnel was meant to arrive with Grafana. It arrived first for the game
+server instead, because the operator could not play from off the LAN, and the
+alternative on the table was a router port forward.
+
+**Why not a port forward.** Remote joins fail on this server whenever it cannot
+form a direct path to the player (#446). This is a known, unresolved defect in
+Valheim's dedicated-server crossplay, reproduced in public reports line for
+line, where the only known fix is crossplay off with UDP 2456-2457 forwarded.
+Doing that on a shared worker would make the game server internet-inbound on
+the same machines as the self-hosted runner, whose token reaches the whole
+vault. The workload record judged that path "real but narrow" partly _because_
+nothing on those workers was internet-inbound. So a forward means moving it
+into a dedicated zone first.
+
+**Why the tunnel instead.** `cloudflared` dials out, and the router gets no
+open port. Only a device enrolled by somebody on the member list is given a
+route, so the server's exposure stays low and it stays on the shared workers.
+It is the model the operator stated when the tunnel was first chosen: "If
+you're not on the list you ain't getting in." The laptop joins Cloudflare,
+never the tailnet.
+
+**The shape.**
+
+- **Private routing only.** No public hostname. WARP runs in **include** mode,
+  so an enrolled device sends exactly the declared routes through Cloudflare
+  and nothing else. Include mode is also the only way the routes work at all:
+  the default exclude list covers every private range.
+- **Routes are fixed cluster addresses.** Each one is a Service with a hand-set
+  `clusterIP` from the bottom of the service range, which Kubernetes reserves
+  for addresses set by hand. `tests/go/repo/tunnel_routes_test.go` holds each
+  route and its Service together.
+- **The tunnel's API token is its own, not the bucket admin token,** and is
+  held to the three-way vendor attestation. It edits who may enroll and what
+  they reach.
+- **The tunnel's password is generated** by the contractor into the vault. It
+  is written to state, which by the rule in `phases/secrets.go` makes it ours.
+- **The member list is personal data, so it lives in the vault.**
+
+**What is not known yet.** Whether crossplay holds a player who arrives through
+the tunnel. The tunnel carries connections the player starts, and crossplay
+insists on one the _server_ starts. The first test is crossplay on, joining
+with WARP connected. If that still fails at +5 s, the second test is crossplay
+off, joining by `10.96.0.46:2456`. That drops console players, and puts the
+friend who plays today on the member list too.
+
 ## Deferred
 
 - **Log aggregation**, per Scope above. Trigger: the first incident where
