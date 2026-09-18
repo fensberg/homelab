@@ -718,6 +718,28 @@ refuses any of them running a procurement verb outside `expedite-*`; it refuses
 `procurement order` in any workflow at all, because ordering is run by a person
 and committed through review.
 
+The App was later named for the role - Fensberg Procurement - because it is
+procurement doing the expediting, and the secrets and variable became
+`PROCUREMENT_BOT_*`. The bound did not move: only `expedite-*` verbs run under
+the credential, and the guard now finds workflows by `PROCUREMENT_BOT_`.
+
+The first delivery to reach the release job (#444) found three defects at once.
+`gh pr merge` refuses a blocked pull request on its own side unless given
+`--admin`, so the bypass was never even asked for. The release job chose pull
+requests by branch name alone, and the standing-order check it relied on had
+run with a holder login one letter off the App's real slug - so it judged
+nothing and passed "as usual". And the "protected branches" ruleset holds the
+review rule and the required checks together, so a bypass actor skips both:
+the design's premise that the checks bound the bypass was false. The release
+job now takes only pull requests the holder opened, runs
+`enforce-standing-order` itself against the head it merges, and merges with
+`--match-head-commit`; `TestEveryBypassMergeIsJudgedWhereItMerges` holds any
+`--admin` merge to that. The operator then merged #444 by hand, and nothing
+tagged it - the tag step only tagged what it had just merged - so the server
+stayed on the old build. A delivery landing on `main` now triggers the release
+at once, and the tag step releases the newest merged delivery no tag contains,
+whoever merged it.
+
 Delivery branches moved from `expediter/valheim-steam-*` to
 `expedite/valheim-steam-*`. A delivery pull request open at the moment the
 patch lands would be missed by the release job; there was none.

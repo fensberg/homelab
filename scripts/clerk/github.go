@@ -42,7 +42,7 @@ const commentOnly = "COMMENT"
 //
 // TWO CONVENTIONS, AND FOLLOWING ONE USED TO BREAK THE OTHER (#382). This
 // estate has two GitHub Apps and they wanted their keys stored differently:
-// the clerk took base64 of the PEM on one line, and the expedite App takes the
+// the clerk took base64 of the PEM on one line, and the procurement App takes the
 // raw PEM, because actions/create-github-app-token cannot parse base64. Whoever set
 // up the second App naturally copied the first, which put base64 where the
 // action wanted PEM and failed at the token step with a message pointing at

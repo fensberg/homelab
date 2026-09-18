@@ -21,7 +21,7 @@ metadata:
     # "unknown" for the image pinned by hand before expediting existed: its
     # build was never recorded, so the first check will take a delivery and
     # replace both lines, which also proves the whole path end to end.
-    homelab.fensberg.com/steam-build: "unknown"
+    homelab.fensberg.com/steam-build: "25390671"
 spec:
   replicas: 1
   # Recreate, not RollingUpdate. The volume is ReadWriteOnce and the world is a
@@ -74,7 +74,7 @@ spec:
           # This carries no Renovate annotation, deliberately. The build that
           # makes this digest already knows it; asking a bot to watch this
           # estate's own registry to rediscover it would be circular (#375).
-          image: ghcr.io/fensberg/homelab-valheim@sha256:6b17c2f9c6e02147eca047a92a5b9af3454c38d1bf8edc6d3a0634338dc98b05
+          image: ghcr.io/fensberg/homelab-valheim@sha256:f5181088ab0047438b53c02e583e26af391604f9af174f04cc163a9e7792f0fd
 
           securityContext:
             allowPrivilegeEscalation: false
