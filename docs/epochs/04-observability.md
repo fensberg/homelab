@@ -426,6 +426,13 @@ never the tailnet.
   is written to state, which by the rule in `phases/secrets.go` makes it ours.
 - **The member list is personal data, so it lives in the vault.**
 
+**The enrollment application is adopted, never created.** The first converge
+stopped on `application_already_exists`: Cloudflare creates the `warp`-type
+Access application along with every Zero Trust organisation and allows only
+one. `tunnel.tf` now finds it by the name Cloudflare gives it and imports it
+(#453). The pull request had named this as a risk. A risk named in a PR body
+is still a risk: it should have been designed out before the first apply.
+
 **What is not known yet.** Whether crossplay holds a player who arrives through
 the tunnel. The tunnel carries connections the player starts, and crossplay
 insists on one the _server_ starts. The first test is crossplay on, joining
