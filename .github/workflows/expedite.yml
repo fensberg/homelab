@@ -241,14 +241,30 @@ jobs:
           # cannot quietly start retrying a check. steamcmd is on that list
           # because Valve's app_info lookup reports no public build under load,
           # which has nothing to do with the change being tested.
+          # +app_info_request before +app_info_print (#440). SteamCMD answers
+          # a print from its local cache, and a cache with nothing in it prints
+          # no branches at all - which the parser below reads as "no public
+          # build". Requesting first asks Steam rather than the cache.
+          #
+          # That is the likely cause of every failure since 17 September, and
+          # it is not a proven one: the step used to throw away SteamCMD's
+          # output, so nothing recorded what it actually said. The output is
+          # printed on failure now, and the next run confirms or refutes this.
           info=""
           if scripts/retry.sh 3 15 "$steam/steamcmd.sh" +login anonymous \
-            +app_info_update 1 +app_info_print "$APP_ID" +quit >"$TMPDIR/steam.out" 2>&1; then
+            +app_info_update 1 +app_info_request "$APP_ID" +app_info_print "$APP_ID" +quit >"$TMPDIR/steam.out" 2>&1; then
             info="$(cat "$TMPDIR/steam.out")"
           fi
           build="$(awk '/"branches"/ {b=1} b && /"public"/ {p=1} p && /"buildid"/ {gsub(/[^0-9]/, ""); print; exit}' <<<"$info")"
           if [ -z "$build" ]; then
-            echo "::error::Steam reported no public build for app ${APP_ID}, so there is nothing to compare"
+            # Keep the evidence (#440). This step used to fail with one line
+            # and the output that would have explained it discarded, and that
+            # is how a week of failures produced nothing anybody could read.
+            # SteamCMD logs in anonymously, so there is no credential in it.
+            echo "::group::What SteamCMD printed (last 80 lines)"
+            tail -n 80 "$TMPDIR/steam.out" 2>/dev/null || echo "(no output was captured)"
+            echo "::endgroup::"
+            echo "::error::Steam reported no public build for app ${APP_ID}, so there is nothing to compare. SteamCMD's own output is in the group above."
             exit 1
           fi
 
