@@ -191,6 +191,35 @@ registries:
       Pinned by digest at its point of use like every other image here, which
       is what makes "Grafana Labs" rather than "whatever :latest resolves to"
       the thing being approved.
+
+  - host: docker.io
+    namespace: cloudflare
+    reason: >-
+      Cloudflare's own images, for cloudflared: the connector that runs inside
+      the cluster, dials out to Cloudflare, and carries a Cloudflare Tunnel.
+      It is how anything here is reached from outside the house without a
+      port forward on the router. Cloudflare is already a supplier (object
+      storage, and the OpenTofu provider above), so this is the same party
+      delivering a second artefact rather than a new party.
+
+      What it would run with: the tunnel's token, which lets it serve that one
+      tunnel and nothing else in the Cloudflare account, and a network policy
+      allowing it the Cloudflare edge outbound and the specific in-cluster
+      targets published through it. First consumer: the game server, reached
+      by enrolled devices through Cloudflare's WARP client, so players off the
+      LAN can join without opening a port (#446). Grafana is next.
+
+      Cloudflare publishes the image nowhere else. Probed rather than assumed:
+      docker.io/cloudflare/cloudflared answers, ghcr.io returns 404 for the
+      same path and quay.io refuses it. So the choice was this, mirroring it
+      into this estate's own registry, or no tunnel. Approved as its own entry,
+      like Grafana's, so it can be removed on its own.
+
+      Replaces nothing: there is no inbound path today. The alternative it
+      avoids is a router port forward to the game server, which would have
+      moved that workload into a dedicated zone. Pinned by digest at its point
+      of use like every other image here.
+
 # Helm chart sources. Charts are as much a supply chain as images - a chart
 # decides what images get deployed, so an unapproved chart repository is an
 # unapproved registry one level up.
