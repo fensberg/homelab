@@ -13,4 +13,5 @@ resources:
   - service-account.yaml
   - world.yaml
   - network-policy.yaml
+  - experiment-open.yaml
   - deployment.yaml
