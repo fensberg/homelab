@@ -1,5 +1,5 @@
 diff --git a/.github/workflows/expedite.yml b/.github/workflows/expedite.yml
-index 233daf6..ae41508 100644
+index 233daf6..aeeb50c 100644
 --- a/.github/workflows/expedite.yml
 +++ b/.github/workflows/expedite.yml
 @@ -64,8 +64,19 @@ name: "Expedite"
@@ -8,19 +8,19 @@ index 233daf6..ae41508 100644
  #
 -#   secrets.EXPEDITE_BOT_APP_ID        the GitHub App's ID or client ID - the
 -#                                      token action accepts either
-+#   secrets.EXPEDITE_BOT_APP_ID        the GitHub App's CLIENT ID, the one
++#   secrets.EXPEDITE_BOT_CLIENT_ID     the GitHub App's Client ID, the one
 +#                                      beginning "Iv", from the App's
-+#                                      settings page. Not the numeric App ID
-+#                                      and not an installation ID: it is
-+#                                      passed as `client-id`, which the
-+#                                      pinned token action documents as
-+#                                      "GitHub App Client ID" - its numeric
-+#                                      `app-id` input is separate and
-+#                                      deprecated. This comment used to say
-+#                                      the action "accepts either", and every
-+#                                      delivery from 12 September failed
++#                                      settings page. It is passed as
++#                                      `client-id`, which the pinned token
++#                                      action documents as "GitHub App Client
++#                                      ID"; its numeric `app-id` input is
++#                                      separate. This was EXPEDITE_BOT_APP_ID,
++#                                      a name for a different value, and
++#                                      every delivery from 12 September failed
 +#                                      minting a token with "Integration not
-+#                                      found" (#439).
++#                                      found" (#439). The name now says what
++#                                      the value is, and a guard holds every
++#                                      token input to that.
  #   secrets.EXPEDITE_BOT_PRIVATE_KEY   its private key, the .pem exactly as
  #                                      GitHub generated it, newlines and all.
  #                                      actions/create-github-app-token cannot
@@ -62,3 +62,21 @@ index 233daf6..ae41508 100644
              echo "::endgroup::"
              echo "::error::Steam reported no public build for app ${APP_ID}, so there is nothing to compare. SteamCMD's own output is in the group above."
              exit 1
+@@ -319,7 +328,7 @@ jobs:
+         if: steps.build.outputs.deliver == 'true'
+         uses: $/.github/workflows/app-token
+         with:
+-          client-id: ${{ secrets.EXPEDITE_BOT_APP_ID }}
++          client-id: ${{ secrets.EXPEDITE_BOT_CLIENT_ID }}
+           private-key: ${{ secrets.EXPEDITE_BOT_PRIVATE_KEY }}
+           # Only what the steps below use, not everything the App was granted
+           # at installation (zizmor's github-app audit). Contents to commit the
+@@ -476,7 +485,7 @@ jobs:
+         if: steps.window.outputs.due == 'true'
+         uses: $/.github/workflows/app-token
+         with:
+-          client-id: ${{ secrets.EXPEDITE_BOT_APP_ID }}
++          client-id: ${{ secrets.EXPEDITE_BOT_CLIENT_ID }}
+           private-key: ${{ secrets.EXPEDITE_BOT_PRIVATE_KEY }}
+           # Contents to merge and tag; pull requests to find, comment on and
+           # merge; checks and statuses to see whether the required checks passed.
