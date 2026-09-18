@@ -118,10 +118,34 @@ resource "cloudflare_zero_trust_access_policy" "members" {
 
 # Device enrollment is an Access application of type `warp`: enrolling a WARP
 # client is a login to it, and the policy above decides who succeeds.
+#
+# ADOPTED, NEVER CREATED. Cloudflare creates this application along with every
+# Zero Trust organisation and allows only one, so creating it fails with
+# `application_already_exists` - which is how the first converge of this file
+# ended (#453). The organisation's own application is found by the name
+# Cloudflare gives it and imported, so OpenTofu manages the one that exists.
+# The id comes from Cloudflare rather than from git; once the application is
+# in state the import is a no-op.
+locals {
+  enrollment_app_name = "Warp Login App"
+}
+
+data "cloudflare_zero_trust_access_application" "enrollment" {
+  provider   = cloudflare.tunnel
+  account_id = local.object_storage_account.account_id
+  name       = local.enrollment_app_name
+}
+
+import {
+  provider = cloudflare.tunnel
+  to       = cloudflare_zero_trust_access_application.enrollment
+  id       = "${local.object_storage_account.account_id}/${data.cloudflare_zero_trust_access_application.enrollment.id}"
+}
+
 resource "cloudflare_zero_trust_access_application" "enrollment" {
   provider         = cloudflare.tunnel
   account_id       = local.object_storage_account.account_id
-  name             = "Warp Login App"
+  name             = local.enrollment_app_name
   type             = "warp"
   session_duration = "24h"
   policies         = [cloudflare_zero_trust_access_policy.members.id]
