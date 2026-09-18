@@ -2,6 +2,11 @@ package main
 
 // What the clerk is asked.
 //
+// The platform facts in findingRules are each a false positive the clerk
+// actually produced, recorded where every prompt reads them rather than argued
+// with in a pull request thread. `$/` was reported as invalid syntax on #442,
+// in the same run where the step using it had succeeded.
+//
 // Never "where do the docs and the code disagree" in one breath. Asked that
 // way, a reader sees the claim first and reads the code looking for it, and
 // reports agreement it was primed to find. So the reading happens blind and
@@ -18,6 +23,9 @@ Rules that apply to every finding:
 - A finding you cannot pin to a path and a line does not go in the list. There is no way to report one.
 - Say what is wrong and where. Do not suggest a rewrite, do not praise anything, do not describe the file as a whole.
 - Report nothing you are not reasonably sure of. An empty list is a fine answer.
+
+Facts about the platforms in this repository that a reader has previously reported as mistakes. They are not mistakes; do not report them:
+- In a GitHub Actions workflow, "uses: $/<path>" is the self-repository action reference. It resolves the action at the commit being run, and it is valid syntax that every workflow here depends on.
 `
 
 // blindPrompt reads the work without being told anything about it.

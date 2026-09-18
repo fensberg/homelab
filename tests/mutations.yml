@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 119
+floor: 121
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -966,7 +966,7 @@ mutations:
           steps:
             - name: Mint the expedite token
               env:
-                APP: ${{ secrets.EXPEDITE_BOT_APP_ID }}
+                APP: ${{ secrets.EXPEDITE_BOT_CLIENT_ID }}
               run: echo minted
             - name: A procurement verb that is not expediting
               run: go run -C scripts/procurement . reconcile-suppliers
@@ -986,6 +986,41 @@ mutations:
       -short is the push budget. In CI it would skip the mutation ledger, the
       comment-stripping re-run and every other heavy guard with a green
       result, and nothing anywhere would run them.
+
+  - guard: TestEveryAppTokenInputIsFedTheValueItsNameSays
+    file: .github/workflows/token-fed-the-wrong-kind-of-id.yml
+    create: |
+      name: "Token fed the wrong kind of id"
+      on: workflow_dispatch
+      permissions:
+        contents: read
+      jobs:
+        mint:
+          runs-on: ubuntu-latest
+          timeout-minutes: 5
+          steps:
+            - name: Mint a token
+              uses: $/.github/workflows/app-token
+              with:
+                client-id: ${{ secrets.SOMETHING_BOT_APP_ID }}
+                private-key: ${{ secrets.SOMETHING_BOT_PRIVATE_KEY }}
+    mentions: "Integration not found"
+    why: >
+      A secret named for the numeric App ID and fed to the client-id input is
+      exactly how every expedite token mint failed for a week (#439): the
+      name described one value, the input wanted another, and nothing
+      compared the two.
+
+  - guard: TestNoWorkflowStepReadsTMPDIR
+    file: .github/workflows/pr-validation.yml
+    find: "run: go test ./..."
+    replace: 'run: go test ./... > "$TMPDIR/test.out"'
+    mentions: "reads $TMPDIR"
+    why: >
+      GitHub-hosted runners do not set TMPDIR, so under set -u a reference to
+      it fails the step before it does anything. That is how every game
+      server update from 17 September failed as "no public build" - a symptom
+      pointing at Valve rather than at the line that caused it (#440).
 
   - guard: TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith
     file: scripts/take-delivery.sh
