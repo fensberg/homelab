@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 119
+floor: 120
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -986,6 +986,17 @@ mutations:
       -short is the push budget. In CI it would skip the mutation ledger, the
       comment-stripping re-run and every other heavy guard with a green
       result, and nothing anywhere would run them.
+
+  - guard: TestNoWorkflowStepReadsTMPDIR
+    file: .github/workflows/pr-validation.yml
+    find: "run: go test ./..."
+    replace: 'run: go test ./... > "$TMPDIR/test.out"'
+    mentions: "reads $TMPDIR"
+    why: >
+      GitHub-hosted runners do not set TMPDIR, so under set -u a reference to
+      it fails the step before it does anything. That is how every game
+      server update from 17 September failed as "no public build" - a symptom
+      pointing at Valve rather than at the line that caused it (#440).
 
   - guard: TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith
     file: scripts/take-delivery.sh
