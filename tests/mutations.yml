@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 121
+floor: 123
 
 mutations:
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
@@ -941,7 +941,7 @@ mutations:
           steps:
             - name: Mint the expedite token
               env:
-                KEY: ${{ secrets.EXPEDITE_BOT_PRIVATE_KEY }}
+                KEY: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
               run: echo minted
             - name: Order the lock
               run: go run -C scripts/procurement . order
@@ -966,7 +966,7 @@ mutations:
           steps:
             - name: Mint the expedite token
               env:
-                APP: ${{ secrets.EXPEDITE_BOT_CLIENT_ID }}
+                APP: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
               run: echo minted
             - name: A procurement verb that is not expediting
               run: go run -C scripts/procurement . reconcile-suppliers
@@ -1010,6 +1010,51 @@ mutations:
       exactly how every expedite token mint failed for a week (#439): the
       name described one value, the input wanted another, and nothing
       compared the two.
+
+  - guard: TestEveryBypassMergeIsJudgedWhereItMerges
+    file: .github/workflows/bypass-merge-rides-along.yml
+    create: |
+      name: "Bypass merge rides along"
+      on: workflow_dispatch
+      permissions:
+        contents: read
+      jobs:
+        release:
+          runs-on: ubuntu-latest
+          timeout-minutes: 5
+          steps:
+            - name: Judge
+              run: go run -C scripts/superintendent . enforce-standing-order
+            - name: Merge
+              run: |
+                gh pr merge "$PR" --squash --admin
+    mentions: "without --match-head-commit"
+    why: >
+      The bypass skips review and required checks alike. Without naming the
+      commit it judged, a push landing between the verdict and the merge goes
+      in unreviewed and unchecked.
+
+  - guard: TestEveryBypassMergeIsJudgedWhereItMerges
+    file: .github/workflows/bypass-merge-unjudged.yml
+    create: |
+      name: "Bypass merge unjudged"
+      on: workflow_dispatch
+      permissions:
+        contents: read
+      jobs:
+        release:
+          runs-on: ubuntu-latest
+          timeout-minutes: 5
+          steps:
+            - name: Merge
+              run: |
+                gh pr merge "$PR" --squash --admin --match-head-commit "$HEAD"
+    mentions: "never runs enforce-standing-order"
+    why: >
+      The Sensitive Paths check that judges the standing order is one of the
+      checks the bypass skips, and it had run under a holder login that
+      matched nobody. A merge under the bypass is bounded only by a judgement
+      made in the job that merges.
 
   - guard: TestNoWorkflowStepReadsTMPDIR
     file: .github/workflows/pr-validation.yml

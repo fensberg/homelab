@@ -736,7 +736,7 @@ jobs:
         run: scripts/take-delivery.sh zizmor
 
       # The workflows are the part of this repository that runs with a token,
-      # which is why this lane exists at all: it caught the expedite App's
+      # which is why this lane exists at all: it caught the procurement App's
       # token inheriting every permission its installation held. The token
       # below is what lets its online audits ask about the actions in use.
       - name: Run zizmor

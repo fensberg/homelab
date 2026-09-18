@@ -21,14 +21,17 @@ import (
 // feels like buying. It belongs to the expediting duty, not to procurement as a
 // role: procurement's other duties run under no such credential (#416).
 //
-// This is what makes it that narrow. It runs in a required check the holder
-// cannot skip - bypassing the review ruleset does not bypass the one requiring
-// checks - and refuses any pull request authored by the holder that changes
-// anything except the game server's image digest and the Steam build recorded
-// beside it. It also refuses a digest from a different image repository, which
-// is the change that would read exactly like a routine update in a diff.
+// This is what makes it that narrow. It refuses any pull request authored by
+// the holder that changes anything except the game server's image digest and
+// the Steam build recorded beside it. It runs twice: in the Sensitive Paths
+// check, so the verdict is visible on the pull request, and in expedite.yml
+// immediately before the merge, against the exact head commit merged. The
+// second is the one that binds, because the review rule and the required
+// checks share one ruleset and a bypass actor skips both. It also refuses a
+// digest from a different image repository, which is the change that would
+// read exactly like a routine update in a diff.
 //
-// The holder's login comes from the EXPEDITE_BOT_LOGIN repository variable, so
+// The holder's login comes from the PROCUREMENT_BOT_LOGIN repository variable, so
 // no name of this estate is written here. With it unset there is no standing
 // order: every pull request is judged by review as usual, and the expedite
 // workflow refuses to merge anything - so the bypass is never used with this
@@ -36,7 +39,7 @@ import (
 func enforceStandingOrder(args []string) int {
 	fs := flag.NewFlagSet("enforce-standing-order", flag.ExitOnError)
 	author := fs.String("author", os.Getenv("PR_AUTHOR"), "the pull request's author login")
-	holder := fs.String("holder", os.Getenv("EXPEDITE_BOT_LOGIN"), "the login the standing order was given to")
+	holder := fs.String("holder", os.Getenv("PROCUREMENT_BOT_LOGIN"), "the login the standing order was given to")
 	base := fs.String("base", "", "the pull request's base commit")
 	head := fs.String("head", "", "the pull request's head commit")
 	pin := fs.String("pin", "modules/applications/valheim/base/deployment.yaml", "the one file the order covers")
@@ -44,7 +47,7 @@ func enforceStandingOrder(args []string) int {
 
 	switch {
 	case *holder == "":
-		fmt.Println("no standing order is configured (EXPEDITE_BOT_LOGIN is unset), so nothing is merged under one")
+		fmt.Println("no standing order is configured (PROCUREMENT_BOT_LOGIN is unset), so nothing is merged under one")
 		return 0
 	case *author != *holder:
 		fmt.Printf("%s holds no standing order; this pull request is reviewed as usual\n", *author)

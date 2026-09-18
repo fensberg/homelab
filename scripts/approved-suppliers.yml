@@ -804,7 +804,7 @@ tools:
     pypi: zizmor
     reason: >-
       Static analysis for GitHub Actions workflows, which are the part of this
-      repository that runs with a token. It caught the expedite App's token
+      repository that runs with a token. It caught the procurement App's token
       inheriting every permission the installation held, which nothing else
       here would have said a word about.
   - source: koalaman/shellcheck
