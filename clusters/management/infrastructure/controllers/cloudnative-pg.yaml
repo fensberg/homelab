@@ -43,8 +43,11 @@ spec:
     # is not in the data path, and a restart only pauses reconciliation.
     replicaCount: 1
     monitoring:
-      # Turn on once Prometheus exists on this cluster.
-      podMonitorEnabled: false
+      # Prometheus exists on this cluster now (#416 recorded this flag as the
+      # first thing epoch 04 flips). The PodMonitor it creates is picked up
+      # because the Prometheus in kube-prometheus-stack.yaml watches every
+      # namespace rather than only its own release's objects.
+      podMonitorEnabled: true
 
     # Critical, and off the machines holding quorum.
     #

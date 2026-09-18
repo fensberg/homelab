@@ -201,6 +201,238 @@ Two things fall out of it that a graph does not give:
   way "the graph looks high" is not, and the schedule is what X is expressed
   against.
 
+### What this epoch deploys, and where each answer goes (agreed 2026-09-17)
+
+Four questions were settled with the operator before anything was built.
+
+**The stack is kube-prometheus-stack, with Grafana.** Prometheus, Alertmanager,
+node-exporter, kube-state-metrics and the operator, plus metrics-server beside
+it so `kubectl top` answers at all.
+
+The operator asked the right question about that chart source - why not take
+Prometheus from the Prometheus project - and the answer is that **the project
+publishes no chart**. It publishes the server, Alertmanager and node-exporter,
+as images on quay.io. The charts live in `prometheus-community`, "Prometheus
+Monitoring Community Projects", which is under the umbrella and explicitly not
+the core team; the operator lives in `prometheus-operator`, whose own
+description says it "is an independent project from the Prometheus project".
+So there is no straight-to-source option for a Kubernetes deployment, only
+three assemblies: this chart, the operator's own jsonnet (a toolchain this
+repository does not have), or writing every manifest here and owning upstream's
+RBAC and scrape configuration forever - which also drops the operator and makes
+`podMonitorEnabled` meaningless. The chart is the same shape every other
+component here already arrives in.
+
+**metrics-server does not come from a chart.** kubernetes-sigs publishes a
+single `components.yaml` release manifest beside it, and one Deployment plus an
+APIService needs no Helm indirection. Taken that way, pinned by digest from
+registry.k8s.io, which is already an approved registry - so this epoch adds one
+chart source rather than two. The operator's CRDs are what
+`cloudnative-pg.yaml`'s `podMonitorEnabled: false` has been waiting for.
+Grafana was the arguable half - the decision above says the deliverable is a
+panel schedule rather than a dashboard, and a dashboard tool invites the
+opposite - and it is taken anyway because the load-bearing measurement of this
+epoch, requested against actually used, is an exploration before it is a
+threshold. The discipline stays where it was: the thresholds get written into
+this record, and Grafana is where the question is asked rather than where the
+answer lives.
+
+**Prometheus gets a 20 GiB volume, and that is bounded by the disk that
+exists.** Each worker carries a 32 GiB data disk at `/var/mnt/storage`, which
+is the whole pool `openebs-hostpath` hands out of, already shared with the
+state database. Fifteen days of a cluster this size is 2-5 GiB - roughly 15-20k
+active series at a sample every 15 seconds, at about two bytes a sample - so
+20 GiB is four to five times the estimate and still leaves the disk room. The
+operator asked for 100 GiB on the "go big, then scale down" principle; it does
+not fit without growing every worker's disk through a converge, and a hostpath
+volume cannot be expanded in place anyway, so starting big costs the same
+recreation later that starting modest does. `retentionSize` is set just under
+the volume, so Prometheus evicts rather than filling a disk the database is
+also writing to.
+
+**Grafana comes from Docker Hub, because it comes from nowhere else.** Probed:
+`docker.io/grafana/grafana` answers and the same path on ghcr.io and quay.io
+does not. That needed a supplier decision rather than a shrug, because the
+docker.io entry approved Docker Official Images for build bases and asserted
+that nothing in the cluster pulls from there at runtime - which was already
+untrue, since OpenEBS' provisioner does, and it is the component handing out
+every volume. Grafana Labs is now its own entry beside the Official Images one,
+so it can be removed on its own, and the false sentence is corrected rather
+than left standing. Mirroring the image into this estate's registry was
+considered and deferred: a new mechanism to re-run on every bump, which would
+not change OpenEBS' dependency on the same registry anyway.
+
+**Cost, stated before it is spent.** The control planes are 4 cores and 4 GiB;
+the workers offer about 7.2 GiB allocatable each and run at 35-39% of it. The
+stack is roughly 1.2 GiB with Grafana, on the workers. That is affordable and
+it is also the first thing the new measurements will judge - if the panel
+schedule says this is the wrong tenant for this estate, that is a finding
+rather than an embarrassment.
+
+**An alert becomes a GitHub issue.** A scheduled job on the self-hosted runner
+asks Prometheus what is firing, opens one issue per alert, and closes it when
+the alert clears - so notification is GitHub's job, which already reaches the
+operator, and a firing alert cannot be scrolled past. No new vendor, no
+credential the estate does not already hold, and no inbound path.
+
+Google Chat was the operator's preference and is **not available**: incoming
+webhooks require a Business or Enterprise Workspace account and an
+administrator setting, which this estate does not have. Worth recording what
+was learned in case that changes, because it shapes the adapter rather than
+just the destination: the webhook URL carries `key` and `token` query
+parameters and **is itself the whole credential**, there is no auth header, the
+quota is one request per second per space shared by every webhook in it, a
+message is capped at 32,000 bytes, and `threadKey` is what keeps every firing
+of one alert in a single thread. The delivery step is therefore written as a
+formatter and a destination rather than as "open an issue", so Chat, Discord or
+email later is a URL and a shape, not a redesign.
+
+**The mesh check is node-exporter's textfile collector.** A timer runs
+`contractor survey` on each hypervisor and writes its row of the pairwise
+matrix where node-exporter publishes it; Prometheus scrapes the hypervisors
+over the overlay. One mechanism gives both the matrix this epoch's first driver
+demands and host metrics for the hypervisors, which nothing watches today. A
+Pushgateway was rejected: a stale push and a fresh one look identical unless
+something checks a timestamp, and the fault being watched for is exactly the
+one that stops pushes arriving.
+
+**Grafana is reached through Cloudflare Tunnel, behind Cloudflare Access.**
+The operator chose the tunnel over an overlay-only service. Two consequences,
+recorded because they were accepted rather than discovered: it builds the
+tunnel epoch 03 wants for the website, so part of that epoch lands inside this
+one; and Access goes in front, because the alternative is Grafana's own login
+page on the public internet. Cloudflare is already an approved supplier.
+
+**The tunnel comes early, not late.** The operator asked for Cloudflare Tunnel
+sooner rather than later, so it lands with the deployment rather than after the
+thresholds - Grafana is reachable the day it exists, and epoch 03 inherits a
+tunnel that has been carrying something real.
+
+**The work lands in three pull requests**, in this order: the chart suppliers,
+with the justification for each; the stack deployed with short retention and no
+alerts, so it starts gathering the requested-against-used data; then the panel
+schedule and the thresholds, with alerts wired to them once there is a week of
+data to write them from. The middle step is deliberately a measurement rather
+than a configuration: every threshold in this record is meant to have a
+denominator taken from this estate rather than from an article about somebody
+else's.
+
+### Alerts go to Slack, and the acceptance test is the Watchdog (agreed 2026-09-17)
+
+**Slack, through the receiver Alertmanager already ships.** No bespoke relay,
+no GitHub identity inside the estate, nothing to write. The webhook URL is the
+whole credential - an incoming webhook authenticates by being known - so it
+arrives from the vault as `alerting.webhook_url`, lands in a Secret created by
+`management/cluster/monitoring.tf`, and Alertmanager reads it from a file
+rather than from its own configuration, which the operator renders into a
+secret of its own.
+
+`alerting` is fleet-level, like `workloads`, because one person reads the
+alerts and a second site would report into the same place. It declares
+`provider` so a reviewer sees the vendor in git, and carries no
+`vault_provider` attestation: that check exists to stop one vendor's
+credentials reaching another vendor's API, and the worst case here is messages
+arriving in the wrong chat.
+
+**What was designed and thrown away, because it is the useful part of this
+record.** The operator asked for an issue to be opened when somebody logs into
+the game server, as an acceptance test that alerting works end to end. That
+produced a design with a log-reading exporter, a new program to turn alerts
+into issues, a GitHub App credential inside the cluster and a container image
+to publish - at which point the operator's objection landed: _"we aren't the
+first people to ever setup a Prometheus / Grafana capabilities. What is
+standard / enterprise?"_
+
+The standard answers were already present and unused:
+
+- **Alert delivery** is Alertmanager's own receivers - Slack, email, PagerDuty,
+  Discord, Telegram and the rest are native. A GitHub issue is not a standard
+  alert destination, which is why every version of that design required
+  writing something.
+- **Proving the path** is the `Watchdog` alert that kube-prometheus-stack
+  already enables: it fires permanently, by design, so that its ABSENCE is the
+  signal. The dead-man's-switch pattern, shipped in the chart this epoch
+  already deployed.
+- **Alerting on a log line** is Loki's ruler, not a bespoke exporter. Written
+  up as #436 and deferred: the benefit is retrospective, the trigger it was
+  deferred behind has not fired, and the reason it was asked for has
+  evaporated now that Watchdog is doing the job.
+
+So the acceptance criterion is not "an issue appears when a player joins". It
+is **an alert reaches a person, proven by the Watchdog heartbeat arriving and
+by a deliberate drill** - which is the property the player login was standing
+in for.
+
+**Watchdog is routed to Slack every twelve hours rather than to nowhere.**
+Routing it nowhere would prove nothing; routing it at the normal interval
+would be noise. Twice a day is a heartbeat whose absence a person can notice -
+and _noticing an absence is a human job, which is this arrangement's weakness
+rather than a claim about it._ The stronger answer is a dead-man's-snitch
+service that reports when pings stop.
+
+**Security patrol cannot be that snitch, and the reason is worth recording.**
+It runs on a GitHub-hosted runner deliberately outside the estate, and it holds
+no credential that reaches in - putting a tailnet key at GitHub is the trade it
+explicitly refuses. So it can see that the estate's GitHub-visible liveness has
+stopped, which is the failure it was built for, and it cannot see Alertmanager.
+Making it the snitch would need the estate to write a heartbeat somewhere
+patrol can read - an object in R2 - plus a read credential stored at GitHub.
+That is a real option and it was declined for now, not overlooked.
+
+**Grafana has no password and no basic auth.** The chart ships an admin secret
+with a password everybody knows, and disabling the login form leaves the HTTP
+API accepting it - a door with the sign taken down. Both are off, so there is
+no account to guess at and reaching the service is the only gate. That gate is
+`kubectl port-forward` today, and replacing it is the first duty of whatever
+exposes Grafana.
+
+### The tunnel's first consumer is the game server, reached through WARP (agreed 2026-09-18)
+
+The tunnel was meant to arrive with Grafana. It arrived first for the game
+server instead, because the operator could not play from off the LAN, and the
+alternative on the table was a router port forward.
+
+**Why not a port forward.** Remote joins fail on this server whenever it cannot
+form a direct path to the player (#446). This is a known, unresolved defect in
+Valheim's dedicated-server crossplay, reproduced in public reports line for
+line, where the only known fix is crossplay off with UDP 2456-2457 forwarded.
+Doing that on a shared worker would make the game server internet-inbound on
+the same machines as the self-hosted runner, whose token reaches the whole
+vault. The workload record judged that path "real but narrow" partly _because_
+nothing on those workers was internet-inbound. So a forward means moving it
+into a dedicated zone first.
+
+**Why the tunnel instead.** `cloudflared` dials out, and the router gets no
+open port. Only a device enrolled by somebody on the member list is given a
+route, so the server's exposure stays low and it stays on the shared workers.
+It is the model the operator stated when the tunnel was first chosen: "If
+you're not on the list you ain't getting in." The laptop joins Cloudflare,
+never the tailnet.
+
+**The shape.**
+
+- **Private routing only.** No public hostname. WARP runs in **include** mode,
+  so an enrolled device sends exactly the declared routes through Cloudflare
+  and nothing else. Include mode is also the only way the routes work at all:
+  the default exclude list covers every private range.
+- **Routes are fixed cluster addresses.** Each one is a Service with a hand-set
+  `clusterIP` from the bottom of the service range, which Kubernetes reserves
+  for addresses set by hand. `tests/go/repo/tunnel_routes_test.go` holds each
+  route and its Service together.
+- **The tunnel's API token is its own, not the bucket admin token,** and is
+  held to the three-way vendor attestation. It edits who may enroll and what
+  they reach.
+- **The tunnel's password is generated** by the contractor into the vault. It
+  is written to state, which by the rule in `phases/secrets.go` makes it ours.
+- **The member list is personal data, so it lives in the vault.**
+
+**What is not known yet.** Whether crossplay holds a player who arrives through
+the tunnel. The tunnel carries connections the player starts, and crossplay
+insists on one the _server_ starts. The first test is crossplay on, joining
+with WARP connected. If that still fails at +5 s, the second test is crossplay
+off, joining by `10.96.0.46:2456`. That drops console players, and puts the
+friend who plays today on the member list too.
+
 ## Deferred
 
 - **Log aggregation**, per Scope above. Trigger: the first incident where

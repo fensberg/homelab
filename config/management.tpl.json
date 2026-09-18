@@ -22,6 +22,19 @@
     "recipient": "{{ op://homelab/state_backup/recipient }}"
   },
 
+  "tunnel": {
+    "provider": "cloudflare",
+    "vault_provider": "{{ op://homelab/tunnel/provider }}",
+    "api_token": "{{ op://homelab/tunnel/api_token }}",
+    "secret": "{{ op://homelab/tunnel/secret }}",
+    "members": "{{ op://homelab/tunnel/members }}"
+  },
+
+  "alerting": {
+    "provider": "slack",
+    "webhook_url": "{{ op://homelab/alerting/webhook_url }}"
+  },
+
   "workloads": {
     "valheim": {
       "name": "{{ op://homelab/valheim/name }}",

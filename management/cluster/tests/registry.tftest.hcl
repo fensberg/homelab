@@ -76,6 +76,20 @@ run "unimplemented_vendor_fails_even_when_config_and_vault_agree" {
   expect_failures = [terraform_data.invariants]
 }
 
+run "tunnel_vendor_mismatch_fails_its_precondition" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/tunnel-vendor-mismatch.json"
+  }
+
+  plan_options {
+    target = [terraform_data.invariants]
+  }
+
+  expect_failures = [terraform_data.invariants]
+}
+
 run "missing_vault_provider_fails_its_precondition" {
   command = plan
 

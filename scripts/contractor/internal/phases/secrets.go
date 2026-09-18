@@ -43,7 +43,40 @@ func ensureGeneratedSecrets(ctx *run.Context) error {
 	if err := ensureStatePassword(ctx); err != nil {
 		return err
 	}
+	if err := ensureTunnelSecret(); err != nil {
+		return err
+	}
 	return assertBackupKeypair(ctx)
+}
+
+// TunnelSecretRef is the tunnel's password. Fleet-level, like the tunnel.
+const TunnelSecretRef = "op://homelab/tunnel/secret"
+
+// ensureTunnelSecret generates the Cloudflare Tunnel's password.
+//
+// It belongs here by this file's rule rather than by judgement: the provider
+// takes it as a resource attribute, so it is written to state, so it is ours
+// to generate and eventually rotate. Nobody reads it - cloudflared runs from
+// the token Cloudflare derives from it.
+//
+// The provider wants 32 or more bytes, base64-encoded. The password generator
+// is letters and digits only; management/cluster/tunnel.tf base64-encodes it,
+// and 44 characters carries more than 32 bytes of it and ~260 bits.
+func ensureTunnelSecret() error {
+	ref, err := onepassword.ParseRef(TunnelSecretRef)
+	if err != nil {
+		return err
+	}
+	_, status, err := onepassword.EnsureField(ref, func() (string, error) {
+		return secrets.Password(44)
+	})
+	if err != nil {
+		return fmt.Errorf("tunnel secret: %w", err)
+	}
+	if status == "generated" {
+		run.Ok("generated a tunnel secret and stored it in 1Password")
+	}
+	return nil
 }
 
 func ensureStatePassword(ctx *run.Context) error {

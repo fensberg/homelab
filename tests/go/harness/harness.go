@@ -94,7 +94,20 @@ type Config struct {
 		AccountID  string `json:"account_id"`
 		AdminToken string `json:"admin_token"`
 	} `json:"object_storage"`
-	Sites map[string]Site_ `json:"sites"`
+	// Also top level: one person reads the alerts, so the destination belongs
+	// to the fleet rather than to a site.
+	Alerting struct {
+		Provider   string `json:"provider"`
+		WebhookURL string `json:"webhook_url"`
+	} `json:"alerting"`
+	// Fleet-level like alerting: one member list, one Cloudflare account.
+	Tunnel Tunnel_          `json:"tunnel"`
+	Sites  map[string]Site_ `json:"sites"`
+}
+
+type Tunnel_ struct {
+	Provider string `json:"provider"`
+	APIToken string `json:"api_token"`
 }
 
 type Site_ struct {
@@ -183,6 +196,24 @@ func ObjectStorageAccount(t *testing.T) struct {
 // tier made the identical assumption a second time (#262).
 func (s Site_) Machines() int {
 	return s.ControlPlaneCount + s.WorkerCount
+}
+
+// Alerting is where the estate speaks when something goes wrong. Fleet-level,
+// for the same reason ObjectStorageAccount is: a second site would report into
+// the same place rather than somewhere new.
+func Alerting(t *testing.T) struct {
+	Provider   string `json:"provider"`
+	WebhookURL string `json:"webhook_url"`
+} {
+	t.Helper()
+	return LoadConfig(t).Alerting
+}
+
+// Tunnel is the fleet-level tunnel block: the vendor and the token that
+// manages it. The member list is personal data and no test needs it.
+func Tunnel(t *testing.T) Tunnel_ {
+	t.Helper()
+	return LoadConfig(t).Tunnel
 }
 
 func SiteConfig(t *testing.T) Site_ {

@@ -1,0 +1,434 @@
+---
+# The monitoring stack: Prometheus, Alertmanager, Grafana, and the exporters
+# that give them something to read.
+#
+# WHY THIS EXISTS. Nothing watches this estate between runs. The Health phase
+# is a converge-time gate that stops existing when the converge ends, the
+# canary watches GitHub rather than the estate, and the hypervisor once spent
+# hours off the overlay with every signal green. The full argument, and the
+# decisions this file implements, are in docs/epochs/04-observability.md.
+#
+# WHAT IT DOES NOT DO YET, DELIBERATELY. Nothing here is reachable from outside
+# the cluster: every service is a ClusterIP, and Grafana is read through
+# `kubectl port-forward` until the pull request that decides exposure lands. No
+# port is opened anywhere, on any machine, by this file.
+#
+# WHERE ALERTS GO. Slack, through the receiver Alertmanager ships - no bespoke
+# relay, no credential inside the cluster beyond the webhook URL itself. The
+# monitoring namespace and that secret are created by
+# management/cluster/monitoring.tf, because a secret cannot come from git.
+#
+# The chart's own rules stay enabled, so the first week is still a survey of
+# what this estate actually trips. What changed is that a firing alert is now
+# visible: severity warning and above reaches a person, and everything else is
+# grouped and quiet.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://prometheus-community.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      # renovate: datasource=helm depName=kube-prometheus-stack registryUrl=https://prometheus-community.github.io/helm-charts
+      version: "91.4.1"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+      interval: 12h
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    # Every image pinned by digest, at the version this chart ships. A tag is a
+    # mutable pointer; the digest is what actually ran. Each was resolved from
+    # the registry rather than copied from a page, and a chart bump means
+    # resolving them again - which is the point, because it makes the image
+    # change visible in the diff rather than invisible at pull time.
+    prometheusOperator:
+      image:
+        registry: quay.io
+        repository: prometheus-operator/prometheus-operator
+        tag: v0.94.0
+        sha: cf153f64d6c38113fceb2cda7642365ea887f71edd7888f054e43e54cf177e55
+      prometheusConfigReloader:
+        image:
+          registry: quay.io
+          repository: prometheus-operator/prometheus-config-reloader
+          tag: v0.94.0
+          sha: 142a1f11df8dd165f00375b0b1826aecb9c9adeb05c39855893138d7c7575ff7
+      # The admission webhook validates PrometheusRule syntax before the API
+      # server accepts it. Off, because turning it on pulls in a third image
+      # from a personal namespace on ghcr.io to generate its certificates -
+      # an unreviewed supplier for a convenience. The same mistake is caught
+      # by the operator refusing to load a bad rule, one reconcile later.
+      admissionWebhooks:
+        enabled: false
+      tls:
+        enabled: false
+      # Declared rather than inherited (#272): the chart's defaults are
+      # reasonable today, and a default is not a requirement - an upgrade that
+      # quietly dropped one would change what runs with nothing in the diff.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext: &hardenedContainer
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      priorityClassName: interactive
+      affinity: &offControlPlane
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  # Off the machines holding etcd quorum, like everything else
+                  # this repository deploys. Monitoring a control plane from a
+                  # pod on it is also how a memory spike takes the thing that
+                  # would have reported it.
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+
+    prometheus:
+      prometheusSpec:
+        image:
+          registry: quay.io
+          repository: prometheus/prometheus
+          tag: v3.14.0-distroless
+          sha: 50c707e96da5ade383cb1707790576480485e93de06aa60ad8802cb5f744bd0a
+        # Fifteen days, on a 20 GiB volume. The estimate for a cluster this
+        # size is 2-5 GiB - roughly 15-20k active series at a sample every 15
+        # seconds, at about two bytes a sample - so this is four to five times
+        # the expectation. retentionSize is what actually protects the disk:
+        # every worker's data disk is 32 GiB in total and the state database
+        # writes to the same one, so Prometheus evicts its own oldest blocks
+        # rather than filling a disk out from under the estate's own backend.
+        retention: 15d
+        retentionSize: 18GiB
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: openebs-hostpath
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 20Gi
+        # Watch every namespace, not only objects this chart's own release
+        # labelled. Without these the CloudNativePG PodMonitor two namespaces
+        # away is created, accepted and never scraped - which looks exactly
+        # like a working monitor until somebody asks for the data.
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        probeSelectorNilUsesHelmValues: false
+        scrapeConfigSelectorNilUsesHelmValues: false
+        # Pod level only: the operator writes each container's context itself,
+        # so there is no chart value that would reach it.
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 2000
+          fsGroup: 2000
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 200m
+            memory: 768Mi
+        priorityClassName: interactive
+        affinity: *offControlPlane
+
+    alertmanager:
+      # No volume, deliberately. A restart loses silences and the notification
+      # log, and neither matters while nothing is delivered; when delivery
+      # lands, so does the argument for giving it storage.
+      alertmanagerSpec:
+        # Mounted at /etc/alertmanager/secrets/<name>/<key>, which is the path
+        # the receivers below read the webhook URL from.
+        secrets:
+          - alerting-webhook
+        image:
+          registry: quay.io
+          repository: prometheus/alertmanager
+          tag: v0.34.0
+          sha: 690c7b525f4367aa91f73e2f91c632206d32e97c6384bdbf2fb7a861b420340d
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 2000
+          fsGroup: 2000
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        priorityClassName: interactive
+        affinity: *offControlPlane
+      # The webhook URL, mounted as a file rather than written into this
+      # config. The operator renders the whole Alertmanager configuration into
+      # a secret of its own; a URL written here would be in git on the way
+      # there, and readable by anything that can read that secret once it
+      # arrives. The name matches kubernetes_secret.alerting_webhook in
+      # management/cluster/monitoring.tf, and the path below is where the
+      # operator mounts it.
+      config:
+        route:
+          group_by: ["alertname", "namespace"]
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 4h
+          receiver: "slack"
+          routes:
+            # Watchdog fires forever, by design: it is the dead-man's switch,
+            # and what it proves is that Prometheus, Alertmanager and the path
+            # out of the estate are all working. So it must be delivered -
+            # routing it to nowhere would prove nothing - but not often. Twice
+            # a day is a heartbeat somebody can notice the absence of.
+            #
+            # Noticing an absence is a human job, and that is this
+            # arrangement's weakness rather than a claim about it. The stronger
+            # answer is a dead-man's-snitch service that reports when pings
+            # STOP; security patrol cannot do it, because it deliberately holds
+            # no credential that reaches into the estate.
+            - matchers:
+                - alertname = "Watchdog"
+              receiver: "slack-heartbeat"
+              group_wait: 0s
+              group_interval: 12h
+              repeat_interval: 12h
+            # Info-level alerts are recorded and not sent. They are the ones
+            # the first week exists to survey, and an alert that arrives before
+            # anybody has decided it means something is how a channel becomes
+            # noise.
+            - matchers:
+                - severity = "info"
+              receiver: "nowhere"
+              continue: false
+        receivers:
+          - name: "nowhere"
+          - name: "slack"
+            slack_configs:
+              - api_url_file: /etc/alertmanager/secrets/alerting-webhook/webhook_url
+                channel: "#alerts"
+                send_resolved: true
+                title: "{{ .Status | toUpper }}: {{ .CommonLabels.alertname }}"
+                text: >-
+                  {{ range .Alerts }}{{ .Annotations.summary }}
+                  {{ .Annotations.description }}
+                  {{ end }}
+          - name: "slack-heartbeat"
+            slack_configs:
+              - api_url_file: /etc/alertmanager/secrets/alerting-webhook/webhook_url
+                channel: "#alerts"
+                send_resolved: false
+                title: "Heartbeat"
+                text: >-
+                  Monitoring is alive: Prometheus is evaluating rules,
+                  Alertmanager is routing them, and the estate can reach
+                  Slack. If this stops arriving, one of those three has
+                  stopped and nothing else will say so.
+        inhibit_rules: []
+
+    grafana:
+      image:
+        registry: docker.io
+        repository: grafana/grafana
+        tag: 13.2.2-distroless
+        sha: 69a5d2d957ca0bba434c160dcd4f2d07de9d6c756a0ba10ae7f52b72ced1e4cc
+      # NO PASSWORD, AND THAT IS THE SAFER OF THE TWO OPTIONS TODAY.
+      #
+      # The chart's default admin password is a well-known string, and a
+      # shared password nobody rotates is worse than none. So the login form is
+      # off and every visitor is an Editor: authentication is "can you reach
+      # this service at all", which today means holding a kubeconfig and
+      # running `kubectl port-forward`, because the service is ClusterIP and
+      # nothing routes to it.
+      #
+      # THIS IS THE THING THE EXPOSURE PULL REQUEST MUST RESOLVE. The moment
+      # Grafana is reachable by anything other than a port-forward, the gate
+      # in front of it - Cloudflare Access, or an address only trusted
+      # machines can route to - IS the authentication, and that has to be
+      # true before it is reachable rather than after.
+      grafana.ini:
+        auth:
+          disable_login_form: true
+        # And basic auth off with it. The chart ships an admin secret holding a
+        # password everybody knows, and disabling the login FORM leaves the
+        # HTTP API accepting that password - a door with the sign taken down.
+        # With both off there is no account to guess at, and reaching the
+        # service at all is the only gate, which is what the exposure pull
+        # request has to replace.
+        auth.basic:
+          enabled: false
+        auth.anonymous:
+          enabled: true
+          org_role: Editor
+        users:
+          viewers_can_edit: false
+        analytics:
+          reporting_enabled: false
+          check_for_updates: false
+      # Dashboards come from git, through the sidecar that watches for
+      # labelled ConfigMaps, so a dashboard somebody draws in the UI is a
+      # draft rather than an artefact. Nothing persists: the database holds
+      # only what the sidecar can recreate, and losing the pod loses nothing
+      # that was not committed.
+      persistence:
+        enabled: false
+      sidecar:
+        # The sidecar that turns a labelled ConfigMap into a dashboard. The
+        # chart's default is an unpinned tag from a namespace nobody here has
+        # reviewed, and rendering the chart is what found it - a value file
+        # read alone would not have shown it at all.
+        image:
+          registry: quay.io
+          repository: kiwigrid/k8s-sidecar
+          tag: 2.11.2
+          sha: 2912be006f62f9ea080194cf6d3afcd90daead8d101d0ba686a137a849f6a4f6
+        dashboards:
+          enabled: true
+          label: grafana_dashboard
+          searchNamespace: ALL
+        datasources:
+          enabled: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        # Not read-only: Grafana writes its sqlite database and plugin
+        # directory under /var/lib/grafana, which is an emptyDir here rather
+        # than a volume, and its own image expects to own those paths.
+        readOnlyRootFilesystem: false
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      priorityClassName: interactive
+      affinity: *offControlPlane
+
+    kube-state-metrics:
+      image:
+        registry: registry.k8s.io
+        repository: kube-state-metrics/kube-state-metrics
+        tag: v2.20.0
+        sha: sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext: *hardenedContainer
+      resources:
+        requests:
+          cpu: 20m
+          memory: 128Mi
+      priorityClassName: interactive
+      affinity: *offControlPlane
+
+    prometheus-node-exporter:
+      image:
+        registry: quay.io
+        repository: prometheus/node-exporter
+        # The chart appends -distroless to this tag, so the digest is the
+        # distroless image's rather than v1.12.1's. Rendering the chart is what
+        # showed the suffix; the two would otherwise disagree in the manifest,
+        # with the digest silently winning at pull time.
+        tag: v1.12.1
+        digest: sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106
+      # This one belongs on every machine, control planes included: a node's
+      # memory headroom is the number this epoch exists to watch, and the
+      # control planes are the tightest machines in the estate. The tolerations
+      # are written down even though no node carries a taint today, because the
+      # taint is a decision epoch 03 is holding.
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      priorityClassName: interactive
+
+    # Components this estate does not scrape yet, switched off so their targets
+    # do not sit red and teach everybody to ignore red targets.
+    #
+    # Each needs a Talos machine-configuration change rather than a chart
+    # value: the scheduler and controller manager bind their metrics to
+    # localhost, and etcd serves metrics on a port that has to be asked for.
+    # That change is a converge, and it lands with the pull request that adds
+    # metrics-server - which needs the same kind of change for kubelet serving
+    # certificates. etcd health is in this epoch's scope and this is the step
+    # that gets it, not a decision to skip it.
+    kubeEtcd:
+      enabled: false
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    # Cilium replaces kube-proxy here, so there is nothing to scrape and its
+    # rules would alert about a component that does not exist.
+    kubeProxy:
+      enabled: false
+
+    # The chart's own rules, on. They encode what the Kubernetes community has
+    # learned about kubelets, API servers and workloads, and this estate has no
+    # evidence yet for which of them matter here. The ones belonging to
+    # components disabled above are dropped with them.
+    defaultRules:
+      create: true
+      rules:
+        etcd: false
+        kubeProxy: false
+        kubeSchedulerAlerting: false
+        kubeSchedulerRecording: false
+        kubeControllerManager: false
+
+    # Windows nodes: there are none, and its exporter would be a DaemonSet
+    # that never schedules plus rules that never fire.
+    windowsMonitoring:
+      enabled: false

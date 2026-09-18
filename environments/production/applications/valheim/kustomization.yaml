@@ -9,3 +9,4 @@ kind: Kustomization
 resources:
   - ../../../../modules/applications/valheim/base
   - server.yaml
+  - tunnel-service.yaml

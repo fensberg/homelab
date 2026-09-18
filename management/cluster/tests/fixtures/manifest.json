@@ -46,6 +46,14 @@
       "because": "Config and vault agree with each other on a vendor the code does not implement - the case a two-way check cannot see."
     },
     {
+      "name": "tunnel_vendor_mismatch_fails_its_precondition",
+      "fixture": "tunnel-vendor-mismatch.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "tunnel.vault_provider",
+      "because": "The tunnel token decides who may enroll and what they reach; another vendor's credentials must not arrive under its name."
+    },
+    {
       "name": "missing_vault_provider_fails_its_precondition",
       "fixture": "missing-vault-provider.json",
       "site": "site0",
