@@ -74,6 +74,7 @@ type Config struct {
 	ObjectStorage ObjectStorageAccount `json:"object_storage"`
 	SourceControl SourceControl        `json:"source_control"`
 	StateBackup   StateBackup          `json:"state_backup"`
+	Alerting      Alerting             `json:"alerting"`
 	Workloads     map[string]Workload  `json:"workloads"`
 	Sites         map[string]Site      `json:"sites"`
 }
@@ -89,6 +90,36 @@ type Organization struct {
 type SourceControl struct {
 	RepoURL    string     `json:"repo_url"`
 	ForemanBot ForemanBot `json:"foreman_bot"`
+}
+
+// Alerting is where the estate speaks when something it monitors goes wrong.
+//
+// Fleet-level rather than per-site, like Workloads below: one person reads the
+// alerts, and a second site would report into the same place rather than
+// somewhere new.
+//
+// The vendor is named in the config so a reviewer can see it in git, and the
+// value carries the credential - which for an incoming webhook is the whole of
+// the credential, since the URL is what authenticates the post. What it can do
+// if it leaks is post messages into one channel, which is noisy and reversible
+// rather than dangerous; that is the reasoning the invariant about preferring
+// worthless over unreachable asks for.
+//
+// No vault_provider attestation, unlike the hypervisor and object storage.
+// That check exists to stop one vendor's CREDENTIALS reaching another vendor's
+// API, and it earns its place where the credential is powerful. Here, swapping
+// the destination means editing Alertmanager's receiver block - a reviewed
+// change in git - and the worst case of a mismatched URL is that messages go
+// to the wrong chat.
+type Alerting struct {
+	// Which vendor's receiver Alertmanager is configured with. Named by
+	// function everywhere else; this one has to name the vendor because the
+	// receiver block is vendor-shaped.
+	Provider string `json:"provider"`
+	// The incoming webhook, from the vault. Never printed - `patrol` and
+	// `plan` draw the same line, and a URL that is itself a credential is
+	// exactly the kind of value a job summary must not carry.
+	WebhookURL string `json:"webhook_url"`
 }
 
 // Workload is one self-hosted application's vault-backed values.

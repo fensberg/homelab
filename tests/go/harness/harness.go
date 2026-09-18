@@ -94,6 +94,12 @@ type Config struct {
 		AccountID  string `json:"account_id"`
 		AdminToken string `json:"admin_token"`
 	} `json:"object_storage"`
+	// Also top level: one person reads the alerts, so the destination belongs
+	// to the fleet rather than to a site.
+	Alerting struct {
+		Provider   string `json:"provider"`
+		WebhookURL string `json:"webhook_url"`
+	} `json:"alerting"`
 	Sites map[string]Site_ `json:"sites"`
 }
 
@@ -183,6 +189,17 @@ func ObjectStorageAccount(t *testing.T) struct {
 // tier made the identical assumption a second time (#262).
 func (s Site_) Machines() int {
 	return s.ControlPlaneCount + s.WorkerCount
+}
+
+// Alerting is where the estate speaks when something goes wrong. Fleet-level,
+// for the same reason ObjectStorageAccount is: a second site would report into
+// the same place rather than somewhere new.
+func Alerting(t *testing.T) struct {
+	Provider   string `json:"provider"`
+	WebhookURL string `json:"webhook_url"`
+} {
+	t.Helper()
+	return LoadConfig(t).Alerting
 }
 
 func SiteConfig(t *testing.T) Site_ {

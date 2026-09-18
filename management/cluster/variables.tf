@@ -447,26 +447,23 @@ locals {
   # tests/go/repo/versions_test.go asserts kubectl stays within one minor.
   kubernetes_version = "1.36.3"
   # Two system extensions, generated via factory.talos.dev's schematic API:
-  # siderolabs/iscsi-tools and siderolabs/util-linux-tools. Talos ships
-  # neither by default.
+  # siderolabs/tailscale and siderolabs/util-linux-tools. Talos ships neither
+  # by default. util-linux-tools provides fstrim, which stays useful whatever
+  # the storage layer is.
   #
-  # Both were added as Longhorn's documented prerequisites, and Longhorn is
-  # gone - OpenEBS Local PV Hostpath hands out directories on a mounted
-  # filesystem and needs no iSCSI at all. iscsi-tools is therefore now
-  # vestigial and could be dropped; util-linux-tools provides fstrim, which
-  # stays useful regardless.
+  # iscsi-tools used to be the other one. It arrived as a Longhorn
+  # prerequisite, and it was deliberately NOT dropped in the change that
+  # removed Longhorn: editing this list mints a new schematic, which changes
+  # the image URL and rebuilds every node - a second way for a run to fail,
+  # folded into a change that already replaced the storage layer. It went in
+  # its own mint, on 2026-08-31, once the image was the only thing being
+  # tested. OpenEBS Local PV Hostpath hands out directories on a mounted
+  # filesystem and needs no iSCSI at all.
   #
-  # Deliberately not dropped in the same change that removed Longhorn.
-  # Editing this list means minting a new schematic ID through the Factory
-  # API, which changes the image URL, forces a re-download and rebuilds every
-  # node - a second, independent way for a run to fail, folded into a change
-  # that already replaces the storage layer. Worth doing on its own, when the
-  # only thing being tested is the image.
-  # Minted 2026-08-31 for tailscale + util-linux-tools. iscsi-tools was dropped
-  # in the same mint: it arrived as a Longhorn prerequisite, Longhorn is gone,
-  # and OpenEBS Local PV Hostpath needs no iSCSI. The record above said that was
-  # worth doing on its own "when the only thing being tested is the image" -
-  # this is that change, and every node is rebuilt by it either way.
+  # This paragraph used to say both things at once - that the schematic held
+  # iscsi-tools and that iscsi-tools had been dropped - because the second
+  # half was appended when the mint happened and the first half was never
+  # updated. The clerk caught it.
   #
   # HOW TO MINT ONE, because a 64-character literal with no instructions is a
   # value a fork cannot change and cannot even verify (#360). POST the
@@ -511,6 +508,20 @@ locals {
   # applies to both: an image change reaches a running estate only through a
   # rebuild.
   dmz_schematic_id = "70d243b7e2cbe699e4db5e73356a2add6b4bb8e34eadba9db22c823110e79099"
+
+  # --- alerting ------------------------------------------------------------
+  #
+  # Where the estate speaks when something it monitors goes wrong. Fleet-level
+  # for the same reason workloads are: one person reads it, and a second site
+  # would report into the same place rather than somewhere new.
+  #
+  # The webhook URL is the whole credential - an incoming webhook authenticates
+  # by being known - so it is written into a Secret the monitoring namespace
+  # reads and never into a manifest in git.
+  alerting = try(local.config.alerting, {
+    provider    = ""
+    webhook_url = ""
+  })
 
   # --- workloads -----------------------------------------------------------
   #

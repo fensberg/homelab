@@ -317,6 +317,75 @@ than a configuration: every threshold in this record is meant to have a
 denominator taken from this estate rather than from an article about somebody
 else's.
 
+### Alerts go to Slack, and the acceptance test is the Watchdog (agreed 2026-09-17)
+
+**Slack, through the receiver Alertmanager already ships.** No bespoke relay,
+no GitHub identity inside the estate, nothing to write. The webhook URL is the
+whole credential - an incoming webhook authenticates by being known - so it
+arrives from the vault as `alerting.webhook_url`, lands in a Secret created by
+`management/cluster/monitoring.tf`, and Alertmanager reads it from a file
+rather than from its own configuration, which the operator renders into a
+secret of its own.
+
+`alerting` is fleet-level, like `workloads`, because one person reads the
+alerts and a second site would report into the same place. It declares
+`provider` so a reviewer sees the vendor in git, and carries no
+`vault_provider` attestation: that check exists to stop one vendor's
+credentials reaching another vendor's API, and the worst case here is messages
+arriving in the wrong chat.
+
+**What was designed and thrown away, because it is the useful part of this
+record.** The operator asked for an issue to be opened when somebody logs into
+the game server, as an acceptance test that alerting works end to end. That
+produced a design with a log-reading exporter, a new program to turn alerts
+into issues, a GitHub App credential inside the cluster and a container image
+to publish - at which point the operator's objection landed: _"we aren't the
+first people to ever setup a Prometheus / Grafana capabilities. What is
+standard / enterprise?"_
+
+The standard answers were already present and unused:
+
+- **Alert delivery** is Alertmanager's own receivers - Slack, email, PagerDuty,
+  Discord, Telegram and the rest are native. A GitHub issue is not a standard
+  alert destination, which is why every version of that design required
+  writing something.
+- **Proving the path** is the `Watchdog` alert that kube-prometheus-stack
+  already enables: it fires permanently, by design, so that its ABSENCE is the
+  signal. The dead-man's-switch pattern, shipped in the chart this epoch
+  already deployed.
+- **Alerting on a log line** is Loki's ruler, not a bespoke exporter. Written
+  up as #436 and deferred: the benefit is retrospective, the trigger it was
+  deferred behind has not fired, and the reason it was asked for has
+  evaporated now that Watchdog is doing the job.
+
+So the acceptance criterion is not "an issue appears when a player joins". It
+is **an alert reaches a person, proven by the Watchdog heartbeat arriving and
+by a deliberate drill** - which is the property the player login was standing
+in for.
+
+**Watchdog is routed to Slack every twelve hours rather than to nowhere.**
+Routing it nowhere would prove nothing; routing it at the normal interval
+would be noise. Twice a day is a heartbeat whose absence a person can notice -
+and _noticing an absence is a human job, which is this arrangement's weakness
+rather than a claim about it._ The stronger answer is a dead-man's-snitch
+service that reports when pings stop.
+
+**Security patrol cannot be that snitch, and the reason is worth recording.**
+It runs on a GitHub-hosted runner deliberately outside the estate, and it holds
+no credential that reaches in - putting a tailnet key at GitHub is the trade it
+explicitly refuses. So it can see that the estate's GitHub-visible liveness has
+stopped, which is the failure it was built for, and it cannot see Alertmanager.
+Making it the snitch would need the estate to write a heartbeat somewhere
+patrol can read - an object in R2 - plus a read credential stored at GitHub.
+That is a real option and it was declined for now, not overlooked.
+
+**Grafana has no password and no basic auth.** The chart ships an admin secret
+with a password everybody knows, and disabling the login form leaves the HTTP
+API accepting it - a door with the sign taken down. Both are off, so there is
+no account to guess at and reaching the service is the only gate. That gate is
+`kubectl port-forward` today, and replacing it is the first duty of whatever
+exposes Grafana.
+
 ## Deferred
 
 - **Log aggregation**, per Scope above. Trigger: the first incident where
