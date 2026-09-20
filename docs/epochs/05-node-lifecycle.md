@@ -42,6 +42,23 @@ Adding a node needs none of the three, which is why epoch 01 can prove the
 merge-driven path in the up direction now and this epoch owns the down
 direction.
 
+**A second criterion, from a change that could not be delivered (2026-09-20).**
+A pod keeps the network settings it was created with, so a merge that changes
+one of them - the pinned pod MTU, in that case (#455) - leaves every running
+pod on the old value and fixes nothing until somebody restarts each workload
+by hand. That is the same gap as the one above, in the small: the estate can
+express the change and cannot deliver it to what is already running.
+
+> A change to a node-level setting that pods inherit is delivered to the pods
+> already running, by the estate, with nobody restarting anything.
+
+It belongs here rather than beside the workload that noticed it, because the
+machinery is this epoch's - draining work off a node and letting it come back
+is exactly how a running pod picks up a node-level change, and a per-workload
+annotation that rolls one deployment is a workaround wearing the shape of a
+fix. The operator's words: _"I think rolling pods is a different book of work?
+When we have cordon and drain."_
+
 Note this is ordinary practice rather than novel work - Cluster API with the
 Proxmox provider does all three, which is why the decision below is to adopt it
 rather than write a driver.

@@ -1,0 +1,37 @@
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 7b908f7..323618f 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -20,6 +20,10 @@ on:
+       - "modules/infrastructure/**"
+       - "management/**"
+       - "config/management.tpl.json"
++      # The CNI manifest, which OpenTofu applies rather than Flux: cilium.tf
++      # keys off its hash, so a change here converges and nothing else
++      # delivers it.
++      - "clusters/bootstrap/**"
+   push:
+     branches: [main]
+     tags: ["v*"]
+@@ -31,6 +35,8 @@ on:
+       - "config/management.tpl.json"
+       - "environments/**/infrastructure/**"
+       - "modules/infrastructure/**"
++      # See the pull_request filter above: the CNI is OpenTofu's to apply.
++      - "clusters/bootstrap/**"
+ 
+ permissions:
+   contents: read
+@@ -150,7 +156,11 @@ jobs:
+ 
+           echo "changed files:"; echo "${files}"
+           mgmt=false; work=false
+-          grep -qE '^(management/|config/management\.tpl\.json$)' <<<"${files}" && mgmt=true
++          # clusters/bootstrap/ is here rather than with the workload paths
++          # below because Flux does not apply it: cilium.tf keys off the
++          # manifest's hash and re-applies it during a converge. Left out, a
++          # merge that changes only the CNI is merged and never delivered.
++          grep -qE '^(management/|config/management\.tpl\.json$|clusters/bootstrap/)' <<<"${files}" && mgmt=true
+           # The same paths the trigger filters on, not a broader guess at them.
+           # This used to match any file under environments/ or modules/, so a
+           # change to an application module - the game server's Deployment -
