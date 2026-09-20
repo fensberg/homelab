@@ -368,3 +368,39 @@ func TestCompletionMessage_MeasuresAgainstTheRightSequence(t *testing.T) {
 		t.Errorf("partial converge should report %s, got %q", want, got)
 	}
 }
+
+// The queued-deploy gate belongs to runs that build machines, and to no others.
+//
+// It refuses to start while a converge is queued, because the runner is a pod
+// inside the cluster being built and a queued job would acquire it partway
+// through. A run that creates nothing gives it nothing to fire into.
+//
+// Keyed on the verb instead, it refused `break-ground -phase render`, which is
+// how the test tiers get a config to read - and the nightly integration tier
+// then died at setup every night for a week, unnoticed, leaving the estate
+// unverified (#461).
+func TestOnlyARunThatBuildsMachinesIsGatedOnQueuedDeploys(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		phase string
+		want  bool
+	}{
+		{"a full ignition", "", true},
+		{"rendering secrets for a test tier", "render", false},
+		{"sterilizing a workspace", "sterilize", false},
+		{"the compute phase itself", "compute", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			toRun, err := selectPhases(tc.phase, "", "break-ground")
+			if err != nil {
+				t.Fatalf("selecting phases: %v", err)
+			}
+			if got := buildsMachines(toRun); got != tc.want {
+				t.Errorf("buildsMachines(%v) = %v, want %v.\n\n"+
+					"A run gated when it builds nothing is an outage with a tidy message; a run "+
+					"that builds machines and is not gated can have a queued converge acquire its "+
+					"runner halfway through.", toRun, got, tc.want)
+			}
+		})
+	}
+}

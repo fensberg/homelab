@@ -330,13 +330,28 @@ Nothing has been touched. Re-run without -whatif to do it.
 			os.Exit(exitUntouched)
 		}
 	}
-	if verb == "break-ground" {
+	// Only when this run will actually build something.
+	//
+	// The gate exists because a queued converge would acquire a runner partway
+	// through an ignition and apply against a half-built estate. A run that
+	// never reaches `compute` builds nothing for it to fire into: rendering
+	// secrets creates no machine, and `-phase render` is how the test tiers
+	// get a config to read.
+	//
+	// Keyed on the verb, it refused those too - and that is how the nightly
+	// integration tier died at setup every night for a week while nobody was
+	// told, leaving the estate unverified and a broken monitoring stack
+	// unnoticed (#461). A landmine check that stops a run which cannot step on
+	// one is not caution; it is an outage with a tidy message.
+	if verb == "break-ground" && buildsMachines(toRun) {
 		run.Info("surveying the ground ...")
 		if err := phases.CheckBreakGroundPreconditions(ctx.Site); err != nil {
 			fmt.Println()
 			run.Fail("HALTED: " + err.Error())
 			os.Exit(exitUntouched)
 		}
+	} else if verb == "break-ground" {
+		run.Info("no machines are built by this run, so nothing is waiting to fire into it")
 	}
 
 	runErr := runInterruptibly(ctx, toRun)
@@ -486,6 +501,16 @@ func reportPreexistingFailure(ctx *run.Context, verb string) int {
 		return exitUntouched
 	}
 	return exitMayHaveChanged
+}
+
+// buildsMachines says whether this run reaches the phase that creates VMs.
+//
+// It is the question the queued-deploy gate should have been asking all along:
+// a queued converge can only fire into a run that is building the cluster it
+// wants a runner from. See the gate's own comment for what keying it on the
+// verb cost (#461).
+func buildsMachines(toRun []string) bool {
+	return slices.Contains(toRun, "compute")
 }
 
 func completionMessage(toRun []string) string {

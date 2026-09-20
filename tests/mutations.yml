@@ -85,9 +85,33 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 127
+floor: 128
 
 mutations:
+  - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
+    file: modules/applications/valheim/base/second-policy.yaml
+    create: |
+      ---
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: valheim-extra
+        namespace: valheim
+      spec:
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: valheim
+        policyTypes:
+          - Egress
+        egress:
+          - {}
+    mentions: "permits the game server egress to everything"
+    why: >
+      NetworkPolicies are additive, so a second file selecting the same pods
+      opens the estate without touching the one the guard used to read. The
+      diff looks like a new file rather than a weakened rule, and the guard
+      stayed green through exactly this shape once already.
+
   - guard: TestEveryFluxSubstitutionHasAStandInAndTheReverse
     file: tests/flux-substitutions.env
     find: 'ETCD_ENDPOINTS=["192.0.2.10","192.0.2.11","192.0.2.12"]'

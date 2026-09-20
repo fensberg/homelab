@@ -13,6 +13,12 @@ package main
 // a different file - and the finding was therefore about a disagreement it had
 // assembled itself.
 //
+// The rules about advice and about self-describing comments come from #475,
+// where all five findings were false in the same run: an error message's
+// "check that the volume mounted" read as a claim the code verifies it, and a
+// comment explaining why an account id lives where it does - citing the issue
+// that moves it - reported as a discrepancy.
+//
 // The rule about a field and its value comes from #465, where it read a
 // comment saying readOnlyRootFilesystem is absent - which it is - as
 // contradicting an account, and read "that is a limit rather than a decision",
@@ -36,6 +42,8 @@ Rules that apply to every finding:
 - Say what is wrong and where. Do not suggest a rewrite, do not praise anything, do not describe the file as a whole.
 - Report nothing you are not reasonably sure of. An empty list is a fine answer.
 - A finding comparing commentary against an account must use the account FOR THAT SAME PATH. If the two you are holding describe different files, there is no disagreement to report - say nothing rather than reporting the mismatch you created by pairing them.
+- Prose addressed to a PERSON is not a claim about the code. An error message saying "check that the volume actually mounted" is advice to whoever reads the failure, not an assertion that the program checks it. Neither is a comment describing what somebody should do next, or what a future change will need.
+- A comment that already states the thing you are about to report is not a disagreement. If the text explains the oddity - and especially if it cites an issue number for it - the repository knows; say nothing.
 - A disagreement is about a FIELD AND ITS VALUE, not about a word. Name the setting and what each side says it is, and check the word means the same thing in both: prose calling a missing setting "a limit" means a limitation, not a resource limit, and a comment saying a field is absent is confirmed by the field being absent rather than contradicted by the word appearing in that comment.
 
 Facts about the platforms in this repository that a reader has previously reported as mistakes. They are not mistakes; do not report them:

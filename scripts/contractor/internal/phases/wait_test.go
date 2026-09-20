@@ -44,18 +44,60 @@ func TestSummariseWait_SingleLineIsUnchanged(t *testing.T) {
 }
 
 // A cluster with many outstanding resources should not print a paragraph every
-// fifteen seconds.
-func TestSummariseWait_Truncates(t *testing.T) {
+// time, and should never cut a name in half: a truncated name is one nobody
+// can search for.
+func TestSummariseWait_ShortensByItemRatherThanByCharacter(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("30 Flux resource(s) not reconciled:")
 	for i := 0; i < 30; i++ {
 		b.WriteString("\n  helmrelease/some-fairly-long-release-name")
 	}
 	got := summariseWait(errors.New(b.String()))
-	if len(got) > 160 {
-		t.Errorf("summary is %d chars; a progress line should stay on one line: %q", len(got), got)
+
+	if len(got) > 200 {
+		t.Errorf("summary is %d chars; a progress line should stay readable: %q", len(got), got)
 	}
-	if !strings.HasSuffix(got, "...") {
-		t.Errorf("a truncated summary should say so, got %q", got)
+	if strings.Contains(got, "...") {
+		t.Errorf("a name was cut mid-word rather than dropped whole: %q", got)
+	}
+	if !strings.Contains(got, "+27 more") {
+		t.Errorf("the summary should say how many it left out, got %q", got)
+	}
+}
+
+// Flux lists a Kustomization waiting on an unready dependency beside the thing
+// that is actually failing, and the waiters are usually the majority - so the
+// one item worth reading was the one being dropped. This is the shape the
+// operator was shown for an hour: five resources, and the only one named was
+// a consequence of the other four (#458).
+func TestSummariseWait_NamesTheCauseRatherThanTheWaiters(t *testing.T) {
+	err := errors.New("5 Flux resource(s) not reconciled:" +
+		"\n  Kustomization flux-system/infra-configs: dependency 'flux-system/infra-controllers' is not ready" +
+		"\n  Kustomization flux-system/workloads-production: dependency 'flux-system/infra-configs' is not ready" +
+		"\n  Kustomization flux-system/workloads-staging: dependency 'flux-system/infra-configs' is not ready" +
+		"\n  HelmRelease monitoring/kube-prometheus-stack: install retries exhausted")
+
+	got := summariseWait(err)
+
+	if !strings.Contains(got, "kube-prometheus-stack") {
+		t.Errorf("the summary drops the only item that is actually failing: %q", got)
+	}
+	if strings.Contains(got, "infra-configs: dependency") {
+		t.Errorf("the summary leads with a consequence rather than the cause: %q", got)
+	}
+	if !strings.Contains(got, "3 waiting on them") {
+		t.Errorf("the summary should still account for the waiters, got %q", got)
+	}
+}
+
+// Everything waiting on something else is still worth printing: with no cause
+// in the list, the waiters are all there is to say.
+func TestSummariseWait_KeepsWaitersWhenThatIsAllThereIs(t *testing.T) {
+	err := errors.New("2 Flux resource(s) not reconciled:" +
+		"\n  Kustomization flux-system/a: dependency 'flux-system/b' is not ready" +
+		"\n  Kustomization flux-system/c: dependency 'flux-system/b' is not ready")
+
+	if got := summariseWait(err); !strings.Contains(got, "flux-system/a") {
+		t.Errorf("with only waiters in the list, they are the summary; got %q", got)
 	}
 }

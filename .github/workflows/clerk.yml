@@ -305,8 +305,10 @@ jobs:
         with:
           sarif_file: snag.sarif
           category: clerk-snag
-          # Told, not inferred. The checkout is refs/pull/N/head so that a
-          # merged pull request can be read retroactively, and the action
+          # Told, not inferred. The change is FETCHED as data rather than
+          # checked out - since #409 the workspace stays on the commit the
+          # workflow runs from, and refs/pull/N/head is added as a worktree so
+          # a merged pull request can still be read retroactively. The action
           # otherwise looks for the merge ref and falls back to a commit it did
           # not scan - two "git call failed" warnings per run, and an alert
           # attributed to one tree with line numbers from another (#228).
@@ -319,8 +321,10 @@ jobs:
         with:
           sarif_file: handover.sarif
           category: clerk-handover
-          # Told, not inferred. The checkout is refs/pull/N/head so that a
-          # merged pull request can be read retroactively, and the action
+          # Told, not inferred. The change is FETCHED as data rather than
+          # checked out - since #409 the workspace stays on the commit the
+          # workflow runs from, and refs/pull/N/head is added as a worktree so
+          # a merged pull request can still be read retroactively. The action
           # otherwise looks for the merge ref and falls back to a commit it did
           # not scan - two "git call failed" warnings per run, and an alert
           # attributed to one tree with line numbers from another (#228).
