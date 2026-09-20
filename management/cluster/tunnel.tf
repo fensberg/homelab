@@ -18,9 +18,12 @@
 # connector itself is declared in git under clusters/management/ and reconciled
 # by Flux.
 #
-# First consumer: the game server (#446). Its crossplay backend cannot hold a
-# player whose own network is strict, and the alternative - a port forward -
-# would have moved it into a dedicated zone. Grafana is next.
+# GENERAL, NOT PER-WORKLOAD. This is how anything in the estate is reached
+# from away - a phone, a laptop in another house - so nothing here is named
+# after the workload that happened to need it first. That was the game server
+# (#446), whose crossplay backend cannot hold a player on a strict network and
+# whose alternative - a port forward - would have moved it into a dedicated
+# zone. Grafana is next, and a route is one line each time.
 # =============================================================================
 
 locals {
