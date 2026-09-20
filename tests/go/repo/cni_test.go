@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -268,5 +269,67 @@ func TestTheCNIReachesEveryNodeIncludingTaintedOnes(t *testing.T) {
 	if checked == 0 {
 		t.Fatalf("%s contains no DaemonSet named cilium, so this test proves nothing.\n\n"+
 			"Either the manifest is empty or the agent was renamed.", cniMani)
+	}
+}
+
+// The pod MTU is pinned, and the rendered manifest carries the number.
+//
+// Since v1.17 Cilium hands every pod the LOWEST link MTU it finds on the node.
+// These nodes carry `tailscale0` at 1280, which is not how a pod reaches
+// anything: pod traffic leaves over eth0 at 1450. Detection therefore sizes
+// every pod for an interface it does not use.
+//
+// The damage is not only lost throughput. 1280 minus Cilium's tunnel overhead
+// is 1230, below the 1252-byte initial packet quic-go insists on, so every
+// QUIC handshake from the tunnel connector timed out and it fell back to
+// HTTP/2 - which carries no UDP, and so cannot serve the game server (#455).
+// Cilium tracks the regression as cilium/cilium#37529, open and unfixed on
+// 1.18, and `MTU` is the escape hatch its maintainers point at.
+//
+// So the value is declared, and the committed render has to agree with it: a
+// value edited without `task render-cni` is a pin that changes nothing, and
+// the cluster keeps whatever the last render said.
+var (
+	pinnedMTUValue    = regexp.MustCompile(`(?m)^MTU:\s*(\d+)\s*$`)
+	renderedMTUConfig = regexp.MustCompile(`(?m)^\s+mtu:\s*"(\d+)"\s*$`)
+)
+
+func TestThePodMTUIsPinnedRatherThanDetected(t *testing.T) {
+	values := readRepoFile(t, "clusters/bootstrap/cilium-values.yaml")
+	m := pinnedMTUValue.FindStringSubmatch(values)
+	if m == nil {
+		t.Fatal(`clusters/bootstrap/cilium-values.yaml pins no MTU.
+
+Cilium then detects one, and on these nodes it detects tailscale0's 1280 and
+gives it to every pod. That is below what quic-go will start a connection
+with once Cilium's tunnel overhead comes off it, so the tunnel connector
+cannot use QUIC, and without QUIC it carries no UDP at all (#455,
+cilium/cilium#37529).
+
+Pin MTU to the MTU of the interface pods actually leave by, and re-render.`)
+	}
+	pinned, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("the pinned MTU %q is not a number: %v", m[1], err)
+	}
+	// 1280 is the floor quic-go's initial packet plus Cilium's tunnel
+	// overhead needs; anything at or below it puts the connector back on the
+	// HTTP/2 fallback with no UDP.
+	if pinned <= 1280 {
+		t.Errorf("the pinned MTU is %d, which leaves less than quic-go's 1252-byte initial packet "+
+			"once Cilium's tunnel overhead comes off it. The tunnel connector would fall back to "+
+			"HTTP/2 and carry no UDP (#455).", pinned)
+	}
+
+	rendered := readRepoFile(t, "clusters/bootstrap/cilium.yaml")
+	r := renderedMTUConfig.FindStringSubmatch(rendered)
+	if r == nil {
+		t.Fatal("clusters/bootstrap/cilium.yaml carries no mtu in its config, so the pinned value " +
+			"never reached the manifest. Re-render with `task render-cni`.")
+	}
+	if r[1] != m[1] {
+		t.Errorf("cilium-values.yaml pins MTU %s and the committed manifest says %s.\n\n"+
+			"The cluster runs the manifest, so the pin is not in effect. Re-render with "+
+			"`task render-cni`.", m[1], r[1])
 	}
 }

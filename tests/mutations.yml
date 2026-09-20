@@ -85,9 +85,21 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 123
+floor: 124
 
 mutations:
+  - guard: TestThePodMTUIsPinnedRatherThanDetected
+    file: clusters/bootstrap/cilium-values.yaml
+    find: "MTU: 1450"
+    replace: "MTU: 1280"
+    mentions: "carry no UDP"
+    why: >
+      Cilium detects the lowest link MTU on a node, which here is the tailnet
+      interface at 1280 - an interface pods never leave by. What that costs is
+      invisible until something needs a full-sized packet: quic-go will not
+      start below 1252 bytes, so the tunnel connector falls back to HTTP/2,
+      which carries no UDP and so no game server (#455).
+
   - guard: TestEveryTunnelRouteIsAServiceAddressAndTheReverse
     file: management/cluster/tunnel.tf
     find: 'valheim = "10.96.0.46"'

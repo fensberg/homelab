@@ -78,3 +78,34 @@ securityContext:
 # into git.
 hubble:
   enabled: false
+
+# The MTU is pinned rather than detected, because detection reads the wrong
+# interface here.
+#
+# Since v1.17 Cilium takes the LOWEST link MTU on a node and gives it to every
+# pod, as veth MTU and route MTU. On these nodes that is `tailscale0` at 1280,
+# which has nothing to do with how a pod reaches the internet: pod traffic
+# leaves over eth0 at 1450. Measured on a worker - eth0 1450, every lxc device
+# 1280 - so every pod was running 170 bytes smaller than its path allows.
+#
+# That is not only wasteful, it breaks QUIC outright, which is how it was
+# found (#455). 1280 minus Cilium's VXLAN overhead leaves 1230, and quic-go
+# refuses to start below its 1252-byte initial packet size, so every
+# cloudflared QUIC handshake timed out and the tunnel fell back to HTTP/2 -
+# which carries no UDP, and so no game server. Cilium tracks this as an open
+# regression, cilium/cilium#37529, still unfixed on 1.18; `MTU` is the escape
+# hatch its maintainers point at.
+#
+# 1450 is eth0's own MTU on these VMs, the hypervisor's SDN having taken its
+# own 50 bytes already. Cilium subtracts the tunnel overhead itself, so pods
+# land at 1400.
+#
+# THE COST, STATED. Pod traffic that really does route over the tailnet may
+# now be fragmented, where before it was sized for that interface. Inside one
+# site nothing does: pods reach each other over VXLAN on eth0, and the tailnet
+# carries node-to-node and site-to-site traffic instead. A second site would
+# make this a real question again.
+#
+# tests/go/repo/cni_test.go refuses an unpinned MTU while this holds, and
+# tests/go/integration asserts the cluster is running the number pinned here.
+MTU: 1450
