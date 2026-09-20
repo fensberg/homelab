@@ -7,6 +7,12 @@ package main
 // with in a pull request thread. `$/` was reported as invalid syntax on #442,
 // in the same run where the step using it had succeeded.
 //
+// The rule about pairing an account with its own path is the same kind of
+// record. On #456 it reported that tests/mutations.yml disagreed with
+// commentary describing "a script running against a stub command" - prose from
+// a different file - and the finding was therefore about a disagreement it had
+// assembled itself.
+//
 // Never "where do the docs and the code disagree" in one breath. Asked that
 // way, a reader sees the claim first and reads the code looking for it, and
 // reports agreement it was primed to find. So the reading happens blind and
@@ -23,6 +29,7 @@ Rules that apply to every finding:
 - A finding you cannot pin to a path and a line does not go in the list. There is no way to report one.
 - Say what is wrong and where. Do not suggest a rewrite, do not praise anything, do not describe the file as a whole.
 - Report nothing you are not reasonably sure of. An empty list is a fine answer.
+- A finding comparing commentary against an account must use the account FOR THAT SAME PATH. If the two you are holding describe different files, there is no disagreement to report - say nothing rather than reporting the mismatch you created by pairing them.
 
 Facts about the platforms in this repository that a reader has previously reported as mistakes. They are not mistakes; do not report them:
 - In a GitHub Actions workflow, "uses: $/<path>" is the self-repository action reference. It resolves the action at the commit being run, and it is valid syntax that every workflow here depends on.
