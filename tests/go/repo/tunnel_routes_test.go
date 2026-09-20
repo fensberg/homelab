@@ -26,7 +26,7 @@ import (
 // every manifest in the repository. A Service with a hand-set address in the
 // reserved band that the tunnel does not route is refused as well, because the
 // only reason to set one here is the tunnel.
-var tunnelRouteEntry = regexp.MustCompile(`(?m)^\s*([a-z0-9_-]+)\s*=\s*"(10\.96\.0\.\d{1,3})"`)
+var tunnelRouteEntry = regexp.MustCompile(`(?m)^\s*"?([a-z0-9_-]+)"?\s*=\s*"(10\.96\.0\.\d{1,3})"`)
 
 func TestEveryTunnelRouteIsAServiceAddressAndTheReverse(t *testing.T) {
 	root := repoRoot(t)

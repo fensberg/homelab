@@ -433,6 +433,24 @@ one. `tunnel.tf` now finds it by the name Cloudflare gives it and imports it
 (#453). The pull request had named this as a risk. A risk named in a PR body
 is still a risk: it should have been designed out before the first apply.
 
+**The pod MTU had to be pinned before the tunnel could carry anything but
+TCP.** Since v1.17 Cilium gives every pod the lowest link MTU on its node, and
+these nodes carry `tailscale0` at 1280 - an interface pods never leave by,
+since pod traffic goes out eth0 at 1450. Every pod was therefore running 170
+bytes short, and cloudflared could not complete a QUIC handshake at all: 1280
+minus the tunnel overhead is 1230, below quic-go's 1252-byte initial packet. It
+fell back to HTTP/2, which carries no UDP, so the game server could never have
+been reached through the tunnel however the rest was configured (#455,
+cilium/cilium#37529, open upstream). `MTU: 1450` is pinned in the Cilium values
+and the cost is stated there: pod traffic that really does route over the
+tailnet may fragment, which nothing does inside one site.
+
+**The lesson is about what "connected" proves.** Every surface said the tunnel
+was healthy - pods Running, four connections registered, Cloudflare's dashboard
+green - while the thing it was built to carry could not pass. The guard is in
+the tier that can see it: `tests/go/integration` reads the connector's own QUIC
+metrics and fails when they are zero, and a repo guard refuses an unpinned MTU.
+
 **What is not known yet.** Whether crossplay holds a player who arrives through
 the tunnel. The tunnel carries connections the player starts, and crossplay
 insists on one the _server_ starts. The first test is crossplay on, joining

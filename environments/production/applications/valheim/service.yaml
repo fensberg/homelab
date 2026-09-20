@@ -1,0 +1,36 @@
+---
+# The game server's address on the cluster network.
+#
+# Fixed rather than allocated, because management/cluster/tunnel.tf routes it
+# to enrolled devices and a route names an address;
+# tests/go/repo/tunnel_routes_test.go holds the two together. A device on the
+# member list reaches 10.96.0.46:2456 from any network, as if it were on the
+# house LAN (#446).
+#
+# Named for what it is rather than for the application it belongs to. The
+# namespace already says `valheim`, so a Service called `valheim` in it reads
+# `valheim.valheim` and tells a reader nothing; `game-server` says which part
+# of the application answers here. The tunnel route beside it uses the same
+# word, so one name means one thing in both places.
+#
+# Production-only: the address is one per cluster, and staging does not run
+# this workload.
+apiVersion: v1
+kind: Service
+metadata:
+  name: game-server
+  namespace: valheim
+spec:
+  type: ClusterIP
+  clusterIP: 10.96.0.46
+  selector:
+    app.kubernetes.io/name: valheim
+  ports:
+    - name: game
+      protocol: UDP
+      port: 2456
+      targetPort: 2456
+    - name: query
+      protocol: UDP
+      port: 2457
+      targetPort: 2457

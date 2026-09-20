@@ -173,6 +173,7 @@ data:
   tunnel-source-port-range: "0-0"
   service-no-backend-response: "reject"
   policy-deny-response: "none"
+  mtu: "1450"
 
   # Enables L7 proxy for L7 policy enforcement and visibility
   enable-l7-proxy: "true"
