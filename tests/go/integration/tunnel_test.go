@@ -57,6 +57,27 @@ func TestTheClusterRunsThePinnedPodMTU(t *testing.T) {
 			"picks the tailnet interface at 1280, which is below what quic-go will start a "+
 			"connection with, and the tunnel then carries no UDP at all (#455).",
 		m[1], cm.Data["mtu"])
+
+	// AND THE AGENTS ARE RUNNING IT, which the ConfigMap does not say.
+	//
+	// An agent reads its configuration once, at start. A ConfigMap change
+	// leaves the DaemonSet's pod spec untouched, so nothing is replaced and
+	// every agent goes on running the old value - which is exactly what
+	// happened: the pin applied, the converge reported success, and the pods
+	// stayed on 1280 for nine days (#466).
+	//
+	// cilium_host carries the MTU the agent configured, so it answers the
+	// question the ConfigMap cannot.
+	out, err := k8s.RunKubectlAndGetOutputE(t, k8s.NewKubectlOptions("", kubeconfig(t), "kube-system"),
+		"exec", "ds/cilium", "-c", "cilium-agent", "--",
+		"sh", "-c", "cat /sys/class/net/cilium_host/mtu")
+	require.NoError(t, err, "asking a Cilium agent what MTU it configured")
+
+	require.Equal(t, m[1], strings.TrimSpace(out),
+		"the cluster is configured for MTU %s and an agent is running %s.\n\n"+
+			"An agent reads its configuration at start, so a pin that was applied without "+
+			"replacing the agents is a pin that is not in effect - and nothing else reports it "+
+			"(#466). Roll the DaemonSet.", m[1], strings.TrimSpace(out))
 }
 
 // The connector is carrying QUIC, not the HTTP/2 fallback.

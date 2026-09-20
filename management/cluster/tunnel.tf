@@ -162,7 +162,18 @@ resource "cloudflare_zero_trust_access_application" "enrollment" {
   name             = local.enrollment_app_name
   type             = "warp"
   session_duration = "24h"
-  policies         = [cloudflare_zero_trust_access_policy.members.id]
+
+  # Declared because the plan otherwise wants to change it on every run: the
+  # application is adopted rather than created, so its attributes come from
+  # what Cloudflare already had, and an attribute this file does not mention
+  # is one the provider defaults differently (#474). A plan that always shows
+  # a change teaches whoever reads it to skim, and the next real drift arrives
+  # in the same colour as the noise.
+  #
+  # false because enrolling a device is not something anybody launches from
+  # the App Launcher; it happens in the WARP client.
+  app_launcher_visible = false
+  policies             = [cloudflare_zero_trust_access_policy.members.id]
 }
 
 # The connector's namespace and credential, for the Deployment Flux applies.

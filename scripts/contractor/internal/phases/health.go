@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -97,8 +98,11 @@ var healthChecks = []struct {
 // never arrived rather than saying "timed out".
 func waitFor(ctx *run.Context, kubeconfig, what string, timeout time.Duration, check healthCheck) error {
 	run.Info("waiting for " + what + " ...")
-	deadline := time.Now().Add(timeout)
+	started := time.Now()
+	deadline := started.Add(timeout)
 	var last error
+	var said string
+	var saidAt time.Time
 	for {
 		last = check(ctx, kubeconfig)
 		if last == nil {
@@ -134,7 +138,19 @@ degraded cluster. Look at what is listed above, then re-run from here:
 
     ./toolshed/contractor break-ground -site %s -from health`, what, timeout, last, ctx.Site)
 		}
-		run.Info("  still waiting: " + summariseWait(last))
+		// Say it when it changes, and once a minute otherwise.
+		//
+		// This used to print every fifteen seconds whether anything had moved
+		// or not, so a wedged phase and a progressing one produced the same
+		// wall of identical lines - and neither said how long it had been
+		// waiting or when it would give up. The operator's words, watching it:
+		// "It doesn't tell me how long but the polling looks identical every
+		// increment" (#458).
+		if summary := summariseWait(last); summary != said || time.Since(saidAt) >= time.Minute {
+			run.Info(fmt.Sprintf("  still waiting (%s of %s): %s",
+				time.Since(started).Round(time.Second), timeout, summary))
+			said, saidAt = summary, time.Now()
+		}
 
 		// Never sleep past the deadline. Waiting fifteen seconds to discover
 		// that two remained is fifteen seconds of a metered runner spent
@@ -176,13 +192,43 @@ func summariseWait(err error) string {
 		return head
 	}
 
-	joined := strings.Join(items, ", ")
-	const cap = 100
-	if len(joined) > cap {
-		joined = joined[:cap] + "..."
+	// Causes before consequences. Flux reports a Kustomization waiting on an
+	// unready dependency in the same list as the thing that is actually
+	// failing, and the waiters are usually the majority - so the one item
+	// worth reading was the one being cut off. If everything is a waiter,
+	// they are all there is to say.
+	causes := make([]string, 0, len(items))
+	for _, it := range items {
+		if !dependencyWaiter.MatchString(it) {
+			causes = append(causes, it)
+		}
 	}
-	return head + ": " + joined
+	waiting := len(items) - len(causes)
+	if len(causes) == 0 {
+		causes, waiting = items, 0
+	}
+
+	// Whole items, never a word cut in half: the first few in full, and a
+	// count for the rest.
+	const show = 3
+	shown := causes
+	rest := 0
+	if len(shown) > show {
+		shown, rest = causes[:show], len(causes)-show
+	}
+	line := head + ": " + strings.Join(shown, "; ")
+	if rest > 0 {
+		line += fmt.Sprintf(" (+%d more)", rest)
+	}
+	if waiting > 0 {
+		line += fmt.Sprintf(" (+%d waiting on them)", waiting)
+	}
+	return line
 }
+
+// A Flux resource whose only complaint is that something it depends on has
+// not finished. It is a consequence of another item in the same list.
+var dependencyWaiter = regexp.MustCompile(`dependency '[^']+' is not ready`)
 
 // --- the checks -------------------------------------------------------------
 

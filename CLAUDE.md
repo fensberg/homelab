@@ -446,8 +446,10 @@ depends on it and uses them.
 
 ## CI
 
-- `pr-validation.yml` — eleven lanes, all running in parallel, Format
-  included. Formatting is enforced locally first (the git hook
+- `pr-validation.yml` — one lane per check, all running in parallel, Format
+  included. The count is deliberately not written here: it was "eleven" and
+  had been thirteen since #408 added the two egress proofs, and a number in
+  prose goes stale the moment a lane is added (#429). Formatting is enforced locally first (the git hook
   `./scripts/install-dependencies.sh` wires up via `pre-commit install`) -
   shift left, catch it in seconds on the machine that wrote it. **Format**'s
   CI lane, running the same `.pre-commit-config.yaml` as that hook, exists as
@@ -549,9 +551,17 @@ depends on it and uses them.
   which is the only thing here that can notice somebody changed a VM in the
   Proxmox web UI. The destructive e2e tier is absent from CI entirely and is
   run by hand; see `tests/README.md`.
-- `deploy-infrastructure.yml` — applies OpenTofu on a self-hosted runner.
-  Path-filtered to `environments/**` and `modules/**`, so Ignition changes
-  never trigger it. That is intentional.
+- `deploy-infrastructure.yml` — applies OpenTofu on a self-hosted runner, and
+  converges the platform. Its filters are `environments/**/infrastructure/**`,
+  `modules/infrastructure/**`, `management/**`, `config/management.tpl.json`
+  and `clusters/bootstrap/**`.
+
+  So a change under `management/` **does** trigger it, which is what
+  `converge` is for. This entry used to say the opposite - that Ignition
+  changes never trigger it, "intentionally" - which was true before converge
+  existed and has been wrong since (#429). `clusters/bootstrap/**` is there
+  because OpenTofu applies the CNI manifest rather than Flux, so a change to
+  it is delivered by a converge and by nothing else.
 
 ## Testing
 
