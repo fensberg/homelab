@@ -32,12 +32,25 @@ spec:
         name: actions-runner-controller
         namespace: flux-system
       interval: 12h
+    # RETRIES FOREVER RATHER THAN STALLING FOR A HUMAN.
+    #
+    # With a finite count Flux gives up, sets Stalled, and waits for somebody
+    # to force a reconcile - which is a person at a keyboard, in the middle of
+    # the night, for a blocker that has usually cleared on its own by then.
+    # That happened: the monitoring stack could not be admitted until the
+    # namespace's Pod Security label arrived from OpenTofu, the four attempts
+    # were spent long before it did, and the release sat Stalled while every
+    # Flux layer behind it waited (#459).
+    #
+    # -1 retries indefinitely with backoff, so an ordering problem heals
+    # itself. A genuinely broken release is then a sustained Ready=False
+    # rather than a silent stall, which is a thing monitoring can see.
   install:
     remediation:
-      retries: 3
+      retries: -1
   upgrade:
     remediation:
-      retries: 3
+      retries: -1
   values:
     # One controller is right for a homelab management cluster, for the same
     # reason CloudNativePG runs one: it is not in the data path, and a restart

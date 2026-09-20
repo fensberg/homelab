@@ -576,6 +576,19 @@ floor a pull request may not drop below and is free to leave alone.
 
 ## Conventions
 
+- **A recovery run by hand is a defect, and it is written down as it happens.**
+  Forcing a stalled HelmRelease to reconcile, restarting a DaemonSet so it
+  re-reads its config, cutting a tag so a merged manifest reaches production -
+  each of those is the automation failing to deliver something, not the
+  incident ending. The operator's bar: _"me asking and running a button is a
+  piece of friction that is cheap to fix now and hard to fix at 2:00am."_ So
+  every manual step taken during a repair becomes code or an issue before the
+  session ends, and the question asked of it is what would have made it
+  unnecessary, then what would have made it automatic. A runbook entry is the
+  answer of last resort, because whoever reads it will be tired. This does not
+  apply to the buttons that guard a dangerous act - an environment's reviewer,
+  a teardown's confirmation - which are wanted.
+
 - **Agree the design before building.** Work that adds a verb, a program, a file kind, a named role, or a new place something is declared starts as a proposal, not code. The proposal covers what is being built, the open decisions with two or three options each and their trade-offs, and a recommendation. Nothing is built until the operator agrees. A design question that turns up mid-build stops the build and becomes a question; it does not get answered in code.
 
 - **One role, one program.** The inspector is the party that checks work before
