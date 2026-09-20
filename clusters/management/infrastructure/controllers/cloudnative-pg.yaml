@@ -30,14 +30,34 @@ spec:
         name: cloudnative-pg
         namespace: flux-system
       interval: 12h
+    # RETRIES RATHER THAN STALLING FOR A HUMAN, AND WITHOUT TEARING ITSELF DOWN.
+    #
+    # The default strategy, RemediateOnFailure, gives up after `retries`
+    # attempts, sets Stalled, and waits for somebody to force a reconcile.
+    # That is a person at a keyboard for a blocker which usually clears on its
+    # own: the monitoring stack could not be admitted until the namespace's
+    # Pod Security label arrived from OpenTofu, its attempts were spent long
+    # before that, and every Flux layer behind it stopped (#459).
+    #
+    # Unlimited retries were the obvious answer and are the wrong one. Install
+    # remediation is an UNINSTALL between every attempt, so `retries: -1` on a
+    # release that is permanently broken uninstalls and reinstalls it forever,
+    # with nothing in the API documenting a backoff.
+    #
+    # RetryOnFailure retries the action on a fixed interval and applies no
+    # remediation at all. An ordering problem heals itself within minutes; a
+    # release that is really broken retries quietly every 5m and shows as a
+    # sustained Ready=False, which is a thing monitoring can see.
   install:
     crds: Create
-    remediation:
-      retries: 3
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
   upgrade:
     crds: CreateReplace
-    remediation:
-      retries: 3
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
   values:
     # Single replica is right for a homelab management cluster: the operator
     # is not in the data path, and a restart only pauses reconciliation.

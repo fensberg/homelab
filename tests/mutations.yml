@@ -85,9 +85,21 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 124
+floor: 125
 
 mutations:
+  - guard: TestEveryHelmReleaseRetriesRatherThanStalling
+    file: clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml
+    find: "  install:\n    crds: Create\n    strategy:\n      name: RetryOnFailure"
+    replace: "  install:\n    crds: Create\n    strategy:\n      name: RemediateOnFailure"
+    mentions: "not RetryOnFailure"
+    why: >
+      Remediating on failure is how the monitoring stack sat Stalled for two
+      days: it could not be admitted until a namespace label arrived from
+      OpenTofu, the attempts were spent before that happened, and Flux then
+      waited for a person to force a reconcile while every layer behind it
+      stopped (#459).
+
   - guard: TestThePodMTUIsPinnedRatherThanDetected
     file: clusters/bootstrap/cilium-values.yaml
     find: "MTU: 1450"

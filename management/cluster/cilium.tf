@@ -78,7 +78,30 @@ resource "terraform_data" "cilium" {
         sleep 5
       done
 
+      # Does the CNI already exist? Asked BEFORE the apply, because the answer
+      # decides whether the agents need replacing afterwards.
+      existed=false
+      kubectl -n kube-system get daemonset/cilium >/dev/null 2>&1 && existed=true
+
       kubectl apply -f "${path.module}/../../clusters/bootstrap/cilium.yaml"
+
+      # AN AGENT READS ITS CONFIGURATION ONCE, AT START.
+      #
+      # This resource re-runs only when the manifest's hash changes, so
+      # reaching here on an existing cluster means something in it is
+      # different - and a ConfigMap change leaves the DaemonSet's pod spec
+      # untouched, so Kubernetes replaces nothing and every agent goes on
+      # running the old values. That is how the pinned MTU was applied,
+      # reported as converged, and not in effect: agents nine days old,
+      # holding the number they started with, and the tunnel still unable to
+      # carry UDP (#455).
+      #
+      # Only on an existing cluster: a fresh install has just started its
+      # agents from this manifest, and cycling them would cost a minute to
+      # change nothing.
+      if [ "$existed" = "true" ]; then
+        kubectl -n kube-system rollout restart daemonset/cilium
+      fi
 
       # Wait for the agents rather than leaving it to the health gate.
       #
