@@ -220,7 +220,14 @@ files:
     uncovered: 3
     covered_by: nothing
   - path: security/patrol.go
-    uncovered: 7
+    uncovered: 8
+    covered_by: nothing
+  # reap-queue: the judgement is covered (deadBecause), and what is not is the
+  # HTTP around it - asking GitHub whether a branch exists, and cancelling.
+  # Same shape as the patrol above it, and the same reason: a fake API proves
+  # the fake, and the real one cannot be exercised from a pull request.
+  - path: security/reap.go
+    uncovered: 5
     covered_by: nothing
   - path: superintendent/enforce-push.go
     uncovered: 2
