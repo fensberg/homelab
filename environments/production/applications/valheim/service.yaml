@@ -7,16 +7,18 @@
 # member list reaches 10.96.0.46:2456 from any network, as if it were on the
 # house LAN (#446).
 #
-# The name is the workload's, not the route's. The tunnel is general - it is
-# how anything here is reached from away - so naming a Service after it would
-# say the wrong thing about both.
+# Named for what it is rather than for the application it belongs to. The
+# namespace already says `valheim`, so a Service called `valheim` in it reads
+# `valheim.valheim` and tells a reader nothing; `game-server` says which part
+# of the application answers here. The tunnel route beside it uses the same
+# word, so one name means one thing in both places.
 #
 # Production-only: the address is one per cluster, and staging does not run
 # this workload.
 apiVersion: v1
 kind: Service
 metadata:
-  name: valheim
+  name: game-server
   namespace: valheim
 spec:
   type: ClusterIP

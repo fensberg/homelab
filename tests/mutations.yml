@@ -102,8 +102,8 @@ mutations:
 
   - guard: TestEveryTunnelRouteIsAServiceAddressAndTheReverse
     file: management/cluster/tunnel.tf
-    find: 'valheim = "10.96.0.46"'
-    replace: 'valheim = "10.96.0.47"'
+    find: '"game-server" = "10.96.0.46"'
+    replace: '"game-server" = "10.96.0.47"'
     mentions: "no Service in git sets clusterIP"
     why: >
       The tunnel route and the Service's fixed address live in files read by

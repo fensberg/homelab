@@ -36,7 +36,7 @@ locals {
   # reserves for addresses chosen by hand, so none can already be taken by a
   # Service that was allocated one.
   tunnel_routes = {
-    valheim = "10.96.0.46"
+    "game-server" = "10.96.0.46"
   }
 
   tunnel_members = [for m in split(",", local.tunnel.members) : trimspace(m) if trimspace(m) != ""]
