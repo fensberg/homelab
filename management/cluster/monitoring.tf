@@ -15,6 +15,29 @@ resource "kubernetes_namespace" "monitoring" {
   depends_on = [data.talos_cluster_health.this]
   metadata {
     name = "monitoring"
+
+    # Talos enforces the `baseline` Pod Security standard on every namespace
+    # but kube-system, and node-exporter cannot run under it: reading a node's
+    # metrics means its PID namespace, hostPath mounts of /proc, /sys and /,
+    # and a host port. Baseline refuses all four, so the chart's DaemonSet was
+    # refused admission, the HelmRelease failed, and everything behind
+    # infra-controllers stopped reconciling - which is what a converge sits in
+    # Health waiting for (#459).
+    #
+    # THE COST, STATED. This raises the bar for the WHOLE namespace, not for
+    # node-exporter alone: Prometheus, Alertmanager and Grafana could also
+    # mount a host path here, and nothing in Kubernetes scopes the label
+    # tighter than a namespace. What bounds it instead is that everything in
+    # here arrives by digest from an approved supplier through a reviewed
+    # HelmRelease. #460 moves node-exporter into a namespace of its own so the
+    # rest can go back to baseline.
+    labels = {
+      "pod-security.kubernetes.io/enforce" = "privileged"
+      # Still reported for anything that would fail the stricter standards, so
+      # a workload quietly acquiring host access is visible rather than silent.
+      "pod-security.kubernetes.io/audit" = "restricted"
+      "pod-security.kubernetes.io/warn"  = "restricted"
+    }
   }
 }
 
