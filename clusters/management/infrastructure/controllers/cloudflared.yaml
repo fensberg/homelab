@@ -82,11 +82,28 @@ spec:
               path: /ready
               port: metrics
             periodSeconds: 10
+
+          # STARTUP IS SLOW WHEN QUIC IS FAILING, AND THAT MUST NOT BE FATAL.
+          # cloudflared retries QUIC across several edge addresses with a
+          # backoff before falling back to HTTP/2, which took six minutes when
+          # UDP was being dropped (#455). The liveness probe below gave up
+          # after two, so the pod was killed before it could connect at all and
+          # went into a crash loop - the connector was never down for a reason
+          # liveness could fix, and restarting it only started the wait again.
+          #
+          # A startup probe holds liveness off until the first connection
+          # registers, up to ten minutes, and liveness then guards the steady
+          # state it was written for.
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            periodSeconds: 15
+            failureThreshold: 40
           livenessProbe:
             httpGet:
               path: /ready
               port: metrics
-            initialDelaySeconds: 30
             periodSeconds: 30
             failureThreshold: 4
 
