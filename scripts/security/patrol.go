@@ -107,6 +107,20 @@ func patrol(args []string) int {
 type client struct {
 	repo  string
 	token string
+	// api is where GitHub is, and is empty everywhere but in tests. The HTTP
+	// around these checks - a 404 meaning a branch is gone, a 409 meaning a
+	// run already finished - is most of what can go wrong with them, and it
+	// cannot be exercised at all while the address is a constant.
+	api string
+}
+
+// endpoint builds a URL against GitHub, or against whatever a test stood up.
+func (c *client) endpoint(format string, args ...any) string {
+	base := c.api
+	if base == "" {
+		base = "https://api.github.com"
+	}
+	return base + fmt.Sprintf(format, args...)
 }
 
 type run struct {
@@ -126,17 +140,20 @@ type run struct {
 // The difference is load-bearing for the nightly check - see
 // scheduledTierIsActuallyRunning - which is why it is a function with a test
 // rather than a format string inline.
-func runsURL(repo, workflow, query string) string {
-	if workflow != "" {
-		return fmt.Sprintf("https://api.github.com/repos/%s/actions/workflows/%s/runs?per_page=100&%s", repo, workflow, query)
+func runsURL(base, repo, workflow, query string) string {
+	if base == "" {
+		base = "https://api.github.com"
 	}
-	return fmt.Sprintf("https://api.github.com/repos/%s/actions/runs?per_page=100&%s", repo, query)
+	if workflow != "" {
+		return fmt.Sprintf("%s/repos/%s/actions/workflows/%s/runs?per_page=100&%s", base, repo, workflow, query)
+	}
+	return fmt.Sprintf("%s/repos/%s/actions/runs?per_page=100&%s", base, repo, query)
 }
 
 // runs asks GitHub about runs: in one workflow when workflow is non-empty,
 // across the repository when it is empty.
 func (c *client) runs(workflow, query string) ([]run, error) {
-	req, err := http.NewRequest(http.MethodGet, runsURL(c.repo, workflow, query), nil)
+	req, err := http.NewRequest(http.MethodGet, runsURL(c.api, c.repo, workflow, query), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +205,7 @@ var stuckStatuses = map[string]bool{"queued": true, "pending": true}
 // dropping it.
 func (c *client) awaitingApproval(id int64) (bool, error) {
 	req, err := http.NewRequest(http.MethodGet,
-		fmt.Sprintf("https://api.github.com/repos/%s/actions/runs/%d/pending_deployments", c.repo, id), nil)
+		c.endpoint("/repos/%s/actions/runs/%d/pending_deployments", c.repo, id), nil)
 	if err != nil {
 		return false, err
 	}

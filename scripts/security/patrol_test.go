@@ -71,7 +71,7 @@ func TestOnlyASuccessCountsAsTheNightlyHavingRun(t *testing.T) {
 // noticing that the nightly has stopped - a watcher reporting on itself and
 // calling it the thing it watches.
 func TestTheNightlyQuestionIsAskedAboutTheNightly(t *testing.T) {
-	url := runsURL("owner/repo", "integration-tests.yml", "event=schedule")
+	url := runsURL("", "owner/repo", "integration-tests.yml", "event=schedule")
 	if !strings.Contains(url, "/actions/workflows/integration-tests.yml/runs") {
 		t.Errorf("asked %s - that is every scheduled run, including the patrol's own", url)
 	}
@@ -81,7 +81,7 @@ func TestTheNightlyQuestionIsAskedAboutTheNightly(t *testing.T) {
 }
 
 func TestTheQueueQuestionIsAskedAboutTheWholeRepository(t *testing.T) {
-	url := runsURL("owner/repo", "", "status=queued")
+	url := runsURL("", "owner/repo", "", "status=queued")
 	if strings.Contains(url, "/workflows/") {
 		t.Errorf("asked %s - a stuck queue anywhere is the fault, not only in one workflow", url)
 	}

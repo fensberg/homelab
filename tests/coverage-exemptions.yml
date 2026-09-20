@@ -220,14 +220,14 @@ files:
     uncovered: 3
     covered_by: nothing
   - path: security/patrol.go
-    uncovered: 8
+    uncovered: 6
     covered_by: nothing
-  # reap-queue: the judgement is covered (deadBecause), and what is not is the
-  # HTTP around it - asking GitHub whether a branch exists, and cancelling.
-  # Same shape as the patrol above it, and the same reason: a fake API proves
-  # the fake, and the real one cannot be exercised from a pull request.
+  # reap-queue: the verb, its judgement and its HTTP are covered against a stub
+  # server - which is what making the API address injectable bought. What is
+  # left is the flag parsing that reads the environment and hands over to
+  # reapWith.
   - path: security/reap.go
-    uncovered: 5
+    uncovered: 1
     covered_by: nothing
   - path: superintendent/enforce-push.go
     uncovered: 2

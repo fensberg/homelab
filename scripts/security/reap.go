@@ -43,8 +43,13 @@ func reapQueue(args []string) int {
 	if token == "" {
 		fatal("GITHUB_TOKEN is empty; nothing can be asked or cancelled")
 	}
-	c := &client{repo: *repo, token: token}
+	return reapWith(&client{repo: *repo, token: token}, *confirm)
+}
 
+// reapWith is the verb itself, with the client handed in so the decisions -
+// what is a candidate, what is proof, what a dry run does - can be exercised
+// against a stub rather than against GitHub.
+func reapWith(c *client, confirm bool) int {
 	var candidates []run
 	for status := range stuckStatuses {
 		runs, err := c.runs("", "status="+status)
@@ -78,7 +83,7 @@ func reapQueue(args []string) int {
 		fmt.Println("no queued run is provably dead")
 		return 0
 	}
-	if !*confirm {
+	if !confirm {
 		fmt.Printf("\n%d run(s) would be cancelled. Re-run with -confirm to do it.\n", len(dead))
 		return 0
 	}
@@ -121,7 +126,7 @@ func deadBecause(branchExists bool) (string, bool) {
 
 // branchExists asks whether the run's head branch is still in the repository.
 func (c *client) branchExists(branch string) (bool, error) {
-	status, err := c.head(fmt.Sprintf("https://api.github.com/repos/%s/branches/%s", c.repo, branch))
+	status, err := c.head(c.endpoint("/repos/%s/branches/%s", c.repo, branch))
 	if err != nil {
 		return false, err
 	}
@@ -156,7 +161,7 @@ func (c *client) head(url string) (int, error) {
 // the run is no longer queued either way.
 func (c *client) cancel(id int64) error {
 	req, err := http.NewRequest(http.MethodPost,
-		fmt.Sprintf("https://api.github.com/repos/%s/actions/runs/%d/cancel", c.repo, id), nil)
+		c.endpoint("/repos/%s/actions/runs/%d/cancel", c.repo, id), nil)
 	if err != nil {
 		return err
 	}
