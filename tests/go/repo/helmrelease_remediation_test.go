@@ -10,22 +10,24 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// A HelmRelease retries forever rather than stalling for a person.
+// A HelmRelease retries rather than stalling for a person.
 //
-// Flux gives up after a finite number of remediation attempts, sets Stalled,
-// and then does nothing until somebody forces a reconcile by hand. That is a
-// person at a keyboard for a blocker which has usually cleared on its own by
-// the time they get there.
+// Flux's default strategy gives up after a finite number of attempts, sets
+// Stalled, and then does nothing until somebody forces a reconcile by hand -
+// a person at a keyboard for a blocker which has usually cleared on its own by
+// the time they get there. The monitoring stack could not be admitted until
+// the namespace's Pod Security label arrived from OpenTofu; its attempts were
+// spent long before that; and every Flux layer behind it stopped until the
+// operator was walked through an annotation at a terminal (#459).
 //
-// It is not hypothetical. The monitoring stack could not be admitted until the
-// namespace's Pod Security label arrived from OpenTofu; four attempts were
-// spent long before it did; the release sat Stalled, and every Flux layer
-// behind it stopped - including the workloads - until the operator was walked
-// through an annotation at a terminal (#459).
+// The fix is NOT unlimited remediation retries. Install remediation is an
+// uninstall between every attempt, so `retries: -1` on a permanently broken
+// release uninstalls and reinstalls it indefinitely, and the API documents no
+// backoff on that path.
 //
-// -1 retries indefinitely with backoff, so an ordering problem heals itself. A
-// release that is genuinely broken then presents as a sustained Ready=False,
-// which monitoring can see, rather than as a silence nobody is watching.
+// RetryOnFailure retries on a fixed interval and applies no remediation. An
+// ordering problem heals itself; a release that is really broken retries
+// quietly and shows as a sustained Ready=False, which monitoring can see.
 func TestEveryHelmReleaseRetriesRatherThanStalling(t *testing.T) {
 	root := repoRoot(t)
 	found := 0
@@ -50,26 +52,20 @@ func TestEveryHelmReleaseRetriesRatherThanStalling(t *testing.T) {
 			}
 			found++
 			for _, phase := range []struct {
-				name    string
-				retries *int
+				name     string
+				strategy string
 			}{
-				{"install", doc.Spec.Install.retries()},
-				{"upgrade", doc.Spec.Upgrade.retries()},
+				{"install", doc.Spec.Install.strategyName()},
+				{"upgrade", doc.Spec.Upgrade.strategyName()},
 			} {
-				if phase.retries == nil {
-					t.Errorf("%s: HelmRelease %s declares no spec.%s.remediation.retries.\n\n"+
-						"It then takes Flux's default and stops retrying, so a blocker that clears "+
-						"later needs somebody to force a reconcile by hand (#459). Declare -1.",
-						rel, doc.Metadata.Name, phase.name)
-					continue
-				}
-				if *phase.retries != -1 {
-					t.Errorf("%s: HelmRelease %s retries %s %d times and then stalls.\n\n"+
-						"A finite count means a release blocked by something that has not arrived yet - a "+
-						"namespace label, a CRD, a volume - gives up and waits for a person, while every "+
-						"Flux layer behind it waits too. -1 retries with backoff, and a release that is "+
-						"really broken shows as a sustained Ready=False instead.",
-						rel, doc.Metadata.Name, phase.name, *phase.retries)
+				if phase.strategy != "RetryOnFailure" {
+					t.Errorf("%s: HelmRelease %s declares spec.%s.strategy.name = %q, not RetryOnFailure.\n\n"+
+						"Any other setting gives up after a finite number of attempts and waits for a "+
+						"person to force a reconcile, while every Flux layer behind it waits too (#459). "+
+						"Unlimited remediation retries are not the answer either: install remediation "+
+						"uninstalls between attempts, so a permanently broken release would tear itself "+
+						"down and rebuild forever.",
+						rel, doc.Metadata.Name, phase.name, phase.strategy)
 				}
 			}
 		}
@@ -84,20 +80,20 @@ func TestEveryHelmReleaseRetriesRatherThanStalling(t *testing.T) {
 	}
 }
 
-// The shape of the two phases is identical, so one type serves both and an
-// absent block reads as "not declared" rather than as zero - which is a real
-// distinction here, because zero would mean "never retry".
+// The shape of the two phases is identical, so one type serves both. An
+// absent block reads as an empty strategy name, which is what the message
+// reports: Flux's default is the one that stalls.
 type helmPhase struct {
-	Remediation *struct {
-		Retries *int `yaml:"retries"`
-	} `yaml:"remediation"`
+	Strategy *struct {
+		Name string `yaml:"name"`
+	} `yaml:"strategy"`
 }
 
-func (p *helmPhase) retries() *int {
-	if p == nil || p.Remediation == nil {
-		return nil
+func (p *helmPhase) strategyName() string {
+	if p == nil || p.Strategy == nil {
+		return ""
 	}
-	return p.Remediation.Retries
+	return p.Strategy.Name
 }
 
 type helmReleaseDoc struct {

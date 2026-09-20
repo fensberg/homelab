@@ -13,6 +13,12 @@ package main
 // a different file - and the finding was therefore about a disagreement it had
 // assembled itself.
 //
+// The rule about a field and its value comes from #465, where it read a
+// comment saying readOnlyRootFilesystem is absent - which it is - as
+// contradicting an account, and read "that is a limit rather than a decision",
+// meaning a limitation, as a claim about Kubernetes resource limits. Both
+// findings named a real line and described a disagreement that did not exist.
+//
 // Never "where do the docs and the code disagree" in one breath. Asked that
 // way, a reader sees the claim first and reads the code looking for it, and
 // reports agreement it was primed to find. So the reading happens blind and
@@ -30,6 +36,7 @@ Rules that apply to every finding:
 - Say what is wrong and where. Do not suggest a rewrite, do not praise anything, do not describe the file as a whole.
 - Report nothing you are not reasonably sure of. An empty list is a fine answer.
 - A finding comparing commentary against an account must use the account FOR THAT SAME PATH. If the two you are holding describe different files, there is no disagreement to report - say nothing rather than reporting the mismatch you created by pairing them.
+- A disagreement is about a FIELD AND ITS VALUE, not about a word. Name the setting and what each side says it is, and check the word means the same thing in both: prose calling a missing setting "a limit" means a limitation, not a resource limit, and a comment saying a field is absent is confirmed by the field being absent rather than contradicted by the word appearing in that comment.
 
 Facts about the platforms in this repository that a reader has previously reported as mistakes. They are not mistakes; do not report them:
 - In a GitHub Actions workflow, "uses: $/<path>" is the self-repository action reference. It resolves the action at the commit being run, and it is valid syntax that every workflow here depends on.
