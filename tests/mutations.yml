@@ -85,9 +85,20 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 126
+floor: 127
 
 mutations:
+  - guard: TestEveryFluxSubstitutionHasAStandInAndTheReverse
+    file: tests/flux-substitutions.env
+    find: 'ETCD_ENDPOINTS=["192.0.2.10","192.0.2.11","192.0.2.12"]'
+    replace: "# ETCD_ENDPOINTS removed"
+    mentions: "substitutes to the empty string"
+    why: >
+      A Flux variable with no stand-in substitutes to nothing, and the
+      manifest usually still parses - so CI validates a document that is not
+      the one Flux applies. Two of the runner's variables were in exactly that
+      state until this guard was written.
+
   - guard: TestScrapingTheControlPlaneChangesBothHalvesTogether
     file: management/cluster/talos.tf
     find: 'listen-metrics-urls = "http://0.0.0.0:2381"'
