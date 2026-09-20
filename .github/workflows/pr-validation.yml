@@ -342,23 +342,22 @@ jobs:
         run: scripts/take-delivery.sh kubeconform
 
       # Build the kustomization and substitute the placeholders before
-      # validating, so what is checked is what Flux will apply. The values are
-      # stand-ins; only their shape matters, and shape is exactly what was
-      # going unchecked - a nodePort has to be an integer, and on disk it is
-      # the string "${STATE_DB_NODEPORT}".
+      # validating, so what is checked is what Flux will apply. Shape is
+      # exactly what was going unchecked - a nodePort has to be an integer,
+      # and on disk it is the string "${STATE_DB_NODEPORT}".
+      #
+      # The stand-in values are in tests/flux-substitutions.env rather than in
+      # an `env:` block here. They were here, which made adding one a change
+      # to a protected path: a patch for the operator to apply, for a list of
+      # deliberately fake values. A guard holds that file and the manifests to
+      # each other in both directions.
       - name: Validate Kubernetes manifests
-        env:
-          STATE_DB_NAMESPACE: state
-          STATE_DB_CLUSTER: state-db
-          STATE_DB_NAME: tfstate
-          STATE_DB_OWNER: tofu
-          STATE_DB_NODEPORT: "30432"
-          OBJECT_STORAGE_BUCKET: placeholder-bucket
-          OBJECT_STORAGE_ENDPOINT: https://example.invalid
-          # A stand-in, like the rest: only the shape is checked, and the real
-          # URL belongs in the config rather than in a workflow.
-          SOURCE_CONTROL_REPO_URL: https://example.invalid/fork/homelab
         run: |
+          set -a
+          # shellcheck source=tests/flux-substitutions.env
+          . tests/flux-substitutions.env
+          set +a
+
           schema='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           for dir in clusters/management/infrastructure/*/ clusters/management/flux-system/; do
             echo "==> ${dir}"
