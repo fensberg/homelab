@@ -16,3 +16,12 @@ spec:
   path: ./clusters/management/infrastructure/controllers
   prune: true
   wait: true
+  # etcd's addresses are node addresses, which this repository keeps out of
+  # git. OpenTofu writes them into this secret (management/cluster/
+  # monitoring.tf) because it is the only thing that knows them, and the
+  # monitoring stack's HelmRelease substitutes them in. A fork gets its own
+  # addresses by having its own config, not by editing a manifest.
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: monitoring-vars

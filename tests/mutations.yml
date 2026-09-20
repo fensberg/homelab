@@ -85,9 +85,20 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 125
+floor: 126
 
 mutations:
+  - guard: TestScrapingTheControlPlaneChangesBothHalvesTogether
+    file: management/cluster/talos.tf
+    find: 'listen-metrics-urls = "http://0.0.0.0:2381"'
+    replace: 'listen-metrics-urls-disabled = "http://0.0.0.0:2381"'
+    mentions: "does not contain"
+    why: >
+      The chart scraping etcd and Talos exposing it are two changes in two
+      tiers, applied by two different mechanisms. Losing the machine
+      configuration half leaves a target permanently red, which is how a
+      cluster teaches everybody to stop reading red targets.
+
   - guard: TestEveryHelmReleaseRetriesRatherThanStalling
     file: clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml
     find: "  install:\n    crds: Create\n    strategy:\n      name: RetryOnFailure"

@@ -259,6 +259,52 @@ data "talos_machine_configuration" "controlplane" {
     #
     # Cluster-level, so it is set once on the control plane's config. A worker
     # repeating it would be a second declaration of one fact.
+    # The control plane's own components, made scrapeable.
+    #
+    # Talos binds the scheduler and the controller-manager to 127.0.0.1, and
+    # leaves etcd's metrics listener off entirely, so Prometheus could watch
+    # every workload in the cluster and nothing that schedules them: no
+    # leader-election state, no work-queue depth, no etcd health at all
+    # (docs/epochs/04-observability.md).
+    #
+    # WHAT EACH ONE EXPOSES, BECAUSE THEY ARE NOT THE SAME.
+    #
+    # The scheduler and the controller-manager serve metrics over TLS and
+    # delegate authentication and authorization to the API server, so binding
+    # them to the node exposes an endpoint that still refuses anyone without a
+    # token bearing `get` on /metrics. Prometheus's service account has it;
+    # nothing else on the network does.
+    #
+    # etcd's metrics listener has NO authentication - that is what makes it a
+    # separate listener from the client port. It serves /metrics and /health
+    # only: no keys, no values, no way to write. So what binding it costs is
+    # that anything able to reach port 2381 on a control-plane node learns
+    # cluster health and sizes. The client port, which does hold the estate's
+    # data, is untouched and still refuses everything without a certificate.
+    # Narrowing 2381 to the cluster's own ranges needs Talos ingress firewall
+    # rules, which is a larger change and is filed rather than bundled (#468).
+    yamlencode({
+      cluster = {
+        etcd = {
+          extraArgs = {
+            # The advertised metrics listener. Talos defaults it to
+            # http://127.0.0.1:2381, which nothing off the node can reach.
+            listen-metrics-urls = "http://0.0.0.0:2381"
+          }
+        }
+        controllerManager = {
+          extraArgs = {
+            bind-address = "0.0.0.0"
+          }
+        }
+        scheduler = {
+          extraArgs = {
+            bind-address = "0.0.0.0"
+          }
+        }
+      }
+    }),
+
     yamlencode({
       cluster = {
         network = {
