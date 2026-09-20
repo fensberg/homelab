@@ -68,3 +68,33 @@ resource "kubernetes_secret" "alerting_webhook" {
     webhook_url = local.alerting.webhook_url
   }
 }
+
+# Where Prometheus should look for etcd.
+#
+# etcd is not a pod on Talos - it is a system service the machine runs - so
+# nothing in the cluster can be selected to find it, and the chart needs the
+# addresses themselves. They are node addresses, which this repository keeps
+# out of git, so they arrive the way every other address does: OpenTofu writes
+# them into a secret and Flux substitutes them into the manifest.
+#
+# A secret of its own rather than an entry in cluster-vars, following the rule
+# already stated there: one owner per secret, so adding a monitoring variable
+# never means editing the file that owns the database's.
+#
+# JSON rather than a comma-separated list, because the value is substituted
+# into a YAML list position and JSON's array syntax is valid YAML flow
+# sequence. `["10.0.0.1","10.0.0.2"]` lands as a list; `10.0.0.1,10.0.0.2`
+# would land as a string and the chart would try to scrape one host with a
+# comma in its name.
+resource "kubernetes_secret" "monitoring_vars" {
+  depends_on = [kubernetes_namespace.flux_system]
+
+  metadata {
+    name      = "monitoring-vars"
+    namespace = "flux-system"
+  }
+
+  data = {
+    ETCD_ENDPOINTS = jsonencode(local.node_ips)
+  }
+}

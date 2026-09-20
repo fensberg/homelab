@@ -458,6 +458,47 @@ with WARP connected. If that still fails at +5 s, the second test is crossplay
 off, joining by `10.96.0.46:2456`. That drops console players, and puts the
 friend who plays today on the member list too.
 
+### The control plane is scraped, and it took two tiers (done 2026-09-20)
+
+The stack shipped watching every workload and nothing that runs them. Talos
+binds the scheduler and the controller-manager to `127.0.0.1` and leaves
+etcd's metrics listener off, so the three components that decide where work
+goes and hold the cluster's state had no targets at all.
+
+**It is two changes in two tiers, and each half alone is wrong.** The machine
+configuration arrives through a converge; the chart values arrive through
+Flux. Enabling the chart alone leaves three red targets, which is how a
+cluster teaches everybody to ignore red targets. Converging alone opens three
+ports nothing reads. `TestScrapingTheControlPlaneChangesBothHalvesTogether`
+refuses either on its own, and the ledger proves it.
+
+**etcd is the one that costs something.** The scheduler and the
+controller-manager serve metrics over TLS and delegate authorization to the
+API server, so exposing them changes who can _reach_ the endpoint and not who
+can read it. etcd's metrics listener has no authentication by design - that is
+why it is separate from the client port - so binding it hands cluster health
+and sizes to anything that can reach 2381 on a control-plane node. It serves
+`/metrics` and `/health` only, and the client port holding the estate's data
+is untouched. Narrowing it needs Talos ingress firewall rules, which means
+enumerating every port the estate depends on and locking everybody out if that
+list is wrong, so it is filed (#468) rather than bundled.
+
+**etcd's addresses are node addresses**, which this repository keeps out of
+git. OpenTofu writes them into a secret and Flux substitutes them into the
+HelmRelease, the same route the database's identifiers already take. JSON
+rather than a comma-separated list, because the value lands in a YAML list
+position and JSON's array syntax is a valid flow sequence.
+
+**The scrape does not verify the scheduler's certificate** (#469). The
+direction that matters still holds - those components refuse a scrape without
+a token carrying `get` on `/metrics` - but Prometheus would hand that token to
+an impostor on the node network. Recorded rather than left implicit.
+
+**What was proved afterwards** is in `tests/go/integration`: a healthy target
+for each of the three. The previous round shipped this stack and asserted
+nothing about it, and it then failed to install for two days without anybody
+noticing (#459).
+
 ## Deferred
 
 - **Log aggregation**, per Scope above. Trigger: the first incident where

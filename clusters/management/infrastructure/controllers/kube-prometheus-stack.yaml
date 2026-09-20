@@ -414,22 +414,44 @@ spec:
           memory: 32Mi
       priorityClassName: interactive
 
-    # Components this estate does not scrape yet, switched off so their targets
-    # do not sit red and teach everybody to ignore red targets.
+    # The control plane itself, now that Talos exposes it.
     #
-    # Each needs a Talos machine-configuration change rather than a chart
-    # value: the scheduler and controller manager bind their metrics to
-    # localhost, and etcd serves metrics on a port that has to be asked for.
-    # That change is a converge, and it lands with the pull request that adds
-    # metrics-server - which needs the same kind of change for kubelet serving
-    # certificates. etcd health is in this epoch's scope and this is the step
-    # that gets it, not a decision to skip it.
-    kubeEtcd:
-      enabled: false
+    # Until this landed, Prometheus watched every workload in the cluster and
+    # nothing that schedules them: no leader election, no work-queue depth, no
+    # etcd health. The machine-configuration change that makes them reachable
+    # is in management/cluster/talos.tf, and the two halves have to travel
+    # together - enabling them here without it leaves three targets red, and
+    # the converge without this leaves three open ports nothing reads.
+    # tests/go/repo refuses either half on its own.
     kubeControllerManager:
-      enabled: false
+      enabled: true
+      serviceMonitor:
+        # Talos's own certificate for this endpoint is not one the scrape can
+        # verify against the cluster CA, so the connection is encrypted and
+        # the server is not authenticated. The direction that matters is
+        # unaffected: the component still refuses a scrape without a token
+        # carrying `get` on /metrics, which only Prometheus's service account
+        # has. #469 is the follow-up to pin a CA rather than skip the check.
+        https: true
+        insecureSkipVerify: true
     kubeScheduler:
-      enabled: false
+      enabled: true
+      serviceMonitor:
+        https: true
+        insecureSkipVerify: true
+
+    # etcd is a machine service rather than a pod, so there is nothing to
+    # select and the addresses have to be given. They are node addresses, kept
+    # out of git: OpenTofu writes them into the monitoring-vars secret and
+    # Flux substitutes them here (management/cluster/monitoring.tf).
+    #
+    # Plain HTTP on 2381, which is the chart's default and Talos's: the
+    # metrics listener is a separate, unauthenticated listener serving
+    # /metrics and /health only. The client port that holds the estate's state
+    # is untouched.
+    kubeEtcd:
+      enabled: true
+      endpoints: ${ETCD_ENDPOINTS}
     # Cilium replaces kube-proxy here, so there is nothing to scrape and its
     # rules would alert about a component that does not exist.
     kubeProxy:
@@ -442,11 +464,10 @@ spec:
     defaultRules:
       create: true
       rules:
-        etcd: false
+        # On, with the components they watch. These are the rules that would
+        # have said "etcd has no leader" or "the scheduler is not scheduling"
+        # while every workload still looked fine.
         kubeProxy: false
-        kubeSchedulerAlerting: false
-        kubeSchedulerRecording: false
-        kubeControllerManager: false
 
     # Windows nodes: there are none, and its exporter would be a DaemonSet
     # that never schedules plus rules that never fire.

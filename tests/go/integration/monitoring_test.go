@@ -3,8 +3,13 @@
 package integration_test
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/stretchr/testify/assert"
@@ -119,4 +124,65 @@ func TestPrometheusScrapesTheStateDatabase(t *testing.T) {
 			"PodMonitor - two namespaces away - is created, accepted and never scraped, which "+
 			"looks exactly like a working monitor until somebody asks for the data.",
 		strings.TrimSpace(out))
+}
+
+// The control plane is scraped, not just the workloads.
+//
+// Talos binds the scheduler and the controller-manager to localhost and leaves
+// etcd's metrics listener off, so a cluster can look thoroughly monitored
+// while nothing watches the components that schedule the work or hold its
+// state. The manifests declaring the fix live in two tiers and are held
+// together by tests/go/repo; this asks the only question that proves it
+// arrived, which is whether Prometheus has a live target for each.
+//
+// A target that exists and is down is the failure this catches: the machine
+// configuration was not applied, the port is closed, or the scrape is refused.
+func TestPrometheusScrapesTheControlPlane(t *testing.T) {
+	opts := k8s.NewKubectlOptions("", kubeconfig(t), monitoringNamespace)
+	tunnel := k8s.NewTunnel(opts, k8s.ResourceTypeService, "kube-prometheus-stack-prometheus", 0, 9090)
+	defer tunnel.Close()
+	tunnel.ForwardPort(t)
+
+	for _, job := range []string{"kube-scheduler", "kube-controller-manager", "kube-etcd"} {
+		t.Run(job, func(t *testing.T) {
+			up := instantQuery(t, tunnel.Endpoint(), fmt.Sprintf(`sum(up{job=%q})`, job))
+			require.Greater(t, up, 0.0,
+				"Prometheus has no healthy target for %s.\n\n"+
+					"Either the Talos machine configuration exposing it was never converged, or the "+
+					"scrape is being refused. The control plane is the part of this cluster nothing "+
+					"else reports on: no leader election, no work-queue depth, no etcd health.", job)
+		})
+	}
+}
+
+// instantQuery runs one PromQL query and returns the single scalar it expects,
+// or zero when the query matched nothing - which for `up` means no target.
+func instantQuery(t *testing.T, endpoint, query string) float64 {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, "http://"+endpoint+"/api/v1/query", nil)
+	require.NoError(t, err)
+	q := req.URL.Query()
+	q.Set("query", query)
+	req.URL.RawQuery = q.Encode()
+
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	require.NoError(t, err, "querying Prometheus")
+	defer resp.Body.Close()
+
+	var answer struct {
+		Status string `json:"status"`
+		Data   struct {
+			Result []struct {
+				Value []any `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&answer), "decoding Prometheus's answer")
+	require.Equal(t, "success", answer.Status, "Prometheus refused the query %q", query)
+	if len(answer.Data.Result) == 0 {
+		return 0
+	}
+	v, err := strconv.ParseFloat(fmt.Sprint(answer.Data.Result[0].Value[1]), 64)
+	require.NoError(t, err, "reading the value Prometheus returned")
+	return v
 }
