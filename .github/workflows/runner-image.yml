@@ -80,7 +80,7 @@ jobs:
             --build-arg KUBECTL_VERSION="$KUBECTL_VERSION" \
             --build-arg TALOSCTL_VERSION="$TALOSCTL_VERSION" \
             --build-arg TOFU_VERSION="$TOFU_VERSION" \
-            --build-arg RCLONE_DEB_VERSION="$RCLONE_VERSION" \
+            --build-arg RCLONE_DEB_VERSION="$RCLONE_DEB_VERSION" \
             -t "${IMAGE}:${SHA}" \
             -t "${IMAGE}:latest" \
             .github/runner-image
