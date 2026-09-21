@@ -1,30 +1,83 @@
 # =============================================================================
-# Object storage bucket. Vendor: Cloudflare R2 (cloudflare/cloudflare provider).
+# Object storage. Vendor: Cloudflare R2 (cloudflare/cloudflare provider).
 #
-# Two different things back up here, at two different layers:
+# FOUR BUCKETS, AND THE RULE THAT PRODUCED THEM.
 #
-#   postgres/    CloudNativePG's WAL archive and base backups, written by the
-#                database itself. This is what routine point-in-time recovery
-#                restores from.
+# R2 API tokens scope per BUCKET. There is no prefix or directory condition on
+# a permanent token, and a token permitted to write is also permitted to delete
+# (#94). So a bucket is exactly one blast radius, and a prefix inside one buys
+# no protection whatsoever - it is filing, not isolation.
 #
-#   state/       An age-encrypted dump of the OpenTofu state, written by the
-#                Backup phase of the start button.
+# That gives one rule, and every entry below follows from it: two things belong
+# in different buckets if and only if one being compromised must not be able to
+# destroy the other.
 #
-# The second one exists because the first is not sufficient on its own. The
-# database backups restore into a running cluster - but rebuilding the cluster
-# needs the state that lives in that database. The standalone state dump is
-# what breaks that circle after a total loss.
+#   <name>              the state database's WAL archive and base backups,
+#                       written continuously by CloudNativePG from inside the
+#                       cluster. Destroyed with the estate.
 #
-# Nothing reaches this bucket in plaintext: Postgres backups are written by a
+#   <name>-state        age-encrypted OpenTofu state dumps, written by the
+#                       Backup phase. Outlives the estate.
+#
+#   <name>-staging      staging workload data.    Outlives the estate.
+#   <name>-production   production workload data. Outlives the estate.
+#
+# WHY THE STATE DUMPS ARE NOT IN THE DATABASE BUCKET, which is where they were.
+# The state dump exists precisely because the database backups are not
+# sufficient on their own: they restore into a running cluster, and rebuilding
+# that cluster needs the state held in that database. The dump is what breaks
+# the circle after a total loss. While both sat in one bucket, the credential
+# that lives permanently in a cluster Secret could delete the break-glass copy
+# along with the backups it was meant to rescue - one compromise taking both
+# layers of a deliberately two-layer design.
+#
+# WHY STAGING AND PRODUCTION ARE BUCKETS AND NOT PREFIXES. Staging is where the
+# less-trusted things run, so a staging compromise must not reach production's
+# data. By the rule above that makes it a bucket boundary.
+#
+# AND WHY THERE IS NO -state-staging. CLAUDE.md: the management tier has no
+# staging or production form - one cluster hosts both overlays, separated by
+# namespace. Environment is a property of a WORKLOAD's data and of nothing
+# else. A platform bucket carrying an environment suffix would be asserting a
+# second platform that does not exist.
+#
+# Nothing reaches any of these in plaintext: Postgres backups are written by a
 # database whose credentials never leave the cluster, and the state dump is
 # age-encrypted to a public recipient before upload.
+#
 # =============================================================================
 
-# Orphan adoption happens in Go (cluster.go), before this gets applied - see
-# compute.tf's talos_disk_image comment for why a static `import` block here
-# is the wrong tool: it always attempts the read and hard-fails when the
-# bucket genuinely does not exist yet, which is the normal, common case.
-resource "cloudflare_r2_bucket" "homelab" {
+# The set is created here as four named resources and declared again in
+# scripts/contractor/internal/config/buckets.go, which decides what happens to
+# each one at teardown. Twice on purpose - the same defence in depth the config
+# contract uses, because this side creates them and that side decides their
+# fate. TestTheBucketTableAgreesWithTheHCL refuses any drift between the two.
+#
+# FOUR NAMED RESOURCES RATHER THAN ONE `for_each`. The set is fixed and small,
+# and a for_each keys every address by a map key - which
+# TestResourceAddressKeysUseAPlaceholder refuses, because for_each keys
+# normally come from the config and a name in an address is a vault value
+# published in a plan. These keys would have been literals rather than config
+# values, but a guard that has to distinguish those two is a guard with an
+# exception in it, and the estate's rule is to move the work to where the guard
+# already looks. Named resources also give `tofu state rm` an address with no
+# quoting in it, which is the command that decides whether a bucket survives a
+# teardown.
+#
+# Orphan adoption happens in Go (cluster.go), before any of this is applied -
+# see compute.tf's talos_disk_image comment for why a static `import` block is
+# the wrong tool: it always attempts the read and hard-fails when the bucket
+# genuinely does not exist yet, which is the normal, common case.
+
+# The state database's WAL archive and base backups. Destroyed with the estate:
+# they describe something that is about to stop existing.
+#
+# Keeps the site's configured name with no suffix, and that is load-bearing
+# rather than lazy. CloudNativePG's destinationPath points at this bucket, and
+# renaming it starts a fresh WAL archive with no base backup behind it - a live
+# migration nobody should be pushed into by a tidy-up. The rename becomes free
+# at the next rebuild, which destroys and recreates this bucket anyway.
+resource "cloudflare_r2_bucket" "database" {
   account_id = local.object_storage_account.account_id
   name       = local.object_storage.bucket
 
@@ -40,38 +93,73 @@ resource "cloudflare_r2_bucket" "homelab" {
   # asserted here for it to disagree with.
 }
 
-# The workload bucket, and its whole point is that it outlives this estate.
+# The age-encrypted OpenTofu state dumps. Outlives the estate.
 #
-# The bucket above holds backups OF this estate, so the teardown empties it
-# deliberately - they describe something that is about to stop existing. This
-# one holds backups of what RUNS on the estate, which is the opposite: a world
-# save, or anything else a workload accumulates that people would mind losing.
+# Separate from the database bucket above, which is the entire point. This is
+# the copy that exists to survive the database being lost - it is what breaks
+# the circle when rebuilding a cluster needs the state held inside that
+# cluster. While the two shared a bucket they shared a credential, so the key
+# sitting permanently in a cluster Secret could delete the break-glass copy
+# along with the backups it was meant to rescue.
 #
-# A cluster rebuild is the normal way a Talos version reaches these machines
-# (#97), and a rebuild is a demolish followed by an ignition. So "survives a
-# teardown" is not an edge case here, it is the routine path - see #330 and the
-# storage section of docs/epochs/03-workload.md.
-#
-# The name is derived rather than configured. It needs no vault item of its
-# own, cannot drift from the bucket it sits beside, and keeps a real name out
-# of this file.
-#
-# Sterilize forgets this resource before the destroy runs, and the next
-# ignition adopts it back. That is deliberate and it is the exception to the
-# rule stated in teardown.go - that forgetting something which outlives the VMs
-# leaves a real thing nothing tracks. It does, for exactly as long as there is
-# no estate to track it, and adoption is what closes that window.
-resource "cloudflare_r2_bucket" "workloads" {
+# It also stops demolish destroying them (#94): the teardown empties the bucket
+# it is about to delete, so the operation most likely to precede needing a
+# state dump was the operation that destroyed every one of them.
+resource "cloudflare_r2_bucket" "state" {
   account_id = local.object_storage_account.account_id
-  name       = "${local.object_storage.bucket}-workloads"
+  name       = "${local.object_storage.bucket}-state"
 
   # No location, same reason as above.
 }
 
-output "workload_storage_bucket" {
-  value = cloudflare_r2_bucket.workloads.name
+# Staging workload data. Outlives the estate.
+resource "cloudflare_r2_bucket" "staging" {
+  account_id = local.object_storage_account.account_id
+  name       = "${local.object_storage.bucket}-staging"
+
+  # No location, same reason as above.
 }
 
-output "object_storage_bucket" {
-  value = cloudflare_r2_bucket.homelab.name
+# Production workload data. Outlives the estate.
+#
+# A cluster rebuild is the routine way a new Talos version reaches these
+# machines (#97), and a rebuild is a demolish followed by an ignition - so
+# "survives a teardown" is the normal path here rather than an edge case. See
+# #330 and the storage section of docs/epochs/03-workload.md.
+resource "cloudflare_r2_bucket" "production" {
+  account_id = local.object_storage_account.account_id
+  name       = "${local.object_storage.bucket}-production"
+
+  # No location, same reason as above.
+}
+
+# The database bucket already exists under a resource name that said nothing
+# about what was in it. Renaming the RESOURCE is free; renaming the BUCKET is
+# not, for the reason above, so only the address moves.
+moved {
+  from = cloudflare_r2_bucket.homelab
+  to   = cloudflare_r2_bucket.database
+}
+
+# `cloudflare_r2_bucket.workloads` is deliberately NOT moved here, and its
+# absence is the whole transition.
+#
+# It held `<name>-workloads`, which the staging and production buckets replace.
+# A bucket cannot be renamed in R2, so this is a destroy and a create rather
+# than a move - and it is safe only because nothing has ever written to it: the
+# world backup that was meant to fill it does not exist yet (#372), which is
+# also why this is the cheapest possible moment to make the change.
+#
+# If that turns out to be wrong, the failure is the safe one. Cloudflare
+# refuses to delete a bucket with objects in it, so the apply stops and says so
+# rather than quietly taking something with it.
+
+output "object_storage_buckets" {
+  description = "Every bucket the estate holds."
+  value = {
+    database   = cloudflare_r2_bucket.database.name
+    state      = cloudflare_r2_bucket.state.name
+    staging    = cloudflare_r2_bucket.staging.name
+    production = cloudflare_r2_bucket.production.name
+  }
 }

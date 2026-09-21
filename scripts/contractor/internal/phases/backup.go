@@ -136,8 +136,28 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	}
 	run.Wipe(state)
 
+	// The state bucket, not the site's base bucket.
+	//
+	// These dumps used to sit beside the database's own WAL archive, and the
+	// two are the estate's two recovery layers: the database backups restore
+	// into a running cluster, and this is what rebuilds the cluster that
+	// database lives in. Sharing a bucket meant sharing a credential, so the
+	// key that sits permanently in a cluster Secret could delete the copy that
+	// exists to survive that cluster being lost. It also meant demolish
+	// destroyed these, because it empties the bucket it is about to delete
+	// (#94).
+	stateBucket, err := config.BucketByKey("state")
+	if err != nil {
+		return err
+	}
+	store.Bucket = stateBucket.Name(store.Bucket)
+
 	rcloneEnv := r2Env(cfg.ObjectStorage, store)
 
+	// The prefix survives the move even though the bucket now holds nothing
+	// else. The provider split gives this root two states rather than one -
+	// infrastructure and platform - and each wants its own prefix here, so
+	// flattening now would only have to be undone. See 02-abstraction.md.
 	dest := fmt.Sprintf("R2:%s/management-cluster", store.Bucket)
 	run.Info(fmt.Sprintf("uploading to %s/%s.tfstate.age", dest, stamp))
 	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, fmt.Sprintf("%s/%s.tfstate.age", dest, stamp)); err != nil {

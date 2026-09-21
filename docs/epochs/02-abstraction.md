@@ -1821,6 +1821,143 @@ into the module boundaries, and every future site inherits it. That is the
 sentence the design constraint above ends on, and it is the reason this is step
 one.
 
+### Object storage: the bucket is the unit, and what belongs at each scope
+
+Agreed 2026-09-21, after the operator asked what belongs at the estate, site and
+node levels and how to display it. The answer came out of one constraint rather
+than out of taste, which is why it is short.
+
+#### The constraint that decides it
+
+**R2 API tokens scope per bucket.** There is no prefix or directory condition on
+a permanent token, and a token permitted to write is also permitted to delete.
+The second half was established in #94, and it is the reason token scoping
+cannot make a backup writer unable to destroy backups.
+
+So a bucket is **exactly one blast radius**, and a prefix inside a bucket is
+filing rather than isolation. One rule follows, and every decision below is an
+application of it:
+
+> Two things belong in different buckets if and only if one of them being
+> compromised must not be able to destroy the other. Everything finer is a
+> prefix.
+
+#### What each level of the hierarchy maps to
+
+| Level      | Maps to                       | Why                                                                                                                                                                             |
+| ---------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Estate** | the vendor **account**        | R2 has no layer above a bucket, and `CLAUDE.md` already counts the object storage account among the things an estate shares. A second estate is a second account, not a prefix. |
+| **Site**   | a **bucket** boundary, always | "A site is an isolation boundary." Two sites must not be able to destroy each other's data. Already true - the base bucket name is a per-site vault value.                      |
+| **Node**   | **nothing**                   | "Node: shares everything with its site." A node is disposable and its data belongs to its site.                                                                                 |
+
+The node row is the one worth stating rather than leaving implied. **If anything
+is ever node-scoped in object storage, that is the defect** - it means a
+disposable thing has acquired durable state of its own, and the next rebuild of
+that node is going to find out.
+
+**Environment is a fourth axis and it applies to workloads only.** `CLAUDE.md`
+is explicit that the management tier has no staging or production form: one
+cluster hosts both overlays, separated by namespace. So staging and production
+are a property of a _workload's data_ and of nothing else. A platform bucket
+that grew an environment suffix would be asserting a second platform that does
+not exist.
+
+#### The layout
+
+Four per site, every name derived from the one vault value so a fork changes one
+field and no real name reaches this repository:
+
+| Bucket              | Holds                                       | Credential held by                   | Survives a teardown |
+| ------------------- | ------------------------------------------- | ------------------------------------ | ------------------- |
+| `<name>`            | the database's WAL archive and base backups | CloudNativePG, in-cluster, permanent | no                  |
+| `<name>-state`      | age-encrypted OpenTofu state dumps          | contractor, transient                | **yes**             |
+| `<name>-staging`    | staging workload data                       | staging workloads                    | **yes**             |
+| `<name>-production` | production workload data                    | production workloads                 | **yes**             |
+
+That gives a clean statement of the teardown rule, which used to be a special
+case and is now the general one: **the estate's own working data is destroyed
+with the estate; everything that exists to outlive it is forgotten before the
+destroy and adopted back by the next ignition.**
+
+#### Two things this fixes rather than tidies
+
+**The state dumps stop sharing a credential with the database they rescue.**
+These are the estate's two recovery layers and they are deliberately two: the
+database backups restore into a running cluster, and the state dump is what
+rebuilds the cluster that database lives in. While both sat in one bucket they
+shared one credential, and that credential is the one sitting permanently in a
+cluster Secret. One compromise took both layers of a design whose entire point
+was having two.
+
+**It closes half of #94.** That issue's second remedy is "the bucket should not
+be something the automation can remove." `demolish` empties the bucket it is
+about to delete, because Cloudflare refuses to delete a non-empty one - so the
+operation most likely to precede needing a state dump was the operation that
+destroyed every state dump. Eleven objects went that way. The `-state` bucket is
+released before the emptying, exactly as the workload bucket already was.
+
+The pre-teardown warning changed with it, and that is not cosmetic. It used to
+say "THESE ARE THE AGE-ENCRYPTED STATE BACKUPS, and they are the only copies",
+which is now false, and an operator who believes their backups are about to be
+destroyed makes worse decisions in the five minutes before a demolish. It now
+names the survivors as well as the casualty.
+
+#### `-workloads` is retired, and the timing is the argument
+
+The bucket created by #330 is replaced by `-staging` and `-production`. R2 cannot
+rename a bucket, so this is a destroy and a create rather than a move - safe
+only because **nothing has ever written to it**. The world backup meant to fill
+it does not exist (#372), which makes this the cheapest moment the change will
+ever have.
+
+If that turns out to be wrong the failure is the safe one: Cloudflare refuses to
+delete a bucket holding objects, so the apply stops and says so.
+
+#### Declared twice, on purpose
+
+The set lives in `object-storage.tf`, which creates the buckets, and in
+`scripts/contractor/internal/config/buckets.go`, which decides each one's fate
+at teardown. Neither can be derived from the other - OpenTofu cannot read a Go
+table, and the teardown is a Go program running when no OpenTofu is loaded - so
+this is the same defence in depth the config contract already uses.
+
+`TestTheBucketTableAgreesWithTheHCL` refuses drift in either direction, and the
+dangerous direction is the quiet one: **a bucket added to the HCL but not the
+table is created, filled, and then destroyed by the next teardown with a zero
+exit code**, because nothing told Sterilize to release it. The reverse is noisy
+and harmless.
+
+The address and fate used to be string literals repeated at each call site - two
+copies at two buckets, which would have been eight at four. That is not a set,
+it is eight chances to disagree.
+
+**Four named resources rather than one `for_each`.** The set is small and fixed,
+and a `for_each` keys every address by a map key, which
+`TestResourceAddressKeysUseAPlaceholder` refuses - for_each keys normally come
+from the config, so a name in an address is a vault value published in a plan.
+These keys would have been literals, but a guard that has to tell those two
+apart is a guard with an exception in it, and the rule here is to move the work
+to where the guard already looks rather than widen the guard. Named resources
+also hand `tofu state rm` an address with no quoting in it, and that is the
+command deciding whether a bucket survives a teardown.
+
+#### Still open
+
+- **Per-bucket credentials do not exist yet.** The estate holds one R2 key
+  scoped to _all_ buckets, so the separation above is structural rather than
+  enforced until #481 and #483 land. Both need an operator: a token is created
+  in a vendor console and its halves go in the vault.
+- **`<name>` should be `<name>-database`.** The resource address moved; the
+  bucket name did not, because CloudNativePG's `destinationPath` points at it
+  and changing that starts a fresh WAL archive with no base backup behind it.
+  A rebuild destroys and recreates this bucket anyway, so the rename is free
+  then and a live migration now. Do it then.
+- **Nothing enumerates the account.** Two buckets existed that this repository
+  never created and nothing noticed; the operator found and deleted them. A
+  table in a record drifts - the guard that would not is one that lists the
+  account's buckets and fails on any the repository does not declare, in the
+  survey rather than in a hermetic test, since it needs a credential.
+
 ## Outcome
 
 ## Deferred
