@@ -40,5 +40,6 @@ rules:
       - inspector.yml
       - integration-tests.yml
       - pr-validation.yml
+      - site-sweep.yml
       - security-patrol.yml
       - sensitive-paths.yml

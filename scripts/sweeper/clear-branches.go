@@ -97,28 +97,28 @@ func clearBranches(args []string) int {
 	// the hook skips it. A fetch reads and never writes to the remote.
 	if !*hook {
 		if _, err := git("fetch", "--prune", "--quiet"); err != nil {
-			fmt.Fprintln(os.Stderr, "collector: could not fetch, so this is judged on stale information:", err)
+			fmt.Fprintln(os.Stderr, "sweeper: could not fetch, so this is judged on stale information:", err)
 		}
 	}
 
 	current, err := git("rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "collector:", err)
+		fmt.Fprintln(os.Stderr, "sweeper:", err)
 		return 1
 	}
 
 	merged, closed, open, prErr := pullRequestBranches()
 	if prErr != nil {
-		// Said even from the hook: a collector that cannot see squash-merges
+		// Said even from the hook: a sweeper that cannot see squash-merges
 		// keeps nearly everything, and staying quiet about that is how the
 		// branch picker filled up in the first place.
-		fmt.Fprintln(os.Stderr, "collector: could not ask GitHub about pull requests, so"+
+		fmt.Fprintln(os.Stderr, "sweeper: could not ask GitHub about pull requests, so"+
 			" branches whose work was squash-merged are being kept. Authenticate gh and run again to clear those.")
 	}
 
 	branches, err := localBranches()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "collector:", err)
+		fmt.Fprintln(os.Stderr, "sweeper:", err)
 		return 1
 	}
 
@@ -196,7 +196,7 @@ func clearBranches(args []string) int {
 func collectRemote(apply bool, merged, closed, open map[string]bool) {
 	names, err := remoteBranches()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "collector: could not list remote branches:", err)
+		fmt.Fprintln(os.Stderr, "sweeper: could not list remote branches:", err)
 		return
 	}
 	fmt.Println("\non GitHub:")

@@ -10,15 +10,15 @@ import (
 // The post-merge hook must never cost the pull anything, and must say so when
 // it could not do its job.
 //
-// WHAT THIS GUARDS. The collector ran by hand only, and on 2026-09-11 an
+// WHAT THIS GUARDS. The sweeper ran by hand only, and on 2026-09-11 an
 // operator's checkout still held branches from pull requests merged two weeks
-// earlier - the collector recognised every one, but nothing ran it. The hook
+// earlier - the sweeper recognised every one, but nothing ran it. The hook
 // runs it after each pull. The failure worth guarding is the quiet one: a hook
-// that cannot build the collector and exits without a word looks exactly like
+// that cannot build the sweeper and exits without a word looks exactly like
 // a hook with nothing to collect, and that is the silent absence that filled
 // the branch picker in the first place.
 //
-// Run for real rather than read, in a repository where the collector cannot be
+// Run for real rather than read, in a repository where the sweeper cannot be
 // built, which is the path where silence would do the damage.
 func TestThePostMergeHookSaysWhenItCouldNotCollect(t *testing.T) {
 	root := repoRoot(t)
@@ -48,7 +48,7 @@ func TestThePostMergeHookSaysWhenItCouldNotCollect(t *testing.T) {
 			"still prints as an error after every pull, which teaches people to ignore it\n%s", err, out)
 	}
 	if !strings.Contains(string(out), "were not taken away") {
-		t.Errorf(`the hook could not build the collector and said nothing about it:
+		t.Errorf(`the hook could not build the sweeper and said nothing about it:
 
 %s
 A silent failure here reads exactly like "nothing to collect", which is how

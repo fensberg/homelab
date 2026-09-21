@@ -59,7 +59,6 @@ func verbs() []verb {
 		{"guard-deliveries", "refuse a delivery from an unapproved supplier, or one the lock does not pin by hash", guardDeliveries},
 		{"guard-egress", "refuse a job whose outbound reach is not what the suppliers list declares", guardEgress},
 		{"patrol", "check from outside that the estate is still answering", patrol},
-		{"reap-queue", "cancel queued runs that can never produce a result: their branch is gone", reapQueue},
 	}
 }
 

@@ -1,0 +1,118 @@
+diff --git a/.github/workflows/site-sweep.yml b/.github/workflows/site-sweep.yml
+new file mode 100644
+index 0000000..e85a2fa
+--- /dev/null
++++ b/.github/workflows/site-sweep.yml
+@@ -0,0 +1,85 @@
++name: "Site Sweep"
++
++# The sweeper, on a schedule.
++#
++# A site produces two kinds of leftover, and they are not the same job.
++# Something dangerous - a half-finished teardown, a machine nothing tracks - is
++# the contractor's problem, handled deliberately. Something merely finished is
++# refuse: boring on purpose, idempotent, safe to miss, and repaired by the next
++# sweep doing exactly the same thing.
++#
++# WHY NOT IN THE SECURITY PATROL, where this started. Security decides what may
++# come in and what may go out - it refuses things and writes nothing. A guard
++# that also cancels work is a guard somebody is reluctant to run, and one role
++# doing two jobs is the bloat this repository refuses everywhere else. The
++# patrol still reports a queue that is not moving; taking the dead ones away is
++# this.
++#
++# It holds no credential that reaches the estate. Cancelling a workflow run is
++# the only thing it writes, and `actions: write` is the narrowest permission
++# GitHub offers for it.
++
++on:
++  schedule:
++    # Daily, off the hour. Sweeping is the work nobody observes the latency of:
++    # a missed sweep needs no retry, because the next one takes away exactly
++    # the same thing. GitHub delays and drops scheduled runs under load, which
++    # for this costs nothing.
++    - cron: "41 6 * * *"
++  workflow_dispatch:
++
++permissions:
++  # read to ask what is queued; write to cancel a run whose branch is gone.
++  # Nothing else here writes anything.
++  actions: write
++  contents: read
++
++concurrency:
++  group: site-sweep
++  cancel-in-progress: false
++
++defaults:
++  run:
++    shell: bash
++
++jobs:
++  sweep:
++    name: "Site Sweep"
++    runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours, which
++    # is what GitHub's default timeout allows.
++    timeout-minutes: 10
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++            go.dev:443
++            objects.githubusercontent.com:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
++
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      # scripts/sweeper has no dependencies, so there is nothing to cache.
++      - name: Setup Go
++        uses: $/.github/workflows/setup-go
++
++      - name: Sweep away queued runs that can never produce a result
++        env:
++          # Read-only on contents, write on actions, and scoped to this
++          # repository by GitHub. It reaches nothing in the estate.
++          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          GITHUB_REPOSITORY: ${{ github.repository }}
++        run: |
++          go build -C scripts/sweeper -o ../../toolshed/sweeper .
++          ./toolshed/sweeper clear-queue -confirm | tee "$GITHUB_STEP_SUMMARY"
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index c633e36..51e0b31 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -531,6 +531,22 @@ egress:
+       list to transcribe. Egress for these pods has to be controlled at the
+       cluster's network layer instead (#411); until then it is uncontrolled
+       and unrecorded, and this entry says so rather than implying otherwise.
++  - job: site-sweep.yml/sweep
++    policy: block
++    reason: >-
++      The sweeper, cancelling queued runs whose branch no longer exists (#181).
++      GitHub's API to ask and to cancel, and the Go toolchain to build the
++      program. It holds no credential that reaches the estate: the only thing
++      it writes is a run cancellation, through the repository-scoped token
++      GitHub issues the job.
++    hosts:
++      - api.github.com:443
++      - github.com:443
++      - go.dev:443
++      - objects.githubusercontent.com:443
++      - release-assets.githubusercontent.com:443
++      - storage.googleapis.com:443
++
+   - job: deploy-infrastructure.yml/converge
+     policy: audit
+     reason: >-

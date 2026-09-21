@@ -94,7 +94,7 @@ func TestNothingCollectsTheCurrentBranchOrMain(t *testing.T) {
 // work is not finished whatever an older one says.
 //
 // Squash-merged repositories reuse head branch names routinely - a follow-up is
-// opened from the same branch after the first merged. The collector used to ask
+// opened from the same branch after the first merged. The sweeper used to ask
 // "did a pull request for this branch merge", find the old one, and take away a
 // branch with work in progress on it.
 func TestAnOpenPullRequestKeepsTheBranch(t *testing.T) {
