@@ -222,10 +222,20 @@ belongs in an epoch record.
   apply runs on local state; once the cluster hosts Postgres, state moves
   there and the local copy is destroyed. CloudNativePG streams WAL and base
   backups to object storage for point-in-time recovery, and the Backup phase
-  writes a standalone age-encrypted state dump alongside them. Both are
-  needed: the database backups restore into a running cluster, but rebuilding
-  that cluster needs the state held in the database. The standalone dump is
-  what breaks that circle after a total loss.
+  writes a standalone age-encrypted state dump **to a bucket of its own**. Both
+  are needed: the database backups restore into a running cluster, but
+  rebuilding that cluster needs the state held in the database. The standalone
+  dump is what breaks that circle after a total loss.
+
+  They are two buckets rather than one prefix because R2 tokens scope per
+  bucket and cannot separate write from delete, so sharing a bucket meant
+  sharing a credential - and the credential that lives permanently in a cluster
+  Secret could delete the copy that exists to survive that cluster being lost.
+  It also meant `demolish` destroyed the state dumps, because it empties the
+  bucket it is about to delete (#94). The bucket layout, and what belongs at
+  the estate, site and node levels, is in
+  [`02-abstraction.md`](docs/epochs/02-abstraction.md).
+
 - **A run proves the cluster converged before it trusts it.** The Health
   phase sits between Cluster and Migrate and refuses to continue unless every
   node is Ready and counted, every Flux Kustomization and HelmRelease has
