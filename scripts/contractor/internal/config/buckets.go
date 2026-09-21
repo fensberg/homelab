@@ -29,9 +29,30 @@ type Bucket struct {
 	// is a key that will one day be quoted wrongly.
 	Key string
 
-	// Suffix is appended to the site's configured bucket name. The base name
-	// is a vault value, so a fork changes one field and gets a whole set.
+	// Suffix is appended to the site's slug - `SiteNetwork.Name`, the same
+	// value that names every VM. So a site's buckets read `north-street-office-state`
+	// beside machines called `north-street-office-cp-100`, and the real name reaches R2
+	// and the rendered config without ever reaching git.
+	//
+	// The slug is the base because the SITE is the isolation boundary. Two
+	// sites share one R2 account, so two sites whose buckets collide are two
+	// sites writing into each other's state dumps.
 	Suffix string
+
+	// FromConfiguredName means this bucket takes `object_storage.bucket` from
+	// the config instead of the site slug.
+	//
+	// True for exactly one bucket, and it is temporary. The database bucket
+	// already exists under whatever that field says, and renaming an R2 bucket
+	// is a destroy and a create - which OpenTofu cannot even do here, because
+	// Cloudflare refuses to delete a bucket holding objects and this one holds
+	// the WAL archive. It also moves CloudNativePG's destinationPath, starting
+	// a fresh archive with no base backup behind it.
+	//
+	// So it keeps its name until the next rebuild, which destroys and recreates
+	// it anyway and makes the rename free. At that point this field, and the
+	// `object_storage.bucket` config key, both go.
+	FromConfiguredName bool
 
 	// Keep says the bucket outlives a teardown.
 	//
@@ -69,10 +90,11 @@ type Bucket struct {
 // not be able to destroy the other.
 var Buckets = []Bucket{
 	{
-		Key:    "database",
-		Suffix: "",
-		Keep:   false,
-		Holds:  "the state database's WAL archive and base backups",
+		Key:                "database",
+		Suffix:             "",
+		FromConfiguredName: true,
+		Keep:               false,
+		Holds:              "the state database's WAL archive and base backups",
 	},
 	{
 		// Separate from the database bucket above, which is the whole point.
@@ -106,8 +128,17 @@ var Buckets = []Bucket{
 	},
 }
 
-// Name is the bucket's real name, given the site's configured base name.
-func (b Bucket) Name(base string) string { return base + b.Suffix }
+// Name is the bucket's real name for a site.
+//
+// Takes the whole SiteNetwork rather than a base string, so a caller cannot
+// pass the wrong base by accident - which was possible while every bucket was
+// `base + suffix` and two different bases were in play.
+func (b Bucket) Name(site *SiteNetwork, configured string) string {
+	if b.FromConfiguredName {
+		return configured
+	}
+	return site.Name + b.Suffix
+}
 
 // Address is the OpenTofu resource address, matching the resource name in
 // object-storage.tf. Written here rather than at each call site so a change to

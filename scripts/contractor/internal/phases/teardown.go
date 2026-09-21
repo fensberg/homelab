@@ -182,8 +182,14 @@ func emptyObjectStorage(ctx *run.Context) {
 		return
 	}
 
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		run.Warn("could not resolve the site to name the bucket to empty: " + err.Error())
+		return
+	}
+
 	store := site.ObjectStorage
-	store.Bucket = database.Name(site.ObjectStorage.Bucket)
+	store.Bucket = database.Name(net, site.ObjectStorage.Bucket)
 
 	env := r2Env(cfg.ObjectStorage, store)
 	remote := "R2:" + store.Bucket

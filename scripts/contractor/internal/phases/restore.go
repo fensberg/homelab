@@ -85,7 +85,11 @@ is genuinely stale, move it aside first and decide deliberately:
 	if err != nil {
 		return err
 	}
-	store.Bucket = stateBucket.Name(store.Bucket)
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return err
+	}
+	store.Bucket = stateBucket.Name(net, store.Bucket)
 
 	rcloneEnv := r2Env(cfg.ObjectStorage, store)
 	key := backupObjectKey(store.Bucket)

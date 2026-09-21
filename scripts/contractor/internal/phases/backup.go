@@ -150,7 +150,11 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	if err != nil {
 		return err
 	}
-	store.Bucket = stateBucket.Name(store.Bucket)
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return err
+	}
+	store.Bucket = stateBucket.Name(net, store.Bucket)
 
 	rcloneEnv := r2Env(cfg.ObjectStorage, store)
 

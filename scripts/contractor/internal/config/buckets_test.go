@@ -6,22 +6,24 @@ import (
 	"testing"
 )
 
-func TestBucketNameIsTheBaseNamePlusTheSuffix(t *testing.T) {
+func TestBucketNameIsTheSiteSlugPlusTheSuffix(t *testing.T) {
+	net := &SiteNetwork{Name: "example"}
 	for _, tc := range []struct {
 		key  string
-		base string
 		want string
 	}{
-		{"database", "example", "example"},
-		{"state", "example", "example-state"},
-		{"staging", "example", "example-staging"},
-		{"production", "example", "example-production"},
+		// The database bucket is named from the config, not the slug - see
+		// TestOnlyTheDatabaseBucketTakesItsNameFromTheConfig.
+		{"database", "configured"},
+		{"state", "example-state"},
+		{"staging", "example-staging"},
+		{"production", "example-production"},
 	} {
 		b, err := BucketByKey(tc.key)
 		if err != nil {
 			t.Fatalf("BucketByKey(%q): %v", tc.key, err)
 		}
-		if got := b.Name(tc.base); got != tc.want {
+		if got := b.Name(net, "configured"); got != tc.want {
 			t.Errorf("bucket %q named %q, want %q", tc.key, got, tc.want)
 		}
 	}
@@ -144,5 +146,77 @@ func TestBucketByKeyNamesTheKeyItCouldNotFind(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "worklodas") {
 		t.Errorf("the error does not name the key that was looked up: %v", err)
+	}
+}
+
+// Two sites cannot be given names that collapse to one slug.
+//
+// The slug names a site's VMs and its buckets. Two sites are two Proxmox
+// clusters, so duplicate VM names never met - but every site in an estate
+// shares ONE object storage account, so duplicate slugs mean two sites writing
+// into each other's state dumps with nothing saying so.
+//
+// Asserted on the slug rather than the raw name, which is the whole point:
+// "North Street Office" and "north-street-office " are two names and one bucket.
+func TestTwoSitesCannotCollapseToOneSlug(t *testing.T) {
+	// Each pair collapses by a different mechanism: trailing whitespace, a
+	// different separator, and case. All three are things somebody types into a
+	// vault field without thinking of them as the same value.
+	for _, tc := range []struct{ a, b string }{
+		{"north-street-office", "north-street-office "},
+		{"north street office", "north_street_office"},
+		{"north-street-office", "North-Street-Office"},
+	} {
+		if got, want := SiteSlug(tc.a, "site0"), SiteSlug(tc.b, "site1"); got != want {
+			t.Errorf("SiteSlug(%q) = %q and SiteSlug(%q) = %q; this case is only "+
+				"interesting if they collide, so the test needs a different pair",
+				tc.a, got, tc.b, want)
+			continue
+		}
+
+		cfg := &Config{Sites: map[string]Site{
+			"site0": {Name: tc.a, Octet: 10, ControlPlaneCount: 1},
+			"site1": {Name: tc.b, Octet: 20, ControlPlaneCount: 1},
+		}}
+		_, err := ResolveSiteNetwork(cfg, "site0")
+		if err == nil {
+			t.Errorf("two sites named %q and %q were accepted; they share the slug %q, "+
+				"so they share every bucket", tc.a, tc.b, SiteSlug(tc.a, "site0"))
+			continue
+		}
+		if !strings.Contains(err.Error(), "slug") {
+			t.Errorf("names %q and %q were refused, but not for the slug collision: %v",
+				tc.a, tc.b, err)
+		}
+	}
+}
+
+// A site with no name falls back to its key, which is unique by construction.
+func TestAnUnnamedSiteFallsBackToItsKey(t *testing.T) {
+	if got := SiteSlug("", "site7"); got != "site7" {
+		t.Errorf("SiteSlug(\"\", \"site7\") = %q, want \"site7\"", got)
+	}
+}
+
+// The database bucket is the one exception, and it is temporary.
+func TestOnlyTheDatabaseBucketTakesItsNameFromTheConfig(t *testing.T) {
+	net := &SiteNetwork{Name: "north-street-office"}
+
+	for _, b := range Buckets {
+		got := b.Name(net, "legacy-name")
+		if b.Key == "database" {
+			if got != "legacy-name" {
+				t.Errorf("the database bucket resolved to %q, want the configured name.\n\n"+
+					"It cannot move to the site slug in place: Cloudflare refuses to delete a "+
+					"bucket holding objects, and this one holds the WAL archive continuously. "+
+					"The rename happens at the next rebuild.", got)
+			}
+			continue
+		}
+		if want := "north-street-office" + b.Suffix; got != want {
+			t.Errorf("bucket %q resolved to %q, want %q - it must be named for the site, "+
+				"because the site is the isolation boundary and one R2 account holds them all",
+				b.Key, got, want)
+		}
 	}
 }

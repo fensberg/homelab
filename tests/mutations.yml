@@ -908,8 +908,8 @@ mutations:
 
   - guard: TestTheBucketTableAgreesWithTheHCL
     file: management/cluster/object-storage.tf
-    find: 'name       = "${local.object_storage.bucket}-state"'
-    replace: 'name       = "${local.object_storage.bucket}-statedumps"'
+    find: 'name       = "${local.site_name}-state"'
+    replace: 'name       = "${local.site_name}-statedumps"'
     mentions: "disagree about the name of the"
     why: >
       Renaming one side of a set that is declared twice. This is the drift the
@@ -921,6 +921,21 @@ mutations:
       still says "-state", so the Backup phase writes to a bucket OpenTofu
       never created, the teardown releases a bucket that does not exist, and
       the one that does is destroyed with the estate.
+
+  - guard: TestTheBucketTableAgreesWithTheHCL
+    file: management/cluster/object-storage.tf
+    find: 'name       = "${local.site_name}-staging"'
+    replace: "name       = local.object_storage.bucket"
+    mentions: "and only"
+    why: >
+      Naming a workload bucket from the config field instead of the site slug.
+      This is the shape of somebody copying the database bucket's name line,
+      which is the one line in the file that legitimately looks like this.
+
+      It reads as harmless and is not. The slug is what carries the site, so a
+      bucket named from the estate-wide config field is a bucket two sites
+      would share - and what they would share is one site's production workload
+      data with another's.
 
   - guard: TestBackupAndRestoreUseTheSameBucket
     file: scripts/contractor/internal/phases/restore.go

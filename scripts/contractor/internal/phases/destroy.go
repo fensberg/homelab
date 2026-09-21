@@ -470,10 +470,16 @@ func reportObjectStorageAtRisk(ctx *run.Context) {
 		return
 	}
 
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		run.Warn("  object storage: could not resolve the site, so this cannot name the buckets")
+		return
+	}
+
 	base := site.ObjectStorage.Bucket
 	for _, bucket := range config.Buckets {
 		store := site.ObjectStorage
-		store.Bucket = bucket.Name(base)
+		store.Bucket = bucket.Name(net, base)
 
 		remote := "R2:" + store.Bucket
 		size, err := run.CmdOutputEnv(ctx.ClusterDir, r2Env(cfg.ObjectStorage, store), "rclone", "--log-level", "ERROR", "size", remote)

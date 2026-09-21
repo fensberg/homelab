@@ -12,15 +12,28 @@
 # in different buckets if and only if one being compromised must not be able to
 # destroy the other.
 #
-#   <name>              the state database's WAL archive and base backups,
+#   <site>              the state database's WAL archive and base backups,
 #                       written continuously by CloudNativePG from inside the
 #                       cluster. Destroyed with the estate.
 #
-#   <name>-state        age-encrypted OpenTofu state dumps, written by the
+#   <site>-state        age-encrypted OpenTofu state dumps, written by the
 #                       Backup phase. Outlives the estate.
 #
-#   <name>-staging      staging workload data.    Outlives the estate.
-#   <name>-production   production workload data. Outlives the estate.
+#   <site>-staging      staging workload data.    Outlives the estate.
+#   <site>-production   production workload data. Outlives the estate.
+#
+# NAMED FOR THE SITE, BECAUSE THE SITE IS THE ISOLATION BOUNDARY. `<site>` is
+# `local.site_name` - the slug of the site's vault name, the same value that
+# names every VM, so a site's buckets read `<site>-state` beside machines called
+# `<site>-cp-100`. Every site in an estate shares one R2 account, so two sites
+# whose buckets collide are two sites writing into each other's state dumps.
+#
+# The estate is NOT in the name. Every bucket in the account belongs to the
+# estate, so a prefix saying so distinguishes nothing.
+#
+# The real name reaches R2 and the rendered config and never git, which is the
+# line this repository draws everywhere: obfuscate in public, use real names
+# where it is private and a reader benefits.
 #
 # WHY THE STATE DUMPS ARE NOT IN THE DATABASE BUCKET, which is where they were.
 # The state dump exists precisely because the database backups are not
@@ -107,7 +120,7 @@ resource "cloudflare_r2_bucket" "database" {
 # state dump was the operation that destroyed every one of them.
 resource "cloudflare_r2_bucket" "state" {
   account_id = local.object_storage_account.account_id
-  name       = "${local.object_storage.bucket}-state"
+  name       = "${local.site_name}-state"
 
   # No location, same reason as above.
 }
@@ -115,7 +128,7 @@ resource "cloudflare_r2_bucket" "state" {
 # Staging workload data. Outlives the estate.
 resource "cloudflare_r2_bucket" "staging" {
   account_id = local.object_storage_account.account_id
-  name       = "${local.object_storage.bucket}-staging"
+  name       = "${local.site_name}-staging"
 
   # No location, same reason as above.
 }
@@ -128,7 +141,7 @@ resource "cloudflare_r2_bucket" "staging" {
 # #330 and the storage section of docs/epochs/03-workload.md.
 resource "cloudflare_r2_bucket" "production" {
   account_id = local.object_storage_account.account_id
-  name       = "${local.object_storage.bucket}-production"
+  name       = "${local.site_name}-production"
 
   # No location, same reason as above.
 }
@@ -136,6 +149,13 @@ resource "cloudflare_r2_bucket" "production" {
 # The database bucket already exists under a resource name that said nothing
 # about what was in it. Renaming the RESOURCE is free; renaming the BUCKET is
 # not, for the reason above, so only the address moves.
+#
+# It is also the one bucket still named from `object_storage.bucket` rather than
+# from the site, and it cannot move to the site name in place: OpenTofu would
+# have to destroy and recreate it, and Cloudflare refuses to delete a bucket
+# holding objects - which this one does, continuously. The next rebuild
+# recreates it anyway, so the rename is free then and impossible now. At that
+# point the `object_storage.bucket` config key goes with it.
 moved {
   from = cloudflare_r2_bucket.homelab
   to   = cloudflare_r2_bucket.database

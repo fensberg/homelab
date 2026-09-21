@@ -98,9 +98,14 @@ func adoptOrphanedR2Buckets(ctx *run.Context) error {
 		return fmt.Errorf("unknown site '%s'", ctx.Site)
 	}
 
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return err
+	}
+
 	for _, bucket := range config.Buckets {
 		store := site.ObjectStorage
-		store.Bucket = bucket.Name(site.ObjectStorage.Bucket)
+		store.Bucket = bucket.Name(net, site.ObjectStorage.Bucket)
 
 		if err := run.AdoptIfOrphaned(ctx, bucket.Address(), func() (string, error) {
 			exists, err := r2BucketExists(cfg.ObjectStorage, store)

@@ -1864,20 +1864,66 @@ not exist.
 
 #### The layout
 
-Four per site, every name derived from the one vault value so a fork changes one
-field and no real name reaches this repository:
+Four per site, named for the **site**, because the site is the isolation
+boundary and every site in an estate shares one storage account:
 
 | Bucket              | Holds                                       | Credential held by                   | Survives a teardown |
 | ------------------- | ------------------------------------------- | ------------------------------------ | ------------------- |
-| `<name>`            | the database's WAL archive and base backups | CloudNativePG, in-cluster, permanent | no                  |
-| `<name>-state`      | age-encrypted OpenTofu state dumps          | contractor, transient                | **yes**             |
-| `<name>-staging`    | staging workload data                       | staging workloads                    | **yes**             |
-| `<name>-production` | production workload data                    | production workloads                 | **yes**             |
+| `<site>`            | the database's WAL archive and base backups | CloudNativePG, in-cluster, permanent | no                  |
+| `<site>-state`      | age-encrypted OpenTofu state dumps          | contractor, transient                | **yes**             |
+| `<site>-staging`    | staging workload data                       | staging workloads                    | **yes**             |
+| `<site>-production` | production workload data                    | production workloads                 | **yes**             |
+
+`<site>` is `local.site_name` - the slug of the site's vault name, already
+computed and already naming every VM, so a site's buckets read `<site>-state`
+beside machines called `<site>-cp-100`. Nothing new was built for this; the
+value existed.
+
+**The estate is not in the name.** Every bucket in the account belongs to the
+estate, so a prefix saying so distinguishes nothing. The operator's objection,
+and it is the general rule here: a descriptor carrying no information is not a
+name, it is noise.
+
+**Real names are used, because R2 is private.** The line this repository draws
+is not "never write a real name" - it is obfuscate in public, where a real name
+is a dumb secret, and use real names where the tree is private and a reader
+benefits from recognising what they are looking at. The slug reaches R2 and the
+rendered config, and never git.
+
+A first attempt used the `sites{}` map key instead, on the grounds that a map
+key is unique by construction and therefore makes collision unrepresentable.
+That is true and it was the wrong trade: it buys a guard nobody needed at the
+cost of a bucket tree nobody can read. The slug needs a uniqueness assertion
+instead, which is the next section.
 
 That gives a clean statement of the teardown rule, which used to be a special
 case and is now the general one: **the estate's own working data is destroyed
 with the estate; everything that exists to outlive it is forgotten before the
 destroy and adopted back by the next ignition.**
+
+#### The slug now needs asserting, and did not before
+
+`local.site_name` derives from a free-form vault field, so two sites can be
+given names that collapse to one slug. Nothing asserted that, on either side -
+octets were asserted unique and slugs were not.
+
+**That was harmless until now, which is why it survived.** Two sites are two
+Proxmox clusters, so two machines called `<site>-cp-100` never met. It stops
+being harmless the moment the slug names buckets, because every site in an
+estate shares **one** R2 account - so two sites with the same slug do not
+collide noisily, they silently write into each other's state dumps and each
+other's workload data.
+
+Asserted on the slug rather than the raw name, which is the whole point:
+"North Street Office" and "north-street-office " are two names and one bucket. It is asserted in
+`registry.tf` and in `config.go`, the same both-sides shape the octet check
+already has, and `config.SiteSlug` is now exported so the check and the name
+actually used cannot drift apart - they were the same expression inline, which
+is not the same thing as being one expression.
+
+This is the general lesson worth keeping: **a value's uniqueness requirement
+comes from what consumes it, not from what produces it.** The slug did not
+change; what reads it did, and that is what made an assertion necessary.
 
 #### Two things this fixes rather than tidies
 
@@ -1947,11 +1993,21 @@ command deciding whether a bucket survives a teardown.
   scoped to _all_ buckets, so the separation above is structural rather than
   enforced until #481 and #483 land. Both need an operator: a token is created
   in a vendor console and its halves go in the vault.
-- **`<name>` should be `<name>-database`.** The resource address moved; the
-  bucket name did not, because CloudNativePG's `destinationPath` points at it
-  and changing that starts a fresh WAL archive with no base backup behind it.
-  A rebuild destroys and recreates this bucket anyway, so the rename is free
-  then and a live migration now. Do it then.
+- **The database bucket is not yet named for its site.** It is the one bucket
+  still taking `object_storage.bucket` from the config, and it cannot move in
+  place: OpenTofu would have to destroy and recreate it, and Cloudflare refuses
+  to delete a bucket holding objects - which this one does, continuously.
+  Changing it also moves CloudNativePG's `destinationPath`, starting a fresh
+  WAL archive with no base backup behind it. A rebuild recreates the bucket
+  anyway, so the rename is free then and impossible now. The
+  `object_storage.bucket` config key goes with it, and so does
+  `Bucket.FromConfiguredName`.
+
+  The plan for this change proves the mechanism is safe: `moved` renamed the
+  resource from `cloudflare_r2_bucket.homelab` to `.database` and the bucket
+  did not appear in the plan at all. A failed move would have read
+  `destroy .homelab` + `add .database`, which is the WAL archive destroyed.
+
 - **Nothing enumerates the account.** Two buckets existed that this repository
   never created and nothing noticed; the operator found and deleted them. A
   table in a record drifts - the guard that would not is one that lists the

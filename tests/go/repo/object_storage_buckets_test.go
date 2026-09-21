@@ -131,13 +131,25 @@ func TestTheTeardownResolvesTheBucketItEmptiesFromTheTable(t *testing.T) {
 // keys. Split-and-scan rather than one regex: a single pattern spanning a
 // block that contains both braces and interpolation is the kind of regex that
 // silently matches nothing, and a guard matching nothing passes.
+// Reads each `resource "cloudflare_r2_bucket" "<key>"` block and the `name =`
+// line inside it, so the guard compares real bucket names rather than only
+// keys. Split-and-scan rather than one regex: a single pattern spanning a
+// block that contains both braces and interpolation is the kind of regex that
+// silently matches nothing, and a guard matching nothing passes.
 var (
 	hclNameRe   = regexp.MustCompile(`(?m)^\s*name\s*=\s*(.+?)\s*$`)
-	hclSuffixRe = regexp.MustCompile(`^"\$\{local\.object_storage\.bucket\}([^"]*)"$`)
+	hclSuffixRe = regexp.MustCompile(`^"\$\{local\.site_name\}([^"]*)"$`)
 	goBucketRe  = regexp.MustCompile(`Key:\s*"([^"]+)",\s*Suffix:\s*"([^"]*)"`)
 )
 
 const bucketResourcePrefix = `resource "cloudflare_r2_bucket" "`
+
+// The one bucket still named from the config rather than the site slug. It
+// cannot move in place - Cloudflare refuses to delete a bucket holding objects,
+// and this one holds the WAL archive - so the rename waits for a rebuild. When
+// that happens this entry goes, and the guard starts requiring every bucket to
+// be named for the site.
+const configuredNameBucket = "database"
 
 func bucketsDeclaredInHCL(t *testing.T) map[string]string {
 	t.Helper()
@@ -163,13 +175,18 @@ func bucketsDeclaredInHCL(t *testing.T) map[string]string {
 		}
 
 		switch {
-		case name == "local.object_storage.bucket":
+		case key == configuredNameBucket && name == "local.object_storage.bucket":
 			found[key] = ""
 		case hclSuffixRe.MatchString(name):
 			found[key] = hclSuffixRe.FindStringSubmatch(name)[1]
+		case name == "local.object_storage.bucket":
+			t.Errorf("bucket %q is named from local.object_storage.bucket, and only %q may be.\n\n"+
+				"Buckets are named for the site, because the site is the isolation boundary and "+
+				"every site in an estate shares one object storage account. Use "+
+				"\"${local.site_name}-<suffix>\".", key, configuredNameBucket)
 		default:
-			t.Errorf("bucket %q is named %s, which is not derived from "+
-				"local.object_storage.bucket.\n\n"+
+			t.Errorf("bucket %q is named %s, which is derived from neither local.site_name "+
+				"nor local.object_storage.bucket.\n\n"+
 				"Bucket names come from the vault so that a fork changes one field and no "+
 				"real name appears in this file. A literal here is a name in git.", key, name)
 		}
