@@ -52,8 +52,13 @@ ARG TOFU_VERSION
 # that name reads to rclone as `--version=1.75.0`, and --version is a boolean.
 # Every rclone invocation during the build then dies on
 # `strconv.ParseBool: parsing "1.75.0": invalid syntax`, which is exactly how
-# this was found. The value still comes from versions.env; the workflow maps
-# it across, and tests/go/repo/runner_image_test.go asserts that mapping.
+# this was found.
+#
+# This used to be an alias: versions.env said RCLONE_VERSION and the workflow
+# mapped it onto this name. That fixed the build and left the same trap set for
+# everyone else, because .github/actions/versions exports the pins into the job
+# environment too - and the nightly Backup phase walked into it (#487). So the
+# pin itself is now RCLONE_DEB_VERSION and this is simply its name.
 ARG RCLONE_DEB_VERSION
 ARG TARGETARCH=amd64
 

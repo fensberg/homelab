@@ -247,14 +247,14 @@ step "rclone (pinned)"
 rclone_installed_version() {
 	rclone version 2>/dev/null | awk 'NR == 1 { sub(/^v/, "", $2); print $2 }'
 }
-if has rclone && [ "$(rclone_installed_version)" = "$RCLONE_VERSION" ]; then
-	skip "rclone already at the pinned ${RCLONE_VERSION}"
+if has rclone && [ "$(rclone_installed_version)" = "$RCLONE_DEB_VERSION" ]; then
+	skip "rclone already at the pinned ${RCLONE_DEB_VERSION}"
 else
 	if has rclone; then
 		# Includes distribution rebuilds, which report a -DEV suffix and so
 		# never compare equal to the pin. That is deliberate: the pin names a
 		# release binary, and a rebuild of the same version number is not it.
-		warn "rclone $(rclone_installed_version) is not the pinned ${RCLONE_VERSION} - replacing it"
+		warn "rclone $(rclone_installed_version) is not the pinned ${RCLONE_DEB_VERSION} - replacing it"
 	fi
 	# Not the official install script: it pipes an unpinned, unverified
 	# remote script straight into `sudo bash`, which is both a real
@@ -262,11 +262,11 @@ else
 	# A pinned .deb from the same GitHub release everything else here
 	# downloads from is no less official and never executes anything the
 	# way a fetched shell script would.
-	info "installing rclone ${RCLONE_VERSION}"
+	info "installing rclone ${RCLONE_DEB_VERSION}"
 	curl -fsSL -o "$TMP/rclone.deb" \
-		"https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${GOARCH}.deb"
+		"https://github.com/rclone/rclone/releases/download/v${RCLONE_DEB_VERSION}/rclone-v${RCLONE_DEB_VERSION}-linux-${GOARCH}.deb"
 	sudo apt-get install -y "$TMP/rclone.deb"
-	ok "rclone ${RCLONE_VERSION} installed"
+	ok "rclone ${RCLONE_DEB_VERSION} installed"
 fi
 
 step "task (go-task)"
