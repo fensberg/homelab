@@ -499,6 +499,50 @@ for each of the three. The previous round shipped this stack and asserted
 nothing about it, and it then failed to install for two days without anybody
 noticing (#459).
 
+### Open: the account holds two user API tokens and the tunnel uses one of them
+
+Parked deliberately on 2026-09-21 rather than resolved. The operator's position
+is that the user-scoped Cloudflare API tokens are not to be touched while the
+tunnel work is in flight; this is the note so the question comes back with it
+rather than being rediscovered.
+
+**What was found.** The Cloudflare account carries two user API tokens that
+could plausibly be `tunnel.api_token`, and nothing in the repository says which:
+
+| Token                         | Permissions                                                    | Resources         |
+| ----------------------------- | -------------------------------------------------------------- | ----------------- |
+| "Cloudflare Tunnel API Token" | Cloudflare One Networks, Cloudflare One Connector: cloudflared | 1 account, 1 zone |
+| "Homelab"                     | Cloudflare Tunnel, Zero Trust                                  | all accounts      |
+
+**Two things are established and worth not re-deriving.**
+
+Nothing in this repository uses a **zone**. Every Cloudflare resource in
+`management/cluster/` is scoped by `account_id`, and there is no `zone_id`,
+`cloudflare_zone` or DNS resource anywhere in the tree. So a token carrying a
+zone grant is carrying something no code asks for.
+
+The six resources on `provider = cloudflare.tunnel` need, between them: Account
+· Cloudflare Tunnel, Account · Cloudflare One Networks, Account · Zero Trust
+(for `cloudflare_zero_trust_split_tunnel`, which is a device setting), and
+Account · Access: Apps and Policies (for the enrollment application and its
+policy). The first token in the table does not cover the last two, which
+suggests it predates the enrollment app and was superseded rather than
+replaced - but that is inference from permissions, not evidence.
+
+**How to settle it without matching dashboard rows**, which is where this
+stalled: do not identify the live token, replace it. Create one token with
+exactly the four permissions above and no zone, put it in the vault, converge,
+confirm a device still enrolls and reaches the game server, and only then
+delete both of the old ones. Whichever was live goes with the one that was not,
+and nobody has to prove which was which. Deleting before the converge would
+remove the working credential, so the order matters.
+
+**Why it is worth coming back to.** An account-wide token with Zero Trust edit
+can change who may enroll a device and which private routes an enrolled device
+is given. That is the reach the tunnel design is built on being narrow, so a
+second one nobody can account for is a gap in exactly the control this epoch's
+tunnel decision rests on.
+
 ## Deferred
 
 - **Log aggregation**, per Scope above. Trigger: the first incident where
