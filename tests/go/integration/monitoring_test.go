@@ -89,7 +89,7 @@ func TestOnlyTheNodeExporterOfTheStackRunsOnAControlPlane(t *testing.T) {
 		if pod.Spec.NodeName == "" || p.role[pod.Spec.NodeName] != "control-plane" {
 			continue
 		}
-		if strings.Contains(pod.Name, "node-exporter") {
+		if isNodeExporter(pod) {
 			sawExporterOnControlPlane = true
 			continue
 		}

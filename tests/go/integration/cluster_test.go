@@ -15,14 +15,12 @@ package integration_test
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/gruntwork-io/terratest/modules/retry"
-	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,20 +28,50 @@ import (
 	"homelab/tests/harness"
 )
 
-// kubeconfig pulls the cluster credential out of the OpenTofu state rather
-// than expecting one on the runner. It lands in the test's own temp directory,
-// which Go removes when the test ends - the same discipline the Sterilize
-// phase applies to everything else.
+// kubeconfig is the credential the contractor already minted for this process,
+// named by KUBECONFIG.
+//
+// It used to read the `kubeconfig` output out of OpenTofu state and write its
+// own copy. That was wrong twice over. Terratest logs the output of every
+// command it runs, so the whole credential - CA, client certificate and the
+// cluster-admin private key - was printed into a public Actions log on every
+// test that touched the cluster (#491). And it meant two credentials with two
+// lifetimes when the estate already has a mechanism that owns exactly one:
+// `contractor kubeconfig -site <site> -- <cmd>` writes a mode-0600 file, sets
+// KUBECONFIG, and removes it on every exit path including a signal. The
+// workflow runs this tier through it; the tests were ignoring what it handed
+// them and minting a second copy from state.
+//
+// So this reads what it was given. The credential's lifetime is the
+// contractor's to end, which is the whole point of an ephemeral one.
+//
+// Nothing here ever renders the file's contents. A failure reports the path
+// and what was wrong with it - never the bytes - because the reason this
+// function exists in this shape is that a credential reached a log.
 func kubeconfig(t *testing.T) string {
 	t.Helper()
-	opts := harness.TofuOptions(t, nil)
 
-	raw := terraform.OutputRequired(t, opts, "kubeconfig")
-	require.Contains(t, raw, "apiVersion",
-		"the kubeconfig output does not look like a kubeconfig; has the Cluster phase run?")
+	path := os.Getenv("KUBECONFIG")
+	require.NotEmptyf(t, path, `KUBECONFIG is not set, so there is no cluster credential for this test.
 
-	path := filepath.Join(t.TempDir(), "kubeconfig")
-	require.NoError(t, os.WriteFile(path, []byte(raw), 0o600))
+The contractor mints one and hands it to the command it wraps:
+
+    contractor kubeconfig -site %s -- go test -C tests/go -tags=integration ./integration/...
+
+Reading it from OpenTofu state instead is what published a cluster-admin key
+to a public log (#491); it is not an available fallback.`, harness.Site())
+
+	// Checked by shape, and reported by shape. `require.Contains` would print
+	// the whole haystack on failure, which for this file is the leak all over
+	// again - so the assertion is on a bool and the message carries the path
+	// and the length, neither of which is secret.
+	body, err := os.ReadFile(path)
+	require.NoErrorf(t, err, "KUBECONFIG names %s, which cannot be read", path)
+	require.Truef(t, strings.Contains(string(body), "apiVersion"),
+		"KUBECONFIG names %s (%d bytes), which does not look like a kubeconfig. "+
+			"Its contents are deliberately not printed here; has the Cluster phase run?",
+		path, len(body))
+
 	return path
 }
 

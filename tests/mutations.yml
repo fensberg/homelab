@@ -1994,6 +1994,23 @@ mutations:
       The trap had already been found once in the runner image and closed
       there with an alias, which fixed the build and left this path armed.
 
+  - guard: TestTerratestNeverPrintsEstateOutputs
+    file: tests/go/harness/tofu.go
+    reads_source: true
+    find: "\t\tLogger: logger.Discard,"
+    replace: "\t\t// Logger: logger.Discard,"
+    mentions: "does not set Logger: logger.Discard"
+    why: >
+      Terratest's default logger prints the output of every command it runs,
+      and the outputs of the estate's OpenTofu root are estate values. Without
+      this line the integration tier publishes a cluster-admin kubeconfig -
+      including client-key-data - and the state database's connection string
+      with its password, into a public repository's Actions log, once per test
+      that touches the cluster (#491). A Kubernetes client certificate cannot
+      be revoked, so the remedy is a CA rotation rather than a password change.
+      Nobody chose to print them; the default did, which is why the guard is on
+      the line that turns the default off.
+
 owed_ceiling: 54
 
 unprovable:
