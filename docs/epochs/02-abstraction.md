@@ -324,6 +324,20 @@ resource straddles it:
 | `infrastructure` | `compute.tf`, `talos.tf`, `overlay-network.tf`, `object-storage.tf` | proxmox, talos, tailscale, cloudflare |
 | `platform`       | `database.tf`, `gitops.tf`                                          | kubernetes                            |
 
+**Correction, re-measured 2026-09-21: the last clause of that sentence is no
+longer true, and the table is three files short.** The seam was clean when it
+was written and has degraded since, silently, because nothing was watching it.
+Five files now carry `kubernetes` resources where two did, and `tunnel.tf`
+straddles the boundary outright - `kubernetes_secret.tunnel_token` reads
+`cloudflare_zero_trust_tunnel_cloudflared.estate.tunnel_token`, so one file
+holds resources from both layers and a dependency that crosses between them.
+
+The current inventory, and the full design that follows from it, is below under
+"Decisions" - see "The split is two roots sharing one config, and the seam is
+two values". The claim is left standing here because the way it decayed is the
+useful part: a seam asserted in prose and guarded by nothing drifts at the rate
+work is done near it.
+
 Split there and the platform layer configures its provider from the
 infrastructure layer's **output** - a value already applied, therefore known at
 plan time. The ordering moves out of `cluster.go` and into the structure,
@@ -1615,6 +1629,197 @@ and `v*` to production; `staging` is a term of art twice over, both the software
 term and the construction term for where materials are gathered before use; and
 `dev` collides with the name of the privileged user account, in a repository
 where the privilege boundary is the thing most important to read correctly.
+
+### The split is two roots sharing one config, and the seam is two values
+
+The design for the provider split named as a constraint above. Written before
+any code moved, because the state migration is the expensive half to get wrong
+and it is an operation only `dev` can run.
+
+**Re-measured 2026-09-21.** Every count below is from the tree rather than from
+the earlier description of it.
+
+#### What is actually on each side
+
+Eighteen resources move. Everything else stays.
+
+| Layer            | Files                                                                                                                                               | Providers                             |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `infrastructure` | `compute.tf`, `pools.tf`, `talos.tf`, `overlay-network.tf`, `object-storage.tf`, `cilium.tf`, `registry.tf`, and the Cloudflare half of `tunnel.tf` | proxmox, talos, tailscale, cloudflare |
+| `platform`       | `database.tf`, `gitops.tf`, `monitoring.tf`, `runner.tf`, `workloads.tf`, and the Kubernetes half of `tunnel.tf`                                    | kubernetes                            |
+
+The eighteen, by kind, because this list is the migration inventory and a
+resource missing from it is a resource the platform root would propose to
+create a second time:
+
+| Kind                   | Count | Addresses                                                                                                                                                                                                                          |
+| ---------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kubernetes_namespace` | 7     | `.database`, `.flux_system`, `.monitoring`, `.valheim`, `.runner_system`, `.runners`, `.tunnel`                                                                                                                                    |
+| `kubernetes_secret`    | 10    | `.state_db_credentials`, `.object_storage_credentials`, `.cluster_vars`, `.alerting_webhook`, `.monitoring_vars`, `.valheim_server`, `.runner_app_credentials`, `.runner_app_credentials_runners`, `.runner_vars`, `.tunnel_token` |
+| `terraform_data`       | 1     | `.flux_bootstrap_apply`                                                                                                                                                                                                            |
+
+#### Cilium is the last step of infrastructure, not the first of platform
+
+`cilium.tf` looks like it belongs with the Kubernetes work and does not. It
+declares no `kubernetes` resource at all - it is a `terraform_data` that writes
+`talos_cluster_kubeconfig.this.kubeconfig_raw` to a temporary file and shells
+out, precisely because it has to run before any node is Ready and therefore
+before a `kubernetes` provider could connect to anything.
+
+That makes the boundary mean something rather than being a filing decision.
+**The infrastructure root's postcondition is "the nodes are Ready", which is
+exactly the platform root's precondition.** A layer that ended one step earlier
+would hand over a cluster whose API server answers and whose nodes do not
+schedule, and the first `kubernetes_namespace` would be the thing that
+discovered it.
+
+#### The seam is two values, and that is the finding
+
+The reason this is worth doing now rather than fearing: the platform files were
+read for every reference that crosses the boundary, and there are only two.
+
+Everything else the platform layer needs comes from `local.*` - and
+`local.config` is `jsondecode(file(var.config_path))`. The rendered config is a
+**file**, not a resource, so both roots read it directly and derive the same
+locals from it. `variables.tf` is shared verbatim rather than plumbed through as
+module inputs.
+
+So the entire cross-boundary surface is:
+
+| Value            | Produced by                                       | Consumed by                                                          |
+| ---------------- | ------------------------------------------------- | -------------------------------------------------------------------- |
+| the kubeconfig   | `talos_cluster_kubeconfig.this`                   | the `kubernetes` provider, and `terraform_data.flux_bootstrap_apply` |
+| the tunnel token | `cloudflare_zero_trust_tunnel_cloudflared.estate` | `kubernetes_secret.tunnel_token`                                     |
+
+Both are secrets, so both outputs are `sensitive`. Both land in the
+infrastructure root's state, which is already encrypted with OpenTofu state
+encryption keyed from the vault - so this adds a value to a ciphertext blob
+rather than adding a place a credential sits in the clear. Worth stating rather
+than assuming, because "an output is fine, state is encrypted" is the kind of
+claim that is true here and not true of a fork that has not set `TF_ENCRYPTION`.
+
+The third thing that looks like a dependency is not one. Every platform
+resource carries `depends_on = [data.talos_cluster_health.this]`, and there is
+no cross-root equivalent of that edge. There does not need to be: the health
+gate becomes **structural**. The platform root runs only after the
+infrastructure root's apply returned zero, and that apply contains the health
+data source. The ordering stops being an edge inside a graph and becomes the
+order two applies happen in, which is the whole point of the split.
+
+`tests/go/repo/kubernetes_gate_test.go` refuses a `kubernetes_*` resource with
+no such edge, so that guard has to move with the resources rather than be
+deleted - it becomes "the platform root runs after infrastructure", asserted
+against the phase sequence rather than against a `depends_on`.
+
+#### Two roots, two schemas, and the reason it is not two workspaces
+
+The backend is `pg`, `schema_name = "management_cluster_state"`, in
+`backend_pg.tf.disabled` - disabled because ignition starts with a local state
+file and `migrate` moves it into the cluster afterwards.
+
+Each root gets its own schema: `management_infrastructure_state` and
+`management_platform_state`. Not two workspaces in one schema, for a reason that
+is the whole argument of this section restated: workspaces share a
+configuration, so both roots would have to declare both provider sets and the
+`kubernetes` provider would be unresolvable again for any infrastructure
+operation. Separate schemas are separate configurations, which is what is
+wanted.
+
+The infrastructure root keeps the existing schema name rather than taking a new
+one, so the larger half of the state is not migrated at all - see below.
+
+#### The migration is a contractor verb, not a runbook
+
+Claude cannot perform any of this. The state is encrypted from the vault and
+Claude holds no vault credential, so the migration is `dev`'s to run - and the
+estate's rule is that a procedure a person performs by hand is not a procedure.
+Either the tool does it or it does not.
+
+So: `contractor split-state -site <site>`, once, idempotent, refusing to start
+unless it can finish. Three properties it needs, each from a rule this estate
+has already paid for:
+
+1. **The larger half does not move.** The infrastructure root adopts the
+   existing schema, so every VM, pool, Talos secret and Cloudflare object stays
+   exactly where it is. Only the eighteen listed above are touched. A migration that rewrites the whole state to move a quarter of it
+   is a migration with a much worse failure mode than it needs.
+2. **It either completes or refuses to start.** "TNT is TNT. Unexploded
+   ordinance is not safe." The preconditions - both schemas reachable, the
+   eighteen addresses present in the source state and absent from the target,
+   the rendered config valid - are checked before the first write, not
+   discovered partway.
+3. **It is resumable in the only direction that matters.** The mechanism is
+   `state rm` from the source and `import` into the target, per resource. Doing
+   the import first and the removal second means an interruption leaves a
+   resource in **both** states, which is recoverable by re-running. The other
+   order leaves it in neither, which is a resource nothing tracks - the exact
+   thing `teardown.go` is written to avoid.
+
+Every one of the eighteen is cheaply importable, which is what makes this
+tractable: a namespace's id is its name, a secret's is `namespace/name`. There
+is one exception and it needs deciding rather than discovering.
+`terraform_data.flux_bootstrap_apply` has no import identity - it is a
+provisioner, and its `triggers_replace` is the only record that it ran. Moving
+it means it re-runs on the platform root's first apply. **That is acceptable and
+should be stated in the verb's own output**: `flux bootstrap` against a cluster
+that already has Flux is idempotent, and the alternative - hand-writing a
+`terraform_data` instance into a state file - is worse than re-running an
+idempotent command.
+
+#### What each phase becomes
+
+The prize is `cluster.go`. Today it is five hand-sequenced `-target` applies,
+every one of them a workaround for the coupling this split removes - including
+one whose only job is to materialise the kubeconfig so that `tofu import` can
+configure providers at all, and a comment explaining that the bucket adopt must
+happen after it for that reason.
+
+| Phase     | Today                                                | After                                                                     |
+| --------- | ---------------------------------------------------- | ------------------------------------------------------------------------- |
+| `compute` | targeted applies in the one root                     | untargeted apply of the infrastructure root                               |
+| `cluster` | five targeted applies, ending with an untargeted one | splits: the rest of infrastructure, then one untargeted platform apply    |
+| `health`  | reads `data.talos_cluster_health` in the one root    | unchanged, in infrastructure - and now genuinely gates the handover       |
+| `attach`  | one backend                                          | both, and refuses if the two disagree about which estate they hold        |
+| `plan`    | one plan                                             | two plans, reported as one answer                                         |
+| `migrate` | moves one local state into one schema                | two, and it is the phase `split-state` supersedes for new sites           |
+| `backup`  | encrypts one state                                   | encrypts both - and the state backup's own integrity test has to see both |
+
+`adoptOrphanedR2Bucket` moves to the infrastructure root and loses its ordering
+comment entirely: with no `kubernetes` provider in that root, `tofu import` has
+nothing unresolvable to trip over, which is the concrete form of the payoff.
+
+#### The cost, stated rather than waved at
+
+- **Two applies and a handoff**, which the record already accepted above.
+- **A second backend schema to create**, and `backup` covering both. A backup
+  that silently covers one of two states is worse than the single state it
+  replaced.
+- **`plan` answers twice.** A converge that changes only a workload secret
+  produces a no-op infrastructure plan beside a real platform one. That is an
+  improvement in signal and a change in what a reader expects.
+- **The fixture corpus and the contract tests read `management/cluster/<name>`**
+  by path - `phases/contract_test.go` and `tfsource.Read` both do - so the
+  split touches the guards as well as the code. That is the corpus problem from
+  the driver above arriving on schedule, and it is the argument for doing the
+  fixture work first rather than after.
+- **`environments/*/infrastructure/` and `modules/infrastructure/` still do not
+  exist.** This split is the prerequisite the record names, not the module
+  carving itself. It does not on its own advance the epoch's acceptance test,
+  which remains "adding a site requires no commit".
+
+#### Why this is not the module carving, and must still come first
+
+Worth being blunt, because two pieces of work that both produce directories
+under `management/` are easy to conflate. This split creates two roots out of
+one. The epoch's acceptance test needs a **site module** instantiated once per
+discovered site, and a config discovered from the vault rather than declared in
+`config/management.tpl.json`.
+
+The order is forced rather than chosen: carving modules out of a root whose
+provider configuration depends on a resource inside it bakes that dependency
+into the module boundaries, and every future site inherits it. That is the
+sentence the design constraint above ends on, and it is the reason this is step
+one.
 
 ## Outcome
 

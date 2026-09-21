@@ -943,6 +943,108 @@ access to the branch. Not now, and not for two workloads. The trigger to
 revisit is a module that genuinely needs to move on a different rhythm from the
 rest of the estate, rather than the count of modules going up.
 
+### The world backup is blocked on a credential, and the rebuild option is gone
+
+Written while designing the provider split in epoch 02, because the split needs
+a state migration and the question "what happens if it goes wrong" turned out to
+have a different answer than it used to.
+
+#### The estate has crossed the line it was waiting to cross
+
+Every record here has treated the cluster as disposable, and said so plainly:
+the VMs are empty buildings, the state file is worthless until there is data on
+it, and a rebuild is the routine answer to a plumbing change. The trigger for
+that stopping was named as **real data on the estate**, not a date.
+
+That trigger has fired. #372 records that players arrived with a world from a
+local session and it is on the server now. So the position is:
+
+- The world is on a `ReadWriteOnce` OpenEBS hostpath volume, pinned to one node.
+- `demolish` destroys every VM and every disk, by design - "TNT is TNT".
+- The backup CronJob that #330 closed on the strength of does **not exist yet**.
+  What #330 delivered was the `-workloads` bucket that a teardown does not
+  empty - the landmine it identified - and not the thing that writes to it.
+- The only way a world gets out is a hand-run `kubectl cp`, which #372 also
+  records is sharper than it looks.
+
+**So "burn it down and rebuild" is no longer a free operation, and any change
+that used to reach for it needs re-costing.** For the provider split
+specifically this is what forces in-place state surgery rather than a rebuild,
+and that decision is recorded in `02-abstraction.md`.
+
+#### What the backup needs that the estate does not have
+
+The design was settled when #330 closed: continuous backup to the workloads
+bucket, encrypted to the age recipient so the automation writes what it cannot
+read, outbound only so no path into the estate is opened. That is still right.
+Three things turned up on reading what it would take, and the first is blocking.
+
+**1. There is no workload-scoped object-storage credential, and the obvious one
+must not be used.** The config carries exactly one R2 access key per site, at
+`sites.<site>.object_storage.access_key_id` / `secret_access_key`, and it is the
+credential the Backup phase uses for the estate's own bucket.
+
+Handing that to the game server would give a workload in the untrusted zone a
+key that can write and delete in the bucket holding **the estate's
+age-encrypted state backups**. The encryption means it could not read them; it
+could destroy them. That inverts the isolation the zone exists to provide, and
+it does it in the specific direction that matters - the thing a compromised
+game server most wants to reach is named in this record's own list of what it
+currently reaches as a defect.
+
+So this needs a second credential, scoped to the `-workloads` bucket alone:
+new vault fields, and an R2 API token whose permissions stop at that bucket.
+Neither is something the agent can create. **This is the blocking dependency,
+and it is an operator action.**
+
+Worth noting the shape, because it generalises past this workload: the estate's
+credentials are scoped per _site_, and this is the first thing that needs one
+scoped per _workload_. A second untrusted workload will want the same, which
+argues for a `workload_storage` block rather than a `valheim` one.
+
+**2. The label the policy selects on is the label the Service selects on.** The
+NetworkPolicy already anticipates this work - "the backup in a later change uses
+the same allowance" - and its `podSelector` is
+`app.kubernetes.io/name: valheim`. But `environments/production/applications/valheim/service.yaml`
+selects on **exactly the same label**.
+
+So labelling the backup pod to inherit the egress it needs would also make it an
+**endpoint of the game Service**, and the tunnel would start delivering game
+traffic to a pod that is not a game server. A backup that runs for ninety
+seconds an hour would make the server intermittently unreachable, and nothing in
+either manifest would look wrong.
+
+The fix is not a second NetworkPolicy. #448 is open precisely because policies
+are additive and the guard reads one file, so answering this with a new file is
+walking around the guard on the first occasion the guard was written for. It
+belongs in the existing policy, as a `matchExpressions` `In` list naming both
+pods, so the union stays in the one file the guard reads and the diff shows what
+was widened.
+
+**3. The image is a placement decision, not a packaging one.** The backup needs
+`age` and `rclone`. The runner image already has both, is built from a committed
+Dockerfile, published to the estate's own registry and pinned by digest - which
+is exactly what "use what the estate already builds and trusts" asks for.
+
+It is still the wrong image here. It also carries `op`, `tofu`, `kubectl` and
+the 1Password CLI, and the placement is a node in the untrusted zone whose whole
+purpose is that it reaches nothing. Putting the estate's administrative toolkit
+on that machine hands an attacker who gets node access the tools, having only to
+find the credentials - and the rule this repository already wrote down is to
+check the placement as carefully as the artefact.
+
+A dedicated minimal image with `age` and `rclone` and nothing else is the
+answer, which means a second Dockerfile and a second build lane - a workflow
+change, therefore a patch handover.
+
+#### What is not a problem, having checked
+
+Recorded so the next person does not re-derive it. The volume is `ReadWriteOnce`
+and already mounted by the game server, which looks like it forbids a second
+pod. It does not: RWO restricts the volume to one **node**, not one pod, and an
+OpenEBS Local PV carries node affinity that the scheduler uses to place the
+backup pod on the node already holding it. Two pods on one node both mount it.
+
 ## Outcome
 
 ## Deferred

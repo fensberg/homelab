@@ -19,8 +19,19 @@ earlier epoch whose decisions you are about to touch.
   route auto-approval, and a two-layer state backup story.
 - **Database:** CloudNativePG, reconciled by Flux, streaming backups to object
   storage. Declared in `clusters/management/`.
-- **Not yet built:** `modules/` and `environments/` — both referenced by
-  `README.md` and by the path filters in `deploy-infrastructure.yml`.
+- **Not yet built:** `modules/infrastructure/` and
+  `environments/*/infrastructure/` — both referenced by `README.md` and by the
+  path filters in `deploy-infrastructure.yml`, and neither exists on any branch.
+  The applications halves of both do exist, built by epoch 03 for the game
+  server. The provider split that has to come before the module carving is
+  designed but not built — see
+  [02-abstraction.md](02-abstraction.md#the-split-is-two-roots-sharing-one-config-and-the-seam-is-two-values).
+- **No longer disposable:** the cluster holds a Valheim world that players
+  brought with them, and nothing gets it out except a hand-run `kubectl cp`
+  (#372). Every earlier record treats a rebuild as the routine answer to a
+  plumbing change, on the stated trigger of "real data on the estate". That
+  trigger has fired, so a rebuild now costs the world until the backup exists.
+  Re-cost anything that reaches for one.
 - **Not measured:** nothing watches the estate between runs. No metrics, no
   alerts, no scaling thresholds — see epoch 04. There is no metrics-server, so
   `kubectl top` does not work and the demand factor the capacity plan rests on
