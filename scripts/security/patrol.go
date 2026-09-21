@@ -107,6 +107,20 @@ func patrol(args []string) int {
 type client struct {
 	repo  string
 	token string
+	// api is where GitHub is, and is empty everywhere but in tests. The HTTP
+	// around these checks - a 404 meaning a branch is gone, a 409 meaning a
+	// run already finished - is most of what can go wrong with them, and it
+	// cannot be exercised at all while the address is a constant.
+	api string
+}
+
+// endpoint builds a URL against GitHub, or against whatever a test stood up.
+func (c *client) endpoint(format string, args ...any) string {
+	base := c.api
+	if base == "" {
+		base = "https://api.github.com"
+	}
+	return base + fmt.Sprintf(format, args...)
 }
 
 type run struct {
@@ -126,17 +140,20 @@ type run struct {
 // The difference is load-bearing for the nightly check - see
 // scheduledTierIsActuallyRunning - which is why it is a function with a test
 // rather than a format string inline.
-func runsURL(repo, workflow, query string) string {
-	if workflow != "" {
-		return fmt.Sprintf("https://api.github.com/repos/%s/actions/workflows/%s/runs?per_page=100&%s", repo, workflow, query)
+func runsURL(base, repo, workflow, query string) string {
+	if base == "" {
+		base = "https://api.github.com"
 	}
-	return fmt.Sprintf("https://api.github.com/repos/%s/actions/runs?per_page=100&%s", repo, query)
+	if workflow != "" {
+		return fmt.Sprintf("%s/repos/%s/actions/workflows/%s/runs?per_page=100&%s", base, repo, workflow, query)
+	}
+	return fmt.Sprintf("%s/repos/%s/actions/runs?per_page=100&%s", base, repo, query)
 }
 
 // runs asks GitHub about runs: in one workflow when workflow is non-empty,
 // across the repository when it is empty.
 func (c *client) runs(workflow, query string) ([]run, error) {
-	req, err := http.NewRequest(http.MethodGet, runsURL(c.repo, workflow, query), nil)
+	req, err := http.NewRequest(http.MethodGet, runsURL(c.api, c.repo, workflow, query), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -166,13 +183,74 @@ func (c *client) runs(workflow, query string) ([]run, error) {
 
 // stuckStatuses are the states that mean nothing will start the work.
 //
-// `waiting` is deliberately absent. It means waiting for a person to approve a
-// deployment environment, and GitHub already notifies whoever can. Counting it
-// kept this patrol red for two days on 2026-09-09 to 11 with "work is not being
-// picked up" while the runner was healthy and five runs sat waiting for
-// approvals - the right alarm for the wrong reason, which is worse than none,
-// because it teaches whoever reads it to stop reading.
+// `waiting` is deliberately absent: it means waiting for a person to approve a
+// deployment environment, and GitHub already notifies whoever can.
+//
+// THAT EXCLUSION DID NOT WORK, and the reason is worth keeping. A run held at
+// an environment approval does not reliably report `waiting` - it frequently
+// reports `pending`, which is in this map - so the patrol went red for exactly
+// the cause it meant to ignore. It did so again on 2026-09-20, with three
+// deploy runs sitting on the management environment's reviewer.
+//
+// A status word cannot answer this. `pending_deployments` can: it is empty
+// unless a person is the thing being waited on. So the status selects
+// candidates and GitHub decides which of them are somebody's turn.
 var stuckStatuses = map[string]bool{"queued": true, "pending": true}
+
+// awaitingApproval asks whether this run is waiting for a human to approve a
+// deployment environment.
+//
+// An error is reported rather than swallowed: "I could not ask" is not "nobody
+// is waiting", and the caller keeps the run in its count rather than quietly
+// dropping it.
+func (c *client) awaitingApproval(id int64) (bool, error) {
+	req, err := http.NewRequest(http.MethodGet,
+		c.endpoint("/repos/%s/actions/runs/%d/pending_deployments", c.repo, id), nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("GitHub answered %d", resp.StatusCode)
+	}
+	var pending []struct {
+		Environment struct {
+			Name string `json:"name"`
+		} `json:"environment"`
+	}
+	if err := json.Unmarshal(body, &pending); err != nil {
+		return false, err
+	}
+	return len(pending) > 0, nil
+}
+
+// waitingOnAPerson splits runs into those a human is holding and the rest.
+//
+// Kept separate from stuck() so the counting stays pure and testable, and the
+// asking stays in one place.
+func waitingOnAPerson(runs []run, ask func(int64) (bool, error)) (held, rest []run) {
+	for _, r := range runs {
+		// An error means the question was not answered. Keep it in the count:
+		// a patrol that drops what it could not ask about reports health it
+		// did not establish.
+		if waiting, err := ask(r.ID); err == nil && waiting {
+			held = append(held, r)
+			continue
+		}
+		rest = append(rest, r)
+	}
+	return held, rest
+}
 
 // stuck counts the runs nobody can start that have been waiting past the
 // limit, and reports the longest.
@@ -205,13 +283,18 @@ func (c *client) noRunStuckInTheQueue(limit time.Duration) result {
 		}
 		all = append(all, runs...)
 	}
-	count, worst := stuck(all, time.Now(), limit)
+	held, rest := waitingOnAPerson(all, c.awaitingApproval)
+	count, worst := stuck(rest, time.Now(), limit)
 	if count > 0 {
-		return result{name, "fail", fmt.Sprintf(
+		detail := fmt.Sprintf(
 			"%d run(s) queued longer than %s, oldest %s.\n"+
 				"       Work is not being picked up. A job that never starts never fails:\n"+
 				"       timeout-minutes only counts once it is running, so nothing else reports this.",
-			count, limit.Round(time.Minute), worst.Round(time.Minute))}
+			count, limit.Round(time.Minute), worst.Round(time.Minute))
+		if len(held) > 0 {
+			detail += fmt.Sprintf("\n       (%d more are waiting on an approval, which is a person rather than a fault.)", len(held))
+		}
+		return result{name, "fail", detail}
 	}
 	return result{name, "ok", "nothing queued beyond " + limit.Round(time.Minute).String()}
 }

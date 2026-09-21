@@ -1052,7 +1052,7 @@ opened the pull request for it, which left a branch nothing explained. That is i
 #### The refuse collector worked; nothing ran it
 
 Every branch in the operator's picker belonged to a merged pull request, and
-the collector recognised each one. It had been left for a person to run "when
+the sweeper recognised each one. It had been left for a person to run "when
 the branch picker gets annoying", and the picker got annoying and nobody did.
 It runs after every pull now. It was also about to stop seeing old pull requests
 at a hard cap of five hundred, would have collected a branch reused for an open

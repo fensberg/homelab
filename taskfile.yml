@@ -200,8 +200,8 @@ tasks:
     #
     #   task clear-branches -- -apply -remote
     cmds:
-      - go build -C scripts/collector -o ../../toolshed/collector .
-      - ./toolshed/collector clear-branches {{.CLI_ARGS}}
+      - go build -C scripts/sweeper -o ../../toolshed/sweeper .
+      - ./toolshed/sweeper clear-branches {{.CLI_ARGS}}
 
   gh-token:
     desc: "Mint a 1-hour GitHub App installation token (for gh auth login --with-token)"

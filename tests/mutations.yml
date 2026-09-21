@@ -170,14 +170,14 @@ mutations:
 
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
     file: githooks/post-merge
-    find: '	echo "collector: could not build scripts/collector, so finished branches were not taken away" >&2'
+    find: '	echo "sweeper: could not build scripts/sweeper, so finished branches were not taken away" >&2'
     replace: "	: # nothing said"
     mentions: "said nothing about it"
     why: >
-      A post-merge hook that cannot build the collector and exits quietly is
+      A post-merge hook that cannot build the sweeper and exits quietly is
       indistinguishable from one with nothing to collect. That silent absence
       is precisely how finished branches piled up in an operator's checkout
-      for two weeks before this hook existed, with a collector that would have
+      for two weeks before this hook existed, with a sweeper that would have
       recognised every one of them.
 
   - guard: TestNoWorkflowRestatesAPinnedVersion
@@ -2070,7 +2070,7 @@ unprovable:
   # cannot express as YAML either.
   #
   # Proved by hand instead, both directions: a 9 MB executable copied to
-  # scripts/collector/collector made it name that path, and removing it went
+  # scripts/sweeper made it name that path, and removing it went
   # green. Run with -count=1, because this reads the repository at runtime and
   # nothing invalidates a cached result.
   - test: TestNoCompiledBinaryIsUntrackedAndUnignored

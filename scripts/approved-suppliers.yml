@@ -531,6 +531,22 @@ egress:
       list to transcribe. Egress for these pods has to be controlled at the
       cluster's network layer instead (#411); until then it is uncontrolled
       and unrecorded, and this entry says so rather than implying otherwise.
+  - job: site-sweep.yml/sweep
+    policy: block
+    reason: >-
+      The sweeper, cancelling queued runs whose branch no longer exists (#181).
+      GitHub's API to ask and to cancel, and the Go toolchain to build the
+      program. It holds no credential that reaches the estate: the only thing
+      it writes is a run cancellation, through the repository-scoped token
+      GitHub issues the job.
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+
   - job: deploy-infrastructure.yml/converge
     policy: audit
     reason: >-

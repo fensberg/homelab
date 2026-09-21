@@ -198,10 +198,16 @@ files:
   - path: clerk/runnote.go
     uncovered: 1
     covered_by: nothing
-  - path: collector/clear-branches.go
+  - path: sweeper/clear-branches.go
     uncovered: 6
     covered_by: nothing
-  - path: collector/main.go
+  # clear-queue: the verb, its judgement and its HTTP are covered against a
+  # stub server - which is what making the API address injectable bought. What
+  # is left is the flag parsing, the endpoint builder and the GET helper.
+  - path: sweeper/clear-queue.go
+    uncovered: 3
+    covered_by: nothing
+  - path: sweeper/main.go
     uncovered: 3
     covered_by: nothing
   - path: procurement/main.go
@@ -220,7 +226,7 @@ files:
     uncovered: 3
     covered_by: nothing
   - path: security/patrol.go
-    uncovered: 7
+    uncovered: 9
     covered_by: nothing
   - path: superintendent/enforce-push.go
     uncovered: 2

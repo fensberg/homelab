@@ -1,4 +1,4 @@
-// Command collector takes away what the work leaves behind.
+// Command sweeper takes away what the work leaves behind.
 //
 // A construction site produces two kinds of leftover and they are not the same
 // job. Something dangerous - a half-finished teardown, a machine nothing tracks
@@ -14,6 +14,7 @@
 // still in use, and nothing here is urgent.
 //
 //	clear-branches  local branches whose work has already landed
+//	clear-queue     queued runs whose branch no longer exists
 //
 // WHY IT IS NOT PART OF SECURITY. Security decides what may come in
 // and what may go out; it refuses things. This takes away things nobody
@@ -52,6 +53,7 @@ type verb struct {
 func verbs() []verb {
 	return []verb{
 		{"clear-branches", "remove local branches whose work has already landed", clearBranches},
+		{"clear-queue", "cancel queued runs that can never produce a result: their branch is gone", clearQueue},
 	}
 }
 
@@ -65,15 +67,15 @@ func main() {
 			os.Exit(v.run(os.Args[2:]))
 		}
 	}
-	fmt.Fprintf(os.Stderr, "collector: no such verb %q\n\n", os.Args[1])
+	fmt.Fprintf(os.Stderr, "sweeper: no such verb %q\n\n", os.Args[1])
 	usage()
 	os.Exit(2)
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, "the collector takes away what the work leaves behind.\n\nusage: collector <verb> [flags]\n\nverbs:\n")
+	fmt.Fprint(os.Stderr, "the sweeper takes away what the work leaves behind.\n\nusage: sweeper <verb> [flags]\n\nverbs:\n")
 	for _, v := range verbs() {
 		fmt.Fprintf(os.Stderr, "  %-16s %s\n", v.name, v.what)
 	}
-	fmt.Fprintln(os.Stderr, "\nRun 'collector <verb> -h' for the flags a verb accepts.")
+	fmt.Fprintln(os.Stderr, "\nRun 'sweeper <verb> -h' for the flags a verb accepts.")
 }
