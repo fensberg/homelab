@@ -2283,3 +2283,51 @@ Doing it safely is one machine at a time, waiting for health in between, which
 is exactly the machinery epoch 05 exists to build. Until then a control-plane
 resize is a deliberate, supervised operation rather than a config change, and
 it is worth confirming against a real plan before believing this note.
+
+### A version pin in a tool's own environment namespace is an instruction
+
+The nightly Integration Tests failed for five nights and the cause was a name.
+
+`.github/actions/versions` exports every key in `scripts/versions.env` into the
+job environment, which is how a lane gets a pinned version without restating
+one. rclone configures **every one of its flags** from a matching
+`RCLONE_<FLAG>` environment variable. So `RCLONE_VERSION=1.75.0` was never
+delivered to rclone as a pin - it arrived as `--version=1.75.0`, and `--version`
+is a boolean:
+
+```text
+CRITICAL: Invalid value when setting --version from environment variable
+RCLONE_VERSION="1.75.0": invalid argument "1.75.0" for "--version" flag:
+strconv.ParseBool: parsing "1.75.0": invalid syntax
+```
+
+Every rclone call in the job then exits 1 before doing any work. The Backup
+phase halted on its first upload, so no encrypted state backup was written; and
+because the `Integration tests` step runs after it, the estate's only check
+against a real cluster did not run either. Two things stopped, one of them
+silently, and the run reported the loud one. `backup` is in `ConvergePhases`
+too, so a merge-driven deploy reaches the same call with the same environment.
+
+The fix is the name: the pin is `RCLONE_DEB_VERSION` now, which is inert
+because rclone has no `--deb-version` and ignores an `RCLONE_` variable matching
+no flag. `tests/go/repo/versions_test.go` refuses anything else in the
+namespace, and the mutation ledger proves that refusal fires.
+
+#### The part worth remembering is that this was found once already
+
+The runner image hit exactly this in its build, because docker puts a build
+argument into the environment of the `RUN` that uses it. It was closed there by
+aliasing the `ARG` to `RCLONE_DEB_VERSION` and mapping `RCLONE_VERSION` onto it
+in the workflow - a fix that worked, was written up carefully in a comment, and
+left the trap fully armed everywhere else. The alias treated a name that is
+dangerous in any environment as a Dockerfile problem.
+
+That is the same shape as the push-guard and ruleset pair recorded elsewhere:
+**when one rule is enforced in more than one place, correcting one of them is
+not correcting the rule.** The question to ask on finding a collision like this
+is not "where did it bite" but "what else hands this name to the same tool" -
+and the answer here was nine workflows, sitting in the file the first fix
+deliberately did not touch.
+
+The generalisation is cheap to apply: a version pin is data about a tool, and
+it must not be spelled the way that tool reads configuration.

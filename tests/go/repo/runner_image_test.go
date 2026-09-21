@@ -56,22 +56,37 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 	// then registered, was refused by the broker, and exited, while the
 	// converge job sat queued and no error anywhere named the cause.
 	//
-	// The two names are not always identical. rclone reads every flag from a
-	// matching RCLONE_<FLAG> environment variable, and docker exposes build
-	// arguments to the RUN that uses them, so an ARG called RCLONE_VERSION is
-	// read by rclone as `--version=1.75.0` and every rclone invocation in the
-	// build fails on it. Hence the alias - and hence the workflow check below,
-	// because an alias that nothing passes a value to is a version silently
-	// defaulting to empty rather than coming from versions.env.
+	// The mapping is identity for all four now, and the map is kept rather
+	// than collapsed because it is the thing that would have to change if a
+	// name ever diverged again.
+	//
+	// It did diverge once. rclone reads every flag from a matching
+	// RCLONE_<FLAG> environment variable, and docker exposes build arguments
+	// to the RUN that uses them, so an ARG called RCLONE_VERSION was read by
+	// rclone as `--version=1.75.0` and every rclone invocation in the build
+	// failed on it. The answer then was an alias here. That was half a fix:
+	// .github/actions/versions exports the same pins into the job environment,
+	// so the name went on breaking rclone everywhere outside the image build
+	// until the Backup phase lost five nights to it (#487). The pin itself is
+	// RCLONE_DEB_VERSION now, and the namespace is guarded in versions_test.go.
 	argFor := map[string]string{
-		"TOFU_VERSION":    "TOFU_VERSION",
-		"RCLONE_VERSION":  "RCLONE_DEB_VERSION",
-		"RUNNER_VERSION":  "RUNNER_VERSION",
-		"KUBECTL_VERSION": "KUBECTL_VERSION",
+		"TOFU_VERSION":       "TOFU_VERSION",
+		"RCLONE_DEB_VERSION": "RCLONE_DEB_VERSION",
+		"RUNNER_VERSION":     "RUNNER_VERSION",
+		"KUBECTL_VERSION":    "KUBECTL_VERSION",
 	}
 
 	dockerfile := readFile(t, filepath.Join(root, ".github", "runner-image", "Dockerfile"))
-	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "runner-image.yml"))
+
+	// Read as it will be once outstanding patches land. runner-image.yml is
+	// under .github/workflows, which the agent cannot push to, so a change to
+	// the wiring arrives as a patch in .github/patches and is applied by a
+	// person. Reading the tracked copy instead would hold this red for the
+	// whole hand-over window, about a state already on its way out - and a red
+	// check whose cause is "the operator has not clicked yet" is the kind
+	// nobody reads. Same reasoning, and the same helper, as the action-pin and
+	// bypass-merge checks.
+	workflow := readFile(t, filepath.Join(intendedRoot(t), ".github", "workflows", "runner-image.yml"))
 
 	for envKey, arg := range argFor {
 		if _, ok := pins[envKey]; !ok {

@@ -111,12 +111,18 @@ func newSetupFixture(t *testing.T, ghBehaviour string) *setupFixture {
 	// cannot drift away from the pin it is impersonating. Worth noting that the
 	// script's own header still claims it "checks for presence, not for a
 	// specific pinned version"; that stopped being true for these two.
+	//
+	// The pin key is named rather than derived from the tool name. rclone's is
+	// RCLONE_DEB_VERSION, because RCLONE_VERSION is a name rclone itself reads
+	// as `--version` (#487, and versions_test.go guards the namespace), so
+	// upper-casing the tool name would ask for a key that is deliberately not
+	// there.
 	pins := pinnedVersions(t, filepath.Join(root, "scripts", "versions.env"))
-	for tool, format := range map[string]string{
-		"rclone": "rclone v%s\n- os/version: stub\n",
-		"task":   "Task version: v%s\n",
+	for tool, stub := range map[string]struct{ key, format string }{
+		"rclone": {"RCLONE_DEB_VERSION", "rclone v%s\n- os/version: stub\n"},
+		"task":   {"TASK_VERSION", "Task version: v%s\n"},
 	} {
-		key := strings.ToUpper(tool) + "_VERSION"
+		key, format := stub.key, stub.format
 		version, ok := pins[key]
 		if !ok {
 			t.Fatalf("scripts/versions.env has no %s, so this fixture cannot "+

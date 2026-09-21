@@ -1977,6 +1977,23 @@ mutations:
       A setting that reads as a protection and does nothing is a status that
       says something untrue, on exactly the jobs where it would matter most.
 
+  - guard: TestNoPinIsReadAsConfigurationByTheToolItPins
+    file: scripts/versions.env
+    find: "RCLONE_DEB_VERSION=1.75.0"
+    replace: "RCLONE_VERSION=1.75.0"
+    mentions: "in rclone's own configuration namespace"
+    why: >
+      rclone configures every one of its flags from a matching RCLONE_<FLAG>
+      environment variable, and .github/actions/versions exports every pin into
+      the job environment. So this exact spelling does not reach rclone as a
+      version - it reaches it as `--version=1.75.0`, which is not even a
+      well-formed boolean, and every rclone call in the job exits 1 before
+      doing any work. The nightly Integration Tests lost five nights to it
+      (#487): the Backup phase halted on its first upload, so no encrypted
+      state backup was written and the integration tier never ran at all.
+      The trap had already been found once in the runner image and closed
+      there with an alias, which fixed the build and left this path armed.
+
 owed_ceiling: 54
 
 unprovable:
