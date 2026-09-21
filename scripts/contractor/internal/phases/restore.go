@@ -76,6 +76,21 @@ is genuinely stale, move it aside first and decide deliberately:
 		}
 	}
 
+	// The state bucket, matching where Backup writes. These two are the only
+	// ends of one pipe, so they are wrong together or right together - and the
+	// way this breaks is silent in the worst possible direction: a restore
+	// pointed at the old bucket finds nothing and reports that there is no
+	// backup, at the moment somebody is trying to recover an estate.
+	stateBucket, err := config.BucketByKey("state")
+	if err != nil {
+		return err
+	}
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return err
+	}
+	store.Bucket = stateBucket.Name(net, store.Bucket)
+
 	rcloneEnv := r2Env(cfg.ObjectStorage, store)
 	key := backupObjectKey(store.Bucket)
 
@@ -177,7 +192,7 @@ Without it the backup cannot be decrypted by anyone, including whoever wrote
 it - that is the property it exists to have. If this estate's backups were
 encrypted to a key held somewhere else, decrypt by hand:
 
-    rclone cat R2:<bucket>/management-cluster/latest.tfstate.age | age -d -i <key>`, BackupIdentityRef)
+    rclone cat R2:<bucket>-state/management-cluster/latest.tfstate.age | age -d -i <key>`, BackupIdentityRef)
 	}
 
 	f, err := os.CreateTemp("", "ignite-identity-*")
