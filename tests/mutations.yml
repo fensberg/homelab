@@ -2011,6 +2011,23 @@ mutations:
       Nobody chose to print them; the default did, which is why the guard is on
       the line that turns the default off.
 
+  - guard: TestEveryDeclaredControlPlaneListenerIsDialled
+    file: tests/go/integration/control_plane_listeners_test.go
+    reads_source: true
+    find: 'Component: "etcd",'
+    replace: 'Component: "etcdXX",'
+    mentions: "and nothing dials it"
+    why: >
+      talos.tf told etcd to open a metrics listener on 0.0.0.0:2381 and the
+      estate did not have it, for long enough that Alertmanager paged every
+      four hours claiming etcd had lost quorum when it had not (#493). Nothing
+      could catch it: talos_machine_configuration_apply records the
+      configuration that was SENT, so a machine that accepted a change and
+      never acted on it looks identical in state to one that did, and the only
+      way to answer "is the machine running what we declared" was a person
+      with a terminal. The answer is a test that dials the port; this is what
+      stops that test silently covering less than talos.tf declares.
+
 owed_ceiling: 54
 
 unprovable:

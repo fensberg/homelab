@@ -637,7 +637,9 @@ anything that fails a build.`, name, overlay)
 	}
 }
 
-func sortedKeys(m map[string]map[string]any) []string {
+// Generic since a second caller wanted it over a different value type
+// (talos_listeners_test.go). One helper rather than two that sort the same way.
+func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
