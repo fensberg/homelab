@@ -125,6 +125,24 @@ func (p placement) isDatabase(pod corev1.Pod) bool {
 	return ok
 }
 
+// isNodeExporter reports whether a pod is the monitoring stack's node
+// exporter, which is a DaemonSet and is meant to cover every machine.
+//
+// One rule, used by both tests that care, because there were two and they
+// disagreed. TestDeployedWorkloadsAreOffTheControlPlane called three exporter
+// pods trespassers while
+// TestOnlyTheNodeExporterOfTheStackRunsOnAControlPlane asserted - correctly -
+// that one had better be there. A cluster cannot satisfy both, so the tier
+// failed on a real estate that was behaving exactly as designed.
+//
+// Matched by name rather than by label to stay identical to the check that was
+// already passing; the namespace is required so this cannot quietly excuse
+// something called node-exporter somewhere else.
+func isNodeExporter(pod corev1.Pod) bool {
+	return pod.Namespace == monitoringNamespace &&
+		strings.Contains(pod.Name, "node-exporter")
+}
+
 // Every manifest under clusters/ but the state database declares a required
 // anti-control-plane affinity. This is whether that arrived.
 func TestDeployedWorkloadsAreOffTheControlPlane(t *testing.T) {
@@ -134,6 +152,14 @@ func TestDeployedWorkloadsAreOffTheControlPlane(t *testing.T) {
 	var trespassers []string
 	for _, pod := range p.pods {
 		if p.role[pod.Spec.NodeName] != "control-plane" || p.isDatabase(pod) {
+			continue
+		}
+		// The deliberate exception, asserted the other way round by
+		// TestOnlyTheNodeExporterOfTheStackRunsOnAControlPlane: a node's
+		// memory headroom is what this epoch watches, and a control plane
+		// nobody measures is the tightest machine in the estate. Exempting it
+		// here costs nothing, because that test fails if it is ever absent.
+		if isNodeExporter(pod) {
 			continue
 		}
 		trespassers = append(trespassers, p.where(pod))

@@ -47,6 +47,38 @@ spec:
       # does not silently acquire one.
       automountServiceAccountToken: false
 
+      # Somebody is waiting for this one. Players are connected to it, so
+      # queueing is the entire cost - which is what `interactive` means in the
+      # table in docs/epochs/02-abstraction.md, and it is the class the tunnel
+      # that fronts this workload already carries.
+      #
+      # It was unset, which is priority zero: below critical, interactive and
+      # batch alike, and therefore the scheduler's first choice to preempt on a
+      # worker it shares with CI. The deployed tier caught it
+      # (TestDeployedWorkloadsCarryThePriorityTheyDeclare); the repo tier did
+      # not, because its guard walks a hand-written list of HelmReleases and
+      # this is a plain Deployment that was never on it.
+      priorityClassName: interactive
+
+      # Off the machines holding etcd quorum.
+      #
+      # Every manifest under clusters/ declares this and this one did not, so
+      # it was one reschedule away from putting an 8 GiB Guaranteed pod on a
+      # 4 GiB control plane - which would not fit, and would be the scheduler
+      # trying rather than a policy refusing.
+      #
+      # Landed in the same edit as the priority above deliberately. Either one
+      # changes the pod template and restarts the server, so doing them
+      # together costs one restart rather than two - the same reasoning the
+      # state database's priority exemption gives for waiting on its taint.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+
       securityContext:
         runAsNonRoot: true
         runAsUser: 10000

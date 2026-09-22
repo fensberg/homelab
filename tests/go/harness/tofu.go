@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 )
 
@@ -29,6 +30,30 @@ func TofuOptions(t *testing.T, vars map[string]any) *terraform.Options {
 		TerraformDir:    filepath.Join(RepoRoot(t), "management", "cluster"),
 		Vars:            mergeVars(map[string]any{"site": Site()}, vars),
 		NoColor:         true,
+
+		// Terratest's default logger prints every command's output. This root
+		// is the estate's, so its outputs are estate values - and the tier
+		// runs in a public repository's Actions log.
+		//
+		// It was not hypothetical. `kubeconfig()` read the `kubeconfig`
+		// output through this, and terratest printed the whole thing - CA,
+		// client certificate and `client-key-data`, a cluster-admin private
+		// key - once per test that touched the cluster, into a world-readable
+		// log (#491). A Kubernetes client certificate cannot be revoked, so
+		// that is a CA rotation rather than a password change.
+		//
+		// Discarding here rather than at the call site is deliberate: the
+		// dangerous default is the one nobody restates, so the fix has to be
+		// where the options are built and not where an output is read. It is
+		// the same rule `run.TofuApply` already applies to the contractor's
+		// own apply output, for the same reason and after the same kind of
+		// leak.
+		//
+		// What this costs: a failing tofu invocation no longer prints its
+		// output here. The error is still returned and still fails the test,
+		// and the detail is available by re-running on a workstation - which
+		// is where somebody debugging it already is.
+		Logger: logger.Discard,
 
 		// Never -upgrade. The committed .terraform.lock.hcl decides provider
 		// versions, so a test run resolves exactly what a real run resolves;

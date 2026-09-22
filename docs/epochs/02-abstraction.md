@@ -2524,3 +2524,125 @@ deliberately did not touch.
 
 The generalisation is cheap to apply: a version pin is data about a tool, and
 it must not be spelled the way that tool reads configuration.
+
+### The default that prints was the one nobody wrote down
+
+The integration tier published a cluster-admin kubeconfig into a public Actions
+log — CA, client certificate and `client-key-data` — once per test that touched
+the cluster, and the state database's connection string with its password
+beside it (#491).
+
+Nobody chose to print either. `harness.TofuOptions` did not set a `Logger`, and
+terratest's default logger prints the output of every command it runs. The
+outputs of this OpenTofu root are the estate: `kubeconfig`, `state_conn_str`,
+addresses. So the credential was not leaked by a line of code that handled it
+carelessly — it was leaked by a line of code that was never written.
+
+That is the lesson worth keeping. The code review question "is this value
+handled safely here" had a correct answer everywhere it was asked. The question
+that was never asked is what the library does when you say nothing.
+
+#### It had been learned once already, one package away
+
+`run.TofuApply` moved the contractor to a `-json` summary after a converge
+published a site name from a resource description into a public log. The
+reasoning is written out at length in `scripts/contractor/internal/run/exec.go`,
+and it is exactly this reasoning. It was applied to the contractor, which is not
+where the tests build their options.
+
+This is the second entry in this record with that shape, after the rclone pin:
+**when one rule is enforced in more than one place, correcting one of them is
+not correcting the rule.** Both times the first fix was careful, well
+documented, and left an identical trap armed somewhere the author was not
+looking. The habit that would have caught both is to finish a fix by asking who
+else does this, rather than by writing up why the fix is right.
+
+The remedy is at the mechanism: `TofuOptions` sets `Logger: logger.Discard`, so
+every caller and every future output is covered, and
+`TestTerratestNeverPrintsEstateOutputs` refuses both an options struct built
+outside the harness and a harness that stops discarding.
+
+#### A client certificate is not a password
+
+Worth stating plainly because it changes what "fix the leak" costs. Kubernetes
+has no CRL and no OCSP: the API server trusts any certificate its CA signed
+until that certificate expires. The leaked one had about a year to run. So the
+only true revocation is rotating the cluster CA, and
+`docs/state-and-secret-rotation.md` is honest that for this estate
+`contractor demolish` plus a fresh ignition is the better-tested path.
+
+The connection string was the cheaper half: a password can simply be changed.
+
+### Two tests asked a real cluster for opposite things
+
+`TestDeployedWorkloadsAreOffTheControlPlane` reported three node-exporter pods
+as trespassers on the control planes. `TestOnlyTheNodeExporterOfTheStackRunsOnAControlPlane`
+asserted, in the same run, that one had better be there — a node's memory
+headroom is what epoch 04 watches, and a control plane nobody measures is the
+tightest machine in the estate.
+
+No cluster can satisfy both. The tier failed on an estate behaving exactly as
+designed, which is the worst kind of red: it costs the time of whoever reads it
+and it teaches them that the tier is unreliable.
+
+The cause was two independent spellings of "is this the node exporter", written
+months apart, neither aware of the other. There is one now, `isNodeExporter`,
+used by both. The general form: when two tests make claims about the same
+subject, the predicate that identifies that subject belongs in one place, or
+they will eventually disagree and the estate will be blamed for it.
+
+### Applying a machine configuration is not the same as the machine running it
+
+`talos_machine_configuration_apply` records the configuration it **sent**. It
+does not read back what the machine is doing. So a node that accepted a change
+and never acted on it is, in OpenTofu state, indistinguishable from one that
+did — and `tofu plan` reports no drift, correctly, about an estate that is not
+what the repository says it is.
+
+That is how `listen-metrics-urls = "http://0.0.0.0:2381"` sat declared and
+inert. The repo tier proved the declaration was present. The deployed tier
+proved Prometheus was unhappy. Nobody owned the question in between — _is the
+machine running what we declared_ — so the only way to answer it was a person
+opening a terminal and running `talosctl`.
+
+**That is the defect, not the etcd listener.** A property this estate declares
+must not need a human to confirm, and "run this command and tell me what it
+says" is the shape of an answer the estate should already have. The operator's
+rule covers it exactly: either the automation works or it does not, and we do
+not give ourselves a shortcut.
+
+#### Dial the port, do not read the config back
+
+The tempting fix is to read each node's running machine configuration over the
+Talos API and compare it to the declaration. That tests the spelling. A config
+can contain the right key while the service has not restarted to act on it,
+which is the failure being guarded — so the comparison would pass on exactly
+the estate that is broken.
+
+Dialling the port tests the thing. It is also credential-free: the tier already
+reaches these node addresses for the Talos API check, so it does not acquire
+Talos API access, which sits below Kubernetes and can reset a machine. A
+diagnostic that widens the tier's blast radius to confirm a metrics port would
+be a poor trade.
+
+`TestEveryControlPlaneOpensTheListenersItWasConfiguredFor` dials all three
+listeners on every control plane, and reads etcd's metrics — deliberately
+unauthenticated, which is why it is a separate listener from the client port —
+to prove the socket is etcd rather than merely open.
+
+#### And the guard that stops it going stale
+
+A table of three ports is a fixed list, and a fixed list silently stops
+covering. `TestEveryDeclaredControlPlaneListenerIsDialled` reads the
+`extraArgs` patches out of `talos.tf`, finds every component told to listen
+somewhere other than loopback, and fails in both directions: a listener
+declared and not dialled, or dialled and not declared.
+
+Matched on the component rather than the port, because the port is a component
+default that `talos.tf` never states. What the configuration does say is which
+component is being moved off loopback, and that is the fact both sides have to
+agree about.
+
+The general form, which is the third time this epoch has produced one: the
+repository declaring something is not evidence the estate has it. Wherever a
+declaration has an observable effect, something automated has to observe it.
