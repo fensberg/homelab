@@ -81,51 +81,72 @@ func forgetClusterInternalResources(ctx *run.Context) {
 
 // workloadBucketAddress is the one resource the teardown deliberately loses
 // track of.
-const workloadBucketAddress = "cloudflare_r2_bucket.workloads"
-
-// forgetWorkloadBucket takes the workload bucket out of state before the
-// destroy, so the destroy cannot delete it.
+// forgetKeptBuckets takes every bucket that outlives the estate out of state
+// before the destroy runs.
 //
 // This is the exception to the rule stated above - that forgetting something
-// which outlives the VMs leaves a real thing nothing tracks - and it is
-// deliberate rather than an oversight in that rule.
+// which outlives the VMs leaves a real thing nothing tracks. It does, and for
+// these buckets that is the point: the window closes on the next ignition,
+// which adopts them back.
 //
-// The alternative is worse in both directions. Left in state, the destroy
-// tries to delete a bucket Cloudflare refuses to delete while it has objects
-// in it, and the teardown stops part-way with the machines still running -
-// which is the failure the emptying below exists to prevent. Emptied first, the
-// destroy succeeds and takes every workload backup with it, which is the entire
-// thing this bucket exists not to do: a rebuild is the routine way a new Talos
-// version reaches these machines, so "survives a teardown" is the normal path.
+// Without it the destroy reaches a bucket Cloudflare refuses to delete while
+// it holds objects, so the teardown stops part-way with the machines still
+// running - which is the failure the emptying below exists to prevent.
+// Emptied first, the destroy succeeds and takes the contents with it, which is
+// the entire thing these buckets exist not to do: a rebuild is the routine way
+// a new Talos version reaches these machines (#97), so "survives a teardown"
+// is the normal path rather than an edge case.
 //
-// The window where nothing tracks it closes on the next ignition, which adopts
-// it exactly as it adopts the state bucket. If there is no next ignition, an
-// empty bucket is a rounding error on a Cloudflare bill and the data in it is
-// the reason it was kept.
-func forgetWorkloadBucket(ctx *run.Context) {
-	list, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list")
-	if err != nil {
-		run.Warn("could not list state to find the workload bucket: " + err.Error())
-		return
-	}
-	if !strings.Contains(list, workloadBucketAddress) {
+// ONE FAILURE DOES NOT ABANDON THE REST. Each bucket is forgotten on its own
+// and a failure on one is reported and stepped over, because the alternative -
+// returning early - would leave the buckets after it in state and destroy
+// them. A partial forget loses less than an abandoned one.
+func forgetKeptBuckets(ctx *run.Context) {
+	kept := config.KeptBuckets()
+	if len(kept) == 0 {
+		// Not reachable from the table as it stands, and deliberately loud if
+		// it ever is: a teardown that keeps nothing is one that deletes the
+		// state dumps and every workload's data, and it would otherwise do
+		// that in silence.
+		run.Warn("no object-storage bucket is marked as surviving a teardown; the destroy will delete all of them")
 		return
 	}
 
-	run.Info("keeping the workload bucket - forgetting it so the destroy leaves it alone")
-	if _, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "rm", workloadBucketAddress); err != nil {
-		run.Warn("could not forget the workload bucket: " + err.Error())
-		run.Warn("The destroy will try to delete it, and Cloudflare refuses to delete a bucket with objects in it - so the teardown will stop there with the machines still running. Empty it by hand only if you are certain nothing in it is wanted.")
+	list, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list")
+	if err != nil {
+		run.Warn("could not list state to find the buckets that must survive: " + err.Error())
+		run.Warn("The destroy will try to delete them. Cloudflare refuses to delete a bucket with objects in it, so the teardown will stop there with the machines still running. Do not empty them to get past that - that is the data this is protecting.")
 		return
 	}
-	run.Ok("workload bucket kept; the next ignition will adopt it")
+
+	for _, bucket := range kept {
+		if !strings.Contains(list, bucket.Address()) {
+			continue
+		}
+
+		run.Info(fmt.Sprintf("keeping the bucket holding %s - forgetting it so the destroy leaves it alone", bucket.Holds))
+		if _, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "rm", bucket.Address()); err != nil {
+			run.Warn(fmt.Sprintf("could not forget the bucket holding %s: %s", bucket.Holds, err.Error()))
+			run.Warn("The destroy will try to delete it, and Cloudflare refuses to delete a bucket with objects in it - so the teardown will stop there with the machines still running. Empty it by hand only if you are certain nothing in it is wanted.")
+			continue
+		}
+		run.Ok(fmt.Sprintf("kept the bucket holding %s; the next ignition will adopt it", bucket.Holds))
+	}
 }
 
 // emptyObjectStorage deletes every object in the site's STATE bucket.
 //
-// The site's bucket by name, which is what scopes it: the workload bucket has
-// a name of its own and is never reached by this, because what is in it is
-// meant to outlive the estate rather than describe it.
+// It empties exactly the buckets marked Keep=false in the bucket table, which
+// today is the database bucket alone. Every other bucket has a name of its own
+// and is never reached by this, because what is in them is meant to outlive
+// the estate rather than describe it.
+//
+// Derived from the table rather than from site.ObjectStorage.Bucket directly.
+// Those two happen to be the same string while the database bucket carries an
+// empty suffix - so writing the shorter one would work today, keep working
+// through review, and start emptying the wrong bucket on the day that suffix
+// changes. A rename is exactly the change somebody would make believing it was
+// cosmetic.
 //
 // Cloudflare refuses to delete a bucket that is not empty, and returns that
 // refusal as a plain apply error part-way through the destroy - so the first
@@ -134,11 +155,11 @@ func forgetWorkloadBucket(ctx *run.Context) {
 // rclone, with the same environment-variable configuration the Backup phase
 // already uses, and no credentials written to disk.
 //
-// This deletes the age-encrypted state backups along with everything else,
-// which is correct and worth saying out loud: they describe an estate that is
-// about to stop existing. The state itself has already been migrated back to
-// local disk by the time this runs, so it is not the last copy of anything
-// the rest of the teardown still needs.
+// This no longer deletes the age-encrypted state dumps, and that is the change
+// #94 asked for. They used to live in this bucket, so the operation most
+// likely to precede needing one was the operation that destroyed every one of
+// them - eleven objects went that way. They now have a bucket of their own
+// that forgetKeptBuckets releases before this runs.
 func emptyObjectStorage(ctx *run.Context) {
 	cfg, err := config.LoadRendered(ctx.ConfigRendered)
 	if err != nil {
@@ -150,11 +171,25 @@ func emptyObjectStorage(ctx *run.Context) {
 		run.Warn("no site " + ctx.Site + " in the rendered config; not emptying object storage")
 		return
 	}
-	store := site.ObjectStorage
-	if strings.TrimSpace(store.Bucket) == "" || strings.TrimSpace(store.AccessKeyID) == "" {
+	if strings.TrimSpace(site.ObjectStorage.Bucket) == "" || strings.TrimSpace(site.ObjectStorage.AccessKeyID) == "" {
 		run.Warn("no object storage credentials in the rendered config; not emptying the bucket")
 		return
 	}
+
+	database, err := config.BucketByKey("database")
+	if err != nil {
+		run.Warn("could not find the bucket to empty: " + err.Error())
+		return
+	}
+
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		run.Warn("could not resolve the site to name the bucket to empty: " + err.Error())
+		return
+	}
+
+	store := site.ObjectStorage
+	store.Bucket = database.Name(net, site.ObjectStorage.Bucket)
 
 	env := r2Env(cfg.ObjectStorage, store)
 	remote := "R2:" + store.Bucket

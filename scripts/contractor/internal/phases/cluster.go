@@ -41,7 +41,7 @@ func Cluster(ctx *run.Context) error {
 
 	// Before the bucket adopt, not after, and not optional.
 	//
-	// adoptOrphanedR2Bucket shells out to `tofu import`, and import configures
+	// adoptOrphanedR2Buckets shells out to `tofu import`, and import configures
 	// EVERY provider in the root - including the kubernetes provider, which
 	// versions.tf configures from this very resource's attributes. Until
 	// talos_cluster_kubeconfig.this is in state those attributes are unknown,
@@ -55,7 +55,7 @@ func Cluster(ctx *run.Context) error {
 		return err
 	}
 
-	if err := adoptOrphanedR2Bucket(ctx); err != nil {
+	if err := adoptOrphanedR2Buckets(ctx); err != nil {
 		return err
 	}
 
@@ -71,45 +71,53 @@ func Cluster(ctx *run.Context) error {
 	return nil
 }
 
-// adoptOrphanedR2Bucket imports the R2 bucket if a prior run's incomplete
-// teardown already left it behind. See run.AdoptIfOrphaned for why this is
-// Go and not a `.tf` import block.
-func adoptOrphanedR2Bucket(ctx *run.Context) error {
+// adoptOrphanedR2Buckets imports any estate bucket that already exists.
+//
+// Two different situations bring a bucket here, and the distinction is worth
+// keeping because it decides how alarming a hit is.
+//
+// A bucket with Keep=false is found because a teardown FAILED part-way and
+// left it behind. That is the recovery case.
+//
+// A bucket with Keep=true is found because a teardown SUCCEEDED: Sterilize
+// forgets those deliberately so the destroy cannot take them with it, which
+// makes finding them here the NORMAL case rather than the exceptional one.
+//
+// If this ever stops working the symptom is a second bucket appearing beside
+// the first with a name Cloudflare had to disambiguate, and a workload
+// restoring from an empty one.
+//
+// See run.AdoptIfOrphaned for why this is Go and not a `.tf` import block.
+func adoptOrphanedR2Buckets(ctx *run.Context) error {
 	cfg, err := config.LoadRendered(ctx.ConfigRendered)
 	if err != nil {
 		return err
 	}
-	site := cfg.Sites[ctx.Site]
+	site, ok := cfg.Sites[ctx.Site]
+	if !ok {
+		return fmt.Errorf("unknown site '%s'", ctx.Site)
+	}
 
-	if err := run.AdoptIfOrphaned(ctx, "cloudflare_r2_bucket.homelab", func() (string, error) {
-		exists, err := r2BucketExists(cfg.ObjectStorage, site.ObjectStorage)
-		if err != nil || !exists {
-			return "", err
-		}
-		return cfg.ObjectStorage.AccountID + "/" + site.ObjectStorage.Bucket, nil
-	}); err != nil {
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
 		return err
 	}
 
-	// The workload bucket is adopted for a different reason, and the difference
-	// matters. The bucket above is adopted because a teardown FAILED part-way
-	// and left it behind. This one is adopted because a teardown SUCCEEDED: the
-	// Sterilize phase forgets it deliberately so the destroy cannot take the
-	// backups with it, which means finding it here is the normal case rather
-	// than the recovery one.
-	//
-	// If this ever stops working, the symptom is a second bucket appearing
-	// beside the first with a name Cloudflare had to disambiguate, and a
-	// workload restoring from an empty one.
-	workloads := site.ObjectStorage
-	workloads.Bucket = site.ObjectStorage.Bucket + "-workloads"
-	return run.AdoptIfOrphaned(ctx, "cloudflare_r2_bucket.workloads", func() (string, error) {
-		exists, err := r2BucketExists(cfg.ObjectStorage, workloads)
-		if err != nil || !exists {
-			return "", err
+	for _, bucket := range config.Buckets {
+		store := site.ObjectStorage
+		store.Bucket = bucket.Name(net, site.ObjectStorage.Bucket)
+
+		if err := run.AdoptIfOrphaned(ctx, bucket.Address(), func() (string, error) {
+			exists, err := r2BucketExists(cfg.ObjectStorage, store)
+			if err != nil || !exists {
+				return "", err
+			}
+			return cfg.ObjectStorage.AccountID + "/" + store.Bucket, nil
+		}); err != nil {
+			return fmt.Errorf("adopting the bucket holding %s: %w", bucket.Holds, err)
 		}
-		return cfg.ObjectStorage.AccountID + "/" + workloads.Bucket, nil
-	})
+	}
+	return nil
 }
 
 // r2BucketExists queries the Cloudflare API directly - not through

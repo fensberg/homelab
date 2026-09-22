@@ -447,10 +447,15 @@ func confirmDestroyScope(ctx *run.Context) error {
 	return nil
 }
 
-// reportObjectStorageAtRisk names the bucket and how much is in it.
+// reportObjectStorageAtRisk names what the teardown destroys and what it does
+// not, and says both out loud.
 //
-// This is the line that matters. Everything else on the list comes back by
-// running break-ground again; these do not.
+// It reports the buckets that survive as well as the one that does not,
+// deliberately. An operator who has read #94, or the old version of this
+// warning, believes a teardown takes the state dumps with it - and somebody
+// who believes their backups are about to be destroyed makes different, worse
+// decisions in the five minutes before a demolish. Naming the survivors is how
+// that belief gets corrected at the only moment it matters.
 func reportObjectStorageAtRisk(ctx *run.Context) {
 	cfg, err := config.LoadRendered(ctx.ConfigRendered)
 	if err != nil {
@@ -461,27 +466,46 @@ func reportObjectStorageAtRisk(ctx *run.Context) {
 	if !ok {
 		return
 	}
-	store := site.ObjectStorage
-	if strings.TrimSpace(store.Bucket) == "" || strings.TrimSpace(store.AccessKeyID) == "" {
+	if strings.TrimSpace(site.ObjectStorage.Bucket) == "" || strings.TrimSpace(site.ObjectStorage.AccessKeyID) == "" {
 		return
 	}
 
-	remote := "R2:" + store.Bucket
-	size, err := run.CmdOutputEnv(ctx.ClusterDir, r2Env(cfg.ObjectStorage, store), "rclone", "--log-level", "ERROR", "size", remote)
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
 	if err != nil {
-		run.Warn("  object storage: " + store.Bucket + " - could not be read, so this cannot say how many state backups are in it")
+		run.Warn("  object storage: could not resolve the site, so this cannot name the buckets")
 		return
 	}
-	summary := strings.Join(strings.Fields(strings.ReplaceAll(size, "\n", " ")), " ")
-	if strings.Contains(summary, "Total objects: 0") {
-		run.Warn("  object storage: " + store.Bucket + " is empty")
-		return
+
+	base := site.ObjectStorage.Bucket
+	for _, bucket := range config.Buckets {
+		store := site.ObjectStorage
+		store.Bucket = bucket.Name(net, base)
+
+		remote := "R2:" + store.Bucket
+		size, err := run.CmdOutputEnv(ctx.ClusterDir, r2Env(cfg.ObjectStorage, store), "rclone", "--log-level", "ERROR", "size", remote)
+		if err != nil {
+			// Not alarming on its own: a bucket that was never created because
+			// an earlier run failed reads exactly like this.
+			run.Warn("  object storage: " + store.Bucket + " - could not be read, so this cannot say what is in it")
+			continue
+		}
+		summary := strings.Join(strings.Fields(strings.ReplaceAll(size, "\n", " ")), " ")
+
+		if bucket.Keep {
+			run.Info("  object storage: " + store.Bucket + " SURVIVES - " + summary)
+			continue
+		}
+
+		if strings.Contains(summary, "Total objects: 0") {
+			run.Warn("  object storage: " + store.Bucket + " is empty")
+			continue
+		}
+		run.Warn("  object storage: " + store.Bucket + " - " + summary)
+		run.Warn("  THIS HOLDS " + strings.ToUpper(bucket.Holds) + ", AND THE TEARDOWN DESTROYS IT.")
+		run.Warn("  Cloudflare will not delete a bucket with objects in it, so the teardown")
+		run.Warn("  empties it first. The age-encrypted state dumps are NOT in here - they")
+		run.Warn("  have a bucket of their own that this operation leaves alone (#94).")
 	}
-	run.Warn("  object storage: " + store.Bucket + " - " + summary)
-	run.Warn("  THESE ARE THE AGE-ENCRYPTED STATE BACKUPS, and they are the only copies.")
-	run.Warn("  Cloudflare will not delete a bucket with objects in it, so the teardown")
-	run.Warn("  empties it first. They exist to survive a total loss and this is the")
-	run.Warn("  operation most likely to precede one.")
 }
 
 // stdinIsATerminal reports whether there is a human to ask.

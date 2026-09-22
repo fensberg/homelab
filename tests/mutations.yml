@@ -885,12 +885,12 @@ mutations:
       motivation belongs. The machinery should read the same whoever moves in
       next.
 
-  - guard: TestTheWorkloadBucketIsReleasedBeforeAnythingCanDeleteIt
+  - guard: TestBucketsThatOutliveTheEstateAreReleasedBeforeAnythingDeletes
     file: scripts/contractor/internal/phases/sterilize.go
     reads_source: true
-    find: "\tforgetWorkloadBucket(ctx)\n\temptyObjectStorage(ctx)"
-    replace: "\temptyObjectStorage(ctx)\n\tforgetWorkloadBucket(ctx)"
-    mentions: "before it releases the workload bucket"
+    find: "\tforgetKeptBuckets(ctx)\n\temptyObjectStorage(ctx)"
+    replace: "\temptyObjectStorage(ctx)\n\tforgetKeptBuckets(ctx)"
+    mentions: "before it releases the kept buckets"
     why: >
       reads_source, because this guard reads sterilize.go as text rather than
       executing it - the order of two calls is a property of the file, and the
@@ -905,6 +905,75 @@ mutations:
       It still reads as correct afterwards. Both calls are present, both run,
       and the teardown completes - which is exactly why the order needs a guard
       rather than a comment.
+
+  - guard: TestTheBucketTableAgreesWithTheHCL
+    file: management/cluster/object-storage.tf
+    find: 'name       = "${local.site_name}-state"'
+    replace: 'name       = "${local.site_name}-statedumps"'
+    mentions: "disagree about the name of the"
+    why: >
+      Renaming one side of a set that is declared twice. This is the drift the
+      guard exists for, and the rename is the plausible version of it - a
+      bucket called "-statedumps" reads as more descriptive than "-state", and
+      nothing in object-storage.tf objects.
+
+      The consequence is invisible from the file being edited. The Go table
+      still says "-state", so the Backup phase writes to a bucket OpenTofu
+      never created, the teardown releases a bucket that does not exist, and
+      the one that does is destroyed with the estate.
+
+  - guard: TestTheBucketTableAgreesWithTheHCL
+    file: management/cluster/object-storage.tf
+    find: 'name       = "${local.site_name}-staging"'
+    replace: "name       = local.object_storage.bucket"
+    mentions: "and only"
+    why: >
+      Naming a workload bucket from the config field instead of the site slug.
+      This is the shape of somebody copying the database bucket's name line,
+      which is the one line in the file that legitimately looks like this.
+
+      It reads as harmless and is not. The slug is what carries the site, so a
+      bucket named from the estate-wide config field is a bucket two sites
+      would share - and what they would share is one site's production workload
+      data with another's.
+
+  - guard: TestBackupAndRestoreUseTheSameBucket
+    file: scripts/contractor/internal/phases/restore.go
+    reads_source: true
+    find: 'stateBucket, err := config.BucketByKey("state")'
+    replace: 'stateBucket, err := config.BucketByKey("database")'
+    mentions: "does not resolve its bucket"
+    why: >
+      reads_source, because this guard opens restore.go and inspects its text
+      rather than executing it - which bucket a phase resolves is visible in the
+      source, and the scratch copy is the file it reads.
+
+      Pointing restore at the database bucket, which is where these dumps used
+      to live. Somebody reading an older runbook, or recovering an estate built
+      before the split, writes exactly this.
+
+      It fails in the worst place: a restore finds no backup and says so, while
+      an operator is trying to rebuild an estate. The bucket it is reading is
+      real and reachable, so nothing looks broken - it just appears that no
+      backup was ever taken.
+
+  - guard: TestTheTeardownResolvesTheBucketItEmptiesFromTheTable
+    file: scripts/contractor/internal/phases/teardown.go
+    reads_source: true
+    find: 'database, err := config.BucketByKey("database")'
+    replace: 'database, err := config.BucketByKey("state")'
+    mentions: "does not resolve the bucket it empties"
+    why: >
+      reads_source, for the same reason as the restore entry above: the guard
+      reads teardown.go as text, so the scratch copy is what it sees.
+
+      Aiming the emptying at the state bucket. The mutation is the shape of a
+      copy-paste between two functions in the same file that both resolve a
+      bucket the same way.
+
+      Emptying is the irreversible half of a demolish, and this version deletes
+      every age-encrypted state dump the estate has - which is #94 restored
+      exactly, by a one-word edit, in the file that was changed to fix it.
 
   - guard: TestAnUnsetDialProducesNoArgument
     file: modules/applications/valheim/image/entrypoint.sh

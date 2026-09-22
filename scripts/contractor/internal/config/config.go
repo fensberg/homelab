@@ -365,6 +365,26 @@ type SiteNetwork struct {
 
 var slugInvalid = regexp.MustCompile(`[^A-Za-z0-9]+`)
 
+// SiteSlug is a site's name reduced to the form that names things.
+//
+// Must match the site_name expression in variables.tf: lowercase, every run of
+// non-alphanumerics collapsed to a hyphen, trimmed. These become Proxmox VM
+// names and R2 bucket names, so "North Street Office" has to become
+// "north-street-office".
+//
+// Exported and used in two places on purpose. It was computed inline, which
+// meant the uniqueness check and the name actually used could not disagree only
+// because they were the same line - and the moment one of them moved, they
+// could. A site with no name at all falls back to its key in sites{}, which is
+// unique by construction.
+func SiteSlug(name, key string) string {
+	slug := strings.ToLower(strings.Trim(slugInvalid.ReplaceAllString(name, "-"), "-"))
+	if slug == "" {
+		return key
+	}
+	return slug
+}
+
 // ResolveSiteNetwork re-derives and re-validates a site's network every time
 // it is called, from whatever is currently on disk, rather than caching -
 // phases run as separate steps and the config does not change mid-run.
@@ -436,6 +456,34 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	if len(dupes) > 0 {
 		sort.Strings(dupes)
 		return nil, fmt.Errorf("duplicate octet(s) in sites: %s. Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network", strings.Join(dupes, ", "))
+	}
+
+	// And the same question about the slug, which is a separate one because it
+	// comes from a free-form vault field rather than from a map key.
+	//
+	// It was harmless while the slug only named VMs: two sites are two Proxmox
+	// clusters, so two machines called `north-street-office-cp-100` never met. It stopped
+	// being harmless when the slug started naming R2 buckets, because every
+	// site in an estate shares ONE object storage account - so two sites with
+	// the same slug do not collide noisily, they silently write into each
+	// other's state dumps and each other's workload data.
+	//
+	// Asserted on the slug rather than on the raw name, because "North Street Office" and
+	// "north-street-office " are different names and the same bucket.
+	slugs := map[string][]string{}
+	for key, s := range cfg.Sites {
+		slugs[SiteSlug(s.Name, key)] = append(slugs[SiteSlug(s.Name, key)], key)
+	}
+	var slugDupes []string
+	for slug, keys := range slugs {
+		if len(keys) > 1 {
+			sort.Strings(keys)
+			slugDupes = append(slugDupes, fmt.Sprintf("%q (%s)", slug, strings.Join(keys, ", ")))
+		}
+	}
+	if len(slugDupes) > 0 {
+		sort.Strings(slugDupes)
+		return nil, fmt.Errorf("duplicate site slug(s): %s. The slug names a site's VMs and its object-storage buckets, and every site in an estate shares one storage account - so two sites sharing a slug write into each other's state dumps. Give each site a distinct name in the vault", strings.Join(slugDupes, ", "))
 	}
 	if site.Octet < OctetMin || site.Octet > OctetMax {
 		return nil, fmt.Errorf("octet %d out of range for site '%s'. Use %d-%d; Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16", site.Octet, name, OctetMin, OctetMax)
@@ -526,10 +574,7 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	// run of non-alphanumerics collapsed to a hyphen, trimmed. These become
 	// Proxmox VM names, so "North Street Office" has to become
 	// "north-street-office".
-	slug := strings.ToLower(strings.Trim(slugInvalid.ReplaceAllString(site.Name, "-"), "-"))
-	if slug == "" {
-		slug = name
-	}
+	slug := SiteSlug(site.Name, name)
 	label := site.Name
 	if strings.TrimSpace(label) == "" {
 		label = slug
