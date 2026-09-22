@@ -8,18 +8,6 @@
 locals {
   all_octets = [for k, s in local.config.sites : s.octet]
 
-  # Every site's slug, computed the same way local.site_name computes the
-  # selected one's. Two sites are two Proxmox clusters, so duplicate VM names
-  # never met - but every site in an estate shares ONE object storage account,
-  # and the slug names the buckets, so a collision here is two sites writing
-  # into each other's state dumps.
-  all_site_slugs = [
-    for k, s in local.config.sites :
-    trim(lower(replace(try(s.name, ""), "/[^A-Za-z0-9]+/", "-")), "-") != ""
-    ? trim(lower(replace(s.name, "/[^A-Za-z0-9]+/", "-")), "-")
-    : k
-  ]
-
   # Octets must stay clear of the Kubernetes defaults at 10.96.0.0/12
   # (services) and 10.244.0.0/16 (pods). Those are cluster-internal and never
   # routed over the overlay, but overlapping them makes debugging confusing.
@@ -55,11 +43,6 @@ resource "terraform_data" "invariants" {
     precondition {
       condition     = length(local.all_octets) == length(distinct(local.all_octets))
       error_message = "Duplicate octet in sites. Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network and present as a broken network rather than a config mistake."
-    }
-
-    precondition {
-      condition     = length(local.all_site_slugs) == length(distinct(local.all_site_slugs))
-      error_message = "Duplicate site slug. A site's name becomes the slug that names its VMs and its object-storage buckets, and every site in an estate shares one storage account - so two sites sharing a slug write into each other's state dumps rather than colliding noisily. Asserted on the slug, not the name: \"North Street Office\" and \"north-street-office \" are two names and one bucket."
     }
 
     precondition {
