@@ -50,6 +50,17 @@ files:
   - path: contractor/internal/phases/compute.go
     uncovered: 6
     covered_by: e2e
+  # SettleMoves runs `tofu apply -refresh-only` against a real estate's state to
+  # record a pending rename, so it has no answer without one. The decision was
+  # extracted: settleMovesArgs builds the invocation and is tested, because every
+  # flag in it is load-bearing - refresh-only so nothing can be created or
+  # destroyed, a target per endpoint so the refresh does not walk into
+  # data.talos_cluster_health, and -json so no attribute value reaches a public
+  # log. PendingMoves, which is the part that can be wrong quietly, is tested
+  # against the estate's own source.
+  - path: contractor/internal/run/moved.go
+    uncovered: 1
+    covered_by: e2e
   # Two more than before, both of them the destroy plan added for #213 and #94:
   # confirmDestroyScope reads `tofu state list` against a real estate's state,
   # and reportObjectStorageAtRisk runs rclone against the site's R2 bucket to

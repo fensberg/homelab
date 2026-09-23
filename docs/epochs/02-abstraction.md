@@ -2646,3 +2646,67 @@ agree about.
 The general form, which is the third time this epoch has produced one: the
 repository declaring something is not evidence the estate has it. Wherever a
 declaration has an observable effect, something automated has to observe it.
+
+### The pre-merge check and the post-merge action were different commands
+
+Renaming one R2 bucket resource stopped every converge on `main`.
+
+`moved` blocks and `-target` are mutually exclusive. OpenTofu resolves a rename
+while it builds the plan and refuses to build one that would record only half of
+it, so if either endpoint falls outside the targets it stops with **"Moved
+resource instances excluded by targeting"**. Every apply in the converge before
+the Cluster phase is targeted, so a single `moved` block halted the converge at
+its _first_ apply — the disk image — and nothing after it ran. Not the VMs, not
+the machine configuration, and not the untargeted apply at the end of Cluster
+that would have settled the move and created the new buckets.
+
+The estate then reported two unrelated-looking symptoms for a day: the nightly
+backup failing with `NoSuchBucket` for buckets the repository described and
+nobody had created, and Alertmanager paging every four hours about an etcd
+metrics listener that a machine configuration nothing was applying had never
+opened.
+
+#### Why nothing caught it
+
+This is the part worth keeping. `contractor plan` — the check that runs on the
+pull request — issues **one untargeted plan**. `contractor converge` — what runs
+after the merge — issues **targeted applies**. Verified against OpenTofu 1.12.6
+on a throwaway configuration: an untargeted plan of a pending move succeeds, and
+a targeted plan of the same configuration fails.
+
+So the pre-merge check was not weak, or badly written, or unlucky. It was
+**structurally incapable** of failing the way the post-merge action would,
+because it ran a different command. The pull request was green, and would be
+green again.
+
+The generalisation is the one worth carrying: **a check earns its place by
+running the same shape of operation as the thing it is checking.** Wherever the
+verification path and the action path diverge — different flags, different
+targets, different verbs — the difference is the exact region no check covers,
+and it will be discovered in production.
+
+#### What was done, and what was only filed
+
+The converge settles a pending rename before its first targeted apply:
+`run.SettleMoves` runs `apply -refresh-only -auto-approve` targeted at the
+move's own endpoints. Verified rather than assumed — refresh-only reports "0
+added, 0 changed, 0 destroyed", so it cannot create or destroy anything, and
+targeting it at the two addresses avoids the untargeted refresh that would read
+`data.talos_cluster_health`, the read that sat for ninety minutes during a
+teardown. `-refresh-only` with `-refresh=false` is refused outright, so that
+combination is not available.
+
+It is in Compute rather than Attach because Attach is shared with
+`contractor plan`, which must change nothing, and settling a move writes state.
+
+Two hermetic guards, so this needs no estate to stay honest:
+`TestPendingMovesFindsEveryMovedBlockInTheEstate` counts the estate's own
+`moved` blocks against what the parser returns, so a block written in a shape
+the parser misses fails rather than being skipped; and
+`TestComputeSettlesRenamesBeforeItApplies` asserts the ordering, because
+settling after the first targeted apply is the same as not settling at all.
+
+Making the plan path actually mirror the converge path is the larger fix and is
+filed rather than bundled. The two sequences would have to share their declared
+steps the way `TeardownSteps` already does, which is a change to the deploy
+path and deserves its own review.
