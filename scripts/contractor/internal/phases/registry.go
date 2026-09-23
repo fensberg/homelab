@@ -18,18 +18,18 @@ var AllPhases = []string{
 // against no state is a plan to build everything - and then stops. No overlay,
 // because minting a tailnet key is a side effect and this sequence has none.
 var PlanPhases = []string{
-	"render", "verify", "attach", "plan", "sterilize",
+	"render", "verify", "take-over", "plan", "sterilize",
 }
 
 // ConvergePhases applies a change to an estate that already exists.
 //
 // Three differences from AllPhases, and each is the point.
 //
-// It reaches tofu through attach, which connects to the state already in the
-// cluster instead of starting from an empty workspace. Nothing before attach
+// It reaches tofu through take-over, which connects to the state already in the
+// cluster instead of starting from an empty workspace. Nothing before take-over
 // may run tofu at all: `tofu init` in the cluster directory configures the
 // local backend and an apply then writes terraform.tfstate beside it, which is
-// precisely the "mid-ignition" condition attach refuses. render and verify are
+// precisely the "mid-ignition" condition take-over refuses. render and verify are
 // safe there because neither touches tofu.
 //
 // It has no migrate: state is already in Postgres, and migrate's -force-copy
@@ -41,12 +41,12 @@ var PlanPhases = []string{
 // that: the tailnet key it mints is consumed by exactly one thing, the vars
 // file the hypervisor playbook reads, so a converge that mints one is
 // producing a live credential nothing will use. It went unnoticed because the
-// key landed in a local state file that attach then refused to touch, so every
+// key landed in a local state file that take-over then refused to touch, so every
 // converge reported the same resource as being created for the first time.
 //
 // tests/go/repo/converge_order_test.go holds the ordering rule.
 var ConvergePhases = []string{
-	"render", "verify", "attach",
+	"render", "verify", "take-over",
 	"compute", "cluster", "health", "backup", "sterilize",
 }
 
@@ -78,8 +78,8 @@ func dispatch(ctx *run.Context, name string) error {
 		return Hypervisor(ctx)
 	case "verify":
 		return Verify(ctx)
-	case "attach":
-		return Attach(ctx)
+	case "take-over":
+		return TakeOver(ctx)
 	case "plan":
 		return Plan(ctx)
 	case "compute":

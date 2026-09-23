@@ -39,8 +39,15 @@ locals {
   # Access key IDs that begin AKIA or ASIA are AWS long-term and temporary
   # credentials respectively. R2 issues 32 hex characters, so this prefix is a
   # positive identification rather than a heuristic.
-  object_storage_key = try(local.object_storage.access_key_id, "")
-  looks_like_aws_key = can(regex("^(AKIA|ASIA)", local.object_storage_key))
+  # Every credential, not the first one. There are two and there will be four,
+  # and a check that reads one of them is a check somebody walks past by
+  # pasting the wrong key into the other field - the vault fields sit next to
+  # each other with near-identical names.
+  object_storage_keys = [
+    try(local.object_storage.database.access_key_id, ""),
+    try(local.object_storage.state.access_key_id, ""),
+  ]
+  looks_like_aws_key = anytrue([for k in local.object_storage_keys : can(regex("^(AKIA|ASIA)", k))])
 }
 
 resource "terraform_data" "invariants" {
@@ -55,6 +62,18 @@ resource "terraform_data" "invariants" {
     precondition {
       condition     = length(local.all_octets) == length(distinct(local.all_octets))
       error_message = "Duplicate octet in sites. Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network and present as a broken network rather than a config mistake."
+    }
+
+    precondition {
+      # One key in both fields defeats the split entirely. The database
+      # credential lives permanently in a cluster Secret; the state credential
+      # reaches the age-encrypted dumps that exist to survive that cluster
+      # being lost. Separating them is the whole reason there are two buckets.
+      condition = (
+        trimspace(try(local.object_storage.database.access_key_id, "")) == "" ||
+        try(local.object_storage.database.access_key_id, "") != try(local.object_storage.state.access_key_id, "")
+      )
+      error_message = "sites.${var.site}.object_storage.database and .state carry the same access_key_id. They are meant to be two tokens scoped to two buckets - one key in both fields means the credential that lives in the cluster can delete the state dumps that exist to survive that cluster being lost."
     }
 
     precondition {
@@ -187,7 +206,7 @@ resource "terraform_data" "invariants" {
     # provider field at all.
     precondition {
       condition     = !local.looks_like_aws_key
-      error_message = "sites.${var.site}.object_storage.access_key_id begins with AKIA or ASIA, which is an AWS credential, but this site declares cloudflare. R2 access key IDs are 32 hex characters."
+      error_message = "An access_key_id under sites.${var.site}.object_storage begins with AKIA or ASIA, which is an AWS credential, but this site declares cloudflare. R2 access key IDs are 32 hex characters."
     }
   }
 }

@@ -1207,19 +1207,26 @@ changes never trigger it.
 first.
 **Because:** the two runs differ in what they may assume. Ignition may assume
 nothing exists; convergence may assume everything does. Expressing that as
-`ConvergePhases` - `attach` in front, no `migrate`, no `hypervisor` - makes the
+
+> **Naming note.** This phase was called `attach` until 2026-09-23 and is now
+> `take-over` - a contractor takes over a site, it does not attach to one. Run
+> transcripts quoted in this record still print `PHASE 4 : ATTACH`, and are left
+> exactly as they were: they are evidence of what happened, not documentation of
+> what the phase is called.
+
+`ConvergePhases` - `take-over` in front, no `migrate`, no `hypervisor` - makes the
 difference reviewable in one place instead of scattered across conditionals
 inside phases that would then have to be read twice.
 **Rejected:** detecting the situation automatically. "Is there state in
 Postgres?" is answerable, but the two wrong answers are a duplicate estate and
 an overwritten state file, and neither is worth risking to save typing a flag.
 
-**Attach carries three refusals, and the third is the one that matters.** It
+**Take-over carries three refusals, and the third is the one that matters.** It
 refuses when local state exists, because that is an ignition that stopped
 before Migrate and this workspace already holds the authoritative copy. It uses
 `init -reconfigure` rather than `-migrate-state`, because migration is the verb
 that copies one state over another. And it refuses when the backend it just
-attached to is **empty** - because an init against an empty backend succeeds
+took over is **empty** - because an init against an empty backend succeeds
 exactly as loudly as one against a populated backend, and applying afterwards
 would build a second estate beside the first with the same names, VM ids and
 addresses. Nothing inside the process can distinguish "new estate" from "lost
@@ -1512,7 +1519,7 @@ epoch 05 exists to build and this estate does not have.
 It became a live hazard only once a converge actually worked end to end, which
 is why it is not in the older notes below. The safe order is always **destroy
 first, then lower the count** - a merge against an estate that no longer exists
-fails at Attach, which costs a red run and touches nothing.
+fails at take-over, which costs a red run and touches nothing.
 
 **Step 1 - match the config to reality before destroying.** `demolish`
 evaluates `data.talos_cluster_health` against the _config's_
@@ -1671,7 +1678,7 @@ What made it possible, after the first attempt failed at Verify:
   the #118 fix that made the plan possible.
 - #129 removed the Overlay phase from the converge sequence. It ran `tofu init`
   in the cluster directory, which writes local state, which is precisely the
-  condition Attach refuses - so the first converge ever to get past Verify
+  condition take-over refuses - so the first converge ever to get past Verify
   halted on a state file its own second phase had written.
 
 ### What was measured afterwards, rather than inferred
@@ -2750,10 +2757,10 @@ closing one is a prompt to delete the other. Nothing here catches it
 mechanically: the two lived in different files, both tested, both passing, and
 between them the estate had a capability it refused to use.
 
-### Converge could not attach, because its own second phase wrote local state
+### Converge could not take over, because its own second phase wrote local state
 
 The scale-up was merged and the converge fired on the merge, which is the half
-of the acceptance test this tier exists to prove. It reached Attach and halted:
+of the acceptance test this tier exists to prove. It reached take-over and halted:
 
     PHASE 2 : OVERLAY
       [ok] auth key minted; the tailnet policy auto-approves this subnet
@@ -2766,20 +2773,20 @@ of the acceptance test this tier exists to prove. It reached Attach and halted:
 
 The state file was written thirty seconds earlier by the Overlay phase in the
 same run. `tofu init` in the cluster directory configures the local backend,
-the apply writes `terraform.tfstate` beside it, and Attach then refuses -
+the apply writes `terraform.tfstate` beside it, and take-over then refuses -
 correctly, since local state normally means an ignition that never reached
 Migrate and attaching on top of it would leave two states describing one
-estate. **Nothing before Attach may touch tofu at all**, and `ConvergePhases`
+estate. **Nothing before take-over may touch tofu at all**, and `ConvergePhases`
 ran Overlay second.
 
 Three things kept this invisible.
 
-**Converge had never reached Attach.** Every previous attempt failed at Verify,
+**Converge had never reached take-over.** Every previous attempt failed at Verify,
 for the unrelated overlay-transport reasons recorded above. The ordering was
-wrong from the moment Attach was introduced and no run had ever got far enough
+wrong from the moment take-over was introduced and no run had ever got far enough
 to find out.
 
-**Each phase was correct alone.** Overlay works, Attach works, and their tests
+**Each phase was correct alone.** Overlay works, take-over works, and their tests
 pass. The defect existed only in the order, which nothing asserted.
 
 **The comment describing `ConvergePhases` had drifted onto `PlanPhases`.** It
@@ -2795,7 +2802,7 @@ would use. `PlanPhases` already omitted it, with the reason written down:
 minting a key is a side effect, and that sequence has none.
 
 **That is also the answer to a plan reporting `1 to add` every single time.**
-The key was created in a local state file that Attach then refused to touch and
+The key was created in a local state file that take-over then refused to touch and
 Sterilize deleted, so it was never recorded anywhere that outlived the run.
 Every converge saw an empty state and planned to create it for the first time.
 It looked like noise worth suppressing. It was the symptom, and suppressing it
@@ -2812,7 +2819,7 @@ the first two fixes were both to the caller rather than to the helper that made
 the wrong thing possible.
 
 **The building code that follows from this**, in
-`tests/go/repo/converge_order_test.go`: nothing may run tofu before Attach in
+`tests/go/repo/converge_order_test.go`: nothing may run tofu before take-over in
 any sequence that contains one; `run.Tofu` may only ever run `init`; and every
 phase a sequence names must have a source file named after it, so no phase can
 be silently exempt from the first two.

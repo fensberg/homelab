@@ -2,6 +2,7 @@ package run
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -45,4 +46,100 @@ func AdoptIfOrphaned(ctx *Context, address string, findID func() (id string, err
 func InState(ctx *Context, address string) bool {
 	out, err := CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list", address)
 	return err == nil && strings.TrimSpace(out) != ""
+}
+
+// TrackedResourceName reads one attribute off a resource already in state.
+//
+// `tofu state show` rather than `show -json`: the JSON form serialises the
+// whole state, which for this estate means every VM, every machine secret and
+// every credential, in order to read one string. A targeted show reads one
+// resource, and nothing here needs more than that.
+//
+// Returns "" when the address is not tracked or the attribute is absent, which
+// callers must treat as "cannot tell" rather than as "no name".
+func TrackedResourceName(ctx *Context, address string) string {
+	out, err := CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "show", "-no-color", address)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(out, "\n") {
+		m := trackedName.FindStringSubmatch(line)
+		if m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
+
+// The `name = "..."` line of a `tofu state show`, anchored so an attribute
+// merely ending in "name" - display_name, bucket_name - cannot match.
+var trackedName = regexp.MustCompile(`^\s*name\s+=\s+"([^"]*)"\s*$`)
+
+// ReleaseIfRenamed stops tracking a resource whose real name no longer matches
+// the one the config asks for, so the next adopt can pick up the right one.
+//
+// WHY THIS EXISTS, AND WHY IT IS NOT A DESTROY.
+//
+// An object storage bucket's name cannot be changed in place - the provider
+// forces replacement - and the vendor refuses to delete a bucket that holds
+// objects. So a rename plans as destroy-and-create and then fails on the
+// destroy, leaving the estate unable to converge at all. The failure is not
+// recoverable by the operator either: every phase runs inside one process that
+// sterilizes the backend configuration on exit, so there is no supported way
+// to reach the state by hand, deliberately.
+//
+// Releasing rather than destroying is the same choice the teardown already
+// makes for the buckets that outlive the estate. The old bucket keeps every
+// object in it and simply stops being this estate's business; retiring it is a
+// deliberate act by somebody who has checked what is inside, not a side effect
+// of a rename.
+//
+// The window where nothing tracks it is real and is stated out loud rather
+// than hidden, because an untracked bucket is exactly the kind of thing this
+// estate calls a landmine.
+func ReleaseIfRenamed(ctx *Context, address, want string) error {
+	if !InState(ctx, address) {
+		return nil
+	}
+
+	have := TrackedResourceName(ctx, address)
+	if !shouldRelease(have, want) {
+		return nil
+	}
+
+	Warn(fmt.Sprintf("%s tracks a resource named %q, and the config now asks for %q", address, have, want))
+	Warn("Releasing the old one rather than destroying it: it keeps whatever it holds, and nothing here will touch it again.")
+	Warn("It is now tracked by nothing. Retire it deliberately once you have checked what is in it.")
+
+	if _, err := CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "rm", address); err != nil {
+		return fmt.Errorf("releasing %s, which holds %q and cannot be renamed in place: %w", address, have, err)
+	}
+	Ok(fmt.Sprintf("released %s; the adopt will pick up %q", address, want))
+	return nil
+}
+
+// shouldRelease decides whether a tracked resource is the wrong one.
+//
+// Extracted from ReleaseIfRenamed and tested, because it is the only part of
+// that function that can be wrong quietly - and being wrong releases a live
+// resource from state, which is the failure the whole thing exists to avoid.
+// What is left around it is two shell-outs to tofu, which have no answer
+// without a real estate.
+//
+// The rules, and each one fails safe:
+//
+//   - An unreadable name is "cannot tell", never "different". A parse failure,
+//     a provider that stopped printing the attribute, an address that vanished
+//     between the two calls - none of those are evidence of a rename, and
+//     treating them as one would release a resource nobody renamed.
+//   - An empty WANT is refused for the same reason from the other side. A
+//     config that resolved to no name at all is a config to stop on, not one
+//     to release against.
+//   - Equal names mean nothing to do, which is the ordinary case on every
+//     converge that changes nothing.
+func shouldRelease(have, want string) bool {
+	if have == "" || want == "" {
+		return false
+	}
+	return have != want
 }

@@ -282,13 +282,13 @@ VM.
 
 **Changing a running estate is `contractor converge`** (`task converge`). It
 renders, attaches to the state already in the cluster, and applies - the same
-phases as ignition minus `hypervisor` and `migrate`, plus `attach` in front.
+phases as ignition minus `hypervisor` and `migrate`, plus `take-over` in front.
 
-Attach is where the safety lives. It refuses if local state exists, because
+Take-over is where the safety lives. It refuses if local state exists, because
 that means an ignition stopped before Migrate and this workspace already holds
 the authoritative copy. It uses `init -reconfigure`, never `-migrate-state`,
 because migration is the verb that copies one state over another. And it
-refuses if the backend it attached to is **empty**: an init against an empty
+refuses if the backend it took over is **empty**: an init against an empty
 backend succeeds exactly as loudly as one against a populated backend, and
 applying afterwards would build a second estate beside the first, with the same
 names, VM ids and addresses. Nothing can tell those two situations apart from

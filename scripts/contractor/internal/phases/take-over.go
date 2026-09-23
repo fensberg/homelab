@@ -9,7 +9,20 @@ import (
 	"homelab/contractor/internal/run"
 )
 
-// Attach reconnects this workspace to the state of an estate that already
+// THE FILENAME CARRIES THE HYPHEN ON PURPOSE, and it is not idiomatic Go.
+//
+// converge_order_test.go finds a phase's code by its own name - take-over.go
+// for "take-over" - and that is what makes the ordering rule enforceable: a
+// phase whose file it cannot find is a phase nothing checks, silently. Naming
+// this takeover.go compiled, passed review and turned the guard off for this
+// one phase, which the pre-push hook caught.
+//
+// So the file matches the phase rather than the convention. Moving the work to
+// where the guard already looks is this repository's rule; widening the guard
+// to accept a second spelling would have bought a filename and paid for it with
+// an exception in the thing doing the checking.
+
+// TakeOver reconnects this workspace to the state of an estate that already
 // exists, so a change can be applied to it rather than a second copy of it
 // being built beside it.
 //
@@ -21,10 +34,10 @@ import (
 // empty state over the real one with -force-copy. The button was a first-run
 // tool and nothing said so.
 //
-// Attach is deliberately not part of AllPhases. Ignition creates the cluster
+// TakeOver is deliberately not part of AllPhases. Ignition creates the cluster
 // that holds the state; it cannot begin by connecting to it.
-func Attach(ctx *run.Context) error {
-	run.WritePhase("Attach", "Reconnect to the state of an estate that already exists.")
+func TakeOver(ctx *run.Context) error {
+	run.WritePhase("TakeOver", "Reconnect to the state of an estate that already exists.")
 
 	// Local state means an ignition run that never reached Migrate, or one
 	// that was interrupted. Either way the workspace already holds the
@@ -66,7 +79,7 @@ see 'contractor restore'`, host, port)
 		"init", "-input=false", "-reconfigure",
 		"-backend-config=conn_str="+connStr,
 	); err != nil {
-		return fmt.Errorf("could not attach to the state database: %w", err)
+		return fmt.Errorf("could not take over the state database: %w", err)
 	}
 
 	// The check this phase exists for.
@@ -103,8 +116,8 @@ the state has been lost and belongs in 'contractor restore'`)
 	// phase because this is the last point at which nothing can have changed
 	// yet.
 	if serial, ok := run.StateSerial(ctx); ok {
-		ctx.StateSerialAtAttach = serial
-		ctx.AttachedOK = true
+		ctx.StateSerialAtTakeover = serial
+		ctx.TakenOverOK = true
 	}
 
 	run.Ok(fmt.Sprintf("attached to existing state: %d resource(s)", n))
@@ -116,7 +129,7 @@ the state has been lost and belongs in 'contractor restore'`)
 // Three answers, and collapsing any two of them is the bug this exists to
 // prevent. The banner it feeds used to assert "the estate is untouched by this
 // failure" on every converge failure with no condition at all - true when the
-// run died at Attach, and a confident falsehood when it died halfway through
+// run died at TakeOver, and a confident falsehood when it died halfway through
 // creating machines, which is precisely when somebody most needs to look.
 //
 //	changed=false, certain=true   nothing was written; a revert is exact
@@ -125,13 +138,13 @@ the state has been lost and belongs in 'contractor restore'`)
 func EstateChanged(ctx *run.Context) (changed, certain bool) {
 	// Never attached, so nothing in this run could have reached tofu at all.
 	// tests/go/repo/converge_order_test.go is what makes this sound: no phase
-	// before attach may invoke tofu, so there is no path to a write.
-	if !ctx.AttachedOK {
+	// before take-over may invoke tofu, so there is no path to a write.
+	if !ctx.TakenOverOK {
 		return false, true
 	}
 	serial, ok := run.StateSerial(ctx)
 	if !ok {
 		return false, false
 	}
-	return serial != ctx.StateSerialAtAttach, true
+	return serial != ctx.StateSerialAtTakeover, true
 }

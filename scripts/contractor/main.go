@@ -68,7 +68,7 @@ usage: contractor <verb> [flags]
 verbs:
   break-ground Build a site that does not exist yet. Local-only: it creates
                the cluster that later converges run inside.
-  converge     Apply the config to a site that already exists, attaching to
+  converge     Apply the config to a site that already exists, taking over
                the state in its cluster. Never destroys on failure.
   plan         Show what a converge would change, and change nothing. Reports
                addresses and actions only, never a value.
@@ -474,7 +474,7 @@ const (
 // It replaces an unconditional reassurance. The old text promised "the estate
 // is untouched by this failure - nothing has been destroyed and nothing will
 // be" on every converge failure whatever had happened, which was true when the
-// run died at Attach and false when it died partway through an apply. A
+// run died at TakeOver and false when it died partway through an apply. A
 // reassurance's whole function is to stop somebody looking, so the one case it
 // was wrong in was the one case where looking mattered.
 func reportPreexistingFailure(ctx *run.Context, verb string) int {
@@ -555,7 +555,7 @@ func sequenceFor(toRun []string) []string {
 func selectPhases(phase, from, verb string) ([]string, error) {
 	// Which sequence -phase and -from index into. Naming a phase is a
 	// statement about where in a run you are, and the two runs are not the
-	// same run: "attach" exists only in a converge and "migrate" only in an
+	// same run: "take-over" exists only in a converge and "migrate" only in an
 	// ignition, so accepting either against the wrong sequence would let
 	// somebody ask for a phase that cannot happen.
 	seq := phases.AllPhases

@@ -54,8 +54,8 @@ resource "kubernetes_secret" "object_storage_credentials" {
   }
 
   data = {
-    ACCESS_KEY_ID     = local.object_storage.access_key_id
-    SECRET_ACCESS_KEY = local.object_storage.secret_access_key
+    ACCESS_KEY_ID     = local.object_storage.database.access_key_id
+    SECRET_ACCESS_KEY = local.object_storage.database.secret_access_key
   }
 }
 
@@ -71,7 +71,7 @@ resource "kubernetes_secret" "cluster_vars" {
   }
 
   data = {
-    OBJECT_STORAGE_BUCKET   = local.object_storage.bucket
+    OBJECT_STORAGE_BUCKET   = "${local.site_name}-database"
     OBJECT_STORAGE_ENDPOINT = "https://${local.object_storage_account.account_id}.r2.cloudflarestorage.com"
     STATE_DB_NAMESPACE      = local.state_db_namespace
     STATE_DB_CLUSTER        = local.state_db_cluster

@@ -77,13 +77,13 @@ func Compute(ctx *run.Context) error {
 	// OpenTofu refuses to build a targeted plan while a `moved` block is
 	// pending, so one rename anywhere in the configuration stops the converge
 	// at the very next line and everything after it - see run/moved.go. It
-	// belongs here rather than in Attach because Attach is shared with
+	// belongs here rather than in TakeOver because TakeOver is shared with
 	// `contractor plan`, which must change nothing, and settling a move writes
 	// state.
 	//
-	// Gated on AttachedOK so it runs on a converge and not on an ignition,
+	// Gated on TakenOverOK so it runs on a converge and not on an ignition,
 	// which starts from an empty state where there is nothing to rename.
-	if ctx.AttachedOK {
+	if ctx.TakenOverOK {
 		if err := run.SettleMoves(ctx); err != nil {
 			return err
 		}

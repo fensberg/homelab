@@ -49,7 +49,7 @@ func sterilizeTargets(ctx *run.Context) []string {
 		// and `task test` on any machine that has completed a run. That is
 		// every machine that matters, and the pre-push hook runs both.
 		//
-		// Safe to delete: attach, destroy and sterilize all pass
+		// Safe to delete: take-over, destroy and sterilize all pass
 		// -backend-config explicitly with -reconfigure, so nothing relies on
 		// the cached record.
 		ctx.TofuBackendRecord,

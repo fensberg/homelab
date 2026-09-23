@@ -41,7 +41,7 @@ files:
   - path: contractor/internal/ansible/ansible.go
     uncovered: 1
     covered_by: e2e
-  - path: contractor/internal/phases/attach.go
+  - path: contractor/internal/phases/take-over.go
     uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/cluster.go
@@ -93,8 +93,24 @@ files:
   - path: contractor/internal/phases/verify.go
     uncovered: 1
     covered_by: e2e
+  # Two more than before, both added so a renamed bucket cannot deadlock a
+  # converge. TrackedResourceName runs `tofu state show` and ReleaseIfRenamed
+  # runs `tofu state rm`, both against a real estate's encrypted state, so
+  # neither has an answer without one.
+  #
+  # BOTH DECISIONS INSIDE THEM ARE EXTRACTED AND COVERED, which is the point of
+  # this entry rather than the count. shouldRelease decides whether a tracked
+  # resource is the wrong one, and trackedName decides which attribute of a
+  # `state show` is the name. Those are the two things that can be wrong
+  # quietly, and being wrong releases a live resource from state - the exact
+  # landmine this repository refuses.
+  #
+  # The first draft exempted both functions whole and tested only the pattern.
+  # That hid a real defect: an empty WANT fell through the guard clause and
+  # released, so a config resolving to no name at all would have dropped a real
+  # bucket out of state. Extracting the decision is what found it.
   - path: contractor/internal/run/adopt.go
-    uncovered: 2
+    uncovered: 4
     covered_by: e2e
   - path: contractor/internal/run/exec.go
     uncovered: 15

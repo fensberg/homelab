@@ -8,33 +8,33 @@ import (
 	"testing"
 )
 
-// Nothing in a sequence may reach OpenTofu before `attach` does.
+// Nothing in a sequence may reach OpenTofu before `take-over` does.
 //
-// `attach` is the phase that points this workspace at the state living in the
+// `take-over` is the phase that points this workspace at the state living in the
 // cluster, and it refuses to run when a local `terraform.tfstate` exists -
 // correctly, because local state means an ignition that never reached Migrate,
-// and attaching on top of it would leave two states describing one estate.
+// and taking over on top of it would leave two states describing one estate.
 //
 // The trap is that any earlier tofu command creates exactly that condition.
 // `tofu init` in the cluster directory configures the local backend, an apply
-// writes `terraform.tfstate` beside it, and `attach` then reports the workspace
+// writes `terraform.tfstate` beside it, and `take-over` then reports the workspace
 // as mid-ignition. The sequence refuses itself.
 //
 // It happened. ConvergePhases ran `overlay` second, and the first converge ever
-// to get past Verify halted at Attach on a state file its own third phase had
+// to get past Verify halted at TakeOver on a state file its own third phase had
 // written thirty seconds earlier. Nothing caught it because each phase was
 // correct alone and the ordering was only wrong in combination - and because
-// the converge lane had never reached Attach before, having failed at Verify
+// the converge lane had never reached TakeOver before, having failed at Verify
 // every previous time for an unrelated reason.
 func TestNothingRunsTofuBeforeAttach(t *testing.T) {
 	for name, seq := range sequencesWithAttach(t) {
-		attachAt := indexOf(seq, "attach")
-		for i, phase := range seq[:attachAt] {
+		takeOverAt := indexOf(seq, "take-over")
+		for i, phase := range seq[:takeOverAt] {
 			if body := phaseSource(t, phase); mentionsTofu(body) {
-				t.Errorf("%s runs %q at position %d, before attach at position %d, and %s.go invokes tofu.\n\n"+
+				t.Errorf("%s runs %q at position %d, before take-over at position %d, and %s.go invokes tofu.\n\n"+
 					"tofu in the cluster directory configures the local backend and writes "+
-					"terraform.tfstate, which is the condition attach refuses. Move it after "+
-					"attach, or drop it from this sequence.", name, phase, i, attachAt, phase)
+					"terraform.tfstate, which is the condition take-over refuses. Move it after "+
+					"take-over, or drop it from this sequence.", name, phase, i, takeOverAt, phase)
 			}
 		}
 	}
@@ -170,7 +170,7 @@ var streamingTofuCall = regexp.MustCompile(`run\.Tofu\(|run\.Cmd\((?:[^,]*,\s*)?
 
 // Anything that shells out to tofu. Deliberately broad: the question is not
 // which subcommand runs, it is whether the cluster directory acquires a local
-// backend before attach expects it to be clean.
+// backend before take-over expects it to be clean.
 var tofuCall = regexp.MustCompile(`run\.Tofu[A-Za-z]*\(|"tofu"`)
 
 func mentionsTofu(body string) bool { return tofuCall.MatchString(body) }
@@ -213,12 +213,12 @@ func sequencesWithAttach(t *testing.T) map[string][]string {
 		for i := range seq {
 			seq[i] = strings.Trim(seq[i], `"`)
 		}
-		if indexOf(seq, "attach") >= 0 {
+		if indexOf(seq, "take-over") >= 0 {
 			found[m[1]] = seq
 		}
 	}
 	if len(found) == 0 {
-		t.Fatal("no sequence in registry.go contains an attach phase. Either the phase " +
+		t.Fatal("no sequence in registry.go contains a take-over phase. Either the phase " +
 			"was renamed or this test can no longer find the declarations it checks; " +
 			"passing on nothing is not the same as passing.")
 	}

@@ -1963,15 +1963,15 @@ one whose only job is to materialise the kubeconfig so that `tofu import` can
 configure providers at all, and a comment explaining that the bucket adopt must
 happen after it for that reason.
 
-| Phase     | Today                                                | After                                                                     |
-| --------- | ---------------------------------------------------- | ------------------------------------------------------------------------- |
-| `compute` | targeted applies in the one root                     | untargeted apply of the infrastructure root                               |
-| `cluster` | five targeted applies, ending with an untargeted one | splits: the rest of infrastructure, then one untargeted platform apply    |
-| `health`  | reads `data.talos_cluster_health` in the one root    | unchanged, in infrastructure - and now genuinely gates the handover       |
-| `attach`  | one backend                                          | both, and refuses if the two disagree about which estate they hold        |
-| `plan`    | one plan                                             | two plans, reported as one answer                                         |
-| `migrate` | moves one local state into one schema                | two, and it is the phase `split-state` supersedes for new sites           |
-| `backup`  | encrypts one state                                   | encrypts both - and the state backup's own integrity test has to see both |
+| Phase       | Today                                                | After                                                                     |
+| ----------- | ---------------------------------------------------- | ------------------------------------------------------------------------- |
+| `compute`   | targeted applies in the one root                     | untargeted apply of the infrastructure root                               |
+| `cluster`   | five targeted applies, ending with an untargeted one | splits: the rest of infrastructure, then one untargeted platform apply    |
+| `health`    | reads `data.talos_cluster_health` in the one root    | unchanged, in infrastructure - and now genuinely gates the handover       |
+| `take-over` | one backend                                          | both, and refuses if the two disagree about which estate they hold        |
+| `plan`      | one plan                                             | two plans, reported as one answer                                         |
+| `migrate`   | moves one local state into one schema                | two, and it is the phase `split-state` supersedes for new sites           |
+| `backup`    | encrypts one state                                   | encrypts both - and the state backup's own integrity test has to see both |
 
 `adoptOrphanedR2Bucket` moves to the infrastructure root and loses its ordering
 comment entirely: with no `kubernetes` provider in that root, `tofu import` has
@@ -2885,7 +2885,7 @@ targeting it at the two addresses avoids the untargeted refresh that would read
 teardown. `-refresh-only` with `-refresh=false` is refused outright, so that
 combination is not available.
 
-It is in Compute rather than Attach because Attach is shared with
+It is in Compute rather than take-over because take-over is shared with
 `contractor plan`, which must change nothing, and settling a move writes state.
 
 Two hermetic guards, so this needs no estate to stay honest:

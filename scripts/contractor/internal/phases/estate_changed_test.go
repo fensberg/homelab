@@ -10,14 +10,14 @@ import (
 //
 // The banner these feed used to assert "the estate is untouched by this
 // failure" on every converge failure, with no condition beyond "this is a
-// converge". True when the run died at Attach; a confident falsehood when it
+// converge". True when the run died at TakeOver; a confident falsehood when it
 // died halfway through creating machines - which is the one case where
 // somebody most needs to go and look, and the one the message told them not
 // to.
 
 // A run that never attached cannot have written anything, and this is a proof
 // rather than an assumption: tests/go/repo/converge_order_test.go refuses any
-// sequence that runs tofu before attach, so there is no path from an
+// sequence that runs tofu before take-over, so there is no path from an
 // unattached workspace to a state write.
 func TestEstateChanged_NeverAttachedIsCertainlyUntouched(t *testing.T) {
 	ctx := &run.Context{}
@@ -33,7 +33,7 @@ func TestEstateChanged_NeverAttachedIsCertainlyUntouched(t *testing.T) {
 // "changed" would send somebody chasing a rollback that may not be needed.
 func TestEstateChanged_UnreadableStateIsNotAnAnswer(t *testing.T) {
 	// ClusterDir points at nothing, so `tofu state pull` cannot succeed.
-	ctx := &run.Context{AttachedOK: true, ClusterDir: t.TempDir()}
+	ctx := &run.Context{TakenOverOK: true, ClusterDir: t.TempDir()}
 	changed, certain := EstateChanged(ctx)
 	if certain {
 		t.Fatalf("got certain=true (changed=%v) for a state that could not be read; "+

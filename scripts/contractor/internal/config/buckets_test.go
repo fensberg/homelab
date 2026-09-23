@@ -6,15 +6,13 @@ import (
 	"testing"
 )
 
-func TestBucketNameIsTheSiteSlugPlusTheSuffix(t *testing.T) {
+func TestEveryBucketIsTheSiteSlugPlusASuffix(t *testing.T) {
 	net := &SiteNetwork{Name: "example"}
 	for _, tc := range []struct {
 		key  string
 		want string
 	}{
-		// The database bucket is named from the config, not the slug - see
-		// TestOnlyTheDatabaseBucketTakesItsNameFromTheConfig.
-		{"database", "configured"},
+		{"database", "example-database"},
 		{"state", "example-state"},
 		{"staging", "example-staging"},
 		{"production", "example-production"},
@@ -23,40 +21,105 @@ func TestBucketNameIsTheSiteSlugPlusTheSuffix(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BucketByKey(%q): %v", tc.key, err)
 		}
-		if got := b.Name(net, "configured"); got != tc.want {
+		if got := b.Name(net); got != tc.want {
 			t.Errorf("bucket %q named %q, want %q", tc.key, got, tc.want)
 		}
 	}
 }
 
-// The database bucket keeps the site's configured name with no suffix.
+// No bucket takes its name from anywhere but the site slug.
 //
-// Not cosmetic: renaming it means changing CloudNativePG's destinationPath,
-// which starts a fresh WAL archive and needs an immediate base backup. That is
-// a live migration nobody should be pushed into by a tidy-up, so the empty
-// suffix is load-bearing until a rebuild makes the rename free.
-func TestTheDatabaseBucketKeepsTheUnsuffixedName(t *testing.T) {
-	b, err := BucketByKey("database")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b.Suffix != "" {
-		t.Errorf("the database bucket has suffix %q, want none.\n\n"+
-			"Renaming it changes CloudNativePG's destinationPath, which starts a new WAL "+
-			"archive with no base backup behind it. If that rename is genuinely wanted it "+
-			"belongs in a change that also takes a fresh base backup, not in this table.", b.Suffix)
+// The database bucket used to, which forced Name to take a second argument
+// that three of four callers passed and ignored - and an argument most callers
+// ignore is one a caller eventually passes wrongly. The operator retired that
+// by renaming the bucket to carry a suffix like the others.
+func TestNoBucketEscapesTheSiteSlug(t *testing.T) {
+	net := &SiteNetwork{Name: "example"}
+	for _, b := range Buckets {
+		if b.Suffix == "" {
+			t.Errorf("bucket %q has no suffix, so it resolves to the bare site slug.\n\n"+
+				"Every bucket is the slug plus a suffix. An empty one collides with the "+
+				"site's own name and reintroduces the special case that was just removed.", b.Key)
+		}
+		if got := b.Name(net); got == net.Name {
+			t.Errorf("bucket %q resolves to the bare site name %q", b.Key, got)
+		}
 	}
 }
 
-// Every bucket that outlives the estate is marked Keep, and the one that
-// describes the estate is not.
+// A credential is declared for exactly the buckets something writes to.
 //
-// Pointed at the direction this actually breaks. Nobody will flip Keep on the
-// database bucket - that is a visible, deliberate edit. What happens is a new
-// bucket gets added beside the others for some new workload, and whoever adds
-// it copies the entry above it without thinking about which one they copied.
-// Copy the database entry and the new bucket is destroyed by the next
-// teardown, silently, with a zero exit code.
+// Staging and production deliberately have none: nothing writes to them yet,
+// and a credential issued ahead of a writer is a live key nobody is watching.
+// CredentialFor must say so rather than hand back a zero value, because an
+// empty key pair fails much later inside rclone as "credentials are empty",
+// naming no bucket.
+func TestOnlyTheBucketsWithWritersHaveCredentials(t *testing.T) {
+	store := ObjectStorage{
+		Database: ObjectStorageCredential{AccessKeyID: "db", SecretAccessKey: "db-secret"},
+		State:    ObjectStorageCredential{AccessKeyID: "st", SecretAccessKey: "st-secret"},
+	}
+
+	for _, key := range []string{"database", "state"} {
+		cred, err := store.CredentialFor(key)
+		if err != nil {
+			t.Errorf("no credential for %q, which has a writer: %v", key, err)
+			continue
+		}
+		if cred.AccessKeyID == "" || cred.SecretAccessKey == "" {
+			t.Errorf("the %q credential is half empty: %+v", key, cred)
+		}
+	}
+
+	for _, key := range []string{"staging", "production"} {
+		if _, err := store.CredentialFor(key); err == nil {
+			t.Errorf("CredentialFor(%q) returned no error.\n\n"+
+				"Nothing writes to that bucket yet, so there is no credential. Returning a "+
+				"zero value instead of an error moves the failure into rclone, where it "+
+				"reads as \"credentials are empty\" and names no bucket.", key)
+		}
+	}
+}
+
+// The two credentials must not be the same key pair.
+//
+// The whole point of the split is that the key living permanently in a cluster
+// Secret cannot delete the state dumps. Pasting one token into both vault
+// fields restores exactly the situation the split removed, and nothing about
+// the config would look wrong - the fields are adjacent and near-identically
+// named.
+func TestConfigRefusesOneKeyInBothFields(t *testing.T) {
+	site := validSite()
+	site.ObjectStorage.State.AccessKeyID = site.ObjectStorage.Database.AccessKeyID
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
+
+	_, err := ResolveSiteNetwork(cfg, "site0")
+	if err == nil {
+		t.Fatal("a config carrying one access_key_id in both the database and state fields " +
+			"was accepted.\n\n" +
+			"That is one credential reaching both buckets, which is the situation the split " +
+			"exists to remove: the key that sits permanently in a cluster Secret can then " +
+			"delete the state dumps that exist to survive that cluster being lost.")
+	}
+	if !strings.Contains(err.Error(), "same access_key_id") {
+		t.Errorf("refused, but not for the shared key: %v", err)
+	}
+}
+
+// Two different keys are accepted, so the check above is not refusing
+// everything. Without this, the assertion would still pass if the config had
+// simply become unloadable for some unrelated reason.
+func TestTwoDistinctCredentialsAreAccepted(t *testing.T) {
+	site := validSite()
+	if site.ObjectStorage.Database.AccessKeyID == site.ObjectStorage.State.AccessKeyID {
+		t.Fatal("validSite() carries the same key in both fields, so this proves nothing")
+	}
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
+	if _, err := ResolveSiteNetwork(cfg, "site0"); err != nil {
+		t.Errorf("two distinct credentials were refused: %v", err)
+	}
+}
+
 func TestOnlyTheEstatesOwnWorkingDataIsDestroyedWithTheEstate(t *testing.T) {
 	kept := map[string]bool{}
 	for _, b := range KeptBuckets() {
@@ -195,28 +258,5 @@ func TestTwoSitesCannotCollapseToOneSlug(t *testing.T) {
 func TestAnUnnamedSiteFallsBackToItsKey(t *testing.T) {
 	if got := SiteSlug("", "site7"); got != "site7" {
 		t.Errorf("SiteSlug(\"\", \"site7\") = %q, want \"site7\"", got)
-	}
-}
-
-// The database bucket is the one exception, and it is temporary.
-func TestOnlyTheDatabaseBucketTakesItsNameFromTheConfig(t *testing.T) {
-	net := &SiteNetwork{Name: "north-street-office"}
-
-	for _, b := range Buckets {
-		got := b.Name(net, "legacy-name")
-		if b.Key == "database" {
-			if got != "legacy-name" {
-				t.Errorf("the database bucket resolved to %q, want the configured name.\n\n"+
-					"It cannot move to the site slug in place: Cloudflare refuses to delete a "+
-					"bucket holding objects, and this one holds the WAL archive continuously. "+
-					"The rename happens at the next rebuild.", got)
-			}
-			continue
-		}
-		if want := "north-street-office" + b.Suffix; got != want {
-			t.Errorf("bucket %q resolved to %q, want %q - it must be named for the site, "+
-				"because the site is the isolation boundary and one R2 account holds them all",
-				b.Key, got, want)
-		}
 	}
 }

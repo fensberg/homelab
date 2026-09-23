@@ -39,9 +39,14 @@
       "object_storage": {
         "provider": "cloudflare",
         "vault_provider": "cloudflare",
-        "access_key_id": "f1e2d3c4b5a697887766554433221100",
-        "secret_access_key": "fixture-secret-access-key",
-        "bucket": "fixture-state-bucket"
+        "database": {
+          "access_key_id": "f1e2d3c4b5a697887766554433221100",
+          "secret_access_key": "fixture-secret-access-key"
+        },
+        "state": {
+          "access_key_id": "00112233445566778899aabbccddeeff",
+          "secret_access_key": "fixture-secret-access-key"
+        }
       },
       "database": {
         "password": "fixture-db-password"

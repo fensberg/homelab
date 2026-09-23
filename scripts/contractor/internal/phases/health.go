@@ -651,7 +651,7 @@ func writeRenderedCredential(
 		if err := Render(ctx); err != nil {
 			return fmt.Errorf("could not render the config, so there is nothing to authenticate with: %w", err)
 		}
-		if err := Attach(ctx); err != nil {
+		if err := TakeOver(ctx); err != nil {
 			return err
 		}
 	}
