@@ -9,7 +9,7 @@ import (
 	"homelab/contractor/internal/run"
 )
 
-// A failed attach must not leave a backend configuration behind.
+// A failed take-over must not leave a backend configuration behind.
 //
 // WHAT THIS GUARDS. When there is no local state, destroy assumes state is
 // where a successful ignition puts it and writes backend_pg.tf to go and look.
@@ -45,7 +45,7 @@ func TestAFailedPostgresAttachRemovesTheBackendFile(t *testing.T) {
 		t.Fatalf("got %v, want the init error wrapped", err)
 	}
 	if _, statErr := os.Stat(ctx.BackendPgOn); !os.IsNotExist(statErr) {
-		t.Fatalf(`backend_pg.tf is still present after a failed attach.
+		t.Fatalf(`backend_pg.tf is still present after a failed take-over.
 
 Every later tofu init in this workspace will now use a Postgres backend with no
 connection string and dial localhost, so the next ignition fails in its Overlay
@@ -70,6 +70,6 @@ func TestASuccessfulPostgresAttachKeepsTheBackendFile(t *testing.T) {
 		t.Fatalf("got %v, want nil", err)
 	}
 	if _, err := os.Stat(ctx.BackendPgOn); err != nil {
-		t.Fatalf("backend_pg.tf was removed after a successful attach: %v", err)
+		t.Fatalf("backend_pg.tf was removed after a successful take-over: %v", err)
 	}
 }

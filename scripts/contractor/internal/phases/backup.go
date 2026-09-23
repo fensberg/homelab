@@ -207,9 +207,9 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 //
 // Conditional, and that is load-bearing rather than an optimisation. In a full
 // ignition this phase runs after Migrate and BEFORE Sterilize, so the local
-// state file is still on disk - and Attach deliberately refuses to run when it
+// state file is still on disk - and TakeOver deliberately refuses to run when it
 // is, because a workspace holding local state is mid-ignition and attaching on
-// top of it would leave two states describing one estate. Calling Attach
+// top of it would leave two states describing one estate. Calling TakeOver
 // unconditionally here would break the ignition path to fix the standalone one.
 //
 // So the question asked is the narrow one: has anything initialised this
@@ -220,7 +220,7 @@ func attachIfDetached(ctx *run.Context) error {
 		return nil
 	}
 	run.Info("workspace is not initialised - attaching to the state database first")
-	return Attach(ctx)
+	return TakeOver(ctx)
 }
 
 // needsAttach reports whether the workspace has no provider plugins installed.

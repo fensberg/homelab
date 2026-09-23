@@ -268,20 +268,20 @@ func TestSelectPhases_ConvergeNeverMigrates(t *testing.T) {
 	if slices.Contains(got, "migrate") {
 		t.Fatal("converge included the migrate phase; -force-copy would overwrite the estate's own state with an empty workspace")
 	}
-	if !slices.Contains(got, "attach") {
-		t.Fatal("converge did not include attach, so it would start from an empty workspace and plan a second estate")
+	if !slices.Contains(got, "take-over") {
+		t.Fatal("converge did not include take-over, so it would start from an empty workspace and plan a second estate")
 	}
 	if got[0] != "render" {
 		t.Fatalf("converge must render first - every later phase needs the config, and it is the credential check. Got %q", got[0])
 	}
 }
 
-// attach exists only in a converge and migrate only in an ignition. Accepting
+// take-over exists only in a converge and migrate only in an ignition. Accepting
 // either against the wrong sequence would let somebody ask for a phase that
 // cannot happen in the run they are actually starting.
 func TestSelectPhases_SequencesDoNotLeak(t *testing.T) {
-	if _, err := selectPhases("attach", "", "break-ground"); err == nil {
-		t.Error("ignition accepted -phase attach, which only exists in a converge")
+	if _, err := selectPhases("take-over", "", "break-ground"); err == nil {
+		t.Error("ignition accepted -phase take-over, which only exists in a converge")
 	}
 	if _, err := selectPhases("migrate", "", "converge"); err == nil {
 		t.Error("converge accepted -phase migrate, which would overwrite the estate's state")
@@ -301,7 +301,7 @@ func TestSelectPhases_ConvergeStillSterilizes(t *testing.T) {
 }
 
 // plan is its own sequence for the same reason converge is: what a run may
-// assume differs. A plan must reach attach - a plan against no state is a plan
+// assume differs. A plan must reach take-over - a plan against no state is a plan
 // to build everything, which is the opposite of the answer being asked for -
 // and must contain nothing that changes the estate.
 func TestSelectPhases_PlanChangesNothing(t *testing.T) {
@@ -309,8 +309,8 @@ func TestSelectPhases_PlanChangesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !slices.Contains(got, "attach") {
-		t.Fatal("plan does not attach, so it would plan against an empty workspace and report building the whole estate")
+	if !slices.Contains(got, "take-over") {
+		t.Fatal("plan does not take over, so it would plan against an empty workspace and report building the whole estate")
 	}
 	for _, mutating := range []string{"compute", "cluster", "migrate", "backup", "hypervisor", "overlay"} {
 		if slices.Contains(got, mutating) {

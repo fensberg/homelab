@@ -358,7 +358,7 @@ func reportMachinesInState(ctx *run.Context, fromConfig int) {
 //
 // The cleanup is the whole reason this is a function rather than four inline
 // lines. backend_pg.tf declares a backend for the entire module, so a copy left
-// behind by a failed attach is picked up by EVERY later `tofu init` in the
+// behind by a failed take-over is picked up by EVERY later `tofu init` in the
 // workspace - including phases with no interest in cluster state. With no
 // -backend-config alongside it, tofu falls back to dialling localhost, and a
 // fresh ignition dies in its Overlay phase with

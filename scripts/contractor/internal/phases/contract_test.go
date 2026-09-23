@@ -132,7 +132,7 @@ func TestContract_EveryPhaseInTheSequenceDispatches(t *testing.T) {
 	}
 
 	// Both sequences, not just ignition. A phase belongs to at least one of
-	// them - attach only ever runs in a converge, migrate only in an ignition
+	// them - take-over only ever runs in a converge, migrate only in an ignition
 	// - so the contract is that dispatch and the union agree exactly, in both
 	// directions.
 	for _, seq := range Sequences {
@@ -152,7 +152,13 @@ func TestContract_EveryPhaseInTheSequenceDispatches(t *testing.T) {
 	}
 }
 
-var switchCase = regexp.MustCompile(`(?m)^\s*case\s+"([a-z]+)":`)
+// Hyphens included: a phase name is a verb phrase, and this estate prefers
+// those to bare nouns - `check-inventory` over `inventory`. The pattern was
+// `[a-z]+` and could not see `take-over` at all, which failed loudly rather
+// than quietly, so the guard held. Widening the characters it accepts does not
+// weaken what it asserts: dispatch and the sequences must still agree exactly,
+// in both directions.
+var switchCase = regexp.MustCompile(`(?m)^\s*case\s+"([a-z-]+)":`)
 
 // The tailnet key's expiry and the Overlay phase's force-replacement are one
 // mechanism split across two languages: a short expiry is only safe because
@@ -205,19 +211,19 @@ func TestContract_ConvergeExcludesMigrate(t *testing.T) {
 
 	var hasAttach bool
 	for _, p := range ConvergePhases {
-		if p == "attach" {
+		if p == "take-over" {
 			hasAttach = true
 		}
 	}
 	if !hasAttach {
-		t.Fatal("ConvergePhases has no attach phase, so it would start from an empty workspace and plan a second estate beside the real one")
+		t.Fatal("ConvergePhases has no take-over phase, so it would start from an empty workspace and plan a second estate beside the real one")
 	}
 
 	// Ignition creates the cluster that holds the state, so it cannot begin by
 	// connecting to it.
 	for _, p := range AllPhases {
-		if p == "attach" {
-			t.Fatal("AllPhases contains attach: ignition cannot attach to state held by a cluster it has not built yet")
+		if p == "take-over" {
+			t.Fatal("AllPhases contains take-over: ignition cannot take over state held by a cluster it has not built yet")
 		}
 	}
 }

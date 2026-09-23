@@ -103,9 +103,7 @@ func ReleaseIfRenamed(ctx *Context, address, want string) error {
 	}
 
 	have := TrackedResourceName(ctx, address)
-	if have == "" || have == want {
-		// Unreadable is not the same as different, and guessing in this
-		// direction would release a resource on a parse failure.
+	if !shouldRelease(have, want) {
 		return nil
 	}
 
@@ -118,4 +116,30 @@ func ReleaseIfRenamed(ctx *Context, address, want string) error {
 	}
 	Ok(fmt.Sprintf("released %s; the adopt will pick up %q", address, want))
 	return nil
+}
+
+// shouldRelease decides whether a tracked resource is the wrong one.
+//
+// Extracted from ReleaseIfRenamed and tested, because it is the only part of
+// that function that can be wrong quietly - and being wrong releases a live
+// resource from state, which is the failure the whole thing exists to avoid.
+// What is left around it is two shell-outs to tofu, which have no answer
+// without a real estate.
+//
+// The rules, and each one fails safe:
+//
+//   - An unreadable name is "cannot tell", never "different". A parse failure,
+//     a provider that stopped printing the attribute, an address that vanished
+//     between the two calls - none of those are evidence of a rename, and
+//     treating them as one would release a resource nobody renamed.
+//   - An empty WANT is refused for the same reason from the other side. A
+//     config that resolved to no name at all is a config to stop on, not one
+//     to release against.
+//   - Equal names mean nothing to do, which is the ordinary case on every
+//     converge that changes nothing.
+func shouldRelease(have, want string) bool {
+	if have == "" || want == "" {
+		return false
+	}
+	return have != want
 }

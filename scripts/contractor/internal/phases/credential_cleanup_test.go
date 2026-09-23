@@ -39,7 +39,7 @@ func TestCleanupSkipsWhatItDidNotCreate(t *testing.T) {
 	mustWrite(t, ctx.ConfigRendered, "someone else's render")
 
 	// Something this call would have created itself.
-	mustWrite(t, ctx.BackendPgOn, "written by attach")
+	mustWrite(t, ctx.BackendPgOn, "written by take-over")
 
 	preexisting := map[string]bool{}
 	for _, p := range sterilizeTargets(ctx) {

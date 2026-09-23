@@ -20,7 +20,7 @@ func TestADetachedWorkspaceNeedsAttaching(t *testing.T) {
 
 // A full ignition reaches this phase through Migrate, which has already
 // initialised the workspace - and it reaches it BEFORE Sterilize, so the local
-// state file is still there. Attach refuses to run against local state, on
+// state file is still there. TakeOver refuses to run against local state, on
 // purpose, so attaching here unconditionally would break the ignition path in
 // order to fix the standalone one.
 func TestAnInitialisedWorkspaceIsLeftAlone(t *testing.T) {
