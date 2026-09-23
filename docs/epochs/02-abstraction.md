@@ -1558,6 +1558,53 @@ costs nothing to the contractor, whose zero-dependency property is about
 _external_ packages. Worth stating explicitly, because the alternative that
 looks cheaper - copying it a fourth time - is what produced this list.
 
+### A new custom block is refused unless somebody says why
+
+The three criteria above remove the duplication that exists today. This one is
+what stops the next one, and it is the only criterion here whose absence would
+make the others a one-off cleanup.
+
+**The rule, in order.** Reuse the reusable block that exists. If none exists,
+build a new one that is reusable. Only when it genuinely cannot be reusable do
+we build something custom - and that is a decision somebody makes out loud, not
+a default anybody falls into.
+
+**What a machine can and cannot check.** It cannot look at a block and tell
+"reusable component" from "custom block"; that is a judgement. What it can do is
+**refuse an undeclared one**. So the guard is a registry plus a mandatory
+declaration, and the judgement stays with the person while the _silence_ is
+abolished - an omission and a considered exception must not look the same, which
+is the rule `workloadPod.Unasserted` and `tests/coverage-exemptions.yml` already
+apply to other questions.
+
+The closest precedent is `scripts/approved-suppliers.yml`, and the shape is
+worth copying exactly: an unapproved tool is not forbidden, it costs a focused
+pull request saying what it is and why the estate should take it. A custom block
+is not forbidden either. It costs a declared reason.
+
+**Per layer, because the check differs and none of them is the whole answer:**
+
+- **OpenTofu.** Once the root is a module, a bare `resource` block outside
+  `modules/` is the exception. The guard walks every `.tf` file and fails on one
+  that is neither inside a module nor declared, with a reason, as instantiating
+  nothing reusable.
+- **Kubernetes.** An object declared directly under `environments/` rather than
+  as an overlay of a base in `modules/applications/` is the same exception, and
+  is checked the same way.
+- **Go.** The hard one, and the guard here is deliberately narrow: fail on two
+  functions whose normalised bodies are identical across packages. That catches
+  copy-paste - it would have caught `portOpen` written twice verbatim - and it
+  does **not** catch the same idea reimplemented differently, which is what
+  produced the four copies of the addressing scheme. Say so in the failure
+  message rather than letting a green run imply more than it proves.
+
+**The honest limit.** Nothing here can refuse a second implementation that was
+written from scratch and looks different. The registry is what covers that, and
+only because adding to it is a moment where somebody has to type a reason. If
+that ever becomes a box people tick, this criterion has failed and the record
+should say so rather than the guard being widened until it is noisy enough to
+disable.
+
 ### Considered, and deliberately not made criteria
 
 Named here so the next person does not have to rediscover why.
