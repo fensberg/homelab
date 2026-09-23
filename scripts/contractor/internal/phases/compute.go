@@ -72,6 +72,23 @@ func Compute(ctx *run.Context) error {
 		return err
 	}
 
+	// Before the first targeted apply, and this is the only place it can go.
+	//
+	// OpenTofu refuses to build a targeted plan while a `moved` block is
+	// pending, so one rename anywhere in the configuration stops the converge
+	// at the very next line and everything after it - see run/moved.go. It
+	// belongs here rather than in Attach because Attach is shared with
+	// `contractor plan`, which must change nothing, and settling a move writes
+	// state.
+	//
+	// Gated on AttachedOK so it runs on a converge and not on an ignition,
+	// which starts from an empty state where there is nothing to rename.
+	if ctx.AttachedOK {
+		if err := run.SettleMoves(ctx); err != nil {
+			return err
+		}
+	}
+
 	// Three steps, not one apply targeting everything: download the image
 	// (API only), build one template per hypervisor from it (the only step
 	// that needs SSH - see compute.tf's talos_template resource for why

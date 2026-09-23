@@ -1433,6 +1433,195 @@ Then epoch 04 measures it, and epoch 05 makes it elastic if that is ever worth
 anything - which [`05-node-lifecycle.md`](05-node-lifecycle.md) records that it
 currently is not.
 
+## Acceptance tests
+
+### A step is declared once, and every verb that shares it reads that declaration
+
+**This epoch is not complete while `contractor plan` and `contractor converge`
+can disagree about what a converge does.**
+
+The bar: the targets a converge applies and the targets a plan plans come from
+**one declaration**. Adding a step, removing one, or changing what it targets
+changes both verbs at once, and neither can be edited on its own. Each step says
+which verbs it takes part in; a step naming no verb, or naming a verb nothing
+dispatches, fails the build rather than being skipped.
+
+Verified by a contract test that both sequences walk the same declared list, and
+by the list being the only place a resource address is written.
+
+#### Why this belongs to this epoch and not to epoch 06
+
+Epoch 06 asks "can this be consolidated", and on its face that is where two
+verbs doing nearly the same job would go. It belongs here because this epoch
+**forces the work whether or not anybody plans it**.
+
+Turning the management root into a module moves every resource behind
+`module.<name>.`, and the contractor currently names eight root-level addresses
+as string literals in Go:
+
+```text
+proxmox_download_file.talos_disk_image
+proxmox_virtual_environment_vm.talos_template
+proxmox_virtual_environment_vm.talos_cp
+proxmox_virtual_environment_vm.talos_worker
+talos_machine_configuration_apply.control_plane
+talos_machine_configuration_apply.worker
+talos_machine_bootstrap.this
+talos_cluster_kubeconfig.this
+```
+
+Every one of them breaks the moment the root becomes a module. So this epoch
+cannot ship without touching all eight, and there are two ways to do it: edit
+the literals in place, which costs the same effort and leaves the two verbs as
+separate hand-written sequences that can drift again; or make the steps data,
+which is the same edit and closes the gap permanently.
+
+Writing it down as a criterion is the difference between those two, because the
+cheaper-looking one is the one that gets done under time pressure.
+
+#### What it is actually fixing
+
+On 2026-09-22 a `moved` block renaming one R2 bucket resource halted every
+converge on `main` at its first targeted apply, for a day. The pull request that
+introduced it was green, because `contractor plan` runs one **untargeted** plan
+while the converge runs **targeted** applies - and an untargeted plan of a
+pending rename succeeds where a targeted one fails.
+
+The immediate trigger is handled, and the estate keeps two hermetic guards for
+it. The class is not: the two verbs are still different commands, so the
+difference between them is still the region no check covers. That is #497, and
+this criterion is what closes it.
+
+The generalisation, which is the operator's and is the better statement of it:
+**a block should be placeable in any verb that shares the action.** Two blocks
+that do effectively the same thing are two things to keep in step, and this
+estate has now paid for that twice - once in a version pinned in two files, once
+here.
+
+### The addressing scheme is computed once
+
+Four implementations of one scheme today, across two languages:
+
+```text
+management/cluster/variables.tf              site_cidr = "10.${local.octet}.0.0/16", host_octets
+scripts/contractor/internal/config/config.go "10.%d.10.%d" for nodes and workers, the /24 and the gateway
+scripts/contractor/internal/phases/sterilize.go  "10.%d.10.%d" for the state database host
+tests/go/harness/harness.go                  "10.%d.10.%d" for a control plane by index
+```
+
+The bar: **one of them computes it and the rest read it.** No second
+implementation, and no contract test whose job is to notice that two
+implementations still agree.
+
+This is the epoch's own known driver arriving in a different file. The record
+already says a site should be "an instantiation rather than a `TF_VAR_site`
+switch" - and a site is, before anything else, an address range. Four things
+deriving that range independently is the copy-paste this epoch exists to remove,
+sitting in the one place nobody thought to look because it is not under
+`modules/`.
+
+Note what the estate does today instead: `sterilize.go` carries a comment
+admitting it restates `variables.tf`, and a contract test holds the two numbers
+together. That test is the right response to a duplication you have decided to
+keep. It is not a substitute for removing one.
+
+### A helper is written once, and the module boundary is a decision
+
+Two copies of the rclone credential mapping:
+
+```text
+scripts/contractor/internal/phases/teardown.go   r2Env
+tests/go/integration/backup_health_test.go       rcloneEnv
+```
+
+Three implementations of "is this port answering":
+
+```text
+scripts/contractor/internal/run/net.go           WaitForPort
+tests/go/integration/state_database_test.go      portOpen
+tests/go/e2e/net_test.go                         portOpen
+```
+
+The last two are the same function twice, in two packages of one module.
+
+The bar: **each of these exists once, and the reason it can be imported is
+written down.** What makes this a design question rather than a tidy-up is the
+module boundary. `scripts/contractor` is module `homelab/contractor` with zero
+external dependencies, which is load-bearing - it is why the Go lanes need no
+`go.sum` cache and why a dependency scan of the shipped binary finds nothing -
+and `internal/` cannot be imported across a module boundary at all. `tests/go`
+is a separate module that today requires nothing of it.
+
+So sharing means promoting something out of `internal/` and letting `tests/go`
+take a local `replace` on the contractor. That costs `tests/go` a dependency and
+costs nothing to the contractor, whose zero-dependency property is about
+_external_ packages. Worth stating explicitly, because the alternative that
+looks cheaper - copying it a fourth time - is what produced this list.
+
+### A new custom block is refused unless somebody says why
+
+The three criteria above remove the duplication that exists today. This one is
+what stops the next one, and it is the only criterion here whose absence would
+make the others a one-off cleanup.
+
+**The rule, in order.** Reuse the reusable block that exists. If none exists,
+build a new one that is reusable. Only when it genuinely cannot be reusable do
+we build something custom - and that is a decision somebody makes out loud, not
+a default anybody falls into.
+
+**What a machine can and cannot check.** It cannot look at a block and tell
+"reusable component" from "custom block"; that is a judgement. What it can do is
+**refuse an undeclared one**. So the guard is a registry plus a mandatory
+declaration, and the judgement stays with the person while the _silence_ is
+abolished - an omission and a considered exception must not look the same, which
+is the rule `workloadPod.Unasserted` and `tests/coverage-exemptions.yml` already
+apply to other questions.
+
+The closest precedent is `scripts/approved-suppliers.yml`, and the shape is
+worth copying exactly: an unapproved tool is not forbidden, it costs a focused
+pull request saying what it is and why the estate should take it. A custom block
+is not forbidden either. It costs a declared reason.
+
+**Per layer, because the check differs and none of them is the whole answer:**
+
+- **OpenTofu.** Once the root is a module, a bare `resource` block outside
+  `modules/` is the exception. The guard walks every `.tf` file and fails on one
+  that is neither inside a module nor declared, with a reason, as instantiating
+  nothing reusable.
+- **Kubernetes.** An object declared directly under `environments/` rather than
+  as an overlay of a base in `modules/applications/` is the same exception, and
+  is checked the same way.
+- **Go.** The hard one, and the guard here is deliberately narrow: fail on two
+  functions whose normalised bodies are identical across packages. That catches
+  copy-paste - it would have caught `portOpen` written twice verbatim - and it
+  does **not** catch the same idea reimplemented differently, which is what
+  produced the four copies of the addressing scheme. Say so in the failure
+  message rather than letting a green run imply more than it proves.
+
+**The honest limit.** Nothing here can refuse a second implementation that was
+written from scratch and looks different. The registry is what covers that, and
+only because adding to it is a moment where somebody has to type a reason. If
+that ever becomes a box people tick, this criterion has failed and the record
+should say so rather than the guard being widened until it is noisy enough to
+disable.
+
+### Considered, and deliberately not made criteria
+
+Named here so the next person does not have to rediscover why.
+
+- **`workloadPods` restating what the manifests declare** (#492). Real, and the
+  same shape, but its fix is enumeration - walk every pod-producing manifest and
+  fail on an undeclared one - rather than a reusable component. It belongs to
+  the guard rule, not to this theme.
+- **The substitution variables**, declared across four `kubernetes_secret`
+  resources in OpenTofu and mirrored in an eleven-line
+  `tests/flux-substitutions.env`. Thematically identical, but the mirror exists
+  so the fixture can be read without an estate, which is a reason a duplicate
+  earns its place. Revisit if the two drift.
+- **The control-plane listener table** added with #498. Two places by design:
+  one declares what the machines should open, the other dials it. Collapsing
+  them would leave the test asserting the declaration against itself.
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying
@@ -2646,3 +2835,67 @@ agree about.
 The general form, which is the third time this epoch has produced one: the
 repository declaring something is not evidence the estate has it. Wherever a
 declaration has an observable effect, something automated has to observe it.
+
+### The pre-merge check and the post-merge action were different commands
+
+Renaming one R2 bucket resource stopped every converge on `main`.
+
+`moved` blocks and `-target` are mutually exclusive. OpenTofu resolves a rename
+while it builds the plan and refuses to build one that would record only half of
+it, so if either endpoint falls outside the targets it stops with **"Moved
+resource instances excluded by targeting"**. Every apply in the converge before
+the Cluster phase is targeted, so a single `moved` block halted the converge at
+its _first_ apply — the disk image — and nothing after it ran. Not the VMs, not
+the machine configuration, and not the untargeted apply at the end of Cluster
+that would have settled the move and created the new buckets.
+
+The estate then reported two unrelated-looking symptoms for a day: the nightly
+backup failing with `NoSuchBucket` for buckets the repository described and
+nobody had created, and Alertmanager paging every four hours about an etcd
+metrics listener that a machine configuration nothing was applying had never
+opened.
+
+#### Why nothing caught it
+
+This is the part worth keeping. `contractor plan` — the check that runs on the
+pull request — issues **one untargeted plan**. `contractor converge` — what runs
+after the merge — issues **targeted applies**. Verified against OpenTofu 1.12.6
+on a throwaway configuration: an untargeted plan of a pending move succeeds, and
+a targeted plan of the same configuration fails.
+
+So the pre-merge check was not weak, or badly written, or unlucky. It was
+**structurally incapable** of failing the way the post-merge action would,
+because it ran a different command. The pull request was green, and would be
+green again.
+
+The generalisation is the one worth carrying: **a check earns its place by
+running the same shape of operation as the thing it is checking.** Wherever the
+verification path and the action path diverge — different flags, different
+targets, different verbs — the difference is the exact region no check covers,
+and it will be discovered in production.
+
+#### What was done, and what was only filed
+
+The converge settles a pending rename before its first targeted apply:
+`run.SettleMoves` runs `apply -refresh-only -auto-approve` targeted at the
+move's own endpoints. Verified rather than assumed — refresh-only reports "0
+added, 0 changed, 0 destroyed", so it cannot create or destroy anything, and
+targeting it at the two addresses avoids the untargeted refresh that would read
+`data.talos_cluster_health`, the read that sat for ninety minutes during a
+teardown. `-refresh-only` with `-refresh=false` is refused outright, so that
+combination is not available.
+
+It is in Compute rather than Attach because Attach is shared with
+`contractor plan`, which must change nothing, and settling a move writes state.
+
+Two hermetic guards, so this needs no estate to stay honest:
+`TestPendingMovesFindsEveryMovedBlockInTheEstate` counts the estate's own
+`moved` blocks against what the parser returns, so a block written in a shape
+the parser misses fails rather than being skipped; and
+`TestComputeSettlesRenamesBeforeItApplies` asserts the ordering, because
+settling after the first targeted apply is the same as not settling at all.
+
+Making the plan path actually mirror the converge path is the larger fix and is
+filed rather than bundled. The two sequences would have to share their declared
+steps the way `TeardownSteps` already does, which is a change to the deploy
+path and deserves its own review.
