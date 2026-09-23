@@ -93,26 +93,38 @@ func adoptOrphanedR2Buckets(ctx *run.Context) error {
 	if err != nil {
 		return err
 	}
-	site, ok := cfg.Sites[ctx.Site]
-	if !ok {
-		return fmt.Errorf("unknown site '%s'", ctx.Site)
-	}
-
+	// ResolveSiteNetwork is the only lookup needed here, and it refuses an
+	// unknown site itself - so there is no separate existence check to drift
+	// out of step with it.
 	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
 	if err != nil {
 		return err
 	}
 
+	// Every bucket, including the two nothing holds an S3 credential for.
+	//
+	// This asks the Cloudflare API with the account's admin token rather than
+	// speaking S3, so it needs no per-bucket credential at all - which is what
+	// lets staging and production be adopted before anything is given a key to
+	// write to them.
 	for _, bucket := range config.Buckets {
-		store := site.ObjectStorage
-		store.Bucket = bucket.Name(net, site.ObjectStorage.Bucket)
+		name := bucket.Name(net)
+
+		// Before the adopt, not after. A bucket's name is derived from the
+		// site slug, so a site renamed in the vault renames every bucket -
+		// and the provider cannot rename one in place, so the apply would
+		// plan destroy-and-create and then fail on a destroy the vendor
+		// refuses. Releasing first lets the adopt below pick up the real one.
+		if err := run.ReleaseIfRenamed(ctx, bucket.Address(), name); err != nil {
+			return fmt.Errorf("releasing the old bucket that held %s: %w", bucket.Holds, err)
+		}
 
 		if err := run.AdoptIfOrphaned(ctx, bucket.Address(), func() (string, error) {
-			exists, err := r2BucketExists(cfg.ObjectStorage, store)
+			exists, err := r2BucketExists(cfg.ObjectStorage, name)
 			if err != nil || !exists {
 				return "", err
 			}
-			return cfg.ObjectStorage.AccountID + "/" + store.Bucket, nil
+			return cfg.ObjectStorage.AccountID + "/" + name, nil
 		}); err != nil {
 			return fmt.Errorf("adopting the bucket holding %s: %w", bucket.Holds, err)
 		}
@@ -123,10 +135,10 @@ func adoptOrphanedR2Buckets(ctx *run.Context) error {
 // r2BucketExists queries the Cloudflare API directly - not through
 // Terraform, which cannot answer "does this exist" without already having
 // it in state.
-func r2BucketExists(acct config.ObjectStorageAccount, os config.ObjectStorage) (bool, error) {
+func r2BucketExists(acct config.ObjectStorageAccount, bucket string) (bool, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 
-	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/r2/buckets/%s", acct.AccountID, os.Bucket)
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/r2/buckets/%s", acct.AccountID, bucket)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return false, err

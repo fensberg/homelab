@@ -25,11 +25,10 @@ func validSite() Site {
 			VaultProvider: "tailscale",
 		},
 		ObjectStorage: ObjectStorage{
-			Provider:        "cloudflare",
-			VaultProvider:   "cloudflare",
-			AccessKeyID:     "f1e2d3c4b5a697887766554433221100",
-			SecretAccessKey: "shh",
-			Bucket:          "state-bucket",
+			Provider:      "cloudflare",
+			VaultProvider: "cloudflare",
+			Database:      ObjectStorageCredential{AccessKeyID: "f1e2d3c4b5a697887766554433221100", SecretAccessKey: "shh"},
+			State:         ObjectStorageCredential{AccessKeyID: "00112233445566778899aabbccddeeff", SecretAccessKey: "shh"},
 		},
 	}
 }
@@ -162,10 +161,31 @@ func TestResolveSiteNetwork_MissingVaultProvider(t *testing.T) {
 	}
 }
 
+// Both credentials are checked, not just the first.
+//
+// There are two now and there will be four, and a check that reads one of them
+// is a check somebody walks past by pasting the wrong key into the other field.
 func TestResolveSiteNetwork_AWSShapedAccessKeyOnNonAWSProvider(t *testing.T) {
 	for _, prefix := range []string{"AKIA", "ASIA"} {
+		for _, field := range []string{"database", "state"} {
+			site := validSite()
+			if field == "database" {
+				site.ObjectStorage.Database.AccessKeyID = prefix + "IOSFODNN7EXAMPLE"
+			} else {
+				site.ObjectStorage.State.AccessKeyID = prefix + "IOSFODNN7EXAMPLE"
+			}
+			cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
+			if _, err := ResolveSiteNetwork(cfg, "site0"); err == nil {
+				t.Errorf("an %s-prefixed key in the %s field was accepted on a cloudflare site", prefix, field)
+			}
+		}
+	}
+}
+
+func TestResolveSiteNetwork_AWSShapedAccessKeyMessageNamesTheProvider(t *testing.T) {
+	for _, prefix := range []string{"AKIA", "ASIA"} {
 		site := validSite()
-		site.ObjectStorage.AccessKeyID = prefix + "IOSFODNN7EXAMPLE"
+		site.ObjectStorage.Database.AccessKeyID = prefix + "IOSFODNN7EXAMPLE"
 		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
 		_, err := ResolveSiteNetwork(cfg, "site0")

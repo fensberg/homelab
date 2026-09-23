@@ -30,13 +30,20 @@ func Backup(ctx *run.Context) error {
 		return fmt.Errorf("object_storage.account_id is empty in the rendered config")
 	}
 
+	stateBucket, err := config.BucketByKey("state")
+	if err != nil {
+		return err
+	}
+	cred, err := store.CredentialFor(stateBucket.Key)
+	if err != nil {
+		return err
+	}
 	for field, val := range map[string]string{
-		"access_key_id":     store.AccessKeyID,
-		"secret_access_key": store.SecretAccessKey,
-		"bucket":            store.Bucket,
+		"access_key_id":     cred.AccessKeyID,
+		"secret_access_key": cred.SecretAccessKey,
 	} {
 		if strings.TrimSpace(val) == "" {
-			return fmt.Errorf("sites.%s.object_storage.%s is missing from the rendered config", ctx.Site, field)
+			return fmt.Errorf("sites.%s.object_storage.state.%s is missing from the rendered config", ctx.Site, field)
 		}
 	}
 	recipient := strings.TrimSpace(cfg.StateBackup.Recipient)
@@ -136,7 +143,8 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	}
 	run.Wipe(state)
 
-	// The state bucket, not the site's base bucket.
+	// The state bucket and the state credential, which are now two separate
+	// facts rather than one.
 	//
 	// These dumps used to sit beside the database's own WAL archive, and the
 	// two are the estate's two recovery layers: the database backups restore
@@ -146,23 +154,19 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	// exists to survive that cluster being lost. It also meant demolish
 	// destroyed these, because it empties the bucket it is about to delete
 	// (#94).
-	stateBucket, err := config.BucketByKey("state")
-	if err != nil {
-		return err
-	}
 	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
 	if err != nil {
 		return err
 	}
-	store.Bucket = stateBucket.Name(net, store.Bucket)
+	bucketName := stateBucket.Name(net)
 
-	rcloneEnv := r2Env(cfg.ObjectStorage, store)
+	rcloneEnv := r2Env(cfg.ObjectStorage, cred)
 
 	// The prefix survives the move even though the bucket now holds nothing
 	// else. The provider split gives this root two states rather than one -
 	// infrastructure and platform - and each wants its own prefix here, so
 	// flattening now would only have to be undone. See 02-abstraction.md.
-	dest := fmt.Sprintf("R2:%s/management-cluster", store.Bucket)
+	dest := fmt.Sprintf("R2:%s/management-cluster", bucketName)
 	run.Info(fmt.Sprintf("uploading to %s/%s.tfstate.age", dest, stamp))
 	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, fmt.Sprintf("%s/%s.tfstate.age", dest, stamp)); err != nil {
 		return fmt.Errorf("rclone upload (timestamped): %w", err)

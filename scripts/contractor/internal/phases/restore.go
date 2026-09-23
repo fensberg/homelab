@@ -65,9 +65,16 @@ is genuinely stale, move it aside first and decide deliberately:
 	if !ok {
 		return fmt.Errorf("unknown site '%s'", ctx.Site)
 	}
-	store := site.ObjectStorage
-	if strings.TrimSpace(store.Bucket) == "" {
-		return fmt.Errorf("sites.%s.object_storage.bucket is missing from the rendered config", ctx.Site)
+	stateBucket, err := config.BucketByKey("state")
+	if err != nil {
+		return err
+	}
+	cred, err := site.ObjectStorage.CredentialFor(stateBucket.Key)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(cred.AccessKeyID) == "" {
+		return fmt.Errorf("sites.%s.object_storage.state.access_key_id is missing from the rendered config", ctx.Site)
 	}
 
 	for _, tool := range []string{"age", "rclone"} {
@@ -81,23 +88,19 @@ is genuinely stale, move it aside first and decide deliberately:
 	// way this breaks is silent in the worst possible direction: a restore
 	// pointed at the old bucket finds nothing and reports that there is no
 	// backup, at the moment somebody is trying to recover an estate.
-	stateBucket, err := config.BucketByKey("state")
-	if err != nil {
-		return err
-	}
 	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
 	if err != nil {
 		return err
 	}
-	store.Bucket = stateBucket.Name(net, store.Bucket)
+	bucketName := stateBucket.Name(net)
 
-	rcloneEnv := r2Env(cfg.ObjectStorage, store)
-	key := backupObjectKey(store.Bucket)
+	rcloneEnv := r2Env(cfg.ObjectStorage, cred)
+	key := backupObjectKey(bucketName)
 
 	// Show what else is there before restoring. The timestamped objects are
 	// the only record of which runs produced which state, and an operator
 	// deciding whether "latest" is the one they want needs to see them.
-	listBackups(ctx, rcloneEnv, store.Bucket)
+	listBackups(ctx, rcloneEnv, bucketName)
 
 	run.Info("fetching " + key)
 	cipher, err := run.CmdBytes(ctx.ClusterDir, rcloneEnv, nil, "rclone", "--log-level", "ERROR", "cat", key)

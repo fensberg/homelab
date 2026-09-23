@@ -74,9 +74,16 @@
       "object_storage": {
         "provider": "cloudflare",
         "vault_provider": "{{ op://homelab/site0/object_storage/provider }}",
-        "access_key_id": "{{ op://homelab/site0/object_storage/access_key_id }}",
-        "secret_access_key": "{{ op://homelab/site0/object_storage/secret_access_key }}",
-        "bucket": "{{ op://homelab/site0/object_storage/bucket }}"
+
+        "database": {
+          "access_key_id": "{{ op://homelab/site0/object_storage/database_access_key_id }}",
+          "secret_access_key": "{{ op://homelab/site0/object_storage/database_secret_access_key }}"
+        },
+
+        "state": {
+          "access_key_id": "{{ op://homelab/site0/object_storage/state_access_key_id }}",
+          "secret_access_key": "{{ op://homelab/site0/object_storage/state_secret_access_key }}"
+        }
       },
 
       "database": {

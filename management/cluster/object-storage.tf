@@ -12,7 +12,7 @@
 # in different buckets if and only if one being compromised must not be able to
 # destroy the other.
 #
-#   <site>              the state database's WAL archive and base backups,
+#   <site>-database     the state database's WAL archive and base backups,
 #                       written continuously by CloudNativePG from inside the
 #                       cluster. Destroyed with the estate.
 #
@@ -85,14 +85,15 @@
 # The state database's WAL archive and base backups. Destroyed with the estate:
 # they describe something that is about to stop existing.
 #
-# Keeps the site's configured name with no suffix, and that is load-bearing
-# rather than lazy. CloudNativePG's destinationPath points at this bucket, and
-# renaming it starts a fresh WAL archive with no base backup behind it - a live
-# migration nobody should be pushed into by a tidy-up. The rename becomes free
-# at the next rebuild, which destroys and recreates this bucket anyway.
+# Suffixed like every other bucket. It used to take its name from a config
+# field, which made it the one exception in the set and forced a second
+# argument through every call site that resolves a bucket name. The operator
+# retired that by renaming the real bucket, which deleted the special case
+# rather than documenting it - and `object_storage.bucket` went with it, so
+# nothing declares a bucket name any more.
 resource "cloudflare_r2_bucket" "database" {
   account_id = local.object_storage_account.account_id
-  name       = local.object_storage.bucket
+  name       = "${local.site_name}-database"
 
   # No location argument, deliberately. It is schema'd Optional+Computed
   # with RequiresReplace - asserting a value here holds Cloudflare to it as
@@ -146,33 +147,16 @@ resource "cloudflare_r2_bucket" "production" {
   # No location, same reason as above.
 }
 
-# The database bucket already exists under a resource name that said nothing
-# about what was in it. Renaming the RESOURCE is free; renaming the BUCKET is
-# not, for the reason above, so only the address moves.
+# `cloudflare_r2_bucket.homelab` was renamed to `.database` by a `moved` block
+# in the change that created this set. That block is spent - the address has
+# moved in state - so it is gone, and the plan for that change is the record
+# that it worked: `.database` appeared nowhere in it, where a failed move would
+# have read `destroy .homelab` plus `add .database`.
 #
-# It is also the one bucket still named from `object_storage.bucket` rather than
-# from the site, and it cannot move to the site name in place: OpenTofu would
-# have to destroy and recreate it, and Cloudflare refuses to delete a bucket
-# holding objects - which this one does, continuously. The next rebuild
-# recreates it anyway, so the rename is free then and impossible now. At that
-# point the `object_storage.bucket` config key goes with it.
-moved {
-  from = cloudflare_r2_bucket.homelab
-  to   = cloudflare_r2_bucket.database
-}
-
-# `cloudflare_r2_bucket.workloads` is deliberately NOT moved here, and its
-# absence is the whole transition.
-#
-# It held `<name>-workloads`, which the staging and production buckets replace.
-# A bucket cannot be renamed in R2, so this is a destroy and a create rather
-# than a move - and it is safe only because nothing has ever written to it: the
-# world backup that was meant to fill it does not exist yet (#372), which is
-# also why this is the cheapest possible moment to make the change.
-#
-# If that turns out to be wrong, the failure is the safe one. Cloudflare
-# refuses to delete a bucket with objects in it, so the apply stops and says so
-# rather than quietly taking something with it.
+# The bucket that address points at is a different question. It still holds the
+# name from before the site-slug scheme, and no credential in the config can
+# reach it any more, so retiring it is a deliberate operator step rather than
+# something a converge does. See docs/epochs/02-abstraction.md.
 
 output "object_storage_buckets" {
   description = "Every bucket the estate holds."

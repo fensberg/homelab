@@ -39,21 +39,6 @@ type Bucket struct {
 	// sites writing into each other's state dumps.
 	Suffix string
 
-	// FromConfiguredName means this bucket takes `object_storage.bucket` from
-	// the config instead of the site slug.
-	//
-	// True for exactly one bucket, and it is temporary. The database bucket
-	// already exists under whatever that field says, and renaming an R2 bucket
-	// is a destroy and a create - which OpenTofu cannot even do here, because
-	// Cloudflare refuses to delete a bucket holding objects and this one holds
-	// the WAL archive. It also moves CloudNativePG's destinationPath, starting
-	// a fresh archive with no base backup behind it.
-	//
-	// So it keeps its name until the next rebuild, which destroys and recreates
-	// it anyway and makes the rename free. At that point this field, and the
-	// `object_storage.bucket` config key, both go.
-	FromConfiguredName bool
-
 	// Keep says the bucket outlives a teardown.
 	//
 	// A false here means the bucket describes an estate that is ending, so it
@@ -90,11 +75,10 @@ type Bucket struct {
 // not be able to destroy the other.
 var Buckets = []Bucket{
 	{
-		Key:                "database",
-		Suffix:             "",
-		FromConfiguredName: true,
-		Keep:               false,
-		Holds:              "the state database's WAL archive and base backups",
+		Key:    "database",
+		Suffix: "-database",
+		Keep:   false,
+		Holds:  "the state database's WAL archive and base backups",
 	},
 	{
 		// Separate from the database bucket above, which is the whole point.
@@ -130,15 +114,12 @@ var Buckets = []Bucket{
 
 // Name is the bucket's real name for a site.
 //
-// Takes the whole SiteNetwork rather than a base string, so a caller cannot
-// pass the wrong base by accident - which was possible while every bucket was
-// `base + suffix` and two different bases were in play.
-func (b Bucket) Name(site *SiteNetwork, configured string) string {
-	if b.FromConfiguredName {
-		return configured
-	}
-	return site.Name + b.Suffix
-}
+// Every bucket is the site slug plus a suffix, with no exceptions - the
+// database bucket used to take its name from a config field, which made this
+// take a second argument that three of four callers had to pass and ignore.
+// The operator retired that by renaming the bucket to carry a suffix like the
+// others, which deleted the special case rather than documenting it.
+func (b Bucket) Name(site *SiteNetwork) string { return site.Name + b.Suffix }
 
 // Address is the OpenTofu resource address, matching the resource name in
 // object-storage.tf. Written here rather than at each call site so a change to

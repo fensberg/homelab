@@ -466,41 +466,51 @@ func reportObjectStorageAtRisk(ctx *run.Context) {
 	if !ok {
 		return
 	}
-	if strings.TrimSpace(site.ObjectStorage.Bucket) == "" || strings.TrimSpace(site.ObjectStorage.AccessKeyID) == "" {
-		return
-	}
-
 	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
 	if err != nil {
 		run.Warn("  object storage: could not resolve the site, so this cannot name the buckets")
 		return
 	}
 
-	base := site.ObjectStorage.Bucket
 	for _, bucket := range config.Buckets {
-		store := site.ObjectStorage
-		store.Bucket = bucket.Name(net, base)
+		name := bucket.Name(net)
 
-		remote := "R2:" + store.Bucket
-		size, err := run.CmdOutputEnv(ctx.ClusterDir, r2Env(cfg.ObjectStorage, store), "rclone", "--log-level", "ERROR", "size", remote)
+		// A bucket that survives needs no reading. Saying so is the useful
+		// half of this report - an operator who believes their backups are
+		// about to be destroyed makes worse decisions in the five minutes
+		// before a demolish - and it costs no credential, which matters
+		// because staging and production have none.
+		if bucket.Keep {
+			run.Info("  object storage: " + name + " SURVIVES - holds " + bucket.Holds)
+			continue
+		}
+
+		cred, err := site.ObjectStorage.CredentialFor(bucket.Key)
+		if err != nil || strings.TrimSpace(cred.AccessKeyID) == "" {
+			// Loud rather than skipped. This bucket is about to be emptied and
+			// destroyed, and not being able to say what is in it is a worse
+			// answer than any number - it means the line below that normally
+			// warns about contents will simply not appear.
+			run.Warn("  object storage: " + name + " WILL BE DESTROYED, and no credential here can read it")
+			run.Warn("  So this cannot tell you what is in it. Check it in the vendor's console before continuing.")
+			continue
+		}
+
+		remote := "R2:" + name
+		size, err := run.CmdOutputEnv(ctx.ClusterDir, r2Env(cfg.ObjectStorage, cred), "rclone", "--log-level", "ERROR", "size", remote)
 		if err != nil {
 			// Not alarming on its own: a bucket that was never created because
 			// an earlier run failed reads exactly like this.
-			run.Warn("  object storage: " + store.Bucket + " - could not be read, so this cannot say what is in it")
+			run.Warn("  object storage: " + name + " - could not be read, so this cannot say what is in it")
 			continue
 		}
 		summary := strings.Join(strings.Fields(strings.ReplaceAll(size, "\n", " ")), " ")
 
-		if bucket.Keep {
-			run.Info("  object storage: " + store.Bucket + " SURVIVES - " + summary)
-			continue
-		}
-
 		if strings.Contains(summary, "Total objects: 0") {
-			run.Warn("  object storage: " + store.Bucket + " is empty")
+			run.Warn("  object storage: " + name + " is empty")
 			continue
 		}
-		run.Warn("  object storage: " + store.Bucket + " - " + summary)
+		run.Warn("  object storage: " + name + " - " + summary)
 		run.Warn("  THIS HOLDS " + strings.ToUpper(bucket.Holds) + ", AND THE TEARDOWN DESTROYS IT.")
 		run.Warn("  Cloudflare will not delete a bucket with objects in it, so the teardown")
 		run.Warn("  empties it first. The age-encrypted state dumps are NOT in here - they")

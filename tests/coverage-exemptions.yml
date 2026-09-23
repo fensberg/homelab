@@ -93,8 +93,16 @@ files:
   - path: contractor/internal/phases/verify.go
     uncovered: 1
     covered_by: e2e
+  # Two more than before, both added so a renamed bucket cannot deadlock a
+  # converge. TrackedResourceName runs `tofu state show` and ReleaseIfRenamed
+  # runs `tofu state rm`, both against a real estate's encrypted state, so
+  # neither has an answer without one. The piece that can be wrong quietly was
+  # extracted and is covered: the pattern that decides WHICH attribute is the
+  # name is tested against every near-miss a provider prints beside it -
+  # bucket_name, display_name, name_prefix - because reading the wrong one
+  # releases a resource that was never renamed.
   - path: contractor/internal/run/adopt.go
-    uncovered: 2
+    uncovered: 4
     covered_by: e2e
   - path: contractor/internal/run/exec.go
     uncovered: 15

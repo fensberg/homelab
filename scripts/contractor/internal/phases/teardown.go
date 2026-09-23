@@ -171,14 +171,19 @@ func emptyObjectStorage(ctx *run.Context) {
 		run.Warn("no site " + ctx.Site + " in the rendered config; not emptying object storage")
 		return
 	}
-	if strings.TrimSpace(site.ObjectStorage.Bucket) == "" || strings.TrimSpace(site.ObjectStorage.AccessKeyID) == "" {
-		run.Warn("no object storage credentials in the rendered config; not emptying the bucket")
-		return
-	}
-
 	database, err := config.BucketByKey("database")
 	if err != nil {
 		run.Warn("could not find the bucket to empty: " + err.Error())
+		return
+	}
+
+	cred, err := site.ObjectStorage.CredentialFor(database.Key)
+	if err != nil {
+		run.Warn("not emptying the bucket: " + err.Error())
+		return
+	}
+	if strings.TrimSpace(cred.AccessKeyID) == "" {
+		run.Warn("no object storage credential in the rendered config; not emptying the bucket")
 		return
 	}
 
@@ -188,11 +193,9 @@ func emptyObjectStorage(ctx *run.Context) {
 		return
 	}
 
-	store := site.ObjectStorage
-	store.Bucket = database.Name(net, site.ObjectStorage.Bucket)
-
-	env := r2Env(cfg.ObjectStorage, store)
-	remote := "R2:" + store.Bucket
+	bucketName := database.Name(net)
+	env := r2Env(cfg.ObjectStorage, cred)
+	remote := "R2:" + bucketName
 
 	// Report before deleting. A bucket that is already empty, or was never
 	// created because the run failed early, is not an error - there is simply
@@ -233,12 +236,16 @@ func emptyObjectStorage(ctx *run.Context) {
 // this process, so no credentials are ever written to a config file on disk.
 // Shared by the Backup phase and the teardown: two copies of a credential
 // mapping is two places for a rename to go unnoticed.
-func r2Env(acct config.ObjectStorageAccount, store config.ObjectStorage) []string {
+// Takes one credential rather than the site's whole object storage block,
+// because there is no longer one credential for everything - passing the block
+// would mean each call site picking a pair out of it, which is the decision
+// this signature exists to take away from them.
+func r2Env(acct config.ObjectStorageAccount, cred config.ObjectStorageCredential) []string {
 	return []string{
 		"RCLONE_CONFIG_R2_TYPE=s3",
 		"RCLONE_CONFIG_R2_PROVIDER=Cloudflare",
-		"RCLONE_CONFIG_R2_ACCESS_KEY_ID=" + store.AccessKeyID,
-		"RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=" + store.SecretAccessKey,
+		"RCLONE_CONFIG_R2_ACCESS_KEY_ID=" + cred.AccessKeyID,
+		"RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=" + cred.SecretAccessKey,
 		"RCLONE_CONFIG_R2_ENDPOINT=https://" + acct.AccountID + ".r2.cloudflarestorage.com",
 		"RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true",
 	}
