@@ -1498,6 +1498,83 @@ that do effectively the same thing are two things to keep in step, and this
 estate has now paid for that twice - once in a version pinned in two files, once
 here.
 
+### The addressing scheme is computed once
+
+Four implementations of one scheme today, across two languages:
+
+```text
+management/cluster/variables.tf              site_cidr = "10.${local.octet}.0.0/16", host_octets
+scripts/contractor/internal/config/config.go "10.%d.10.%d" for nodes and workers, the /24 and the gateway
+scripts/contractor/internal/phases/sterilize.go  "10.%d.10.%d" for the state database host
+tests/go/harness/harness.go                  "10.%d.10.%d" for a control plane by index
+```
+
+The bar: **one of them computes it and the rest read it.** No second
+implementation, and no contract test whose job is to notice that two
+implementations still agree.
+
+This is the epoch's own known driver arriving in a different file. The record
+already says a site should be "an instantiation rather than a `TF_VAR_site`
+switch" - and a site is, before anything else, an address range. Four things
+deriving that range independently is the copy-paste this epoch exists to remove,
+sitting in the one place nobody thought to look because it is not under
+`modules/`.
+
+Note what the estate does today instead: `sterilize.go` carries a comment
+admitting it restates `variables.tf`, and a contract test holds the two numbers
+together. That test is the right response to a duplication you have decided to
+keep. It is not a substitute for removing one.
+
+### A helper is written once, and the module boundary is a decision
+
+Two copies of the rclone credential mapping:
+
+```text
+scripts/contractor/internal/phases/teardown.go   r2Env
+tests/go/integration/backup_health_test.go       rcloneEnv
+```
+
+Three implementations of "is this port answering":
+
+```text
+scripts/contractor/internal/run/net.go           WaitForPort
+tests/go/integration/state_database_test.go      portOpen
+tests/go/e2e/net_test.go                         portOpen
+```
+
+The last two are the same function twice, in two packages of one module.
+
+The bar: **each of these exists once, and the reason it can be imported is
+written down.** What makes this a design question rather than a tidy-up is the
+module boundary. `scripts/contractor` is module `homelab/contractor` with zero
+external dependencies, which is load-bearing - it is why the Go lanes need no
+`go.sum` cache and why a dependency scan of the shipped binary finds nothing -
+and `internal/` cannot be imported across a module boundary at all. `tests/go`
+is a separate module that today requires nothing of it.
+
+So sharing means promoting something out of `internal/` and letting `tests/go`
+take a local `replace` on the contractor. That costs `tests/go` a dependency and
+costs nothing to the contractor, whose zero-dependency property is about
+_external_ packages. Worth stating explicitly, because the alternative that
+looks cheaper - copying it a fourth time - is what produced this list.
+
+### Considered, and deliberately not made criteria
+
+Named here so the next person does not have to rediscover why.
+
+- **`workloadPods` restating what the manifests declare** (#492). Real, and the
+  same shape, but its fix is enumeration - walk every pod-producing manifest and
+  fail on an undeclared one - rather than a reusable component. It belongs to
+  the guard rule, not to this theme.
+- **The substitution variables**, declared across four `kubernetes_secret`
+  resources in OpenTofu and mirrored in an eleven-line
+  `tests/flux-substitutions.env`. Thematically identical, but the mirror exists
+  so the fixture can be read without an estate, which is a reason a duplicate
+  earns its place. Revisit if the two drift.
+- **The control-plane listener table** added with #498. Two places by design:
+  one declares what the machines should open, the other dials it. Collapsing
+  them would leave the test asserting the declaration against itself.
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying
