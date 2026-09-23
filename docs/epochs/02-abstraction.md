@@ -1433,6 +1433,71 @@ Then epoch 04 measures it, and epoch 05 makes it elastic if that is ever worth
 anything - which [`05-node-lifecycle.md`](05-node-lifecycle.md) records that it
 currently is not.
 
+## Acceptance tests
+
+### A step is declared once, and every verb that shares it reads that declaration
+
+**This epoch is not complete while `contractor plan` and `contractor converge`
+can disagree about what a converge does.**
+
+The bar: the targets a converge applies and the targets a plan plans come from
+**one declaration**. Adding a step, removing one, or changing what it targets
+changes both verbs at once, and neither can be edited on its own. Each step says
+which verbs it takes part in; a step naming no verb, or naming a verb nothing
+dispatches, fails the build rather than being skipped.
+
+Verified by a contract test that both sequences walk the same declared list, and
+by the list being the only place a resource address is written.
+
+#### Why this belongs to this epoch and not to epoch 06
+
+Epoch 06 asks "can this be consolidated", and on its face that is where two
+verbs doing nearly the same job would go. It belongs here because this epoch
+**forces the work whether or not anybody plans it**.
+
+Turning the management root into a module moves every resource behind
+`module.<name>.`, and the contractor currently names eight root-level addresses
+as string literals in Go:
+
+```text
+proxmox_download_file.talos_disk_image
+proxmox_virtual_environment_vm.talos_template
+proxmox_virtual_environment_vm.talos_cp
+proxmox_virtual_environment_vm.talos_worker
+talos_machine_configuration_apply.control_plane
+talos_machine_configuration_apply.worker
+talos_machine_bootstrap.this
+talos_cluster_kubeconfig.this
+```
+
+Every one of them breaks the moment the root becomes a module. So this epoch
+cannot ship without touching all eight, and there are two ways to do it: edit
+the literals in place, which costs the same effort and leaves the two verbs as
+separate hand-written sequences that can drift again; or make the steps data,
+which is the same edit and closes the gap permanently.
+
+Writing it down as a criterion is the difference between those two, because the
+cheaper-looking one is the one that gets done under time pressure.
+
+#### What it is actually fixing
+
+On 2026-09-22 a `moved` block renaming one R2 bucket resource halted every
+converge on `main` at its first targeted apply, for a day. The pull request that
+introduced it was green, because `contractor plan` runs one **untargeted** plan
+while the converge runs **targeted** applies - and an untargeted plan of a
+pending rename succeeds where a targeted one fails.
+
+The immediate trigger is handled, and the estate keeps two hermetic guards for
+it. The class is not: the two verbs are still different commands, so the
+difference between them is still the region no check covers. That is #497, and
+this criterion is what closes it.
+
+The generalisation, which is the operator's and is the better statement of it:
+**a block should be placeable in any verb that shares the action.** Two blocks
+that do effectively the same thing are two things to keep in step, and this
+estate has now paid for that twice - once in a version pinned in two files, once
+here.
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying
