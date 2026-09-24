@@ -5,6 +5,7 @@ package integration_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/gruntwork-io/terratest/modules/k8s"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"homelab/tests/harness"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -146,13 +148,39 @@ func TestPrometheusScrapesTheControlPlane(t *testing.T) {
 	for _, job := range []string{"kube-scheduler", "kube-controller-manager", "kube-etcd"} {
 		t.Run(job, func(t *testing.T) {
 			up := instantQuery(t, tunnel.Endpoint(), fmt.Sprintf(`sum(up{job=%q})`, job))
-			require.Greater(t, up, 0.0,
-				"Prometheus has no healthy target for %s.\n\n"+
-					"Either the Talos machine configuration exposing it was never converged, or the "+
-					"scrape is being refused. The control plane is the part of this cluster nothing "+
-					"else reports on: no leader election, no work-queue depth, no etcd health.", job)
+			if up > 0 {
+				return
+			}
+
+			// Prometheus's own record of why, not a guess. This message used to
+			// offer two possible causes while the real one sat one request away,
+			// which sent the investigation to somebody running commands by hand.
+			failures, total := scrapeFailures(t, tunnel.Endpoint(), job)
+			if total == 0 {
+				t.Fatalf("Prometheus has no target at all for %s.\n\n"+
+					"Nothing was discovered, so this is a missing ServiceMonitor or an empty "+
+					"endpoint list rather than a scrape that fails - see kube-prometheus-stack.yaml.", job)
+			}
+			t.Fatalf("Prometheus has %d target(s) for %s and none is healthy. What Prometheus recorded:\n\n  %s\n\n"+
+				"The control plane is the part of this cluster nothing else reports on: no leader "+
+				"election, no work-queue depth, no etcd health.",
+				total, job, strings.Join(failures, "\n  "))
 		})
 	}
+}
+
+// scrapeFailures asks Prometheus which of a job's targets are failing and why.
+func scrapeFailures(t *testing.T, endpoint, job string) ([]string, int) {
+	t.Helper()
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Get("http://" + endpoint + "/api/v1/targets?state=active")
+	require.NoError(t, err, "asking Prometheus for its targets")
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err, "reading Prometheus's target list")
+
+	failures, total, err := harness.ScrapeFailures(body, job)
+	require.NoError(t, err)
+	return failures, total
 }
 
 // instantQuery runs one PromQL query and returns the single scalar it expects,
