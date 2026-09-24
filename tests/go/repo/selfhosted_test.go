@@ -2,11 +2,13 @@ package repo
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -131,13 +133,16 @@ func triggerNames(n *yaml.Node) []string {
 // A runner group is by definition a set of self-hosted runners, so the
 // mapping form counts even when no label spells "self-hosted".
 func isSelfHosted(n *yaml.Node) bool {
-	name := scaleSetName()
+	ours := map[string]bool{}
+	for _, name := range scaleSetNames() {
+		ours[name] = true
+	}
 	switch n.Kind {
 	case yaml.ScalarNode:
-		return n.Value == name
+		return ours[n.Value]
 	case yaml.SequenceNode:
 		for _, c := range n.Content {
-			if c.Value == name {
+			if ours[c.Value] {
 				return true
 			}
 		}
@@ -236,6 +241,16 @@ Environments as well.`, rel, name))
 func TestNoPullRequestJobReachesTheSelfHostedRunnerUnguarded(t *testing.T) {
 	root := repoRoot(t)
 	dir := filepath.Join(root, ".github", "workflows")
+
+	// No scale set found means no job looks self-hosted, and every workflow
+	// would pass as hermetic - the guard checking nothing while reporting
+	// green.
+	if len(scaleSetNames()) == 0 {
+		t.Fatal("no runner scale set was found anywhere in the repository, so no job " +
+			"could be recognised as reaching the estate's runners and this guard would pass " +
+			"having checked nothing. Look for `chart: gha-runner-scale-set` and its " +
+			"`runnerScaleSetName`.")
+	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -430,32 +445,96 @@ func TestReachableFromPullRequest(t *testing.T) {
 	}
 }
 
-// scaleSetName reads the runner scale set's name out of the manifest that
-// declares it, rather than hard-coding it here.
+// scaleSetNames reads every runner scale set's name out of the manifests that
+// declare them, rather than hard-coding any here.
 //
-// The guard above decides whether a job reaches the estate's own runner, and
-// it used to compare against the literal "self-hosted". Renaming the scale set
-// - which had to happen, because self-hosted is a reserved label that scale
-// sets are never offered jobs for - would have left this matching a string
-// nothing uses, so every job would have looked hermetic and the guard would
-// have protected nothing while still passing.
-func scaleSetName() string {
-	root, err := os.Getwd()
+// The guard above decides whether a job reaches one of the estate's own
+// runners, and it used to compare against the literal "self-hosted". Renaming
+// the scale set - which had to happen, because self-hosted is a reserved label
+// that scale sets are never offered jobs for - would have left this matching a
+// string nothing uses, so every job would have looked hermetic and the guard
+// would have protected nothing while still passing.
+//
+// It then read one file, which is the same failure one step later: a second
+// scale set declared anywhere else - the fabricator's, the first one - would
+// have been a runner this guard could not see. So it walks the whole
+// repository for the chart and collects every name it finds.
+var walkedScaleSets = sync.OnceValues(walkScaleSetNames)
+
+// scaleSetNames panics rather than answering when the walk failed. A partial
+// walk is a list with a scale set missing from it, and a runner this guard
+// cannot see is the failure it exists to prevent - so an unreadable file
+// stops the test instead of shrinking the answer.
+func scaleSetNames() []string {
+	names, err := walkedScaleSets()
 	if err != nil {
-		return ""
+		panic(fmt.Sprintf("looking for runner scale sets: %v", err))
 	}
-	for i := 0; i < 5; i++ {
-		p := filepath.Join(root, "clusters", "management", "infrastructure", "configs", "runner-scale-set.yaml")
-		if body, err := os.ReadFile(p); err == nil {
-			m := scaleSetNamePattern.FindStringSubmatch(string(body))
-			if m != nil {
-				return m[1]
-			}
-			return ""
+	return names
+}
+
+func walkScaleSetNames() ([]string, error) {
+	root, err := resolveRepoRoot()
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		root = filepath.Dir(root)
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "toolshed":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !scaleSetChart.Match(body) {
+			return nil
+		}
+		for _, m := range scaleSetNamePattern.FindAllSubmatch(body, -1) {
+			names = append(names, string(m[1]))
+		}
+		return nil
+	})
+	sort.Strings(names)
+	return names, err
+}
+
+// scaleSetName is one of them, for the synthetic workflows below that need a
+// label this guard treats as the estate's.
+func scaleSetName() string {
+	if names := scaleSetNames(); len(names) > 0 {
+		return names[0]
 	}
 	return ""
 }
 
+// The scale set chart itself, and not its controller, whose chart name has
+// this one as a prefix.
+var scaleSetChart = regexp.MustCompile(`(?m)^\s*chart:\s*gha-runner-scale-set\s*$`)
+
 var scaleSetNamePattern = regexp.MustCompile(`(?m)^\s*runnerScaleSetName:\s*(\S+)\s*$`)
+
+// The walk has to find the scale set that exists today. A walker that returns
+// nothing would make every job look hermetic, so this pins that it finds at
+// least the converge runner's.
+func TestScaleSetNamesFindsTheConvergeRunner(t *testing.T) {
+	names := scaleSetNames()
+	for _, n := range names {
+		if n == "homelab-management" {
+			return
+		}
+	}
+	t.Errorf("scaleSetNames() = %v, which does not include homelab-management - the scale set "+
+		"clusters/management/infrastructure/configs/runner-scale-set.yaml declares and "+
+		"deploy-infrastructure.yml runs on", names)
+}

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 141
+floor: 142
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -503,6 +503,18 @@ mutations:
       produced nine identical "<redacted>" rows on the change whose entire
       purpose is that somebody can see which machine is which. This guard is
       what stops the tidier, unreadable form coming back.
+
+  - guard: TestScaleSetNamesFindsTheConvergeRunner
+    file: clusters/management/infrastructure/configs/runner-scale-set.yaml
+    find: "chart: gha-runner-scale-set\n"
+    replace: "chart: gha-runner-scale-set-renamed\n"
+    mentions: "does not include homelab-management"
+    why: >
+      The self-hosted guard recognises the estate's runners by walking the
+      repository for this chart and reading each scale set's name. A walk that
+      stops recognising the chart finds no runners at all, and then every job
+      looks hermetic and the guard passes having checked nothing. This proves
+      the walk still finds the one runner that exists today.
 
   - guard: TestRunnerPodsAreNotBestEffort
     file: clusters/management/infrastructure/configs/runner-scale-set.yaml

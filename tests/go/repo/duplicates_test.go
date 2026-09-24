@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"fmt"
 	"homelab/details/repopath"
 	"os"
 	"path/filepath"
@@ -146,23 +147,29 @@ const repoRootEnv = "HOMELAB_REPO_ROOT"
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
+	root, err := resolveRepoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// resolveRepoRoot is repoRoot for code that has no test to fail, and returns
+// the error instead.
+func resolveRepoRoot() (string, error) {
 	if override := os.Getenv(repoRootEnv); override != "" {
 		if _, err := os.Stat(filepath.Join(override, "CLAUDE.md")); err != nil {
-			t.Fatalf("%s is set to %s, which does not look like the repository: %v",
+			return "", fmt.Errorf("%s is set to %s, which does not look like the repository: %w",
 				repoRootEnv, override, err)
 		}
-		return override
+		return override, nil
 	}
 	// The override above is what the mutation ledger depends on and it stays
 	// here: the ledger breaks a scratch copy of the tree and points these guards
 	// at it. repopath.Root walks from its own source file, so it always answers
 	// with the real tree - fine for everything else, and exactly wrong for a
 	// guard being proved against a mutation.
-	root, err := repopath.Root()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return root
+	return repopath.Root()
 }
 
 func TestRepositoryHasNoDuplicateKeys(t *testing.T) {
