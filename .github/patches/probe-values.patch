@@ -20,7 +20,7 @@ index e98e6ac..2c1b47f 100644
            version=""
            for _ in $(seq 1 "${PROBE_ATTEMPTS:-60}"); do
 diff --git a/scripts/work-orders.json b/scripts/work-orders.json
-index 05092d2..66ec4c9 100644
+index 05092d2..4225c5d 100644
 --- a/scripts/work-orders.json
 +++ b/scripts/work-orders.json
 @@ -15,7 +15,8 @@
@@ -33,7 +33,7 @@ index 05092d2..66ec4c9 100644
      "captures the version from what it prints. The version is what the built",
      "thing says it is, plus a counter for rebuilds of the same version: 1.0.15-1,",
      "then 1.0.15-2. Nothing here is the fabricator's knowledge; it follows the order."
-@@ -32,11 +33,7 @@
+@@ -32,11 +33,11 @@
          "overlay": "environments/production/applications/valheim",
          "module": "modules/applications/valheim",
          "version": {
@@ -42,7 +42,11 @@ index 05092d2..66ec4c9 100644
 -            "VALHEIM_WORLD_NAME": "version-probe",
 -            "VALHEIM_PASSWORD": "probe-only-9"
 -          },
-+          "env": ["VALHEIM_PASSWORD", "VALHEIM_SERVER_NAME", "VALHEIM_WORLD_NAME"],
++          "env": [
++            "VALHEIM_PASSWORD",
++            "VALHEIM_SERVER_NAME",
++            "VALHEIM_WORLD_NAME"
++          ],
            "pattern": "Valheim version: [a-z]*-\\{0,1\\}\\([0-9][0-9.]*\\)"
          }
        }
