@@ -2,10 +2,7 @@ package repo
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -39,25 +36,22 @@ import (
 // only the verbs that ought to sweep every module are refused.
 var namesOneModule = regexp.MustCompile(`go (vet|test) -C scripts/[a-z]`)
 
+// goModules is the name of every module under scripts/, derived from
+// goModuleDirs rather than read from the filesystem a second way. It read
+// scripts/ directly until the building-block guards needed every module in the
+// repository, and two enumerations of one set would have been the first thing
+// those guards refused.
 func goModules(t *testing.T) []string {
 	t.Helper()
-	entries, err := os.ReadDir(filepath.Join(repoRoot(t), "scripts"))
-	if err != nil {
-		t.Fatalf("reading scripts/: %v", err)
-	}
 	var modules []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(repoRoot(t), "scripts", e.Name(), "go.mod")); err == nil {
-			modules = append(modules, e.Name())
+	for _, dir := range goModuleDirs(t) {
+		if name, ok := strings.CutPrefix(dir, "scripts/"); ok && !strings.Contains(name, "/") {
+			modules = append(modules, name)
 		}
 	}
 	if len(modules) == 0 {
 		t.Fatal("no Go module found under scripts/, so this asserts nothing")
 	}
-	sort.Strings(modules)
 	return modules
 }
 

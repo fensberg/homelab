@@ -1,0 +1,119 @@
+# Strings restated in more than one Go module.
+#
+# Each is a fact with no single home: the next change to it has to find every
+# copy, and the one it misses fails quietly. That is how the integration tier
+# came to report healthy backups as broken.
+#
+# tests/go/repo/building_blocks_test.go refuses a NEW crossing, and refuses an
+# entry here that no longer crosses. So this list only shrinks, and a change
+# that retires a copy deletes its line. Do not add to it to get past the guard
+# without saying why in the commit.
+debt:
+  # --- A GitHub API client, rebuilt per program (15)
+  - ".github/workflows"
+  - "Authorization"
+  - "Content-Type"
+  - "GITHUB_REPOSITORY"
+  - "GITHUB_TOKEN"
+  - "X-GitHub-Api-Version"
+  - "application/json"
+  - "application/vnd.github+json"
+  - "bad credentials for "
+  - "https://api.github.com"
+  - 'json:"workflow_runs"'
+  - "no repository given: pass -repo owner/name or set GITHUB_REPOSITORY"
+  - "owner/name to inspect"
+  - "pull_request"
+  - "refs/heads/main"
+
+  # --- Git test isolation - required in every test that runs git, and copied into each (16)
+  - '"refs/signing/"'
+  - "--abbrev-ref"
+  - "--allow-empty"
+  - "--is-ancestor"
+  - "--remotes=origin"
+  - "GIT_AUTHOR_EMAIL=t@example.com"
+  - "GIT_AUTHOR_NAME=t"
+  - "GIT_COMMITTER_EMAIL=t@example.com"
+  - "GIT_COMMITTER_NAME=t"
+  - "GIT_CONFIG_GLOBAL"
+  - "GIT_CONFIG_GLOBAL=/dev/null"
+  - "GIT_CONFIG_SYSTEM"
+  - "GIT_CONFIG_SYSTEM=/dev/null"
+  - "commit.gpgsign"
+  - "refs/signing/"
+  - "user.email=a@example.com"
+
+  # --- Paths into this repository (20)
+  - ".pre-commit-config.yaml"
+  - "age-encryption.org/v1"
+  - "approved-suppliers.yml"
+  - "clusters/management/infrastructure/controllers/openebs.yaml"
+  - "epoch/03-workload"
+  - "fensberg/homelab"
+  - "gotk-sync.yaml"
+  - "http://127.0.0.1:1"
+  - "https://api.cloudflare.com/client/v4/accounts/"
+  - "hypervisor-prep.yml"
+  - "management.rendered.json"
+  - "management.tpl.json"
+  - "management/cluster/talos.tf"
+  - "scripts/approved-suppliers.yml"
+  - "scripts/clerk/llm.go"
+  - "scripts/deliveries.lock"
+  - "scripts/versions.env"
+  - "site.auto.yml"
+  - "tests/mutations.yml"
+  - "variables.tf"
+
+  # --- Everything else: tool flags, vendor identifiers, status wording (50)
+  - " --hash=sha256:"
+  - "-auto-approve"
+  - "-input=false"
+  - "-refresh-only"
+  - ".tfstate.age"
+  - "TF_ENCRYPTION"
+  - "^[a-zA-Z_][a-zA-Z0-9_-]*:"
+  - "allowed-endpoints:"
+  - "ansible-playbook"
+  - "data.talos_cluster_health.this"
+  - "does not exist"
+  - "enforce-push"
+  - "enforce-standing-order"
+  - "expected an error"
+  - "guard-egress"
+  - 'json:"IsDir"'
+  - 'json:"conclusion"'
+  - 'json:"conditions"'
+  - 'json:"created_at"'
+  - 'json:"database"'
+  - 'json:"databaseId"'
+  - 'json:"environment"'
+  - 'json:"foreman_bot"'
+  - 'json:"head_branch"'
+  - 'json:"message"'
+  - 'json:"metadata"'
+  - 'json:"nodes"'
+  - 'json:"object_storage"'
+  - 'json:"private_key"'
+  - 'json:"reason"'
+  - 'json:"repo_url"'
+  - 'json:"rules"'
+  - 'json:"sites"'
+  - 'json:"source_control"'
+  - 'json:"status"'
+  - 'json:"token"'
+  - 'json:"value"'
+  - 'json:"version"'
+  - 'json:"volid"'
+  - "kube-prometheus-stack"
+  - "no tools: entry in "
+  - "north-street-office"
+  - "nothing at all"
+  - "proxmox_virtual_environment_vm.talos_cp"
+  - "set -euo pipefail"
+  - "source_control.repo_url"
+  - "source_control.token"
+  - "state_conn_str"
+  - "tag:homelab-router"
+  - "terraform.tfstate"
