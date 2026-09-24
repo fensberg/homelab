@@ -9,7 +9,7 @@
 # Install from it with scripts/take-delivery.sh, which refuses any file whose
 # hash is not listed here.
 
-# [fetch: flux2 FLUX_VERSION=2.7.1]
+# [fetch: flux FLUX_VERSION=2.7.1]
 https://github.com/fluxcd/flux2/releases/download/v2.7.1/flux_2.7.1_linux_amd64.tar.gz --hash=sha256:dbd088c133aee74c409d51fb26d2b3ba3727ca304b88ecc0bf6af878bec007d3
 # [end]
 

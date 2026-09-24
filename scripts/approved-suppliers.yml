@@ -980,6 +980,9 @@ egress:
 #                     archive, an installer script - with {version} where the
 #                     publisher puts it. Ordering downloads it and locks its
 #                     SHA256.
+#   binary: <name>    with fetch:, the file an archive gives up when it is not
+#                     named for the repository - fluxcd/flux2 ships `flux`.
+#                     It is also the name take-delivery.sh is asked for.
 #
 # scripts/take-delivery.sh installs from the lock and nowhere else, refusing a
 # file whose hash the lock does not list, and `security guard-deliveries`
@@ -1088,6 +1091,7 @@ tools:
       beside it is the OpenTofu the script is told to install.
   - source: fluxcd/flux2
     version: FLUX_VERSION
+    binary: flux
     fetch: https://github.com/fluxcd/flux2/releases/download/v{version}/flux_{version}_linux_amd64.tar.gz
     reason: >-
       The Flux CLI, from the project whose controllers already run this
