@@ -486,24 +486,24 @@ mutations:
       The first line of the machinery this refuses is a test naming the
       directory. Caught there, nobody spends hours building the rest.
 
-  - guard: TestTheFabricatorSurveyFindsEveryDockerfile
-    file: .github/workflows/fabricator.yml
-    find: 'name="${name%/image}"'
-    replace: 'name="${name%/image}-image"'
-    mentions: "did not name a product"
+  - guard: TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile
+    file: scripts/work-orders.json
+    find: '{ "name": "valheim", "context": "modules/applications/valheim/image" }'
+    replace: '{ "name": "valheim", "context": "modules/applications/valheim/img" }'
+    mentions: "has no work order"
     why: >
-      The product name becomes the published image name. A survey that
-      names a product wrongly publishes it somewhere nothing pulls from, and
-      the digest everything else pins never moves.
+      An order pointing at the wrong directory leaves the real Dockerfile
+      unbuilt. The image looks published until somebody deploys it and finds
+      the digest never moved.
 
-  - guard: TestTheFabricatorSurveyRefusesADockerfileItCannotName
+  - guard: TestTheFabricatorReadsEveryWorkOrder
     file: .github/workflows/fabricator.yml
-    find: "teach the survey its name.\"\n                exit 1"
-    replace: "teach the survey its name.\"\n                continue"
-    mentions: "passed with a Dockerfile it cannot name"
+    find: 'orders="$(jq -c ''.orders'' scripts/work-orders.json)"'
+    replace: 'orders="$(jq -c ''.orders[:1]'' scripts/work-orders.json)"'
+    mentions: "did not reach the build matrix"
     why: >
-      Skipping a Dockerfile the survey cannot name is the quiet failure: the
-      image is never built, and nothing says so until somebody deploys it.
+      A step that hands the matrix fewer orders than the file holds builds
+      some images and silently not others.
 
   - guard: TestTheFabricatorPassesEveryPinADockerfileAsksFor
     file: .github/workflows/fabricator.yml

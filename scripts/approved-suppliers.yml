@@ -634,7 +634,7 @@ egress:
     hosts:
       - api.github.com:443
 
-  - job: fabricator.yml/survey
+  - job: fabricator.yml/orders
     policy: block
     hosts:
       - api.github.com:443

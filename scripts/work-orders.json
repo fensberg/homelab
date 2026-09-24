@@ -1,0 +1,18 @@
+{
+  "_comment": [
+    "What the fabricator builds. .github/workflows/fabricator.yml reads this and",
+    "builds every order in it, and nothing else: it does not look for work.",
+    "",
+    "Each order names the image it publishes (ghcr.io/<repository>-<name>) and",
+    "the directory holding its Dockerfile, which is also the build context.",
+    "",
+    "Completeness is checked by a guard, not by the fabricator:",
+    "tests/go/repo/fabricator_test.go walks the repository and fails on a",
+    "Dockerfile with no order here, and on an order whose Dockerfile is gone.",
+    "So adding an image is adding its order, on the same pull request."
+  ],
+  "orders": [
+    { "name": "runner", "context": ".github/runner-image" },
+    { "name": "valheim", "context": "modules/applications/valheim/image" }
+  ]
+}

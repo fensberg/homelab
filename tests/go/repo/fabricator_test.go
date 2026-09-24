@@ -2,6 +2,7 @@ package repo
 
 import (
 	"bufio"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,12 +12,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// The fabricator builds every image the repository defines, and two of its
-// steps decide what that means: the survey says what the products are, and the
-// pin step says what versions each is built with. Both are shell inside a
-// workflow, and both are run here as shipped - read out of the workflow and
+// The fabricator builds from scripts/work-orders.json, filling each
+// Dockerfile's pins from scripts/versions.env. Its two steps are shell inside
+// a workflow, and both are run here as shipped - read out of the workflow and
 // executed - because a test of a copy is a test of something that does not
-// run.
+// run. Whether the orders are complete is judged here too, by a guard, so the
+// fabricator itself never has to.
 
 const fabricatorWorkflow = "fabricator.yml"
 
@@ -67,68 +68,85 @@ func runFabricatorScript(t *testing.T, script, dir string, env []string) (ok boo
 	return err == nil, string(written), string(b)
 }
 
-// Every Dockerfile in the repository is a product, and the survey finds each
-// one under the name its image is published as.
-func TestTheFabricatorSurveyFindsEveryDockerfile(t *testing.T) {
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Fatal("jq is not on PATH; the survey uses it and this test cannot run the survey without it")
+// The fabricator builds what the work orders say and nothing else, so
+// whether the orders are complete is this guard's question, not the
+// fabricator's. Both directions: a Dockerfile with no order is an image
+// nobody builds, which looks exactly like one that is built until somebody
+// deploys it and finds the digest never moved; and an order with no
+// Dockerfile is a build that fails every run.
+func TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile(t *testing.T) {
+	orders := workOrders(t)
+	ordered := map[string]string{}
+	names := map[string]bool{}
+	for _, o := range orders {
+		if o.Name == "" || o.Context == "" {
+			t.Errorf("a work order is missing its name or its context: %+v", o)
+			continue
+		}
+		if names[o.Name] {
+			t.Errorf("two work orders are named %q; both would publish to one image", o.Name)
+		}
+		names[o.Name] = true
+		ordered[o.Context] = o.Name
 	}
-	script := fabricatorStep(t, "survey", "Find every product")
-	root := repoRoot(t)
 
-	ok, output, logs := runFabricatorScript(t, script, root, nil)
-	if !ok {
-		t.Fatalf("the survey failed against the repository as it stands:\n\n%s", logs)
-	}
-
-	// Walked independently: every Dockerfile in the tree must appear.
-	var want []string
-	for _, rel := range trackedMatching(t, func(p string) bool { return filepath.Base(p) == "Dockerfile" }) {
-		want = append(want, filepath.Dir(rel))
-	}
-	if len(want) == 0 {
+	dockerfiles := trackedMatching(t, func(p string) bool { return filepath.Base(p) == "Dockerfile" })
+	if len(dockerfiles) == 0 {
 		t.Fatal("no Dockerfile is tracked at all, so this checked nothing")
 	}
-	for _, ctx := range want {
-		if !strings.Contains(output, `"context":"`+ctx+`"`) {
-			t.Errorf("the survey did not list %s, so nothing would build it.\n\nIt listed:\n%s", ctx, output)
+	present := map[string]bool{}
+	for _, rel := range dockerfiles {
+		ctx := filepath.Dir(rel)
+		present[ctx] = true
+		if _, ok := ordered[ctx]; !ok {
+			t.Errorf("%s has no work order in scripts/work-orders.json, so the fabricator "+
+				"never builds it.\n\nAdd an order naming the image it publishes.", rel)
 		}
 	}
-	for _, name := range []string{`"name":"runner"`, `"name":"valheim"`} {
-		if !strings.Contains(output, name) {
-			t.Errorf("the survey did not name a product %s; the published image name "+
-				"is derived from it, so a wrong name publishes somewhere nothing pulls "+
-				"from.\n\n%s", name, output)
+	for ctx, name := range ordered {
+		if !present[ctx] {
+			t.Errorf("the work order %q points at %s, which holds no Dockerfile, so its "+
+				"build fails every run.", name, ctx)
 		}
 	}
 }
 
-// A Dockerfile the survey cannot name fails the survey rather than being
-// skipped.
-func TestTheFabricatorSurveyRefusesADockerfileItCannotName(t *testing.T) {
-	script := fabricatorStep(t, "survey", "Find every product")
-	dir := t.TempDir()
-	// A product the survey can name beside the one it cannot, so skipping
-	// the unnamed one would leave a survey that otherwise succeeds - which is
-	// the quiet failure this is about. Alone, a skip would fail anyway for
-	// having found nothing, and prove nothing.
-	for _, p := range []string{"modules/applications/example/image/Dockerfile", "somewhere/else/Dockerfile"} {
-		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(p)), 0o755); err != nil {
-			t.Fatal(err)
+// The workflow's own step hands the fabricator exactly the orders in the
+// file - run as shipped, so a step that dropped or reshaped them fails here.
+func TestTheFabricatorReadsEveryWorkOrder(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Fatal("jq is not on PATH; the step uses it and this test cannot run it without it")
+	}
+	script := fabricatorStep(t, "orders", "Read the work orders")
+	ok, output, logs := runFabricatorScript(t, script, repoRoot(t), nil)
+	if !ok {
+		t.Fatalf("the step failed against the repository as it stands:\n\n%s", logs)
+	}
+	for _, o := range workOrders(t) {
+		if !strings.Contains(output, `"name":"`+o.Name+`"`) || !strings.Contains(output, `"context":"`+o.Context+`"`) {
+			t.Errorf("the work order %q (%s) did not reach the build matrix, so it is never built.\n\nThe step produced:\n%s",
+				o.Name, o.Context, output)
 		}
-		if err := os.WriteFile(filepath.Join(dir, p), []byte("FROM scratch\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
 	}
-	ok, _, logs := runFabricatorScript(t, script, dir, nil)
-	if ok {
-		t.Error("the survey passed with a Dockerfile it cannot name (somewhere/else).\n\n" +
-			"A product nobody builds looks exactly like one that is built, until somebody " +
-			"deploys it and finds the digest never moved.")
+}
+
+type workOrder struct {
+	Name    string `json:"name"`
+	Context string `json:"context"`
+}
+
+func workOrders(t *testing.T) []workOrder {
+	t.Helper()
+	var f struct {
+		Orders []workOrder `json:"orders"`
 	}
-	if !strings.Contains(logs, "does not know what this Dockerfile builds") {
-		t.Errorf("the survey failed, but not by refusing the unnamed Dockerfile:\n%s", logs)
+	if err := json.Unmarshal([]byte(readRepoFile(t, "scripts/work-orders.json")), &f); err != nil {
+		t.Fatalf("parsing scripts/work-orders.json: %v", err)
 	}
+	if len(f.Orders) == 0 {
+		t.Fatal("scripts/work-orders.json holds no orders, so the fabricator builds nothing")
+	}
+	return f.Orders
 }
 
 // Every Dockerfile gets every pin it asks for, at the value versions.env
