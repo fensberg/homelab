@@ -220,6 +220,51 @@ registries:
       moved that workload into a dedicated zone. Pinned by digest at its point
       of use like every other image here.
 
+  - host: docker.io
+    namespace: moby
+    reason: >-
+      BuildKit, the image builder from the Moby project (Docker Inc.'s open
+      source upstream). It is the engine behind `docker build`, so every image
+      this estate has built so far was built by it on a GitHub-hosted runner.
+      Adopting it directly changes where the builds run, not what builds them:
+      the Dockerfiles behave identically.
+
+      What it is for: the fabricator, the one workflow that builds every image
+      and artifact the estate runs, on the estate's own compute rather than
+      GitHub's. The runner pods deliberately have no docker daemon and no
+      privilege, so without a builder in the cluster nothing here can make an
+      image at all.
+
+      What it would run with: the rootless image (`moby/buildkit:*-rootless`),
+      as a non-root user in its own namespace, on workers and never on a
+      control plane. It accepts builds only from the fabricator's own runner
+      scale set, which is separate from the converge runner and holds no
+      estate credential. It runs only for pushes to main, so it only ever
+      builds reviewed code, never a fork's.
+
+      What it costs, said plainly. Rootless building needs unprivileged user
+      namespaces, and Talos's hardening defaults switch them off
+      (`user.max_user_namespaces=0`, from its KSPP profile). So the node it
+      runs on needs that sysctl raised. That is a real reduction in kernel
+      hardening, historically a source of privilege-escalation bugs. The
+      fabricator's design scopes it to the machines that build, and says so;
+      this entry approves the supplier, not the sysctl.
+
+      Considered and rejected: Kaniko, archived by Google in 2025 and run as
+      root inside its container; Buildah, which needs the same user namespaces
+      and is a different engine from the one the Dockerfiles were written
+      against; and a privileged BuildKit, which is a root shell on the node for
+      anything that reaches it.
+
+      Replaces the GitHub-hosted docker builds in runner-image.yml,
+      workload-images.yml and expedite.yml once the fabricator exists.
+
+      Moby publishes it nowhere else. Probed rather than assumed:
+      docker.io/moby/buildkit answers, while ghcr.io refuses a pull token for
+      the same path and quay.io requires authentication. Approved as its own
+      entry, like Grafana's and Cloudflare's, so it can be removed on its own.
+      Pinned by digest at its point of use like every other image here.
+
 # Helm chart sources. Charts are as much a supply chain as images - a chart
 # decides what images get deployed, so an unapproved chart repository is an
 # unapproved registry one level up.
