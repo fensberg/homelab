@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 141
+floor: 143
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -1108,13 +1108,34 @@ mutations:
 
   - guard: TestHeavyGuardsRunOnEveryPullRequest
     file: .github/workflows/pr-validation.yml
-    find: "run: go test ./..."
-    replace: "run: go test -short ./..."
+    find: "run: go test ./... -skip"
+    replace: "run: go test -short ./... -skip"
     mentions: "runs Go tests with -short"
     why: >
       -short is the push budget. In CI it would skip the mutation ledger, the
       comment-stripping re-run and every other heavy guard with a green
       result, and nothing anywhere would run them.
+
+  - guard: TestHeavyGuardsRunOnEveryPullRequest
+    file: .github/workflows/pr-validation.yml
+    find: "TestNoTestIsSatisfiedByAComment)$"
+    replace: "TestNoTestIsSatisfiedByComments)$"
+    mentions: "which is not a test in tests/go/repo"
+    why: >
+      The meta-tests run in their own lane, named by META_TESTS. A misspelt
+      name is skipped by the invariants lane and matched by nothing in the
+      meta lane, and `go test -run` with no match passes. So a typo would
+      switch off the comment-stripping re-run with every lane green.
+
+  - guard: TestHeavyGuardsRunOnEveryPullRequest
+    file: .github/workflows/pr-validation.yml
+    find: 'run: go test ./repo/ -run "$META_TESTS"'
+    replace: 'run: go test ./repo/ -run "^TestSomethingElse$"'
+    mentions: "no lane runs them"
+    why: >
+      The full run skips the meta-tests on the promise that another lane runs
+      them. If that lane stops selecting them, the mutation ledger and the
+      comment-stripping re-run run nowhere.
 
   - guard: TestEveryAppTokenInputIsFedTheValueItsNameSays
     file: .github/workflows/token-fed-the-wrong-kind-of-id.yml

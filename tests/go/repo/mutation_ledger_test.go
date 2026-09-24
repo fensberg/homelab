@@ -251,7 +251,6 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 	}
 
 	bin := testBinary(t)
-	root := repoRoot(t)
 
 	for _, m := range l.Mutations {
 		t.Run(m.Guard, func(t *testing.T) {
@@ -307,8 +306,18 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 					m.File)
 			}
 
+			// The tree as it will be after the hand-over. The guards judge
+			// that tree - they read workflows through the outstanding patches
+			// - so the mutation is made to it as well. Breaking the file as it
+			// stands on disk would mutate a workflow the patch is about to
+			// replace, and an entry about the patched lines could never find
+			// them.
+			scratch := scratchRepo(t)
+			applyOutstandingPatches(t, scratch)
+			indexScratchTree(t, scratch)
+
 			if m.creates() {
-				if _, err := os.Stat(filepath.Join(root, m.File)); err == nil {
+				if _, err := os.Stat(filepath.Join(scratch, m.File)); err == nil {
 					t.Fatalf("this entry plants %s, and that file already exists in the "+
 						"repository. Planting it would overwrite something real, and the "+
 						"guard would be judged against the wrong thing.", m.File)
@@ -318,7 +327,7 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 			var original []byte
 			if !m.creates() {
 				var err error
-				original, err = os.ReadFile(filepath.Join(root, m.File))
+				original, err = os.ReadFile(filepath.Join(scratch, m.File))
 				if err != nil {
 					t.Fatalf("the ledger names %s, which cannot be read: %v\n\n"+
 						"The file moved or was deleted. Point the entry at where it went; "+
@@ -335,7 +344,6 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 
 			// Passing first. A guard that is already broken would satisfy
 			// "fails after the mutation" for free, and prove nothing at all.
-			scratch := scratchRepo(t)
 			if ok, out := runGuard(t, bin, scratch, m.Guard); !ok {
 				t.Fatalf("%s already fails on an unmutated copy, so this entry cannot "+
 					"prove anything about it.\n\nFix the guard first.\n\n%s", m.Guard, out)

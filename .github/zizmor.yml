@@ -43,3 +43,4 @@ rules:
       - site-sweep.yml
       - security-patrol.yml
       - sensitive-paths.yml
+      - warm-caches.yml
