@@ -3,8 +3,9 @@
 #
 # Two Kustomizations rather than one, from two sources, because that is what
 # makes the promotion path real rather than described. `main` is what staging
-# reconciles; a `v*` tag is what production reconciles. Nothing promotes by
-# somebody editing a file in production's directory.
+# reconciles; a release pinned in releases.yaml is what production reconciles.
+# Merging to main changes what the next release will contain, never what
+# production is running.
 #
 # Both depend on infra-configs: a workload that needs a volume needs the
 # storage class, and one that needs a database needs the operator that serves
@@ -40,12 +41,13 @@ spec:
   interval: 10m
   retryInterval: 1m
   timeout: 10m
+  # The release pinned in releases.yaml. The name stays workloads-production
+  # although it now reads one workload's release: its inventory already holds
+  # Valheim's objects, and a renamed or second Kustomization would have this
+  # one prune them - the world's volume with them.
   sourceRef:
-    # Declared in infrastructure/configs rather than here, because its url is
-    # substituted and this file is validated without substitution - see the
-    # note on that resource.
-    kind: GitRepository
-    name: flux-production
-  path: ./environments/production/applications
+    kind: OCIRepository
+    name: valheim
+  path: ./environments/production/applications/valheim
   prune: true
   wait: false

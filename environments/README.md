@@ -5,20 +5,17 @@ below this one build a cluster; this one is the reason there is a cluster.
 
 ## The promotion path is the directory you are in
 
-| Environment  | Reconciled from | Deployed by           |
-| ------------ | --------------- | --------------------- |
-| `staging`    | `main`          | merging               |
-| `production` | a `v*` tag      | tagging, deliberately |
+| Environment  | Reconciled from                                         | Deployed by                               |
+| ------------ | ------------------------------------------------------- | ----------------------------------------- |
+| `staging`    | `main`                                                  | merging                                   |
+| `production` | a release pinned in `clusters/management/releases.yaml` | merging a pull request that moves the pin |
 
-Two Flux sources, not one: `flux-system` is pinned to a branch, and
-`flux-production` tracks tags by semver. Pointing production at a different
-directory of the same branch would deploy to production every time anything
-merged, which is a promotion path in name only.
-
-**Production is not ready until the first tag exists, and that is correct.** A
-semver ref with no matching tag reports its source as failed. That reads as a
-red light and is an accurate one - nothing has been released yet. It is not a
-reason to point production at a branch.
+Production does not read this directory from `main`. The fabricator builds
+each release from it - the workload's production overlay and module, with the
+image just built pinned by digest - and publishes it as an OCI artifact named
+for the version the workload reported, plus a counter: `1.0.15-1`, then
+`1.0.15-2`. Merging here changes what the next release will contain; moving
+the pin in `releases.yaml` is what changes production (#510).
 
 ## `applications` and `infrastructure`
 

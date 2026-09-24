@@ -14,4 +14,5 @@ resources:
   - flux-system
   - infra-controllers.yaml
   - infra-configs.yaml
+  - releases.yaml
   - workloads.yaml

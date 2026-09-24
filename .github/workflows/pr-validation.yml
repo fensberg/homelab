@@ -371,12 +371,18 @@ jobs:
               -schema-location default -schema-location "${schema}" -
           done
 
+          # Every entrypoint at the top of clusters/management, globbed rather
+          # than listed: releases.yaml arrived after the list was written, and
+          # a list only validates what somebody remembered to add to it. The
+          # kustomization.yaml there is kustomize's own and has no schema to
+          # hold it to. Substituted like the directories above, because Flux
+          # substitutes these too.
           echo "==> clusters/management (Flux entrypoints)"
-          kubeconform -strict -summary -ignore-missing-schemas \
-            -schema-location default -schema-location "${schema}" \
-            clusters/management/infra-controllers.yaml \
-            clusters/management/infra-configs.yaml \
-            clusters/management/workloads.yaml
+          for file in clusters/management/*.yaml; do
+            [ "$(basename "$file")" = kustomization.yaml ] && continue
+            envsubst < "$file" | kubeconform -strict -summary -ignore-missing-schemas \
+              -schema-location default -schema-location "${schema}" -
+          done
 
           # The workload tier's overlays. Globbed rather than listed, so a
           # third environment is validated by existing rather than by somebody

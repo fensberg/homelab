@@ -1,0 +1,30 @@
+---
+# What production runs. One source per workload, pinned to a release the
+# fabricator published - the workload's production overlay and module, with
+# the image built for it pinned by digest.
+#
+# A release is a pull request that changes a pin here, and nothing else moves
+# production: merging to main changes what the next release will contain, not
+# what is running. The tag is the version the workload reported when it was
+# built plus a counter for rebuilds of that version, so a diff here reads as
+# 1.0.15-1 -> 1.0.15-2. The digest is what Flux trusts; the tag is for people.
+#
+# The Kustomization reading each source is in workloads.yaml, and for Valheim it
+# keeps the name workloads-production. Flux prunes whatever leaves a
+# Kustomization's inventory, so a new Kustomization taking over these objects
+# would have the old one delete them - the world's volume included. Keeping
+# the name keeps the inventory.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: valheim
+  namespace: flux-system
+spec:
+  interval: 1m
+  # No secretRef. The release packages are public, like the images they pin,
+  # and a secretRef naming a secret nothing creates fails the source closed
+  # rather than falling back to anonymous access (flux_source_secret_test.go).
+  url: oci://${RELEASE_REPOSITORY}-valheim-release
+  ref:
+    tag: "1.0.15-1"
+    digest: "sha256:7f700daffd9d12c200d081fe5da56603e9fa739da021760969e926690600c145"

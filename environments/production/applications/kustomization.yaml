@@ -6,8 +6,9 @@
 # staging because it was the first thing built would have been a name chosen by
 # accident of order.
 #
-# This reconciles from a v* tag rather than from main. Nothing here is live
-# until one exists.
+# Production does not reconcile this from main. Each workload's overlay is
+# built into a release by the fabricator, and clusters/management/releases.yaml
+# pins which release runs.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
