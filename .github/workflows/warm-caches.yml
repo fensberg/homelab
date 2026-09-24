@@ -1,0 +1,98 @@
+name: Warm Caches
+# Compiles on main what a pull request is about to compile, so that it does
+# not start from nothing.
+#
+# PR Validation runs only on pull requests, and GitHub scopes a cache to the
+# ref that wrote it: a pull request can read its own caches and its base
+# branch's, and nothing else. Main never ran anything that saved a Go cache,
+# so every pull request's first run compiled the test module's dependencies
+# from cold. On #505 that was most of the 165 seconds spent vetting every
+# build tag, and a share of the repository tier besides - the log says
+# "Cache is not found" right under Setup Go.
+#
+# Only main writes this cache, and that is the rule rather than an accident.
+# A build cache holds compiled output that nothing re-verifies against the
+# source, so a writer that could be a pull request is a writer that could
+# plant object code in what the next build links. GitHub's scoping keeps a
+# pull request's own caches away from main; this workflow is what gives main
+# one worth reading. The module cache beside it is checked against go.sum on
+# every use, so it would be safe either way.
+#
+# It keys exactly as the test lanes do - the same setup-go action and the
+# same go.sum - because a cache is only found under the key it was saved
+# with. That key is the Go version and go.sum, so those are the triggers: a
+# run whose key already exists restores it and saves nothing new. The cache
+# holds the dependencies, which are the expensive part; this repository's own
+# packages recompile in seconds on top of it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tests/go/go.sum"
+      - "scripts/versions.env"
+      - ".github/workflows/warm-caches.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+# Two merges in quick succession would otherwise both compile and race to save
+# the same key; the second is redundant once the first has run.
+concurrency:
+  group: warm-caches
+  cancel-in-progress: true
+# GitHub's default shell for `run:` is `bash -e {0}`, which has no pipefail.
+# tests/go/repo/pipefail_test.go asserts this is present on every workflow.
+defaults:
+  run:
+    shell: bash
+jobs:
+  go:
+    name: Warm the Go cache
+    runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+    # is what GitHub's default timeout allows.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            proxy.golang.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
+      - name: Setup Go
+        uses: $/.github/workflows/setup-go
+        with:
+          cache-dependency-path: tests/go/go.sum
+
+      # Compile, do not run. `-run '^$'` builds every test binary and runs no
+      # test, and the vet passes compile each build-tagged tier, which is what
+      # the Vet lane pays for. setup-go saves the result when the job ends.
+      - name: Compile what the test lanes compile
+        run: |
+          for dir in scripts/*/; do
+            [ -f "$dir/go.mod" ] || continue
+            go test -C "$dir" -run '^$' ./...
+          done
+          cd tests/go
+          go test -run '^$' ./...
+          go vet ./...
+          go vet -tags=api ./...
+          go vet -tags=integration ./...
+          go vet -tags=e2e ./...
