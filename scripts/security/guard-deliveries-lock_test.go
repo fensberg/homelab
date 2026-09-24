@@ -158,3 +158,28 @@ func TestParsingRefusesAMalformedLock(t *testing.T) {
 		}
 	}
 }
+
+// A tool whose binary is not named for its repository is checked under the
+// name its lock section carries. Procurement names the fluxcd/flux2 section
+// flux, from its binary: field, and security has to agree independently or
+// every correct lock is refused.
+func TestABinaryFieldNamesTheSectionSecurityExpects(t *testing.T) {
+	suppliers := lockSuppliers + "\n" // hooks: is last; add the tool under tools:
+	suppliers = strings.Replace(suppliers, "  - source: example/undelivered\n",
+		"  - source: fluxcd/flux2\n    version: FLUX_VERSION\n    binary: flux\n"+
+			"    fetch: https://github.com/fluxcd/flux2/releases/download/v{version}/flux_{version}_linux_amd64.tar.gz\n"+
+			"  - source: example/undelivered\n", 1)
+	versions := lockVersions + "FLUX_VERSION=2.7.1\n"
+	flux := "# [fetch: flux FLUX_VERSION=2.7.1]\n" +
+		"https://github.com/fluxcd/flux2/releases/download/v2.7.1/flux_2.7.1_linux_amd64.tar.gz --hash=sha256:" + hashA + "\n# [end]\n"
+
+	findings, err := checkDeliveriesLock(writeLockFixture(t, suppliers, versions, goodLock+flux))
+	if err != nil || len(findings) != 0 {
+		t.Fatalf("a lock naming the section for its binary should pass, got %v %v", findings, err)
+	}
+	wrong := strings.Replace(flux, "[fetch: flux ", "[fetch: flux2 ", 1)
+	findings, err = checkDeliveriesLock(writeLockFixture(t, suppliers, versions, goodLock+wrong))
+	if err != nil || len(findings) == 0 {
+		t.Fatalf("a section named for the repository rather than the binary should be refused, got %v %v", findings, err)
+	}
+}

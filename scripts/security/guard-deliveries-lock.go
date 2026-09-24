@@ -35,10 +35,14 @@ const (
 
 // lockedDelivery is one tools: entry that says how it is delivered.
 type lockedDelivery struct {
-	Kind       string
-	Name       string
-	Source     string
-	Spec       string
+	Kind   string
+	Name   string
+	Source string
+	Spec   string
+	// The file an archive gives up, when it is not named for the repository
+	// it comes from - fluxcd/flux2 ships a binary called flux. Empty means
+	// the last element of the source, which is right for every other tool.
+	Binary     string
 	VersionKey string
 	Version    string
 }
@@ -111,6 +115,9 @@ func deliveriesIn(suppliers string, versions map[string]string) ([]lockedDeliver
 		}
 		cur.Version = v
 		cur.Name = deliveryKinds[cur.Kind](cur.Source, cur.Spec)
+		if cur.Binary != "" {
+			cur.Name = cur.Binary
+		}
 		out = append(out, *cur)
 		return nil
 	}
@@ -138,6 +145,10 @@ func deliveriesIn(suppliers string, versions map[string]string) ([]lockedDeliver
 		}
 		if strings.HasPrefix(t, "version:") {
 			cur.VersionKey = strings.TrimSpace(strings.TrimPrefix(t, "version:"))
+			continue
+		}
+		if strings.HasPrefix(t, "binary:") {
+			cur.Binary = strings.TrimSpace(strings.TrimPrefix(t, "binary:"))
 			continue
 		}
 		for kind := range deliveryKinds {

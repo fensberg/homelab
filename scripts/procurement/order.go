@@ -54,10 +54,14 @@ const (
 
 // declaredDelivery is one tools: entry that says how it is delivered.
 type declaredDelivery struct {
-	Kind       string // "pypi" or "fetch"
-	Name       string // the section's name, and what take-delivery.sh is asked for
-	Source     string // the tools: entry's source, owner/repository
-	Spec       string // the kind field's value: a package name, or a URL template
+	Kind   string // "pypi" or "fetch"
+	Name   string // the section's name, and what take-delivery.sh is asked for
+	Source string // the tools: entry's source, owner/repository
+	Spec   string
+	// The file an archive gives up, when it is not named for the repository
+	// it comes from - fluxcd/flux2 ships a binary called flux. Empty means
+	// the last element of the source, which is right for every other tool.
+	Binary     string // the kind field's value: a package name, or a URL template
 	VersionKey string
 	Version    string
 }
@@ -190,6 +194,9 @@ func deliveriesIn(suppliers string, versions map[string]string) ([]declaredDeliv
 		}
 		cur.Version = v
 		cur.Name = deliveryKinds[cur.Kind](cur.Source, cur.Spec)
+		if cur.Binary != "" {
+			cur.Name = cur.Binary
+		}
 		out = append(out, *cur)
 		return nil
 	}
@@ -217,6 +224,10 @@ func deliveriesIn(suppliers string, versions map[string]string) ([]declaredDeliv
 		}
 		if strings.HasPrefix(t, "version:") {
 			cur.VersionKey = strings.TrimSpace(strings.TrimPrefix(t, "version:"))
+			continue
+		}
+		if strings.HasPrefix(t, "binary:") {
+			cur.Binary = strings.TrimSpace(strings.TrimPrefix(t, "binary:"))
 			continue
 		}
 		for kind := range deliveryKinds {

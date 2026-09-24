@@ -43,9 +43,9 @@ func TestDeliveriesAreReadFromTheToolsSectionOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []declaredDelivery{
-		{"fetch", "hadolint", "hadolint/hadolint", "https://github.com/hadolint/hadolint/releases/download/v{version}/hadolint-linux-x86_64", "HADOLINT_VERSION", "2.15.1"},
-		{"pypi", "checkov", "bridgecrewio/checkov", "checkov", "CHECKOV_VERSION", "3.3.17"},
-		{"pypi", "pre-commit", "pre-commit/pre-commit", "pre-commit", "PRE_COMMIT_VERSION", "4.6.2"},
+		{"fetch", "hadolint", "hadolint/hadolint", "https://github.com/hadolint/hadolint/releases/download/v{version}/hadolint-linux-x86_64", "", "HADOLINT_VERSION", "2.15.1"},
+		{"pypi", "checkov", "bridgecrewio/checkov", "checkov", "", "CHECKOV_VERSION", "3.3.17"},
+		{"pypi", "pre-commit", "pre-commit/pre-commit", "pre-commit", "", "PRE_COMMIT_VERSION", "4.6.2"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("want the three entries declaring a kind, got %+v", got)
@@ -294,5 +294,21 @@ func TestTheLockIsRenderedFromTheDeclarations(t *testing.T) {
 	must(os.WriteFile(filepath.Join(root, suppliersPath), []byte("tools:\n  - source: a/b\n    version: X\n"), 0o644))
 	if _, err := renderDeliveriesLock(root, resolve, hashes, fetch); err == nil || !strings.Contains(err.Error(), "nothing to order") {
 		t.Errorf("no declared delivery must be refused, got %v", err)
+	}
+}
+
+// A tool whose binary is not named for its repository says so, and the lock
+// section - which is what take-delivery.sh is asked for - carries that name.
+// fluxcd/flux2 ships a binary called flux; named flux2, its archive holds no
+// such file and every install is refused.
+func TestABinaryNamedUnlikeItsRepositoryIsDeliveredByThatName(t *testing.T) {
+	suppliers := "tools:\n  - source: fluxcd/flux2\n    version: FLUX_VERSION\n    binary: flux\n" +
+		"    fetch: https://github.com/fluxcd/flux2/releases/download/v{version}/flux_{version}_linux_amd64.tar.gz\n"
+	got, err := deliveriesIn(suppliers, map[string]string{"FLUX_VERSION": "2.7.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Name != "flux" {
+		t.Fatalf("want one delivery named flux, got %+v", got)
 	}
 }
