@@ -203,10 +203,13 @@ jobs:
           RELEASE: ${{ toJSON(matrix.order.release) }}
         run: |
           pattern="$(jq -r '.version.pattern' <<<"$RELEASE")"
+          # Each variable the order names gets its own random throwaway value.
+          # They exist only so the image will start; nothing reaches the
+          # probe, and nothing password-shaped is written in the repository.
           envs=()
-          while IFS= read -r kv; do
-            envs+=(-e "$kv")
-          done < <(jq -r '.version.env | to_entries[] | "\(.key)=\(.value)"' <<<"$RELEASE")
+          while IFS= read -r name; do
+            envs+=(-e "${name}=probe-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')")
+          done < <(jq -r '.version.env[]' <<<"$RELEASE")
           docker run -d --name version-probe "${envs[@]}" "${IMAGE}@${DIGEST}" >/dev/null
           version=""
           for _ in $(seq 1 "${PROBE_ATTEMPTS:-60}"); do

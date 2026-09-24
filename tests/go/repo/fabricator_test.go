@@ -425,8 +425,8 @@ func TestEveryReleaseOrderIsOneTheFabricatorCanFollow(t *testing.T) {
 				Overlay string `json:"overlay"`
 				Module  string `json:"module"`
 				Version struct {
-					Env     map[string]string `json:"env"`
-					Pattern string            `json:"pattern"`
+					Env     []string `json:"env"`
+					Pattern string   `json:"pattern"`
 				} `json:"version"`
 			} `json:"release"`
 		} `json:"orders"`
@@ -446,6 +446,9 @@ func TestEveryReleaseOrderIsOneTheFabricatorCanFollow(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(repoRoot(t), o.Release.Module)); err != nil {
 			t.Errorf("%s: the release module %s does not exist: %v", o.Name, o.Release.Module, err)
+		}
+		if len(o.Release.Version.Env) == 0 {
+			t.Errorf("%s: the release order names no environment variables, so the probe starts an image that may refuse to run", o.Name)
 		}
 		if strings.Count(o.Release.Version.Pattern, `\(`) != 1 {
 			t.Errorf("%s: the version pattern must capture exactly one group, the version: %q", o.Name, o.Release.Version.Pattern)

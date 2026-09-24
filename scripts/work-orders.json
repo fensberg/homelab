@@ -15,7 +15,8 @@
     "release: the production overlay and the module it builds on, which are",
     "staged with the new image digest and published as",
     "ghcr.io/<repository>-<name>-release:<version>; and how the version is read -",
-    "the environment the image needs in order to start, and the sed pattern that",
+    "the names of the environment variables the image needs set in order to",
+    "start, each given a random throwaway value, and the sed pattern that",
     "captures the version from what it prints. The version is what the built",
     "thing says it is, plus a counter for rebuilds of the same version: 1.0.15-1,",
     "then 1.0.15-2. Nothing here is the fabricator's knowledge; it follows the order."
@@ -32,11 +33,11 @@
         "overlay": "environments/production/applications/valheim",
         "module": "modules/applications/valheim",
         "version": {
-          "env": {
-            "VALHEIM_SERVER_NAME": "version-probe",
-            "VALHEIM_WORLD_NAME": "version-probe",
-            "VALHEIM_PASSWORD": "probe-only-9"
-          },
+          "env": [
+            "VALHEIM_PASSWORD",
+            "VALHEIM_SERVER_NAME",
+            "VALHEIM_WORLD_NAME"
+          ],
           "pattern": "Valheim version: [a-z]*-\\{0,1\\}\\([0-9][0-9.]*\\)"
         }
       }
