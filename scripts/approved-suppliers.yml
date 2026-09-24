@@ -691,21 +691,75 @@ egress:
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
 
-  - job: pr-validation.yml/test
+  - job: pr-validation.yml/test-go
     policy: block
     hosts:
       - api.github.com:443
       - get.opentofu.org:443
       - github.com:443
       - go.dev:443
-      - nodejs.org:443
       - objects.githubusercontent.com:443
       - proxy.golang.org:443
-      - registry.npmjs.org:443
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
       - sum.golang.org:443
+
+  - job: pr-validation.yml/vet
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - proxy.golang.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
+
+  - job: pr-validation.yml/invariants
+    policy: block
+    hosts:
+      - api.github.com:443
+      - get.opentofu.org:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - proxy.golang.org:443
+      - registry.opentofu.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
+
+  - job: pr-validation.yml/meta
+    policy: block
+    hosts:
+      - api.github.com:443
+      - get.opentofu.org:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - proxy.golang.org:443
+      - registry.opentofu.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
+
+  - job: pr-validation.yml/test-js
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - nodejs.org:443
+      - objects.githubusercontent.com:443
+      - registry.npmjs.org:443
+      - release-assets.githubusercontent.com:443
+
+  - job: pr-validation.yml/test
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
 
   - job: pr-validation.yml/dockerfiles
     policy: block
@@ -799,6 +853,18 @@ egress:
     root: >-
       Builds the runner image with Docker, which needs the Docker socket that
       disable-sudo-and-containers removes.
+  - job: warm-caches.yml/go
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - proxy.golang.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
+
   - job: scorecard.yml/scorecard
     policy: block
     hosts:

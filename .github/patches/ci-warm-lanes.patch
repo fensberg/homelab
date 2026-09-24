@@ -1,0 +1,510 @@
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index e3b4227..8b54d5d 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -17,6 +17,11 @@ on:
+       - "epoch/**"
+ 
+ permissions: read-all
++# The meta-tests, named once. The Repository invariants lane skips them and
++# the Meta-tests lane runs only them, both through this variable, so a test
++# cannot be dropped by the two lists disagreeing.
++env:
++  META_TESTS: "^(TestTheLedgerProvesEachGuardFailsWhenItShould|TestNoTestIsSatisfiedByAComment)$"
+ 
+ # Cancel in-progress runs if a new commit is pushed to the PR
+ concurrency:
+@@ -405,27 +410,8 @@ jobs:
+       # egress allowlist does not carry it - on purpose. scripts/contractor has
+       # no dependencies, and a Validate lane that cannot reach a module proxy
+       # at all is the cheapest possible proof of that. It is vetted in the
+-      # Test lane instead, which already has both the endpoints and the
+-      # module cache.
+-
+-      # -----------------------------------------------------------------
+-      # LANE 4: Does it behave?
+-      # -----------------------------------------------------------------
+-      # Validate above proves the code resolves. This proves it does the right
+-      # thing: the Go unit tests, the config-contract tests that hold
+-      # scripts/contractor and management/cluster/registry.tf to the same rules, the
+-      # OpenTofu invariant tests, and the JavaScript/TypeScript tier.
+-      #
+-      # Everything here is hermetic - no 1Password, no hypervisor, no cluster.
+-      # The tiers that need a real estate live in integration-tests.yml, on a
+-      # self-hosted runner, and cannot be triggered by a pull request. That
+-      # separation is the point: a fork PR runs this lane in full and still cannot
+-      # reach a credential or a machine.
+-      #
+-      # One lane rather than three because the three steps share a checkout and
+-      # most of a toolchain, and splitting them would triple the install time to
+-      # buy a slightly more specific red X. The step names carry that information
+-      # already.
++      # Vet lane instead, which has both the endpoints and the module cache.
++
+       # Formatting, with the pinned toolchain. The pre-commit hook skips this
+       # in the Format lane because ubuntu-latest's Go is not necessarily the
+       # one this repository pins, so it is checked here where it is.
+@@ -447,26 +433,48 @@ jobs:
+             exit 1
+           fi
+ 
+-  test:
+-    name: "Test (go, tofu, vitest)"
++  # -----------------------------------------------------------------
++  # LANE 4: Does it behave? Parallel lanes behind one required check
++  # -----------------------------------------------------------------
++  # Validate above proves the code resolves. This proves it does the right
++  # thing: the Go unit tests, the config-contract tests that hold
++  # scripts/contractor and management/cluster/registry.tf to the same rules,
++  # the repository invariants, the OpenTofu invariant tests, and the
++  # JavaScript/TypeScript tier.
++  #
++  # Everything here is hermetic - no 1Password, no hypervisor, no cluster.
++  # The tiers that need a real estate live in integration-tests.yml, on a
++  # self-hosted runner, and cannot be triggered by a pull request. That
++  # separation is the point: a fork PR runs these lanes in full and still
++  # cannot reach a credential or a machine.
++  #
++  # These were one job running every step in sequence, and it was the
++  # slowest thing on every pull request: 8m47s on #505, of which the
++  # repository tier was 274s and vetting every build tag 165s. It was one job
++  # on the argument that splitting would repeat the toolchain install in each
++  # lane. That cost is real but small - Setup Go is seconds once its cache is
++  # warm, and warm-caches.yml keeps main's warm so a pull request's first run
++  # is not a cold compile. Nothing in the job depended on anything before it
++  # except the toolchains, so it is now five lanes that run at once, and the
++  # pull request waits for the slowest one rather than for the sum.
++  #
++  # The required check keeps its name. "Test (go, tofu, vitest)" is required
++  # by the rulesets, so it stays - as the job that waits for the five lanes
++  # and fails if any did. A ruleset change is a settings change a person has
++  # to make; keeping the name means there is none to make, and a lane added
++  # later is covered by adding it to `needs` below.
++  test-go:
++    name: "Test (Go modules, OpenTofu)"
+     runs-on: ubuntu-latest
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+-    timeout-minutes: 20
++    timeout-minutes: 15
+     permissions:
+       contents: read
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
+-          # Not a guessed list: every entry here is already proven under
+-          # egress-policy: block by another lane in this same file. The
+-          # OpenTofu and Go entries are the Validate lane's list verbatim
+-          # (same installer, same setup-go, same provider downloads); the
+-          # nodejs.org and registry.npmjs.org entries come from the Format
+-          # lane, which already builds a Node toolchain for prettier under
+-          # block. Nothing here is new traffic - it is two existing lanes'
+-          # traffic in one job.
+           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+           # which job may reach what; `security guard-egress` refuses any drift.
+           # The copy lives here because harden-runner reads its policy in a
+@@ -478,10 +486,8 @@ jobs:
+             get.opentofu.org:443
+             github.com:443
+             go.dev:443
+-            nodejs.org:443
+             objects.githubusercontent.com:443
+             proxy.golang.org:443
+-            registry.npmjs.org:443
+             registry.opentofu.org:443
+             release-assets.githubusercontent.com:443
+             storage.googleapis.com:443
+@@ -493,7 +499,6 @@ jobs:
+       - name: Read pinned versions
+         uses: ./.github/actions/versions
+ 
+-      # --- Go -------------------------------------------------------------
+       - name: Setup Go
+         uses: $/.github/workflows/setup-go
+         with:
+@@ -522,18 +527,6 @@ jobs:
+             echo "::endgroup::"
+           done
+ 
+-      # Every build tag, because `go vet ./...` compiles none of the tiers
+-      # that carry one. A compile error in the integration or e2e tier should
+-      # surface on the pull request that caused it, not the night someone
+-      # first reaches for that suite.
+-      - name: Vet the test module (every tier)
+-        working-directory: tests/go
+-        run: |
+-          go vet ./...
+-          go vet -tags=api ./...
+-          go vet -tags=integration ./...
+-          go vet -tags=e2e ./...
+-
+       # Reported on every run, enforced as a ratchet: a pull request may not
+       # push coverage below the committed floor, and is free to leave it
+       # exactly where it found it. See tests/coverage-baseline.json.
+@@ -570,6 +563,111 @@ jobs:
+           tofu init -backend=false -input=false
+           tofu test
+ 
++
++  vet:
++    name: "Vet (every tier)"
++    runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 15
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++            go.dev:443
++            objects.githubusercontent.com:443
++            proxy.golang.org:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
++            sum.golang.org:443
++
++      # Versions come from scripts/versions.env, which is the only place one
++      # is written. See .github/actions/versions for why this is a step
++      # rather than a setup job.
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      - name: Setup Go
++        uses: $/.github/workflows/setup-go
++        with:
++          # tests/go is the only module here with dependencies to cache;
++          # scripts/contractor has none, so there is no go.sum of its own to key on.
++          cache-dependency-path: tests/go/go.sum
++
++      # Every build tag, because `go vet ./...` compiles none of the tiers
++      # that carry one. A compile error in the integration or e2e tier should
++      # surface on the pull request that caused it, not the night someone
++      # first reaches for that suite.
++      - name: Vet the test module (every tier)
++        working-directory: tests/go
++        run: |
++          go vet ./...
++          go vet -tags=api ./...
++          go vet -tags=integration ./...
++          go vet -tags=e2e ./...
++
++
++  invariants:
++    name: "Repository invariants"
++    runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 15
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            get.opentofu.org:443
++            github.com:443
++            go.dev:443
++            objects.githubusercontent.com:443
++            proxy.golang.org:443
++            registry.opentofu.org:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
++            sum.golang.org:443
++
++      # Versions come from scripts/versions.env, which is the only place one
++      # is written. See .github/actions/versions for why this is a step
++      # rather than a setup job.
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      - name: Setup Go
++        uses: $/.github/workflows/setup-go
++        with:
++          # tests/go is the only module here with dependencies to cache;
++          # scripts/contractor has none, so there is no go.sum of its own to key on.
++          cache-dependency-path: tests/go/go.sum
++
++      - name: Install OpenTofu
++        # The installer script from scripts/deliveries.lock by hash, run into
++        # directories the runner account owns - this job runs with sudo
++        # removed (#410). Until #416 the script was fetched and executed with
++        # nothing checking what arrived.
++        run: scripts/take-delivery.sh opentofu
++
+       # Untagged, so this compiles and runs only the hermetic tests in
+       # tests/go: the repository-invariant checks and the state-encryption
+       # cutover rehearsal. The integration, api and e2e tiers all carry a
+@@ -579,7 +677,102 @@ jobs:
+       # drives a real `tofu` against a scratch workspace.
+       - name: Repository invariants and the encryption rehearsal
+         working-directory: tests/go
+-        run: go test ./...
++        # The two meta-tests run in the lane below, in parallel with this one.
++        # They are skipped by the same variable that selects them there, so
++        # one declaration decides both and no test can fall between the two.
++        run: go test ./... -skip "$META_TESTS"
++
++
++  meta:
++    name: "Meta-tests (mutation ledger, comment stripping)"
++    runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 15
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            get.opentofu.org:443
++            github.com:443
++            go.dev:443
++            objects.githubusercontent.com:443
++            proxy.golang.org:443
++            registry.opentofu.org:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
++            sum.golang.org:443
++
++      # Versions come from scripts/versions.env, which is the only place one
++      # is written. See .github/actions/versions for why this is a step
++      # rather than a setup job.
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      - name: Setup Go
++        uses: $/.github/workflows/setup-go
++        with:
++          # tests/go is the only module here with dependencies to cache;
++          # scripts/contractor has none, so there is no go.sum of its own to key on.
++          cache-dependency-path: tests/go/go.sum
++
++      - name: Install OpenTofu
++        # The installer script from scripts/deliveries.lock by hash, run into
++        # directories the runner account owns - this job runs with sudo
++        # removed (#410). Until #416 the script was fetched and executed with
++        # nothing checking what arrived.
++        run: scripts/take-delivery.sh opentofu
++
++      # The two tests that prove the other tests: the mutation ledger breaks
++      # each guarded file and checks its guard fails, and the comment test
++      # strips every comment and re-runs the guards to prove none is satisfied
++      # by prose. Each re-runs a large part of the tier, so together they were
++      # about half its time, and here they run beside it instead of after it.
++      - name: Prove the guards fail when they should
++        working-directory: tests/go
++        run: go test ./repo/ -run "$META_TESTS"
++
++  test-js:
++    name: "Test (vitest)"
++    runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours,
++    # which is what GitHub's default timeout allows.
++    timeout-minutes: 15
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++            nodejs.org:443
++            objects.githubusercontent.com:443
++            registry.npmjs.org:443
++            release-assets.githubusercontent.com:443
++
++      # Versions come from scripts/versions.env, which is the only place one
++      # is written. See .github/actions/versions for why this is a step
++      # rather than a setup job.
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
+ 
+       # --- JavaScript / TypeScript ----------------------------------------
+       # Before setup-node, so that setup-node's pnpm cache has a pnpm to
+@@ -611,6 +804,45 @@ jobs:
+           pct="$(node -e 'const p=require("./coverage/js/coverage-summary.json").total.statements.pct;console.log(Number.isFinite(p)?p:0)' 2>/dev/null || echo 0)"
+           bash scripts/coverage-gate.sh js "$pct"
+ 
++
++  test:
++    name: "Test (go, tofu, vitest)"
++    needs: [test-go, vet, invariants, meta, test-js]
++    # always(), or a failed lane would SKIP this job - and a skipped required
++    # check counts as passing. The result is read explicitly instead.
++    if: always()
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          # Only the checkout Mobilize performs; the check itself reads the
++          # needs context and reaches nothing.
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++
++      - name: Every lane passed
++        env:
++          RESULTS: ${{ join(needs.*.result, ' ') }}
++        run: |
++          echo "lanes: ${RESULTS}"
++          for r in ${RESULTS}; do
++            if [ "$r" != "success" ]; then
++              echo "::error::a test lane finished as '${r}'; see the lanes above this one"
++              exit 1
++            fi
++          done
++
+   # -----------------------------------------------------------------
+   # LANES 5-8: Static analysis, one tool each
+   # -----------------------------------------------------------------
+diff --git a/.github/workflows/warm-caches.yml b/.github/workflows/warm-caches.yml
+new file mode 100644
+index 0000000..5c6603c
+--- /dev/null
++++ b/.github/workflows/warm-caches.yml
+@@ -0,0 +1,98 @@
++name: Warm Caches
++# Compiles on main what a pull request is about to compile, so that it does
++# not start from nothing.
++#
++# PR Validation runs only on pull requests, and GitHub scopes a cache to the
++# ref that wrote it: a pull request can read its own caches and its base
++# branch's, and nothing else. Main never ran anything that saved a Go cache,
++# so every pull request's first run compiled the test module's dependencies
++# from cold. On #505 that was most of the 165 seconds spent vetting every
++# build tag, and a share of the repository tier besides - the log says
++# "Cache is not found" right under Setup Go.
++#
++# Only main writes this cache, and that is the rule rather than an accident.
++# A build cache holds compiled output that nothing re-verifies against the
++# source, so a writer that could be a pull request is a writer that could
++# plant object code in what the next build links. GitHub's scoping keeps a
++# pull request's own caches away from main; this workflow is what gives main
++# one worth reading. The module cache beside it is checked against go.sum on
++# every use, so it would be safe either way.
++#
++# It keys exactly as the test lanes do - the same setup-go action and the
++# same go.sum - because a cache is only found under the key it was saved
++# with. That key is the Go version and go.sum, so those are the triggers: a
++# run whose key already exists restores it and saves nothing new. The cache
++# holds the dependencies, which are the expensive part; this repository's own
++# packages recompile in seconds on top of it.
++on:
++  push:
++    branches: [main]
++    paths:
++      - "tests/go/go.sum"
++      - "scripts/versions.env"
++      - ".github/workflows/warm-caches.yml"
++  workflow_dispatch:
++permissions:
++  contents: read
++# Two merges in quick succession would otherwise both compile and race to save
++# the same key; the second is redundant once the first has run.
++concurrency:
++  group: warm-caches
++  cancel-in-progress: true
++# GitHub's default shell for `run:` is `bash -e {0}`, which has no pipefail.
++# tests/go/repo/pipefail_test.go asserts this is present on every workflow.
++defaults:
++  run:
++    shell: bash
++jobs:
++  go:
++    name: Warm the Go cache
++    runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours, which
++    # is what GitHub's default timeout allows.
++    timeout-minutes: 15
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++            go.dev:443
++            objects.githubusercontent.com:443
++            proxy.golang.org:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
++            sum.golang.org:443
++
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      - name: Setup Go
++        uses: $/.github/workflows/setup-go
++        with:
++          cache-dependency-path: tests/go/go.sum
++
++      # Compile, do not run. `-run '^$'` builds every test binary and runs no
++      # test, and the vet passes compile each build-tagged tier, which is what
++      # the Vet lane pays for. setup-go saves the result when the job ends.
++      - name: Compile what the test lanes compile
++        run: |
++          for dir in scripts/*/; do
++            [ -f "$dir/go.mod" ] || continue
++            go test -C "$dir" -run '^$' ./...
++          done
++          cd tests/go
++          go test -run '^$' ./...
++          go vet ./...
++          go vet -tags=api ./...
++          go vet -tags=integration ./...
++          go vet -tags=e2e ./...
