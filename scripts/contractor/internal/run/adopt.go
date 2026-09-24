@@ -34,7 +34,9 @@ func AdoptIfOrphaned(ctx *Context, address string, findID func() (id string, err
 	}
 
 	Info(fmt.Sprintf("%s already exists outside Terraform - importing it instead of letting apply try to create a duplicate", address))
-	return Tofu(ctx, "tofu import "+address, "import", "-input=false", address, importID)
+	// Quiet, because the import ID is a value: for a bucket it is the vendor
+	// account id and the bucket's real name. See TofuQuiet.
+	return TofuQuiet(ctx, "tofu import "+address, "import", "-input=false", address, importID)
 }
 
 // InState reports whether Terraform is already tracking an address.
@@ -107,14 +109,18 @@ func ReleaseIfRenamed(ctx *Context, address, want string) error {
 		return nil
 	}
 
-	Warn(fmt.Sprintf("%s tracks a resource named %q, and the config now asks for %q", address, have, want))
+	// The address and never the names. Both names are vault-derived - a site's
+	// real name is in every bucket name - and this line is printed into an
+	// Actions log anybody can read. The first version of this function printed
+	// both, and a real site name reached a public log on its first run.
+	Warn(fmt.Sprintf("%s tracks a resource whose name no longer matches the config", address))
 	Warn("Releasing the old one rather than destroying it: it keeps whatever it holds, and nothing here will touch it again.")
 	Warn("It is now tracked by nothing. Retire it deliberately once you have checked what is in it.")
 
 	if _, err := CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "rm", address); err != nil {
-		return fmt.Errorf("releasing %s, which holds %q and cannot be renamed in place: %w", address, have, err)
+		return fmt.Errorf("releasing %s, which cannot be renamed in place: %w", address, err)
 	}
-	Ok(fmt.Sprintf("released %s; the adopt will pick up %q", address, want))
+	Ok(fmt.Sprintf("released %s; the adopt will pick up the one the config names", address))
 	return nil
 }
 
