@@ -26,10 +26,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"homelab/details/repopath"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"runtime"
 	"slices"
 	"syscall"
 
@@ -38,16 +37,18 @@ import (
 	"homelab/contractor/internal/survey"
 )
 
-// repoRoot is derived from this source file's own location rather than the
-// process's working directory, so `go run ./scripts/contractor` behaves the same
-// whether it's invoked from the repo root, from within scripts/contractor, or via
-// `go run -C`. main.go lives at <repoRoot>/scripts/contractor/main.go.
+// repoRoot is where the repository is on disk, found from the source tree
+// rather than the working directory so it holds however the program is run.
+//
+// It climbed three directories with nested filepath.Dir calls - the same
+// fixed-depth answer as eight copies elsewhere, spelled differently, and the
+// only one that ran in the shipped binary. repopath walks to the marker.
 func repoRoot() string {
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		panic("could not determine this source file's location")
+	root, err := repopath.Root()
+	if err != nil {
+		panic(err)
 	}
-	return filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
+	return root
 }
 
 // verbs are whole invocations, not steps, which is why they are subcommands

@@ -33,7 +33,7 @@ import (
 	"testing"
 
 	"homelab/contractor/config"
-	"homelab/contractor/repopath"
+	"homelab/details/repopath"
 )
 
 // RepoRoot is repopath.Root with the test's failure attached.
@@ -181,16 +181,11 @@ func Machines(t *testing.T) int {
 // and the check that exists to prove backups are healthy reported them broken.
 func StateBackups(t *testing.T) (folder string, env []string) {
 	t.Helper()
-	bucket, err := config.BucketByKey("state")
+	loc, err := config.StateBackupLocation(LoadConfig(t), Site())
 	if err != nil {
 		t.Fatal(err)
 	}
-	cred, err := SiteConfig(t).ObjectStorage.CredentialFor(bucket.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return config.StateBackupPath(bucket.Name(SiteNetwork(t))),
-		config.RcloneEnv(ObjectStorageAccount(t), cred)
+	return loc.Folder, loc.Env
 }
 
 // Alerting is where the estate speaks when something goes wrong. Fleet-level,

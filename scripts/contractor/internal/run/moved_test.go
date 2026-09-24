@@ -1,7 +1,7 @@
 package run
 
 import (
-	"homelab/contractor/repopath"
+	"homelab/details/repopath"
 	"os"
 	"path/filepath"
 	"strings"

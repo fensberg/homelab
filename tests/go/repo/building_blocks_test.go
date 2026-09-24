@@ -112,54 +112,58 @@ func structTags(t *testing.T, rel string) map[string]bool {
 
 // Nothing finds the repository root by counting directories.
 //
-// A fixed chain of ".." is correct until the file holding it moves, and then it
-// is wrong without a word. Eight copies of that answer existed across two
-// modules; moving one package up a directory broke four tests at once.
-// repopath.Root walks up to the marker instead, from wherever it is called.
+// A fixed-depth climb is correct until the file holding it moves, and then it
+// is wrong without a word. Nine copies of that answer existed across three
+// modules, in two spellings - a chain of ".." and nested filepath.Dir - and the
+// guard's first version knew only the first, which let the one copy in the
+// shipped binary through. repopath.Root walks up to the marker instead.
+//
+// No debt: every copy has been replaced.
 func TestNothingFindsTheRepositoryByCountingDirectories(t *testing.T) {
-	// Modules that cannot import homelab/contractor/repopath yet. Each is a
-	// separate Go module, so taking the fix means a require and a replace in its
-	// go.mod - which is the change that should delete its line here.
-	debt := map[string]bool{
-		// Also skips rather than fails when the path is wrong, so a moved file
-		// turns this test into a silent pass.
-		"scripts/clerk/verify_test.go": true,
-	}
-
 	found := map[string]bool{}
 	for _, rel := range goFiles(t) {
-		if countsUpward(t, rel) {
+		if climbsFixedDepth(t, rel) {
 			found[rel] = true
 		}
 	}
-	ratchet(t, "a fixed chain of \"..\" to reach the repository root", found, debt,
-		"Use repopath.Root or repopath.Join from homelab/contractor/repopath.")
+	ratchet(t, "a fixed-depth climb to the repository root", found, map[string]bool{},
+		"Use repopath.Root or repopath.Join from homelab/details/repopath.")
 }
 
-// countsUpward reports whether a file has two ".." string literals in a row -
-// the shape filepath.Join("..", "..", ...) takes. Tokenized rather than
-// matched, so an explanation of the pattern in a comment is not a violation.
-func countsUpward(t *testing.T, rel string) bool {
+// climbsFixedDepth reports whether a file climbs a fixed number of
+// directories, in either spelling: two ".." literals in a row, as
+// filepath.Join("..", "..", ...) takes, or filepath.Dir(filepath.Dir(...)).
+// Tokenized rather than matched, so explaining the pattern in a comment is not
+// a violation.
+func climbsFixedDepth(t *testing.T, rel string) bool {
 	t.Helper()
 	src := []byte(readRepoFile(t, rel))
 	var s scanner.Scanner
 	fset := token.NewFileSet()
 	s.Init(fset.AddFile(rel, -1, len(src)), src, nil, 0)
 
-	var prev, prevprev string
+	// The last seven tokens: enough to see Dir ( filepath . Dir.
+	var window []string
 	for {
 		_, tok, lit := s.Scan()
 		if tok == token.EOF {
 			return false
 		}
 		cur := tok.String()
-		if tok == token.STRING {
+		if tok == token.STRING || tok == token.IDENT {
 			cur = lit
 		}
-		if cur == `".."` && prev == "," && prevprev == `".."` {
+		window = append(window, cur)
+		if len(window) > 7 {
+			window = window[1:]
+		}
+		n := len(window)
+		if n >= 3 && window[n-1] == `".."` && window[n-2] == "," && window[n-3] == `".."` {
 			return true
 		}
-		prevprev, prev = prev, cur
+		if n >= 7 && strings.Join(window[n-7:], " ") == "filepath . Dir ( filepath . Dir" {
+			return true
+		}
 	}
 }
 

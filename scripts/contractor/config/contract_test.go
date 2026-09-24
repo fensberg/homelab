@@ -2,7 +2,7 @@ package config
 
 import (
 	"encoding/json"
-	"homelab/contractor/repopath"
+	"homelab/details/repopath"
 	"os"
 	"path/filepath"
 	"slices"

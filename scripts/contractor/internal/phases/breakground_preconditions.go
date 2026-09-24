@@ -3,6 +3,7 @@ package phases
 import (
 	"encoding/json"
 	"fmt"
+	"homelab/details/repopath"
 	"io"
 	"net/http"
 	"os"
@@ -312,24 +313,7 @@ func getJSON(url string, into any) error {
 	return json.Unmarshal(body, into)
 }
 
-// repoSlug is owner/name for the repository this run belongs to.
-//
-// GITHUB_REPOSITORY in Actions, the origin remote on a workstation. git is
-// present wherever this program runs, which is exactly what was not true of gh.
-func repoSlug() (string, error) {
-	if s := strings.TrimSpace(os.Getenv("GITHUB_REPOSITORY")); s != "" {
-		return s, nil
-	}
-	out, err := run.CmdOutputQuiet(".", "git", "remote", "get-url", "origin")
-	if err != nil {
-		return "", fmt.Errorf("no GITHUB_REPOSITORY set and the origin remote could not be read: %w", err)
-	}
-	u := strings.TrimSuffix(strings.TrimSpace(out), ".git")
-	if i := strings.Index(u, "github.com"); i >= 0 {
-		u = strings.TrimLeft(u[i+len("github.com"):], ":/")
-	}
-	if strings.Count(u, "/") != 1 || u == "" {
-		return "", fmt.Errorf("could not read owner/name out of the origin remote")
-	}
-	return u, nil
-}
+// repoSlug is owner/name for the repository this run belongs to. The answer
+// lives in homelab/details/repopath so the test tiers can ask the same
+// question without restating how it is answered.
+func repoSlug() (string, error) { return repopath.Slug() }

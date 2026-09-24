@@ -1,7 +1,7 @@
 package phases
 
 import (
-	"homelab/contractor/repopath"
+	"homelab/details/repopath"
 	"path/filepath"
 	"reflect"
 	"testing"

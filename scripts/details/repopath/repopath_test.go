@@ -61,3 +61,38 @@ func TestJoinResolvesInsideTheRepository(t *testing.T) {
 		t.Errorf("Join(management, cluster) = %s, which does not exist: %v", p, err)
 	}
 }
+
+// Both remote forms a clone can have, and the ways a remote can fail to name
+// a repository. Addresses use the documented placeholders.
+func TestSlugFromRemote(t *testing.T) {
+	for _, tc := range []struct{ remote, want string }{
+		{"https://github.com/example/estate.git\n", "example/estate"},
+		{"https://github.com/example/estate", "example/estate"},
+		{"git@github.com:example/estate.git", "example/estate"},
+		{"ssh://git@github.com/example/estate.git", "example/estate"},
+	} {
+		got, err := slugFromRemote(tc.remote)
+		if err != nil || got != tc.want {
+			t.Errorf("slugFromRemote(%q) = %q, %v; want %q", tc.remote, got, err, tc.want)
+		}
+	}
+	for _, bad := range []string{
+		"https://gitlab.example/example/estate.git",
+		"https://github.com/example",
+		"https://github.com/example/estate/extra",
+		"",
+	} {
+		if got, err := slugFromRemote(bad); err == nil {
+			t.Errorf("slugFromRemote(%q) = %q with no error; it names no owner/name", bad, got)
+		}
+	}
+}
+
+// In Actions the environment is authoritative, whatever the remote says.
+func TestSlugPrefersGitHubRepository(t *testing.T) {
+	t.Setenv("GITHUB_REPOSITORY", "example/from-env")
+	got, err := Slug()
+	if err != nil || got != "example/from-env" {
+		t.Errorf("Slug() = %q, %v; want the GITHUB_REPOSITORY value", got, err)
+	}
+}

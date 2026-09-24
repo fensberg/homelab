@@ -32,6 +32,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1
 	homelab/contractor v0.0.0-00010101000000-000000000000
+	homelab/details v0.0.0
 	k8s.io/api v0.37.0
 	k8s.io/apimachinery v0.37.0
 )
@@ -163,3 +164,6 @@ require (
 // The contractor, from this checkout. Never a published version: there is
 // none, and the point is to read the config with the code in this tree.
 replace homelab/contractor => ../../scripts/contractor
+
+// Standard details, from this checkout, for the same reason as the contractor.
+replace homelab/details => ../../scripts/details

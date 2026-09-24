@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Bucket is one of the estate's object-storage buckets.
 //
@@ -214,4 +217,54 @@ func RcloneEnv(acct ObjectStorageAccount, cred ObjectStorageCredential) []string
 // proving something about a request the program does not send.
 func BucketAPIURL(accountID, bucket string) string {
 	return "https://api.cloudflare.com/client/v4/accounts/" + accountID + "/r2/buckets/" + bucket
+}
+
+// StateBackups is where a site's age-encrypted state dumps live, and the
+// rclone environment that reaches them.
+type StateBackups struct {
+	Folder string   // the folder holding every dump, as rclone addresses it
+	Latest string   // the pointer object a restore reads first
+	Env    []string // rclone configured with the state bucket's own credential
+}
+
+// StateBackupLocation resolves StateBackups for a site: the state bucket from
+// Buckets, named for the site, reached with its own credential and no other.
+//
+// The Backup phase, the Restore phase and the integration tier each ran this
+// sequence for themselves - find the bucket, pick its credential, check it is
+// not empty, name it for the site, build the environment. Backup and Restore
+// are the two ends of one pipe, and a guard read both files to check they still
+// agreed. They had already drifted: Backup refused an empty key id or secret,
+// Restore only the key id. One function leaves nothing to agree.
+func StateBackupLocation(cfg *Config, site string) (StateBackups, error) {
+	bucket, err := BucketByKey("state")
+	if err != nil {
+		return StateBackups{}, err
+	}
+	s, ok := cfg.Sites[site]
+	if !ok {
+		return StateBackups{}, fmt.Errorf("unknown site '%s'", site)
+	}
+	cred, err := s.ObjectStorage.CredentialFor(bucket.Key)
+	if err != nil {
+		return StateBackups{}, err
+	}
+	for field, val := range map[string]string{
+		"access_key_id":     cred.AccessKeyID,
+		"secret_access_key": cred.SecretAccessKey,
+	} {
+		if strings.TrimSpace(val) == "" {
+			return StateBackups{}, fmt.Errorf("sites.%s.object_storage.%s.%s is missing from the rendered config", site, bucket.Key, field)
+		}
+	}
+	net, err := ResolveSiteNetwork(cfg, site)
+	if err != nil {
+		return StateBackups{}, err
+	}
+	name := bucket.Name(net)
+	return StateBackups{
+		Folder: StateBackupPath(name),
+		Latest: LatestStateBackupPath(name),
+		Env:    RcloneEnv(cfg.ObjectStorage, cred),
+	}, nil
 }

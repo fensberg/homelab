@@ -298,3 +298,41 @@ func TestBucketAPIURLNamesTheAccountAndTheBucket(t *testing.T) {
 		t.Errorf("BucketAPIURL = %q; it must address the account and then the bucket", got)
 	}
 }
+
+// The state backups are reached with the state credential, in the state
+// bucket, named for the site - and an empty half of the credential is refused
+// on either side, which Backup and Restore did not agree about while each had
+// its own copy.
+func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
+	site := validSite()
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
+
+	loc, err := StateBackupLocation(cfg, "site0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	net, _ := ResolveSiteNetwork(cfg, "site0")
+	if want := StateBackupPath(net.Name + "-state"); loc.Folder != want {
+		t.Errorf("Folder = %q, want %q", loc.Folder, want)
+	}
+	env := strings.Join(loc.Env, "\n")
+	if !strings.Contains(env, site.ObjectStorage.State.AccessKeyID) {
+		t.Error("the environment does not carry the state credential")
+	}
+	if strings.Contains(env, site.ObjectStorage.Database.AccessKeyID) {
+		t.Error("the environment carries the database credential - the key that lives in the cluster must not reach the state dumps")
+	}
+
+	for _, half := range []string{"key id", "secret"} {
+		broken := validSite()
+		if half == "key id" {
+			broken.ObjectStorage.State.AccessKeyID = ""
+		} else {
+			broken.ObjectStorage.State.SecretAccessKey = ""
+		}
+		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": broken}}
+		if _, err := StateBackupLocation(cfg, "site0"); err == nil {
+			t.Errorf("an empty state %s was accepted", half)
+		}
+	}
+}

@@ -937,26 +937,6 @@ mutations:
       would share - and what they would share is one site's production workload
       data with another's.
 
-  - guard: TestBackupAndRestoreUseTheSameBucket
-    file: scripts/contractor/internal/phases/restore.go
-    reads_source: true
-    find: 'stateBucket, err := config.BucketByKey("state")'
-    replace: 'stateBucket, err := config.BucketByKey("database")'
-    mentions: "does not resolve its bucket"
-    why: >
-      reads_source, because this guard opens restore.go and inspects its text
-      rather than executing it - which bucket a phase resolves is visible in the
-      source, and the scratch copy is the file it reads.
-
-      Pointing restore at the database bucket, which is where these dumps used
-      to live. Somebody reading an older runbook, or recovering an estate built
-      before the split, writes exactly this.
-
-      It fails in the worst place: a restore finds no backup and says so, while
-      an operator is trying to rebuild an estate. The bucket it is reading is
-      real and reachable, so nothing looks broken - it just appears that no
-      backup was ever taken.
-
   - guard: TestTheTeardownResolvesTheBucketItEmptiesFromTheTable
     file: scripts/contractor/internal/phases/teardown.go
     reads_source: true
@@ -2117,7 +2097,7 @@ mutations:
     reads_source: true
     find: "	sort.Strings(failures)"
     replace: "	_ = []string{\"..\", \"..\"}\n\tsort.Strings(failures)"
-    mentions: "fixed chain of"
+    mentions: "fixed-depth climb"
     why: >
       reads_source, because the guard tokenizes Go source rather than running
       it.
@@ -2125,6 +2105,21 @@ mutations:
       Two ".." literals in a row, which is the shape filepath.Join("..", "..",
       ...) takes. Eight copies of that answer existed, each right until the
       file holding it moved; the move that proved it broke four tests at once.
+
+  - guard: TestNothingFindsTheRepositoryByCountingDirectories
+    file: tests/go/harness/scrape.go
+    reads_source: true
+    find: "	return failures, total, nil"
+    replace: "	_ = filepath.Dir(filepath.Dir(\"x\"))\n\treturn failures, total, nil"
+    mentions: "fixed-depth climb"
+    why: >
+      reads_source, because the guard tokenizes Go source rather than running
+      it.
+
+      The second spelling of the same climb - nested filepath.Dir - which the
+      guard's first version could not see. The one copy of it was in the
+      contractor's main.go, the only root-finder that ran in the shipped
+      binary, and it went through unnoticed while the ".." copies were caught.
 
   - guard: TestAFactCrossingAModuleBoundaryIsDeclared
     file: tests/go/harness/scrape.go

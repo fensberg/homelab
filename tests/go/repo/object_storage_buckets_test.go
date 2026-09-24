@@ -89,26 +89,6 @@ func TestBucketsThatOutliveTheEstateAreReleasedBeforeAnythingDeletes(t *testing.
 	}
 }
 
-// Backup and restore must name the same bucket.
-//
-// They are the two ends of one pipe and the way this breaks is silent in the
-// worst direction: a restore pointed at the wrong bucket reports that there is
-// no backup, at the moment somebody is recovering an estate.
-func TestBackupAndRestoreUseTheSameBucket(t *testing.T) {
-	for _, file := range []string{
-		"scripts/contractor/internal/phases/backup.go",
-		"scripts/contractor/internal/phases/restore.go",
-	} {
-		body := readRepoFile(t, file)
-		if !strings.Contains(body, `config.BucketByKey("state")`) {
-			t.Errorf(`%s does not resolve its bucket with config.BucketByKey("state").`+"\n\n"+
-				"Backup writes the age-encrypted state dumps and restore reads them back. If "+
-				"either one names a bucket some other way, the two can drift apart and the "+
-				"symptom is a restore that finds nothing during a recovery.", file)
-		}
-	}
-}
-
 // The teardown empties a bucket it resolves from the table, not the raw config
 // value.
 //

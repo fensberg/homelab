@@ -74,7 +74,8 @@
     "go/superintendent": 72.1,
     "go/signedpush": 40.4,
     "go/tests-helpers": 50.9,
-    "js": 0
+    "js": 0,
+    "go/details": 71
   },
   "tiers": {
     "unit": 453,
