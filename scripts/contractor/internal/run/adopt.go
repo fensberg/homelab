@@ -34,9 +34,22 @@ func AdoptIfOrphaned(ctx *Context, address string, findID func() (id string, err
 	}
 
 	Info(fmt.Sprintf("%s already exists outside Terraform - importing it instead of letting apply try to create a duplicate", address))
-	// Quiet, because the import ID is a value: for a bucket it is the vendor
-	// account id and the bucket's real name. See TofuQuiet.
-	return TofuQuiet(ctx, "tofu import "+address, "import", "-input=false", address, importID)
+	// stdout captured, stderr passed through - CmdOutput's shape exactly, and
+	// the reason it is used rather than Tofu, which streams both.
+	//
+	// The import ID is a value: for a bucket it is the vendor account id and
+	// the bucket's real name, and tofu announces it on stdout ("Importing from
+	// ID ...") into an Actions log anybody can read. Its Error: diagnostics go
+	// to stderr, so a failure is still diagnosable. On failure the captured
+	// stdout is printed as well, because a failed import mid-converge with half
+	// its context missing is worse than the leak - the trade is narrow, since
+	// success is every run that matters and success now says nothing.
+	out, err := CmdOutput(ctx.ClusterDir, "tofu", "import", "-input=false", address, importID)
+	if err != nil {
+		fmt.Println(out)
+		return fmt.Errorf("tofu import %s: %w", address, err)
+	}
+	return nil
 }
 
 // InState reports whether Terraform is already tracking an address.

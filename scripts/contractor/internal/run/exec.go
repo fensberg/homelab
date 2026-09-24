@@ -76,31 +76,6 @@ func Tofu(ctx *Context, what string, args ...string) error {
 	return nil
 }
 
-// TofuQuiet runs tofu and shows its output only if it fails.
-//
-// For commands whose success output names values rather than structure. `tofu
-// import` announces the import ID it was given, and for an R2 bucket that ID is
-// the vendor account id followed by the bucket's real name - both vault values,
-// printed into an Actions log that anybody can read on a public repository.
-// Applies already avoid this by summarising to addresses and verbs; the import
-// was the one tofu call still streaming raw.
-//
-// On failure the captured output IS printed, deliberately. A failed import
-// halfway through a converge with no diagnosis is worse than the leak, and it is
-// how every other tofu failure in this program already behaves. The trade is
-// narrow: success, which is every run that matters, says nothing.
-func TofuQuiet(ctx *Context, what string, args ...string) error {
-	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-	c := exec.Command("tofu", args...)
-	c.Dir = ctx.ClusterDir
-	out, err := c.CombinedOutput()
-	if err != nil {
-		fmt.Print(string(out))
-		return fmt.Errorf("%s: %w", what, err)
-	}
-	return nil
-}
-
 // TofuApply runs a targeted (or full, if targets is empty) apply, and reports
 // addresses and verbs rather than streaming what tofu would print.
 //
