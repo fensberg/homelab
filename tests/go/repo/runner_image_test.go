@@ -47,8 +47,7 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 		}
 	}
 
-	// The Dockerfile must take them as build arguments, not hard-code them,
-	// and the workflow must actually wire versions.env's value into each one.
+	// The Dockerfile must take them as build arguments, not hard-code them.
 	//
 	// RUNNER_VERSION is here because it was not, and that is how the estate
 	// stopped working: it sat as an ARG default in the Dockerfile, governed by
@@ -78,8 +77,6 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 
 	dockerfile := readFile(t, filepath.Join(root, ".github", "runner-image", "Dockerfile"))
 
-	workflow := readFile(t, filepath.Join(repoRoot(t), ".github", "workflows", "runner-image.yml"))
-
 	for envKey, arg := range argFor {
 		if _, ok := pins[envKey]; !ok {
 			t.Errorf("versions.env no longer declares %s, but the runner image still expects it", envKey)
@@ -91,11 +88,10 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 		if regexp.MustCompile(`(?m)^ARG\s+` + arg + `\s*=`).MatchString(dockerfile) {
 			t.Errorf("the Dockerfile gives %s a default, which is a second place a version is written", arg)
 		}
-		// --build-arg <ARG>="$<ENVKEY>" - the link that makes the alias safe.
-		wired := regexp.MustCompile(`--build-arg\s+` + arg + `="\$` + envKey + `"`)
-		if !wired.MatchString(workflow) {
-			t.Errorf("runner-image.yml does not pass versions.env's %s into the Dockerfile's %s build argument;\nthe image would build with an empty %s instead of the pinned version", envKey, arg, arg)
-		}
+		// The workflow half - that versions.env's value actually reaches the
+		// build argument - is the fabricator's pin step, which passes every
+		// bare ARG automatically. fabricator_test.go runs it against this
+		// Dockerfile.
 	}
 }
 
