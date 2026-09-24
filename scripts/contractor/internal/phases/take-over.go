@@ -37,7 +37,7 @@ import (
 // TakeOver is deliberately not part of AllPhases. Ignition creates the cluster
 // that holds the state; it cannot begin by connecting to it.
 func TakeOver(ctx *run.Context) error {
-	run.WritePhase("TakeOver", "Reconnect to the state of an estate that already exists.")
+	run.WritePhase("Take-over", "Reconnect to the state of an estate that already exists.")
 
 	// Local state means an ignition run that never reached Migrate, or one
 	// that was interrupted. Either way the workspace already holds the
@@ -120,7 +120,7 @@ the state has been lost and belongs in 'contractor restore'`)
 		ctx.TakenOverOK = true
 	}
 
-	run.Ok(fmt.Sprintf("attached to existing state: %d resource(s)", n))
+	run.Ok(fmt.Sprintf("took over existing state: %d resource(s)", n))
 	return nil
 }
 
