@@ -160,11 +160,7 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 			"comparing an empty set against the skip list and proving nothing")
 	}
 
-	// As it will be once any outstanding patch is applied - see
-	// patches_test.go. The agent cannot write a workflow, so the fix to one
-	// arrives as a patch, and a test red for the whole of that window blocks
-	// the hand-over it is part of.
-	body := intendedWorkflow(t, "pr-validation.yml")
+	body := workflowText(t, "pr-validation.yml")
 	m := regexp.MustCompile(`(?m)^\s+SKIP:\s*(\S+)`).FindStringSubmatch(body)
 	if m == nil {
 		t.Fatal("the Format lane no longer sets SKIP, so every system hook now runs " +
@@ -227,7 +223,7 @@ func TestEverySystemHookIsSkippedInTheFormatLane(t *testing.T) {
 // the entire property - a gate after the delivery is a receipt - and ordering
 // is exactly what a test asserting "the step exists" would not notice.
 func TestTheFormatLaneRefusesASupplierBeforeInstallingAnything(t *testing.T) {
-	body := intendedWorkflow(t, "pr-validation.yml")
+	body := workflowText(t, "pr-validation.yml")
 
 	gate := strings.Index(body, "guard-deliveries -before-install")
 	if gate < 0 {
@@ -314,7 +310,7 @@ func sharedSetupGoReadsThePin(t *testing.T, workflow string) bool {
 	if !strings.Contains(workflow, "uses: $/.github/workflows/setup-go") {
 		return false
 	}
-	body, err := os.ReadFile(filepath.Join(intendedRoot(t), ".github", "workflows", "setup-go", "action.yml"))
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), ".github", "workflows", "setup-go", "action.yml"))
 	if err != nil {
 		t.Errorf("a workflow uses $/.github/workflows/setup-go, which cannot be read: %v", err)
 		return false

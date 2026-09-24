@@ -46,7 +46,7 @@ func heavy(t *testing.T, why string) {
 // with no match passes with "no tests to run" - so every name must be a test
 // that exists.
 func TestHeavyGuardsRunOnEveryPullRequest(t *testing.T) {
-	body := intendedWorkflow(t, "pr-validation.yml")
+	body := workflowText(t, "pr-validation.yml")
 
 	full := regexp.MustCompile(`(?m)working-directory: tests/go\n(?:\s+#.*\n)*\s+run: go test \./\.\.\.( -skip "\$META_TESTS")?\s*$`)
 	m := full.FindStringSubmatch(body)

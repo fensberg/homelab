@@ -40,7 +40,7 @@ type egressRoot struct {
 }
 
 func TestEveryJobSaysWhetherItKeepsRoot(t *testing.T) {
-	root := intendedRoot(t)
+	root := repoRoot(t)
 
 	selfHosted := selfHostedLabels(t, root)
 

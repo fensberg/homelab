@@ -17,13 +17,11 @@ import (
 // after it reported "no public build" - a symptom that pointed at Valve rather
 // than at the line that caused it (#440). Actions sets $RUNNER_TEMP for exactly
 // this, on every runner, and cleans it up after the job.
-//
-// Read from the workflows as they will be once outstanding patches apply, so a
-// fix arriving as a patch is judged by what it will be.
+
 var tmpdirReference = regexp.MustCompile(`\$\{?TMPDIR\b`)
 
 func TestNoWorkflowStepReadsTMPDIR(t *testing.T) {
-	workflows := intendedWorkflows(t)
+	workflows := workflowTexts(t)
 	if len(workflows) == 0 {
 		t.Fatal("no workflows were read, so nothing was checked")
 	}

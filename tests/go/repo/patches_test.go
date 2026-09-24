@@ -4,263 +4,120 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// Reading a protected file as it is *going* to be.
+// Reading the tree as it is.
 //
 // `.github/workflows/**` is behind the agent boundary: the App has no
 // `workflows` permission, deliberately, so a workflow change is handed over as
-// a patch in .github/patches and applied by a person. That leaves a window
-// where the change is committed and reviewable but the file it edits is not
-// yet edited.
+// a patch in .github/patches and applied by a person.
 //
-// A test asserting a property of a workflow is red for the whole of that
-// window, and the pre-push hook runs the tests - so the branch cannot be
-// pushed by the only party that can write the test, to fix a file only the
-// other party can write. That is a guard refusing the sole available route,
-// which is not a guard, it is an outage. It happened on the first branch that
-// carried both.
+// These helpers used to read workflows as they would be once every
+// outstanding patch was applied, so a branch carrying a patch stayed green
+// while it waited. But they applied the patch to the workflows and to nothing
+// else, and the tests doing the reading were the old tests. So a patch that
+// changed a workflow and the test of it together produced a tree that was
+// neither old nor new, and the old test failed against the new workflow.
 //
-// So a workflow property is judged against the workflow plus every outstanding
-// patch that touches it. Not an exemption: the patch is committed, it is in
-// the diff being reviewed, and the property still has to hold - it just holds
-// against the intended content rather than against a half-applied state. Once
-// the patch is applied and removed, there is nothing to apply and the file
-// alone has to satisfy it.
-//
-// This does not create a way to be green while broken. The workflow that
-// actually runs is the file, so the lane it belongs to fails for real until
-// somebody applies the patch. This only stops a second, redundant red check
-// from blocking the hand-over.
+// Everything that changes along with a workflow now travels inside its patch:
+// the tests, the suppliers list, the ledger, the docs. The branch is
+// consistently the old tree until the patch is applied and consistently the
+// new tree afterwards, so the tree can simply be read as it is.
 
-// intendedWorkflow returns a workflow's content with every outstanding patch
-// that touches it applied, using git itself rather than a diff parser.
-func intendedWorkflow(t *testing.T, name string) string {
+// workflowText returns a workflow's content, or "" if there is no such
+// workflow.
+func workflowText(t *testing.T, name string) string {
 	t.Helper()
-	root := repoRoot(t)
 	rel := filepath.Join(".github", "workflows", name)
-
-	body, err := os.ReadFile(filepath.Join(root, rel))
-	if err != nil {
-		t.Fatalf("reading %s: %v", rel, err)
-	}
-
-	patches := outstandingPatches(t)
-	if len(patches) == 0 {
-		return string(body)
-	}
-
-	// A scratch tree holding EVERY workflow at its repository path, so `git
-	// apply` sees the paths the patch names.
-	//
-	// Every workflow rather than just this one, because a patch may touch
-	// several - one change can need a job added here and a build argument
-	// passed there. The first version of this copied only the file being
-	// asked about, and a patch spanning two workflows failed with "No such
-	// file or directory" for the other one: reported as a stale patch, when
-	// the patch was fine and the scratch tree was incomplete. A helper that
-	// blames the thing it is checking is worse than no helper.
-	dir := t.TempDir()
-	copyWorkflowTree(t, root, dir)
-
-	for _, p := range patches {
-		if !patchTouches(t, p, rel) {
-			continue
-		}
-		// Only the workflow hunks, because the scratch tree holds only
-		// workflows. A patch may also carry another protected file - the
-		// sensitive-paths list, when a program it protects is renamed - and
-		// without this `git apply` fails on that file's absence and the helper
-		// reports every workflow the patch touches as stale. The same shape as
-		// the multi-workflow failure above, one directory further out.
-		cmd := exec.Command("git", "apply", "--include=.github/workflows/*", p)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%s is outstanding and does not apply to %s: %v\n%s\n\n"+
-				"A patch that no longer applies is worse than no patch: it looks "+
-				"like a hand-over that is still good, and it is not. Regenerate it "+
-				"against the current file.",
-				filepath.Base(p), rel, err, out)
-		}
-	}
-
-	// A patch may delete the workflow. That is an answer, not a failure to
-	// read one: a workflow that will not exist holds nothing to assert about.
-	// It is checked explicitly rather than inferred from any error, so a scratch
-	// tree that is simply broken still fails loudly here.
-	out, err := os.ReadFile(filepath.Join(dir, rel))
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), rel))
 	if errors.Is(err, fs.ErrNotExist) {
 		return ""
 	}
 	if err != nil {
-		t.Fatalf("reading the patched %s: %v", rel, err)
+		t.Fatalf("reading %s: %v", rel, err)
 	}
-	return string(out)
+	return string(body)
 }
 
-// intendedWorkflows returns every workflow as it is going to be: the files in
-// .github/workflows with every outstanding patch applied, including workflows
-// a patch adds and none that a patch renames away.
-//
-// intendedWorkflow answers for one existing file. A property of the whole set
-// needs this instead, because a workflow that only exists inside a patch is
-// exactly where a new violation would sit unseen.
-func intendedWorkflows(t *testing.T) map[string]string {
+// workflowTexts returns every workflow at the top of .github/workflows, keyed
+// by file name.
+func workflowTexts(t *testing.T) map[string]string {
 	t.Helper()
-	root := repoRoot(t)
-	dir := t.TempDir()
-	wf := filepath.Join(dir, ".github", "workflows")
-	copyWorkflowTree(t, root, dir)
-	for _, p := range outstandingPatches(t) {
-		cmd := exec.Command("git", "apply", "--include=.github/workflows/*", p)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%s is outstanding and does not apply to the workflows: %v\n%s", filepath.Base(p), err, out)
-		}
+	dir := filepath.Join(repoRoot(t), ".github", "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("listing the workflows: %v", err)
 	}
 	out := map[string]string{}
-	patched, err := os.ReadDir(wf)
-	if err != nil {
-		t.Fatalf("listing the patched workflows: %v", err)
-	}
-	for _, e := range patched {
+	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(wf, e.Name()))
+		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
-			t.Fatalf("reading the patched %s: %v", e.Name(), err)
+			t.Fatalf("reading %s: %v", e.Name(), err)
 		}
 		out[e.Name()] = string(body)
 	}
 	return out
 }
 
-// intendedFile returns one protected file that is not a workflow as it will be
-// once every outstanding patch touching it is applied - the sensitive-paths
-// list being the case that needed it.
-//
-// Only that file's hunks are applied (--include), so the scratch tree needs
-// nothing else in it.
-func intendedFile(t *testing.T, rel string) string {
+// repoFileText returns one file's content.
+func repoFileText(t *testing.T, rel string) string {
 	t.Helper()
-	root := repoRoot(t)
-	body, err := os.ReadFile(filepath.Join(root, rel))
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), rel))
 	if err != nil {
 		t.Fatalf("reading %s: %v", rel, err)
 	}
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(rel)), 0o755); err != nil {
-		t.Fatalf("preparing a scratch tree: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, rel), body, 0o644); err != nil {
-		t.Fatalf("preparing a scratch tree: %v", err)
-	}
-	for _, p := range outstandingPatches(t) {
-		if !patchTouches(t, p, rel) {
+	return string(body)
+}
+
+// No test reads .github/patches.
+//
+// A patch exists for the seconds between the agent handing it over and the
+// operator applying it, and everything that changes with it travels inside
+// it. So there is nothing about the pending state worth testing, and tests
+// that tried - reading workflows through pending patches, applying them to
+// the ledger's scratch tree, checking a patch still applies - cost hours and
+// guarded a window nobody runs in. The operator's words: "A test whose only
+// purpose is to test a patch that won't exist in 5 seconds is a stupid test."
+//
+// This refuses the first step back towards that machinery.
+func TestNoTestReadsThePatchesDirectory(t *testing.T) {
+	root := repoRoot(t)
+	self := filepath.Join("tests", "go", "repo", "patches_test.go")
+	checked := 0
+	for _, rel := range trackedMatching(t, func(p string) bool {
+		return strings.HasPrefix(p, "tests/") && strings.HasSuffix(p, "_test.go")
+	}) {
+		if rel == self {
 			continue
 		}
-		cmd := exec.Command("git", "apply", "--include="+rel, p)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%s is outstanding and does not apply to %s: %v\n%s",
-				filepath.Base(p), rel, err, out)
-		}
-	}
-	out, err := os.ReadFile(filepath.Join(dir, rel))
-	if err != nil {
-		t.Fatalf("reading the patched %s: %v", rel, err)
-	}
-	return string(out)
-}
-
-func outstandingPatches(t *testing.T) []string {
-	t.Helper()
-	entries, err := os.ReadDir(filepath.Join(repoRoot(t), ".github", "patches"))
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".patch") {
-			out = append(out, filepath.Join(repoRoot(t), ".github", "patches", e.Name()))
-		}
-	}
-	return out
-}
-
-func patchTouches(t *testing.T, patch, rel string) bool {
-	t.Helper()
-	body, err := os.ReadFile(patch)
-	if err != nil {
-		t.Fatalf("reading %s: %v", patch, err)
-	}
-	return strings.Contains(string(body), "b/"+rel)
-}
-
-// Every outstanding patch has to apply to the tree it is outstanding against.
-//
-// .github/patches/README.md asserts each one is verified against a clean tree
-// before it is committed. Nothing checked that, and nothing rechecked it after
-// the file underneath moved - so a patch could sit there looking like a
-// hand-over that is still good, and fail in the hands of the one person who
-// can apply it, who has no way to tell a stale patch from a live one.
-func TestEveryOutstandingPatchStillApplies(t *testing.T) {
-	root := repoRoot(t)
-	patches := outstandingPatches(t)
-	if len(patches) == 0 {
-		t.Skip("no patches are outstanding")
-	}
-
-	for _, p := range patches {
-		name := filepath.Base(p)
-		cmd := exec.Command("git", "apply", "--check", p)
-		cmd.Dir = root
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Errorf("%s does not apply to the current tree: %v\n%s\n\n"+
-				"Regenerate it, or delete it if it has already been applied. A stale "+
-				"patch is indistinguishable from a live one to whoever has to run it.",
-				name, err, out)
-		}
-	}
-}
-
-// copyWorkflowTree mirrors .github/workflows into a scratch tree, subdirectories
-// included.
-//
-// Top-level files used to be enough, because that directory held nothing else.
-// It now also holds the composite actions every job calls - mobilize, checkout
-// and the rest - kept beside the workflows so they sit behind the same
-// permission. A patch editing one of them failed to apply to a scratch tree
-// that did not contain it, and was reported as stale when it was good: a
-// helper blaming the thing it checks, which is the failure this file already
-// records once.
-func copyWorkflowTree(t *testing.T, root, dir string) {
-	t.Helper()
-	src := filepath.Join(root, ".github", "workflows")
-	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		checked++
+		body, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
-			return err
+			t.Fatalf("reading %s: %v", rel, err)
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
+		// Code only. A comment explaining why patches are absent is not a
+		// test reading them.
+		var code []string
+		for _, line := range strings.Split(string(body), "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "//") {
+				code = append(code, line)
+			}
 		}
-		dst := filepath.Join(dir, rel)
-		if d.IsDir() {
-			return os.MkdirAll(dst, 0o755)
+		src := strings.Join(code, "\n")
+		if strings.Contains(src, `".github", "patches"`) || strings.Contains(src, ".github/patches") {
+			t.Errorf("%s reads .github/patches.\n\n"+
+				"A patch lives for the seconds between hand-over and apply, and carries "+
+				"every change that goes with it. Test the tree as it is; there is no "+
+				"pending state worth a test.", rel)
 		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(dst, body, 0o644)
-	})
-	if err != nil {
-		t.Fatalf("mirroring .github/workflows into a scratch tree: %v", err)
+	}
+	if checked == 0 {
+		t.Fatal("found no test files under tests/, so nothing was checked")
 	}
 }

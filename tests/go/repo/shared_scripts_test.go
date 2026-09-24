@@ -24,11 +24,10 @@ const sharedScriptDir = ".github/workflows/github-script/"
 
 var scriptName = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// sharedScripts returns every script beside the shared action, by name, as the
-// tree will be once outstanding patches land.
+// sharedScripts returns every script beside the shared action, by name.
 func sharedScripts(t *testing.T) map[string]string {
 	t.Helper()
-	root := intendedRoot(t)
+	root := repoRoot(t)
 	out := map[string]string{}
 	for _, rel := range trackedFilesIn(t, root) {
 		if !strings.HasPrefix(rel, sharedScriptDir) || !strings.HasSuffix(rel, ".js") {
@@ -47,7 +46,7 @@ func sharedScripts(t *testing.T) map[string]string {
 // the shared action, with where it is named.
 func namedScripts(t *testing.T) map[string][]string {
 	t.Helper()
-	root := intendedRoot(t)
+	root := repoRoot(t)
 	named := map[string][]string{}
 	for _, rel := range trackedFilesIn(t, root) {
 		if !authoredHere(rel) || !runnable(rel) {

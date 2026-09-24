@@ -295,34 +295,6 @@ mutations:
       saying why. The list stops being a decision and becomes a record of
       whatever was convenient.
 
-  - guard: TestEveryOutstandingPatchStillApplies
-    file: .github/patches/a-patch-that-cannot-apply.patch
-    create: |
-      diff --git a/.github/workflows/codeql.yml b/.github/workflows/codeql.yml
-      index 1111111..2222222 100644
-      --- a/.github/workflows/codeql.yml
-      +++ b/.github/workflows/codeql.yml
-      @@ -1,3 +1,3 @@
-      -name: "A line this workflow has never contained"
-      +name: "Something else"
-       # context that does not exist either
-    mentions: "does not apply to the current tree"
-    why: >
-      A stale patch is indistinguishable from a live one to whoever has to
-      run it, and the person who has to run it is the only one who can - the
-      agent cannot write a workflow at all. Planted rather than substituted
-      because this guard has nothing to say until a patch is outstanding, and
-      the normal state of the repository is that none is.
-
-  # --- Added retroactively -------------------------------------------------
-  #
-  # Every entry below was proved by hand at the time - the guard was written,
-  # the thing it guards was broken, the failure was read, the break was undone
-  # - and none of those proofs was committed. Six guards went in that way in
-  # one session, by the same hand that built this file to stop exactly that.
-  #
-  # They are here now because a proof that lived in a terminal is a claim.
-
   - guard: TestNoGoCommandResolvesAgainstTheRootlessRepository
     file: .github/workflows/sensitive-paths.yml
     find: "go run -C scripts/attestation ."
@@ -503,6 +475,16 @@ mutations:
       produced nine identical "<redacted>" rows on the change whose entire
       purpose is that somebody can see which machine is which. This guard is
       what stops the tidier, unreadable form coming back.
+
+  - guard: TestNoTestReadsThePatchesDirectory
+    file: tests/go/repo/heavy_test.go
+    find: "package repo\n"
+    replace: "package repo\n\nvar _ = \".github/patches\"\n"
+    reads_source: true
+    mentions: "reads .github/patches"
+    why: >
+      The first line of the machinery this refuses is a test naming the
+      directory. Caught there, nobody spends hours building the rest.
 
   - guard: TestRunnerPodsAreNotBestEffort
     file: clusters/management/infrastructure/configs/runner-scale-set.yaml

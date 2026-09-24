@@ -51,12 +51,7 @@ var declaredRetries = map[string]string{
 }
 
 func TestThereIsOnlyOneRetryAndANewOneIsRefused(t *testing.T) {
-	// Workflows are read AS THEY WILL BE once outstanding patches are applied.
-	// The agent cannot write one, so the consolidation of expediter.yml's
-	// hand-rolled loop arrives as a patch - and a guard red for that whole
-	// window blocks the hand-over it is part of. (#401 is the general form of
-	// guards disagreeing about which version they read.)
-	intended := intendedWorkflows(t)
+	workflows := workflowTexts(t)
 
 	// Every file that could hold one: shell, Go, workflows, the taskfile.
 	candidates := tracked(t, func(rel string) bool {
@@ -82,10 +77,10 @@ no longer looks - which is the same green as there being none.`, len(candidates)
 		if _, declared := declaredRetries[rel]; declared {
 			continue
 		}
-		// intendedWorkflows keys by base name, and only workflows are patched.
+		// workflowTexts keys by base name.
 		body, patched := "", false
 		if strings.HasPrefix(rel, ".github/workflows/") {
-			body, patched = intended[filepath.Base(rel)]
+			body, patched = workflows[filepath.Base(rel)]
 		}
 		if !patched {
 			body = readRepoFile(t, rel)

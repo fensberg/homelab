@@ -71,13 +71,9 @@ func TestRecoveryInstructionsNameTheWorkstationBinary(t *testing.T) {
 			return nil
 		}
 
-		// A workflow is read AS IT WILL BE once any outstanding patch is
-		// applied. The agent cannot write one, so a fix to a workflow arrives
-		// as a patch - and a guard red for the whole of that window blocks the
-		// hand-over it is part of.
 		var text string
 		if dir := filepath.Dir(rel); dir == filepath.Join(".github", "workflows") {
-			text = intendedWorkflow(t, d.Name())
+			text = workflowText(t, d.Name())
 		} else {
 			body, readErr := os.ReadFile(path)
 			if readErr != nil {

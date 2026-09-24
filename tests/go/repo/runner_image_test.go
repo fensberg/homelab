@@ -78,15 +78,7 @@ func TestVersionsAreDeclaredOnceAndSharedByBoth(t *testing.T) {
 
 	dockerfile := readFile(t, filepath.Join(root, ".github", "runner-image", "Dockerfile"))
 
-	// Read as it will be once outstanding patches land. runner-image.yml is
-	// under .github/workflows, which the agent cannot push to, so a change to
-	// the wiring arrives as a patch in .github/patches and is applied by a
-	// person. Reading the tracked copy instead would hold this red for the
-	// whole hand-over window, about a state already on its way out - and a red
-	// check whose cause is "the operator has not clicked yet" is the kind
-	// nobody reads. Same reasoning, and the same helper, as the action-pin and
-	// bypass-merge checks.
-	workflow := readFile(t, filepath.Join(intendedRoot(t), ".github", "workflows", "runner-image.yml"))
+	workflow := readFile(t, filepath.Join(repoRoot(t), ".github", "workflows", "runner-image.yml"))
 
 	for envKey, arg := range argFor {
 		if _, ok := pins[envKey]; !ok {

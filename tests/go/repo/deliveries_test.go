@@ -32,7 +32,7 @@ var pythonInstall = regexp.MustCompile(`\b(?:pip3?|pipx)\s+install\b|\buv\s+(?:p
 var commentLine = regexp.MustCompile(`^\s*(?:#|//|\*|<!--|--)`)
 
 func TestNothingInstallsFromPyPIOutsideTakeDelivery(t *testing.T) {
-	root := intendedRoot(t)
+	root := repoRoot(t)
 
 	var offenders []string
 	scanned := 0
@@ -104,7 +104,7 @@ var (
 )
 
 func TestOnlyTheExpediteDutyRunsUnderItsCredential(t *testing.T) {
-	workflows := intendedWorkflows(t)
+	workflows := workflowTexts(t)
 	if len(workflows) == 0 {
 		t.Fatal("no workflows were read, so nothing was checked")
 	}

@@ -195,21 +195,19 @@ tool. Read the pin, or take the version out of versions.env and say why.`,
 func TestNoWorkflowRestatesAPinnedVersion(t *testing.T) {
 	input := regexp.MustCompile(`(?m)^\s*((?:go|node|python|java|dotnet|tofu|opentofu|terraform|helm|kubectl)[-_]version):\s*(.*?)\s*$`)
 
-	// Every workflow and every composite action, as they are going to be with
-	// outstanding patches applied - so a fix still in .github/patches counts,
-	// and so does a violation inside a file that only exists in one.
+	// Every workflow and every composite action.
 	//
 	// Composites wherever they live, not under .github/actions alone. The Go
 	// setup moved into .github/workflows/setup-go when action commits were
 	// written once, and a guard reading a named directory would have lost every
 	// version input it had without saying so.
-	intended := intendedRoot(t)
+	root := repoRoot(t)
 	sources := map[string]string{}
-	for _, rel := range trackedFilesIn(t, intended) {
+	for _, rel := range trackedFilesIn(t, root) {
 		if !authoredHere(rel) || !runnable(rel) {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(intended, rel))
+		body, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
 			t.Fatalf("reading %s: %v", rel, err)
 		}
