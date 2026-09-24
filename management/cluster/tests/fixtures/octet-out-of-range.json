@@ -51,6 +51,14 @@
         "state": {
           "access_key_id": "00112233445566778899aabbccddeeff",
           "secret_access_key": "fixture-secret-access-key"
+        },
+        "staging": {
+          "access_key_id": "11112222333344445555666677778888",
+          "secret_access_key": "fixture-secret-access-key"
+        },
+        "production": {
+          "access_key_id": "99990000aaaabbbbccccddddeeeeffff",
+          "secret_access_key": "fixture-secret-access-key"
         }
       },
       "database": {

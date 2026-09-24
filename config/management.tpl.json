@@ -83,6 +83,16 @@
         "state": {
           "access_key_id": "{{ op://homelab/site0/object_storage/state_access_key_id }}",
           "secret_access_key": "{{ op://homelab/site0/object_storage/state_secret_access_key }}"
+        },
+
+        "staging": {
+          "access_key_id": "{{ op://homelab/site0/object_storage/staging_access_key_id }}",
+          "secret_access_key": "{{ op://homelab/site0/object_storage/staging_secret_access_key }}"
+        },
+
+        "production": {
+          "access_key_id": "{{ op://homelab/site0/object_storage/production_access_key_id }}",
+          "secret_access_key": "{{ op://homelab/site0/object_storage/production_secret_access_key }}"
         }
       },
 

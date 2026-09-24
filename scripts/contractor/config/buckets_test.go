@@ -47,37 +47,32 @@ func TestNoBucketEscapesTheSiteSlug(t *testing.T) {
 	}
 }
 
-// A credential is declared for exactly the buckets something writes to.
+// Every bucket the site declares has a credential of its own.
 //
-// Staging and production deliberately have none: nothing writes to them yet,
-// and a credential issued ahead of a writer is a live key nobody is watching.
-// CredentialFor must say so rather than hand back a zero value, because an
-// empty key pair fails much later inside rclone as "credentials are empty",
-// naming no bucket.
-func TestOnlyTheBucketsWithWritersHaveCredentials(t *testing.T) {
-	store := ObjectStorage{
-		Database: ObjectStorageCredential{AccessKeyID: "db", SecretAccessKey: "db-secret"},
-		State:    ObjectStorageCredential{AccessKeyID: "st", SecretAccessKey: "st-secret"},
-	}
-
-	for _, key := range []string{"database", "state"} {
-		cred, err := store.CredentialFor(key)
+// Walked from Buckets rather than listed here, so a bucket added to the set
+// without a credential beside it fails this rather than reaching rclone with an
+// empty key - which fails much later, as "credentials are empty", naming no
+// bucket. A key nobody declared is refused rather than answered with a zero
+// value, for the same reason.
+func TestEveryBucketHasACredentialOfItsOwn(t *testing.T) {
+	site := validSite()
+	ids := map[string]string{}
+	for _, b := range Buckets {
+		cred, err := site.ObjectStorage.CredentialFor(b.Key)
 		if err != nil {
-			t.Errorf("no credential for %q, which has a writer: %v", key, err)
+			t.Errorf("bucket %q has no credential field: %v", b.Key, err)
 			continue
 		}
 		if cred.AccessKeyID == "" || cred.SecretAccessKey == "" {
-			t.Errorf("the %q credential is half empty: %+v", key, cred)
+			t.Errorf("validSite gives the %q bucket a half-empty credential, so this proves nothing about it", b.Key)
 		}
+		if other, dup := ids[cred.AccessKeyID]; dup {
+			t.Errorf("validSite gives %q and %q the same key, so the shared-key refusal cannot be tested against it", other, b.Key)
+		}
+		ids[cred.AccessKeyID] = b.Key
 	}
-
-	for _, key := range []string{"staging", "production"} {
-		if _, err := store.CredentialFor(key); err == nil {
-			t.Errorf("CredentialFor(%q) returned no error.\n\n"+
-				"Nothing writes to that bucket yet, so there is no credential. Returning a "+
-				"zero value instead of an error moves the failure into rclone, where it "+
-				"reads as \"credentials are empty\" and names no bucket.", key)
-		}
+	if _, err := site.ObjectStorage.CredentialFor("nonexistent"); err == nil {
+		t.Error("CredentialFor answered for a bucket nobody declared")
 	}
 }
 
@@ -88,21 +83,38 @@ func TestOnlyTheBucketsWithWritersHaveCredentials(t *testing.T) {
 // fields restores exactly the situation the split removed, and nothing about
 // the config would look wrong - the fields are adjacent and near-identically
 // named.
-func TestConfigRefusesOneKeyInBothFields(t *testing.T) {
-	site := validSite()
-	site.ObjectStorage.State.AccessKeyID = site.ObjectStorage.Database.AccessKeyID
-	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
+func TestConfigRefusesOneKeyInTwoFields(t *testing.T) {
+	// The pairs that matter most, and one that does not involve the estate's
+	// own recovery material - so the check is shown to cover every pair
+	// rather than the two fields it was first written for.
+	for _, pair := range [][2]string{
+		{"database", "state"},
+		{"state", "production"},
+		{"staging", "production"},
+	} {
+		site := validSite()
+		src, _ := site.ObjectStorage.CredentialFor(pair[0])
+		switch pair[1] {
+		case "state":
+			site.ObjectStorage.State.AccessKeyID = src.AccessKeyID
+		case "staging":
+			site.ObjectStorage.Staging.AccessKeyID = src.AccessKeyID
+		case "production":
+			site.ObjectStorage.Production.AccessKeyID = src.AccessKeyID
+		}
+		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
-	_, err := ResolveSiteNetwork(cfg, "site0")
-	if err == nil {
-		t.Fatal("a config carrying one access_key_id in both the database and state fields " +
-			"was accepted.\n\n" +
-			"That is one credential reaching both buckets, which is the situation the split " +
-			"exists to remove: the key that sits permanently in a cluster Secret can then " +
-			"delete the state dumps that exist to survive that cluster being lost.")
-	}
-	if !strings.Contains(err.Error(), "same access_key_id") {
-		t.Errorf("refused, but not for the shared key: %v", err)
+		_, err := ResolveSiteNetwork(cfg, "site0")
+		if err == nil {
+			t.Errorf("one access_key_id in both %s and %s was accepted.\n\n"+
+				"Each credential is scoped to one bucket; a key in two fields lets the holder "+
+				"of either reach both - for database and state, the key in a cluster Secret "+
+				"could then delete the dumps that exist to survive that cluster.", pair[0], pair[1])
+			continue
+		}
+		if !strings.Contains(err.Error(), "same access_key_id") {
+			t.Errorf("%s/%s refused, but not for the shared key: %v", pair[0], pair[1], err)
+		}
 	}
 }
 

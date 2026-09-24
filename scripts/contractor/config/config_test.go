@@ -29,6 +29,8 @@ func validSite() Site {
 			VaultProvider: "cloudflare",
 			Database:      ObjectStorageCredential{AccessKeyID: "f1e2d3c4b5a697887766554433221100", SecretAccessKey: "shh"},
 			State:         ObjectStorageCredential{AccessKeyID: "00112233445566778899aabbccddeeff", SecretAccessKey: "shh"},
+			Staging:       ObjectStorageCredential{AccessKeyID: "11112222333344445555666677778888", SecretAccessKey: "shh"},
+			Production:    ObjectStorageCredential{AccessKeyID: "99990000aaaabbbbccccddddeeeeffff", SecretAccessKey: "shh"},
 		},
 	}
 }
@@ -168,12 +170,17 @@ func TestResolveSiteNetwork_MissingVaultProvider(t *testing.T) {
 // the wrong key into another field.
 func TestResolveSiteNetwork_AWSShapedAccessKeyOnNonAWSProvider(t *testing.T) {
 	for _, prefix := range []string{"AKIA", "ASIA"} {
-		for _, field := range []string{"database", "state"} {
+		for _, field := range []string{"database", "state", "staging", "production"} {
 			site := validSite()
-			if field == "database" {
+			switch field {
+			case "database":
 				site.ObjectStorage.Database.AccessKeyID = prefix + "IOSFODNN7EXAMPLE"
-			} else {
+			case "state":
 				site.ObjectStorage.State.AccessKeyID = prefix + "IOSFODNN7EXAMPLE"
+			case "staging":
+				site.ObjectStorage.Staging.AccessKeyID = prefix + "IOSFODNN7EXAMPLE"
+			case "production":
+				site.ObjectStorage.Production.AccessKeyID = prefix + "IOSFODNN7EXAMPLE"
 			}
 			cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 			if _, err := ResolveSiteNetwork(cfg, "site0"); err == nil {

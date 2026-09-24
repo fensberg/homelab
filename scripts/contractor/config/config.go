@@ -285,8 +285,10 @@ type ObjectStorage struct {
 	//
 	// The `bucket` name is gone because names are derived from the site slug
 	// now. Nothing declares a bucket name any more; see buckets.go.
-	Database ObjectStorageCredential `json:"database"`
-	State    ObjectStorageCredential `json:"state"`
+	Database   ObjectStorageCredential `json:"database"`
+	State      ObjectStorageCredential `json:"state"`
+	Staging    ObjectStorageCredential `json:"staging"`
+	Production ObjectStorageCredential `json:"production"`
 }
 
 // ObjectStorageCredential is one S3-compatible key pair.
@@ -299,23 +301,33 @@ type ObjectStorageCredential struct {
 	SecretAccessKey string `json:"secret_access_key"`
 }
 
+// credentials is every declared credential, keyed by the bucket it reaches.
+//
+// The one place the struct's fields are listed against bucket keys. CredentialFor
+// and every check over "all the credentials" read this, so a bucket added to
+// the struct is added here once and every check sees it - rather than each
+// check keeping its own list, which is how the AWS-shape check came to read one
+// credential when there were two.
+func (o ObjectStorage) credentials() map[string]ObjectStorageCredential {
+	return map[string]ObjectStorageCredential{
+		"database":   o.Database,
+		"state":      o.State,
+		"staging":    o.Staging,
+		"production": o.Production,
+	}
+}
+
 // CredentialFor returns the credential declared for a bucket.
 //
-// Returns an error rather than a zero value when none is declared, because the
-// two are very different and a zero credential fails much later, inside rclone,
-// as "credentials are empty" naming no bucket. Staging and production have no
-// credential today and are expected to hit this - a caller that can carry on
-// without one says so explicitly rather than reading an empty string as
-// permission.
+// Returns an error rather than a zero value for a bucket with no credential
+// declared, because the two are very different and a zero credential fails
+// much later, inside rclone, as "credentials are empty" naming no bucket.
 func (o ObjectStorage) CredentialFor(bucketKey string) (ObjectStorageCredential, error) {
-	switch bucketKey {
-	case "database":
-		return o.Database, nil
-	case "state":
-		return o.State, nil
-	default:
+	cred, ok := o.credentials()[bucketKey]
+	if !ok {
 		return ObjectStorageCredential{}, fmt.Errorf("no object-storage credential is declared for the %q bucket", bucketKey)
 	}
+	return cred, nil
 }
 
 // Database is the site's own state database. Per-site, because each site
@@ -597,33 +609,38 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	// field. The vault fields sit next
 	// to each other with near-identical names, which is exactly where a paste
 	// goes astray.
-	for _, c := range []struct {
-		field string
-		cred  ObjectStorageCredential
-	}{
-		{"database", site.ObjectStorage.Database},
-		{"state", site.ObjectStorage.State},
-	} {
-		if strings.HasPrefix(c.cred.AccessKeyID, "AKIA") || strings.HasPrefix(c.cred.AccessKeyID, "ASIA") {
-			return nil, fmt.Errorf("sites.%s.object_storage.%s.access_key_id is an AWS credential (AKIA/ASIA prefix) but this site declares %s", name, c.field, site.ObjectStorage.Provider)
+	creds := site.ObjectStorage.credentials()
+	keys := make([]string, 0, len(creds))
+	for k := range creds {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		id := creds[k].AccessKeyID
+		if strings.HasPrefix(id, "AKIA") || strings.HasPrefix(id, "ASIA") {
+			return nil, fmt.Errorf("sites.%s.object_storage.%s.access_key_id is an AWS credential (AKIA/ASIA prefix) but this site declares %s", name, k, site.ObjectStorage.Provider)
 		}
 	}
 
-	// One key in both fields defeats the split entirely.
+	// No key in two fields. Each credential is scoped to one bucket, and the
+	// scoping is the whole of what the split buys: the key living permanently
+	// in a cluster Secret must not reach the state dumps, and a workload's key
+	// must not reach the estate's recovery material. One token pasted into two
+	// fields restores exactly what the split removed, and nothing else would
+	// look wrong - the fields sit side by side with near-identical names.
 	//
-	// The database credential lives permanently in a cluster Secret; the state
-	// credential reaches the age-encrypted dumps that exist to survive that
-	// cluster being lost. Separating them is the whole reason there are two
-	// buckets. Pasting one token into both vault fields restores exactly the
-	// situation the split removed, and nothing else would look wrong - the two
-	// fields sit next to each other with near-identical names, which is
-	// precisely where a paste goes astray.
-	//
-	// Checked on the access key id rather than the secret: it is the half that
-	// identifies the token, and a mismatched pair fails at the vendor anyway.
-	db, st := site.ObjectStorage.Database.AccessKeyID, site.ObjectStorage.State.AccessKeyID
-	if strings.TrimSpace(db) != "" && db == st {
-		return nil, fmt.Errorf("sites.%s.object_storage.database and .state carry the same access_key_id. They are meant to be two tokens scoped to two buckets - one key in both fields means the credential that lives in the cluster can delete the state dumps that exist to survive that cluster being lost", name)
+	// Checked on the access key id: it is what identifies the token, and a
+	// mismatched pair fails at the vendor anyway.
+	keyOwner := map[string]string{}
+	for _, k := range keys {
+		id := strings.TrimSpace(creds[k].AccessKeyID)
+		if id == "" {
+			continue
+		}
+		if other, dup := keyOwner[id]; dup {
+			return nil, fmt.Errorf("sites.%s.object_storage.%s and .%s carry the same access_key_id. Each is meant to be a token scoped to its own bucket - one key in two fields lets the holder of either reach both buckets", name, other, k)
+		}
+		keyOwner[id] = k
 	}
 
 	nodeKeys := make([]string, 0, len(site.Hypervisor.Nodes))
