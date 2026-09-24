@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 139
+floor: 141
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -2121,6 +2121,33 @@ mutations:
       contractor's main.go, the only root-finder that ran in the shipped
       binary, and it went through unnoticed while the ".." copies were caught.
 
+  - guard: TestBackupAndRestoreReachTheStateBackupsThroughOneResolver
+    file: scripts/contractor/internal/phases/restore.go
+    reads_source: true
+    find: "	backups, err := config.StateBackupLocation(cfg, ctx.Site)"
+    replace: "	backups, err := resolveStateBackupsHere(cfg, ctx.Site)"
+    mentions: "does not call config.StateBackupLocation"
+    why: >
+      reads_source, because the guard parses restore.go for its calls rather
+      than running it.
+
+      Restore resolving the location itself - the shape of somebody adding a
+      fallback or a special case for recovery. The deleted guard this replaces
+      caught the same thing by name; for a stretch in between nothing did.
+
+  - guard: TestNothingResolvesTheStateBackupsByHand
+    file: scripts/contractor/internal/phases/teardown.go
+    reads_source: true
+    find: '	database, err := config.BucketByKey("database")'
+    replace: "	_ = config.LatestStateBackupPath(\"x\")\n\tdatabase, err := config.BucketByKey(\"database\")"
+    mentions: "building the route to the state backups itself"
+    why: >
+      reads_source, for the same reason.
+
+      A third reader of the state backups, in a file neither of the two named
+      ones - which is exactly what the guard above cannot see, and why this
+      one walks every Go file.
+
   - guard: TestAFactCrossingAModuleBoundaryIsDeclared
     file: tests/go/harness/scrape.go
     reads_source: true
@@ -2375,6 +2402,14 @@ unprovable:
   # than depending on the package it lives in, so nothing invalidated the
   # cache. Any repo-introspection guard proved by hand needs -count=1, or the
   # proof is of nothing.
+  - path: tests/go/repo/enumeration_root_test.go
+    reason: go-source
+    # It calls repopath.Root from the compiled binary, so no mutation of the
+    # scratch tree reaches the answer it checks. Proved by hand, with -count=1
+    # for the reason recorded above: repopath's walk was edited to answer one
+    # directory too deep, the check failed naming both paths, and the edit was
+    # reverted byte for byte. The logic it protects is also unit-tested in
+    # scripts/details/repopath: TestANestedClaudeMdDoesNotBecomeTheRoot.
   - path: tests/go/repo/toolbelt_test.go
     reason: go-source
   # Same reason: it reads Go source and nothing else, so the ledger cannot

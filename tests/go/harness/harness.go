@@ -179,13 +179,13 @@ func Machines(t *testing.T) int {
 // Every one of those used to be restated in the integration tier. When the
 // state dumps moved to a bucket of their own, the restatement was left behind,
 // and the check that exists to prove backups are healthy reported them broken.
-func StateBackups(t *testing.T) (folder string, env []string) {
+func StateBackups(t *testing.T) config.StateBackups {
 	t.Helper()
 	loc, err := config.StateBackupLocation(LoadConfig(t), Site())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return loc.Folder, loc.Env
+	return loc
 }
 
 // Alerting is where the estate speaks when something goes wrong. Fleet-level,

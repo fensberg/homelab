@@ -239,6 +239,12 @@ func crossModuleLiterals(t *testing.T) map[string][]string {
 	for _, rel := range goFiles(t) {
 		mod := owningModule(rel, modules)
 		if mod == "" {
+			// Not skipped. A Go file no module owns is one this guard cannot
+			// place, and skipping it would be a hole every future file of that
+			// kind walks through - the guard reporting green over code it never
+			// examined.
+			t.Errorf("%s belongs to no Go module, so this guard cannot tell which module "+
+				"its strings cross into. Put it inside one.", rel)
 			continue
 		}
 		for _, lit := range stringLiterals(t, rel) {

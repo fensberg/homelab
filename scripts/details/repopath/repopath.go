@@ -21,10 +21,24 @@ import (
 	"strings"
 )
 
-// Marker is the file that identifies the repository root. The existing checks
-// already treated CLAUDE.md as the sign they had found the right directory, so
-// this keeps the same answer rather than introducing a second one.
-const Marker = "CLAUDE.md"
+// Markers identify the repository root, and ALL of them must be present in the
+// one directory.
+//
+// CLAUDE.md alone is not enough, and the reason is the whole of what this
+// package decides. Claude Code reads CLAUDE.md files in subdirectories too, so
+// one could appear anywhere; the walk stops at the first directory holding the
+// markers, and every guard in tests/go/repo enumerates the repository from the
+// answer. A nested CLAUDE.md on its own would have silently narrowed every one
+// of them to a subtree, and each would have gone on reporting green over the
+// part it could still see.
+//
+// .git is the second marker because it is what "the top of the repository"
+// means: git's own directory lives there and nowhere below it. A file rather
+// than a directory in a worktree, which os.Stat does not mind. A nested .git
+// would be a nested repository, which git treats as its own root, so matching
+// it agrees with git rather than opening a hole. tests/go/repo checks the
+// answer against git's own rev-parse --show-toplevel.
+var Markers = []string{"CLAUDE.md", ".git"}
 
 // Root returns the repository root.
 //
@@ -43,13 +57,13 @@ func Root() (string, error) {
 // rootFrom walks up from dir until it finds Marker.
 func rootFrom(dir string) (string, error) {
 	for {
-		if _, err := os.Stat(filepath.Join(dir, Marker)); err == nil {
+		if hasAll(dir, Markers) {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("walked to the filesystem root without finding " + Marker +
-				" - this is not running from a checkout of the repository")
+			return "", errors.New("walked to the filesystem root without finding " +
+				strings.Join(Markers, " and ") + " together - this is not running from a checkout of the repository")
 		}
 		dir = parent
 	}
@@ -104,4 +118,13 @@ func slugFromRemote(remote string) (string, error) {
 		return "", fmt.Errorf("could not read owner/name out of the origin remote")
 	}
 	return u, nil
+}
+
+func hasAll(dir string, names []string) bool {
+	for _, n := range names {
+		if _, err := os.Stat(filepath.Join(dir, n)); err != nil {
+			return false
+		}
+	}
+	return true
 }

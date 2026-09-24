@@ -10,8 +10,10 @@ import (
 // replaces did not have.
 func TestRootIsFoundFromAnyDepth(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, Marker), nil, 0o600); err != nil {
-		t.Fatal(err)
+	for _, m := range Markers {
+		if err := os.WriteFile(filepath.Join(root, m), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for _, depth := range []string{
 		root,
@@ -36,7 +38,7 @@ func TestRootIsFoundFromAnyDepth(t *testing.T) {
 // happens to be the top of the filesystem.
 func TestRootRefusesWhenThereIsNoMarker(t *testing.T) {
 	if got, err := rootFrom(t.TempDir()); err == nil {
-		t.Errorf("found a root at %s with no %s anywhere above it", got, Marker)
+		t.Errorf("found a root at %s with no markers anywhere above it", got)
 	}
 }
 
@@ -94,5 +96,34 @@ func TestSlugPrefersGitHubRepository(t *testing.T) {
 	got, err := Slug()
 	if err != nil || got != "example/from-env" {
 		t.Errorf("Slug() = %q, %v; want the GITHUB_REPOSITORY value", got, err)
+	}
+}
+
+// A directory holding only some of the markers is not the root, however close
+// to the caller it is. This is the case that would otherwise shrink every guard:
+// a CLAUDE.md added to a subdirectory.
+func TestANestedClaudeMdDoesNotBecomeTheRoot(t *testing.T) {
+	root := t.TempDir()
+	for _, m := range Markers {
+		if err := os.WriteFile(filepath.Join(root, m), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nested := filepath.Join(root, "scripts", "tool")
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scripts", "CLAUDE.md"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := rootFrom(nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != root {
+		t.Errorf("a nested CLAUDE.md made %s the root instead of %s.\n\n"+
+			"Every guard enumerates the repository from this answer, so each would silently "+
+			"check only that subtree and go on reporting green.", got, root)
 	}
 }

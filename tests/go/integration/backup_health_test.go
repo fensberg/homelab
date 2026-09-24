@@ -48,23 +48,23 @@ type r2Object struct {
 	IsDir   bool      `json:"IsDir"`
 }
 
-func listBackups(t *testing.T) (folder string, env []string, objs []r2Object) {
+func listBackups(t *testing.T) (loc config.StateBackups, objs []r2Object) {
 	t.Helper()
-	folder, env = harness.StateBackups(t)
+	loc = harness.StateBackups(t)
 
-	out, err := harness.RunEnv(t, env, "rclone", "lsjson", folder)
+	out, err := harness.RunEnv(t, loc.Env, "rclone", "lsjson", loc.Folder)
 	// rclone's own error, not a theory about it. This message used to add "the
 	// R2 credentials in the vault no longer work, which means backups have been
 	// failing too" - and the first time it fired, neither was true: the test was
 	// reading a config shape that no longer existed.
-	require.NoErrorf(t, err, "listing %s", folder)
+	require.NoErrorf(t, err, "listing %s", loc.Folder)
 
 	require.NoError(t, json.Unmarshal([]byte(out), &objs), "parsing the bucket listing")
-	return folder, env, objs
+	return loc, objs
 }
 
 func TestNewestBackupIsFreshAndWellFormed(t *testing.T) {
-	folder, env, objs := listBackups(t)
+	loc, objs := listBackups(t)
 
 	var latest *r2Object
 	for i := range objs {
@@ -85,8 +85,7 @@ that step failed silently or something deleted the object.`)
 	assert.Greaterf(t, latest.Size, int64(1024),
 		"latest.tfstate.age is only %d bytes, which is too small to be a real encrypted state file", latest.Size)
 
-	head, err := harness.RunEnv(t, env, "rclone", "cat", "--count", "64",
-		folder+"/"+config.LatestStateBackup)
+	head, err := harness.RunEnv(t, loc.Env, "rclone", "cat", "--count", "64", loc.Latest)
 	require.NoError(t, err, "reading the first bytes of the newest backup")
 	assert.Containsf(t, head, ageMagic,
 		"latest.tfstate.age does not start with an age header, so it is not a well-formed encrypted file. Decrypting it to check further is deliberately impossible from here - the identity is offline.")
@@ -96,7 +95,7 @@ that step failed silently or something deleted the object.`)
 // stopped running or is refusing to act - which it does, on purpose, whenever
 // it cannot confirm the new upload landed.
 func TestBackupGenerationsAreBounded(t *testing.T) {
-	_, _, objs := listBackups(t)
+	_, objs := listBackups(t)
 
 	var generations []string
 	for _, o := range objs {

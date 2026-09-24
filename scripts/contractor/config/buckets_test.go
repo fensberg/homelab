@@ -336,3 +336,22 @@ func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
 		}
 	}
 }
+
+// The path every existing backup is stored at, written out rather than rebuilt
+// from the constants that produce it.
+//
+// This test used to live in restore_test.go against backupObjectKey, and when
+// that wrapper went its replacement compared LatestStateBackupPath with a
+// concatenation of the same constants - which passes whatever the constants
+// say. A rename of the folder or the pointer object would have gone through
+// green, and every backup already in the bucket would then sit where Restore
+// no longer looks. A restore that finds nothing reports that there is no
+// backup, at the moment somebody is recovering an estate.
+func TestTheStateBackupPathIsWhereExistingBackupsAre(t *testing.T) {
+	if got, want := LatestStateBackupPath("my-bucket"), "R2:my-bucket/management-cluster/latest.tfstate.age"; got != want {
+		t.Errorf("LatestStateBackupPath = %q, want %q.\n\n"+
+			"Every backup already stored is at the second path. Changing where new ones go "+
+			"strands the old ones where Restore no longer looks - move them in the same change, "+
+			"or keep the path.", got, want)
+	}
+}
