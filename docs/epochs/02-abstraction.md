@@ -202,6 +202,16 @@ to add the site to a file. "Bootstrap a site" is therefore the acceptance test
 for this tier: if adding a site still requires a commit, the abstraction is not
 finished.
 
+**A second acceptance test, and this one is executable.** Every fact has one
+building block, so a change to it reaches every consumer. The class it closes
+was found the hard way: the integration tier kept its own copy of the config
+types, the config changed shape, the copy did not, and the nightly reported
+healthy backups as broken. `tests/go/repo/building_blocks_test.go` holds the
+line - one reader per document, no repository root found by counting
+directories, and every string restated across Go modules declared in
+`tests/building-block-debt.yml`. That list must be empty, or every entry left
+in it justified, before this epoch closes.
+
 ### Adding a hypervisor currently re-deals the control plane
 
 The scenario above - "a client buys a server, racks it, installs Proxmox" - is
