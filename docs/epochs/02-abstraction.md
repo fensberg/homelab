@@ -212,6 +212,52 @@ directories, and every string restated across Go modules declared in
 `tests/building-block-debt.yml`. That list must be empty, or every entry left
 in it justified, before this epoch closes.
 
+**A third acceptance test: a workload leaves by one directory delete and one
+config edit.** Set by the owner on 2026-09-24: removing Valheim should be
+deleting its application directory and removing its entry from the
+environment's config, after which every reference to it - tests, guards,
+vault requirements, delivery automation - is simply gone and everything still
+passes. The same property, read the other way, is what makes adding the
+second workload cheap.
+
+Measured the same day, it is far from true. Outside the epoch records, 29
+files name Valheim and about as many again reach it indirectly (the game
+server's address, Steam's app id, Valve's endpoints). They fall into six
+places the workload has leaked out of its directory:
+
+- **OpenTofu.** `management/cluster/workloads.tf` creates its namespace and
+  both of its Secrets, `variables.tf` reads `workloads.valheim`, and
+  `tunnel.tf` routes the game server's address.
+- **The vault and the config template.** `config/management.tpl.json` requires
+  four `op://homelab/valheim/*` fields, and the contractor generates one of
+  them by a reference written into `secrets.go`.
+- **Flux.** `clusters/management/releases.yaml` and `workloads.yaml` name it
+  (`workloads-production` is Valheim's Kustomization in all but name), the
+  environment's overlay list includes it, and cloudflared routes to it.
+- **Delivery.** `expedite.yml` is Valheim's update automation from end to
+  end (Steam app id, SteamCMD, the pin file), `procurement expedite-check`
+  watches its news feed, `superintendent enforce-standing-order` defaults to
+  its Deployment, `scripts/work-orders.json` orders it, and the suppliers list
+  carries Valve's endpoints for those jobs.
+- **Tests.** Five test files name it, and 26 mutation-ledger entries point at
+  its files - deleting the directory would break the ledger rather than
+  retire its entries.
+- **Scanner configuration.** `.trivyignore.yaml` and `.checkov.yaml` carry
+  exemptions written for it.
+
+What it would take, in outline: a workload declares everything it needs
+inside its own directory - its manifests and image, its tests and ledger
+entries, the secrets it needs and which of them the estate generates, its
+tunnel route, its upstream and how to watch it, its work order - and every
+estate-level mechanism discovers workloads by walking that directory rather
+than naming them. The environment's config lists which workloads it runs and
+which release of each.
+
+Executable form, to be built with the work rather than now: a guard that
+walks every workload directory and fails on any file outside that directory -
+other than the environment's config - that names the workload. It fails
+today, on all of the above; the epoch closes when it passes.
+
 ### Adding a hypervisor currently re-deals the control plane
 
 The scenario above - "a client buys a server, racks it, installs Proxmox" - is

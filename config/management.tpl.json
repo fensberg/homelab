@@ -39,7 +39,8 @@
     "valheim": {
       "name": "{{ op://homelab/valheim/name }}",
       "server_name": "{{ op://homelab/valheim/server_name }}",
-      "password": "{{ op://homelab/valheim/password }}"
+      "password": "{{ op://homelab/valheim/password }}",
+      "backup_key": "{{ op://homelab/valheim/backup_key }}"
     }
   },
 

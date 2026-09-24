@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 154
+floor: 162
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -592,6 +592,69 @@ mutations:
       Without the digest the tag alone decides what production runs, and a
       tag can be moved in the registry with no pull request and nothing in
       git recording it.
+  - guard: TestTheWorldIsRestoredFromTheNewestBackup
+    file: modules/applications/valheim/image/world-restore.sh
+    find: "grep 'Z/$' | sort | tail -n 1"
+    replace: "grep 'Z/$' | sort | head -n 1"
+    mentions: "want the newest backup restored"
+    why: >
+      Restoring the oldest backup instead of the newest silently throws away every day since it.
+
+  - guard: TestAWorldAlreadyOnTheVolumeIsLeftAlone
+    file: modules/applications/valheim/image/world-restore.sh
+    find: "is present, so there is nothing to restore\"\n\texit 0"
+    replace: 'is present, so there is nothing to restore"'
+    mentions: "replaced a world"
+    why: >
+      The volume is the truth. A restore that overwrites a live world with a backup rolls the world back by up to an hour every time the pod restarts.
+
+  - guard: TestANewWorldStartsOnlyWhenThereIsNoBackup
+    file: modules/applications/valheim/image/world-restore.sh
+    find: "so the server will generate a new world\"\n\texit 0"
+    replace: "so the server will generate a new world\"\n\texit 1"
+    mentions: "the restore failed"
+    why: >
+      A brand new estate has no backup, and the server has to be allowed to create its first world.
+
+  - guard: TestTheServerDoesNotStartWhenTheBackupsCannotBeRead
+    file: modules/applications/valheim/image/world-restore.sh
+    find: 'if ! listing="$(rclone lsf --dirs-only world:)"; then'
+    replace: 'if ! listing="$(rclone lsf --dirs-only world: || true)"; then'
+    mentions: "let the server start although"
+    why: >
+      An unreadable bucket read as "no backups" starts a new world beside the real one, and the first backup after it begins rotating the real world out.
+
+  - guard: TestARestoreThatProducesNoWorldStopsThePod
+    file: modules/applications/valheim/image/world-restore.sh
+    find: 'if [ ! -f "$world" ]; then'
+    replace: "if false; then"
+    mentions: "copied nothing"
+    why: >
+      A restore that reports success without producing the world file lets the server generate a fresh world over the one it meant to bring back.
+
+  - guard: TestTheBackupKeepsTheNewestAndRemovesTheRest
+    file: modules/applications/valheim/image/world-backup.sh
+    find: "grep 'Z/$' | sort | head -n"
+    replace: "grep 'Z/$' | sort -r | head -n"
+    mentions: "want the newest two kept"
+    why: >
+      Pruning the newest backups instead of the oldest deletes the backup just taken.
+
+  - guard: TestAFailedBackupIsLoudRatherThanSilent
+    file: modules/applications/valheim/image/world-backup.sh
+    find: '"$worlds" "world:${stamp}"'
+    replace: '"$worlds" "world:${stamp}" || true'
+    mentions: "exited cleanly"
+    why: >
+      A backup that fails and carries on looks healthy forever; the first sign would be the restore that finds nothing recent.
+
+  - guard: TestTheGameServerIsRestoredBeforeItStartsAndBackedUpBesideIt
+    file: modules/applications/valheim/base/deployment.yaml
+    find: "          restartPolicy: Always\n"
+    replace: "          restartPolicy: OnFailure\n"
+    mentions: "no world-backup sidecar"
+    why: >
+      Without restartPolicy: Always the backup is an ordinary init container: it would block the server forever on its loop, and never back anything up beside it.
 
   - guard: TestRunnerPodsAreNotBestEffort
     file: clusters/management/infrastructure/configs/runner-scale-set.yaml

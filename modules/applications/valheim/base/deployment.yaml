@@ -89,6 +89,90 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 
+      # The world's restore and backup, from the same image as the server so
+      # one digest pins all three. Both read the valheim-backup Secret OpenTofu
+      # writes - the production bucket, its own credential, and the key the
+      # backups are encrypted with - and the server container never mounts it.
+      #
+      # Restore runs first and to completion. It puts the newest backup in
+      # place only when the world file is missing, lets the server generate a
+      # new world only when the bucket holds no backup at all, and stops the pod
+      # if the bucket cannot be read - so a rebuilt estate comes back with its
+      # world, and an outage never looks like a new one.
+      #
+      # Backup is a native sidecar (an init container that keeps running): it
+      # starts before the server, is stopped after it, and reads the world
+      # read-only. A failed pass exits and restarts, so the restart count says
+      # so. Scripts: modules/applications/valheim/image/world-*.sh.
+      initContainers:
+        - name: world-restore
+          image: ghcr.io/fensberg/homelab-valheim@sha256:f5181088ab0047438b53c02e583e26af391604f9af174f04cc163a9e7792f0fd
+          command: ["/usr/local/bin/world-restore"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          envFrom:
+            - secretRef:
+                name: valheim-backup
+          env:
+            - name: HOME
+              value: /scratch
+            - name: VALHEIM_WORLD_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: valheim-server
+                  key: world-name
+          volumeMounts:
+            - name: world
+              mountPath: /data
+            - name: scratch
+              mountPath: /scratch
+          # Equal requests and limits, like the server, so the pod stays
+          # Guaranteed and is not the first thing evicted under pressure.
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 256Mi
+              cpu: 100m
+
+        - name: world-backup
+          image: ghcr.io/fensberg/homelab-valheim@sha256:f5181088ab0047438b53c02e583e26af391604f9af174f04cc163a9e7792f0fd
+          command: ["/usr/local/bin/world-backup"]
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          envFrom:
+            - secretRef:
+                name: valheim-backup
+          env:
+            - name: HOME
+              value: /scratch
+            - name: VALHEIM_WORLD_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: valheim-server
+                  key: world-name
+          volumeMounts:
+            - name: world
+              mountPath: /data
+              readOnly: true
+            - name: scratch
+              mountPath: /scratch
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 256Mi
+              cpu: 100m
+
       containers:
         - name: valheim
           # A digest, not a tag, and this is the version of the software -

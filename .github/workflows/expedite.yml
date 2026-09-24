@@ -226,6 +226,12 @@ jobs:
           egress-policy: audit
           disable-sudo-and-containers: "false"
 
+      # The image takes rclone at the version scripts/versions.env pins, as a
+      # build argument - the fabricator passes it automatically, and this
+      # build has to pass it too until expediting stops building (#510).
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
       - name: Ask SteamCMD what the build actually is
         id: build
         run: |
@@ -311,6 +317,7 @@ jobs:
           # true of what is inside.
           docker build \
             --build-arg VALHEIM_BUILDID="$BUILD" \
+            --build-arg RCLONE_DEB_VERSION="$RCLONE_DEB_VERSION" \
             -t "${IMAGE}:steam-${BUILD}" \
             modules/applications/valheim/image
           docker push "${IMAGE}:steam-${BUILD}"

@@ -50,6 +50,15 @@ RUN curl -fsSL -o steamcmd.tar.gz https://media.steampowered.com/client/steamcmd
 	&& tar -xzf steamcmd.tar.gz \
 	&& rm steamcmd.tar.gz
 
+# rclone, for the world's backups, at the version scripts/versions.env pins -
+# the same release artefact the runner image and the workstation take. The
+# fabricator passes every bare ARG from that file; the name is deliberately
+# outside rclone's own RCLONE_ namespace (see versions.env).
+ARG RCLONE_DEB_VERSION
+ARG TARGETARCH=amd64
+RUN curl -fsSL -o /rclone.deb \
+	"https://github.com/rclone/rclone/releases/download/v${RCLONE_DEB_VERSION}/rclone-v${RCLONE_DEB_VERSION}-linux-${TARGETARCH}.deb"
+
 # THE GAME VERSION IS DELIBERATELY NOT PINNED, AND THAT IS NOT AN OVERSIGHT.
 #
 # This estate pins everything, so the exception needs its reason stated where
@@ -246,6 +255,14 @@ RUN set -eu; \
 		exit 1; \
 	fi
 
+# rclone from the fetch stage. Installed here as root, before the image drops
+# to the server's account, and proved to run.
+COPY --from=fetch /rclone.deb /tmp/rclone.deb
+RUN apt-get update \
+	&& apt-get install --no-install-recommends -y /tmp/rclone.deb \
+	&& rm -rf /tmp/rclone.deb /var/lib/apt/lists/* \
+	&& rclone version
+
 RUN mkdir -p /data && chown valheim:valheim /data
 
 # Which Steam build is inside, readable from the registry without pulling the
@@ -279,4 +296,11 @@ VOLUME ["/data"]
 # to be an ABSENT argument. A manifest cannot express that, because Kubernetes
 # expands $(VAR) into exactly one argument and never splits it.
 COPY --chown=root:root entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# The world's backup and restore, run from the same image as the server so one
+# digest pins all three: the backup as a sidecar, the restore as an init
+# container. Root-owned and read-only to the server's account, like everything
+# else it does not need to change.
+COPY --chown=root:root world-backup.sh /usr/local/bin/world-backup
+COPY --chown=root:root world-restore.sh /usr/local/bin/world-restore
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

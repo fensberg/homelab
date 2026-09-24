@@ -97,7 +97,10 @@ locals {
   # the vendor account rather than one estate. See the epoch record, "The
   # object storage account plane is not the site plane".
   object_storage_account = local.config.object_storage
-  site_database          = local.site.database
+  # The account's S3 API address, which every bucket in it shares. One
+  # expression for the database's backups and the world's.
+  object_storage_endpoint = "https://${local.object_storage_account.account_id}.r2.cloudflarestorage.com"
+  site_database           = local.site.database
 
   # --- CI runners ----------------------------------------------------------
   # Fleet plane, like the object storage account: one GitHub App serves the
@@ -537,6 +540,7 @@ locals {
     name        = ""
     server_name = ""
     password    = ""
+    backup_key  = ""
   })
 
   gitops_target_path = "clusters/management"

@@ -190,6 +190,9 @@ type Workload struct {
 	ServerName string `json:"server_name"`
 	// Genuinely secret.
 	Password string `json:"password"`
+	// The key the world's backups are encrypted with. Generated into the
+	// vault by the Render phase (ensureWorldBackupKey), never typed.
+	BackupKey string `json:"backup_key"`
 }
 
 type Site struct {

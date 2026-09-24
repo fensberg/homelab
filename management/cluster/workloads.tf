@@ -88,3 +88,40 @@ resource "kubernetes_secret" "valheim_server" {
     password    = local.valheim.password
   }
 }
+
+# What the world's backups need: the production bucket, a credential scoped to
+# it, and the key they are encrypted with.
+#
+# The backup sidecar and the restore init container in the game server's pod
+# both read this, and nothing else in the pod does - the server itself never
+# mounts it. rclone is configured entirely from the environment: the remote
+# "r2" is the bucket, and the scripts wrap it in an encrypting remote keyed
+# from WORLD_BACKUP_KEY, so the bucket holds ciphertext.
+#
+# The production bucket's own credential, not the estate's: a staging workload
+# holding this cannot reach production's data, and the state and database
+# buckets are out of its reach entirely.
+#
+# No preconditions here, because both failures are already refused earlier: a
+# site without a production credential fails the config's own validation, and
+# the Render phase generates the backup key before anything reads it. Were
+# either to slip through, the restore init container cannot read the bucket
+# and refuses to start the server rather than starting a fresh world.
+resource "kubernetes_secret" "valheim_backup" {
+  metadata {
+    name      = "valheim-backup"
+    namespace = kubernetes_namespace.valheim.metadata[0].name
+  }
+  data = {
+    RCLONE_CONFIG_R2_TYPE              = "s3"
+    RCLONE_CONFIG_R2_PROVIDER          = "Cloudflare"
+    RCLONE_CONFIG_R2_ACCESS_KEY_ID     = local.object_storage.production.access_key_id
+    RCLONE_CONFIG_R2_SECRET_ACCESS_KEY = local.object_storage.production.secret_access_key
+    RCLONE_CONFIG_R2_ENDPOINT          = local.object_storage_endpoint
+    # The token is scoped to one bucket and cannot list or create buckets, so
+    # rclone must not try.
+    RCLONE_CONFIG_R2_NO_CHECK_BUCKET = "true"
+    WORLD_BACKUP_BUCKET              = cloudflare_r2_bucket.production.name
+    WORLD_BACKUP_KEY                 = local.valheim.backup_key
+  }
+}
