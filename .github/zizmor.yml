@@ -37,6 +37,7 @@ rules:
       - clerk.yml
       - deploy-infrastructure.yml
       - expedite.yml
+      - fabricator.yml
       - inspector.yml
       - integration-tests.yml
       - pr-validation.yml

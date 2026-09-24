@@ -523,12 +523,12 @@ depends on it and uses them.
   nothing read from the repository can reach it at runtime, short of a gate job
   every lane waits behind. The copy is mechanical; the suppliers list owns it.
 
-  The two image builds - `workload-images.yml` and `expedite.yml` - fetch from
+  The two image builds - `fabricator.yml` and `expedite.yml` - fetch from
   Valve, whose content servers are a set of hosts it changes, so an allowlist
-  would break on Valve's schedule rather than this estate's. `workload-images.yml`
-  was `audit` with no reason recorded anywhere until the expedite workflow was
-  added beside it - the same undocumented drift the paragraph below describes, found
-  by counting.
+  would break on Valve's schedule rather than this estate's. The fabricator's
+  predecessor, `workload-images.yml`, was `audit` with no reason recorded
+  anywhere until the expedite workflow was added beside it - the same
+  undocumented drift the paragraph below describes, found by counting.
 
   This paragraph used to claim there was exactly one exception, the TruffleHog
   lane, and named the reason: verification works by calling the API of whichever

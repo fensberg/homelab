@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 143
+floor: 147
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -485,6 +485,44 @@ mutations:
     why: >
       The first line of the machinery this refuses is a test naming the
       directory. Caught there, nobody spends hours building the rest.
+
+  - guard: TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile
+    file: scripts/work-orders.json
+    find: '{ "name": "valheim", "context": "modules/applications/valheim/image" }'
+    replace: '{ "name": "valheim", "context": "modules/applications/valheim/img" }'
+    mentions: "has no work order"
+    why: >
+      An order pointing at the wrong directory leaves the real Dockerfile
+      unbuilt. The image looks published until somebody deploys it and finds
+      the digest never moved.
+
+  - guard: TestTheFabricatorReadsEveryWorkOrder
+    file: .github/workflows/fabricator.yml
+    find: 'orders="$(jq -c ''.orders'' scripts/work-orders.json)"'
+    replace: 'orders="$(jq -c ''.orders[:1]'' scripts/work-orders.json)"'
+    mentions: "did not reach the build matrix"
+    why: >
+      A step that hands the matrix fewer orders than the file holds builds
+      some images and silently not others.
+
+  - guard: TestTheFabricatorPassesEveryPinADockerfileAsksFor
+    file: .github/workflows/fabricator.yml
+    find: 'args="${args} --build-arg ${name}=${value}"'
+    replace: 'args="${args}"'
+    mentions: "does not pass it"
+    why: >
+      A pin that never reaches the build leaves the Dockerfile's installer to
+      choose the version - the drift versions.env exists to stop, and the
+      shape of the hand-written list this step replaced.
+
+  - guard: TestTheFabricatorRefusesAnUnpinnedArg
+    file: .github/workflows/fabricator.yml
+    find: 'value="$(printenv "$name" || true)"'
+    replace: 'value="$(printenv "$name" || echo unset)"'
+    mentions: "passed a Dockerfile asking for UNPINNED_VERSION"
+    why: >
+      An ARG nobody pinned has to stop the build. Filled with a placeholder,
+      the image builds with a version string that pins nothing.
 
   - guard: TestRunnerPodsAreNotBestEffort
     file: clusters/management/infrastructure/configs/runner-scale-set.yaml
@@ -1658,7 +1696,7 @@ mutations:
       just had a push refused.
 
   - guard: TestThereIsOnlyOneRetryAndANewOneIsRefused
-    file: .github/workflows/workload-images.yml
+    file: .github/workflows/fabricator.yml
     find: "jobs:"
     replace: "jobs:\n  for attempt in 1 2 3; do\n"
     mentions: "hand-rolls a retry"

@@ -59,14 +59,14 @@ here.`, m[1])
 
 	// 3. The workflow hands the build no secret. `docker login` legitimately
 	//    uses one, so this looks only at the docker build invocation.
-	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "runner-image.yml"))
+	workflow := workflowText(t, fabricatorWorkflow)
 	build, ok := dockerBuildCommand(workflow)
 	if !ok {
-		t.Fatal("could not find the `docker build` invocation in runner-image.yml.\n\nThe publish step was restructured; re-check by hand that no secret is passed to the build, then update this test to the new shape.")
+		t.Fatal("could not find the `docker build` invocation in fabricator.yml.\n\nThe publish step was restructured; re-check by hand that no secret is passed to the build, then update this test to the new shape.")
 	}
 	for _, bad := range []string{"secrets.", "--secret", "GITHUB_TOKEN", "$TOKEN"} {
 		if strings.Contains(build, bad) {
-			t.Errorf(`the docker build invocation in runner-image.yml references %q.
+			t.Errorf(`the docker build invocation in fabricator.yml references %q.
 
 Nothing secret may be passed to this build - the image it produces is public,
 and a build argument survives in the layer metadata. Credentials belong to the

@@ -1,0 +1,172 @@
+name: Fabricator
+# The one workflow that builds what the estate runs.
+#
+# On a construction site, fabrication happens off site: components are made
+# to the drawings in a shop and delivered finished. The fabricator does the
+# same with every image this repository defines. It builds what the drawings
+# say and publishes it, addressed by digest. It decides nothing: it never
+# writes to the repository and never chooses what is installed where. Pinning
+# a product is a release, and releases belong to somebody else.
+#
+# It builds from work orders and nothing else. scripts/work-orders.json says
+# what to build and from which directory, and the fabricator reads it and
+# builds each order - it does not go looking for work, and it does not judge
+# whether an order is complete. That judgement belongs to a guard:
+# tests/go/repo/fabricator_test.go refuses a Dockerfile with no work order,
+# and a work order with no Dockerfile, on the pull request that caused it.
+#
+# It replaces runner-image.yml and workload-images.yml, which were the same
+# job written twice with the version wiring done by hand in one and not at all
+# in the other.
+#
+# GitHub-hosted for now. Moving it onto the estate is #503, and the parked
+# work for that is on the feat/fabricator branch.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/runner-image/**"
+      - "modules/applications/*/image/**"
+      - "scripts/versions.env"
+      - ".github/workflows/fabricator.yml"
+  workflow_dispatch:
+# Read at the top. packages:write is granted on the build job alone, which is
+# the only thing that publishes, so a job added here later does not inherit the
+# registry. Scorecard flags the workflow-level form.
+permissions:
+  contents: read
+concurrency:
+  group: fabricator
+  cancel-in-progress: false
+# GitHub's default shell for `run:` is `bash -e {0}`, which has no pipefail.
+# tests/go/repo/pipefail_test.go asserts this is present on every workflow.
+defaults:
+  run:
+    shell: bash
+jobs:
+  orders:
+    name: Read the work orders
+    runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+    # is what GitHub's default timeout allows.
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      orders: ${{ steps.orders.outputs.orders }}
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Read the work orders
+        id: orders
+        run: |
+          orders="$(jq -c '.orders' scripts/work-orders.json)"
+          echo "orders=${orders}" >> "$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.name): \(.context)"' <<<"$orders" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build ${{ matrix.order.name }}
+    needs: orders
+    runs-on: ubuntu-latest
+    # Longer than most jobs here because a game server's depots are gigabytes,
+    # and the download is the slow part. Bounded so a hung fetch cannot bill
+    # for hours.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # One order failing should not hide another's result.
+      fail-fast: false
+      matrix:
+        order: ${{ fromJSON(needs.orders.outputs.orders) }}
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Audit, not block: the builds reach package archives, release
+          # downloads and Valve's content servers, a set this repository has
+          # never transcribed (approved-suppliers.yml records why).
+          egress-policy: audit
+          disable-sudo-and-containers: "false"
+
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
+      # Every build argument a Dockerfile declares without a default is a
+      # pin, and it is filled from scripts/versions.env - automatically, so no
+      # workflow restates the list. The runner image's list was written out
+      # by hand and a test checked four of its five entries; that shape is
+      # what this replaces.
+      #
+      # A bare ARG that versions.env does not pin fails here, naming it,
+      # rather than building with an empty value - which for a version is
+      # "whatever the installer's default is today".
+      #
+      # tests/go/repo/fabricator_test.go runs this step's script against
+      # every Dockerfile in the repository.
+      - name: Take the pins each Dockerfile asks for
+        id: pins
+        env:
+          CONTEXT: ${{ matrix.order.context }}
+        run: |
+          args=""
+          while IFS= read -r name; do
+            # BuildKit fills these itself from the platform being built for.
+            case "$name" in
+              TARGETPLATFORM | TARGETOS | TARGETARCH | TARGETVARIANT | BUILDPLATFORM | BUILDOS | BUILDARCH | BUILDVARIANT) continue ;;
+            esac
+            value="$(printenv "$name" || true)"
+            if [ -z "$value" ]; then
+              echo "::error file=${CONTEXT}/Dockerfile::ARG ${name} has no default and scripts/versions.env pins no ${name}. Pin it there; the fabricator will pass it."
+              exit 1
+            fi
+            args="${args} --build-arg ${name}=${value}"
+          done < <(sed -n 's/^ARG[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*$/\1/p' "${CONTEXT}/Dockerfile" | sort -u)
+          echo "args=${args# }" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the registry
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+
+      # No secret reaches the build. The images are public, and a build
+      # argument survives in the layer metadata; the registry credential
+      # belongs to the login step above and nowhere else.
+      - name: Build and publish
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}
+          CONTEXT: ${{ matrix.order.context }}
+          PINS: ${{ steps.pins.outputs.args }}
+          SHA: ${{ github.sha }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          # shellcheck disable=SC2086 # PINS is a list of flags by construction
+          docker build $PINS \
+            --label "org.opencontainers.image.revision=${SHA}" \
+            --label "org.opencontainers.image.source=${SOURCE}" \
+            -t "${IMAGE}:${SHA}" \
+            -t "${IMAGE}:latest" \
+            "$CONTEXT"
+          docker push "${IMAGE}:${SHA}"
+          docker push "${IMAGE}:latest"
+          digest="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE}:${SHA}")"
+          {
+            echo "### ${IMAGE##*/}"
+            echo ""
+            echo "Built from \`${CONTEXT}\` at ${SHA}."
+            echo ""
+            echo "\`${digest}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
