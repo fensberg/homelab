@@ -177,7 +177,7 @@ files:
     uncovered: 3
     covered_by: nothing
   - path: contractor/internal/phases/secrets.go
-    uncovered: 5
+    uncovered: 6
     covered_by: nothing
 
   # --- covered_by: not-worth-testing -----------------------------------

@@ -46,7 +46,40 @@ func ensureGeneratedSecrets(ctx *run.Context) error {
 	if err := ensureTunnelSecret(); err != nil {
 		return err
 	}
+	if err := ensureWorldBackupKey(); err != nil {
+		return err
+	}
 	return assertBackupKeypair(ctx)
+}
+
+// WorldBackupKeyRef encrypts the game world's backups. Per workload, like the
+// world it protects.
+const WorldBackupKeyRef = "op://homelab/valheim/backup_key"
+
+// ensureWorldBackupKey generates the key the game server's backups are
+// encrypted with.
+//
+// By this file's rule: management/cluster/workloads.tf writes it into a
+// Secret, so it reaches state, so it is ours to generate. Nobody types it -
+// the backup sidecar encrypts with it and the restore init container
+// decrypts with it, both from that Secret, so a rebuilt estate restores the
+// world with no human in the loop. A backup bucket that leaks without this
+// key yields ciphertext.
+func ensureWorldBackupKey() error {
+	ref, err := onepassword.ParseRef(WorldBackupKeyRef)
+	if err != nil {
+		return err
+	}
+	_, status, err := onepassword.EnsureField(ref, func() (string, error) {
+		return secrets.Password(44)
+	})
+	if err != nil {
+		return fmt.Errorf("world backup key: %w", err)
+	}
+	if status == "generated" {
+		run.Ok("generated a world backup key and stored it in 1Password")
+	}
+	return nil
 }
 
 // TunnelSecretRef is the tunnel's password. Fleet-level, like the tunnel.

@@ -44,10 +44,13 @@ locals {
   # pasting the wrong key into the other field - the vault fields sit next to
   # each other with near-identical names.
   object_storage_keys = [
-    try(local.object_storage.database.access_key_id, ""),
-    try(local.object_storage.state.access_key_id, ""),
+    for bucket in ["database", "state", "staging", "production"] :
+    try(local.object_storage[bucket].access_key_id, "")
   ]
-  looks_like_aws_key = anytrue([for k in local.object_storage_keys : can(regex("^(AKIA|ASIA)", k))])
+  # The same ids with the empty ones dropped, for the check that no two
+  # buckets share a token.
+  object_storage_keys_declared = [for k in local.object_storage_keys : k if trimspace(k) != ""]
+  looks_like_aws_key           = anytrue([for k in local.object_storage_keys : can(regex("^(AKIA|ASIA)", k))])
 }
 
 resource "terraform_data" "invariants" {
@@ -65,15 +68,11 @@ resource "terraform_data" "invariants" {
     }
 
     precondition {
-      # One key in both fields defeats the split entirely. The database
-      # credential lives permanently in a cluster Secret; the state credential
-      # reaches the age-encrypted dumps that exist to survive that cluster
-      # being lost. Separating them is the whole reason there are two buckets.
-      condition = (
-        trimspace(try(local.object_storage.database.access_key_id, "")) == "" ||
-        try(local.object_storage.database.access_key_id, "") != try(local.object_storage.state.access_key_id, "")
-      )
-      error_message = "sites.${var.site}.object_storage.database and .state carry the same access_key_id. They are meant to be two tokens scoped to two buckets - one key in both fields means the credential that lives in the cluster can delete the state dumps that exist to survive that cluster being lost."
+      # No key in two fields. Each credential is scoped to one bucket, and the
+      # scoping is the whole of what the split buys: one token pasted into two
+      # fields lets the holder of either reach both buckets.
+      condition     = length(local.object_storage_keys_declared) == length(distinct(local.object_storage_keys_declared))
+      error_message = "Two buckets under sites.${var.site}.object_storage carry the same access_key_id. Each is meant to be a token scoped to its own bucket - one key in two fields lets the holder of either reach both buckets."
     }
 
     precondition {
