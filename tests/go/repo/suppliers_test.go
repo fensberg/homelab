@@ -258,6 +258,12 @@ func TestChartSourcesAreApproved(t *testing.T) {
 			if strings.Contains(u, "fensberg/homelab") {
 				continue
 			}
+			// And so are its releases: RELEASE_REPOSITORY is derived from this
+			// repository's own configured address (management/cluster/database.tf),
+			// and the fabricator publishes there from this repository's code.
+			if strings.HasPrefix(u, "oci://${RELEASE_REPOSITORY}-") {
+				continue
+			}
 			checked++
 			if !approved[u] {
 				t.Errorf("%s: chart source %q is not an approved supplier.\n"+

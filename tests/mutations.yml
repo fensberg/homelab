@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 153
+floor: 154
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -194,9 +194,9 @@ mutations:
       that converged the estate.
 
   - guard: TestFluxSourcesOnlyNameSecretsThisRepositoryCreates
-    file: clusters/management/infrastructure/configs/flux-production.yaml
-    find: "  # NO secretRef, and that is deliberate rather than an omission."
-    replace: "  secretRef:\n    name: flux-system"
+    file: clusters/management/releases.yaml
+    find: "  url: oci://"
+    replace: "  secretRef:\n    name: flux-system\n  url: oci://"
     mentions: "nothing in this repository creates"
     why: >
       A secretRef naming a secret that does not exist does not degrade to
@@ -204,7 +204,9 @@ mutations:
       never produces an artifact. Downstream that reads as "Source artifact not
       found", which looks like a missing tag, and the layer applying the source
       has wait:true so it blocks on its own GitRepository until the ignition's
-      health gate gives up. One unchecked reference cost a full rebuild.
+      health gate gives up. One unchecked reference cost a full rebuild, on
+      the GitRepository production used to track; the release sources that
+      replaced it are held to the same rule.
 
   - guard: TestPoolMembershipDependsOnTheMachineItPlaces
     file: management/cluster/pools.tf
@@ -580,6 +582,16 @@ mutations:
       The fabricator appends an images: key to the staged overlay. One
       already there makes a duplicate key, which is invalid and surfaces only
       when Flux reconciles the release.
+
+  - guard: TestEveryReleaseIsPinnedByDigest
+    file: clusters/management/releases.yaml
+    find: '    digest: "sha256:'
+    replace: '    # digest: "sha256:'
+    mentions: "is not pinned by digest"
+    why: >
+      Without the digest the tag alone decides what production runs, and a
+      tag can be moved in the registry with no pull request and nothing in
+      git recording it.
 
   - guard: TestRunnerPodsAreNotBestEffort
     file: clusters/management/infrastructure/configs/runner-scale-set.yaml
