@@ -1,8 +1,8 @@
 diff --git a/.github/workflows/expedite.yml b/.github/workflows/expedite.yml
-index 84958fd..07579e7 100644
+index c03cf77..761be12 100644
 --- a/.github/workflows/expedite.yml
 +++ b/.github/workflows/expedite.yml
-@@ -235,6 +235,12 @@ jobs:
+@@ -226,6 +226,12 @@ jobs:
            egress-policy: audit
            disable-sudo-and-containers: "false"
  
@@ -15,7 +15,7 @@ index 84958fd..07579e7 100644
        - name: Ask SteamCMD what the build actually is
          id: build
          run: |
-@@ -320,6 +326,7 @@ jobs:
+@@ -311,6 +317,7 @@ jobs:
            # true of what is inside.
            docker build \
              --build-arg VALHEIM_BUILDID="$BUILD" \
@@ -95,7 +95,7 @@ index 4a46d53..dfc616d 100644
  
  The scenario above - "a client buys a server, racks it, installs Proxmox" - is
 diff --git a/management/cluster/database.tf b/management/cluster/database.tf
-index 55a25e8..80b7c92 100644
+index 2a32745..bcc17ba 100644
 --- a/management/cluster/database.tf
 +++ b/management/cluster/database.tf
 @@ -72,7 +72,7 @@ resource "kubernetes_secret" "cluster_vars" {
@@ -831,22 +831,22 @@ index 0000000..7552cdf
 +	index int
 +}
 diff --git a/tests/mutations.yml b/tests/mutations.yml
-index 640e16e..e765b4e 100644
+index c6f5976..9b5ed17 100644
 --- a/tests/mutations.yml
 +++ b/tests/mutations.yml
 @@ -85,7 +85,7 @@
  # require editing two places, and removing one should always require a visible,
  # reviewable act rather than a quiet deletion. Same shape as
  # tests/coverage-baseline.json, for the same reason.
--floor: 153
-+floor: 161
+-floor: 154
++floor: 162
  
  mutations:
    - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
-@@ -581,6 +581,70 @@ mutations:
-       already there makes a duplicate key, which is invalid and surfaces only
-       when Flux reconciles the release.
- 
+@@ -592,6 +592,69 @@ mutations:
+       Without the digest the tag alone decides what production runs, and a
+       tag can be moved in the registry with no pull request and nothing in
+       git recording it.
 +  - guard: TestTheWorldIsRestoredFromTheNewestBackup
 +    file: modules/applications/valheim/image/world-restore.sh
 +    find: "grep 'Z/$' | sort | tail -n 1"
@@ -910,7 +910,6 @@ index 640e16e..e765b4e 100644
 +    mentions: "no world-backup sidecar"
 +    why: >
 +      Without restartPolicy: Always the backup is an ordinary init container: it would block the server forever on its loop, and never back anything up beside it.
-+
+ 
    - guard: TestRunnerPodsAreNotBestEffort
      file: clusters/management/infrastructure/configs/runner-scale-set.yaml
-     find: "memory: 2Gi"
