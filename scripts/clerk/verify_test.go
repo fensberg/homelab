@@ -1,6 +1,7 @@
 package main
 
 import (
+	"homelab/details/repopath"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,10 +152,16 @@ func TestKeysInsideABlockScalarAreNotCounted(t *testing.T) {
 // it reports a duplicate in a file that has none, it is about to start
 // discarding true findings, and nothing else would say so.
 func TestTheRepositorysOwnWorkflowsHaveNoDuplicateKeys(t *testing.T) {
-	dir := filepath.Join("..", "..", ".github", "workflows")
+	// Found, not counted, and a failure rather than a skip when it is missing.
+	// It skipped: so the day this file moved and "../.." stopped reaching the
+	// repository, the check would have reported nothing and passed.
+	dir, err := repopath.Join(".github", "workflows")
+	if err != nil {
+		t.Fatal(err)
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Skipf("no workflows to read: %v", err)
+		t.Fatalf("reading %s: %v", dir, err)
 	}
 	checked := 0
 	for _, e := range entries {

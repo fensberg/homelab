@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 )
 
@@ -496,8 +496,8 @@ func reportObjectStorageAtRisk(ctx *run.Context) {
 			continue
 		}
 
-		remote := "R2:" + name
-		size, err := run.CmdOutputEnv(ctx.ClusterDir, r2Env(cfg.ObjectStorage, cred), "rclone", "--log-level", "ERROR", "size", remote)
+		remote := config.BucketRemote(name)
+		size, err := run.CmdOutputEnv(ctx.ClusterDir, config.RcloneEnv(cfg.ObjectStorage, cred), "rclone", "--log-level", "ERROR", "size", remote)
 		if err != nil {
 			// Not alarming on its own: a bucket that was never created because
 			// an earlier run failed reads exactly like this.

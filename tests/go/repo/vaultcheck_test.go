@@ -35,7 +35,7 @@ import (
 var vaultCheckFiles = []string{
 	"scripts/contractor/internal/onepassword/probe.go",
 	"scripts/contractor/internal/phases/checkvault.go",
-	"scripts/contractor/internal/config/vaultrefs.go",
+	"scripts/contractor/config/vaultrefs.go",
 }
 
 // Probe's signature is the load-bearing part of the design: one return value,

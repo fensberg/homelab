@@ -1,6 +1,7 @@
 package run
 
 import (
+	"homelab/details/repopath"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,7 +70,10 @@ func TestPendingMovesFindsNothingWhenNothingMoved(t *testing.T) {
 // Counted against a plain search for the keyword, so a `moved` block written in
 // a shape this does not parse fails here rather than being skipped.
 func TestPendingMovesFindsEveryMovedBlockInTheEstate(t *testing.T) {
-	dir := filepath.Join("..", "..", "..", "..", "management", "cluster")
+	dir, err := repopath.Join("management", "cluster")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {

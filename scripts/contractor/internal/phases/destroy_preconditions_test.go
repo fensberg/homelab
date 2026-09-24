@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 )
 
 // TNT is TNT. A teardown either goes off or does not start.

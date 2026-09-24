@@ -421,11 +421,21 @@ var slugInvalid = regexp.MustCompile(`[^A-Za-z0-9]+`)
 // could. A site with no name at all falls back to its key in sites{}, which is
 // unique by construction.
 func SiteSlug(name, key string) string {
-	slug := strings.ToLower(strings.Trim(slugInvalid.ReplaceAllString(name, "-"), "-"))
-	if slug == "" {
-		return key
+	if slug := Slug(name); slug != "" {
+		return slug
 	}
-	return slug
+	return key
+}
+
+// Slug is the transform alone, with no fallback: lowercase, every run of
+// non-alphanumerics collapsed to a hyphen, trimmed.
+//
+// Separate from SiteSlug because not every name that gets slugged is a site's
+// - the forkability check slugs the organization too - and the fallback to a
+// sites{} key only means something for a site. That check used to carry its
+// own copy of this transform, with a comment saying it "mirrors" this one.
+func Slug(s string) string {
+	return strings.ToLower(strings.Trim(slugInvalid.ReplaceAllString(s, "-"), "-"))
 }
 
 // ResolveSiteNetwork re-derives and re-validates a site's network every time
@@ -581,9 +591,10 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	// issues 32 hex characters, so this is positive identification, not a
 	// heuristic.
 	//
-	// EVERY credential, not the first one. There are two now and there will be
-	// four, and a check that reads one of them is a check somebody walks past
-	// by pasting the wrong key into the other field. The vault fields sit next
+	// EVERY credential, not the first one. A site carries one per bucket that
+	// is written to, and the set grows as writers do. A check that reads one of
+	// them is a check somebody walks past by pasting the wrong key into another
+	// field. The vault fields sit next
 	// to each other with near-identical names, which is exactly where a paste
 	// goes astray.
 	for _, c := range []struct {

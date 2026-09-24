@@ -104,8 +104,9 @@ func TestEveryNodeTheConfigAsksForIsReady(t *testing.T) {
 	site := harness.SiteConfig(t)
 
 	nodes := k8s.GetNodes(t, opts)
-	require.Len(t, nodes, site.Machines(),
-		"the cluster has %d node(s); the config asks for %d control plane(s) and %d worker(s)",
+	require.Len(t, nodes, harness.Machines(t),
+		"the cluster has %d node(s); the config asks for %d control plane(s), %d worker(s) and "+
+			"whatever untrusted-zone machines it declares",
 		len(nodes), site.ControlPlaneCount, site.WorkerCount)
 
 	// Polled rather than asserted once: a node can be briefly NotReady

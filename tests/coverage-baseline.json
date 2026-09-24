@@ -67,14 +67,15 @@
     "go/attestation": 34.2,
     "go/clerk": 63.8,
     "go/sweeper": 47.0,
-    "go/contractor": 39.2,
+    "go/contractor": 41.0,
     "go/procurement": 77.3,
     "go/security": 62.0,
     "go/inspector": 75.8,
     "go/superintendent": 72.1,
     "go/signedpush": 40.4,
-    "go/tests-helpers": 50.9,
-    "js": 0
+    "go/tests-helpers": 51.8,
+    "js": 0,
+    "go/details": 75
   },
   "tiers": {
     "unit": 453,

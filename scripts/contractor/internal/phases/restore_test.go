@@ -60,9 +60,3 @@ func TestValidateRestoredState_RejectsStateWithNoResources(t *testing.T) {
 		t.Errorf("the error should say what is wrong, got: %v", err)
 	}
 }
-
-func TestBackupObjectKey_DefaultsToLatest(t *testing.T) {
-	if got := backupObjectKey("my-bucket"); got != "R2:my-bucket/management-cluster/latest.tfstate.age" {
-		t.Errorf("got %q", got)
-	}
-}

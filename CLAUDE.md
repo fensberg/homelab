@@ -584,7 +584,7 @@ full, including one from a fork. integration, api and e2e need a real estate
 and never run on a pull request.
 
 **The config contract is checked, not assumed.** `registry.tf` and
-`internal/config/config.go` implement the same invariants twice, so a bad
+`scripts/contractor/config/config.go` implement the same invariants twice, so a bad
 config is refused whether it arrives through the start button or a bare
 `tofu plan`. `management/cluster/tests/fixtures/manifest.json` is the single
 corpus both sides are run against, and the contract tests fail if a case

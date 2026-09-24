@@ -67,7 +67,7 @@ once it's actually being worked on.
   `environments/`.
 - **Make the two config-contract implementations one implementation.** The
   contract tests added in the test epoch prove `registry.tf` and
-  `internal/config/config.go` agree, which is a real improvement over hoping.
+  `scripts/contractor/config/config.go` agree, which is a real improvement over hoping.
   Proving agreement is still second best to not having two implementations:
   the invariants could live in the OpenTofu alone, with the Go side shelling
   out to a targeted `tofu plan` for its fast pre-flight. That trades

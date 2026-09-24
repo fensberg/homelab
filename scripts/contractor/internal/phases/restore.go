@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/onepassword"
 	"homelab/contractor/internal/run"
 )
@@ -61,20 +61,14 @@ is genuinely stale, move it aside first and decide deliberately:
 	if err != nil {
 		return err
 	}
-	site, ok := cfg.Sites[ctx.Site]
-	if !ok {
-		return fmt.Errorf("unknown site '%s'", ctx.Site)
-	}
-	stateBucket, err := config.BucketByKey("state")
+	// The same call Backup makes, so the two ends of the pipe cannot point at
+	// different buckets. They used to resolve it separately, and a guard read
+	// both files to check they still agreed. A restore pointed at the wrong
+	// bucket finds nothing and reports that there is no backup, at the moment
+	// somebody is trying to recover an estate.
+	backups, err := config.StateBackupLocation(cfg, ctx.Site)
 	if err != nil {
 		return err
-	}
-	cred, err := site.ObjectStorage.CredentialFor(stateBucket.Key)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(cred.AccessKeyID) == "" {
-		return fmt.Errorf("sites.%s.object_storage.state.access_key_id is missing from the rendered config", ctx.Site)
 	}
 
 	for _, tool := range []string{"age", "rclone"} {
@@ -83,24 +77,13 @@ is genuinely stale, move it aside first and decide deliberately:
 		}
 	}
 
-	// The state bucket, matching where Backup writes. These two are the only
-	// ends of one pipe, so they are wrong together or right together - and the
-	// way this breaks is silent in the worst possible direction: a restore
-	// pointed at the old bucket finds nothing and reports that there is no
-	// backup, at the moment somebody is trying to recover an estate.
-	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
-	if err != nil {
-		return err
-	}
-	bucketName := stateBucket.Name(net)
-
-	rcloneEnv := r2Env(cfg.ObjectStorage, cred)
-	key := backupObjectKey(bucketName)
+	rcloneEnv := backups.Env
+	key := backups.Latest
 
 	// Show what else is there before restoring. The timestamped objects are
 	// the only record of which runs produced which state, and an operator
 	// deciding whether "latest" is the one they want needs to see them.
-	listBackups(ctx, rcloneEnv, bucketName)
+	listBackups(ctx, rcloneEnv, backups.Folder)
 
 	run.Info("fetching " + key)
 	cipher, err := run.CmdBytes(ctx.ClusterDir, rcloneEnv, nil, "rclone", "--log-level", "ERROR", "cat", key)
@@ -155,17 +138,8 @@ the estate was torn down, which deletes the bucket and everything in it`, key, e
 	return nil
 }
 
-// backupObjectKey addresses the rolling copy the Backup phase overwrites every
-// run. The timestamped objects beside it are listed for the operator rather
-// than selectable here: for OpenTofu state, older is not a point in time worth
-// rewinding to - it describes fewer resources than exist, which is the one
-// thing more dangerous than no state at all.
-func backupObjectKey(bucket string) string {
-	return "R2:" + bucket + "/management-cluster/latest.tfstate.age"
-}
-
-func listBackups(ctx *run.Context, env []string, bucket string) {
-	out, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "lsl", "R2:"+bucket+"/management-cluster")
+func listBackups(ctx *run.Context, env []string, folder string) {
+	out, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "lsl", folder)
 	if err != nil || strings.TrimSpace(out) == "" {
 		return
 	}

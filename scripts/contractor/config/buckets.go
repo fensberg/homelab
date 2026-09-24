@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Bucket is one of the estate's object-storage buckets.
 //
@@ -151,4 +154,117 @@ func BucketByKey(key string) (Bucket, error) {
 		}
 	}
 	return Bucket{}, fmt.Errorf("no object-storage bucket is declared with the key %q", key)
+}
+
+// Where things live inside object storage, declared once.
+//
+// These were spelled out separately by the Backup phase, the Restore phase,
+// the teardown, the destroy report and the integration tier's backup checks.
+// Backup and restore are the two ends of one pipe, and they only agreed because
+// two people typed the same folder name - a guard then policed that they still
+// did. One declaration removes the thing the guard was watching.
+
+// rcloneRemote is the name RcloneEnv gives the remote. Paths below are written
+// against it, so the two are one fact rather than two strings that must match.
+const rcloneRemote = "R2"
+
+// StateBackupFolder holds the age-encrypted state dumps inside the state
+// bucket. A folder rather than the bucket root because the provider split will
+// give this site two states, each wanting its own.
+const StateBackupFolder = "management-cluster"
+
+// LatestStateBackup is the pointer object, overwritten on every backup and
+// never pruned; the timestamped objects beside it are the history.
+const LatestStateBackup = "latest.tfstate.age"
+
+// BucketRemote is a bucket as rclone addresses it through RcloneEnv.
+func BucketRemote(bucket string) string { return rcloneRemote + ":" + bucket }
+
+// StateBackupPath is the folder holding a bucket's state backups.
+func StateBackupPath(bucket string) string {
+	return BucketRemote(bucket) + "/" + StateBackupFolder
+}
+
+// LatestStateBackupPath is the object a restore reads first.
+func LatestStateBackupPath(bucket string) string {
+	return StateBackupPath(bucket) + "/" + LatestStateBackup
+}
+
+// RcloneEnv configures rclone entirely through environment variables scoped
+// to one process, so no credential is ever written to a config file on disk.
+//
+// Takes one credential rather than a site's whole object-storage block,
+// because there is no longer one credential for everything - passing the block
+// would leave each caller picking a pair out of it, which is the decision this
+// signature takes away from them.
+func RcloneEnv(acct ObjectStorageAccount, cred ObjectStorageCredential) []string {
+	prefix := "RCLONE_CONFIG_" + rcloneRemote + "_"
+	return []string{
+		prefix + "TYPE=s3",
+		prefix + "PROVIDER=Cloudflare",
+		prefix + "ACCESS_KEY_ID=" + cred.AccessKeyID,
+		prefix + "SECRET_ACCESS_KEY=" + cred.SecretAccessKey,
+		prefix + "ENDPOINT=https://" + acct.AccountID + ".r2.cloudflarestorage.com",
+		prefix + "NO_CHECK_BUCKET=true",
+	}
+}
+
+// BucketAPIURL is where the vendor's API answers "does this bucket exist".
+//
+// Declared here because two things build it: the Cluster phase, which adopts a
+// bucket only if this answers 200, and the api tier, which exists to prove the
+// answer is still 200-or-404. A test building its own copy of the URL would be
+// proving something about a request the program does not send.
+func BucketAPIURL(accountID, bucket string) string {
+	return "https://api.cloudflare.com/client/v4/accounts/" + accountID + "/r2/buckets/" + bucket
+}
+
+// StateBackups is where a site's age-encrypted state dumps live, and the
+// rclone environment that reaches them.
+type StateBackups struct {
+	Folder string   // the folder holding every dump, as rclone addresses it
+	Latest string   // the pointer object a restore reads first
+	Env    []string // rclone configured with the state bucket's own credential
+}
+
+// StateBackupLocation resolves StateBackups for a site: the state bucket from
+// Buckets, named for the site, reached with its own credential and no other.
+//
+// The Backup phase, the Restore phase and the integration tier each ran this
+// sequence for themselves - find the bucket, pick its credential, check it is
+// not empty, name it for the site, build the environment. Backup and Restore
+// are the two ends of one pipe, and a guard read both files to check they still
+// agreed. They had already drifted: Backup refused an empty key id or secret,
+// Restore only the key id. One function leaves nothing to agree.
+func StateBackupLocation(cfg *Config, site string) (StateBackups, error) {
+	bucket, err := BucketByKey("state")
+	if err != nil {
+		return StateBackups{}, err
+	}
+	s, ok := cfg.Sites[site]
+	if !ok {
+		return StateBackups{}, fmt.Errorf("unknown site '%s'", site)
+	}
+	cred, err := s.ObjectStorage.CredentialFor(bucket.Key)
+	if err != nil {
+		return StateBackups{}, err
+	}
+	for field, val := range map[string]string{
+		"access_key_id":     cred.AccessKeyID,
+		"secret_access_key": cred.SecretAccessKey,
+	} {
+		if strings.TrimSpace(val) == "" {
+			return StateBackups{}, fmt.Errorf("sites.%s.object_storage.%s.%s is missing from the rendered config", site, bucket.Key, field)
+		}
+	}
+	net, err := ResolveSiteNetwork(cfg, site)
+	if err != nil {
+		return StateBackups{}, err
+	}
+	name := bucket.Name(net)
+	return StateBackups{
+		Folder: StateBackupPath(name),
+		Latest: LatestStateBackupPath(name),
+		Env:    RcloneEnv(cfg.ObjectStorage, cred),
+	}, nil
 }

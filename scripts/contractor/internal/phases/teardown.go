@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 )
 
@@ -194,8 +194,8 @@ func emptyObjectStorage(ctx *run.Context) {
 	}
 
 	bucketName := database.Name(net)
-	env := r2Env(cfg.ObjectStorage, cred)
-	remote := "R2:" + bucketName
+	env := config.RcloneEnv(cfg.ObjectStorage, cred)
+	remote := config.BucketRemote(bucketName)
 
 	// Report before deleting. A bucket that is already empty, or was never
 	// created because the run failed early, is not an error - there is simply
@@ -230,23 +230,4 @@ func emptyObjectStorage(ctx *run.Context) {
 		return
 	}
 	run.Ok("object storage emptied")
-}
-
-// r2Env configures rclone entirely through environment variables scoped to
-// this process, so no credentials are ever written to a config file on disk.
-// Shared by the Backup phase and the teardown: two copies of a credential
-// mapping is two places for a rename to go unnoticed.
-// Takes one credential rather than the site's whole object storage block,
-// because there is no longer one credential for everything - passing the block
-// would mean each call site picking a pair out of it, which is the decision
-// this signature exists to take away from them.
-func r2Env(acct config.ObjectStorageAccount, cred config.ObjectStorageCredential) []string {
-	return []string{
-		"RCLONE_CONFIG_R2_TYPE=s3",
-		"RCLONE_CONFIG_R2_PROVIDER=Cloudflare",
-		"RCLONE_CONFIG_R2_ACCESS_KEY_ID=" + cred.AccessKeyID,
-		"RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=" + cred.SecretAccessKey,
-		"RCLONE_CONFIG_R2_ENDPOINT=https://" + acct.AccountID + ".r2.cloudflarestorage.com",
-		"RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true",
-	}
 }

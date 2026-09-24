@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 )
 

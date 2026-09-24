@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 )
 
@@ -20,31 +20,16 @@ func Backup(ctx *run.Context) error {
 	if err != nil {
 		return err
 	}
-	site, ok := cfg.Sites[ctx.Site]
-	if !ok {
-		return fmt.Errorf("unknown site '%s'", ctx.Site)
-	}
-	store := site.ObjectStorage
 
 	if strings.TrimSpace(cfg.ObjectStorage.AccountID) == "" {
 		return fmt.Errorf("object_storage.account_id is empty in the rendered config")
 	}
 
-	stateBucket, err := config.BucketByKey("state")
+	// Resolved before any work, so a missing credential stops the run rather
+	// than the upload. The same call Restore makes - see StateBackupLocation.
+	backups, err := config.StateBackupLocation(cfg, ctx.Site)
 	if err != nil {
 		return err
-	}
-	cred, err := store.CredentialFor(stateBucket.Key)
-	if err != nil {
-		return err
-	}
-	for field, val := range map[string]string{
-		"access_key_id":     cred.AccessKeyID,
-		"secret_access_key": cred.SecretAccessKey,
-	} {
-		if strings.TrimSpace(val) == "" {
-			return fmt.Errorf("sites.%s.object_storage.state.%s is missing from the rendered config", ctx.Site, field)
-		}
 	}
 	recipient := strings.TrimSpace(cfg.StateBackup.Recipient)
 	if recipient == "" {
@@ -154,25 +139,19 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	// exists to survive that cluster being lost. It also meant demolish
 	// destroyed these, because it empties the bucket it is about to delete
 	// (#94).
-	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
-	if err != nil {
-		return err
-	}
-	bucketName := stateBucket.Name(net)
+	rcloneEnv := backups.Env
 
-	rcloneEnv := r2Env(cfg.ObjectStorage, cred)
-
-	// The prefix survives the move even though the bucket now holds nothing
+	// The folder survives the move even though the bucket now holds nothing
 	// else. The provider split gives this root two states rather than one -
-	// infrastructure and platform - and each wants its own prefix here, so
+	// infrastructure and platform - and each wants its own folder here, so
 	// flattening now would only have to be undone. See 02-abstraction.md.
-	dest := fmt.Sprintf("R2:%s/management-cluster", bucketName)
+	dest := backups.Folder
 	run.Info(fmt.Sprintf("uploading to %s/%s.tfstate.age", dest, stamp))
 	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, fmt.Sprintf("%s/%s.tfstate.age", dest, stamp)); err != nil {
 		return fmt.Errorf("rclone upload (timestamped): %w", err)
 	}
-	run.Info(fmt.Sprintf("updating %s/latest.tfstate.age", dest))
-	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, dest+"/latest.tfstate.age"); err != nil {
+	run.Info("updating " + backups.Latest)
+	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, backups.Latest); err != nil {
 		return fmt.Errorf("rclone upload (latest): %w", err)
 	}
 

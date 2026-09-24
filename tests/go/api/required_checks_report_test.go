@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"homelab/tests/harness"
 )
 
 // A required status check has to be one that can actually report.
@@ -145,7 +147,7 @@ func coversRef(filters []string, ref string) bool {
 
 func readWorkflows(t *testing.T) map[string]workflowFile {
 	t.Helper()
-	dir := filepath.Join("..", "..", "..", ".github", "workflows")
+	dir := filepath.Join(harness.RepoRoot(t), ".github", "workflows")
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err, "reading .github/workflows")
 

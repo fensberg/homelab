@@ -260,3 +260,98 @@ func TestAnUnnamedSiteFallsBackToItsKey(t *testing.T) {
 		t.Errorf("SiteSlug(\"\", \"site7\") = %q, want \"site7\"", got)
 	}
 }
+
+// The paths are written against the remote RcloneEnv defines, so a rename of
+// one cannot leave the other pointing at a remote that does not exist.
+func TestBackupPathsUseTheRemoteRcloneIsGiven(t *testing.T) {
+	env := strings.Join(RcloneEnv(ObjectStorageAccount{AccountID: "acct"}, ObjectStorageCredential{}), "\n")
+	remote := strings.SplitN(BucketRemote("b"), ":", 2)[0]
+	if !strings.Contains(env, "RCLONE_CONFIG_"+remote+"_TYPE=") {
+		t.Errorf("paths address the remote %q, but RcloneEnv configures a different one:\n%s", remote, env)
+	}
+	if got, want := LatestStateBackupPath("b"), BucketRemote("b")+"/"+StateBackupFolder+"/"+LatestStateBackup; got != want {
+		t.Errorf("LatestStateBackupPath = %q, want %q", got, want)
+	}
+}
+
+// Slug is the transform alone; SiteSlug adds the site's fallback. The split
+// exists so the forkability check can slug an organization's name without
+// inheriting a fallback that only means something for a site.
+func TestSlugHasNoFallbackAndSiteSlugDoes(t *testing.T) {
+	if got := Slug("North Street Office"); got != "north-street-office" {
+		t.Errorf("Slug = %q, want north-street-office", got)
+	}
+	if got := Slug("   "); got != "" {
+		t.Errorf("Slug of nothing = %q, want empty - a fallback here would invent a name", got)
+	}
+	if got := SiteSlug("   ", "site3"); got != "site3" {
+		t.Errorf("SiteSlug with no usable name = %q, want the key", got)
+	}
+}
+
+// The Cluster phase adopts a bucket only if this URL answers 200, and the api
+// tier proves the answer is still 200-or-404. Both build it from here; this
+// pins the shape so a change to it is a change somebody reviews.
+func TestBucketAPIURLNamesTheAccountAndTheBucket(t *testing.T) {
+	got := BucketAPIURL("acct", "example-state")
+	if !strings.HasSuffix(got, "/accounts/acct/r2/buckets/example-state") {
+		t.Errorf("BucketAPIURL = %q; it must address the account and then the bucket", got)
+	}
+}
+
+// The state backups are reached with the state credential, in the state
+// bucket, named for the site - and an empty half of the credential is refused
+// on either side, which Backup and Restore did not agree about while each had
+// its own copy.
+func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
+	site := validSite()
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
+
+	loc, err := StateBackupLocation(cfg, "site0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	net, _ := ResolveSiteNetwork(cfg, "site0")
+	if want := StateBackupPath(net.Name + "-state"); loc.Folder != want {
+		t.Errorf("Folder = %q, want %q", loc.Folder, want)
+	}
+	env := strings.Join(loc.Env, "\n")
+	if !strings.Contains(env, site.ObjectStorage.State.AccessKeyID) {
+		t.Error("the environment does not carry the state credential")
+	}
+	if strings.Contains(env, site.ObjectStorage.Database.AccessKeyID) {
+		t.Error("the environment carries the database credential - the key that lives in the cluster must not reach the state dumps")
+	}
+
+	for _, half := range []string{"key id", "secret"} {
+		broken := validSite()
+		if half == "key id" {
+			broken.ObjectStorage.State.AccessKeyID = ""
+		} else {
+			broken.ObjectStorage.State.SecretAccessKey = ""
+		}
+		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": broken}}
+		if _, err := StateBackupLocation(cfg, "site0"); err == nil {
+			t.Errorf("an empty state %s was accepted", half)
+		}
+	}
+}
+
+// The path every existing backup is stored at, written out rather than rebuilt
+// from the constants that produce it.
+//
+// This test used to live in restore_test.go against backupObjectKey, and when
+// that wrapper went its replacement compared LatestStateBackupPath with a
+// concatenation of the same constants - which passes whatever the constants
+// say. A rename of the folder or the pointer object would have gone through
+// green, and every backup already in the bucket would then sit where Restore
+// no longer looks. A restore that finds nothing reports that there is no
+// backup, at the moment somebody is recovering an estate.
+func TestTheStateBackupPathIsWhereExistingBackupsAre(t *testing.T) {
+	if got, want := LatestStateBackupPath("my-bucket"), "R2:my-bucket/management-cluster/latest.tfstate.age"; got != want {
+		t.Errorf("LatestStateBackupPath = %q, want %q.\n\n"+
+			"Every backup already stored is at the second path. Changing where new ones go "+
+			"strands the old ones where Restore no longer looks - move them in the same change, "+
+			"or keep the path.", got, want)
+	}
+}

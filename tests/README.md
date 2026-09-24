@@ -64,24 +64,34 @@ tests/coverage-baseline.json           the coverage floor
 
 **Go unit tests sit beside the code they test.** That is the Go convention, it
 keeps a test from outliving its subject, and it is why `config_test.go` is in
-`internal/config/` rather than here.
+`scripts/contractor/config/` rather than here.
 
-**The contract tests are in `scripts/contractor` for a reason Go forces.**
-`internal/` is a per-module rule, so nothing outside `homelab/contractor` can
-import `homelab/contractor/internal/config` - including this module. The contract
-tests need that package, so they live there. They shell out to nothing and
-read the OpenTofu source as text.
+**`tests/go` is a separate Go module on purpose, and the protection runs one
+way.** `scripts/contractor` has zero external dependencies, and that is
+load-bearing: it is why the Validate lane needs no `go.sum` cache, why Trivy's
+`gomod` scan of the shipped binary has nothing to find, and why Dependabot
+never opens a pull request against the one program that can destroy
+infrastructure. Terratest brings roughly 280 transitive modules. They stay
+over here.
 
-**`tests/go` is a separate Go module on purpose.** `scripts/contractor` has zero
-external dependencies, and that is load-bearing: it is why the Validate lane
-needs no `go.sum` cache, why Trivy's `gomod` scan of the shipped binary has
-nothing to find, and why Dependabot never opens a pull request against the one
-program that can destroy infrastructure. Terratest brings roughly 280
-transitive modules. They stay over here.
+But a requirement is recorded in the _requirer's_ `go.mod`, so this module
+depending on the contractor costs the contractor nothing. These tiers import
+the contractor's public packages - `config` and `repopath` - through a local
+`replace`, and read the rendered config with the program's own reader.
+
+**They used to keep a copy instead**, because everything shared sat under
+`internal/`, which Go forbids another module to import. The copy was defended
+as an independent reader that would catch a misreading. It caught none. When
+the object-storage block changed shape the program's reader was updated and
+the copy was not, Go filled the missing fields with empty strings, and the
+nightly reported healthy backups as broken. The copy also counted machines
+without the untrusted-zone class, so it would have failed a healthy cluster
+the first time a zone was declared. **Import the building block; do not
+restate it.** The guard that holds this line is in `tests/go/repo`.
 
 ## The config contract
 
-`management/cluster/registry.tf` and `scripts/contractor/internal/config/config.go`
+`management/cluster/registry.tf` and `scripts/contractor/config/config.go`
 implement the same rules twice - octet bounds, vendor attestation, node
 counts - so that a bad config is refused whether it arrives through the start
 button or through a bare `tofu plan`. Defence in depth is only defence while
@@ -215,11 +225,11 @@ the "test the detector" rule above.
 
 Three places, and the distinction is what each one can see:
 
-| Rule about                      | Lives in                                              |
-| ------------------------------- | ----------------------------------------------------- |
-| The repository's own files      | `tests/go/repo/`                                      |
-| Two implementations of one rule | `scripts/contractor/internal/config/contract_test.go` |
-| A config that must be refused   | `management/cluster/registry.tf` (preconditions)      |
+| Rule about                      | Lives in                                         |
+| ------------------------------- | ------------------------------------------------ |
+| The repository's own files      | `tests/go/repo/`                                 |
+| Two implementations of one rule | `scripts/contractor/config/contract_test.go`     |
+| A config that must be refused   | `management/cluster/registry.tf` (preconditions) |
 
 `tests/go/repo` is the one to reach for when the rule is "the source must never
 do X" — it reads the source as text, so it can assert things no compiler or

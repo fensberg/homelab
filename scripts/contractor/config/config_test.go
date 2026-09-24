@@ -163,8 +163,9 @@ func TestResolveSiteNetwork_MissingVaultProvider(t *testing.T) {
 
 // Both credentials are checked, not just the first.
 //
-// There are two now and there will be four, and a check that reads one of them
-// is a check somebody walks past by pasting the wrong key into the other field.
+// A site holds one credential per bucket that something writes to, and a
+// check that reads only one of them is a check somebody walks past by pasting
+// the wrong key into another field.
 func TestResolveSiteNetwork_AWSShapedAccessKeyOnNonAWSProvider(t *testing.T) {
 	for _, prefix := range []string{"AKIA", "ASIA"} {
 		for _, field := range []string{"database", "state"} {

@@ -1,6 +1,7 @@
 package phases
 
 import (
+	"homelab/details/repopath"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,11 +34,10 @@ func TestTemporaryKubeconfigIsNotWrittenIntoTheRepository(t *testing.T) {
 	defer os.Remove(f.Name())
 	f.Close()
 
-	wd, err := os.Getwd()
+	root, err := repopath.Root()
 	if err != nil {
-		t.Fatalf("getwd: %v", err)
+		t.Fatal(err)
 	}
-	root := filepath.Clean(filepath.Join(wd, "..", "..", "..", ".."))
 	if strings.HasPrefix(filepath.Clean(f.Name()), root+string(os.PathSeparator)) {
 		t.Errorf("the temporary kubeconfig landed inside the repository at %s.\n\nA credential in the working tree is one a later `git add -A` can commit.", f.Name())
 	}

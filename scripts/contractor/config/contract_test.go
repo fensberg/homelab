@@ -2,9 +2,9 @@ package config
 
 import (
 	"encoding/json"
+	"homelab/details/repopath"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -38,14 +38,9 @@ import (
 // so the path holds regardless of where `go test` was invoked from.
 func repoRoot(t *testing.T) string {
 	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("could not determine this source file's location")
-	}
-	// <root>/scripts/contractor/internal/config/contract_test.go
-	root := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "..", ".."))
-	if _, err := os.Stat(filepath.Join(root, "CLAUDE.md")); err != nil {
-		t.Fatalf("computed repo root %s does not look like the repository: %v", root, err)
+	root, err := repopath.Root()
+	if err != nil {
+		t.Fatal(err)
 	}
 	return root
 }

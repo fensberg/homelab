@@ -39,19 +39,3 @@ func TestStateIsReadablePassesWhenTheKeyIsPresent(t *testing.T) {
 		t.Errorf("refused a run that has the encryption config: %v", err)
 	}
 }
-
-// Machines is what "how many nodes" means, and it is the number two separate
-// gates got wrong by reaching for ControlPlaneCount instead.
-func TestMachinesCountsEveryClass(t *testing.T) {
-	s := Site_{ControlPlaneCount: 3, WorkerCount: 2}
-	if got := s.Machines(); got != 5 {
-		t.Errorf("Machines() = %d, want 5", got)
-	}
-
-	// A config predating workers is still a valid config, and describes an
-	// estate of control planes alone.
-	none := Site_{ControlPlaneCount: 3}
-	if got := none.Machines(); got != 3 {
-		t.Errorf("Machines() = %d with no workers, want 3", got)
-	}
-}

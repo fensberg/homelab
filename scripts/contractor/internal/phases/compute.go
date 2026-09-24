@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/onepassword"
 	"homelab/contractor/internal/run"
 )

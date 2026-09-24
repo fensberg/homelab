@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 128
+floor: 141
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -936,26 +936,6 @@ mutations:
       bucket named from the estate-wide config field is a bucket two sites
       would share - and what they would share is one site's production workload
       data with another's.
-
-  - guard: TestBackupAndRestoreUseTheSameBucket
-    file: scripts/contractor/internal/phases/restore.go
-    reads_source: true
-    find: 'stateBucket, err := config.BucketByKey("state")'
-    replace: 'stateBucket, err := config.BucketByKey("database")'
-    mentions: "does not resolve its bucket"
-    why: >
-      reads_source, because this guard opens restore.go and inspects its text
-      rather than executing it - which bucket a phase resolves is visible in the
-      source, and the scratch copy is the file it reads.
-
-      Pointing restore at the database bucket, which is where these dumps used
-      to live. Somebody reading an older runbook, or recovering an estate built
-      before the split, writes exactly this.
-
-      It fails in the worst place: a restore finds no backup and says so, while
-      an operator is trying to rebuild an estate. The bucket it is reading is
-      real and reachable, so nothing looks broken - it just appears that no
-      backup was ever taken.
 
   - guard: TestTheTeardownResolvesTheBucketItEmptiesFromTheTable
     file: scripts/contractor/internal/phases/teardown.go
@@ -2097,6 +2077,92 @@ mutations:
       with a terminal. The answer is a test that dials the port; this is what
       stops that test silently covering less than talos.tf declares.
 
+  - guard: TestTheConfigDocumentHasOneReader
+    file: tests/go/harness/scrape.go
+    reads_source: true
+    find: '	if answer.Status != "success" {'
+    replace: "	var _ struct {\n\t\tSites map[string]any `json:\"sites\"`\n\t}\n\tif answer.Status != \"success\" {"
+    mentions: "second reader of the rendered config"
+    why: >
+      reads_source, because the guard parses Go files for their struct tags
+      rather than running them.
+
+      A struct carrying the config's own top-level key, in a module that is not
+      the config package. This is exactly what the harness used to hold, and
+      the shape a new tier writes when it wants "just the one field" and
+      declares a small struct for it instead of importing the reader.
+
+  - guard: TestNothingFindsTheRepositoryByCountingDirectories
+    file: tests/go/harness/scrape.go
+    reads_source: true
+    find: "	sort.Strings(failures)"
+    replace: "	_ = []string{\"..\", \"..\"}\n\tsort.Strings(failures)"
+    mentions: "fixed-depth climb"
+    why: >
+      reads_source, because the guard tokenizes Go source rather than running
+      it.
+
+      Two ".." literals in a row, which is the shape filepath.Join("..", "..",
+      ...) takes. Eight copies of that answer existed, each right until the
+      file holding it moved; the move that proved it broke four tests at once.
+
+  - guard: TestNothingFindsTheRepositoryByCountingDirectories
+    file: tests/go/harness/scrape.go
+    reads_source: true
+    find: "	return failures, total, nil"
+    replace: "	_ = filepath.Dir(filepath.Dir(\"x\"))\n\treturn failures, total, nil"
+    mentions: "fixed-depth climb"
+    why: >
+      reads_source, because the guard tokenizes Go source rather than running
+      it.
+
+      The second spelling of the same climb - nested filepath.Dir - which the
+      guard's first version could not see. The one copy of it was in the
+      contractor's main.go, the only root-finder that ran in the shipped
+      binary, and it went through unnoticed while the ".." copies were caught.
+
+  - guard: TestBackupAndRestoreReachTheStateBackupsThroughOneResolver
+    file: scripts/contractor/internal/phases/restore.go
+    reads_source: true
+    find: "	backups, err := config.StateBackupLocation(cfg, ctx.Site)"
+    replace: "	backups, err := resolveStateBackupsHere(cfg, ctx.Site)"
+    mentions: "does not call config.StateBackupLocation"
+    why: >
+      reads_source, because the guard parses restore.go for its calls rather
+      than running it.
+
+      Restore resolving the location itself - the shape of somebody adding a
+      fallback or a special case for recovery. The deleted guard this replaces
+      caught the same thing by name; for a stretch in between nothing did.
+
+  - guard: TestNothingResolvesTheStateBackupsByHand
+    file: scripts/contractor/internal/phases/teardown.go
+    reads_source: true
+    find: '	database, err := config.BucketByKey("database")'
+    replace: "	_ = config.LatestStateBackupPath(\"x\")\n\tdatabase, err := config.BucketByKey(\"database\")"
+    mentions: "building the route to the state backups itself"
+    why: >
+      reads_source, for the same reason.
+
+      A third reader of the state backups, in a file neither of the two named
+      ones - which is exactly what the guard above cannot see, and why this
+      one walks every Go file.
+
+  - guard: TestAFactCrossingAModuleBoundaryIsDeclared
+    file: tests/go/harness/scrape.go
+    reads_source: true
+    find: "	sort.Strings(failures)"
+    replace: "	_ = \"management-cluster\"\n\tsort.Strings(failures)"
+    mentions: "new instance(s) of a string restated"
+    why: >
+      reads_source, for the same reason as the two entries above.
+
+      The state-backup folder name, restated in the test module after it was
+      given one home in homelab/contractor/config. That is precisely the
+      regression this guard exists for: the integration tier spelled this
+      folder out for itself, and when the backups moved it went on looking in
+      the old place.
+
 owed_ceiling: 54
 
 unprovable:
@@ -2336,6 +2402,14 @@ unprovable:
   # than depending on the package it lives in, so nothing invalidated the
   # cache. Any repo-introspection guard proved by hand needs -count=1, or the
   # proof is of nothing.
+  - path: tests/go/repo/enumeration_root_test.go
+    reason: go-source
+    # It calls repopath.Root from the compiled binary, so no mutation of the
+    # scratch tree reaches the answer it checks. Proved by hand, with -count=1
+    # for the reason recorded above: repopath's walk was edited to answer one
+    # directory too deep, the check failed naming both paths, and the edit was
+    # reverted byte for byte. The logic it protects is also unit-tested in
+    # scripts/details/repopath: TestANestedClaudeMdDoesNotBecomeTheRoot.
   - path: tests/go/repo/toolbelt_test.go
     reason: go-source
   # Same reason: it reads Go source and nothing else, so the ledger cannot

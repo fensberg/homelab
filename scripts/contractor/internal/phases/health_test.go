@@ -1,12 +1,12 @@
 package phases
 
 import (
+	"homelab/details/repopath"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 )
 
@@ -142,12 +142,10 @@ func TestDatabaseShortfall_NoClusterIsAnError(t *testing.T) {
 // Driven from the corpus's own valid fixture rather than a config written
 // here, so the numbers this asserts are the numbers a real plan uses.
 func TestExpectedNodeCountCountsEveryMachineClass(t *testing.T) {
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("could not determine this source file's location")
+	root, err := repopath.Root()
+	if err != nil {
+		t.Fatal(err)
 	}
-	// <root>/scripts/contractor/internal/phases/health_test.go
-	root := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "..", ".."))
 	fixture := filepath.Join(root, "management", "cluster", "tests", "fixtures", "valid.json")
 
 	cfg, err := config.LoadRendered(fixture)

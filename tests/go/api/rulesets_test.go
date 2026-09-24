@@ -4,6 +4,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"homelab/details/repopath"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -33,7 +34,19 @@ import (
 // batch that has already been merged.
 //
 //	go test -tags=api ./api/...
-const repo = "fensberg/homelab"
+
+// repoSlug is the repository this check inspects - read from the environment
+// or the origin remote, never written down. It was a constant naming this
+// estate, so a fork running the api tier would have inspected the rulesets of
+// the repository it was copied from and reported on those instead of its own.
+func repoSlug(t *testing.T) string {
+	t.Helper()
+	s, err := repopath.Slug()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
 
 type ruleset struct {
 	ID   int64  `json:"id"`
@@ -135,14 +148,14 @@ func TestOnlyMainRequiresBranchesToBeUpToDate(t *testing.T) {
 func allRulesets(t *testing.T) []ruleset {
 	t.Helper()
 	var out []ruleset
-	require.NoError(t, json.Unmarshal(ghAPI(t, "repos/"+repo+"/rulesets"), &out))
+	require.NoError(t, json.Unmarshal(ghAPI(t, "repos/"+repoSlug(t)+"/rulesets"), &out))
 	return out
 }
 
 func detail(t *testing.T, id int64) rulesetDetail {
 	t.Helper()
 	var d rulesetDetail
-	require.NoError(t, json.Unmarshal(ghAPI(t, "repos/"+repo+"/rulesets/"+itoa(id)), &d))
+	require.NoError(t, json.Unmarshal(ghAPI(t, "repos/"+repoSlug(t)+"/rulesets/"+itoa(id)), &d))
 	return d
 }
 
