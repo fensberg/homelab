@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 147
+floor: 153
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -488,8 +488,8 @@ mutations:
 
   - guard: TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile
     file: scripts/work-orders.json
-    find: '{ "name": "valheim", "context": "modules/applications/valheim/image" }'
-    replace: '{ "name": "valheim", "context": "modules/applications/valheim/img" }'
+    find: '"context": "modules/applications/valheim/image"'
+    replace: '"context": "modules/applications/valheim/img"'
     mentions: "has no work order"
     why: >
       An order pointing at the wrong directory leaves the real Dockerfile
@@ -523,6 +523,63 @@ mutations:
     why: >
       An ARG nobody pinned has to stop the build. Filled with a placeholder,
       the image builds with a version string that pins nothing.
+
+  - guard: TestTheReleaseIsNamedForTheVersionTheServerReports
+    file: scripts/work-orders.json
+    find: "Valheim version: [a-z]*"
+    replace: "Valheim release: [a-z]*"
+    mentions: "the version step failed"
+    why: >
+      A pattern that stops matching the server's own line leaves every build
+      without a version. This entry breaks the pattern the way an edit would,
+      and the step run as shipped has to notice.
+
+  - guard: TestAReleaseIsRefusedWhenTheVersionCannotBeRead
+    file: .github/workflows/fabricator.yml
+    find: "echo \"::error::the built image never printed a line matching the order's version pattern, so there is no version to release it as\"\n            exit 1"
+    replace: "version=unknown"
+    mentions: "named a version"
+    why: >
+      Releasing under a placeholder when the version could not be read puts
+      a release in production that names no real version.
+
+  - guard: TestTheReleaseCounterFollowsTheRegistry
+    file: .github/workflows/fabricator.yml
+    find: 'echo "tag=${VERSION}-$((n + 1))"'
+    replace: 'echo "tag=${VERSION}-1"'
+    mentions: 'want "tag=1.0.15-4'
+    why: >
+      A counter that restarts at 1 republishes a tag that already exists, and
+      the release a pin names changes under it.
+
+  - guard: TestTheReleaseCounterRefusesARegistryItCannotRead
+    file: .github/workflows/fabricator.yml
+    find: 'elif ! grep -q "HTTP 404" <<<"$listed"; then'
+    replace: "elif false; then"
+    mentions: "numbered a release from a registry it could not read"
+    why: >
+      Treating every registry error as "no releases yet" numbers from 1
+      whenever the registry hiccups, and overwrites a real release.
+
+  - guard: TestTheReleaseCarriesTheOverlayWithTheNewDigest
+    file: .github/workflows/fabricator.yml
+    find: '>> "${stage}/${overlay}/kustomization.yaml"'
+    replace: "> /dev/null"
+    mentions: "does not pin the image just built"
+    why: >
+      Without the digest pin the release runs whatever image the manifests in
+      git name, which is not the image this build made - the release and its
+      contents would disagree.
+
+  - guard: TestEveryReleaseOrderIsOneTheFabricatorCanFollow
+    file: environments/production/applications/valheim/kustomization.yaml
+    find: "  - service.yaml\n"
+    replace: "  - service.yaml\nimages:\n  - name: example\n"
+    mentions: "already has an images: key"
+    why: >
+      The fabricator appends an images: key to the staged overlay. One
+      already there makes a duplicate key, which is invalid and surfaces only
+      when Flux reconciles the release.
 
   - guard: TestRunnerPodsAreNotBestEffort
     file: clusters/management/infrastructure/configs/runner-scale-set.yaml

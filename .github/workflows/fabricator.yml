@@ -26,8 +26,10 @@ on:
     branches: [main]
     paths:
       - ".github/runner-image/**"
-      - "modules/applications/*/image/**"
+      - "modules/applications/**"
+      - "environments/production/applications/**"
       - "scripts/versions.env"
+      - "scripts/work-orders.json"
       - ".github/workflows/fabricator.yml"
   workflow_dispatch:
 # Read at the top. packages:write is granted on the build job alone, which is
@@ -146,6 +148,7 @@ jobs:
       # argument survives in the layer metadata; the registry credential
       # belongs to the login step above and nowhere else.
       - name: Build and publish
+        id: build
         env:
           IMAGE: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}
           CONTEXT: ${{ matrix.order.context }}
@@ -169,4 +172,128 @@ jobs:
             echo "Built from \`${CONTEXT}\` at ${SHA}."
             echo ""
             echo "\`${digest}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "digest=${digest#*@}" >> "$GITHUB_OUTPUT"
+
+      # --- A release, for an order that asks for one -------------------------
+      #
+      # What production runs is a release: the production overlay and the
+      # module it builds on, with the image just built pinned by digest,
+      # published as one OCI artifact. Its tag is the version the built thing
+      # reports, plus a counter for rebuilds of the same version.
+      #
+      # Everything specific to the workload - which overlay, how to start the
+      # image, what the version line looks like - comes from the order.
+      # tests/go/repo/fabricator_test.go runs each of these steps as shipped.
+
+      - name: Take delivery of the Flux CLI
+        if: matrix.order.release
+        run: scripts/take-delivery.sh flux
+
+      # Started once, with the environment the order gives it, and read from
+      # its own log. A build whose version cannot be read fails rather than
+      # guessing one: a release named for the wrong version is worse than no
+      # release.
+      - name: Read the version the build carries
+        id: version
+        if: matrix.order.release
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          RELEASE: ${{ toJSON(matrix.order.release) }}
+        run: |
+          pattern="$(jq -r '.version.pattern' <<<"$RELEASE")"
+          envs=()
+          while IFS= read -r kv; do
+            envs+=(-e "$kv")
+          done < <(jq -r '.version.env | to_entries[] | "\(.key)=\(.value)"' <<<"$RELEASE")
+          docker run -d --name version-probe "${envs[@]}" "${IMAGE}@${DIGEST}" >/dev/null
+          version=""
+          for _ in $(seq 1 "${PROBE_ATTEMPTS:-60}"); do
+            found="$(docker logs version-probe 2>&1 | sed -n "s/.*${pattern}.*/\1/p")"
+            version="${found%%$'\n'*}"
+            [ -n "$version" ] && break
+            sleep "${PROBE_INTERVAL:-5}"
+          done
+          docker rm -f version-probe >/dev/null
+          if [ -z "$version" ]; then
+            echo "::error::the built image never printed a line matching the order's version pattern, so there is no version to release it as"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      # The next counter for this version, from the tags the registry already
+      # holds. None yet - the package does not exist - is the first release.
+      - name: Number the release
+        id: number
+        if: matrix.order.release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: ${{ github.event.repository.name }}-${{ matrix.order.name }}-release
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          case "$(gh api "users/${OWNER}" --jq .type)" in
+            Organization) base="orgs/${OWNER}" ;;
+            User) base="users/${OWNER}" ;;
+            *)
+              echo "::error::could not tell whether ${OWNER} is an organization or a user"
+              exit 1
+              ;;
+          esac
+          tags=""
+          if listed="$(gh api --paginate "${base}/packages/container/${PACKAGE}/versions" --jq '.[].metadata.container.tags[]' 2>&1)"; then
+            tags="$listed"
+          elif ! grep -q "HTTP 404" <<<"$listed"; then
+            echo "::error::could not list the release tags of ${PACKAGE}: ${listed}"
+            exit 1
+          fi
+          n=0
+          while IFS= read -r tag; do
+            case "$tag" in
+              "${VERSION}"-*)
+                m="${tag#"${VERSION}"-}"
+                if [[ "$m" =~ ^[0-9]+$ ]] && [ "$m" -gt "$n" ]; then
+                  n="$m"
+                fi
+                ;;
+            esac
+          done <<<"$tags"
+          echo "tag=${VERSION}-$((n + 1))" >> "$GITHUB_OUTPUT"
+
+      - name: Stage and publish the release
+        id: release
+        if: matrix.order.release
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          ARTIFACT: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}-release
+          TAG: ${{ steps.number.outputs.tag }}
+          RELEASE: ${{ toJSON(matrix.order.release) }}
+          SHA: ${{ github.sha }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          overlay="$(jq -r '.overlay' <<<"$RELEASE")"
+          module="$(jq -r '.module' <<<"$RELEASE")"
+          stage="${RUNNER_TEMP}/release"
+          rm -rf "$stage"
+          for dir in "$module" "$overlay"; do
+            mkdir -p "${stage}/$(dirname "$dir")"
+            cp -R "$dir" "${stage}/${dir}"
+          done
+          # The image this release runs, pinned by digest over whatever the
+          # manifests in git name.
+          printf '%s\n' "images:" "  - name: ${IMAGE}" "    digest: ${DIGEST}" >> "${stage}/${overlay}/kustomization.yaml"
+          flux push artifact "oci://${ARTIFACT}:${TAG}" \
+            --path="$stage" \
+            --source="$SOURCE" \
+            --revision="${TAG}@sha1:${SHA}" \
+            --annotations="org.opencontainers.image.base.name=${IMAGE}@${DIGEST}" \
+            --reproducible \
+            --output=json > "${RUNNER_TEMP}/pushed.json"
+          pushed="$(jq -r '.digest' "${RUNNER_TEMP}/pushed.json")"
+          echo "digest=${pushed}" >> "$GITHUB_OUTPUT"
+          {
+            echo ""
+            echo "Released as \`${ARTIFACT}:${TAG}\` (\`${pushed}\`), from \`${overlay}\`."
           } >> "$GITHUB_STEP_SUMMARY"
