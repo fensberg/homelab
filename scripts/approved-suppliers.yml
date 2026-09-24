@@ -1086,6 +1086,17 @@ tools:
       decision, knowing the cost - when OpenTofu edits the script,
       take-delivery.sh refuses it until somebody orders again. The version
       beside it is the OpenTofu the script is told to install.
+  - source: fluxcd/flux2
+    version: FLUX_VERSION
+    fetch: https://github.com/fluxcd/flux2/releases/download/v{version}/flux_{version}_linux_amd64.tar.gz
+    reason: >-
+      The Flux CLI, from the project whose controllers already run this
+      estate's GitOps - the same party delivering one more artefact, not a new
+      one. The fabricator needs it to publish each workload's rendered
+      manifests as an OCI artifact (`flux push artifact`), which is what a
+      production release pins. Taken from Flux's own GitHub release and
+      installed only if its SHA256 matches the lock. The workstation already
+      installed it from the same release, by version only.
 
 # Declared exemptions.
 #
