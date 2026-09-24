@@ -21,12 +21,11 @@ import (
 // wrong one gets stored.
 //
 // So the name has to agree with the input: `client-id` takes *_CLIENT_ID, and
-// `app-id` takes *_APP_ID. Read from the workflows as they will be once
-// outstanding patches apply.
+// `app-id` takes *_APP_ID.
 var tokenInput = regexp.MustCompile(`^\s*(client-id|app-id):\s*\$\{\{\s*(?:secrets|vars)\.([A-Za-z0-9_]+)\s*\}\}`)
 
 func TestEveryAppTokenInputIsFedTheValueItsNameSays(t *testing.T) {
-	workflows := intendedWorkflows(t)
+	workflows := workflowTexts(t)
 	names := make([]string, 0, len(workflows))
 	for name := range workflows {
 		names = append(names, name)

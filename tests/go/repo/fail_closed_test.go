@@ -45,10 +45,6 @@ import (
 // patches genuinely has nothing to check; a guard that cannot reach the thing
 // it guards does not.
 var skipIsHonest = map[string]string{
-	"patches_test.go": "no patches outstanding is the NORMAL state, and it is a true " +
-		"statement about the repository rather than a failure to look. " +
-		"outstandingPatches has already read the directory by then.",
-
 	"mutation_ledger_test.go": "the ledger runs each guard twice - once as the harness " +
 		"and once as the subject - and the inner run must not recurse. The skip is " +
 		"keyed on repoRootEnv, which only the harness sets.",
@@ -257,8 +253,7 @@ var droppedErrors = map[string]int{
 	"estate_surfaces_test.go":    2,
 	"gitops_test.go":             1,
 	"go_invocation_test.go":      4,
-	"mutation_ledger_test.go":    6,
-	"patches_test.go":            1,
+	"mutation_ledger_test.go":    5,
 	"pinned_endpoints_test.go":   2,
 	"placeholder_config_test.go": 1,
 	"recovery_paths_test.go":     1,

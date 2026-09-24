@@ -95,7 +95,7 @@ var (
 )
 
 func TestNoPrivilegedRunPutsAPullRequestInTheWorkspace(t *testing.T) {
-	root := intendedRoot(t)
+	root := repoRoot(t)
 
 	privileged := 0
 	for _, rel := range trackedFilesIn(t, root) {
@@ -177,10 +177,10 @@ func hasPrivilegedTrigger(on *yaml.Node) bool {
 }
 
 // forEachRunnableStep visits every step GitHub executes, in workflows and in
-// composite actions, as the tree will be once outstanding patches land.
+// composite actions.
 func forEachRunnableStep(t *testing.T, fn func(file string, step map[string]any)) {
 	t.Helper()
-	root := intendedRoot(t)
+	root := repoRoot(t)
 	for _, rel := range trackedFilesIn(t, root) {
 		if !authoredHere(rel) || !runnable(rel) {
 			continue

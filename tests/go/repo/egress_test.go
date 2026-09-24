@@ -19,12 +19,10 @@ import (
 // rule drift, and the copy that runs in CI would be the one nobody notices is
 // wrong.
 func TestEveryJobsEgressIsDeclaredInTheSuppliersList(t *testing.T) {
-	// The tree as it will be once any outstanding patch is applied. A workflow
-	// change arrives as a patch, and the suppliers list that must agree with it
-	// is edited in the same pull request - so judging the unpatched workflows
-	// against the new list would be red for exactly the window the hand-over
-	// needs (#401).
-	root := intendedRoot(t)
+	// A workflow change arrives as a patch, and the suppliers list that must
+	// agree with it travels in the same patch, so the tree agrees with itself
+	// before the patch is applied and after.
+	root := repoRoot(t)
 
 	// -root, because the ledger runs this against a scratch copy of the
 	// repository that has no .git for the verb's walk upwards to find.

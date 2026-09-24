@@ -46,8 +46,7 @@ import (
 // the failure is not that one path was missed. It is that a new comment path
 // looks complete without one, and the next one added would go the same way.
 func TestEveryCommentPathReplacesItselfRatherThanAppending(t *testing.T) {
-	// Every script the workflows run, as the tree will be once outstanding
-	// patches land. They were inline `script:` blocks in
+	// Every script the workflows run. They were inline `script:` blocks in
 	// deploy-infrastructure.yml, and are files beside
 	// $/.github/workflows/github-script now - so this reads the files, and
 	// would read a new one the moment it existed.

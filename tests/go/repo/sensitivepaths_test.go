@@ -50,11 +50,7 @@ func parseSensitivePaths(body string) []sensitiveEntry {
 func loadSensitivePaths(t *testing.T) (string, []sensitiveEntry) {
 	t.Helper()
 	root := repoRoot(t)
-	// As it is going to be, because the list is protected and changes to it
-	// arrive as a patch. A patch renaming a program it covers moves both the
-	// directory and this line; judging the line before the patch is applied
-	// reports the directory missing when it is sitting under its new name.
-	entries := parseSensitivePaths(intendedFile(t, filepath.Join(".github", "sensitive-paths")))
+	entries := parseSensitivePaths(repoFileText(t, filepath.Join(".github", "sensitive-paths")))
 	if len(entries) < 5 {
 		t.Fatalf("only %d paths declared; this is reading the wrong file or the list was gutted", len(entries))
 	}
@@ -180,7 +176,7 @@ func runSensor(t *testing.T, changed string) (string, error) {
 	// Given the list as it is going to be, which is what the parser reads, so
 	// the two readers are compared on the same file.
 	list := filepath.Join(t.TempDir(), "sensitive-paths")
-	if err := os.WriteFile(list, []byte(intendedFile(t, filepath.Join(".github", "sensitive-paths"))), 0o644); err != nil {
+	if err := os.WriteFile(list, []byte(repoFileText(t, filepath.Join(".github", "sensitive-paths"))), 0o644); err != nil {
 		t.Fatalf("preparing the list: %v", err)
 	}
 	cmd := exec.Command("bash", filepath.Join(root, ".github", "scripts", "sensitive-paths.sh"))

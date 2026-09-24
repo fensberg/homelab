@@ -131,18 +131,6 @@ func scratchRepo(t *testing.T) string {
 		}
 	}
 
-	// Then every outstanding patch is applied and removed, as the operator
-	// would. The guards judge a protected file as it is going to be
-	// (patches_test.go), so the copy they are proved against has to be that
-	// tree too.
-	//
-	// Without this a mutation and a patch touching the same line collide: the
-	// mutation lands first, the patch's context no longer matches, and the
-	// guard fails because the hand-over "does not apply" - red for a reason
-	// unrelated to the entry, which the ledger rightly refuses as proof.
-	// Renaming a program a workflow invokes is enough to cause it.
-	applyOutstandingPatches(t, dir)
-
 	// And then the copy becomes a git repository, so that the guards being
 	// proved can enumerate it the same way they enumerate the real tree.
 	//
@@ -306,15 +294,9 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 					m.File)
 			}
 
-			// The tree as it will be after the hand-over. The guards judge
-			// that tree - they read workflows through the outstanding patches
-			// - so the mutation is made to it as well. Breaking the file as it
-			// stands on disk would mutate a workflow the patch is about to
-			// replace, and an entry about the patched lines could never find
-			// them.
+			// A copy of the tree to break. The entry's target is read from
+			// the copy, so what is counted and what is broken are one file.
 			scratch := scratchRepo(t)
-			applyOutstandingPatches(t, scratch)
-			indexScratchTree(t, scratch)
 
 			if m.creates() {
 				if _, err := os.Stat(filepath.Join(scratch, m.File)); err == nil {
@@ -506,31 +488,6 @@ func field(line, prefix string) string {
 		return rest[:i]
 	}
 	return rest
-}
-
-// applyOutstandingPatches applies each patch in the scratch tree and removes
-// it, so the tree is the one that will exist after the hand-over.
-func applyOutstandingPatches(t *testing.T, root string) {
-	t.Helper()
-	dir := filepath.Join(root, ".github", "patches")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".patch") {
-			continue
-		}
-		path := filepath.Join(dir, e.Name())
-		cmd := exec.Command("git", "apply", path)
-		cmd.Dir = root
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("applying %s in the scratch tree: %v\n%s", e.Name(), err, out)
-		}
-		if err := os.Remove(path); err != nil {
-			t.Fatalf("removing the applied %s: %v", e.Name(), err)
-		}
-	}
 }
 
 // stripComments removes whole-line `#` comments from the files the guards read,

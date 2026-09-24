@@ -38,12 +38,6 @@ import (
 // the same one - otherwise consolidating by path would permit two commits of one
 // action at once.
 //
-// JUDGED AS IT WILL BE. Workflows reach the repository through a hand-over
-// patch, so while one is outstanding this reads the tree with it applied - the
-// same view the mutation ledger proves guards against. Read the tracked copy
-// instead and this is red for the whole hand-over window about a state that is
-// already on its way out.
-//
 // WHAT THIS DOES NOT CHECK. Whether a reference is pinned at all. A `uses:` on a
 // tag has no 40-character commit and is invisible here; zizmor's unpinned-uses
 // owns that question and fails the Workflow Scan lane on it.
@@ -52,15 +46,6 @@ var (
 	usesLine     = regexp.MustCompile(`(?m)^\s*(?:-\s+)?uses:\s*["']?([^\s"'#]+)`)
 	pinnedAction = regexp.MustCompile(`^([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)((?:/[^@]+)?)@([0-9a-f]{40})$`)
 )
-
-// intendedRoot is the repository as it will be once outstanding patches land.
-func intendedRoot(t *testing.T) string {
-	t.Helper()
-	if len(outstandingPatches(t)) == 0 {
-		return repoRoot(t)
-	}
-	return scratchRepo(t)
-}
 
 // runnable reports whether GitHub executes a file's `uses:` lines: a workflow
 // at the top of .github/workflows, or the metadata of any composite action.
@@ -75,7 +60,7 @@ func runnable(rel string) bool {
 }
 
 func TestEveryActionCommitIsWrittenOnce(t *testing.T) {
-	root := intendedRoot(t)
+	root := repoRoot(t)
 
 	type site struct{ file, commit string }
 	byPath := map[string][]site{}              // owner/repo[/path] -> every place it is written

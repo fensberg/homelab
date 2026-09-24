@@ -117,13 +117,9 @@ func TestTheTripwireCanRefuse(t *testing.T) {
 	}
 }
 
-// As the workflow will be once any outstanding patch is applied - see
-// patches_test.go. The agent cannot write a workflow, so a fix to one arrives
-// as a patch, and a test red for the whole of that window blocks the hand-over
-// it is part of.
 func readSensitivePathsWorkflow(t *testing.T) string {
 	t.Helper()
-	return intendedWorkflow(t, "sensitive-paths.yml")
+	return workflowText(t, "sensitive-paths.yml")
 }
 
 // `pull_request_review_thread:` as a workflow trigger - at the indentation

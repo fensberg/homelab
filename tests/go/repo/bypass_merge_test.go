@@ -23,8 +23,7 @@ import (
 //
 // So every --admin merge must carry --match-head-commit, so a push after the
 // verdict cannot ride along, and its job must run enforce-standing-order
-// itself. Read from the workflows as they will be once outstanding patches
-// apply.
+// itself.
 var continuation = regexp.MustCompile(`\\\n\s*`)
 
 type bypassWorkflow struct {
@@ -36,7 +35,7 @@ type bypassWorkflow struct {
 }
 
 func TestEveryBypassMergeIsJudgedWhereItMerges(t *testing.T) {
-	workflows := intendedWorkflows(t)
+	workflows := workflowTexts(t)
 	names := make([]string, 0, len(workflows))
 	for name := range workflows {
 		names = append(names, name)

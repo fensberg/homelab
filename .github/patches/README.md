@@ -47,6 +47,12 @@ One command, and it finishes the job. Applying and then remembering to delete
 is two steps where one will do, and the second is exactly the kind a computer
 should carry rather than a person.
 
+**Everything that changes along with the workflow goes in the same patch** -
+the tests that read it, the suppliers list, the mutation ledger, the docs. The
+branch is then the old tree until the patch is applied and the new tree
+afterwards, never a mix of the two, and the tests read the tree as it is.
+Splitting them leaves the old tests judging the new workflow, or the reverse.
+
 Every patch here is verified against a clean tree before it is committed:
 `git apply --check` passes, and where it changes a workflow, the result is
 confirmed to parse.

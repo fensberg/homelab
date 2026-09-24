@@ -27,10 +27,7 @@ import (
 // exemption exists for. A stale entry fails here rather than sitting in the file
 // looking load-bearing.
 func TestZizmorExemptionsAreStillEarned(t *testing.T) {
-	// The workflows as they will be once any outstanding patch is applied, so
-	// an exemption renamed alongside a workflow it follows is judged against
-	// the rename rather than against the file it replaces.
-	root := intendedRoot(t)
+	root := repoRoot(t)
 
 	var cfg struct {
 		Rules map[string]struct {
@@ -89,10 +86,7 @@ func TestZizmorExemptionsAreStillEarned(t *testing.T) {
 // this owns the bookkeeping between the audit and the exemption list, which is
 // the part zizmor cannot see.
 func TestEveryRelativeActionReferenceIsAccountedFor(t *testing.T) {
-	// The workflows as they will be once any outstanding patch is applied, so
-	// an exemption renamed alongside a workflow it follows is judged against
-	// the rename rather than against the file it replaces.
-	root := intendedRoot(t)
+	root := repoRoot(t)
 
 	var cfg struct {
 		Rules map[string]struct {
