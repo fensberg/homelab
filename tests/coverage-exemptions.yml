@@ -129,7 +129,7 @@ files:
     uncovered: 2
     covered_by: integration
   - path: contractor/internal/phases/health.go
-    uncovered: 11
+    uncovered: 10
     covered_by: integration
   - path: contractor/internal/phases/health_etcd.go
     uncovered: 2

@@ -54,6 +54,8 @@ func Health(ctx *run.Context) error {
 	}
 	defer cleanup()
 
+	requestFluxReconcile(ctx, kubeconfig, time.Now())
+
 	for _, c := range healthChecks {
 		if err := waitFor(ctx, kubeconfig, c.name, c.timeout, c.check); err != nil {
 			return err
@@ -62,6 +64,41 @@ func Health(ctx *run.Context) error {
 
 	run.Ok("cluster is healthy: nodes ready and schedulable, per-node workloads running on every node, Flux reconciled, database at full instance count, every etcd member voting")
 	return nil
+}
+
+// requestFluxReconcile asks every Flux source and consumer to reconcile now,
+// which is what `flux reconcile` does: it sets reconcile.fluxcd.io/requestedAt.
+//
+// Without it, the Flux check below can spend its whole timeout watching a
+// failure that no longer applies. Flux reconciles the moment a change merges,
+// usually before the converge that the change needs has run. A merge that adds
+// a substitution variable and its first use fails on the missing variable,
+// then waits out its interval - an hour for the root - and the Secret the
+// Cluster phase just wrote does not wake it. That is how #513's converge failed:
+// RELEASE_REPOSITORY was written, and the health gate watched the stale
+// "variable not set" for fifteen minutes.
+//
+// Not fatal. On a cluster still being built the CRDs may not exist yet, and
+// then there is nothing to ask - the check that follows waits either way.
+func requestFluxReconcile(ctx *run.Context, kubeconfig string, now time.Time) {
+	stamp := "reconcile.fluxcd.io/requestedAt=" + now.UTC().Format(time.RFC3339Nano)
+	for _, kind := range fluxReconcilable {
+		if _, err := kubectl(ctx, kubeconfig, "annotate", "--overwrite", "--all", "-A", kind, stamp); err != nil {
+			run.Info(fmt.Sprintf("could not ask Flux to reconcile %s yet: %v", kind, err))
+		}
+	}
+}
+
+// Sources first, so a consumer reconciling on the request reads the newest
+// artifact rather than the one it already had.
+//
+// Short names, as checkFlux uses: only Flux defines these kinds here.
+var fluxReconcilable = []string{
+	"gitrepositories",
+	"ocirepositories",
+	"helmrepositories",
+	"kustomizations",
+	"helmreleases",
 }
 
 // A check returns nil when healthy, or an error describing what is not.

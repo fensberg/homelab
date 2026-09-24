@@ -2,9 +2,12 @@ package phases
 
 import (
 	"homelab/details/repopath"
+	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
@@ -170,4 +173,60 @@ func TestExpectedNodeCountCountsEveryMachineClass(t *testing.T) {
 	if got != want {
 		t.Errorf("the health gate expects %d nodes but the config builds %d.\n\nThe comparison at the call site is strict equality, so a gate that undercounts halts a healthy cluster and one that overcounts waits five minutes for a machine nobody asked for.", got, want)
 	}
+}
+
+// The converge asks Flux to reconcile before it waits on Flux, sources before
+// consumers, with the annotation `flux reconcile` itself uses - run against a
+// fake kubectl that records what it was asked.
+//
+// Without the request the health gate watched a failure from before the
+// converge had written the variable it was missing, for its whole timeout.
+func TestTheConvergeAsksFluxToReconcileSourcesFirst(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	fake := "#!/bin/sh\necho \"$*\" >> " + log + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	when := time.Date(2026, 9, 24, 23, 0, 0, 0, time.UTC)
+	requestFluxReconcile(&run.Context{ClusterDir: dir}, filepath.Join(dir, "kubeconfig"), when)
+
+	body, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatalf("kubectl was never run: %v", err)
+	}
+	calls := strings.Split(strings.TrimSpace(string(body)), "\n")
+	firstConsumer, lastSource := -1, -1
+	for i, c := range calls {
+		if !strings.Contains(c, "annotate --overwrite --all -A") ||
+			!strings.Contains(c, "reconcile.fluxcd.io/requestedAt=2026-09-24T23:00:00Z") {
+			t.Errorf("call %d is not a reconcile request: %q", i, c)
+		}
+		if strings.Contains(c, "repositories") {
+			lastSource = i
+		} else if firstConsumer < 0 {
+			firstConsumer = i
+		}
+	}
+	for _, kind := range []string{"gitrepositories", "ocirepositories", "kustomizations", "helmreleases"} {
+		if !strings.Contains(string(body), kind) {
+			t.Errorf("no reconcile was requested for %s", kind)
+		}
+	}
+	if firstConsumer >= 0 && lastSource > firstConsumer {
+		t.Errorf("a consumer was asked to reconcile before every source was: %v", calls)
+	}
+}
+
+// A cluster still being built has no Flux CRDs to annotate. That is not a
+// reason to fail the converge - the Flux check that follows waits either way.
+func TestAReconcileRequestThatCannotBeMadeDoesNotStopTheConverge(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte("#!/bin/sh\necho 'no matches for kind' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	requestFluxReconcile(&run.Context{ClusterDir: dir}, filepath.Join(dir, "kubeconfig"), time.Now())
 }
