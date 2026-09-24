@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"homelab/contractor/config"
 	"homelab/contractor/internal/ansible"
-	"homelab/contractor/internal/config"
 	"homelab/contractor/internal/run"
 )
 

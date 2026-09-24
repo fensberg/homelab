@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/onepassword"
 )
 

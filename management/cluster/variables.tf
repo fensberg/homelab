@@ -311,7 +311,7 @@ locals {
   # is a firewall rule silently pointing at somebody else.
   #
   # This has to agree with ResolveSiteNetwork in
-  # scripts/contractor/internal/config/config.go, the same contract every other
+  # scripts/contractor/config/config.go, the same contract every other
   # tier here already implements twice.
   dmz_zones_in   = try(local.site.dmz_zones, {})
   dmz_zone_names = sort(keys(local.dmz_zones_in))

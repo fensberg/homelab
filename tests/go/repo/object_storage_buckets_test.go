@@ -202,7 +202,7 @@ func bucketsDeclaredInHCL(t *testing.T) map[string]string {
 
 func bucketsDeclaredInGo(t *testing.T) map[string]string {
 	t.Helper()
-	body := readRepoFile(t, "scripts/contractor/internal/config/buckets.go")
+	body := readRepoFile(t, "scripts/contractor/config/buckets.go")
 
 	start := strings.Index(body, "var Buckets = []Bucket{")
 	if start < 0 {
@@ -218,7 +218,7 @@ func bucketsDeclaredInGo(t *testing.T) map[string]string {
 		found[m[1]] = m[2]
 	}
 	if len(found) == 0 {
-		t.Fatal("no buckets found in scripts/contractor/internal/config/buckets.go.\n\n" +
+		t.Fatal("no buckets found in scripts/contractor/config/buckets.go.\n\n" +
 			"Either the Buckets slice was renamed or its shape changed, in which case this " +
 			"guard is reading nothing and proving nothing.")
 	}

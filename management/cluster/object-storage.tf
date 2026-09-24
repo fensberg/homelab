@@ -1,7 +1,11 @@
 # =============================================================================
 # Object storage. Vendor: Cloudflare R2 (cloudflare/cloudflare provider).
 #
-# FOUR BUCKETS, AND THE RULE THAT PRODUCED THEM.
+# ONE SET OF BUCKETS PER SITE, AND THE RULE THAT PRODUCES THEM.
+#
+# The estate holds one set per site, so N sites means N sets. What each set
+# contains is below; its size is whatever the rule produces, which is why no
+# count is written here.
 #
 # R2 API tokens scope per BUCKET. There is no prefix or directory condition on
 # a permanent token, and a token permitted to write is also permitted to delete
@@ -60,13 +64,13 @@
 #
 # =============================================================================
 
-# The set is created here as four named resources and declared again in
-# scripts/contractor/internal/config/buckets.go, which decides what happens to
+# The set is created here as named resources and declared again in
+# scripts/contractor/config/buckets.go, which decides what happens to
 # each one at teardown. Twice on purpose - the same defence in depth the config
 # contract uses, because this side creates them and that side decides their
 # fate. TestTheBucketTableAgreesWithTheHCL refuses any drift between the two.
 #
-# FOUR NAMED RESOURCES RATHER THAN ONE `for_each`. The set is fixed and small,
+# NAMED RESOURCES RATHER THAN ONE `for_each`. The set is small and changes rarely,
 # and a for_each keys every address by a map key - which
 # TestResourceAddressKeysUseAPlaceholder refuses, because for_each keys
 # normally come from the config and a name in an address is a vault value

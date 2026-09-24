@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/onepassword"
 	"homelab/contractor/internal/run"
 )
@@ -94,7 +94,7 @@ is genuinely stale, move it aside first and decide deliberately:
 	}
 	bucketName := stateBucket.Name(net)
 
-	rcloneEnv := r2Env(cfg.ObjectStorage, cred)
+	rcloneEnv := config.RcloneEnv(cfg.ObjectStorage, cred)
 	key := backupObjectKey(bucketName)
 
 	// Show what else is there before restoring. The timestamped objects are
@@ -161,11 +161,11 @@ the estate was torn down, which deletes the bucket and everything in it`, key, e
 // rewinding to - it describes fewer resources than exist, which is the one
 // thing more dangerous than no state at all.
 func backupObjectKey(bucket string) string {
-	return "R2:" + bucket + "/management-cluster/latest.tfstate.age"
+	return config.LatestStateBackupPath(bucket)
 }
 
 func listBackups(ctx *run.Context, env []string, bucket string) {
-	out, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "lsl", "R2:"+bucket+"/management-cluster")
+	out, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "lsl", config.StateBackupPath(bucket))
 	if err != nil || strings.TrimSpace(out) == "" {
 		return
 	}

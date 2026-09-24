@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 )
 

@@ -27,28 +27,25 @@
 package harness
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"testing"
+
+	"homelab/contractor/config"
+	"homelab/contractor/repopath"
 )
 
-// RepoRoot walks up from this source file rather than the working directory,
-// so it resolves the same whether `go test` ran from the repo root, from
-// tests/go, or from a single tier's directory.
+// RepoRoot is repopath.Root with the test's failure attached.
+//
+// It used to count its own way up with a fixed chain of "..", one of eight
+// copies of that answer across two modules. Each was right until the file
+// holding it moved.
 func RepoRoot(t *testing.T) string {
 	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("could not determine this source file's location")
-	}
-	// <root>/tests/go/harness/harness.go
-	root := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", ".."))
-	if _, err := os.Stat(filepath.Join(root, "CLAUDE.md")); err != nil {
-		t.Fatalf("computed repo root %s does not look like the repository: %v", root, err)
+	root, err := repopath.Root()
+	if err != nil {
+		t.Fatal(err)
 	}
 	return root
 }
@@ -79,64 +76,26 @@ func RequireEnv(t *testing.T, names ...string) {
 
 // --- the rendered config ----------------------------------------------------
 
-// Config holds only the fields a test tier actually reads. It is deliberately
-// a separate declaration from config.Config in scripts/contractor rather than a
-// shared one: a test that parsed the file with the same code as the program
-// under test would agree with that program about a misreading, which is
-// exactly the class of bug an independent reader catches.
-type Config struct {
-	Organization struct {
-		Name string `json:"name"`
-	} `json:"organization"`
-	// Top level, mirroring the config: an account id and an admin token
-	// describe the vendor account, not one estate.
-	ObjectStorage struct {
-		AccountID  string `json:"account_id"`
-		AdminToken string `json:"admin_token"`
-	} `json:"object_storage"`
-	// Also top level: one person reads the alerts, so the destination belongs
-	// to the fleet rather than to a site.
-	Alerting struct {
-		Provider   string `json:"provider"`
-		WebhookURL string `json:"webhook_url"`
-	} `json:"alerting"`
-	// Fleet-level like alerting: one member list, one Cloudflare account.
-	Tunnel Tunnel_          `json:"tunnel"`
-	Sites  map[string]Site_ `json:"sites"`
-}
-
-type Tunnel_ struct {
-	Provider string `json:"provider"`
-	APIToken string `json:"api_token"`
-}
-
-type Site_ struct {
-	Name              string `json:"name"`
-	Octet             int    `json:"octet"`
-	ControlPlaneCount int    `json:"control_plane_count"`
-	// Absent means none, which is what every config described before workers
-	// existed. Machines is what assertions about "how many nodes" should use;
-	// ControlPlaneCount is only ever the etcd-bearing subset.
-	WorkerCount int `json:"worker_count"`
-	Hypervisor  struct {
-		Provider    string `json:"provider"`
-		TokenID     string `json:"token_id"`
-		TokenSecret string `json:"token_secret"`
-		Nodes       map[string]struct {
-			Hostname string `json:"hostname"`
-			IP       string `json:"ip"`
-		} `json:"nodes"`
-	} `json:"hypervisor"`
-	ObjectStorage struct {
-		Provider        string `json:"provider"`
-		AccessKeyID     string `json:"access_key_id"`
-		SecretAccessKey string `json:"secret_access_key"`
-		Bucket          string `json:"bucket"`
-	} `json:"object_storage"`
-	Database struct {
-		Password string `json:"password"`
-	} `json:"database"`
-}
+// The config types are the program's own, aliased rather than copied.
+//
+// This used to be a separate declaration, defended in a comment as an
+// independent reader: "a test that parsed the file with the same code as the
+// program under test would agree with that program about a misreading". It
+// caught no misreading. When the object-storage block changed shape, the
+// program's reader was updated and this copy was not; Go's decoder filled the
+// missing fields with empty strings, and the nightly handed object storage an
+// empty bucket name and empty credentials while its message blamed the vault.
+//
+// The copy was never a choice so much as a consequence: the program kept its
+// config under internal/, which Go forbids another module to import. It now
+// lives in homelab/contractor/config, and these tiers read the rendered config
+// with the same reader the program uses - one building block, so a change to
+// it reaches every consumer at once.
+type (
+	Config  = config.Config
+	Site_   = config.Site
+	Tunnel_ = config.Tunnel
+)
 
 // RenderedConfigPath is where the Render phase writes, overridable for a test
 // run pointed at a second estate.
@@ -153,8 +112,9 @@ func RenderedConfigPath(t *testing.T) string {
 func LoadConfig(t *testing.T) *Config {
 	t.Helper()
 	path := RenderedConfigPath(t)
-	data, err := os.ReadFile(path)
-	if err != nil {
+	// Stat, not read: this only decides which message a missing file gets.
+	// Reading it is LoadRendered's job, so there is one reader.
+	if _, err := os.Stat(path); err != nil {
 		t.Fatalf(`no rendered config at %s.
 
 These tiers read the same file the start button reads, so rendering it is the
@@ -168,11 +128,11 @@ and wiping it again is the teardown:
 
 underlying error: %v`, path, Site(), Site(), err)
 	}
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		t.Fatalf("rendered config at %s is not valid JSON: %v", path, err)
+	cfg, err := config.LoadRendered(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return &cfg
+	return cfg
 }
 
 // SiteConfig is LoadConfig narrowed to the site under test.
@@ -180,31 +140,63 @@ underlying error: %v`, path, Site(), Site(), err)
 // accessor from SiteConfig because the two live on different planes, and a
 // test that reached for the account through a site would be asserting a
 // containment the config deliberately does not have.
-func ObjectStorageAccount(t *testing.T) struct {
-	AccountID  string `json:"account_id"`
-	AdminToken string `json:"admin_token"`
-} {
+func ObjectStorageAccount(t *testing.T) config.ObjectStorageAccount {
 	t.Helper()
 	return LoadConfig(t).ObjectStorage
 }
 
+// SiteNetwork is the site under test with its addressing resolved - by the
+// program's own ResolveSiteNetwork, so an address a test dials is the address
+// the program built.
+func SiteNetwork(t *testing.T) *config.SiteNetwork {
+	t.Helper()
+	net, err := config.ResolveSiteNetwork(LoadConfig(t), Site())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return net
+}
+
 // Machines is every node this site builds, whatever its role.
 //
-// Named rather than left as an addition at each call site, because the
-// addition is exactly what gets forgotten: the Health phase counted control
-// planes and halted a healthy five-node cluster (#261), and the integration
-// tier made the identical assumption a second time (#262).
-func (s Site_) Machines() int {
-	return s.ControlPlaneCount + s.WorkerCount
+// It was ControlPlaneCount + WorkerCount, kept here as a second copy of the
+// answer config.SiteNetwork.AllMachineIPs already gave - and the copy had
+// already fallen behind: it left out untrusted-zone machines, so the first
+// zone declared would have failed a healthy cluster exactly as the Health
+// phase did in #261 and this tier did in #262. The test beside it was named
+// "counts every class" and checked two of the three.
+func Machines(t *testing.T) int {
+	t.Helper()
+	return len(SiteNetwork(t).AllMachineIPs())
+}
+
+// StateBackups is where the Backup phase writes the age-encrypted state dumps,
+// and the rclone environment that reaches them - both resolved exactly as the
+// program resolves them: the state bucket from config.Buckets, its own
+// credential rather than any other, and the folder and remote from the same
+// declarations the Backup and Restore phases use.
+//
+// Every one of those used to be restated in the integration tier. When the
+// state dumps moved to a bucket of their own, the restatement was left behind,
+// and the check that exists to prove backups are healthy reported them broken.
+func StateBackups(t *testing.T) (folder string, env []string) {
+	t.Helper()
+	bucket, err := config.BucketByKey("state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cred, err := SiteConfig(t).ObjectStorage.CredentialFor(bucket.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return config.StateBackupPath(bucket.Name(SiteNetwork(t))),
+		config.RcloneEnv(ObjectStorageAccount(t), cred)
 }
 
 // Alerting is where the estate speaks when something goes wrong. Fleet-level,
 // for the same reason ObjectStorageAccount is: a second site would report into
 // the same place rather than somewhere new.
-func Alerting(t *testing.T) struct {
-	Provider   string `json:"provider"`
-	WebhookURL string `json:"webhook_url"`
-} {
+func Alerting(t *testing.T) config.Alerting {
 	t.Helper()
 	return LoadConfig(t).Alerting
 }
@@ -244,13 +236,14 @@ func FirstHypervisor(t *testing.T) (hostname, ip string) {
 	return n.Hostname, n.IP
 }
 
-// ControlPlaneIP returns the address of control-plane node i, derived the
-// same way variables.tf derives it: 10.<octet>.10.<100+i>.
+// ControlPlaneIP is the address of control-plane node i, as the program
+// derived it. It used to restate the formula - 10.<octet>.10.<100+i> - which
+// is one more copy for the next addressing change to miss.
 func ControlPlaneIP(t *testing.T, i int) string {
 	t.Helper()
-	site := SiteConfig(t)
-	if i < 0 || i >= site.ControlPlaneCount {
-		t.Fatalf("control-plane index %d is outside this site's %d node(s)", i, site.ControlPlaneCount)
+	ips := SiteNetwork(t).NodeIPs
+	if i < 0 || i >= len(ips) {
+		t.Fatalf("control-plane index %d is outside this site's %d node(s)", i, len(ips))
 	}
-	return fmt.Sprintf("10.%d.10.%d", site.Octet, 100+i)
+	return ips[i]
 }

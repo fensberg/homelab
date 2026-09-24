@@ -8,10 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
+	"homelab/contractor/config"
 	"homelab/tests/harness"
 )
 
@@ -143,10 +143,6 @@ func TestEstateNamesAreNotCommitted(t *testing.T) {
 	}
 }
 
-// dnsForm mirrors the sanitising in scripts/contractor/internal/config: lowercase,
-// every run of non-alphanumerics to a hyphen, trimmed.
-func dnsForm(s string) string {
-	s = strings.ToLower(s)
-	s = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(s, "-")
-	return strings.Trim(s, "-")
-}
+// dnsForm is the program's own slug, so this checks for the exact string the
+// program writes into names rather than a restatement of how it writes them.
+func dnsForm(s string) string { return config.Slug(s) }

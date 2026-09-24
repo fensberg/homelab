@@ -8,10 +8,20 @@
 // world; putting that in ignite's module would trade all of the above for
 // test-only code that never ships.
 //
-// The cost is that this module cannot import homelab/contractor/internal/* - Go's
-// internal/ rule is per-module. That is why the config-contract tests live
-// inside ignite itself (scripts/contractor/internal/config/contract_test.go) and
-// only the tiers that treat the system as a black box live here.
+// THE PROTECTION RUNS ONE WAY. The contractor must never depend on this module;
+// this module depending on the contractor costs the contractor nothing, because
+// a requirement is recorded in the requirer's go.mod, not the required one's.
+// So the tiers here import the contractor's public packages - config and
+// repopath - through the local replace below, and read the rendered config with
+// the same reader the program uses.
+//
+// That used to be impossible. Everything shared lived under internal/, which
+// Go refuses to let another module import, so the harness kept its own copy of
+// the config types and defended it as an independent reader. It caught no
+// misreading. When the config shape changed, the program's reader was updated
+// and the copy was not; Go filled the missing fields with empty strings, and
+// the nightly handed object storage an empty bucket name and empty
+// credentials. The copy produced the misreading it was kept to catch.
 module homelab/tests
 
 go 1.26.0
@@ -21,6 +31,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1
+	homelab/contractor v0.0.0-00010101000000-000000000000
 	k8s.io/api v0.37.0
 	k8s.io/apimachinery v0.37.0
 )
@@ -148,3 +159,7 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+// The contractor, from this checkout. Never a published version: there is
+// none, and the point is to read the config with the code in this tree.
+replace homelab/contractor => ../../scripts/contractor

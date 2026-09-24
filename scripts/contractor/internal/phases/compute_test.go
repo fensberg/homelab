@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 )
 
 var probeNode = config.Node{Hostname: "hv-01", IP: "192.0.2.10"}

@@ -5,7 +5,6 @@ package integration_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"homelab/contractor/config"
 	"homelab/tests/harness"
 )
 
@@ -48,39 +48,27 @@ type r2Object struct {
 	IsDir   bool      `json:"IsDir"`
 }
 
-func rcloneEnv(t *testing.T) []string {
+func listBackups(t *testing.T) (folder string, env []string, objs []r2Object) {
 	t.Helper()
-	site := harness.SiteConfig(t)
-	require.NotEmpty(t, harness.ObjectStorageAccount(t).AccountID, "the rendered config has no object_storage.account_id")
-	return []string{
-		"RCLONE_CONFIG_R2_TYPE=s3",
-		"RCLONE_CONFIG_R2_PROVIDER=Cloudflare",
-		"RCLONE_CONFIG_R2_ACCESS_KEY_ID=" + site.ObjectStorage.AccessKeyID,
-		"RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=" + site.ObjectStorage.SecretAccessKey,
-		"RCLONE_CONFIG_R2_ENDPOINT=https://" + harness.ObjectStorageAccount(t).AccountID + ".r2.cloudflarestorage.com",
-		"RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true",
-	}
-}
+	folder, env = harness.StateBackups(t)
 
-func listBackups(t *testing.T) []r2Object {
-	t.Helper()
-	site := harness.SiteConfig(t)
-	dest := fmt.Sprintf("R2:%s/management-cluster", site.ObjectStorage.Bucket)
+	out, err := harness.RunEnv(t, env, "rclone", "lsjson", folder)
+	// rclone's own error, not a theory about it. This message used to add "the
+	// R2 credentials in the vault no longer work, which means backups have been
+	// failing too" - and the first time it fired, neither was true: the test was
+	// reading a config shape that no longer existed.
+	require.NoErrorf(t, err, "listing %s", folder)
 
-	out, err := harness.RunEnv(t, rcloneEnv(t), "rclone", "lsjson", dest)
-	require.NoErrorf(t, err, "listing %s - if this is an auth failure the R2 credentials in the vault no longer work, which means backups have been failing too", dest)
-
-	var objs []r2Object
 	require.NoError(t, json.Unmarshal([]byte(out), &objs), "parsing the bucket listing")
-	return objs
+	return folder, env, objs
 }
 
 func TestNewestBackupIsFreshAndWellFormed(t *testing.T) {
-	objs := listBackups(t)
+	folder, env, objs := listBackups(t)
 
 	var latest *r2Object
 	for i := range objs {
-		if objs[i].Path == "latest.tfstate.age" {
+		if objs[i].Path == config.LatestStateBackup {
 			latest = &objs[i]
 		}
 	}
@@ -97,9 +85,8 @@ that step failed silently or something deleted the object.`)
 	assert.Greaterf(t, latest.Size, int64(1024),
 		"latest.tfstate.age is only %d bytes, which is too small to be a real encrypted state file", latest.Size)
 
-	site := harness.SiteConfig(t)
-	head, err := harness.RunEnv(t, rcloneEnv(t), "rclone", "cat", "--count", "64",
-		fmt.Sprintf("R2:%s/management-cluster/latest.tfstate.age", site.ObjectStorage.Bucket))
+	head, err := harness.RunEnv(t, env, "rclone", "cat", "--count", "64",
+		folder+"/"+config.LatestStateBackup)
 	require.NoError(t, err, "reading the first bytes of the newest backup")
 	assert.Containsf(t, head, ageMagic,
 		"latest.tfstate.age does not start with an age header, so it is not a well-formed encrypted file. Decrypting it to check further is deliberately impossible from here - the identity is offline.")
@@ -109,11 +96,11 @@ that step failed silently or something deleted the object.`)
 // stopped running or is refusing to act - which it does, on purpose, whenever
 // it cannot confirm the new upload landed.
 func TestBackupGenerationsAreBounded(t *testing.T) {
-	objs := listBackups(t)
+	_, _, objs := listBackups(t)
 
 	var generations []string
 	for _, o := range objs {
-		if o.IsDir || o.Path == "latest.tfstate.age" {
+		if o.IsDir || o.Path == config.LatestStateBackup {
 			continue
 		}
 		if strings.HasSuffix(o.Path, ".tfstate.age") {

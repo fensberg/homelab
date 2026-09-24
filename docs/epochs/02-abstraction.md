@@ -1504,7 +1504,7 @@ Four implementations of one scheme today, across two languages:
 
 ```text
 management/cluster/variables.tf              site_cidr = "10.${local.octet}.0.0/16", host_octets
-scripts/contractor/internal/config/config.go "10.%d.10.%d" for nodes and workers, the /24 and the gateway
+scripts/contractor/config/config.go "10.%d.10.%d" for nodes and workers, the /24 and the gateway
 scripts/contractor/internal/phases/sterilize.go  "10.%d.10.%d" for the state database host
 tests/go/harness/harness.go                  "10.%d.10.%d" for a control plane by index
 ```
@@ -2053,7 +2053,8 @@ not exist.
 
 #### The layout
 
-Four per site, named for the **site**, because the site is the isolation
+One set per site - so the estate holds N sets for N sites - named for the **site**,
+because the site is the isolation
 boundary and every site in an estate shares one storage account:
 
 | Bucket              | Holds                                       | Credential held by                   | Survives a teardown |
@@ -2151,7 +2152,7 @@ delete a bucket holding objects, so the apply stops and says so.
 #### Declared twice, on purpose
 
 The set lives in `object-storage.tf`, which creates the buckets, and in
-`scripts/contractor/internal/config/buckets.go`, which decides each one's fate
+`scripts/contractor/config/buckets.go`, which decides each one's fate
 at teardown. Neither can be derived from the other - OpenTofu cannot read a Go
 table, and the teardown is a Go program running when no OpenTofu is loaded - so
 this is the same defence in depth the config contract already uses.
@@ -2166,7 +2167,7 @@ The address and fate used to be string literals repeated at each call site - two
 copies at two buckets, which would have been eight at four. That is not a set,
 it is eight chances to disagree.
 
-**Four named resources rather than one `for_each`.** The set is small and fixed,
+**Named resources rather than one `for_each`.** The set is small and changes rarely,
 and a `for_each` keys every address by a map key, which
 `TestResourceAddressKeysUseAPlaceholder` refuses - for_each keys normally come
 from the config, so a name in an address is a vault value published in a plan.

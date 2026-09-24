@@ -260,3 +260,41 @@ func TestAnUnnamedSiteFallsBackToItsKey(t *testing.T) {
 		t.Errorf("SiteSlug(\"\", \"site7\") = %q, want \"site7\"", got)
 	}
 }
+
+// The paths are written against the remote RcloneEnv defines, so a rename of
+// one cannot leave the other pointing at a remote that does not exist.
+func TestBackupPathsUseTheRemoteRcloneIsGiven(t *testing.T) {
+	env := strings.Join(RcloneEnv(ObjectStorageAccount{AccountID: "acct"}, ObjectStorageCredential{}), "\n")
+	remote := strings.SplitN(BucketRemote("b"), ":", 2)[0]
+	if !strings.Contains(env, "RCLONE_CONFIG_"+remote+"_TYPE=") {
+		t.Errorf("paths address the remote %q, but RcloneEnv configures a different one:\n%s", remote, env)
+	}
+	if got, want := LatestStateBackupPath("b"), BucketRemote("b")+"/"+StateBackupFolder+"/"+LatestStateBackup; got != want {
+		t.Errorf("LatestStateBackupPath = %q, want %q", got, want)
+	}
+}
+
+// Slug is the transform alone; SiteSlug adds the site's fallback. The split
+// exists so the forkability check can slug an organization's name without
+// inheriting a fallback that only means something for a site.
+func TestSlugHasNoFallbackAndSiteSlugDoes(t *testing.T) {
+	if got := Slug("North Street Office"); got != "north-street-office" {
+		t.Errorf("Slug = %q, want north-street-office", got)
+	}
+	if got := Slug("   "); got != "" {
+		t.Errorf("Slug of nothing = %q, want empty - a fallback here would invent a name", got)
+	}
+	if got := SiteSlug("   ", "site3"); got != "site3" {
+		t.Errorf("SiteSlug with no usable name = %q, want the key", got)
+	}
+}
+
+// The Cluster phase adopts a bucket only if this URL answers 200, and the api
+// tier proves the answer is still 200-or-404. Both build it from here; this
+// pins the shape so a change to it is a change somebody reviews.
+func TestBucketAPIURLNamesTheAccountAndTheBucket(t *testing.T) {
+	got := BucketAPIURL("acct", "example-state")
+	if !strings.HasSuffix(got, "/accounts/acct/r2/buckets/example-state") {
+		t.Errorf("BucketAPIURL = %q; it must address the account and then the bucket", got)
+	}
+}

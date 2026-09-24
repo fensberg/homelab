@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"homelab/contractor/config"
 	"homelab/tests/harness"
 )
 
@@ -44,14 +45,25 @@ func TestObjectStorageMissingBucketIsA404(t *testing.T) {
 // The other half of the same switch: an existing bucket must answer 200. If
 // it started answering 204 or 301, orphan adoption would conclude the bucket
 // does not exist and apply would try to create one that is already there.
+//
+// Every declared bucket, not one. Each is adopted through this same switch, and
+// the earlier version checked the single bucket the config used to name - so
+// when the site gained more buckets it went on checking one, and when that field was
+// removed it went on checking an empty name.
 func TestObjectStorageExistingBucketIsA200(t *testing.T) {
-	site := harness.SiteConfig(t)
 	acct := harness.ObjectStorageAccount(t)
-	require.NotEmpty(t, site.ObjectStorage.Bucket, "the rendered config has no object_storage.bucket")
+	net := harness.SiteNetwork(t)
 
-	status := headBucket(t, acct.AccountID, acct.AdminToken, site.ObjectStorage.Bucket)
-	require.Equal(t, http.StatusOK, status,
-		"the configured bucket %q answered %d. Either it has not been created yet - run the Cluster phase - or the API's success status has changed.", site.ObjectStorage.Bucket, status)
+	for _, bucket := range config.Buckets {
+		name := bucket.Name(net)
+		t.Run(bucket.Key, func(t *testing.T) {
+			status := headBucket(t, acct.AccountID, acct.AdminToken, name)
+			require.Equal(t, http.StatusOK, status,
+				"the %s bucket, which holds %s, answered %d. Either it has not been created yet - "+
+					"run the Cluster phase - or the API's success status has changed.",
+				bucket.Key, bucket.Holds, status)
+		})
+	}
 }
 
 func headBucket(t *testing.T, accountID, token, bucket string) int {
@@ -59,7 +71,7 @@ func headBucket(t *testing.T, accountID, token, bucket string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/r2/buckets/%s", accountID, bucket)
+	url := config.BucketAPIURL(accountID, bucket)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)

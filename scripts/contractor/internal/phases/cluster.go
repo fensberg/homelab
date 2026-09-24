@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"homelab/contractor/internal/config"
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 )
 
@@ -138,7 +138,7 @@ func adoptOrphanedR2Buckets(ctx *run.Context) error {
 func r2BucketExists(acct config.ObjectStorageAccount, bucket string) (bool, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 
-	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/r2/buckets/%s", acct.AccountID, bucket)
+	url := config.BucketAPIURL(acct.AccountID, bucket)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return false, err
