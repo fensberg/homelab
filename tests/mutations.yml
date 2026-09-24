@@ -626,7 +626,7 @@ mutations:
 
   - guard: TestARestoreThatProducesNoWorldStopsThePod
     file: modules/applications/valheim/image/world-restore.sh
-    find: 'if [ ! -f "$world" ]; then'
+    find: "if ! has_world; then"
     replace: "if false; then"
     mentions: "copied nothing"
     why: >
@@ -642,8 +642,8 @@ mutations:
 
   - guard: TestAFailedBackupIsLoudRatherThanSilent
     file: modules/applications/valheim/image/world-backup.sh
-    find: '"$worlds" "world:${stamp}"'
-    replace: '"$worlds" "world:${stamp}" || true'
+    find: 'rclone copy "$world" "world:${stamp}"'
+    replace: 'rclone copy "$world" "world:${stamp}" || true'
     mentions: "exited cleanly"
     why: >
       A backup that fails and carries on looks healthy forever; the first sign would be the restore that finds nothing recent.

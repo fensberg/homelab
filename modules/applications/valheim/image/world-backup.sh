@@ -2,8 +2,11 @@
 # Back the world up to the production bucket, encrypted, every hour.
 #
 # Runs as a sidecar beside the server, from the same image. Each pass copies the
-# world's two files into a directory named for the UTC time, then removes all
-# but the newest WORLD_BACKUP_KEEP. The bucket holds ciphertext: the files go
+# world's directory - worlds_local/<world>/, whatever the server keeps in it -
+# into a directory named for the UTC time, then removes all but the newest
+# WORLD_BACKUP_KEEP. A directory, not a pair of loose files: that is where this
+# server keeps a world, and the first version of this script looked for
+# worlds_local/<world>.db, found nothing, and backed up nothing. The bucket holds ciphertext: the files go
 # through an rclone crypt remote keyed from WORLD_BACKUP_KEY, and the key lives
 # in 1Password, not beside the bucket.
 #
@@ -19,6 +22,7 @@ set -eu
 interval="${WORLD_BACKUP_INTERVAL:-3600}"
 keep="${WORLD_BACKUP_KEEP:-48}"
 worlds="${WORLD_DIR:-/data/worlds_local}"
+world="${worlds}/${VALHEIM_WORLD_NAME}"
 
 export RCLONE_CONFIG_WORLD_TYPE=crypt
 export RCLONE_CONFIG_WORLD_REMOTE="r2:${WORLD_BACKUP_BUCKET}/worlds/${VALHEIM_WORLD_NAME}"
@@ -28,12 +32,9 @@ RCLONE_CONFIG_WORLD_PASSWORD="$(rclone obscure "$WORLD_BACKUP_KEY")"
 export RCLONE_CONFIG_WORLD_PASSWORD
 
 while :; do
-	if [ -f "${worlds}/${VALHEIM_WORLD_NAME}.db" ]; then
+	if find "$world" -maxdepth 1 -name '*.db' 2>/dev/null | grep -q .; then
 		stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-		rclone copy \
-			--include "${VALHEIM_WORLD_NAME}.db" \
-			--include "${VALHEIM_WORLD_NAME}.fwl" \
-			"$worlds" "world:${stamp}"
+		rclone copy "$world" "world:${stamp}"
 		echo "world-backup: backed up ${VALHEIM_WORLD_NAME} as ${stamp}"
 
 		listing="$(rclone lsf --dirs-only world:)"
@@ -46,7 +47,7 @@ while :; do
 				done
 		fi
 	else
-		echo "world-backup: no world at ${worlds}/${VALHEIM_WORLD_NAME}.db yet, so nothing to back up"
+		echo "world-backup: no world in ${world} yet, so nothing to back up"
 	fi
 	if [ "${WORLD_BACKUP_ONCE:-}" = "1" ]; then
 		exit 0
