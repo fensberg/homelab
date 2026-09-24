@@ -20,9 +20,17 @@ set -eu
 : "${WORLD_BACKUP_KEY:?the key comes from the valheim-backup Secret}"
 
 worlds="${WORLD_DIR:-/data/worlds_local}"
-world="${worlds}/${VALHEIM_WORLD_NAME}.db"
+# The world is a directory, worlds_local/<world>/, and it is present when it
+# holds the server's .db. The first version looked for worlds_local/<world>.db,
+# which this server never writes - it found no world on a volume that had one,
+# and was harmless only because no backup existed to restore over it.
+world="${worlds}/${VALHEIM_WORLD_NAME}"
 
-if [ -f "$world" ]; then
+has_world() {
+	find "$world" -maxdepth 1 -name '*.db' 2>/dev/null | grep -q .
+}
+
+if has_world; then
 	echo "world-restore: ${world} is present, so there is nothing to restore"
 	exit 0
 fi
@@ -46,9 +54,9 @@ if [ -z "$latest" ]; then
 	exit 0
 fi
 
-mkdir -p "$worlds"
-rclone copy "world:${latest}" "$worlds"
-if [ ! -f "$world" ]; then
+mkdir -p "$world"
+rclone copy "world:${latest}" "$world"
+if ! has_world; then
 	echo "world-restore: restored ${latest}, but ${world} is not there - refusing to start" >&2
 	exit 1
 fi

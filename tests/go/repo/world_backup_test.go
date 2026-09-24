@@ -13,6 +13,12 @@ import (
 // The world's backup and restore scripts, run as shipped against a fake
 // rclone whose "world:" remote is a local directory.
 //
+// The layout is the one the production server actually has, read off its
+// volume: each world is a directory, worlds_local/<world>/, with Valheim's own
+// rotating backups beside it as <world>_backup_auto-<time>/. The first version
+// of these scripts, and these tests, assumed loose worlds_local/<world>.db files
+// - the tests passed, and production backed up nothing.
+//
 // The restore's three outcomes are the property that matters: restore the
 // newest backup when the world is missing, let the server start a new world
 // only when there is no backup at all, and refuse to start when the bucket
@@ -123,12 +129,14 @@ func TestTheWorldIsRestoredFromTheNewestBackup(t *testing.T) {
 	f.put(t, filepath.Join(f.bucket, "20260901T000000Z", "example.db"), "old")
 	f.put(t, filepath.Join(f.bucket, "20260923T120000Z", "example.db"), "newest")
 	f.put(t, filepath.Join(f.bucket, "20260923T120000Z", "example.fwl"), "meta")
+	// Valheim's own rotating backups sit beside the world. They are not it.
+	f.put(t, filepath.Join(f.worlds, "example_backup_auto-20260924-223711", "example.db"), "valheim's own")
 
 	ok, out := f.run(t, "world-restore.sh")
 	if !ok {
 		t.Fatalf("the restore failed:\n%s", out)
 	}
-	got, err := os.ReadFile(filepath.Join(f.worlds, "example.db"))
+	got, err := os.ReadFile(filepath.Join(f.worlds, "example", "example.db"))
 	if err != nil || string(got) != "newest" {
 		t.Errorf("want the newest backup restored, got %q (%v)\n%s", got, err, out)
 	}
@@ -136,11 +144,11 @@ func TestTheWorldIsRestoredFromTheNewestBackup(t *testing.T) {
 
 func TestAWorldAlreadyOnTheVolumeIsLeftAlone(t *testing.T) {
 	f := newWorldFixture(t)
-	f.put(t, filepath.Join(f.worlds, "example.db"), "live")
+	f.put(t, filepath.Join(f.worlds, "example", "example.db"), "live")
 	f.put(t, filepath.Join(f.bucket, "20260923T120000Z", "example.db"), "backup")
 
 	ok, out := f.run(t, "world-restore.sh")
-	got, _ := os.ReadFile(filepath.Join(f.worlds, "example.db"))
+	got, _ := os.ReadFile(filepath.Join(f.worlds, "example", "example.db"))
 	if !ok || string(got) != "live" {
 		t.Errorf("the restore replaced a world that was already on the volume (now %q):\n%s", got, out)
 	}
@@ -181,9 +189,10 @@ func TestARestoreThatProducesNoWorldStopsThePod(t *testing.T) {
 
 func TestTheBackupKeepsTheNewestAndRemovesTheRest(t *testing.T) {
 	f := newWorldFixture(t)
-	f.put(t, filepath.Join(f.worlds, "example.db"), "world")
-	f.put(t, filepath.Join(f.worlds, "example.fwl"), "meta")
-	f.put(t, filepath.Join(f.worlds, "other.db"), "not this world")
+	f.put(t, filepath.Join(f.worlds, "example", "example.db"), "world")
+	f.put(t, filepath.Join(f.worlds, "example", "example.fwl"), "meta")
+	f.put(t, filepath.Join(f.worlds, "other", "other.db"), "not this world")
+	f.put(t, filepath.Join(f.worlds, "example_backup_auto-20260924-223711", "example.db"), "valheim's own")
 	for _, old := range []string{"20260101T000000Z", "20260102T000000Z", "20260103T000000Z"} {
 		f.put(t, filepath.Join(f.bucket, old, "example.db"), "old")
 	}
@@ -202,14 +211,16 @@ func TestTheBackupKeepsTheNewestAndRemovesTheRest(t *testing.T) {
 			t.Errorf("the backup just taken is missing %s: %v", want, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(newest, "other.db")); err == nil {
-		t.Error("the backup took a file that is not this world's")
+	for _, stray := range []string{"other.db", "other", "example_backup_auto-20260924-223711"} {
+		if _, err := os.Stat(filepath.Join(newest, stray)); err == nil {
+			t.Errorf("the backup took %s, which is not this world", stray)
+		}
 	}
 }
 
 func TestAFailedBackupIsLoudRatherThanSilent(t *testing.T) {
 	f := newWorldFixture(t)
-	f.put(t, filepath.Join(f.worlds, "example.db"), "world")
+	f.put(t, filepath.Join(f.worlds, "example", "example.db"), "world")
 
 	ok, out := f.run(t, "world-backup.sh", "WORLD_BACKUP_ONCE=1", "FAKE_FAIL=copy")
 	if ok {
