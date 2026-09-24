@@ -321,6 +321,11 @@ locals {
       name  = zone
       index = i
       cidr  = "10.${local.octet}.${local.dmz_first_subnet + i}.0/24"
+      # The hypervisor's address on the zone's subnet, as ResolveSiteNetwork
+      # derives it. talos.tf routed every zone machine through this attribute
+      # before it existed; no zone had ever been declared, so nothing had ever
+      # evaluated it, and the first one would have failed to plan.
+      gateway = cidrhost("10.${local.octet}.${local.dmz_first_subnet + i}.0/24", 1)
       # Indexed rather than named: a Proxmox vnet id is capped at eight
       # characters, which a workload name of any length will exceed.
       vnet = "vnetdmz${i}"

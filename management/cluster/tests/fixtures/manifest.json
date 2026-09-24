@@ -116,6 +116,13 @@
       "valid": false,
       "go_error_contains": "node_count",
       "because": "A zone with no node_count means one machine, so the count cannot be required to be positive. Negative is the meaningless value and would otherwise reach range() in variables.tf, exactly as a negative worker count would."
+    },
+    {
+      "name": "zone_user_namespaces_reach_only_the_zone_that_declares_them",
+      "fixture": "zone-user-namespaces.json",
+      "site": "site0",
+      "valid": true,
+      "because": "Two zones, one declaring user_namespaces. Both implementations accept it; the HCL side also asserts the sysctl reaches only the zone that declared it and that both zones carry their label."
     }
   ]
 }

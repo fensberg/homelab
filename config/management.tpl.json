@@ -49,6 +49,11 @@
       "octet": 10,
       "control_plane_count": 3,
       "worker_count": 3,
+      "dmz_zones": {
+        "fabricator": {
+          "user_namespaces": true
+        }
+      },
 
       "hypervisor": {
         "provider": "proxmox",

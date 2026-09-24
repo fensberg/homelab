@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 142
+floor: 144
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -515,6 +515,27 @@ mutations:
       stops recognising the chart finds no runners at all, and then every job
       looks hermetic and the guard passes having checked nothing. This proves
       the walk still finds the one runner that exists today.
+
+  - guard: TestAnUntrustedZoneCanJoinTheClusterAndReachNothingElse
+    file: management/hypervisor/hypervisor-prep.yml
+    find: "-p tcp --dport 6443 -j ACCEPT"
+    replace: "-p tcp --dport 6444 -j ACCEPT"
+    mentions: "no rule"
+    why: >
+      Moved to the wrong port rather than deleted, which is the likelier
+      mistake and the one a reader skims past. Without the API server opening a zone machine boots and never joins the
+      cluster, and nothing reports why - the state the zone sat in, unnoticed,
+      because no zone machine had ever booted.
+
+  - guard: TestAnUntrustedZoneCanJoinTheClusterAndReachNothingElse
+    file: management/hypervisor/hypervisor-prep.yml
+    find: "--dport 50001 -j ACCEPT\n"
+    replace: "--dport 50001 -j ACCEPT\n          ensure FORWARD -s {{ item.subnet }} -d {{ sdn_subnet }} -p tcp --dport 50000 -j ACCEPT\n"
+    mentions: "not one of the three membership ports"
+    why: >
+      The Talos API on the control planes is the one port that can reset or
+      reboot a machine. A zone exists for node-level compromise, so opening it
+      "while we are here" hands that to whatever escaped a container.
 
   - guard: TestRunnerPodsAreNotBestEffort
     file: clusters/management/infrastructure/configs/runner-scale-set.yaml

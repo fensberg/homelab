@@ -34,6 +34,10 @@ import (
 
 const dmzTaskName = "Close the private estate to each untrusted zone"
 
+// The node subnet the task opens membership ports to, standing in for
+// {{ sdn_subnet }}.
+const dmzTestNodeSubnet = "203.0.113.0/24"
+
 // A stub iptables backed by a text file, understanding -C and -I only.
 //
 // -C exits non-zero when the rule is absent, which is what makes the task
@@ -83,6 +87,7 @@ func shippedDMZScript(t *testing.T, subnet, gateway string) string {
 				t.Fatalf("%q has no cmd", dmzTaskName)
 			}
 			cmd = strings.ReplaceAll(cmd, "{{ item.subnet }}", subnet)
+			cmd = strings.ReplaceAll(cmd, "{{ sdn_subnet }}", dmzTestNodeSubnet)
 			return strings.ReplaceAll(cmd, "{{ item.gateway }}", gateway)
 		}
 	}
@@ -243,4 +248,55 @@ func indexOfRule(rules []string, want string) int {
 		}
 	}
 	return -1
+}
+
+// A zone machine is a worker, so it has to be able to join the cluster - and
+// only that.
+//
+// The drops close the node subnet along with everything else private, and
+// they were written before a zone machine had ever booted. A worker that
+// cannot reach the API server, trustd or the pod network's tunnel never
+// becomes Ready, and nothing reports why. So three ports are opened to the
+// node subnet, plus replies to connections the estate opened into the zone.
+//
+// Both halves are asserted. Each opening has to sit above the drops, or it is
+// never reached. And nothing else to the node subnet may be open: a zone
+// exists for node-level compromise, and a port added "while we are here" is
+// the estate's control plane handed to whatever escaped a container.
+func TestAnUntrustedZoneCanJoinTheClusterAndReachNothingElse(t *testing.T) {
+	after, _ := runDMZ(t, nil)
+	const zone = "FORWARD -s 198.51.100.0/24"
+	drop := indexOfRule(after, zone+" -d 10.0.0.0/8 -j DROP")
+	if drop < 0 {
+		t.Fatal("no drop for 10.0.0.0/8 was installed, so there is no ordering to check")
+	}
+
+	membership := map[string]string{
+		zone + " -d " + dmzTestNodeSubnet + " -p tcp --dport 6443 -j ACCEPT":  "the API server, which the kubelet and the Cilium agent register with",
+		zone + " -d " + dmzTestNodeSubnet + " -p tcp --dport 50001 -j ACCEPT": "trustd, which issues a joining Talos worker its certificates",
+		zone + " -d " + dmzTestNodeSubnet + " -p udp --dport 8472 -j ACCEPT":  "Cilium's VXLAN tunnel, which is the pod network",
+		zone + " -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT":        "replies to the Talos API, kubectl logs and metrics scraping",
+	}
+	for rule, why := range membership {
+		i := indexOfRule(after, rule)
+		switch {
+		case i < 0:
+			t.Errorf("the zone cannot reach %s - no rule\n\n  %s\n\nThe machine would boot and never join the cluster.", why, rule)
+		case i > drop:
+			t.Errorf("the opening for %s is below the drops, so it is never reached:\n\n  %s", why, strings.Join(after, "\n  "))
+		}
+	}
+
+	for _, r := range after {
+		r = strings.TrimSpace(r)
+		if !strings.HasSuffix(r, "-j ACCEPT") || !strings.Contains(r, dmzTestNodeSubnet) {
+			continue
+		}
+		if _, ok := membership[r]; !ok {
+			t.Errorf("the zone may reach the node subnet by a rule that is not one of the "+
+				"three membership ports:\n\n  %s\n\nThe node subnet holds the control plane. "+
+				"A zone exists for node-level compromise, so every opening into it is argued "+
+				"in the playbook and asserted here.", r)
+		}
+	}
 }

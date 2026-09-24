@@ -25,7 +25,7 @@ locals {
   # Its own gateway, because it is in its own subnet rather than a band of the
   # node one.
   dmz_patches = {
-    for k, v in local.dmz : k => [
+    for k, v in local.dmz : k => concat([
       yamlencode({
         apiVersion = "v1alpha1"
         kind       = "LinkConfig"
@@ -49,6 +49,19 @@ locals {
         }
       }),
 
+      ],
+      # What makes the machine this zone's rather than any zone's.
+    local.dmz_by_zone[v.zone])
+  }
+
+  # The part of a zone machine's patches that depends only on which zone it is
+  # in, folded into dmz_patches above. A fragment rather than a machine's
+  # whole set, which is why it is not named like one. Keyed by zone rather
+  # than by machine because a machine's key carries its hypervisor, which is
+  # not known until the plan reads it - and these have to be checkable before
+  # then, by tests/registry.tftest.hcl.
+  dmz_by_zone = {
+    for zone, z in local.dmz_zones_in : zone => concat([
       # The taint, and why it is a kubelet argument rather than machine.nodeTaints.
       #
       # A worker cannot taint itself. NodeRestriction refuses a kubelet
@@ -68,16 +81,41 @@ locals {
       # v1.13.9, where it does not exist. Adopt it when the OS is bumped for
       # its own reasons, rather than moving every machine in the estate onto a
       # week-old release for one field.
+      #
+      # The label beside it is how a workload asks for this zone rather than
+      # merely tolerating it. A toleration permits a pod here; it does not put
+      # it here, and a zone's tenant that lands on a shared worker has left
+      # the isolation the zone exists for. Same mechanism and same reason as
+      # the taint: a label set at registration, which NodeRestriction permits
+      # for a key outside the kubernetes.io namespaces.
       yamlencode({
         machine = {
           kubelet = {
             extraArgs = {
-              "register-with-taints" = "untrusted-zone=${v.zone}:NoSchedule"
+              "register-with-taints" = "untrusted-zone=${zone}:NoSchedule"
+              "node-labels"          = "untrusted-zone=${zone}"
             }
           }
         }
       }),
-    ]
+      ],
+      # Unprivileged user namespaces, on the zones that declare them and no
+      # other machine. Talos's hardening profile sets this to 0 everywhere, and
+      # a rootless image builder cannot run without it - so the machine that
+      # builds gets it back, and it is a machine with nothing else on it.
+      #
+      # The number is Talos's own, from the patch its integration suite uses to
+      # enable the feature. Any positive value enables it; this one bounds how
+      # many a machine may hold.
+      try(z.user_namespaces, false) ? [
+        yamlencode({
+          machine = {
+            sysctls = {
+              "user.max_user_namespaces" = "11255"
+            }
+          }
+        }),
+    ] : [])
   }
 
   machine_patches = {

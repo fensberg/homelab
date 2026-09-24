@@ -59,6 +59,16 @@ resource "terraform_data" "invariants" {
     # block on the variable itself, which runs before locals are evaluated and
     # cannot be targeted away. See variables.tf.
 
+    # Every untrusted zone's machines register with that zone's taint. The
+    # taint is what makes a zone dedicated rather than conventional - without
+    # it any pod may schedule onto the least trusted hardware on the estate,
+    # beside whatever the zone holds. It lives in talos.tf's per-zone patches,
+    # and this is what fails a plan if that ever stops being true.
+    precondition {
+      condition     = alltrue([for zone, patches in local.dmz_by_zone : strcontains(join("\n", patches), "untrusted-zone=${zone}:NoSchedule")])
+      error_message = "An untrusted zone's machines would register without the zone's taint, so nothing would stop ordinary pods scheduling onto them. See dmz_by_zone in talos.tf."
+    }
+
     precondition {
       condition     = length(local.all_octets) == length(distinct(local.all_octets))
       error_message = "Duplicate octet in sites. Each site owns 10.<octet>.0.0/16; two sites sharing one collide on the overlay network and present as a broken network rather than a config mistake."

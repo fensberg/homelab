@@ -226,6 +226,14 @@ type DMZZone struct {
 	// subnet and a VXLAN identifier nothing sits on, and a workload that has
 	// been declared wants somewhere to run.
 	NodeCount int `json:"node_count"`
+	// Whether this zone's machines allow unprivileged user namespaces.
+	//
+	// Talos's hardening profile sets user.max_user_namespaces to 0 on every
+	// machine, and that is right for almost everything. A rootless image
+	// builder cannot work without them, so the zone that builds - and only
+	// that zone - declares this. Off unless declared, so no other machine
+	// loses the hardening by default. management/cluster/talos.tf reads it.
+	UserNamespaces bool `json:"user_namespaces"`
 }
 
 type Hypervisor struct {

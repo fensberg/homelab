@@ -1231,8 +1231,9 @@
     #   - the zone's own subnet, so machines inside one zone still talk to each
     #     other. Zones are isolated from the estate, not from themselves.
     #
-    # Everything else private is dropped: the house LAN, every other site, the
-    # node subnet holding the control plane, and every other untrusted zone.
+    # Everything else private is dropped: the house LAN, every other site,
+    # every other untrusted zone, and the node subnet except for the three
+    # ports cluster membership needs, listed where they are opened below.
     # Egress to the internet is untouched - it is what the SNAT above is for,
     # and a zone that cannot pull an image or ship a backup is not usable.
     #
@@ -1263,6 +1264,22 @@
           ensure FORWARD -s {{ item.subnet }} -d 192.168.0.0/16 -j DROP
           ensure FORWARD -s {{ item.subnet }} -d {{ item.subnet }} -j ACCEPT
           ensure FORWARD -s {{ item.subnet }} -d {{ item.gateway }}/32 -j ACCEPT
+          # Cluster membership, which the drops above had closed as well.
+          # A zone machine is a Kubernetes worker, and a worker that cannot
+          # reach the control plane never joins: these rules were written
+          # before a zone machine had ever booted, and nothing had tested
+          # them. Each opening is to the node subnet only, one port each:
+          #   6443/tcp  the API server - the kubelet and the Cilium agent
+          #   50001/tcp trustd on the control planes, which issues a joining
+          #             Talos worker its certificates
+          #   8472/udp  Cilium's VXLAN tunnel, which is the pod network
+          # and replies to connections the estate opened into the zone - the
+          # Talos API, `kubectl logs`, metrics scraping - which the drops
+          # would otherwise swallow on the way back out.
+          ensure FORWARD -s {{ item.subnet }} -d {{ sdn_subnet }} -p udp --dport 8472 -j ACCEPT
+          ensure FORWARD -s {{ item.subnet }} -d {{ sdn_subnet }} -p tcp --dport 50001 -j ACCEPT
+          ensure FORWARD -s {{ item.subnet }} -d {{ sdn_subnet }} -p tcp --dport 6443 -j ACCEPT
+          ensure FORWARD -s {{ item.subnet }} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
           echo "added=$added"
       register: dmz_isolation
       changed_when: "'added=0' not in dmz_isolation.stdout"

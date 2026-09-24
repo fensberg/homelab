@@ -201,3 +201,40 @@ run "negative_zone_node_count_fails_its_precondition" {
 
   expect_failures = [terraform_data.invariants]
 }
+
+# Unprivileged user namespaces reach only the zone that declares them.
+#
+# Talos turns them off on every machine, and that hardening is worth keeping
+# everywhere but the one machine a rootless builder needs it on. A patch that
+# keyed off "any zone" rather than the zone's own declaration would hand it to
+# every untrusted machine - the least trusted hardware on the estate, losing
+# the hardening first.
+#
+# Both zones also carry their label, which is how a tenant is required onto
+# its zone rather than merely tolerated there.
+run "zone_user_namespaces_reach_only_the_zone_that_declares_them" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/zone-user-namespaces.json"
+  }
+
+  plan_options {
+    target = [terraform_data.invariants]
+  }
+
+  assert {
+    condition     = strcontains(join("\n", local.dmz_by_zone["redacted"]), "max_user_namespaces")
+    error_message = "the zone declaring user_namespaces does not get the sysctl, so a rootless builder there cannot start"
+  }
+
+  assert {
+    condition     = !strcontains(join("\n", local.dmz_by_zone["example"]), "max_user_namespaces")
+    error_message = "a zone that did not declare user_namespaces gets them anyway, losing Talos's hardening on a machine that never asked"
+  }
+
+  assert {
+    condition     = alltrue([for k in ["redacted", "example"] : strcontains(join("\n", local.dmz_by_zone[k]), "node-labels")])
+    error_message = "a zone machine carries no untrusted-zone label, so its tenant can tolerate the zone but cannot be required onto it"
+  }
+}
