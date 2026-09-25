@@ -218,3 +218,42 @@ func TestUpsertFieldsChangesOnlyWhatDiffers(t *testing.T) {
 		t.Fatalf("an item already right was changed: %v, %v", changed, err)
 	}
 }
+
+// A generated field directly on an item is written through WriteItem, which
+// creates the item a brand new vault does not have yet. A field in a section
+// is not, because a section that does not exist means the reference is wrong
+// and inventing one hides a real credential where nobody will look.
+func TestAGeneratedFieldCreatesItsItemButNeverItsSection(t *testing.T) {
+	var used string
+	writeItem = func(vault, title string, fields map[string]string) ([]string, error) {
+		used = "item " + vault + "/" + title + "/" + strings.Join(sortedFieldNames(fields), ",")
+		return nil, nil
+	}
+	writeField = func(ref Ref, value string) error {
+		used = "field " + ref.String()
+		return nil
+	}
+	t.Cleanup(func() { writeItem, writeField = WriteItem, WriteField })
+
+	if err := writeGenerated(Ref{Vault: "site0", Item: "database", Field: "password"}, "v"); err != nil {
+		t.Fatal(err)
+	}
+	if used != "item site0/database/password" {
+		t.Errorf("a field directly on an item was written with %q; want the item-creating write", used)
+	}
+
+	if err := writeGenerated(Ref{Vault: "site0", Item: "site", Section: "database", Field: "password"}, "v"); err != nil {
+		t.Fatal(err)
+	}
+	if used != "field op://site0/site/database/password" {
+		t.Errorf("a field in a section was written with %q; want the write that refuses a missing section", used)
+	}
+}
+
+func sortedFieldNames(fields map[string]string) []string {
+	names := make([]string, 0, len(fields))
+	for k := range fields {
+		names = append(names, k)
+	}
+	return names
+}

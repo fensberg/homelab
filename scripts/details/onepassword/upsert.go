@@ -136,6 +136,28 @@ func WriteField(ref Ref, value string) error {
 	return nil
 }
 
+// writeGenerated stores a value this program generated. A field directly on
+// an item goes through WriteItem, which creates the item when the vault does
+// not have it yet: a brand new site's vault holds no `database` item until the
+// first build generates its password, and a value only a program invents
+// should never need a person to make somewhere to put it first. A field in a
+// section still needs its item and section to exist, because a section that
+// does not exist means the reference is wrong.
+func writeGenerated(ref Ref, value string) error {
+	if ref.Section != "" {
+		return writeField(ref, value)
+	}
+	_, err := writeItem(ref.Vault, ref.Item, map[string]string{ref.Field: value})
+	return err
+}
+
+// The two writers writeGenerated chooses between, as variables so a test can
+// see which one it chose without a vault.
+var (
+	writeField = WriteField
+	writeItem  = WriteItem
+)
+
 // EnsureField returns the value at ref, generating and storing one if the
 // field is absent or empty.
 //
@@ -155,7 +177,7 @@ func EnsureField(ref Ref, generate func() (string, error)) (string, string, erro
 	if err != nil {
 		return "", "", fmt.Errorf("generating a value for %s: %w", ref, err)
 	}
-	if err := WriteField(ref, value); err != nil {
+	if err := writeGenerated(ref, value); err != nil {
 		return "", "", err
 	}
 	return value, "generated", nil

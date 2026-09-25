@@ -2156,6 +2156,37 @@ Things that turned out to matter:
   tunnel token for this account. Whether the tunnel is _connected_ needs the
   estate's token, so that check moves to the estate's lane (#535).
 
+#### A new vault has no items, and generated secrets assumed one
+
+The first `build-site` against the new `site0` vault stopped at once, with
+`state encryption passphrase: reading item site0/database`. The contractor
+generates the state passphrase and the database password into the `database`
+item, and the write only knew how to add a field to an item that already
+existed. The `homelab` vault had always had that item, from before anything
+generated into it; a vault created for the scope split had none. A value only a
+program invents should never need a person to make somewhere to put it, so a
+generated field directly on an item now creates the item when it is missing.
+A field inside a section still refuses a missing section, because that means
+the reference is wrong.
+
+#### A pasted private key lost its line breaks, and the provider blamed the host
+
+The second `build-site` stopped at Compute with `unable to authenticate user
+"svc-terraform" over SSH ... attempted methods [none password]`. The disk-import
+key had been copied from the old `homelab` vault into `site0` by hand, and the
+paste put it on one line: `op read` returned it with a line count of 1. A key
+without its line breaks cannot be parsed, and the Proxmox provider does not say
+so. It offers no key, falls back, and reports a handshake failure against the
+host, after the disk image has already downloaded. The same thing happened
+earlier to procurement's App key.
+
+Compute now refuses a key that is not a BEGIN line, a body and an END line,
+before anything is applied, and the refusal gives the recovery. That recovery is
+never a re-paste: delete the two fields, and the Hypervisor phase generates a
+key, authorizes it and reads it back. It is the general lesson for moving vaults
+too: a credential the automation generated should be regenerated, not carried
+across by hand.
+
 #### Proven
 
 The first `lawyer build-estate` completed on 2026-09-25, on the third run. It
