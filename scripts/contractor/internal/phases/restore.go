@@ -132,7 +132,7 @@ the estate was torn down, which deletes the bucket and everything in it`, key, e
   What usually comes next:
 
     tofu -chdir=management/cluster plan   # see how far reality has drifted
-    ./toolshed/contractor demolish -site %s -confirm %s
+    ./toolshed/contractor demolish-site -site %s -confirm %s
 
 `, summary.Resources, ctx.Site, ctx.Site)
 	return nil

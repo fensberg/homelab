@@ -82,12 +82,12 @@ depends on.
 
 Each gates one thing, and none overlaps another:
 
-| Environment   | Gates                                       | Triggered by                 |
-| ------------- | ------------------------------------------- | ---------------------------- |
-| `management`  | the platform itself - `contractor converge` | merge touching `management/` |
-| `staging`     | workload deploys                            | merge to `main`              |
-| `production`  | workload deploys                            | tag `v*`                     |
-| `integration` | the test tiers that need a real estate      | nightly, or dispatch         |
+| Environment   | Gates                                            | Triggered by                 |
+| ------------- | ------------------------------------------------ | ---------------------------- |
+| `management`  | the platform itself - `contractor converge-site` | merge touching `management/` |
+| `staging`     | workload deploys                                 | merge to `main`              |
+| `production`  | workload deploys                                 | tag `v*`                     |
+| `integration` | the test tiers that need a real estate           | nightly, or dispatch         |
 
 `management` is a fourth environment rather than a reuse of `staging`
 deliberately. Reusing one would look leaner and would mislabel the job with the
@@ -117,7 +117,7 @@ belongs in an epoch record.
   by OpenTofu, which `tests/go/repo` enforces.
 
   Everything below that floor is generated: the state database password is
-  created by break-ground and written to 1Password, because the rule that decides is
+  created by build-site and written to 1Password, because the rule that decides is
   where a secret ends up. A secret that becomes a resource attribute is
   written into OpenTofu state, so a leaked state file yields a live
   credential; those are ours to generate. A secret that only configures a
@@ -134,13 +134,13 @@ belongs in an epoch record.
   _Convergence_ applies a config change to an estate that already exists. The
   circular dependency ignition has does not apply - the cluster is already
   there, holding the state - so a converge may run wherever it can reach the
-  estate, including on the self-hosted runner inside it. `contractor converge`
+  estate, including on the self-hosted runner inside it. `contractor converge-site`
   attaches to the state in Postgres instead of starting from an empty
   workspace, never runs Migrate, and never destroys on failure.
 
   The distinction is load-bearing rather than pedantic. After a successful
   ignition, Sterilize removes both the local state file and `backend_pg.tf`,
-  so a second `break-ground` run starts empty, plans to create every VM again, and
+  so a second `build-site` run starts empty, plans to create every VM again, and
   would copy that empty state over the real one with `-force-copy`. Changing
   `management/` had no supported path at all until converge existed.
 
@@ -208,7 +208,7 @@ belongs in an epoch record.
   pipes `tofu state pull` straight into `age` and wipes the buffer - and state
   is encrypted at rest with OpenTofu's own state encryption, keyed from
   1Password. The whole `encryption` block is carried in `TF_ENCRYPTION`, set by
-  break-ground before the first phase, so nothing in git reveals the scheme or the
+  build-site before the first phase, so nothing in git reveals the scheme or the
   key and a bare `tofu` run cannot read state at all. That is the lock, not a
   side effect - and it matters more than protecting the local file, because the
   state _is_ the Postgres database, which CloudNativePG streams to object
@@ -231,7 +231,7 @@ belongs in an epoch record.
   bucket and cannot separate write from delete, so sharing a bucket meant
   sharing a credential - and the credential that lives permanently in a cluster
   Secret could delete the copy that exists to survive that cluster being lost.
-  It also meant `demolish` destroyed the state dumps, because it empties the
+  It also meant `demolish-site` destroyed the state dumps, because it empties the
   bucket it is about to delete (#94). The bucket layout, and what belongs at
   the estate, site and node levels, is in
   [`02-abstraction.md`](docs/epochs/02-abstraction.md).
@@ -264,23 +264,23 @@ One entrypoint, a Go program, run from the Linux workstation:
 
 ```sh
 ./scripts/install-dependencies.sh   # once
-task start SITE=site0               # builds break-ground and prints the command to run it
-./toolshed/contractor break-ground -site site0 # the actual run - always run this directly, never through task
+task start SITE=site0               # builds the contractor and prints the command to run it
+./toolshed/contractor build-site -site site0 # the actual run - always run this directly, never through task
 ```
 
-**`task start` deliberately does not run break-ground itself.** `task` intercepts
+**`task start` deliberately does not run build-site itself.** `task` intercepts
 Ctrl-C for its own purposes but does not proxy the signal to the process it's
 supervising - a confirmed, currently-open upstream limitation
 (`go-task/task#1408`). Ignite's own destroy-then-sterilize cleanup on
 interrupt only runs if something actually delivers it the signal, so the
 real ignition run has to be invoked directly. Every other `task`-wrapped
-break-ground phase (`render-secrets`, `verify`, `configure-hypervisor`,
+build-site phase (`render-secrets`, `verify`, `configure-hypervisor`,
 `backup-state`, `kubeconfig`, `clean-secrets`) stays safe to wrap regardless, because none
 of them can reach the Compute phase - an interrupted one leaves stale
 secrets at worst, recoverable with `task clean-secrets`, never an orphaned
 VM.
 
-**Changing a running estate is `contractor converge`** (`task converge`). It
+**Changing a running estate is `contractor converge-site`** (`task converge`). It
 renders, attaches to the state already in the cluster, and applies - the same
 phases as ignition minus `hypervisor` and `migrate`, plus `take-over` in front.
 
@@ -330,7 +330,7 @@ the same reason: the output is most useful exactly when somebody wants to paste
 it somewhere. The saved plan file is removed by the phase that made it, and
 listed in Sterilize for the run that dies first.
 
-**Tearing it down is `contractor demolish`**, run directly for the same
+**Tearing it down is `contractor demolish-site`**, run directly for the same
 signal-handling reason `start` is. It renders the config first, which is the
 credential check rather than a formality - no 1Password session means no
 Proxmox token and no hypervisor endpoint, so the command is inert in the
@@ -367,7 +367,7 @@ so an empty field does not fail Render at all — it surfaces much later inside 
 provider as something like "credentials are empty", naming no field.
 
 **Agent commits are published with `task push`** (`scripts/signedpush`), which
-is beside break-ground and never inside it — different job, different blast radius,
+is beside build-site and never inside it — different job, different blast radius,
 and a bug in a push tool has no business living in the binary that can destroy
 the estate. Both are zero-dependency Go for the same reason: this one reads
 the GitHub App private key, so a supply chain that reaches it can mint tokens

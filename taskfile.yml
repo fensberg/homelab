@@ -22,28 +22,28 @@ vars:
 
 tasks:
   build:
-    desc: "Build the break-ground binary"
+    desc: "Build the contractor binary"
     cmds:
       - go build -C scripts/contractor -o ../../toolshed/contractor .
 
   start:
-    desc: "Builds break-ground, then tells you to run it directly - see comment"
-    # This does not exec break-ground itself, on purpose. `task` intercepts SIGINT
+    desc: "Builds the contractor, then tells you to run it directly - see comment"
+    # This does not exec build-site itself, on purpose. `task` intercepts SIGINT
     # for itself but does not proxy it to the subprocess it's supervising -
     # a confirmed, currently-open upstream limitation
     # (github.com/go-task/task/issues/1408). A Ctrl-C aimed at `task start`
-    # can kill break-ground before its own signal handler ever runs, which is
-    # exactly what leaves VMs orphaned instead of destroyed. break-ground's
+    # can kill build-site before its own signal handler ever runs, which is
+    # exactly what leaves VMs orphaned instead of destroyed. build-site's
     # destroy-then-sterilize cleanup on interrupt only works when something
     # actually delivers it the signal - which means running the binary
-    # yourself, not through task. Every other break-ground-invoking task below is
+    # yourself, not through task. Every other contractor-invoking task below is
     # safe to wrap because none of them can reach the Compute phase, so an
     # interrupted one leaves stale secrets at worst - recoverable with
     # `task clean-secrets` - never an orphaned VM.
     cmds:
       - task: build
       - 'echo "Built. Run directly so Ctrl-C can safely destroy and sterilize:"'
-      - 'echo "  ./toolshed/contractor break-ground -site {{.SITE}}"'
+      - 'echo "  ./toolshed/contractor build-site -site {{.SITE}}"'
 
   plan:
     desc: "Show what a converge would change, without changing it"
@@ -58,14 +58,14 @@ tasks:
     desc: "Apply the config to an estate that already exists"
     # Safe to wrap, unlike start, and for a reason that is worth stating
     # rather than assumed. start is unwrapped because an interrupted ignition
-    # can leave VMs nothing is tracking, and only break-ground's own signal handler
+    # can leave VMs nothing is tracking, and only build-site's own signal handler
     # destroys them. A converge cannot reach that state: the estate already
-    # exists, its state already lives in Postgres, and break-ground never destroys
+    # exists, its state already lives in Postgres, and build-site never destroys
     # on failure or interrupt in this mode. An interrupted converge leaves a
     # running estate and a state file that still describes it.
     cmds:
       - task: build
-      - ./toolshed/contractor converge -site {{.SITE}}
+      - ./toolshed/contractor converge-site -site {{.SITE}}
 
   phases:
     desc: "List the phases an ignition would run, without running them"
@@ -74,7 +74,7 @@ tasks:
     # estate". The second is the one anybody means by "plan".
     cmds:
       - task: build
-      - ./toolshed/contractor break-ground -site {{.SITE}} -whatif
+      - ./toolshed/contractor build-site -site {{.SITE}} -whatif
 
   render-secrets:
     desc: "Prove every template renders from 1Password, then wipe what it wrote"
@@ -94,7 +94,7 @@ tasks:
     # question - do the references resolve - without pulling a single value.
     cmds:
       - task: build
-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase render
+      - ./toolshed/contractor build-site -site {{.SITE}} -phase render
 
   push:
     desc: "Publish the current branch as GitHub-signed commits"
@@ -223,13 +223,13 @@ tasks:
     desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:
       - task: build
-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase verify
+      - ./toolshed/contractor build-site -site {{.SITE}} -phase verify
 
   configure-hypervisor:
     desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
     cmds:
       - task: build
-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase hypervisor
+      - ./toolshed/contractor build-site -site {{.SITE}} -phase hypervisor
 
   check-hypervisor:
     desc: "Dry-run the playbook: show what would change, change nothing"
@@ -248,13 +248,13 @@ tasks:
     # refuses a play that matched nothing.
     cmds:
       - task: build
-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase hypervisor -check
+      - ./toolshed/contractor build-site -site {{.SITE}} -phase hypervisor -check
 
   backup-state:
     desc: "Encrypt the current state and push it to Cloudflare R2"
     cmds:
       - task: build
-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase backup
+      - ./toolshed/contractor build-site -site {{.SITE}} -phase backup
 
   apply-patches:
     desc: "Apply every outstanding handover patch, or none of them"
@@ -732,25 +732,25 @@ tasks:
       - codespell
 
   destroy:
-    desc: "Builds break-ground, then tells you how to tear a site down - see comment"
+    desc: "Builds the contractor, then tells you how to tear a site down - see comment"
     # Same shape as `start`, and for the same reason: this reaches real
     # infrastructure, and `task` intercepts Ctrl-C without proxying it to the
     # process it supervises (go-task/task#1408). An interrupted destroy that
     # never received the signal cannot wait for tofu to release its state
     # lock, which is precisely how a half-finished teardown turns into VMs
-    # nothing is tracking. Every other break-ground-wrapped task here is safe to
+    # nothing is tracking. Every other contractor-wrapped task here is safe to
     # exec directly because none of them can reach real infrastructure; this
     # one can, so it prints the command instead of running it.
     cmds:
       - task: build
       - 'echo "Built. Run directly so Ctrl-C can wait for tofu to release its lock:"'
-      - 'echo "  ./toolshed/contractor demolish -site {{.SITE}} -confirm {{.SITE}}"'
+      - 'echo "  ./toolshed/contractor demolish-site -site {{.SITE}} -confirm {{.SITE}}"'
       - 'echo ""'
       - 'echo "Add -whatif first if you want to see what that would do."'
 
   kubeconfig:
     desc: "Write this site's kubeconfig into the workspace, for looking at the cluster"
-    # Safe to wrap, like every other break-ground task except start and destroy: it
+    # Safe to wrap, like every other build-site task except start and destroy: it
     # reads one tofu output and writes one file, and can no more reach the
     # Compute phase than `render` can. An interrupted run leaves a credential
     # on disk at worst, which `task clean-secrets` removes.
@@ -801,4 +801,4 @@ tasks:
     desc: "Wipe every rendered secret and the local state file"
     cmds:
       - task: build
-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase sterilize
+      - ./toolshed/contractor build-site -site {{.SITE}} -phase sterilize

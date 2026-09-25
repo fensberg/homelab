@@ -121,7 +121,7 @@ func TestMachinesInStateOnEmptyStateReportsNone(t *testing.T) {
 // different one from being shown what will go (#213).
 //
 // The irreversible line in that list is the object storage. The machines are
-// disposable and come back from a break-ground; the age-encrypted state dumps
+// disposable and come back from a build-site; the age-encrypted state dumps
 // do not, and the teardown empties the bucket because Cloudflare will not
 // delete a non-empty one (#94).
 func TestTheTeardownNamesTheObjectStorageBeforeEmptyingIt(t *testing.T) {

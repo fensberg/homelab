@@ -13,7 +13,7 @@ import (
 // address that works from inside the cluster as well as outside it (#99). A
 // devbox on the LAN alone hands that address to the LAN gateway, which
 // black-holes it - and a provider given an unreachable API does not fail, it
-// waits. Every local `break-ground` and `demolish` then hangs with no error at
+// waits. Every local `build-site` and `demolish-site` then hangs with no error at
 // all. That cost a full day before anybody read a route table.
 //
 // So the provisioning has to put the machine on the overlay, and has to refuse

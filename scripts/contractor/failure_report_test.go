@@ -14,7 +14,7 @@ import (
 // and a revert is exact.
 func TestPreexistingFailure_UntouchedGetsItsOwnExitCode(t *testing.T) {
 	ctx := &run.Context{Site: "site0"}
-	if got := reportPreexistingFailure(ctx, "converge"); got != exitUntouched {
+	if got := reportPreexistingFailure(ctx, "converge-site"); got != exitUntouched {
 		t.Fatalf("got exit %d, want %d for a run that never attached", got, exitUntouched)
 	}
 }
@@ -24,7 +24,7 @@ func TestPreexistingFailure_UntouchedGetsItsOwnExitCode(t *testing.T) {
 // for anything automating on this.
 func TestPreexistingFailure_CannotTellIsTreatedAsChanged(t *testing.T) {
 	ctx := &run.Context{Site: "site0", TakenOverOK: true, ClusterDir: t.TempDir()}
-	if got := reportPreexistingFailure(ctx, "converge"); got != exitMayHaveChanged {
+	if got := reportPreexistingFailure(ctx, "converge-site"); got != exitMayHaveChanged {
 		t.Fatalf("got exit %d, want %d when the estate's state could not be read", got, exitMayHaveChanged)
 	}
 }
