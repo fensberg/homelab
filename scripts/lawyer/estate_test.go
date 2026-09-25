@@ -235,3 +235,35 @@ func TestSterilizeRemovesWhatTheRunWrote(t *testing.T) {
 	}
 	e.sterilize() // nothing left: must not fail or warn
 }
+
+// The first build has no state at all, and that must read as an empty estate
+// rather than fail; state that is present and unreadable must fail rather than
+// read as empty, or build-estate would build over it.
+func TestStateIsReadAsEmptyOnlyWhenThereIsNone(t *testing.T) {
+	for _, none := range []string{"", "\n"} {
+		got, err := stateResources([]byte(none))
+		if err != nil || len(got) != 0 {
+			t.Errorf("no state %q: got %v, %v", none, got, err)
+		}
+	}
+
+	got, err := stateResources([]byte(`{"version":4,"serial":3,"resources":[
+		{"mode":"data","type":"cloudflare_accounts","name":"a"},
+		{"mode":"managed","type":"cloudflare_zero_trust_access_application","name":"enrollment"},
+		{"mode":"managed","type":"cloudflare_zero_trust_split_tunnel","name":"estate"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, " ") != enrollmentAddress+" cloudflare_zero_trust_split_tunnel.estate" {
+		t.Errorf("got %v; want the two managed resources and no data source", got)
+	}
+
+	if got, err := stateResources([]byte(`{"version":4,"serial":1,"resources":[]}`)); err != nil || len(got) != 0 {
+		t.Errorf("an emptied estate: got %v, %v", got, err)
+	}
+	for _, bad := range []string{`not json`, `{"version":4}`} {
+		if _, err := stateResources([]byte(bad)); err == nil {
+			t.Errorf("unreadable state %q was taken for an empty estate", bad)
+		}
+	}
+}

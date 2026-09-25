@@ -3096,6 +3096,21 @@ The general form, which is the third time this epoch has produced one: the
 repository declaring something is not evidence the estate has it. Wherever a
 declaration has an observable effect, something automated has to observe it.
 
+### `tofu state list` fails on the one run where empty is the answer
+
+The first real `lawyer build-estate` stopped at Take over with "No state file
+was found". It asked for the estate's resources with `tofu state list`, and
+`list` treats "there is no state yet" as an error. A first build is exactly the
+run where no state is the correct and expected answer. `tofu state pull` prints
+nothing and exits 0 in the same situation, which is why the contractor already
+used it, and the lawyer does now. It also parses what it pulls: state that is
+present but unreadable is an error, never an empty estate, because build-estate
+would take an empty estate as permission to build over it.
+
+The unit tests had covered which verb admits which state, but not the command
+that produced the state they judged. It took the first run against a real
+backend to find it.
+
 ### The pre-merge check and the post-merge action were different commands
 
 Renaming one R2 bucket resource stopped every converge on `main`.

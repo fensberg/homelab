@@ -268,12 +268,52 @@ func (e *estate) adoptEnrollment(api cloudflare, resources []string) error {
 	return e.run("import", "-input=false", enrollmentAddress, e.cfg.Access.AccountID+"/"+id)
 }
 
+// stateList names the managed resources the estate's state holds.
+//
+// `state pull` rather than `state list`: list fails with "No state file was
+// found" on the first build, which is the one run where an empty answer is
+// the correct one, while pull prints nothing.
 func (e *estate) stateList() ([]string, error) {
-	out, err := e.tofuOutput("state", "list")
+	out, err := e.tofuOutput("state", "pull")
 	if err != nil {
 		return nil, err
 	}
-	return strings.Fields(out), nil
+	return stateResources([]byte(out))
+}
+
+// stateResources reads resource addresses out of a pulled state. No state at
+// all is no resources. State that is present and cannot be read is an error,
+// never an empty estate: build-estate would take it for permission to build.
+func stateResources(state []byte) ([]string, error) {
+	if len(bytes.TrimSpace(state)) == 0 {
+		return nil, nil
+	}
+	var st struct {
+		Resources *[]struct {
+			Module string `json:"module"`
+			Mode   string `json:"mode"`
+			Type   string `json:"type"`
+			Name   string `json:"name"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(state, &st); err != nil {
+		return nil, fmt.Errorf("the estate's state is present and cannot be read: %w", err)
+	}
+	if st.Resources == nil {
+		return nil, errors.New("the estate's state is present and has no resources list, so it is not state this lawyer can read")
+	}
+	var addrs []string
+	for _, r := range *st.Resources {
+		if r.Mode != "managed" {
+			continue
+		}
+		addr := r.Type + "." + r.Name
+		if r.Module != "" {
+			addr = r.Module + "." + addr
+		}
+		addrs = append(addrs, addr)
+	}
+	return addrs, nil
 }
 
 // backendEnv reaches the estate's bucket with its own credential and no other,
