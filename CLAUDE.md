@@ -92,16 +92,18 @@ Each gates one thing, and none overlaps another:
 `management` is a fourth environment rather than a reuse of `staging`
 deliberately. Reusing one would look leaner and would mislabel the job with the
 largest blast radius in the repository. The secret it holds is scoped to match:
-read and write on the `homelab` vault only, because that is the only vault the
-platform's own secrets live in.
+the site's own service account, with read and write on `site0` and read on
+`site0-shared` and `estate-shared`, and nothing else. The contractor refuses a
+token that can see more (`scripts/details/vaults`).
 
 ## Invariants
 
 These hold across all epochs. Changing one is an epoch-level decision that
 belongs in an epoch record.
 
-- **No secret ever lands in git.** Secrets live in the 1Password `homelab`
-  vault and are materialized at runtime by `op inject` into gitignored files.
+- **No secret ever lands in git.** Secrets live in 1Password, one vault per
+  scope (`estate`, `estate-shared`, `<site>-shared`, `<site>`; see epoch 02),
+  and are materialized at runtime by `op inject` into gitignored files.
   Everything rendered is wiped by the Sterilize phase.
 - **No ClickOps, with one honest floor.** Anything a human would otherwise
   click — Proxmox SDN, overlay route approval, storage buckets — is codified.
@@ -541,8 +543,8 @@ depends on it and uses them.
 
   The four in `deploy-infrastructure.yml` and the one in `integration-tests.yml`
   are the ones worth arguing about: they run on the **self-hosted runner inside
-  the estate**, holding a vault token with read and write on the whole
-  `homelab` vault, while every pull request lane that holds nothing is blocked.
+  the estate**, holding a vault token with read and write on the site's
+  own vault, while every pull request lane that holds nothing is blocked.
   There is a real case for them - a converge reaches the hypervisor, Talos, the
   overlay, object storage and 1Password, several at private addresses, and that
   allowlist would be long and brittle - but a case nobody wrote down is not a

@@ -18,22 +18,8 @@ import (
 	"homelab/details/secrets"
 	"homelab/details/stateencryption"
 	"homelab/details/tofustate"
+	"homelab/details/vaults"
 )
-
-// estateVault is the vault the estate's secrets live in. One vault per scope,
-// named for the scope, because a 1Password token is granted per vault and so
-// the vault is the unit a program's reach can be drawn around:
-//
-//	estate          the lawyer's alone: account-wide credentials
-//	estate-shared   the lawyer writes, every site reads
-//	<site>-shared   the lawyer writes, that one site reads
-//	<site>          the site's alone; the lawyer never sees it
-//
-// The names are generic enough to sit in git without naming anybody.
-const estateVault = "estate"
-
-// sharedSuffix marks a vault the lawyer writes for a narrower scope to read.
-const sharedSuffix = "-shared"
 
 // enrollmentAddress is the one estate object that may already exist before
 // the estate is built: Cloudflare keeps a single WARP enrollment application
@@ -78,28 +64,6 @@ func (c config) validate() error {
 		if strings.TrimSpace(v) == "" {
 			return fmt.Errorf("%s in the estate vault is empty", field)
 		}
-	}
-	return nil
-}
-
-// checkVaults is the credential boundary. The lawyer's token must reach the
-// estate vault, and otherwise only vaults it writes for somebody else - the
-// "-shared" ones. A site's own vault is refused: what a site generates for
-// itself is the site's, and the lawyer holding it would make a compromise of
-// the estate a compromise of every site. Refused vaults are counted, never
-// named - their names reach a public Actions log.
-func checkVaults(names []string) error {
-	if !slices.Contains(names, estateVault) {
-		return fmt.Errorf("the 1Password token cannot see the %q vault. The lawyer's service account must be granted it", estateVault)
-	}
-	refused := 0
-	for _, n := range names {
-		if n != estateVault && !strings.HasSuffix(n, sharedSuffix) {
-			refused++
-		}
-	}
-	if refused > 0 {
-		return fmt.Errorf("the 1Password token reaches %d vault(s) that are neither %q nor a %q vault. The lawyer holds the estate's credentials and writes what it shares; a site's own vault is the site's alone, so the service account must not be granted one", refused, estateVault, "*"+sharedSuffix)
 	}
 	return nil
 }
@@ -202,7 +166,7 @@ func (e *estate) vault() error {
 	if err != nil {
 		return err
 	}
-	if err := checkVaults(names); err != nil {
+	if err := vaults.CheckLawyer(names); err != nil {
 		return err
 	}
 	console.Ok("the token reaches the estate vault and the vaults it shares, and nothing else")
@@ -213,7 +177,7 @@ func (e *estate) vault() error {
 // on the first build. The estate's, not any site's: a site's passphrase lives
 // in the site's vault, which this token cannot read.
 func (e *estate) encrypt() error {
-	ref := onepassword.Ref{Vault: estateVault, Item: "state", Field: stateencryption.PassphraseField}
+	ref := onepassword.Ref{Vault: vaults.Estate, Item: "state", Field: stateencryption.PassphraseField}
 	return stateencryption.Establish(func() (string, error) {
 		passphrase, status, err := onepassword.EnsureField(ref, func() (string, error) { return secrets.Password(32) })
 		if status == "generated" {

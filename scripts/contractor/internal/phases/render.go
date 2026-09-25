@@ -8,13 +8,14 @@ import (
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 	"homelab/details/onepassword"
+	"homelab/details/vaults"
 )
 
 // Render pulls secrets out of 1Password into gitignored files.
 func Render(ctx *run.Context) error {
 	run.WritePhase("Render", "Pull secrets from 1Password into gitignored files.")
 
-	if err := EnsureVaultSession(); err != nil {
+	if err := EnsureVaultSession(ctx.Site); err != nil {
 		return err
 	}
 
@@ -105,14 +106,19 @@ sdn_vnet_vni: %d
 	return nil
 }
 
-// EnsureVaultSession makes sure `op` is present and signed in.
+// EnsureVaultSession makes sure `op` is present and signed in, and that the
+// token reaches this site's vaults and nothing else (vaults.CheckSite): its
+// own, what the estate grants it, and what the estate shares with every site.
+// A token that can see the estate's vault or a sibling's is refused before a
+// single secret is read, because a site holding it could harm what it cannot
+// see today.
 //
 // Signing in here rather than failing and making the operator do it: an
 // unsigned CLI otherwise surfaces as `op inject` emitting a half-rendered
 // file, which is a far worse failure than a prompt. Shared with
 // EnsureStateEncryption, which needs a session before the first phase runs and
 // therefore before Render has had a chance to establish one.
-func EnsureVaultSession() error {
+func EnsureVaultSession(site string) error {
 	if !onepassword.Available() {
 		return onepassword.ErrNoCLI
 	}
@@ -131,5 +137,13 @@ If the desktop app is installed, enable Settings > Developer > Integrate with
 	if email, err := onepassword.WhoamiEmail(); err == nil && email != "" {
 		run.Ok("signed in to 1Password as " + email)
 	}
+	names, err := onepassword.Vaults()
+	if err != nil {
+		return err
+	}
+	if err := vaults.CheckSite(site, names); err != nil {
+		return err
+	}
+	run.Ok("the token reaches this site's vaults and nothing else")
 	return nil
 }

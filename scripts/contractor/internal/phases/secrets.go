@@ -7,19 +7,23 @@ import (
 	"homelab/contractor/internal/run"
 	"homelab/details/onepassword"
 	"homelab/details/secrets"
+	"homelab/details/vaults"
 )
 
 // The estate's break-glass keypair, addressed once so that the Render, Backup
 // and Sterilize phases cannot drift apart on where it lives. There is no site
 // in these paths on purpose: one key covers the whole estate.
 //
-// Only the recipient is ever read by this program. BackupIdentityRef exists so
-// that ignite can tell a human where to put the private half and where to find
-// it again during a restore - it is never fetched here, and no OpenTofu file
-// may name it at all (tests/go/repo/breakglass_test.go).
-const (
-	BackupRecipientRef = "op://homelab/state_backup/recipient"
-	BackupIdentityRef  = "op://homelab/state_backup/identity"
+// The two halves live in different vaults, and that is the point. The
+// recipient is public, so it is in estate-shared, which every site reads. The
+// identity is in the estate's own vault, which no site's token can see at all,
+// so this program cannot read it even by mistake: a restore takes it piped on
+// stdin from a person holding the estate token. BackupIdentityRef exists only
+// so the program can tell that person where it is, and no OpenTofu file may
+// name it (tests/go/repo/breakglass_test.go).
+var (
+	BackupRecipientRef = "op://" + vaults.EstateShared + "/state_backup/recipient"
+	BackupIdentityRef  = "op://" + vaults.Estate + "/state_backup/identity"
 )
 
 // ensureGeneratedSecrets creates the credentials this project owns end to end,
@@ -43,18 +47,18 @@ func ensureGeneratedSecrets(ctx *run.Context) error {
 	if err := ensureStatePassword(ctx); err != nil {
 		return err
 	}
-	if err := ensureTunnelSecret(); err != nil {
+	if err := ensureTunnelSecret(ctx.Site); err != nil {
 		return err
 	}
-	if err := ensureWorldBackupKey(); err != nil {
+	if err := ensureWorldBackupKey(ctx.Site); err != nil {
 		return err
 	}
 	return assertBackupKeypair(ctx)
 }
 
-// WorldBackupKeyRef encrypts the game world's backups. Per workload, like the
+// WorldBackupKeyRef encrypts the game world's backups. The site's, like the
 // world it protects.
-const WorldBackupKeyRef = "op://homelab/valheim/backup_key"
+func WorldBackupKeyRef(site string) string { return "op://" + site + "/valheim/backup_key" }
 
 // ensureWorldBackupKey generates the key the game server's backups are
 // encrypted with.
@@ -65,8 +69,8 @@ const WorldBackupKeyRef = "op://homelab/valheim/backup_key"
 // decrypts with it, both from that Secret, so a rebuilt estate restores the
 // world with no human in the loop. A backup bucket that leaks without this
 // key yields ciphertext.
-func ensureWorldBackupKey() error {
-	ref, err := onepassword.ParseRef(WorldBackupKeyRef)
+func ensureWorldBackupKey(site string) error {
+	ref, err := onepassword.ParseRef(WorldBackupKeyRef(site))
 	if err != nil {
 		return err
 	}
@@ -82,8 +86,8 @@ func ensureWorldBackupKey() error {
 	return nil
 }
 
-// TunnelSecretRef is the tunnel's password. Fleet-level, like the tunnel.
-const TunnelSecretRef = "op://homelab/tunnel/secret"
+// TunnelSecretRef is the tunnel's password. The site's, like its tunnel.
+func TunnelSecretRef(site string) string { return "op://" + site + "/tunnel/secret" }
 
 // ensureTunnelSecret generates the Cloudflare Tunnel's password.
 //
@@ -95,8 +99,8 @@ const TunnelSecretRef = "op://homelab/tunnel/secret"
 // The provider wants 32 or more bytes, base64-encoded. The password generator
 // is letters and digits only; management/cluster/tunnel.tf base64-encodes it,
 // and 44 characters carries more than 32 bytes of it and ~260 bits.
-func ensureTunnelSecret() error {
-	ref, err := onepassword.ParseRef(TunnelSecretRef)
+func ensureTunnelSecret(site string) error {
+	ref, err := onepassword.ParseRef(TunnelSecretRef(site))
 	if err != nil {
 		return err
 	}
@@ -113,7 +117,7 @@ func ensureTunnelSecret() error {
 }
 
 func ensureStatePassword(ctx *run.Context) error {
-	ref, err := onepassword.ParseRef(fmt.Sprintf("op://homelab/%s/database/password", ctx.Site))
+	ref, err := onepassword.ParseRef(fmt.Sprintf("op://%s/database/password", ctx.Site))
 	if err != nil {
 		return err
 	}
@@ -144,12 +148,16 @@ func ensureStatePassword(ctx *run.Context) error {
 // human-supplied because they come from a console. This one is human-supplied
 // because it must not come from here.
 //
-// It lives at op://homelab/state_backup, outside every site, because there is
-// one break-glass key for the whole estate. That is not a convenience: the
-// recipient is a public key, so sharing it across sites costs nothing, while
-// rotating it strands every backup already encrypted to the previous one. A
-// key per site would multiply the number of private halves a restore has to
-// find, for no security gained.
+// It lives outside every site, because there is one break-glass key for the
+// whole estate. That is not a convenience: the recipient is a public key, so
+// sharing it across sites costs nothing, while rotating it strands every
+// backup already encrypted to the previous one. A key per site would multiply
+// the number of private halves a restore has to find, for no security gained.
+//
+// Only the recipient is checked. The identity is in the estate's own vault,
+// which this site's token cannot see - so its absence cannot be told from its
+// presence here, and that is the property rather than a gap: a site that
+// could confirm the private half exists could read it.
 func assertBackupKeypair(*run.Context) error {
 	recipientRef, err := onepassword.ParseRef(BackupRecipientRef)
 	if err != nil {
@@ -159,53 +167,25 @@ func assertBackupKeypair(*run.Context) error {
 	if err != nil {
 		return err
 	}
-
-	present := func(r onepassword.Ref) bool {
-		v, err := onepassword.Read(r.String())
-		return err == nil && strings.TrimSpace(v) != ""
-	}
-	haveRecipient, haveIdentity := present(recipientRef), present(identityRef)
-
-	switch {
-	case haveRecipient && haveIdentity:
+	if v, err := onepassword.Read(recipientRef.String()); err == nil && strings.TrimSpace(v) != "" {
 		return nil
-
-	case !haveRecipient && !haveIdentity:
-		return fmt.Errorf(`the estate has no state-backup keypair, and ignite will not create one.
+	}
+	return fmt.Errorf(`the estate has no state-backup recipient at %s, and ignite will not create one.
 
 It is the break-glass: its whole purpose is to be outside this program's
-control, so generating it here would defeat it. Make one once for the estate
-and store both halves:
+control, so generating it here would defeat it. With the estate's token, make
+one once for the estate and store the two halves in their two vaults - the
+public recipient where every site reads it, the private identity where no site
+can:
 
     age-keygen -o backup.key            # prints the age1... recipient
-    op item edit %s --vault %s \
-      %s[text]=<the age1 line> \
-      %s[password]=<the AGE-SECRET-KEY line>
+    op item edit %s --vault %s %s[text]=<the age1 line>
+    op item edit %s --vault %s %s[password]=<the AGE-SECRET-KEY line>
     shred -u backup.key
 
 The same keypair serves every site - one break-glass key, not one per site`,
-			recipientRef.Item, recipientRef.Vault, fieldAddress(recipientRef), fieldAddress(identityRef))
-
-	case haveRecipient && !haveIdentity:
-		// Backups are being taken and encrypted to a key whose private half
-		// this project cannot see. Not fatal - the backups are still valid -
-		// but a restore depends on finding a file rather than opening a vault.
-		run.Warn("the state-backup recipient is set but its identity is not.")
-		run.Warn("Backups are encrypted to a key whose private half is not in the vault, so a")
-		run.Warn("restore depends on someone finding it. Store it beside the recipient:")
-		run.Warn("    op item edit " + identityRef.Item + " --vault " + identityRef.Vault +
-			" " + fieldAddress(identityRef) + "[password]=<the AGE-SECRET-KEY line>")
-		return nil
-
-	default: // identity without recipient
-		return fmt.Errorf(`the estate has a state-backup identity but no recipient.
-
-The Backup phase has nothing to encrypt to. Derive the recipient from the
-identity you already hold rather than making a new pair, which would strand
-whatever the stored identity was for:
-
-    op read "%s" | age-keygen -y`, identityRef)
-	}
+		recipientRef, recipientRef.Item, recipientRef.Vault, fieldAddress(recipientRef),
+		identityRef.Item, identityRef.Vault, fieldAddress(identityRef))
 }
 
 // fieldAddress renders the "section.field" (or bare "field") form that

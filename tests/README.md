@@ -374,17 +374,18 @@ op read "op://homelab-automation/OP_SERVICE_ACCOUNT_TOKEN/credential" \
 ```
 
 > **The thing most likely to break the first run.** That service account must
-> have read access to the **`homelab`** vault, not only to whichever vault the
-> token itself is stored in. Every reference in `config/management.tpl.json` is
-> an `op://homelab/...` path, so a token scoped to a different vault renders
-> nothing and the run dies at its first step. Check before dispatching:
+> be the site's: read and write on **`site0`**, read on **`site0-shared`** and
+> **`estate-shared`**, and nothing else. `config/management.tpl.json` reads
+> from those three, and the contractor refuses a token that can see any other
+> vault, so both too little and too much stop the run at its first step. Check
+> before dispatching:
 >
 > ```sh
 > OP_SERVICE_ACCOUNT_TOKEN="$(op read 'op://homelab-automation/OP_SERVICE_ACCOUNT_TOKEN/credential')" \
 >   op vault list
 > ```
 >
-> `homelab` must appear in that list.
+> Exactly `site0`, `site0-shared` and `estate-shared` must appear in that list.
 
 **Then dispatch it by hand rather than waiting for 04:00.** Actions ->
 Integration Tests -> Run workflow, tier `integration`. The first run is

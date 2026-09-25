@@ -40,10 +40,10 @@ import (
 // weakens the property if it were ever left switched on.
 func EnsureStateEncryption(ctx *run.Context) error {
 	return stateencryption.Establish(func() (string, error) {
-		if err := EnsureVaultSession(); err != nil {
+		if err := EnsureVaultSession(ctx.Site); err != nil {
 			return "", err
 		}
-		ref, err := onepassword.ParseRef(fmt.Sprintf("op://homelab/%s/database/%s", ctx.Site, stateencryption.PassphraseField))
+		ref, err := onepassword.ParseRef(fmt.Sprintf("op://%s/database/%s", ctx.Site, stateencryption.PassphraseField))
 		if err != nil {
 			return "", err
 		}

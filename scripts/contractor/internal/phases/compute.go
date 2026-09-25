@@ -39,11 +39,11 @@ func Compute(ctx *run.Context) error {
 	// recovery-path edge case; re-running ignite once picks up the
 	// now-stable value from a fresh Render.
 	run.Info("resolving the disk-import SSH credential")
-	sshUser, err := onepassword.Read(fmt.Sprintf("op://homelab/%s/hypervisor/ssh_username", ctx.Site))
+	sshUser, err := onepassword.Read(fmt.Sprintf("op://%s/hypervisor/ssh_username", ctx.Site))
 	if err != nil {
 		return fmt.Errorf("resolving disk-import SSH credential (run the Hypervisor phase first): %w", err)
 	}
-	sshKey, err := onepassword.Read(fmt.Sprintf("op://homelab/%s/hypervisor/ssh_private_key", ctx.Site))
+	sshKey, err := onepassword.Read(fmt.Sprintf("op://%s/hypervisor/ssh_private_key", ctx.Site))
 	if err != nil {
 		return fmt.Errorf("resolving disk-import SSH credential (run the Hypervisor phase first): %w", err)
 	}

@@ -10,30 +10,6 @@ import (
 	"testing"
 )
 
-// The lawyer holds the estate's credentials and only those. A token reaching a
-// second vault can read a site's credentials, so it is refused rather than
-// used with care.
-func TestTheLawyerRefusesATokenThatReachesMoreThanTheEstate(t *testing.T) {
-	for _, ok := range [][]string{
-		{"estate"},
-		{"estate", "estate-shared", "site0-shared"},
-	} {
-		if err := checkVaults(ok); err != nil {
-			t.Errorf("%v was refused: %v", ok, err)
-		}
-	}
-	if err := checkVaults([]string{"estate-shared", "site0-shared"}); err == nil {
-		t.Error("a token that cannot see the estate vault was accepted")
-	}
-	err := checkVaults([]string{"estate", "estate-shared", "site0"})
-	if err == nil {
-		t.Fatal("a token reaching a site's own vault was accepted, so the lawyer could read what a site generates for itself")
-	}
-	if strings.Contains(err.Error(), "site0") {
-		t.Errorf("the refusal names another vault, and it reaches a public log: %v", err)
-	}
-}
-
 // Build establishes and converge maintains, and each refuses the other's case.
 func TestEachVerbRefusesTheEstateItWasNotMeantFor(t *testing.T) {
 	standing := []string{enrollmentAddress}
