@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"homelab/details/tofustate"
+
+	"homelab/details/procenv"
 )
 
 // Cmd runs an external command with inherited stdio, in dir. Go already
@@ -45,7 +47,7 @@ func CmdEnv(dir string, extraEnv []string, name string, args ...string) error {
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
-	c.Env = append(os.Environ(), extraEnv...)
+	c.Env = procenv.With(os.Environ(), extraEnv)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -604,7 +606,7 @@ func CmdOutputEnv(dir string, extraEnv []string, name string, args ...string) (s
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
-	c.Env = append(os.Environ(), extraEnv...)
+	c.Env = procenv.With(os.Environ(), extraEnv)
 	var out bytes.Buffer
 	c.Stdout = &out
 	c.Stderr = os.Stderr
@@ -638,7 +640,7 @@ func CmdBytes(dir string, extraEnv []string, stdin []byte, name string, args ...
 	c := exec.Command(name, args...)
 	c.Dir = dir
 	if len(extraEnv) > 0 {
-		c.Env = append(os.Environ(), extraEnv...)
+		c.Env = procenv.With(os.Environ(), extraEnv)
 	}
 	if stdin != nil {
 		c.Stdin = bytes.NewReader(stdin)

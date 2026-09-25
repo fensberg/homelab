@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"homelab/details/procenv"
 )
 
 // RunEnv runs a command with extra environment variables and returns its
@@ -15,7 +17,7 @@ import (
 func RunEnv(t *testing.T, env []string, name string, args ...string) (string, error) {
 	t.Helper()
 	c := exec.Command(name, args...)
-	c.Env = append(os.Environ(), env...)
+	c.Env = procenv.With(os.Environ(), env)
 	var out, errBuf bytes.Buffer
 	c.Stdout = &out
 	c.Stderr = &errBuf
