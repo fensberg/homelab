@@ -2061,6 +2061,15 @@ closing bar printed colour codes into pipes (#537).
   precondition. Who may enroll is checked where it is declared, in the estate.
 - An estate-only change no longer counts as site work in the deploy workflow.
 
+#### Proven
+
+The first `lawyer build-estate` completed on 2026-09-25, on the third run. It
+built from an empty estate bucket into state encrypted under the estate's own
+generated passphrase. The account had no enrollment application to adopt, so
+the apply created all three objects (the enrollment application, the Access
+policy and the split tunnel) and stopped there. The two failed runs before it
+are the `state list` / blank-state gotcha below.
+
 #### Found on the way, and not fixed here
 
 - **Nothing converges the estate on merge** (#535). The site converge runs on a
