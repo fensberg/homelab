@@ -44,14 +44,13 @@ debt:
   - "refs/signing/"
   - "user.email=a@example.com"
 
-  # --- Paths into this repository (20)
+  # --- Paths into this repository (18)
   - ".pre-commit-config.yaml"
   - "age-encryption.org/v1"
   - "approved-suppliers.yml"
   - "clusters/management/infrastructure/controllers/openebs.yaml"
   - "epoch/03-workload"
   - "fensberg/homelab"
-  - "gotk-sync.yaml"
   - "http://127.0.0.1:1"
   - "hypervisor-prep.yml"
   - "management.rendered.json"
@@ -123,9 +122,8 @@ debt:
   # one file expedite may change without review, and the pod-shape guard in
   # tests/go/repo/world_backup_test.go reads that file. Goes when the standing
   # order moves off it to releases.yaml (#510, R2b).
-  - "modules/applications/valheim/base/deployment.yaml"
 
-  # --- Field names two separate documents happen to share (11)
+  # --- Field names two separate documents happen to share (12)
   #
   # The estate's rendered config (config/estate.tpl.json, read by the lawyer)
   # and a site's (config/management.tpl.json, read by the contractor) describe
@@ -133,13 +131,16 @@ debt:
   # on purpose: sharing one would put the lawyer's reading of its config in the
   # contractor's package, across the credential boundary the two programs
   # exist to hold. change is a plan's per-resource change and, separately, an
-  # apply summary's count of changed resources. errors and result are
+  # apply summary's count of changed resources. context is a work order's
+  # build directory and, in GitHub's rulesets API, a required check's name.
+  # errors and result are
   # Cloudflare's envelope, which also happens to be GitHub's and Prometheus's
   # vocabulary.
   - 'json:"access_key_id"'
   - 'json:"account_id"'
   - 'json:"bucket"'
   - 'json:"change"'
+  - 'json:"context"'
   - 'json:"errors"'
   - 'json:"organization"'
   - 'json:"provider"'
@@ -154,3 +155,11 @@ debt:
   # estate scope guard declares the type the estate's. A Go constant cannot be
   # shared: the lawyer is a main package, which nothing may import.
   - "cloudflare_r2_bucket"
+
+  # --- A Kubernetes kind two readers of the releases file both name (1)
+  #
+  # The superintendent reads production's release pins to judge a delivery,
+  # and the test tier holds every release pin to a digest. A kind is the API's
+  # vocabulary rather than a fact this repository decides, and each reader
+  # needs only the pins, so neither takes the other's parser.
+  - "OCIRepository"

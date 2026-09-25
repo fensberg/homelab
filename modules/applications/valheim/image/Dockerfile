@@ -81,10 +81,14 @@ RUN curl -fsSL -o /rclone.deb \
 # is the right place for it to fail.
 ARG VALHEIM_APP_ID=896660
 
-# The Steam build this image is meant to contain, when the expedite workflow
-# asks for one. Declared before the download so that a new value is a cache miss there,
+# The Steam build this image contains: pinned in scripts/versions.env, where
+# the expediter records each new one Valve publishes, and passed by the
+# fabricator like every other pin. No default: a build that does not name its
+# Steam build downloads whatever Valve serves that day, which is how the image
+# production ran came to differ from the build the repository recorded.
+# Declared before the download so that a new value is a cache miss there,
 # rather than a build quietly reusing the previous game files.
-ARG VALHEIM_BUILDID=""
+ARG VALHEIM_STEAM_BUILD_VERSION
 
 # Retried, because SteamCMD fails this way intermittently and the failure is
 # not about this image.
@@ -157,7 +161,7 @@ RUN set -eu; \
 # that are not in the image. So the build stops instead, and the next check
 # asks again.
 #
-# Without VALHEIM_BUILDID - a build by hand, or the image workflow - this only
+# Without VALHEIM_STEAM_BUILD_VERSION - a build by hand, or the image workflow - this only
 # requires that a build ID exists, which proves the download produced a real
 # installation rather than an empty directory SteamCMD called a success.
 RUN set -eu; \
@@ -167,8 +171,8 @@ RUN set -eu; \
 		echo "no build ID in $manifest, so what was installed is unknown" >&2; \
 		exit 1; \
 	fi; \
-	if [ -n "${VALHEIM_BUILDID}" ] && [ "$installed" != "${VALHEIM_BUILDID}" ]; then \
-		echo "asked for Steam build ${VALHEIM_BUILDID} and was served $installed - Valve published mid-build; the next check will ask again" >&2; \
+	if [ -n "${VALHEIM_STEAM_BUILD_VERSION}" ] && [ "$installed" != "${VALHEIM_STEAM_BUILD_VERSION}" ]; then \
+		echo "asked for Steam build ${VALHEIM_STEAM_BUILD_VERSION} and was served $installed - Valve published mid-build; the next check will ask again" >&2; \
 		exit 1; \
 	fi; \
 	echo "installed Steam build $installed"
@@ -267,8 +271,8 @@ RUN mkdir -p /data && chown valheim:valheim /data
 
 # Which Steam build is inside, readable from the registry without pulling the
 # image. Checked against what was installed in the fetch stage above.
-ARG VALHEIM_BUILDID=""
-LABEL org.opencontainers.image.version="${VALHEIM_BUILDID}"
+ARG VALHEIM_STEAM_BUILD_VERSION
+LABEL org.opencontainers.image.version="${VALHEIM_STEAM_BUILD_VERSION}"
 
 USER 10000
 WORKDIR /valheim

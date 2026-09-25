@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/workorders"
 )
 
 // The fabricator builds from scripts/work-orders.json, filling each
@@ -130,23 +132,13 @@ func TestTheFabricatorReadsEveryWorkOrder(t *testing.T) {
 	}
 }
 
-type workOrder struct {
-	Name    string `json:"name"`
-	Context string `json:"context"`
-}
-
-func workOrders(t *testing.T) []workOrder {
+func workOrders(t *testing.T) []workorders.Order {
 	t.Helper()
-	var f struct {
-		Orders []workOrder `json:"orders"`
+	orders, err := workorders.Parse([]byte(readRepoFile(t, workorders.Path)))
+	if err != nil {
+		t.Fatalf("%v, so the fabricator builds nothing", err)
 	}
-	if err := json.Unmarshal([]byte(readRepoFile(t, "scripts/work-orders.json")), &f); err != nil {
-		t.Fatalf("parsing scripts/work-orders.json: %v", err)
-	}
-	if len(f.Orders) == 0 {
-		t.Fatal("scripts/work-orders.json holds no orders, so the fabricator builds nothing")
-	}
-	return f.Orders
+	return orders
 }
 
 // Every Dockerfile gets every pin it asks for, at the value versions.env
@@ -270,17 +262,13 @@ func fakeTools(t *testing.T, tools map[string]string) string {
 
 func valheimRelease(t *testing.T) string {
 	t.Helper()
-	var f struct {
-		Orders []map[string]json.RawMessage `json:"orders"`
-	}
-	if err := json.Unmarshal([]byte(readRepoFile(t, "scripts/work-orders.json")), &f); err != nil {
-		t.Fatal(err)
-	}
-	for _, o := range f.Orders {
-		if string(o["name"]) == `"valheim"` {
-			if r, ok := o["release"]; ok {
-				return string(r)
+	for _, o := range workOrders(t) {
+		if o.Name == "valheim" && o.Release != nil {
+			b, err := json.Marshal(o.Release)
+			if err != nil {
+				t.Fatal(err)
 			}
+			return string(b)
 		}
 	}
 	t.Fatal("the valheim work order asks for no release, so production has nothing to pin")
@@ -418,24 +406,8 @@ echo '{"repository":"ghcr.io/example/homelab-valheim-release","tag":"1.0.15-1","
 // overlay that does not already pin images - the fabricator appends that pin,
 // and a second images: key is invalid YAML nobody sees until Flux does.
 func TestEveryReleaseOrderIsOneTheFabricatorCanFollow(t *testing.T) {
-	var f struct {
-		Orders []struct {
-			Name    string `json:"name"`
-			Release *struct {
-				Overlay string `json:"overlay"`
-				Module  string `json:"module"`
-				Version struct {
-					Env     []string `json:"env"`
-					Pattern string   `json:"pattern"`
-				} `json:"version"`
-			} `json:"release"`
-		} `json:"orders"`
-	}
-	if err := json.Unmarshal([]byte(readRepoFile(t, "scripts/work-orders.json")), &f); err != nil {
-		t.Fatal(err)
-	}
 	releases := 0
-	for _, o := range f.Orders {
+	for _, o := range workOrders(t) {
 		if o.Release == nil {
 			continue
 		}
