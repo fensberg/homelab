@@ -4,9 +4,10 @@
 # Runs as a sidecar beside the server, from the same image. Each pass copies the
 # world's directory - worlds_local/<world>/, whatever the server keeps in it -
 # into a directory named for the UTC time, then removes all but the newest
-# WORLD_BACKUP_KEEP. A directory, not a pair of loose files: that is where this
-# server keeps a world, and the first version of this script looked for
-# worlds_local/<world>.db, found nothing, and backed up nothing. The bucket holds ciphertext: the files go
+# WORLD_BACKUP_KEEP. There is a world to back up once the server has completed
+# a save, which it marks with _main.<n>.ok (Valheim 1.0's chunked format; see
+# world-restore.sh). Two earlier versions looked for a .db file this server
+# never writes, and backed up nothing. The bucket holds ciphertext: the files go
 # through an rclone crypt remote keyed from WORLD_BACKUP_KEY, and the key lives
 # in 1Password, not beside the bucket.
 #
@@ -32,7 +33,7 @@ RCLONE_CONFIG_WORLD_PASSWORD="$(rclone obscure "$WORLD_BACKUP_KEY")"
 export RCLONE_CONFIG_WORLD_PASSWORD
 
 while :; do
-	if find "$world" -maxdepth 1 -name '*.db' 2>/dev/null | grep -q .; then
+	if find "$world" -maxdepth 1 -name '_main.*.ok' 2>/dev/null | grep -q .; then
 		stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 		rclone copy "$world" "world:${stamp}"
 		echo "world-backup: backed up ${VALHEIM_WORLD_NAME} as ${stamp}"

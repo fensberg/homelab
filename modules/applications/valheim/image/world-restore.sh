@@ -20,14 +20,18 @@ set -eu
 : "${WORLD_BACKUP_KEY:?the key comes from the valheim-backup Secret}"
 
 worlds="${WORLD_DIR:-/data/worlds_local}"
-# The world is a directory, worlds_local/<world>/, and it is present when it
-# holds the server's .db. The first version looked for worlds_local/<world>.db,
-# which this server never writes - it found no world on a volume that had one,
-# and was harmless only because no backup existed to restore over it.
+# The world is a directory, worlds_local/<world>/, in Valheim 1.0's chunked
+# format: region files (*.chunk) and, per save generation, a manifest
+# (_main.<n>.db2, .fwl2, .chunks) closed by _main.<n>.ok, which the server
+# writes last. So a world is present when a completed save is - an .ok marker.
+#
+# Read off the production volume. Two earlier versions guessed instead - a loose
+# <world>.db, then a <world>/*.db - and each found no world on a volume that had
+# one; they were harmless only because no backup existed to restore over it.
 world="${worlds}/${VALHEIM_WORLD_NAME}"
 
 has_world() {
-	find "$world" -maxdepth 1 -name '*.db' 2>/dev/null | grep -q .
+	find "$world" -maxdepth 1 -name '_main.*.ok' 2>/dev/null | grep -q .
 }
 
 if has_world; then

@@ -14,10 +14,12 @@ import (
 // rclone whose "world:" remote is a local directory.
 //
 // The layout is the one the production server actually has, read off its
-// volume: each world is a directory, worlds_local/<world>/, with Valheim's own
-// rotating backups beside it as <world>_backup_auto-<time>/. The first version
-// of these scripts, and these tests, assumed loose worlds_local/<world>.db files
-// - the tests passed, and production backed up nothing.
+// volume: each world is a directory, worlds_local/<world>/, in Valheim 1.0's
+// chunked format - region *.chunk files and a _main.<n> manifest closed by the
+// _main.<n>.ok the server writes last - with Valheim's own rotating backups
+// beside it as <world>_backup_auto-<time>/. Two versions of these scripts, and
+// these tests, assumed a .db file instead; the tests passed, and production
+// backed up nothing.
 //
 // The restore's three outcomes are the property that matters: restore the
 // newest backup when the world is missing, let the server start a new world
@@ -93,6 +95,28 @@ func (f worldFixture) put(t *testing.T, path, body string) {
 	}
 }
 
+// save writes one completed save in Valheim 1.0's chunked format, as the
+// production volume holds it: a region chunk and a _main.<n> manifest - .db2,
+// .fwl2, .chunks - closed by the .ok the server writes last. body marks the
+// manifest so a test can tell one save from another.
+func (f worldFixture) save(t *testing.T, dir, body string) {
+	t.Helper()
+	f.put(t, filepath.Join(dir, "1e_20__1_578.chunk"), "region")
+	for _, ext := range []string{"db2", "fwl2", "chunks"} {
+		f.put(t, filepath.Join(dir, "_main.1170."+ext), body)
+	}
+	f.put(t, filepath.Join(dir, "_main.1170.ok"), "ok")
+}
+
+// manifest reads the save's manifest back, "" when there is none.
+func manifest(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, "_main.1170.db2"))
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
 func (f worldFixture) run(t *testing.T, script string, extra ...string) (bool, string) {
 	t.Helper()
 	var cmd *exec.Cmd
@@ -126,30 +150,28 @@ func (f worldFixture) backups(t *testing.T) []string {
 
 func TestTheWorldIsRestoredFromTheNewestBackup(t *testing.T) {
 	f := newWorldFixture(t)
-	f.put(t, filepath.Join(f.bucket, "20260901T000000Z", "example.db"), "old")
-	f.put(t, filepath.Join(f.bucket, "20260923T120000Z", "example.db"), "newest")
-	f.put(t, filepath.Join(f.bucket, "20260923T120000Z", "example.fwl"), "meta")
+	f.save(t, filepath.Join(f.bucket, "20260901T000000Z"), "old")
+	f.save(t, filepath.Join(f.bucket, "20260923T120000Z"), "newest")
 	// Valheim's own rotating backups sit beside the world. They are not it.
-	f.put(t, filepath.Join(f.worlds, "example_backup_auto-20260924-223711", "example.db"), "valheim's own")
+	f.save(t, filepath.Join(f.worlds, "example_backup_auto-20260924-223711"), "valheim's own")
 
 	ok, out := f.run(t, "world-restore.sh")
 	if !ok {
 		t.Fatalf("the restore failed:\n%s", out)
 	}
-	got, err := os.ReadFile(filepath.Join(f.worlds, "example", "example.db"))
-	if err != nil || string(got) != "newest" {
-		t.Errorf("want the newest backup restored, got %q (%v)\n%s", got, err, out)
+	if got := manifest(filepath.Join(f.worlds, "example")); got != "newest" {
+		t.Errorf("want the newest backup restored, got %q\n%s", got, out)
 	}
 }
 
 func TestAWorldAlreadyOnTheVolumeIsLeftAlone(t *testing.T) {
 	f := newWorldFixture(t)
-	f.put(t, filepath.Join(f.worlds, "example", "example.db"), "live")
-	f.put(t, filepath.Join(f.bucket, "20260923T120000Z", "example.db"), "backup")
+	f.save(t, filepath.Join(f.worlds, "example"), "live")
+	f.save(t, filepath.Join(f.bucket, "20260923T120000Z"), "backup")
 
 	ok, out := f.run(t, "world-restore.sh")
-	got, _ := os.ReadFile(filepath.Join(f.worlds, "example", "example.db"))
-	if !ok || string(got) != "live" {
+	got := manifest(filepath.Join(f.worlds, "example"))
+	if !ok || got != "live" {
 		t.Errorf("the restore replaced a world that was already on the volume (now %q):\n%s", got, out)
 	}
 }
@@ -164,7 +186,7 @@ func TestANewWorldStartsOnlyWhenThereIsNoBackup(t *testing.T) {
 
 func TestTheServerDoesNotStartWhenTheBackupsCannotBeRead(t *testing.T) {
 	f := newWorldFixture(t)
-	f.put(t, filepath.Join(f.bucket, "20260923T120000Z", "example.db"), "backup")
+	f.save(t, filepath.Join(f.bucket, "20260923T120000Z"), "backup")
 
 	ok, out := f.run(t, "world-restore.sh", "FAKE_FAIL=lsf")
 	if ok {
@@ -179,7 +201,7 @@ func TestTheServerDoesNotStartWhenTheBackupsCannotBeRead(t *testing.T) {
 
 func TestARestoreThatProducesNoWorldStopsThePod(t *testing.T) {
 	f := newWorldFixture(t)
-	f.put(t, filepath.Join(f.bucket, "20260923T120000Z", "example.db"), "backup")
+	f.save(t, filepath.Join(f.bucket, "20260923T120000Z"), "backup")
 
 	ok, out := f.run(t, "world-restore.sh", "FAKE_EMPTY_COPY=1")
 	if ok || !strings.Contains(out, "refusing to start") {
@@ -189,12 +211,11 @@ func TestARestoreThatProducesNoWorldStopsThePod(t *testing.T) {
 
 func TestTheBackupKeepsTheNewestAndRemovesTheRest(t *testing.T) {
 	f := newWorldFixture(t)
-	f.put(t, filepath.Join(f.worlds, "example", "example.db"), "world")
-	f.put(t, filepath.Join(f.worlds, "example", "example.fwl"), "meta")
-	f.put(t, filepath.Join(f.worlds, "other", "other.db"), "not this world")
-	f.put(t, filepath.Join(f.worlds, "example_backup_auto-20260924-223711", "example.db"), "valheim's own")
+	f.save(t, filepath.Join(f.worlds, "example"), "world")
+	f.save(t, filepath.Join(f.worlds, "other"), "not this world")
+	f.save(t, filepath.Join(f.worlds, "example_backup_auto-20260924-223711"), "valheim's own")
 	for _, old := range []string{"20260101T000000Z", "20260102T000000Z", "20260103T000000Z"} {
-		f.put(t, filepath.Join(f.bucket, old, "example.db"), "old")
+		f.save(t, filepath.Join(f.bucket, old), "old")
 	}
 
 	ok, out := f.run(t, "world-backup.sh", "WORLD_BACKUP_ONCE=1", "WORLD_BACKUP_KEEP=2")
@@ -206,12 +227,15 @@ func TestTheBackupKeepsTheNewestAndRemovesTheRest(t *testing.T) {
 		t.Fatalf("want the newest two kept - 20260103T000000Z and the one just taken - got %v\n%s", got, out)
 	}
 	newest := filepath.Join(f.bucket, got[1])
-	for _, want := range []string{"example.db", "example.fwl"} {
+	for _, want := range []string{"_main.1170.db2", "_main.1170.fwl2", "_main.1170.chunks", "_main.1170.ok", "1e_20__1_578.chunk"} {
 		if _, err := os.Stat(filepath.Join(newest, want)); err != nil {
 			t.Errorf("the backup just taken is missing %s: %v", want, err)
 		}
 	}
-	for _, stray := range []string{"other.db", "other", "example_backup_auto-20260924-223711"} {
+	if got := manifest(newest); got != "world" {
+		t.Errorf("the backup just taken holds %q, not this world", got)
+	}
+	for _, stray := range []string{"other", "example_backup_auto-20260924-223711"} {
 		if _, err := os.Stat(filepath.Join(newest, stray)); err == nil {
 			t.Errorf("the backup took %s, which is not this world", stray)
 		}
@@ -220,7 +244,7 @@ func TestTheBackupKeepsTheNewestAndRemovesTheRest(t *testing.T) {
 
 func TestAFailedBackupIsLoudRatherThanSilent(t *testing.T) {
 	f := newWorldFixture(t)
-	f.put(t, filepath.Join(f.worlds, "example", "example.db"), "world")
+	f.save(t, filepath.Join(f.worlds, "example"), "world")
 
 	ok, out := f.run(t, "world-backup.sh", "WORLD_BACKUP_ONCE=1", "FAKE_FAIL=copy")
 	if ok {
