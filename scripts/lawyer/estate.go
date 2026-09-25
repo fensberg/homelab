@@ -291,12 +291,28 @@ func stateResources(state []byte) ([]string, error) {
 	}
 	st, err := tofustate.Parse(state)
 	if err != nil {
-		return nil, fmt.Errorf("the estate's state is present and cannot be read: %w", err)
+		return nil, fmt.Errorf("the estate's state is present and cannot be read (%s): %w", shape(state), err)
 	}
 	if st.Version == 0 || st.Lineage == "" {
-		return nil, errors.New("the estate's state is present and has no version or lineage, so it is not state this lawyer can read")
+		return nil, fmt.Errorf("the estate's state is present and has no version or lineage, so it is not state this lawyer can read. What came back: %s", shape(state))
 	}
 	return st.Managed(), nil
+}
+
+// shape says what a pulled state looks like without saying what is in it:
+// its size, and its top-level keys when it is a JSON object. Keys are
+// OpenTofu's vocabulary; values are the estate's and never printed.
+func shape(body []byte) string {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return fmt.Sprintf("%d bytes, not a JSON object", len(body))
+	}
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return fmt.Sprintf("%d bytes, a JSON object with keys %v", len(body), keys)
 }
 
 // backendEnv reaches the estate's bucket with its own credential and no other,

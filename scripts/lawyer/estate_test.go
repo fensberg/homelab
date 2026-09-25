@@ -267,3 +267,23 @@ func TestStateIsReadAsEmptyOnlyWhenThereIsNone(t *testing.T) {
 		}
 	}
 }
+
+// A refusal describes what came back by its shape alone, so the next run
+// says what the backend returned without printing any of the estate's values.
+func TestAnUnreadableStateIsDescribedByItsShapeNeverItsValues(t *testing.T) {
+	_, err := stateResources([]byte(`{"serial":1,"meta":{"secret":"do-not-print"}}`))
+	if err == nil {
+		t.Fatal("state with no version or lineage was accepted")
+	}
+	for _, want := range []string{"[meta serial]", "bytes"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "do-not-print") {
+		t.Errorf("the refusal printed a value: %v", err)
+	}
+	if _, err := stateResources([]byte(`<Error>NoSuchKey</Error>`)); err == nil || !strings.Contains(err.Error(), "not a JSON object") {
+		t.Errorf("a non-JSON answer was not described as one: %v", err)
+	}
+}
