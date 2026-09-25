@@ -27,10 +27,11 @@ func validSite() Site {
 		ObjectStorage: ObjectStorage{
 			Provider:      "cloudflare",
 			VaultProvider: "cloudflare",
-			Database:      ObjectStorageCredential{AccessKeyID: "f1e2d3c4b5a697887766554433221100", SecretAccessKey: "shh"},
-			State:         ObjectStorageCredential{AccessKeyID: "00112233445566778899aabbccddeeff", SecretAccessKey: "shh"},
-			Staging:       ObjectStorageCredential{AccessKeyID: "11112222333344445555666677778888", SecretAccessKey: "shh"},
-			Production:    ObjectStorageCredential{AccessKeyID: "99990000aaaabbbbccccddddeeeeffff", SecretAccessKey: "shh"},
+			AccountID:     "0123456789abcdef0123456789abcdef",
+			Database:      ObjectStorageCredential{Bucket: "example-north-street-office-database", AccessKeyID: "f1e2d3c4b5a697887766554433221100", SecretAccessKey: "shh"},
+			State:         ObjectStorageCredential{Bucket: "example-north-street-office-state", AccessKeyID: "00112233445566778899aabbccddeeff", SecretAccessKey: "shh"},
+			Staging:       ObjectStorageCredential{Bucket: "example-north-street-office-staging", AccessKeyID: "11112222333344445555666677778888", SecretAccessKey: "shh"},
+			Production:    ObjectStorageCredential{Bucket: "example-north-street-office-production", AccessKeyID: "99990000aaaabbbbccccddddeeeeffff", SecretAccessKey: "shh"},
 		},
 	}
 }
@@ -517,8 +518,7 @@ func validTunnel() Tunnel {
 	return Tunnel{
 		Provider:      TunnelProvider,
 		VaultProvider: TunnelProvider,
-		APIToken:      "fixture",
-		Secret:        "fixture-tunnel-secret-at-least-thirty-two-bytes",
+		Token:         "fixture-run-token",
 	}
 }
 

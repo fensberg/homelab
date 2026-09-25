@@ -93,13 +93,10 @@ locals {
   overlay_network = local.site.overlay_network
   object_storage  = local.site.object_storage
 
-  # Top level, not inside the site: an account id and an admin token describe
-  # the vendor account rather than one estate. See the epoch record, "The
-  # object storage account plane is not the site plane".
-  object_storage_account = local.config.object_storage
   # The account's S3 API address, which every bucket in it shares. One
-  # expression for the database's backups and the world's.
-  object_storage_endpoint = "https://${local.object_storage_account.account_id}.r2.cloudflarestorage.com"
+  # expression for the database's backups and the world's. The account and the
+  # buckets are granted by the estate; the site creates neither.
+  object_storage_endpoint = "https://${local.object_storage.account_id}.r2.cloudflarestorage.com"
   site_database           = local.site.database
 
   # --- CI runners ----------------------------------------------------------

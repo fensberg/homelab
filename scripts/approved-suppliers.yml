@@ -362,8 +362,10 @@ providers:
       hypervisor join with.
   - source: cloudflare/cloudflare
     reason: >-
-      Object storage. Creates the bucket the encrypted state backups and the
-      database's WAL archive are written to.
+      The estate's Cloudflare account, and the estate root alone: who may
+      enroll a device, the split tunnel, and each site's plot - its buckets,
+      a key per bucket, and its tunnel. No site root requires it; a site is
+      granted narrowed credentials instead.
 
 # Network destinations a CI job may reach.
 #

@@ -15,7 +15,7 @@ terraform {
   required_version = ">= 1.10.0"
 
   required_providers {
-    cloudflare = { source = "cloudflare/cloudflare", version = "~> 4.40" }
+    cloudflare = { source = "cloudflare/cloudflare", version = "~> 5.25" }
   }
 
   # The estate's own bucket, not any site's database: the estate cannot
@@ -41,9 +41,11 @@ terraform {
   }
 }
 
-# The estate's own token: Access applications and policies, and the account's
-# device settings. It is not the site's tunnel token, and the site's is not
-# this; the vendor refuses each one what the other owns.
+# The estate's own token, and the estate's master key: Access applications and
+# policies, the account's device settings, R2, tunnels, and the account API
+# tokens it mints for each site. That last permission is why it lives in the
+# estate vault alone - it can make any narrower credential, so the narrower
+# credentials are what sites are given instead.
 provider "cloudflare" {
   api_token = local.access.api_token
 }

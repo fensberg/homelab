@@ -135,16 +135,6 @@ underlying error: %v`, path, Site(), Site(), err)
 	return cfg
 }
 
-// SiteConfig is LoadConfig narrowed to the site under test.
-// ObjectStorageAccount is the fleet-level half of object storage. Separate
-// accessor from SiteConfig because the two live on different planes, and a
-// test that reached for the account through a site would be asserting a
-// containment the config deliberately does not have.
-func ObjectStorageAccount(t *testing.T) config.ObjectStorageAccount {
-	t.Helper()
-	return LoadConfig(t).ObjectStorage
-}
-
 // SiteNetwork is the site under test with its addressing resolved - by the
 // program's own ResolveSiteNetwork, so an address a test dials is the address
 // the program built.
@@ -189,7 +179,7 @@ func StateBackups(t *testing.T) config.StateBackups {
 }
 
 // Alerting is where the estate speaks when something goes wrong. Fleet-level,
-// for the same reason ObjectStorageAccount is: a second site would report into
+// for the same reason the site is kept separate: a second site would report into
 // the same place rather than somewhere new.
 func Alerting(t *testing.T) config.Alerting {
 	t.Helper()

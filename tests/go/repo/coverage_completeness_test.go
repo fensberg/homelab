@@ -190,7 +190,9 @@ func covered(t *testing.T, u unit, sources map[string]string, floors map[string]
 		if err != nil {
 			t.Fatalf("reading %s: %v", u.path, err)
 		}
-		decls := regexp.MustCompile(`(?m)^(?:variable|resource\s+"[^"]+"|terraform_data)\s+"([^"]+)"`).
+		// output as well: an output can carry a precondition, and a test
+		// reaches it as expect_failures = [output.<name>].
+		decls := regexp.MustCompile(`(?m)^(?:variable|output|resource\s+"[^"]+"|terraform_data)\s+"([^"]+)"`).
 			FindAllStringSubmatch(string(body), -1)
 		for name, src := range sources {
 			if !strings.HasSuffix(name, ".tftest.hcl") {

@@ -121,7 +121,7 @@ resource "kubernetes_secret" "valheim_backup" {
     # The token is scoped to one bucket and cannot list or create buckets, so
     # rclone must not try.
     RCLONE_CONFIG_R2_NO_CHECK_BUCKET = "true"
-    WORLD_BACKUP_BUCKET              = cloudflare_r2_bucket.production.name
+    WORLD_BACKUP_BUCKET              = local.object_storage.production.bucket
     WORLD_BACKUP_KEY                 = local.valheim.backup_key
   }
 }

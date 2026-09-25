@@ -2,6 +2,7 @@ package onepassword
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -186,5 +187,34 @@ func TestUpsertField_NoSectionDoesNotTouchSameNameInSection(t *testing.T) {
 	}
 	if inSec, ok := find(fs, "recipient", "sec-db"); !ok || inSec.value != "IN-SECTION" {
 		t.Errorf("the sectioned field of the same name was disturbed, got %+v", fs)
+	}
+}
+
+// A field already holding the right value is left alone, and an item whose
+// fields are all right is not edited at all: the lawyer converges every run,
+// and a vault rewritten each time is a vault where a real change is invisible.
+func TestUpsertFieldsChangesOnlyWhatDiffers(t *testing.T) {
+	raw := []byte(`{"id":"i","title":"tunnel","fields":[
+		{"id":"a","type":"CONCEALED","label":"token","value":"same"},
+		{"id":"b","type":"STRING","label":"provider","value":"old"}]}`)
+	changed, updated, err := upsertFields(raw, map[string]string{"token": "same", "provider": "cloudflare", "added": "v"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(changed, " ") != "added provider" {
+		t.Fatalf("changed %v; want exactly the differing fields, sorted", changed)
+	}
+	for _, want := range []string{`"cloudflare"`, `"added"`, `"same"`} {
+		if !strings.Contains(string(updated), want) {
+			t.Errorf("the edited item is missing %s", want)
+		}
+	}
+	if strings.Contains(string(updated), `"old"`) {
+		t.Error("the replaced value survived the edit")
+	}
+
+	changed, _, err = upsertFields(raw, map[string]string{"token": "same"})
+	if err != nil || len(changed) != 0 {
+		t.Fatalf("an item already right was changed: %v, %v", changed, err)
 	}
 }

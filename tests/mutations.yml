@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 164
+floor: 162
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -170,8 +170,8 @@ mutations:
 
   - guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
     file: management/cluster/tunnel.tf
-    find: 'resource "cloudflare_zero_trust_tunnel_route" "estate" {'
-    replace: 'resource "cloudflare_zero_trust_split_tunnel" "estate" {'
+    find: 'resource "kubernetes_namespace" "tunnel" {'
+    replace: 'resource "cloudflare_zero_trust_tunnel_cloudflared" "tunnel" {'
     mentions: "which is the estate's"
     why: >
       An estate object declared in a site root is in that site's state, so the
@@ -181,8 +181,8 @@ mutations:
 
   - guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
     file: management/estate/zero-trust.tf
-    find: 'resource "cloudflare_zero_trust_split_tunnel" "estate" {'
-    replace: 'resource "cloudflare_zero_trust_tunnel_cloudflared" "estate" {'
+    find: 'resource "cloudflare_zero_trust_device_default_profile" "estate" {'
+    replace: 'resource "kubernetes_namespace" "estate" {'
     mentions: "not listed as the estate's"
     why: >
       Whatever the estate root declares survives every site and is shared by
@@ -1058,57 +1058,18 @@ mutations:
       motivation belongs. The machinery should read the same whoever moves in
       next.
 
-  - guard: TestBucketsThatOutliveTheEstateAreReleasedBeforeAnythingDeletes
-    file: scripts/contractor/internal/phases/sterilize.go
-    reads_source: true
-    find: "\tforgetKeptBuckets(ctx)\n\temptyObjectStorage(ctx)"
-    replace: "\temptyObjectStorage(ctx)\n\tforgetKeptBuckets(ctx)"
-    mentions: "before it releases the kept buckets"
-    why: >
-      reads_source, because this guard reads sterilize.go as text rather than
-      executing it - the order of two calls is a property of the file, and the
-      scratch copy is the file it reads.
-
-      Reordered rather than deleted, because that is the version somebody
-      writes while looking at a stuck teardown instead of at this file: the
-      destroy halted on a bucket Cloudflare would not delete, emptying is
-      visibly the thing that unsticks it, and moving it earlier looks like
-      fixing the order rather than deleting the backups.
-
-      It still reads as correct afterwards. Both calls are present, both run,
-      and the teardown completes - which is exactly why the order needs a guard
-      rather than a comment.
-
   - guard: TestTheBucketTableAgreesWithTheHCL
-    file: management/cluster/object-storage.tf
-    find: 'name       = "${local.site_name}-state"'
-    replace: 'name       = "${local.site_name}-statedumps"'
-    mentions: "disagree about the name of the"
+    file: management/estate/site/object-storage.tf
+    find: 'purposes = toset(["database", "state", "staging", "production"])'
+    replace: 'purposes = toset(["database", "statedumps", "staging", "production"])'
+    mentions: "the estate creates buckets for"
     why: >
-      Renaming one side of a set that is declared twice. This is the drift the
-      guard exists for, and the rename is the plausible version of it - a
-      bucket called "-statedumps" reads as more descriptive than "-state", and
-      nothing in object-storage.tf objects.
-
-      The consequence is invisible from the file being edited. The Go table
-      still says "-state", so the Backup phase writes to a bucket OpenTofu
-      never created, the teardown releases a bucket that does not exist, and
-      the one that does is destroyed with the estate.
-
-  - guard: TestTheBucketTableAgreesWithTheHCL
-    file: management/cluster/object-storage.tf
-    find: 'name       = "${local.site_name}-staging"'
-    replace: "name       = local.object_storage.bucket"
-    mentions: "and only"
-    why: >
-      Naming a workload bucket from the config field instead of the site slug.
-      This is the shape of somebody copying the database bucket's name line,
-      which is the one line in the file that legitimately looks like this.
-
-      It reads as harmless and is not. The slug is what carries the site, so a
-      bucket named from the estate-wide config field is a bucket two sites
-      would share - and what they would share is one site's production workload
-      data with another's.
+      Renaming one side of a set that is declared twice, and the plausible
+      version of it: "statedumps" reads as more descriptive than "state", and
+      nothing in the estate's HCL objects. The estate would then grant a
+      bucket the site's config never asks for, and the site's config would ask
+      the vault for a state grant that is never written - so every site run
+      fails at Render, naming a vault field rather than the rename.
 
   - guard: TestTheTeardownResolvesTheBucketItEmptiesFromTheTable
     file: scripts/contractor/internal/phases/teardown.go

@@ -54,15 +54,39 @@ func (c cloudflare) enrollmentApp() (string, error) {
 	}
 }
 
-// liveTunnels counts the account's tunnels that have not been deleted. Every
-// tunnel in the account is a site's, so any at all means a site stands on the
-// estate.
-func (c cloudflare) liveTunnels() (int, error) {
+// connectedTunnels counts the account's tunnels that a connector is serving
+// right now. Every tunnel belongs to a site, and the estate creates them, so a
+// tunnel existing says only that the estate granted a plot; a connected one
+// says a site is standing on it.
+func (c cloudflare) connectedTunnels() (int, error) {
 	tunnels, err := get[[]struct {
-		ID string `json:"id"`
+		Status string `json:"status"`
 	}](c, "/cfd_tunnel", url.Values{"is_deleted": {"false"}})
 	if err != nil {
 		return 0, err
 	}
-	return len(tunnels), nil
+	n := 0
+	for _, t := range tunnels {
+		if t.Status == "healthy" || t.Status == "degraded" {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// bucketNames lists every R2 bucket in the account.
+func (c cloudflare) bucketNames() (map[string]bool, error) {
+	answer, err := get[struct {
+		Buckets []struct {
+			Name string `json:"name"`
+		} `json:"buckets"`
+	}](c, "/r2/buckets", url.Values{"per_page": {"1000"}})
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, b := range answer.Buckets {
+		names[b.Name] = true
+	}
+	return names, nil
 }

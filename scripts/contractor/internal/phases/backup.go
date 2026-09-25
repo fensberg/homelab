@@ -21,10 +21,6 @@ func Backup(ctx *run.Context) error {
 		return err
 	}
 
-	if strings.TrimSpace(cfg.ObjectStorage.AccountID) == "" {
-		return fmt.Errorf("object_storage.account_id is empty in the rendered config")
-	}
-
 	// Resolved before any work, so a missing credential stops the run rather
 	// than the upload. The same call Restore makes - see StateBackupLocation.
 	backups, err := config.StateBackupLocation(cfg, ctx.Site)

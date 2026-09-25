@@ -6,7 +6,6 @@ terraform {
     talos      = { source = "siderolabs/talos", version = "~> 0.11.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.35" }
     tailscale  = { source = "tailscale/tailscale", version = "~> 0.17" }
-    cloudflare = { source = "cloudflare/cloudflare", version = "~> 4.40" }
   }
 }
 
@@ -61,21 +60,9 @@ provider "tailscale" {
   tailnet             = local.overlay_network.domain
 }
 
-# --- object storage: Cloudflare R2 -------------------------------------------
-provider "cloudflare" {
-  # Bucket lifecycle only. This is the one credential that needs admin scope,
-  # it never leaves the workstation, and the Sterilize phase wipes it.
-  api_token = local.object_storage_account.admin_token
-}
-
-# --- tunnel: Cloudflare Zero Trust --------------------------------------------
-# A token of its own rather than the bucket admin token above. This one edits
-# who may enroll a device and which private routes a device is given; the other
-# creates buckets. One leaking should not hand over the other's reach.
-provider "cloudflare" {
-  alias     = "tunnel"
-  api_token = local.tunnel.api_token
-}
+# No Cloudflare provider. The site's buckets and tunnel are the estate's,
+# created in management/estate/ and granted to the site as narrowed
+# credentials, so this root holds no token that could create or delete either.
 
 # --- cluster access -----------------------------------------------------------
 # Both of these read the kubeconfig the Talos resources produce. Use the

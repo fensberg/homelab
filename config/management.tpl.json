@@ -13,11 +13,6 @@
     }
   },
 
-  "object_storage": {
-    "account_id": "{{ op://site0-shared/object_storage/account_id }}",
-    "admin_token": "{{ op://site0-shared/object_storage/admin_token }}"
-  },
-
   "state_backup": {
     "recipient": "{{ op://estate-shared/state_backup/recipient }}"
   },
@@ -25,8 +20,7 @@
   "tunnel": {
     "provider": "cloudflare",
     "vault_provider": "{{ op://site0-shared/tunnel/provider }}",
-    "api_token": "{{ op://site0-shared/tunnel/api_token }}",
-    "secret": "{{ op://site0/tunnel/secret }}"
+    "token": "{{ op://site0-shared/tunnel/token }}"
   },
 
   "alerting": {
@@ -45,7 +39,7 @@
 
   "sites": {
     "site0": {
-      "name": "{{ op://site0/identity/name }}",
+      "name": "{{ op://site0-shared/identity/name }}",
       "octet": 10,
       "control_plane_count": 3,
       "worker_count": 3,
@@ -74,23 +68,28 @@
       "object_storage": {
         "provider": "cloudflare",
         "vault_provider": "{{ op://site0-shared/object_storage/provider }}",
+        "account_id": "{{ op://site0-shared/object_storage/account_id }}",
 
         "database": {
+          "bucket": "{{ op://site0-shared/object_storage/database_bucket }}",
           "access_key_id": "{{ op://site0-shared/object_storage/database_access_key_id }}",
           "secret_access_key": "{{ op://site0-shared/object_storage/database_secret_access_key }}"
         },
 
         "state": {
+          "bucket": "{{ op://site0-shared/object_storage/state_bucket }}",
           "access_key_id": "{{ op://site0-shared/object_storage/state_access_key_id }}",
           "secret_access_key": "{{ op://site0-shared/object_storage/state_secret_access_key }}"
         },
 
         "staging": {
+          "bucket": "{{ op://site0-shared/object_storage/staging_bucket }}",
           "access_key_id": "{{ op://site0-shared/object_storage/staging_access_key_id }}",
           "secret_access_key": "{{ op://site0-shared/object_storage/staging_secret_access_key }}"
         },
 
         "production": {
+          "bucket": "{{ op://site0-shared/object_storage/production_bucket }}",
           "access_key_id": "{{ op://site0-shared/object_storage/production_access_key_id }}",
           "secret_access_key": "{{ op://site0-shared/object_storage/production_secret_access_key }}"
         }

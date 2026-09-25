@@ -70,14 +70,13 @@ var RequiredProvidersByConcern = map[string]string{
 }
 
 type Config struct {
-	Organization  Organization         `json:"organization"`
-	ObjectStorage ObjectStorageAccount `json:"object_storage"`
-	SourceControl SourceControl        `json:"source_control"`
-	StateBackup   StateBackup          `json:"state_backup"`
-	Alerting      Alerting             `json:"alerting"`
-	Tunnel        Tunnel               `json:"tunnel"`
-	Workloads     map[string]Workload  `json:"workloads"`
-	Sites         map[string]Site      `json:"sites"`
+	Organization  Organization        `json:"organization"`
+	SourceControl SourceControl       `json:"source_control"`
+	StateBackup   StateBackup         `json:"state_backup"`
+	Alerting      Alerting            `json:"alerting"`
+	Tunnel        Tunnel              `json:"tunnel"`
+	Workloads     map[string]Workload `json:"workloads"`
+	Sites         map[string]Site     `json:"sites"`
 }
 
 type Organization struct {
@@ -129,21 +128,18 @@ type Alerting struct {
 // Fleet-level, like Alerting: one list of people is allowed in, and the
 // Cloudflare account it lives in is the same one object storage uses.
 //
-// Unlike Alerting it carries the three-way vendor attestation. The API token
-// here can edit the account's Zero Trust configuration - who may enroll a
-// device, and which private routes a device is given - so it is exactly the
-// kind of credential that check exists for: a swapped vault item reaching the
-// wrong vendor's API, or the right vendor's API with the wrong reach.
+// The estate creates the tunnel and grants this site its run token alone: the
+// token serves this one tunnel and can change nothing, so a site holding it
+// cannot touch another site's tunnel or the account's Zero Trust settings. It
+// still carries the three-way vendor attestation, because a token from the
+// wrong vendor fails far from its cause.
 type Tunnel struct {
 	// The vendor, in git. Must be "cloudflare".
 	Provider string `json:"provider"`
-	// The vendor, as attested by the vault item carrying the credentials.
+	// The vendor, as attested by the grant carrying the token.
 	VaultProvider string `json:"vault_provider"`
-	// Configures the provider only: never written to state.
-	APIToken string `json:"api_token"`
-	// The tunnel's password. Written to state as a resource attribute, so
-	// the contractor generates it (phases/secrets.go) rather than a person.
-	Secret string `json:"secret"`
+	// The run token cloudflared serves the tunnel from, granted by the estate.
+	Token string `json:"token"`
 }
 
 // TunnelProvider is the one tunnel vendor this code implements.
@@ -249,27 +245,16 @@ type OverlayNetwork struct {
 	ClientSecret  string `json:"client_secret"`
 }
 
-// ObjectStorageAccount is the object-storage control plane, and it sits at the
-// top level because it describes the vendor account rather than one estate.
-//
-// The rule is the one "Vendor and credentials live inside the site" already
-// states - does this describe one estate or the whole fleet - applied field by
-// field rather than block by block. An account id identifies the account. An
-// admin token is scoped to the whole account by construction, because minting
-// credentials is an account operation and no bucket-scoped form of it exists.
-// Filing either inside sites.site0 would claim a containment neither has: a
-// reader of that one item gets every other site's bucket too.
-type ObjectStorageAccount struct {
-	AccountID  string `json:"account_id"`
-	AdminToken string `json:"admin_token"`
-}
-
-// ObjectStorage is one estate's bucket and the credentials that reach it.
-// These stay per-site, because one bucket per site is the isolation boundary
-// that survives: an Object-scoped R2 credential names a single bucket.
+// ObjectStorage is a site's buckets and the key for each, as the estate
+// grants them. The estate creates the buckets and names them, so the names
+// arrive here rather than being worked out; and each key reaches its own
+// bucket alone, so no credential a site holds can create, delete or read a
+// bucket that is not its own.
 type ObjectStorage struct {
 	Provider      string `json:"provider"`
 	VaultProvider string `json:"vault_provider"`
+	// The account the buckets are in: the S3 endpoint is derived from it.
+	AccountID string `json:"account_id"`
 
 	// One credential per bucket, keyed by the bucket it may reach.
 	//
@@ -283,20 +268,22 @@ type ObjectStorage struct {
 	// write from delete (#94), so one credential meant one blast radius across
 	// everything - the exact thing the four-bucket split was for.
 	//
-	// The `bucket` name is gone because names are derived from the site slug
-	// now. Nothing declares a bucket name any more; see buckets.go.
+	// Each carries its bucket's name beside its key pair, because the estate
+	// names the buckets and grants the two together.
 	Database   ObjectStorageCredential `json:"database"`
 	State      ObjectStorageCredential `json:"state"`
 	Staging    ObjectStorageCredential `json:"staging"`
 	Production ObjectStorageCredential `json:"production"`
 }
 
-// ObjectStorageCredential is one S3-compatible key pair.
+// ObjectStorageCredential is one bucket and the S3-compatible key pair that
+// reaches it.
 //
 // Named for the two values R2 actually issues. `access_key` on its own was
 // rejected during the vault reorganisation because it could describe either
 // half of the pair, and the half it described was the secret.
 type ObjectStorageCredential struct {
+	Bucket          string `json:"bucket"`
 	AccessKeyID     string `json:"access_key_id"`
 	SecretAccessKey string `json:"secret_access_key"`
 }

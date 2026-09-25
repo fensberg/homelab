@@ -14,6 +14,12 @@ locals {
 
   members = [for m in split(",", local.access.members) : trimspace(m) if trimspace(m) != ""]
 
+  # The estate's name, which leads every bucket it creates, and the sites it
+  # grants a plot to. A site's key is positional and in git; its name is a
+  # vault value, owned by the estate because the estate names what it grants.
+  organization = local.config.organization.name
+  sites        = local.config.plots
+
   # Written once, read by both roots.
   tunnel_routes = jsondecode(file("${path.module}/../tunnel-routes.json")).routes
 }

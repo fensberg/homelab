@@ -6,47 +6,6 @@ import (
 	"testing"
 )
 
-func TestEveryBucketIsTheSiteSlugPlusASuffix(t *testing.T) {
-	net := &SiteNetwork{Name: "example"}
-	for _, tc := range []struct {
-		key  string
-		want string
-	}{
-		{"database", "example-database"},
-		{"state", "example-state"},
-		{"staging", "example-staging"},
-		{"production", "example-production"},
-	} {
-		b, err := BucketByKey(tc.key)
-		if err != nil {
-			t.Fatalf("BucketByKey(%q): %v", tc.key, err)
-		}
-		if got := b.Name(net); got != tc.want {
-			t.Errorf("bucket %q named %q, want %q", tc.key, got, tc.want)
-		}
-	}
-}
-
-// No bucket takes its name from anywhere but the site slug.
-//
-// The database bucket used to, which forced Name to take a second argument
-// that three of four callers passed and ignored - and an argument most callers
-// ignore is one a caller eventually passes wrongly. The operator retired that
-// by renaming the bucket to carry a suffix like the others.
-func TestNoBucketEscapesTheSiteSlug(t *testing.T) {
-	net := &SiteNetwork{Name: "example"}
-	for _, b := range Buckets {
-		if b.Suffix == "" {
-			t.Errorf("bucket %q has no suffix, so it resolves to the bare site slug.\n\n"+
-				"Every bucket is the slug plus a suffix. An empty one collides with the "+
-				"site's own name and reintroduces the special case that was just removed.", b.Key)
-		}
-		if got := b.Name(net); got == net.Name {
-			t.Errorf("bucket %q resolves to the bare site name %q", b.Key, got)
-		}
-	}
-}
-
 // Every bucket the site declares has a credential of its own.
 //
 // Walked from Buckets rather than listed here, so a bucket added to the set
@@ -132,30 +91,6 @@ func TestTwoDistinctCredentialsAreAccepted(t *testing.T) {
 	}
 }
 
-func TestOnlyTheEstatesOwnWorkingDataIsDestroyedWithTheEstate(t *testing.T) {
-	kept := map[string]bool{}
-	for _, b := range KeptBuckets() {
-		kept[b.Key] = true
-	}
-
-	if kept["database"] {
-		t.Error("the database bucket is marked Keep.\n\n" +
-			"It holds the WAL archive and base backups of a database that is about to stop " +
-			"existing. Keeping it leaves a bucket nothing tracks, holding backups of nothing.")
-	}
-
-	for _, key := range []string{"state", "staging", "production"} {
-		if !kept[key] {
-			t.Errorf("the %q bucket is not marked Keep.\n\n"+
-				"It holds something meant to still be there after a teardown, and a rebuild is "+
-				"the routine way a new Talos version reaches these machines. Without Keep, "+
-				"Sterilize never takes it out of state and the destroy deletes it - which for "+
-				"the state bucket is #94, the backups destroyed by the operation most likely "+
-				"to precede needing them.", key)
-		}
-	}
-}
-
 // A key is pasted straight into a resource address, so it has to be a valid
 // HCL identifier.
 //
@@ -176,21 +111,27 @@ func TestBucketKeysAreValidResourceNames(t *testing.T) {
 	}
 }
 
-func TestBucketKeysAndSuffixesAreUnique(t *testing.T) {
+func TestBucketKeysAreUnique(t *testing.T) {
 	keys := map[string]bool{}
-	suffixes := map[string]bool{}
 	for _, b := range Buckets {
 		if keys[b.Key] {
 			t.Errorf("two buckets share the key %q, so one of them is unreachable "+
-				"through BucketByKey and its for_each entry silently replaces the other", b.Key)
+				"through BucketByKey and the estate's for_each entry silently replaces the other", b.Key)
 		}
 		keys[b.Key] = true
+	}
+}
 
-		if suffixes[b.Suffix] {
-			t.Errorf("two buckets share the suffix %q, so they resolve to the same real "+
-				"bucket name - two resources fighting over one bucket", b.Suffix)
+// A site teardown empties the database bucket and nothing else. The database's
+// WAL archive describes a cluster that is ending, and CloudNativePG refuses to
+// archive a new one into it; everything else is meant to still be there
+// after the teardown, and emptying the state bucket is #94 - the backups
+// destroyed by the operation most likely to precede needing them.
+func TestATeardownEmptiesTheDatabaseBucketAndNothingElse(t *testing.T) {
+	for _, b := range Buckets {
+		if want := b.Key == "database"; b.EmptiedAtTeardown != want {
+			t.Errorf("the %q bucket has EmptiedAtTeardown=%v; only the database bucket is emptied by a site teardown", b.Key, b.EmptiedAtTeardown)
 		}
-		suffixes[b.Suffix] = true
 	}
 }
 
@@ -201,16 +142,6 @@ func TestEveryBucketSaysWhatItHolds(t *testing.T) {
 				"It is printed in the line that tells an operator a bucket is being kept or "+
 				"destroyed, and %q on its own does not tell them whether to worry.", b.Key, b.Key)
 		}
-	}
-}
-
-func TestAddressMatchesTheNamedResource(t *testing.T) {
-	b, err := BucketByKey("state")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := b.Address(), "cloudflare_r2_bucket.state"; got != want {
-		t.Errorf("Address() = %s, want %s", got, want)
 	}
 }
 
@@ -276,7 +207,7 @@ func TestAnUnnamedSiteFallsBackToItsKey(t *testing.T) {
 // The paths are written against the remote RcloneEnv defines, so a rename of
 // one cannot leave the other pointing at a remote that does not exist.
 func TestBackupPathsUseTheRemoteRcloneIsGiven(t *testing.T) {
-	env := strings.Join(RcloneEnv(ObjectStorageAccount{AccountID: "acct"}, ObjectStorageCredential{}), "\n")
+	env := strings.Join(RcloneEnv("acct", ObjectStorageCredential{}), "\n")
 	remote := strings.SplitN(BucketRemote("b"), ":", 2)[0]
 	if !strings.Contains(env, "RCLONE_CONFIG_"+remote+"_TYPE=") {
 		t.Errorf("paths address the remote %q, but RcloneEnv configures a different one:\n%s", remote, env)
@@ -301,20 +232,10 @@ func TestSlugHasNoFallbackAndSiteSlugDoes(t *testing.T) {
 	}
 }
 
-// The Cluster phase adopts a bucket only if this URL answers 200, and the api
-// tier proves the answer is still 200-or-404. Both build it from here; this
-// pins the shape so a change to it is a change somebody reviews.
-func TestBucketAPIURLNamesTheAccountAndTheBucket(t *testing.T) {
-	got := BucketAPIURL("acct", "example-state")
-	if !strings.HasSuffix(got, "/accounts/acct/r2/buckets/example-state") {
-		t.Errorf("BucketAPIURL = %q; it must address the account and then the bucket", got)
-	}
-}
-
-// The state backups are reached with the state credential, in the state
-// bucket, named for the site - and an empty half of the credential is refused
-// on either side, which Backup and Restore did not agree about while each had
-// its own copy.
+// The state backups are reached with the state credential, in the bucket the
+// estate granted for them - and an empty half of the credential, or no bucket
+// name, is refused, which Backup and Restore did not agree about while each
+// had its own copy.
 func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
 	site := validSite()
 	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
@@ -323,8 +244,7 @@ func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	net, _ := ResolveSiteNetwork(cfg, "site0")
-	if want := StateBackupPath(net.Name + "-state"); loc.Folder != want {
+	if want := StateBackupPath(site.ObjectStorage.State.Bucket); loc.Folder != want {
 		t.Errorf("Folder = %q, want %q", loc.Folder, want)
 	}
 	env := strings.Join(loc.Env, "\n")
@@ -335,12 +255,15 @@ func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
 		t.Error("the environment carries the database credential - the key that lives in the cluster must not reach the state dumps")
 	}
 
-	for _, half := range []string{"key id", "secret"} {
+	for _, half := range []string{"key id", "secret", "bucket name"} {
 		broken := validSite()
-		if half == "key id" {
+		switch half {
+		case "key id":
 			broken.ObjectStorage.State.AccessKeyID = ""
-		} else {
+		case "secret":
 			broken.ObjectStorage.State.SecretAccessKey = ""
+		default:
+			broken.ObjectStorage.State.Bucket = ""
 		}
 		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": broken}}
 		if _, err := StateBackupLocation(cfg, "site0"); err == nil {

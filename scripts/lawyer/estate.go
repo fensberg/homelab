@@ -28,6 +28,14 @@ const enrollmentAddress = "cloudflare_zero_trust_access_application.enrollment"
 
 // config is config/estate.rendered.json.
 type config struct {
+	Organization struct {
+		Name string `json:"name"`
+	} `json:"organization"`
+	// The plots the estate grants, one per site key, with each site's name.
+	Plots map[string]struct {
+		Name string `json:"name"`
+	} `json:"plots"`
+
 	// Who may enroll a device and what it reaches, and the credential that
 	// administers both. Named for the function; Provider says whose it is.
 	Access struct {
@@ -63,6 +71,17 @@ func (c config) validate() error {
 	} {
 		if strings.TrimSpace(v) == "" {
 			return fmt.Errorf("%s in the estate vault is empty", field)
+		}
+	}
+	if strings.TrimSpace(c.Organization.Name) == "" {
+		return errors.New("organization/name in the estate-shared vault is empty, and it names every bucket the estate creates")
+	}
+	if len(c.Plots) == 0 {
+		return errors.New("config/estate.tpl.json lists no plots, so the estate would grant nothing")
+	}
+	for key, site := range c.Plots {
+		if strings.TrimSpace(site.Name) == "" {
+			return fmt.Errorf("%s/name in the estate vault is empty, and it names the site's buckets", key)
 		}
 	}
 	return nil
@@ -138,12 +157,15 @@ func execute(verb string) error {
 	api := cloudflare{account: e.cfg.Access.AccountID, token: e.cfg.Access.APIToken}
 	if verb == "demolish-estate" {
 		console.Phase("Demolish", "Tear the estate down, once no site stands on it.")
-		live, err := api.liveTunnels()
+		connected, err := api.connectedTunnels()
 		if err != nil {
 			return err
 		}
-		if live > 0 {
-			return fmt.Errorf("%d site tunnel(s) stand in the account. Every site stands on the estate, so demolish each with `contractor demolish-site` first", live)
+		if connected > 0 {
+			return fmt.Errorf("%d site tunnel(s) have a connector serving them, so a site stands on the estate. Demolish each with `contractor demolish-site` first", connected)
+		}
+		if err := e.releaseBuckets(); err != nil {
+			return err
 		}
 		return e.run("destroy", "-input=false", "-auto-approve")
 	}
@@ -152,7 +174,15 @@ func execute(verb string) error {
 	if err := e.adoptEnrollment(api, resources); err != nil {
 		return err
 	}
-	return e.run("apply", "-input=false", "-auto-approve")
+	if err := e.adoptBuckets(api); err != nil {
+		return err
+	}
+	if err := e.run("apply", "-input=false", "-auto-approve"); err != nil {
+		return err
+	}
+
+	console.Phase("Grant", "Write what each site is granted into its -shared vault.")
+	return e.grant()
 }
 
 func (e *estate) vault() error {

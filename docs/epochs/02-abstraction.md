@@ -2108,6 +2108,54 @@ closing bar printed colour codes into pipes (#537).
   precondition. Who may enroll is checked where it is declared, in the estate.
 - An estate-only change no longer counts as site work in the deploy workflow.
 
+#### The grants: the estate creates each site's plot
+
+The third step. A site no longer holds a credential that could create or
+delete anything shared. Its Cloudflare provider is gone entirely: no bucket
+resource, no tunnel resource, no admin token and no adoption logic.
+
+**What the estate creates per site** (`management/estate/site/`, one module
+instance per site key):
+
+- four buckets, `<estate>-<site>-{database,state,staging,production}`;
+- one account-owned token per bucket, scoped to that bucket alone;
+- the site's tunnel, its configuration and routes, and its run token.
+
+**What the lawyer writes into `<site>-shared` after every apply:** `identity`
+(the site's name), `object_storage` (the account id, and each bucket's name and
+key pair) and `tunnel` (the run token). It writes an item only where a value
+changed, so a converge that changed nothing leaves the vault untouched.
+
+Things that turned out to matter:
+
+- **Cloudflare provider v5 was required.** v4 can mint API tokens only as
+  _user_ tokens (`cloudflare_api_token` takes no account). Account-owned tokens
+  are v5's `cloudflare_account_token`. The upgrade also moved the split tunnel
+  into `cloudflare_zero_trust_device_default_profile`, and v5 refuses
+  `app_launcher_visible` on a `warp` application, which v4 had needed to keep
+  its plan quiet (#474).
+- **R2 reads an API token as an S3 key pair.** The access key id is the token's
+  id and the secret is the SHA-256 of its value (Cloudflare's R2 docs). A
+  token's reach is `com.cloudflare.edge.r2.bucket.<account>_default_<bucket>`
+  with the "Workers R2 Storage Bucket Item Write" permission group, whose id the
+  estate looks up rather than writes down.
+- **Buckets outlive the estate's machinery.** `demolish-estate` releases them
+  from state rather than destroying them, and every build adopts whatever the
+  plan would create that already exists. The plan supplies the addresses, so
+  the naming lives in the HCL alone.
+- **"A site stands" changed meaning.** The estate now creates the tunnels
+  itself, so a tunnel existing means only that a plot was granted. A tunnel
+  with a connector serving it means a site stands, and that is what refuses a
+  demolish.
+- **The estate's key names the sites it grants `plots`**, not `sites`. That is
+  the right word, and it keeps the estate's document from reading as a second
+  reader of the site's config.
+- **The api tier checks what a site can now know.** Each granted key reaches its
+  own bucket; the database's key is refused on the state bucket (#94, asked of
+  the vendor, since scope is a vendor setting); and the granted run token is a
+  tunnel token for this account. Whether the tunnel is _connected_ needs the
+  estate's token, so that check moves to the estate's lane (#535).
+
 #### Proven
 
 The first `lawyer build-estate` completed on 2026-09-25, on the third run. It

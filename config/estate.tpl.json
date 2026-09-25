@@ -1,4 +1,8 @@
 {
+  "organization": {
+    "name": "{{ op://estate-shared/organization/name }}"
+  },
+
   "access": {
     "provider": "cloudflare",
     "vault_provider": "{{ op://estate/access/provider }}",
@@ -11,5 +15,11 @@
     "bucket": "{{ op://estate/state/bucket }}",
     "access_key_id": "{{ op://estate/state/access_key_id }}",
     "secret_access_key": "{{ op://estate/state/secret_access_key }}"
+  },
+
+  "plots": {
+    "site0": {
+      "name": "{{ op://estate/site0/name }}"
+    }
   }
 }

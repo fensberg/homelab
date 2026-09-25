@@ -1,4 +1,7 @@
 {
+  "organization": {
+    "name": "Example"
+  },
   "access": {
     "provider": "cloudflare",
     "vault_provider": "cloudflare",
@@ -10,5 +13,10 @@
     "bucket": "example-estate",
     "access_key_id": "fixture",
     "secret_access_key": "fixture"
+  },
+  "plots": {
+    "site0": {
+      "name": "North Street Office"
+    }
   }
 }
