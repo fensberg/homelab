@@ -1,14 +1,15 @@
 package phases
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
-	"homelab/details/onepassword"
 	"homelab/details/tofustate"
 )
 
@@ -50,8 +51,16 @@ is genuinely stale, move it aside first and decide deliberately:
     mv %s %s.superseded`, ctx.LocalState, ctx.LocalState, ctx.LocalState)
 	}
 
+	// The identity first, before anything is rendered or fetched: a restore
+	// with nothing piped in is refused while it has touched nothing.
+	identity, err := readIdentity(os.Stdin)
+	defer run.Wipe(identity)
+	if err != nil {
+		return err
+	}
+
 	// Same credential check as Destroy: no vault session means no bucket
-	// credentials and no identity, so the command is inert without one.
+	// credentials, so the command is inert without one.
 	run.Info("rendering the config (this is the credential check)")
 	if err := Render(ctx); err != nil {
 		return fmt.Errorf("could not render the config, so there is nothing to authenticate with: %w", err)
@@ -97,7 +106,7 @@ the estate was torn down, which deletes the bucket and everything in it`, key, e
 		return fmt.Errorf("%s is empty", key)
 	}
 
-	plain, err := decryptWithBreakGlassIdentity(ctx, cipher)
+	plain, err := decryptWithBreakGlassIdentity(ctx, identity, cipher)
 	defer run.Wipe(plain)
 	if err != nil {
 		return err
@@ -151,27 +160,52 @@ func listBackups(ctx *run.Context, env []string, folder string) {
 	}
 }
 
-// decryptWithBreakGlassIdentity fetches the private half and decrypts.
+// readIdentity takes the break-glass identity from stdin.
+//
+// Not from the vault: the identity is in the estate's own vault, which no
+// site's token can see, and that is the property it exists to have. A person
+// holding the estate's token reads it and pipes it in, so this program holds
+// it for one restore and never had a way to fetch it:
+//
+//	op read op://estate/state_backup/identity | contractor restore -site site0
+//
+// A terminal on stdin means nothing was piped, and is refused rather than
+// waited on - a prompt for a private key invites pasting it into a scrollback.
+func readIdentity(stdin *os.File) ([]byte, error) {
+	if info, err := stdin.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
+		return nil, errNoIdentityPiped()
+	}
+	return identityFrom(stdin)
+}
+
+func identityFrom(r io.Reader) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, 64<<10))
+	if err != nil {
+		return nil, fmt.Errorf("reading the identity from stdin: %w", err)
+	}
+	if !bytes.Contains(b, []byte("AGE-SECRET-KEY-")) {
+		run.Wipe(b)
+		return nil, errNoIdentityPiped()
+	}
+	return b, nil
+}
+
+func errNoIdentityPiped() error {
+	return fmt.Errorf(`restore needs the break-glass identity piped in on stdin, and none arrived.
+
+It is in the estate's vault, which this site's token cannot see - on purpose.
+With the estate's token, read it and pipe it in:
+
+    op read %s | contractor restore -site <site>`, BackupIdentityRef)
+}
+
+// decryptWithBreakGlassIdentity decrypts with the identity readIdentity took.
 //
 // age can only take an identity from a file, so one is written - 0600, zeroed
 // and removed before this returns. That is worse than never touching disk and
 // better than the alternative it replaces, which was a printed instruction to
 // `op read` the key into /tmp and remember to delete it.
-//
-// This is the only place in the program that reads the identity at all. Every
-// other phase works with the recipient, which is public.
-func decryptWithBreakGlassIdentity(ctx *run.Context, cipher []byte) ([]byte, error) {
-	identity, err := onepassword.Read(BackupIdentityRef)
-	if err != nil || strings.TrimSpace(identity) == "" {
-		return nil, fmt.Errorf(`could not read the break-glass identity from %s.
-
-Without it the backup cannot be decrypted by anyone, including whoever wrote
-it - that is the property it exists to have. If this estate's backups were
-encrypted to a key held somewhere else, decrypt by hand:
-
-    rclone cat R2:<bucket>-state/management-cluster/latest.tfstate.age | age -d -i <key>`, BackupIdentityRef)
-	}
-
+func decryptWithBreakGlassIdentity(ctx *run.Context, identity, cipher []byte) ([]byte, error) {
 	f, err := os.CreateTemp("", "ignite-identity-*")
 	if err != nil {
 		return nil, err
@@ -190,7 +224,7 @@ encrypted to a key held somewhere else, decrypt by hand:
 		f.Close()
 		return nil, err
 	}
-	if _, err := f.WriteString(identity); err != nil {
+	if _, err := f.Write(identity); err != nil {
 		f.Close()
 		return nil, err
 	}

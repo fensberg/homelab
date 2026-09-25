@@ -95,7 +95,7 @@ it.
 
 ```hcl
 # The shape of what TF_ENCRYPTION carries. The passphrase comes from
-# op://homelab/<site>/database/encryption_passphrase.
+# op://<site>/database/encryption_passphrase.
 key_provider "pbkdf2" "primary" {
   passphrase = "<from 1Password>"
 }
@@ -170,7 +170,7 @@ leaked PKI even if the age dump was never touched.**
 
 Rotating by hand is: create a new token scoped to the one bucket with Object
 Read & Write, update
-`op://homelab/<site>/object_storage/{access_key_id,secret_access_key}`,
+`op://<site>-shared/object_storage/<bucket>_{access_key_id,secret_access_key}`,
 re-run ignite's Cluster phase to rewrite the secret, confirm WAL archiving
 still works, then delete the old token.
 
@@ -185,7 +185,7 @@ account API token, where `access_key_id` is the token's id and
 `cloudflare_api_token` is a resource the pinned provider already has.
 
 What stops it today is scope. Asked directly, the admin token in
-`op://homelab/site0/object_storage/admin_token` answers:
+`op://<site>-shared/object_storage/admin_token` answers:
 
 | Request                                       | Result                                   |
 | --------------------------------------------- | ---------------------------------------- |

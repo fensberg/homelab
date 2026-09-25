@@ -36,7 +36,7 @@ locals {
 # WHERE THE ACCOUNT ID COMES FROM. `object_storage.account_id`, which reads
 # oddly and is correct today: it is the Cloudflare ACCOUNT the estate has, and
 # object storage was simply the first thing in it. It arrives from the vault at
-# op://homelab/object_storage/account_id, from the account's dashboard. That
+# op://<site>-shared/object_storage/account_id, from the account's dashboard. That
 # the tunnel has to reach into object storage to find it is a defect in where
 # the key lives rather than here; #457 moves it.
 resource "cloudflare_zero_trust_tunnel_cloudflared" "estate" {
@@ -46,7 +46,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared" "estate" {
 
   # The tunnel's password, which Cloudflare turns into the token cloudflared
   # runs from. Nobody types it and nobody reads it: the contractor generates 44
-  # random characters into op://homelab/tunnel/secret on the run before this
+  # random characters into op://<site>/tunnel/secret on the run before this
   # one (phases/secrets.go, `ensureTunnelSecret`), and Render brings it back as
   # local.tunnel.secret. Generated rather than human-supplied because it is
   # written to state as a resource attribute, which is the rule that decides

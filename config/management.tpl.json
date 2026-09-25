@@ -1,103 +1,103 @@
 {
   "organization": {
-    "name": "{{ op://homelab/organization/name }}"
+    "name": "{{ op://estate-shared/organization/name }}"
   },
 
   "source_control": {
-    "repo_url": "{{ op://homelab/source-control/url }}",
+    "repo_url": "{{ op://estate-shared/source-control/url }}",
 
     "foreman_bot": {
-      "app_id": "{{ op://homelab/source-control/foreman-bot/app_id }}",
-      "installation_id": "{{ op://homelab/source-control/foreman-bot/installation_id }}",
-      "private_key": "{{ op://homelab/source-control/foreman-bot/private_key }}"
+      "app_id": "{{ op://estate-shared/source-control/foreman-bot/app_id }}",
+      "installation_id": "{{ op://estate-shared/source-control/foreman-bot/installation_id }}",
+      "private_key": "{{ op://estate-shared/source-control/foreman-bot/private_key }}"
     }
   },
 
   "object_storage": {
-    "account_id": "{{ op://homelab/object_storage/account_id }}",
-    "admin_token": "{{ op://homelab/object_storage/admin_token }}"
+    "account_id": "{{ op://site0-shared/object_storage/account_id }}",
+    "admin_token": "{{ op://site0-shared/object_storage/admin_token }}"
   },
 
   "state_backup": {
-    "recipient": "{{ op://homelab/state_backup/recipient }}"
+    "recipient": "{{ op://estate-shared/state_backup/recipient }}"
   },
 
   "tunnel": {
     "provider": "cloudflare",
-    "vault_provider": "{{ op://homelab/tunnel/provider }}",
-    "api_token": "{{ op://homelab/tunnel/api_token }}",
-    "secret": "{{ op://homelab/tunnel/secret }}"
+    "vault_provider": "{{ op://site0-shared/tunnel/provider }}",
+    "api_token": "{{ op://site0-shared/tunnel/api_token }}",
+    "secret": "{{ op://site0/tunnel/secret }}"
   },
 
   "alerting": {
     "provider": "slack",
-    "webhook_url": "{{ op://homelab/alerting/webhook_url }}"
+    "webhook_url": "{{ op://estate-shared/alerting/webhook_url }}"
   },
 
   "workloads": {
     "valheim": {
-      "name": "{{ op://homelab/valheim/name }}",
-      "server_name": "{{ op://homelab/valheim/server_name }}",
-      "password": "{{ op://homelab/valheim/password }}",
-      "backup_key": "{{ op://homelab/valheim/backup_key }}"
+      "name": "{{ op://site0/valheim/name }}",
+      "server_name": "{{ op://site0/valheim/server_name }}",
+      "password": "{{ op://site0/valheim/password }}",
+      "backup_key": "{{ op://site0/valheim/backup_key }}"
     }
   },
 
   "sites": {
     "site0": {
-      "name": "{{ op://homelab/site0/name }}",
+      "name": "{{ op://site0/identity/name }}",
       "octet": 10,
       "control_plane_count": 3,
       "worker_count": 3,
 
       "hypervisor": {
         "provider": "proxmox",
-        "vault_provider": "{{ op://homelab/site0/hypervisor/provider }}",
-        "token_id": "{{ op://homelab/site0/hypervisor/token_id }}",
-        "token_secret": "{{ op://homelab/site0/hypervisor/token_secret }}",
+        "vault_provider": "{{ op://site0/hypervisor/provider }}",
+        "token_id": "{{ op://site0/hypervisor/token_id }}",
+        "token_secret": "{{ op://site0/hypervisor/token_secret }}",
         "nodes": {
           "node0": {
-            "hostname": "{{ op://homelab/site0/node0/hostname }}",
-            "ip": "{{ op://homelab/site0/node0/ip }}"
+            "hostname": "{{ op://site0/node0/hostname }}",
+            "ip": "{{ op://site0/node0/ip }}"
           }
         }
       },
 
       "overlay_network": {
         "provider": "tailscale",
-        "vault_provider": "{{ op://homelab/site0/overlay_network/provider }}",
-        "domain": "{{ op://homelab/site0/overlay_network/domain }}",
-        "client_id": "{{ op://homelab/site0/overlay_network/client_id }}",
-        "client_secret": "{{ op://homelab/site0/overlay_network/client_secret }}"
+        "vault_provider": "{{ op://site0-shared/overlay_network/provider }}",
+        "domain": "{{ op://site0-shared/overlay_network/domain }}",
+        "client_id": "{{ op://site0-shared/overlay_network/client_id }}",
+        "client_secret": "{{ op://site0-shared/overlay_network/client_secret }}"
       },
 
       "object_storage": {
         "provider": "cloudflare",
-        "vault_provider": "{{ op://homelab/site0/object_storage/provider }}",
+        "vault_provider": "{{ op://site0-shared/object_storage/provider }}",
 
         "database": {
-          "access_key_id": "{{ op://homelab/site0/object_storage/database_access_key_id }}",
-          "secret_access_key": "{{ op://homelab/site0/object_storage/database_secret_access_key }}"
+          "access_key_id": "{{ op://site0-shared/object_storage/database_access_key_id }}",
+          "secret_access_key": "{{ op://site0-shared/object_storage/database_secret_access_key }}"
         },
 
         "state": {
-          "access_key_id": "{{ op://homelab/site0/object_storage/state_access_key_id }}",
-          "secret_access_key": "{{ op://homelab/site0/object_storage/state_secret_access_key }}"
+          "access_key_id": "{{ op://site0-shared/object_storage/state_access_key_id }}",
+          "secret_access_key": "{{ op://site0-shared/object_storage/state_secret_access_key }}"
         },
 
         "staging": {
-          "access_key_id": "{{ op://homelab/site0/object_storage/staging_access_key_id }}",
-          "secret_access_key": "{{ op://homelab/site0/object_storage/staging_secret_access_key }}"
+          "access_key_id": "{{ op://site0-shared/object_storage/staging_access_key_id }}",
+          "secret_access_key": "{{ op://site0-shared/object_storage/staging_secret_access_key }}"
         },
 
         "production": {
-          "access_key_id": "{{ op://homelab/site0/object_storage/production_access_key_id }}",
-          "secret_access_key": "{{ op://homelab/site0/object_storage/production_secret_access_key }}"
+          "access_key_id": "{{ op://site0-shared/object_storage/production_access_key_id }}",
+          "secret_access_key": "{{ op://site0-shared/object_storage/production_secret_access_key }}"
         }
       },
 
       "database": {
-        "password": "{{ op://homelab/site0/database/password }}"
+        "password": "{{ op://site0/database/password }}"
       }
     }
   }

@@ -19,10 +19,12 @@
   gather_facts: true
 
   vars:
-    # Which config/management.tpl.json site this run provisions secrets for -
-    # matches the "site0" in every op://homelab/site0/... reference there.
+    # Which site this run provisions secrets for. It is also the site's own
+    # 1Password vault: one vault per scope, named for the scope, so the
+    # credentials below land in op://site0/hypervisor/..., which is where
+    # config/management.tpl.json reads them from.
     site_name: "site0"
-    op_vault: "homelab"
+    op_item: "hypervisor"
     pve_user: "terraform"
     pve_realm: "pve"
     pve_token_id: "pipeline"
@@ -577,7 +579,7 @@
 
     - name: Check whether the token secret already exists in 1Password
       ansible.builtin.command: >-
-        op read op://{{ op_vault }}/{{ site_name }}/hypervisor/token_secret
+        op read op://{{ site_name }}/{{ op_item }}/token_secret
       register: existing_token_secret
       delegate_to: localhost
       become: false
@@ -645,16 +647,15 @@
         # matches what is on screen here.
         cmd: |
           set -o pipefail
-          op item get {{ site_name }} --vault {{ op_vault }} --format=json | jq --arg tid "{{ pve_user }}@{{ pve_realm }}!{{ pve_token_id }}" '
-            (.sections[] | select(.label=="hypervisor") | .id) as $hv
-            | .fields |= (
-                map(select(.section.id != $hv or (.label != "token_id" and .label != "token_secret")))
+          op item get {{ op_item }} --vault {{ site_name }} --format=json | jq --arg tid "{{ pve_user }}@{{ pve_realm }}!{{ pve_token_id }}" '
+            .fields |= (
+                map(select(.label != "token_id" and .label != "token_secret"))
                 + [
-                    {id: "token_id", type: "STRING", label: "token_id", value: $tid, section: {id: $hv}},
-                    {id: "token_secret", type: "CONCEALED", label: "token_secret", value: env.TOKEN_SECRET, section: {id: $hv}}
+                    {id: "token_id", type: "STRING", label: "token_id", value: $tid},
+                    {id: "token_secret", type: "CONCEALED", label: "token_secret", value: env.TOKEN_SECRET}
                   ]
               )
-          ' | op item edit {{ site_name }} --vault {{ op_vault }}
+          ' | op item edit {{ op_item }} --vault {{ site_name }}
       environment:
         TOKEN_SECRET: "{{ (generated_token.stdout | from_json).value }}"
       delegate_to: localhost
@@ -671,7 +672,7 @@
         executable: /bin/bash
         cmd: |
           set -o pipefail
-          op item get {{ site_name }} --vault {{ op_vault }} --format=json | jq -c '{
+          op item get {{ op_item }} --vault {{ site_name }} --format=json | jq -c '{
             token_id: ([.fields[] | select(.label=="token_id")][0].value),
             token_secret: ([.fields[] | select(.label=="token_secret")][0].value)
           }'
@@ -694,7 +695,7 @@
         fail_msg: >-
           The token secret written to 1Password does not match what Proxmox
           generated - do not proceed with a mismatched credential. Check the
-          'hypervisor' section on the {{ site_name }} item by hand.
+          {{ op_item }} item in the {{ site_name }} vault by hand.
         success_msg: "Token secret verified in 1Password."
       when: generated_token.changed | default(false)
       tags: [rbac]
@@ -756,7 +757,7 @@
     # idiom as the role and token existence checks above - avoids that.
     - name: Check whether the SSH credential already exists in 1Password
       ansible.builtin.command: >-
-        op read op://{{ op_vault }}/{{ site_name }}/hypervisor/ssh_private_key
+        op read op://{{ site_name }}/{{ op_item }}/ssh_private_key
       register: existing_ssh_credential
       delegate_to: localhost
       become: false
@@ -791,22 +792,21 @@
     # straight from the file generated a few tasks up, so the private key
     # never becomes a command-line argument (a jq --arg would) or an Ansible
     # variable that might end up in a log; adds ssh_username/ssh_private_key
-    # to the hypervisor section since they don't exist there yet.
+    # to the hypervisor item since they don't exist there yet.
     - name: Store the SSH credential in 1Password
       ansible.builtin.shell:
         executable: /bin/bash
         cmd: |
           set -o pipefail
-          op item get {{ site_name }} --vault {{ op_vault }} --format=json | jq --arg user "{{ disk_import_user }}" --rawfile key {{ disk_import_key_path }} '
-            (.sections[] | select(.label=="hypervisor") | .id) as $hv
-            | .fields |= (
-                map(select(.section.id != $hv or (.label != "ssh_username" and .label != "ssh_private_key")))
+          op item get {{ op_item }} --vault {{ site_name }} --format=json | jq --arg user "{{ disk_import_user }}" --rawfile key {{ disk_import_key_path }} '
+            .fields |= (
+                map(select(.label != "ssh_username" and .label != "ssh_private_key"))
                 + [
-                    {id: "ssh_username", type: "STRING", label: "ssh_username", value: $user, section: {id: $hv}},
-                    {id: "ssh_private_key", type: "CONCEALED", label: "ssh_private_key", value: $key, section: {id: $hv}}
+                    {id: "ssh_username", type: "STRING", label: "ssh_username", value: $user},
+                    {id: "ssh_private_key", type: "CONCEALED", label: "ssh_private_key", value: $key}
                   ]
               )
-          ' | op item edit {{ site_name }} --vault {{ op_vault }}
+          ' | op item edit {{ op_item }} --vault {{ site_name }}
       delegate_to: localhost
       become: false
       when: existing_ssh_credential.rc != 0
@@ -821,7 +821,7 @@
         executable: /bin/bash
         cmd: |
           set -o pipefail
-          op item get {{ site_name }} --vault {{ op_vault }} --format=json | jq -c '{
+          op item get {{ op_item }} --vault {{ site_name }} --format=json | jq -c '{
             ssh_username: ([.fields[] | select(.label=="ssh_username")][0].value),
             ssh_private_key: ([.fields[] | select(.label=="ssh_private_key")][0].value)
           }'
@@ -844,7 +844,7 @@
           The SSH private key written to 1Password does not match the key
           generated and authorized on the host. The local copy at
           {{ disk_import_key_path }} has deliberately NOT been deleted -
-          check the 'hypervisor' section on the {{ site_name }} item by hand
+          check the {{ op_item }} item in the {{ site_name }} vault by hand
           before re-running this playbook.
         success_msg: "SSH credential verified in 1Password."
       when: existing_ssh_credential.rc != 0
