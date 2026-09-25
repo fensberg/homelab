@@ -1,7 +1,9 @@
 # The estate: what every site and every node stands on.
 #
-# Built once, by `contractor build-estate`, before any site - and never reached
-# by a site's build. A site demolish cannot touch anything here, because none
+# Built once, by `lawyer build-estate`, before any site - and never reached by
+# a site's build. The lawyer holds the estate's credentials and only those; the
+# contractor holds a site's and only those, so neither program can change what
+# the other owns. A site demolish cannot touch anything here, because none
 # of it is in a site's state: that is the whole point of a root of its own
 # rather than a list of things a site teardown must remember to spare. The
 # boundary between estate, site and node is in docs/epochs/02-abstraction.md.
@@ -17,7 +19,7 @@ terraform {
   }
 
   # The estate's own bucket, not any site's database: the estate cannot
-  # depend on a site. The contractor supplies the bucket, the account's S3
+  # depend on a site. The lawyer supplies the bucket, the account's S3
   # endpoint and the bucket's own credential at init (-backend-config and the
   # AWS_* environment), so nothing in git names the account. State is
   # encrypted by TF_ENCRYPTION exactly as a site's is, so the bucket holds
@@ -39,8 +41,9 @@ terraform {
   }
 }
 
-# The Zero Trust token: the one that administers the account's tunnels,
-# Access and device settings. The account's admin token is object storage's.
+# The estate's own token: Access applications and policies, and the account's
+# device settings. It is not the site's tunnel token, and the site's is not
+# this; the vendor refuses each one what the other owns.
 provider "cloudflare" {
-  api_token = local.tunnel.api_token
+  api_token = local.account.api_token
 }

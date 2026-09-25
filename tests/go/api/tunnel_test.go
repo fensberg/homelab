@@ -3,15 +3,13 @@
 package api_test
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"homelab/details/cloudflare"
 	"homelab/tests/harness"
 )
 
@@ -41,35 +39,19 @@ func TestTheTunnelIsDeclaredAtTheVendorAndConnected(t *testing.T) {
 	name := fmt.Sprintf("%s-%s", harness.LoadConfig(t).Organization.Name, harness.Site())
 
 	q := url.Values{"name": {name}, "is_deleted": {"false"}}
-	req, err := http.NewRequest(http.MethodGet,
-		"https://api.cloudflare.com/client/v4/accounts/"+account+"/cfd_tunnel?"+q.Encode(), nil)
-	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer "+tunnel.APIToken)
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	require.NoError(t, err, "asking Cloudflare for the tunnel")
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode,
-		"Cloudflare answered %d to the tunnel token listing its own tunnels. The token may have "+
-			"been revoked or lost the Cloudflare Tunnel read permission.", resp.StatusCode)
-
-	var answer struct {
-		Success bool `json:"success"`
-		Result  []struct {
-			Name   string `json:"name"`
-			Status string `json:"status"`
-		} `json:"result"`
-	}
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&answer), "decoding Cloudflare's answer")
-	require.True(t, answer.Success, "Cloudflare reported the tunnel listing as unsuccessful")
-	require.Len(t, answer.Result, 1,
+	tunnels, err := cloudflare.Get[[]struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}](cloudflare.API+"/accounts/"+account, tunnel.APIToken, "/cfd_tunnel", q)
+	require.NoError(t, err, "the tunnel token listing its own tunnels. The token may have been "+
+		"revoked or lost the Cloudflare Tunnel read permission.")
+	require.Len(t, tunnels, 1,
 		"Cloudflare holds %d live tunnels named %q; management/cluster/tunnel.tf declares exactly one",
-		len(answer.Result), name)
+		len(tunnels), name)
 
 	// healthy: every connector up. degraded: some. inactive and down mean no
 	// connector is carrying anything, which is the silent failure above.
-	status := answer.Result[0].Status
+	status := tunnels[0].Status
 	require.Contains(t, []string{"healthy", "degraded"}, status,
 		"the tunnel %q is %q: no cloudflared connector is carrying traffic, so every enrolled "+
 			"device's route leads nowhere. Check the cloudflared pods in the tunnel namespace.",

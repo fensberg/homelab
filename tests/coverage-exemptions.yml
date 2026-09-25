@@ -155,13 +155,13 @@ files:
   # recorded in Deferred as never having been executed. encryption.go sets
   # TF_ENCRYPTION, where being wrong writes plaintext state to a database
   # that ships off-site.
-  - path: contractor/internal/onepassword/onepassword.go
-    uncovered: 6
+  - path: details/onepassword/onepassword.go
+    uncovered: 7
     covered_by: nothing
-  - path: contractor/internal/onepassword/probe.go
+  - path: details/onepassword/probe.go
     uncovered: 2
     covered_by: nothing
-  - path: contractor/internal/onepassword/upsert.go
+  - path: details/onepassword/upsert.go
     uncovered: 2
     covered_by: nothing
   - path: contractor/internal/phases/checkvault.go
@@ -179,6 +179,13 @@ files:
   - path: contractor/internal/phases/secrets.go
     uncovered: 6
     covered_by: nothing
+  # The lawyer's run itself: signing in, rendering from the estate vault,
+  # and driving tofu against the estate's bucket. Each needs the estate's
+  # real vault and account. Its decisions - the vault boundary, which verb
+  # admits which state, adoption, sterilize - are extracted and unit-tested.
+  - path: lawyer/estate.go
+    uncovered: 7
+    covered_by: nothing
 
   # --- covered_by: not-worth-testing -----------------------------------
   #
@@ -195,7 +202,10 @@ files:
     uncovered: 1
     covered_by: not-worth-testing
   - path: contractor/internal/run/log.go
-    uncovered: 6
+    uncovered: 5
+    covered_by: not-worth-testing
+  - path: lawyer/main.go
+    uncovered: 1
     covered_by: not-worth-testing
   - path: contractor/main.go
     uncovered: 8

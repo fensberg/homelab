@@ -1,0 +1,14 @@
+{
+  "account": {
+    "provider": "cloudflare",
+    "vault_provider": "cloudflare",
+    "account_id": "0123456789abcdef0123456789abcdef",
+    "api_token": "fixture"
+  },
+  "members": "someone@example.com, another@example.com",
+  "state": {
+    "bucket": "example-estate",
+    "access_key_id": "fixture",
+    "secret_access_key": "fixture"
+  }
+}

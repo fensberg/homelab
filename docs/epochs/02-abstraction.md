@@ -1875,10 +1875,140 @@ term and the construction term for where materials are gathered before use; and
 `dev` collides with the name of the privileged user account, in a repository
 where the privilege boundary is the thing most important to read correctly.
 
-### The split is two roots sharing one config, and the seam is two values
+### The first split is by scope: estate, site, node
 
-The design for the provider split named as a constraint above. Written before
-any code moved, because the state migration is the expensive half to get wrong
+Decided 2026-09-25, after a site `demolish` deleted the WARP enrollment
+application for the whole Cloudflare account and the next build failed looking
+for it (#531). The application had been adopted into the site's state, so the
+site's teardown destroyed it. That is a scope error, not a teardown bug, and it
+re-plans this epoch's split: **the first cut is by scope, and the
+infrastructure/platform cut below happens inside a site.**
+
+#### Three scopes, and an operation at one cannot harm a wider one
+
+| Scope      | What it is                                             | What it owns                                                                     | Program      |
+| ---------- | ------------------------------------------------------ | -------------------------------------------------------------------------------- | ------------ |
+| **estate** | the Cloudflare account and its Zero Trust organisation | the enrollment application, who may enroll (the Access policy), the split tunnel | `lawyer`     |
+| **site**   | one cluster                                            | its machines, control plane, database, buckets, and its own tunnel and routes    | `contractor` |
+| **node**   | raw compute, ready to be adopted by a site             | nothing                                                                          | -            |
+
+"The organisation" and "the estate" are the same thing here: the account _is_
+the estate, so the boundary is "the estate's, not the site's".
+
+**Nodes are owned, not owners.** They are the site's keyed resources, in the
+site's root and the site's state, and no node has a root or a verb of its own.
+What "nothing done to a node may harm its site" asks for is already the
+disposable-VM rule: a node is replaced, never repaired, and it holds nothing
+the site needs back.
+
+**A site's buckets are the site's**, even though they deliberately outlive a
+rebuild of its machines. That is a statement about lifetime, not scope, and it
+is not evidence that they belong to the estate.
+
+#### The boundary is state, not a list of things to spare
+
+The estate has its own OpenTofu root, `management/estate/`, with its own state
+in its own R2 bucket (S3 backend, `use_lockfile`, encrypted with
+`TF_ENCRYPTION` like every other state). A site's plan has no handle on any
+estate object, so a site's destroy cannot reach one. The alternative, keeping
+the objects in site state and having each teardown forget them first, is the
+careful-handling fix: it works until somebody adds an object and not the
+matching forget.
+
+`tests/go/repo/estate_scope_test.go` holds the boundary in both directions.
+It walks every `.tf` file in the repository and refuses:
+
+- an estate type owned (by `resource` or `import`) anywhere but the estate
+  root;
+- any type in the estate root not declared as the estate's.
+
+A new estate object is therefore a decision written into that test, never an
+accident. The mutation ledger proves both directions.
+
+What both roots need, they read from a file rather than from each other:
+`management/tunnel-routes.json` is read by the site root, for the routes
+through its own tunnel, and by the estate root, for the account's split tunnel.
+
+#### The lawyer holds the estate's credentials, and only those
+
+"Contractors don't build estates - lawyers do." The estate's verbs belong to a
+second program, `scripts/lawyer`, and the name is a credential boundary as much
+as a theme. In the user's words: "the lawyer holds the estate credentials and
+estate credentials only. The contractor holds the site credentials and the site
+credentials only."
+
+| Verb              | Program    | Refuses when                                                      |
+| ----------------- | ---------- | ----------------------------------------------------------------- |
+| `build-estate`    | lawyer     | the estate's state already holds anything                         |
+| `converge-estate` | lawyer     | the estate's state is empty                                       |
+| `demolish-estate` | lawyer     | any tunnel stands in the account, i.e. any site, or no `-confirm` |
+| `build-site`      | contractor | (renamed from `break-ground`, #534)                               |
+| `converge-site`   | contractor | (renamed from `converge`)                                         |
+| `demolish-site`   | contractor | (renamed from `demolish`)                                         |
+
+Build and converge each refuse the other's case, so a converge can never
+quietly build an estate from nothing.
+
+**The estate's secrets are in a separate 1Password vault**, reached by a service
+account that can see that vault alone. With one vault, "only those" would hold
+only because each program renders its own template, and either token could
+still read the other's fields. The lawyer asks 1Password which vaults its token
+can see and **refuses unless the answer is exactly one**. That makes the
+separation checkable rather than conventional, and it also means the
+repository never names the vault:
+`config/estate.tpl.json` references `op://${ESTATE_VAULT}/...`, and the lawyer
+sets `ESTATE_VAULT` to the one vault it found. A fork with a differently named
+vault changes nothing.
+
+The estate vault holds:
+
+| Item         | Fields                                                                  | Notes                                                                                  |
+| ------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `cloudflare` | `provider`, `account_id`, `api_token`                                   | the token may edit Access applications and policies, device settings, and read tunnels |
+| `access`     | `members`                                                               | comma-separated emails; moved here from the site config's `tunnel.members`             |
+| `state`      | `bucket`, `access_key_id`, `secret_access_key`, `encryption_passphrase` | the passphrase is generated by the first build                                         |
+
+Two facts now exist in both vaults: the account id, and the fact that the
+account is Cloudflare's. That is the price of a vault boundary, since a program
+that cannot read the other vault cannot share a field with it.
+
+What each program shares in code comes from `scripts/details`: the 1Password
+wrapper, the password generator, the console, the state-encryption block and a
+Cloudflare API client all moved there so the lawyer did not grow a copy of any
+of them. Writing the console's first test found a live bug: the phase banner's
+closing bar printed colour codes into pipes (#537).
+
+#### Consequences for the site
+
+- The site's `tunnel.api_token` now needs Cloudflare Tunnel edit and nothing
+  else. It used to administer Access too, because the site owned the enrollment
+  application. Narrowing it is what makes the boundary hold at the vendor as
+  well as in the code.
+- `tunnel.members` left the site's config, its Go type, its fixtures and its
+  precondition. Who may enroll is checked where it is declared, in the estate.
+- An estate-only change no longer counts as site work in the deploy workflow.
+
+#### Found on the way, and not fixed here
+
+- **Nothing converges the estate on merge** (#535). The site converge runs on a
+  runner inside a site, which is the wrong place for the estate's token and
+  does not exist while no site stands. So the estate's lane needs a
+  GitHub-hosted runner, and `op` delivered to it. Until then an estate change
+  is converged by hand with `task converge-estate`.
+- **The tunnel routes collide as soon as there are two sites** (#536). The game
+  server's route is a fixed `clusterIP`. Every cluster has the same service
+  range, every site's routes share the account's one virtual network, and the
+  split tunnel is one list for the account. This is harmless with one site and
+  decided before the second.
+- **The estate has no plan-on-pull-request.** A reviewer sees the estate's
+  change as a diff, not as a plan. That belongs with #535, since a check must
+  run the same operation as the action.
+
+### Inside a site, the split is two roots sharing one config, and the seam is two values
+
+The design for the provider split named as a constraint above, and the second
+cut: it divides one site's root, after the scope split has taken the estate's
+objects out of it. Written before any code moved, because the state migration is the expensive half to get wrong
 and it is an operation only `dev` can run.
 
 **Re-measured 2026-09-21.** Every count below is from the tree rather than from
@@ -1888,10 +2018,10 @@ the earlier description of it.
 
 Eighteen resources move. Everything else stays.
 
-| Layer            | Files                                                                                                                                               | Providers                             |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `infrastructure` | `compute.tf`, `pools.tf`, `talos.tf`, `overlay-network.tf`, `object-storage.tf`, `cilium.tf`, `registry.tf`, and the Cloudflare half of `tunnel.tf` | proxmox, talos, tailscale, cloudflare |
-| `platform`       | `database.tf`, `gitops.tf`, `monitoring.tf`, `runner.tf`, `workloads.tf`, and the Kubernetes half of `tunnel.tf`                                    | kubernetes                            |
+| Layer            | Files                                                                                                                                             | Providers                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `infrastructure` | `compute.tf`, `pools.tf`, `talos.tf`, `overlay-network.tf`, `object-storage.tf`, `cilium.tf`, `registry.tf`, and the site's tunnel in `tunnel.tf` | proxmox, talos, tailscale, cloudflare |
+| `platform`       | `database.tf`, `gitops.tf`, `monitoring.tf`, `runner.tf`, `workloads.tf`, and the Kubernetes half of `tunnel.tf`                                  | kubernetes                            |
 
 The eighteen, by kind, because this list is the migration inventory and a
 resource missing from it is a resource the platform root would propose to

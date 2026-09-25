@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"homelab/contractor/config"
-	"homelab/contractor/internal/onepassword"
+	"homelab/details/onepassword"
 )
 
 // A fake probe, keyed by reference. The whole point of injecting it is that

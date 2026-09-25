@@ -2,12 +2,11 @@ package phases
 
 import (
 	"fmt"
-	"os"
-	"strings"
 
-	"homelab/contractor/internal/onepassword"
 	"homelab/contractor/internal/run"
-	"homelab/contractor/internal/secrets"
+	"homelab/details/onepassword"
+	"homelab/details/secrets"
+	"homelab/details/stateencryption"
 )
 
 // EnsureStateEncryption resolves the state-encryption passphrase and puts the
@@ -40,80 +39,22 @@ import (
 // path used once, on an estate that no longer exists, and one that quietly
 // weakens the property if it were ever left switched on.
 func EnsureStateEncryption(ctx *run.Context) error {
-	if _, set := os.LookupEnv("TF_ENCRYPTION"); set {
-		// Somebody is mid-cutover, or driving tofu by hand from the runbook.
-		// Their block wins: overwriting it here is how a migration loses its
-		// fallback halfway through.
-		run.Info("TF_ENCRYPTION is already set; leaving it alone")
-		return nil
-	}
-
-	if err := EnsureVaultSession(); err != nil {
-		return err
-	}
-
-	ref, err := onepassword.ParseRef(fmt.Sprintf("op://homelab/%s/database/encryption_passphrase", ctx.Site))
-	if err != nil {
-		return err
-	}
-	passphrase, status, err := onepassword.EnsureField(ref, func() (string, error) {
-		return secrets.Password(32)
+	return stateencryption.Establish(func() (string, error) {
+		if err := EnsureVaultSession(); err != nil {
+			return "", err
+		}
+		ref, err := onepassword.ParseRef(fmt.Sprintf("op://homelab/%s/database/%s", ctx.Site, stateencryption.PassphraseField))
+		if err != nil {
+			return "", err
+		}
+		passphrase, status, err := onepassword.EnsureField(ref, func() (string, error) {
+			return secrets.Password(32)
+		})
+		if status == "generated" {
+			run.Ok("generated a state encryption passphrase and stored it in 1Password")
+		}
+		return passphrase, err
 	})
-	if err != nil {
-		return fmt.Errorf("state encryption passphrase: %w", err)
-	}
-	if status == "generated" {
-		run.Ok("generated a state encryption passphrase and stored it in 1Password")
-	}
-
-	cfg := encryptionConfig(passphrase)
-	if cfg == "" {
-		return fmt.Errorf("the state encryption passphrase at %s is empty", ref)
-	}
-	if err := os.Setenv("TF_ENCRYPTION", cfg); err != nil {
-		return err
-	}
-	run.Ok("state encryption is on: what tofu writes is ciphertext at rest")
-	return nil
-}
-
-// encryptionConfig renders the block TF_ENCRYPTION carries.
-//
-// `plan` as well as `state`: a saved plan file holds the same attributes state
-// does, so encrypting one and not the other leaves the identical secrets in a
-// different file. Nothing here writes plan files today, which is exactly why
-// it is worth setting now rather than remembering later.
-func encryptionConfig(passphrase string) string {
-	if strings.TrimSpace(passphrase) == "" {
-		return ""
-	}
-	return fmt.Sprintf(`
-key_provider "pbkdf2" "primary" {
-  passphrase = %s
-}
-
-method "aes_gcm" "primary" {
-  keys = key_provider.pbkdf2.primary
-}
-
-state {
-  method = method.aes_gcm.primary
-}
-
-plan {
-  method = method.aes_gcm.primary
-}
-`, hclString(passphrase))
-}
-
-// hclString quotes a value for HCL. A passphrase containing a quote or a
-// backslash would otherwise end the string early, and the resulting parse
-// error would arrive after the credential was already in the vault - at which
-// point every tofu invocation fails and the cause is a config nobody can see,
-// because it only exists in an environment variable.
-func hclString(s string) string {
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
-	return `"` + r.Replace(s) + `"`
 }
 
 // NeedsStateEncryption reports whether a single-phase run has to establish the

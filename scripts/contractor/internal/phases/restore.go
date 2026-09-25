@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"homelab/contractor/config"
-	"homelab/contractor/internal/onepassword"
 	"homelab/contractor/internal/run"
+	"homelab/details/onepassword"
 )
 
 // Restore brings the age-encrypted state back from object storage.

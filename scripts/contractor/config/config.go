@@ -144,9 +144,6 @@ type Tunnel struct {
 	// The tunnel's password. Written to state as a resource attribute, so
 	// the contractor generates it (phases/secrets.go) rather than a person.
 	Secret string `json:"secret"`
-	// Who may enroll a device, as comma-separated email addresses. Personal
-	// data, so it lives in the vault rather than in git.
-	Members string `json:"members"`
 }
 
 // TunnelProvider is the one tunnel vendor this code implements.
@@ -574,16 +571,14 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		"overlay_network": site.OverlayNetwork.VaultProvider,
 		"object_storage":  site.ObjectStorage.VaultProvider,
 	}
-	// The tunnel is fleet-level, but held to the same three-way agreement:
-	// its token edits who may enroll and what an enrolled device can reach.
+	// The tunnel is held to the same three-way agreement: its token edits
+	// the site's tunnel and what an enrolled device can reach through it.
+	// Who may enroll is the estate's, and the lawyer's to check.
 	if cfg.Tunnel.Provider != TunnelProvider {
 		return nil, fmt.Errorf("provider mismatch in tunnel - the config declares '%s' but this code implements '%s'. Change the code before changing the declaration", cfg.Tunnel.Provider, TunnelProvider)
 	}
 	if strings.TrimSpace(cfg.Tunnel.VaultProvider) != TunnelProvider {
 		return nil, fmt.Errorf("tunnel.vault_provider is '%s', not '%s'. The 1Password item must attest which vendor its credentials belong to", cfg.Tunnel.VaultProvider, TunnelProvider)
-	}
-	if strings.TrimSpace(cfg.Tunnel.Members) == "" {
-		return nil, fmt.Errorf("tunnel.members is empty, so nobody could enroll a device. List at least one email address in the vault")
 	}
 
 	// Sorted so a config with several concerns wrong always reports the

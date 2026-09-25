@@ -1,0 +1,16 @@
+{
+  "account": {
+    "provider": "cloudflare",
+    "vault_provider": "{{ op://${ESTATE_VAULT}/cloudflare/provider }}",
+    "account_id": "{{ op://${ESTATE_VAULT}/cloudflare/account_id }}",
+    "api_token": "{{ op://${ESTATE_VAULT}/cloudflare/api_token }}"
+  },
+
+  "members": "{{ op://${ESTATE_VAULT}/access/members }}",
+
+  "state": {
+    "bucket": "{{ op://${ESTATE_VAULT}/state/bucket }}",
+    "access_key_id": "{{ op://${ESTATE_VAULT}/state/access_key_id }}",
+    "secret_access_key": "{{ op://${ESTATE_VAULT}/state/secret_access_key }}"
+  }
+}

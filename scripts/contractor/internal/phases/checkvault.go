@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"homelab/contractor/config"
-	"homelab/contractor/internal/onepassword"
 	"homelab/contractor/internal/run"
+	"homelab/details/onepassword"
 )
 
 // CheckVault proves the vault holds everything the config template asks for,

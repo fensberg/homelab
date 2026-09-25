@@ -1,0 +1,308 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	cf "homelab/details/cloudflare"
+	"homelab/details/console"
+	"homelab/details/onepassword"
+	"homelab/details/repopath"
+	"homelab/details/secrets"
+	"homelab/details/stateencryption"
+)
+
+// vaultEnv is the variable config/estate.tpl.json names its vault by. The
+// repository never spells the vault: it is whichever one the lawyer's token
+// reaches, so a fork with its own vault needs no edit.
+const vaultEnv = "ESTATE_VAULT"
+
+// enrollmentAddress is the one estate object that may already exist before
+// the estate is built: Cloudflare keeps a single WARP enrollment application
+// per account and refuses a second.
+const enrollmentAddress = "cloudflare_zero_trust_access_application.enrollment"
+
+// config is config/estate.rendered.json.
+type config struct {
+	Account struct {
+		Provider      string `json:"provider"`
+		VaultProvider string `json:"vault_provider"`
+		AccountID     string `json:"account_id"`
+		APIToken      string `json:"api_token"`
+	} `json:"account"`
+	Members string `json:"members"`
+	State   struct {
+		Bucket          string `json:"bucket"`
+		AccessKeyID     string `json:"access_key_id"`
+		SecretAccessKey string `json:"secret_access_key"`
+	} `json:"state"`
+}
+
+// validate names the first field that would make a run fail later and further
+// from its cause. Field names only: a value never reaches the log.
+func (c config) validate() error {
+	if c.Account.Provider != "cloudflare" {
+		return fmt.Errorf("account.provider is %q; management/estate/ implements cloudflare", c.Account.Provider)
+	}
+	if strings.TrimSpace(c.Account.VaultProvider) != "cloudflare" {
+		return errors.New("the estate vault's cloudflare item attests a provider other than cloudflare, so its credentials may belong to another vendor")
+	}
+	for field, v := range map[string]string{
+		"cloudflare/account_id":   c.Account.AccountID,
+		"cloudflare/api_token":    c.Account.APIToken,
+		"access/members":          c.Members,
+		"state/bucket":            c.State.Bucket,
+		"state/access_key_id":     c.State.AccessKeyID,
+		"state/secret_access_key": c.State.SecretAccessKey,
+	} {
+		if strings.TrimSpace(v) == "" {
+			return fmt.Errorf("%s in the estate vault is empty", field)
+		}
+	}
+	return nil
+}
+
+// pickVault is the credential boundary. The lawyer's token must reach exactly
+// one vault, the estate's: none means there is nothing to hold, and more than
+// one means the token can read a site's credentials too, which is the split
+// this program exists to keep. Counted, never named - vault names reach a
+// public Actions log.
+func pickVault(names []string) (string, error) {
+	switch len(names) {
+	case 1:
+		return names[0], nil
+	case 0:
+		return "", errors.New("the 1Password token reaches no vault. The lawyer's service account must be granted the estate vault")
+	default:
+		return "", fmt.Errorf("the 1Password token reaches %d vaults. The lawyer holds the estate's credentials and only those, so its service account must be scoped to the estate vault alone", len(names))
+	}
+}
+
+// admit decides whether a verb may run against what the estate's state holds.
+// Build establishes and converge maintains; each refuses the other's case, so
+// a converge can never quietly build an estate from nothing, and a build can
+// never be run twice over one that stands.
+func admit(verb string, resources []string) error {
+	switch verb {
+	case "build-estate":
+		if len(resources) > 0 {
+			return fmt.Errorf("the estate stands: its state holds %d resource(s). Use converge-estate", len(resources))
+		}
+	case "converge-estate", "demolish-estate":
+		if len(resources) == 0 {
+			return errors.New("there is no estate: its state is empty. Use build-estate")
+		}
+	}
+	return nil
+}
+
+type estate struct {
+	dir      string // management/estate
+	tpl      string
+	rendered string
+	cfg      config
+
+	// run executes tofu in the estate root. A field so the tests can see
+	// what the lawyer would have asked tofu to do.
+	run func(args ...string) error
+}
+
+func execute(verb string) error {
+	root, err := repopath.Root()
+	if err != nil {
+		return err
+	}
+	e := &estate{
+		dir:      filepath.Join(root, "management", "estate"),
+		tpl:      filepath.Join(root, "config", "estate.tpl.json"),
+		rendered: filepath.Join(root, "config", "estate.rendered.json"),
+	}
+	e.run = e.tofu
+	// Always, however the run ends: the rendered file holds the estate's
+	// token and the bucket's credential.
+	defer e.sterilize()
+
+	console.Phase("Render", "Pull the estate's secrets from the estate vault.")
+	vault, err := e.vault()
+	if err != nil {
+		return err
+	}
+	if err := e.encrypt(vault); err != nil {
+		return err
+	}
+	if err := e.render(); err != nil {
+		return err
+	}
+
+	console.Phase("Take over", "Open the estate's state in its own bucket.")
+	if err := e.run("init", "-input=false", "-backend-config=bucket="+e.cfg.State.Bucket); err != nil {
+		return err
+	}
+	resources, err := e.stateList()
+	if err != nil {
+		return err
+	}
+	if err := admit(verb, resources); err != nil {
+		return err
+	}
+
+	api := cloudflare{account: e.cfg.Account.AccountID, token: e.cfg.Account.APIToken}
+	if verb == "demolish-estate" {
+		console.Phase("Demolish", "Tear the estate down, once no site stands on it.")
+		live, err := api.liveTunnels()
+		if err != nil {
+			return err
+		}
+		if live > 0 {
+			return fmt.Errorf("%d site tunnel(s) stand in the account. Every site stands on the estate, so demolish each with `contractor demolish-site` first", live)
+		}
+		return e.run("destroy", "-input=false", "-auto-approve")
+	}
+
+	console.Phase("Apply", "Bring the estate to what management/estate/ declares.")
+	if err := e.adoptEnrollment(api, resources); err != nil {
+		return err
+	}
+	return e.run("apply", "-input=false", "-auto-approve")
+}
+
+func (e *estate) vault() (string, error) {
+	if !onepassword.Available() {
+		return "", onepassword.ErrNoCLI
+	}
+	if !onepassword.SignedIn() {
+		return "", errors.New("1Password is not signed in. The lawyer runs on the estate's service account: export OP_SERVICE_ACCOUNT_TOKEN from the estate token")
+	}
+	names, err := onepassword.Vaults()
+	if err != nil {
+		return "", err
+	}
+	vault, err := pickVault(names)
+	if err != nil {
+		return "", err
+	}
+	if err := os.Setenv(vaultEnv, vault); err != nil {
+		return "", err
+	}
+	console.Ok("the token reaches the estate vault and nothing else")
+	return vault, nil
+}
+
+// encrypt puts the estate's own passphrase into TF_ENCRYPTION, generating it
+// on the first build. The estate's, not any site's: a site's passphrase lives
+// in the site's vault, which this token cannot read.
+func (e *estate) encrypt(vault string) error {
+	ref := onepassword.Ref{Vault: vault, Item: "state", Field: stateencryption.PassphraseField}
+	return stateencryption.Establish(func() (string, error) {
+		passphrase, status, err := onepassword.EnsureField(ref, func() (string, error) { return secrets.Password(32) })
+		if status == "generated" {
+			console.Ok("generated the estate's state encryption passphrase and stored it in the estate vault")
+		}
+		return passphrase, err
+	})
+}
+
+func (e *estate) render() error {
+	if err := onepassword.Inject(e.tpl, e.rendered); err != nil {
+		return err
+	}
+	if err := os.Chmod(e.rendered, 0o600); err != nil {
+		return err
+	}
+	body, err := os.ReadFile(e.rendered)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(body, &e.cfg); err != nil {
+		return fmt.Errorf("config/estate.rendered.json: %w", err)
+	}
+	if err := e.cfg.validate(); err != nil {
+		return err
+	}
+	console.Ok("the estate's secrets are rendered")
+	return nil
+}
+
+// adoptEnrollment takes the account's existing enrollment application into
+// state, when there is one and state does not hold it. Cloudflare allows one
+// per account, so creating another fails; and one may exist for reasons the
+// estate did not cause, since the account creates one with every Zero Trust
+// organisation. Found in Go rather than by an import block, because an import
+// block fails the whole plan when the application is absent - which is the
+// state a demolished estate leaves.
+func (e *estate) adoptEnrollment(api cloudflare, resources []string) error {
+	for _, r := range resources {
+		if r == enrollmentAddress {
+			return nil
+		}
+	}
+	id, err := api.enrollmentApp()
+	if err != nil {
+		return err
+	}
+	if id == "" {
+		console.Info("the account has no enrollment application; the apply creates it")
+		return nil
+	}
+	console.Info("adopting the account's enrollment application")
+	return e.run("import", "-input=false", enrollmentAddress, e.cfg.Account.AccountID+"/"+id)
+}
+
+func (e *estate) stateList() ([]string, error) {
+	out, err := e.tofuOutput("state", "list")
+	if err != nil {
+		return nil, err
+	}
+	return strings.Fields(out), nil
+}
+
+// backendEnv reaches the estate's bucket with its own credential and no other,
+// through the environment of one process so it is never written to disk.
+func (e *estate) backendEnv() []string {
+	return append(os.Environ(),
+		"AWS_ACCESS_KEY_ID="+e.cfg.State.AccessKeyID,
+		"AWS_SECRET_ACCESS_KEY="+e.cfg.State.SecretAccessKey,
+		"AWS_ENDPOINT_URL_S3="+cf.R2Endpoint(e.cfg.Account.AccountID),
+	)
+}
+
+func (e *estate) tofu(args ...string) error {
+	c := exec.Command("tofu", args...)
+	c.Dir = e.dir
+	c.Env = e.backendEnv()
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("tofu %s: %w", args[0], err)
+	}
+	return nil
+}
+
+func (e *estate) tofuOutput(args ...string) (string, error) {
+	c := exec.Command("tofu", args...)
+	c.Dir = e.dir
+	c.Env = e.backendEnv()
+	var stderr bytes.Buffer
+	c.Stderr = &stderr
+	out, err := c.Output()
+	if err != nil {
+		return "", fmt.Errorf("tofu %s: %w\n%s", args[0], err, stderr.String())
+	}
+	return string(out), nil
+}
+
+// sterilize removes what the run wrote that holds or points at a secret: the
+// rendered config, and the backend record tofu init keeps beside the root.
+func (e *estate) sterilize() {
+	for _, path := range []string{e.rendered, filepath.Join(e.dir, ".terraform", "terraform.tfstate")} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			console.Warn(fmt.Sprintf("could not remove %s: %v", filepath.Base(path), err))
+		}
+	}
+}

@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"homelab/contractor/config"
-	"homelab/contractor/internal/onepassword"
 	"homelab/contractor/internal/run"
+	"homelab/details/onepassword"
 )
 
 // Render pulls secrets out of 1Password into gitignored files.
@@ -114,7 +114,7 @@ sdn_vnet_vni: %d
 // therefore before Render has had a chance to establish one.
 func EnsureVaultSession() error {
 	if !onepassword.Available() {
-		return fmt.Errorf("1Password CLI ('op') not found on PATH")
+		return onepassword.ErrNoCLI
 	}
 	if !onepassword.SignedIn() {
 		run.Info("not signed in to 1Password - starting sign-in")

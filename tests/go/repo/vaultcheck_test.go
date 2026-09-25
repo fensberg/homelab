@@ -33,7 +33,7 @@ import (
 // so that moving the logic somewhere else fails loudly here instead of
 // silently taking it out of scope.
 var vaultCheckFiles = []string{
-	"scripts/contractor/internal/onepassword/probe.go",
+	"scripts/details/onepassword/probe.go",
 	"scripts/contractor/internal/phases/checkvault.go",
 	"scripts/contractor/config/vaultrefs.go",
 }
@@ -45,7 +45,7 @@ var probeSignature = regexp.MustCompile(`func Probe\(ref string\) Status \{`)
 
 func TestVaultProbeReturnsAStatusAndNothingElse(t *testing.T) {
 	root := repoRoot(t)
-	path := filepath.Join(root, "scripts", "contractor", "internal", "onepassword", "probe.go")
+	path := filepath.Join(root, "scripts", "details", "onepassword", "probe.go")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading probe.go: %v", err)

@@ -26,8 +26,7 @@
     "provider": "cloudflare",
     "vault_provider": "{{ op://homelab/tunnel/provider }}",
     "api_token": "{{ op://homelab/tunnel/api_token }}",
-    "secret": "{{ op://homelab/tunnel/secret }}",
-    "members": "{{ op://homelab/tunnel/members }}"
+    "secret": "{{ op://homelab/tunnel/secret }}"
   },
 
   "alerting": {
