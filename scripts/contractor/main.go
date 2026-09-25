@@ -60,29 +60,39 @@ func repoRoot() string {
 // of merely refused: each verb registers only the flags that mean something
 // for it, so `contractor restore -phase compute` fails on an undefined flag
 // before any of this code runs.
-var knownVerbs = []string{"break-ground", "converge", "plan", "demolish", "restore", "kubeconfig", "talosconfig", "check-inventory", "survey"}
+// retiredVerbs are the old names, answered with the new one rather than with
+// "unknown verb". break-ground and demolish said how the work felt, not what
+// it built or took down; they became build-site and demolish-site when the
+// estate got a build of its own (docs/epochs/02-abstraction.md).
+var retiredVerbs = map[string]string{
+	"break-ground": "build-site",
+	"demolish":     "demolish-site",
+	"converge":     "converge-site",
+}
+
+var knownVerbs = []string{"build-site", "converge-site", "plan", "demolish-site", "restore", "kubeconfig", "talosconfig", "check-inventory", "survey"}
 
 const usage = `contractor manages the lifecycle of a site.
 
 usage: contractor <verb> [flags]
 
 verbs:
-  break-ground Build a site that does not exist yet. Local-only: it creates
-               the cluster that later converges run inside.
-  converge     Apply the config to a site that already exists, taking over
-               the state in its cluster. Never destroys on failure.
-  plan         Show what a converge would change, and change nothing. Reports
-               addresses and actions only, never a value.
-  demolish     Tear a site down, then wipe the workspace. Requires -confirm.
-  restore      Bring the age-encrypted state back from object storage.
-  kubeconfig   Write this site's kubeconfig into the workspace and exit, or
-               run a command with one that lives only that long: put the
-               command after --. Everything before it runs once per
-               invocation, so several checks belong in a single call:
-                 contractor kubeconfig -site site0 -- \
-                   bash -c 'kubectl get nodes; kubectl get ds -A'
-  talosconfig  Run a command against this site's machines with a talosconfig
-               that lives only as long as the command.
+  build-site     Build a site that does not exist yet. Local-only: it creates
+                 the cluster that later converges run inside.
+  converge-site  Apply the config to a site that already exists, taking over
+                 the state in its cluster. Never destroys on failure.
+  plan           Show what a converge would change, and change nothing. Reports
+                 addresses and actions only, never a value.
+  demolish-site  Tear a site down, then wipe the workspace. Requires -confirm.
+  restore        Bring the age-encrypted state back from object storage.
+  kubeconfig     Write this site's kubeconfig into the workspace and exit, or
+                 run a command with one that lives only that long: put the
+                 command after --. Everything before it runs once per
+                 invocation, so several checks belong in a single call:
+                   contractor kubeconfig -site site0 -- \
+                     bash -c 'kubectl get nodes; kubectl get ds -A'
+  talosconfig    Run a command against this site's machines with a talosconfig
+                 that lives only as long as the command.
   check-inventory  Prove every op:// reference in the config template resolves.
   survey       Walk the overlay from here and report what answers. A surveyor
                checks the ground before anybody builds on it; this one probes
@@ -101,6 +111,10 @@ func main() {
 	if verb == "-h" || verb == "--help" || verb == "help" {
 		fmt.Print(usage)
 		return
+	}
+	if renamed, ok := retiredVerbs[verb]; ok {
+		fmt.Fprintf(os.Stderr, "%q is now %q: verbs are named for the scope they build or tear down - an estate, a site.\n", verb, renamed)
+		os.Exit(2)
 	}
 	if !slices.Contains(knownVerbs, verb) {
 		fmt.Fprintf(os.Stderr, "unknown verb %q\n\n%s", verb, usage)
@@ -125,7 +139,7 @@ func main() {
 	upgrade, skipOverlay, skipUpgrade := o.upgrade, o.skipOverlay, o.skipUpgrade
 	dryRun := o.dryRun
 	keepOnFailure, whatIf := o.keepOnFailure, o.whatIf
-	converge := verb == "converge"
+	converge := verb == "converge-site"
 	toRun, err := selectPhases(deref(phase), deref(from), verb)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -135,7 +149,7 @@ func main() {
 		toRun = slices.DeleteFunc(toRun, func(p string) bool { return p == "overlay" })
 	}
 
-	if on(whatIf) && verb == "demolish" {
+	if on(whatIf) && verb == "demolish-site" {
 		fmt.Printf(`
 Would destroy site %q:
 
@@ -222,7 +236,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 		}
 	}
 
-	if verb == "demolish" {
+	if verb == "demolish-site" {
 		os.Exit(runDestroy(ctx, deref(confirm)))
 	}
 
@@ -344,14 +358,14 @@ Nothing has been touched. Re-run without -whatif to do it.
 	// told, leaving the estate unverified and a broken monitoring stack
 	// unnoticed (#461). A landmine check that stops a run which cannot step on
 	// one is not caution; it is an outage with a tidy message.
-	if verb == "break-ground" && buildsMachines(toRun) {
+	if verb == "build-site" && buildsMachines(toRun) {
 		run.Info("surveying the ground ...")
 		if err := phases.CheckBreakGroundPreconditions(ctx.Site); err != nil {
 			fmt.Println()
 			run.Fail("HALTED: " + err.Error())
 			os.Exit(exitUntouched)
 		}
-	} else if verb == "break-ground" {
+	} else if verb == "build-site" {
 		run.Info("no machines are built by this run, so nothing is waiting to fire into it")
 	}
 
@@ -561,7 +575,7 @@ func selectPhases(phase, from, verb string) ([]string, error) {
 	// somebody ask for a phase that cannot happen.
 	seq := phases.AllPhases
 	switch verb {
-	case "converge":
+	case "converge-site":
 		seq = phases.ConvergePhases
 	case "plan":
 		seq = phases.PlanPhases
@@ -686,7 +700,7 @@ func runInterruptibly(ctx *run.Context, toRun []string) error {
 //
 // Which flags exist is the safety property that standaloneFlagsOK used to
 // enforce by hand. A verb that has no phases does not define -phase, so
-// `contractor demolish -phase verify` - a command somebody could read as "destroy,
+// `contractor demolish-site -phase verify` - a command somebody could read as "destroy,
 // but only the safe part" - fails on an undefined flag instead of being
 // interpreted. Refusing a combination and being unable to express it are
 // different guarantees, and this is the second one.
@@ -707,7 +721,7 @@ func flagsFor(verb string) *opts {
 
 	// Only ignite and converge run a sequence of phases, so only they can be
 	// asked to run part of one.
-	if verb == "break-ground" || verb == "converge" || verb == "plan" {
+	if verb == "build-site" || verb == "converge-site" || verb == "plan" {
 		o.phase = fs.String("phase", "", "Run a single phase instead of all of them.")
 		o.from = fs.String("from", "", "Start at this phase and run everything after it.")
 		o.upgrade = fs.Bool("upgrade", false, "Re-resolve providers against the version constraints instead of the committed lock file.")
@@ -725,7 +739,7 @@ func flagsFor(verb string) *opts {
 	// Absent from converge deliberately: a converge never destroys on failure,
 	// so there is nothing here to opt out of, and offering the flag would
 	// suggest the default is the other way round.
-	if verb == "break-ground" {
+	if verb == "build-site" {
 		o.keepOnFailure = fs.Bool("keep-on-failure", false, "On error, skip the automatic destroy and keep local state for debugging.")
 	}
 
@@ -737,7 +751,7 @@ func flagsFor(verb string) *opts {
 		o.commentOut = fs.String("comment-out", "", "Write the pull request comment body to this file.")
 	}
 
-	if verb == "demolish" {
+	if verb == "demolish-site" {
 		o.confirm = fs.String("confirm", "", "Name the site again, to confirm the destroy.")
 		o.whatIf = fs.Bool("whatif", false, "Say what would be destroyed, without destroying it.")
 	}
@@ -757,7 +771,7 @@ func on(p *bool) bool { return p != nil && *p }
 // finds. Split out so the decision is testable per verb rather than inferred
 // from reading main.
 func applyDestroyPolicy(ctx *run.Context, verb string) {
-	ctx.PreexistingEstate = verb != "break-ground"
+	ctx.PreexistingEstate = verb != "build-site"
 }
 
 // commandAfterDoubleDash returns the argv following a bare "--", which flag

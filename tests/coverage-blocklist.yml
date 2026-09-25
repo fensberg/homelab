@@ -79,7 +79,7 @@ blocked:
   - integration:openebs # 303
   - integration:self-hosted # 300
   - verb:check-inventory # 307
-  - verb:converge # 299
+  - verb:converge-site # 299
   - verb:kubeconfig # 305
   - verb:restore # 298
   - verb:survey # 308

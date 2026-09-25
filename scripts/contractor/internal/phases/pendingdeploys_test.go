@@ -138,7 +138,7 @@ func pointAt(t *testing.T, url, slug string) func() {
 
 // A run the listing calls queued and GitHub calls finished is not a hazard.
 //
-// THE RUN THAT PRODUCED THIS. break-ground refused to start:
+// THE RUN THAT PRODUCED THIS. build-site refused to start:
 //
 //	[FAIL] HALTED: 5 deploy run(s) would converge site0 during this ignition.
 //	  #152 (main, pending) - gh run cancel 34532646382

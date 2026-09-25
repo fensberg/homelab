@@ -256,7 +256,7 @@ do, which is where the work is:
 Because of (3), the honest sequencing for a suspected state leak is: rotate
 everything in Layer 2 first, then decide whether the Talos PKI rotation is
 warranted, and if it is, treat rebuilding the cluster from scratch as a
-serious alternative. `contractor demolish` followed by a fresh ignition is well
+serious alternative. `contractor demolish-site` followed by a fresh ignition is well
 tested, fully automated, and takes less time than a careful CA rotation — and
 it leaves nothing behind to be uncertain about.
 
@@ -407,7 +407,7 @@ task check-inventory SITE=site0
 #    state in a cluster; there is no cluster yet. Ignition finds the restored
 #    state locally, refreshes it, sees that the VMs it describes are gone, and
 #    plans to create them.
-./toolshed/contractor break-ground -site site0
+./toolshed/contractor build-site -site site0
 ```
 
 **Restoring first is what makes it the same estate rather than a new one.** A

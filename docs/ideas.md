@@ -42,7 +42,7 @@ once it's actually being worked on.
   this is a real CI restructure (new egress allowlists per job, a rewrite
   of the CI section in the root `CLAUDE.md`), not a small tweak.
 
-- **Give break-ground a supported teardown, and an honest name for `-keep-on-failure`.**
+- **Give build-site a supported teardown, and an honest name for `-keep-on-failure`.**
   Two related gaps, both found while building the test tiers. First: a
   successful single-phase run sterilizes the workspace on the way out
   (`main.go`'s "belt and braces" block), which means `task render-secrets`
@@ -102,7 +102,7 @@ once it's actually being worked on.
   the point. So the risk worth guarding is destroying the _wrong_ estate, not
   destroying one at all, and the two remaining guards already address exactly
   that: a build tag, and the site named twice - the same thing
-  `contractor demolish` asks of a human.
+  `contractor demolish-site` asks of a human.
 
   It stays absent from CI. A destructive nuke-and-pave should not be one
   dropdown selection away in a web UI, and that is unchanged.

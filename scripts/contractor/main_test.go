@@ -18,7 +18,7 @@ import (
 // is an orphaned VM or a leaked secret.
 
 func TestSelectPhases_DefaultsToTheFullSequence(t *testing.T) {
-	got, err := selectPhases("", "", "break-ground")
+	got, err := selectPhases("", "", "build-site")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestSelectPhases_DefaultsToTheFullSequence(t *testing.T) {
 // shared backing array would let one run's flag mutate the package-level
 // sequence for everything after it.
 func TestSelectPhases_DoesNotAliasThePackageSequence(t *testing.T) {
-	got, err := selectPhases("", "", "break-ground")
+	got, err := selectPhases("", "", "build-site")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestSelectPhases_DoesNotAliasThePackageSequence(t *testing.T) {
 // What must stay true is that it does not become a full run. Two phases, the
 // second of which is the one asked for.
 func TestSelectPhases_SinglePhaseRunsItsPrerequisiteAndNothingElse(t *testing.T) {
-	got, err := selectPhases("compute", "", "break-ground")
+	got, err := selectPhases("compute", "", "build-site")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestSelectPhases_SinglePhaseRunsItsPrerequisiteAndNothingElse(t *testing.T)
 // until somebody asks why a teardown pulled credentials out of the vault.
 func TestSelectPhases_RenderAndSterilizeGainNoPrerequisite(t *testing.T) {
 	for _, phase := range []string{"render", "sterilize"} {
-		got, err := selectPhases(phase, "", "break-ground")
+		got, err := selectPhases(phase, "", "build-site")
 		if err != nil {
 			t.Fatalf("unexpected error for %q: %v", phase, err)
 		}
@@ -90,9 +90,9 @@ func TestSelectPhases_RenderAndSterilizeGainNoPrerequisite(t *testing.T) {
 // add a hypervisor with `-phase hypervisor`, and that had never worked.
 func TestEveryPhaseIsRunnableOnItsOwn(t *testing.T) {
 	verbs := map[string][]string{
-		"break-ground": phases.AllPhases,
-		"converge":     phases.ConvergePhases,
-		"plan":         phases.PlanPhases,
+		"build-site":    phases.AllPhases,
+		"converge-site": phases.ConvergePhases,
+		"plan":          phases.PlanPhases,
 	}
 	for verb, seq := range verbs {
 		for _, phase := range seq {
@@ -119,7 +119,7 @@ cannot fix that by rendering separately.`, verb, phase, got)
 }
 
 func TestSelectPhases_FromIsInclusiveAndRunsToTheEnd(t *testing.T) {
-	got, err := selectPhases("", "migrate", "break-ground")
+	got, err := selectPhases("", "migrate", "build-site")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestSelectPhases_FromIsInclusiveAndRunsToTheEnd(t *testing.T) {
 // is the boundary case where an off-by-one would silently skip Render and
 // leave every later phase reading a config that was never written.
 func TestSelectPhases_FromTheFirstPhaseIsTheWholeSequence(t *testing.T) {
-	got, err := selectPhases("", phases.AllPhases[0], "break-ground")
+	got, err := selectPhases("", phases.AllPhases[0], "build-site")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestSelectPhases_FromTheFirstPhaseIsTheWholeSequence(t *testing.T) {
 
 func TestSelectPhases_FromTheLastPhaseIsJustThatPhase(t *testing.T) {
 	last := phases.AllPhases[len(phases.AllPhases)-1]
-	got, err := selectPhases("", last, "break-ground")
+	got, err := selectPhases("", last, "build-site")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestSelectPhases_FromTheLastPhaseIsJustThatPhase(t *testing.T) {
 // choice to pin: the alternative reading (run -from, ignore -phase) would
 // turn a command someone believed was a single safe step into a full run.
 func TestSelectPhases_PhaseWinsOverFrom(t *testing.T) {
-	got, err := selectPhases("verify", "render", "break-ground")
+	got, err := selectPhases("verify", "render", "build-site")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestSelectPhases_UnknownNamesAreRejectedAndListTheValidOnes(t *testing.T) {
 		{"nope", ""},
 		{"", "nope"},
 	} {
-		_, err := selectPhases(tc.phase, tc.from, "break-ground")
+		_, err := selectPhases(tc.phase, tc.from, "build-site")
 		if err == nil {
 			t.Errorf("selectPhases(%q, %q): expected an error", tc.phase, tc.from)
 			continue
@@ -189,7 +189,7 @@ func TestSelectPhases_UnknownNamesAreRejectedAndListTheValidOnes(t *testing.T) {
 // "Compute" would create infrastructure from what the operator typed rather
 // than from what the program documents.
 func TestSelectPhases_IsCaseSensitive(t *testing.T) {
-	if _, err := selectPhases("Compute", "", "break-ground"); err == nil {
+	if _, err := selectPhases("Compute", "", "build-site"); err == nil {
 		t.Error("expected -phase Compute to be rejected; the documented names are lower-case")
 	}
 }
@@ -198,7 +198,7 @@ func TestSelectPhases_IsCaseSensitive(t *testing.T) {
 // exist at all. A command reading "destroy, but only the verify phase" would be
 // understood by somebody as a safe thing to run, so it must not parse.
 func TestFlagsFor_VerbsWithoutPhasesDoNotDefinePhaseSelectors(t *testing.T) {
-	for _, verb := range []string{"demolish", "restore", "kubeconfig", "check-inventory"} {
+	for _, verb := range []string{"demolish-site", "restore", "kubeconfig", "check-inventory"} {
 		o := flagsFor(verb)
 		for _, name := range []string{"phase", "from"} {
 			if o.fs.Lookup(name) != nil {
@@ -212,7 +212,7 @@ func TestFlagsFor_VerbsWithoutPhasesDoNotDefinePhaseSelectors(t *testing.T) {
 }
 
 func TestFlagsFor_SequencedVerbsDefinePhaseSelectors(t *testing.T) {
-	for _, verb := range []string{"break-ground", "converge"} {
+	for _, verb := range []string{"build-site", "converge-site"} {
 		o := flagsFor(verb)
 		for _, name := range []string{"phase", "from", "whatif"} {
 			if o.fs.Lookup(name) == nil {
@@ -226,10 +226,10 @@ func TestFlagsFor_SequencedVerbsDefinePhaseSelectors(t *testing.T) {
 // -keep-on-failure to opt out of. Offering it would imply the default is the
 // other way round, which is the opposite of true.
 func TestFlagsFor_ConvergeHasNoKeepOnFailure(t *testing.T) {
-	if flagsFor("converge").fs.Lookup("keep-on-failure") != nil {
+	if flagsFor("converge-site").fs.Lookup("keep-on-failure") != nil {
 		t.Error("converge defines -keep-on-failure, implying it might destroy on failure; it never does")
 	}
-	if flagsFor("break-ground").fs.Lookup("keep-on-failure") == nil {
+	if flagsFor("build-site").fs.Lookup("keep-on-failure") == nil {
 		t.Error("ignite does not define -keep-on-failure, so a failed run cannot be kept for debugging")
 	}
 }
@@ -237,10 +237,10 @@ func TestFlagsFor_ConvergeHasNoKeepOnFailure(t *testing.T) {
 // -confirm belongs to destroy alone. Anywhere else it would be a flag that
 // reads like a safety check and does nothing.
 func TestFlagsFor_ConfirmBelongsToDestroyOnly(t *testing.T) {
-	if flagsFor("demolish").fs.Lookup("confirm") == nil {
+	if flagsFor("demolish-site").fs.Lookup("confirm") == nil {
 		t.Fatal("destroy does not define -confirm, so the typo guard is gone")
 	}
-	for _, verb := range []string{"break-ground", "converge", "restore", "kubeconfig", "check-inventory"} {
+	for _, verb := range []string{"build-site", "converge-site", "restore", "kubeconfig", "check-inventory"} {
 		if flagsFor(verb).fs.Lookup("confirm") != nil {
 			t.Errorf("verb %q defines -confirm, which would read as a safety check while doing nothing", verb)
 		}
@@ -261,7 +261,7 @@ func TestFlagsFor_EveryVerbTakesASite(t *testing.T) {
 // run migrate, whose -force-copy would overwrite that state with whatever this
 // workspace happened to hold.
 func TestSelectPhases_ConvergeNeverMigrates(t *testing.T) {
-	got, err := selectPhases("", "", "converge")
+	got, err := selectPhases("", "", "converge-site")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -280,10 +280,10 @@ func TestSelectPhases_ConvergeNeverMigrates(t *testing.T) {
 // either against the wrong sequence would let somebody ask for a phase that
 // cannot happen in the run they are actually starting.
 func TestSelectPhases_SequencesDoNotLeak(t *testing.T) {
-	if _, err := selectPhases("take-over", "", "break-ground"); err == nil {
+	if _, err := selectPhases("take-over", "", "build-site"); err == nil {
 		t.Error("ignition accepted -phase take-over, which only exists in a converge")
 	}
-	if _, err := selectPhases("migrate", "", "converge"); err == nil {
+	if _, err := selectPhases("migrate", "", "converge-site"); err == nil {
 		t.Error("converge accepted -phase migrate, which would overwrite the estate's state")
 	}
 }
@@ -291,7 +291,7 @@ func TestSelectPhases_SequencesDoNotLeak(t *testing.T) {
 // Ignition ends by sterilizing, and so must a converge: the workstation should
 // hold no state and no secrets afterwards either way.
 func TestSelectPhases_ConvergeStillSterilizes(t *testing.T) {
-	got, err := selectPhases("", "", "converge")
+	got, err := selectPhases("", "", "converge-site")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestPreexistingEstate_OnlyIgniteMayDestroy(t *testing.T) {
 		ctx := run.NewContext(t.TempDir(), "site0")
 		applyDestroyPolicy(ctx, verb)
 
-		if verb == "break-ground" {
+		if verb == "build-site" {
 			if ctx.PreexistingEstate {
 				t.Error("ignite cannot clean up after itself; a half-finished ignition would leave VMs nothing tracks")
 			}
@@ -375,7 +375,7 @@ func TestCompletionMessage_MeasuresAgainstTheRightSequence(t *testing.T) {
 // inside the cluster being built and a queued job would acquire it partway
 // through. A run that creates nothing gives it nothing to fire into.
 //
-// Keyed on the verb instead, it refused `break-ground -phase render`, which is
+// Keyed on the verb instead, it refused `build-site -phase render`, which is
 // how the test tiers get a config to read - and the nightly integration tier
 // then died at setup every night for a week, unnoticed, leaving the estate
 // unverified (#461).
@@ -391,7 +391,7 @@ func TestOnlyARunThatBuildsMachinesIsGatedOnQueuedDeploys(t *testing.T) {
 		{"the compute phase itself", "compute", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			toRun, err := selectPhases(tc.phase, "", "break-ground")
+			toRun, err := selectPhases(tc.phase, "", "build-site")
 			if err != nil {
 				t.Fatalf("selecting phases: %v", err)
 			}

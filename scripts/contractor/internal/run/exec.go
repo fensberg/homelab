@@ -495,7 +495,7 @@ If it complained that a locked provider does not match its version
 constraint, the committed lock file is behind management/cluster/versions.tf.
 Re-resolve and commit the result:
 
-    ./contractor break-ground -phase overlay -upgrade
+    ./contractor build-site -phase overlay -upgrade
     git add management/cluster/.terraform.lock.hcl && git commit`, err)
 	}
 	return fmt.Errorf("tofu init -upgrade failed: %w", err)

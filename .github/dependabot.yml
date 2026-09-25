@@ -75,7 +75,7 @@ updates:
 
   # The test-only Go module, tracked separately from /scripts/contractor because
   # it is a separate module with a completely different dependency profile:
-  # break-ground has none at all, and this one has Terratest's ~280. Keeping them
+  # build-site has none at all, and this one has Terratest's ~280. Keeping them
   # apart is what stops a Terratest bump ever appearing as a pull request
   # against the program that can destroy infrastructure.
   #

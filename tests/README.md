@@ -257,14 +257,14 @@ the start button reads. So the setup step is `task render-secrets` and the
 teardown is `task clean-secrets` - no separate secret plumbing exists for
 tests, and nothing is left on disk that ignite would not have left there.
 
-> **A wrinkle worth knowing.** `contractor break-ground -phase render` sterilizes the workspace
+> **A wrinkle worth knowing.** `contractor build-site -phase render` sterilizes the workspace
 > on the way out, which deletes the config it just wrote. Pass
 > `-keep-on-failure` to stop it:
-> `./toolshed/contractor break-ground -site site0 -phase render -keep-on-failure`.
+> `./toolshed/contractor build-site -site site0 -phase render -keep-on-failure`.
 > The flag name describes the failure path rather than this one; see
 > `docs/ideas.md`.
 
-**Tearing an estate down** is `contractor demolish`, which is what the e2e tier
+**Tearing an estate down** is `contractor demolish-site`, which is what the e2e tier
 calls and what a human should call. It renders the config first - that is the
 credential check, not a formality: without a 1Password session there is no
 Proxmox token and no hypervisor endpoint, so somebody with a terminal and a
@@ -274,8 +274,8 @@ hold the credentials.
 
 ```sh
 task destroy SITE=site0     # prints the command; does not run it
-./toolshed/contractor break-ground -site site0 -destroy -whatif
-./toolshed/contractor demolish -site site0 -confirm site0
+./toolshed/contractor build-site -site site0 -destroy -whatif
+./toolshed/contractor demolish-site -site site0 -confirm site0
 ```
 
 ## The backup alarm
@@ -412,11 +412,11 @@ disposable second estate looked likely. It is not coming, and that guard was
 not making this tier safer; it was making it unrunnable, which is worse than
 not having the tier at all. The estate here is disposable by design, so the
 risk worth guarding is destroying the _wrong_ one, and naming the site twice is
-exactly what `contractor demolish` asks of a human. See `docs/ideas.md`.
+exactly what `contractor demolish-site` asks of a human. See `docs/ideas.md`.
 
 It covers the whole ignition sequence - Render through Backup, including
 moving state off local disk into cluster Postgres and pushing an encrypted
-copy off-site. Teardown runs `contractor demolish`, the same supported entrypoint
+copy off-site. Teardown runs `contractor demolish-site`, the same supported entrypoint
 a human uses, rather than driving `tofu destroy` itself: a test that tore down
 its own way would be exercising the test's teardown instead of the one that
 has to work at 2am.

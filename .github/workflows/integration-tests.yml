@@ -105,7 +105,7 @@ jobs:
       # Sterilize phase below is the teardown, so this job leaves the runner
       # in the state it found it.
       #
-      # -keep-on-failure is what stops break-ground sterilizing the workspace the
+      # -keep-on-failure is what stops build-site sterilizing the workspace the
       # moment this single phase succeeds. Without it, Render wipes the file
       # it just wrote and every step below reads nothing.
       - name: Render the config from 1Password
@@ -114,7 +114,7 @@ jobs:
           SITE: ${{ inputs.site || 'site0' }}
         run: |
           go build -C scripts/contractor -o ../../toolshed/contractor .
-          ./toolshed/contractor break-ground -site "$SITE" -phase render -keep-on-failure
+          ./toolshed/contractor build-site -site "$SITE" -phase render -keep-on-failure
 
       - name: API contract tests
         if: ${{ inputs.tier == 'api' || inputs.tier == 'both' }}
@@ -154,7 +154,7 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           SITE: ${{ inputs.site || 'site0' }}
-        run: ./toolshed/contractor break-ground -site "$SITE" -phase backup -keep-on-failure
+        run: ./toolshed/contractor build-site -site "$SITE" -phase backup -keep-on-failure
 
       # Run through the contractor, not beside it.
       #
@@ -193,4 +193,4 @@ jobs:
         if: always()
         env:
           SITE: ${{ inputs.site || 'site0' }}
-        run: ./toolshed/contractor break-ground -site "$SITE" -phase sterilize
+        run: ./toolshed/contractor build-site -site "$SITE" -phase sterilize

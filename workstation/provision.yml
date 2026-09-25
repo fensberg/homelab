@@ -53,7 +53,7 @@
     # cluster as well as outside it - see #99. A devbox on the LAN alone
     # therefore cannot reach the hypervisor it sits on: it hands the overlay
     # address to the LAN gateway, which black-holes it, and every provider call
-    # in `break-ground` and `demolish` waits forever without ever reporting an
+    # in `build-site` and `demolish-site` waits forever without ever reporting an
     # error. That cost a full day before anybody looked at a route table.
     #
     # Tagged rather than user-owned, and the reason is expiry. A device

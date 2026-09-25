@@ -421,7 +421,7 @@ locals {
   #
   # Bumped here rather than later because #97: a Talos image change cannot reach
   # a running estate, so a rebuild is the only delivery mechanism there is. This
-  # branch is merged between a demolish and a break-ground, which is the only
+  # branch is merged between a demolish and a build-site, which is the only
   # window in which this costs nothing.
   talos_version = "v1.13.9"
 
@@ -443,7 +443,7 @@ locals {
   # above: #97 means an image change cannot reach a running estate, and
   # changing the control plane's Kubernetes version on a live cluster is an
   # upgrade rather than an apply - epoch 05's work, not epoch 01's. This
-  # branch is merged between a demolish and a break-ground, which is the only
+  # branch is merged between a demolish and a build-site, which is the only
   # window in which it costs nothing. Ignite on 1.31 and the estate carries an
   # out-of-support control plane until epoch 05 exists to move it.
   #
