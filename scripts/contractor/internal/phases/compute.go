@@ -43,9 +43,13 @@ func Compute(ctx *run.Context) error {
 	if err != nil {
 		return fmt.Errorf("resolving disk-import SSH credential (run the Hypervisor phase first): %w", err)
 	}
-	sshKey, err := onepassword.Read(fmt.Sprintf("op://%s/hypervisor/ssh_private_key", ctx.Site))
+	keyRef := fmt.Sprintf("op://%s/hypervisor/ssh_private_key", ctx.Site)
+	sshKey, err := onepassword.Read(keyRef)
 	if err != nil {
 		return fmt.Errorf("resolving disk-import SSH credential (run the Hypervisor phase first): %w", err)
+	}
+	if err := sshKeyUsable(sshKey, keyRef); err != nil {
+		return err
 	}
 	if err := os.Setenv("PROXMOX_VE_SSH_USERNAME", sshUser); err != nil {
 		return err
@@ -371,4 +375,30 @@ func datastoreHasVolume(hv config.Hypervisor, node config.Node, volID string) (b
 		}
 	}
 	return false, nil
+}
+
+// sshKeyUsable refuses a private key the Proxmox provider would silently
+// ignore.
+//
+// The provider does not say it cannot parse the key it was given. It falls
+// back to the methods it has left and reports "attempted methods [none
+// password], no supported methods remain" part way through the template
+// apply, after the disk image is downloaded - which reads as a host refusing
+// a key rather than a key nobody offered. That is how the first build after
+// the scope split failed: the key had been pasted into a vault field that
+// kept it on one line. A PEM or OpenSSH key without its line breaks cannot be
+// parsed, so the check is the shape, not the key.
+func sshKeyUsable(key, ref string) error {
+	lines := strings.Split(strings.TrimSpace(key), "\n")
+	if len(lines) >= 3 && strings.HasPrefix(lines[0], "-----BEGIN ") && strings.HasPrefix(lines[len(lines)-1], "-----END ") {
+		return nil
+	}
+	return fmt.Errorf(`the SSH private key at %s is not a key the Proxmox provider can read (%d line(s)).
+
+A private key has a BEGIN line, its body, and an END line. One pasted into a
+vault field often arrives on one line, and the provider then offers no key at
+all and fails part way through Compute blaming the host. Do not re-paste it:
+delete the ssh_username and ssh_private_key fields from the hypervisor item,
+and the Hypervisor phase generates a new key, authorizes it on the host and
+stores it, reading it back to check`, ref, len(lines))
 }

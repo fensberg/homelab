@@ -145,11 +145,18 @@ func WriteField(ref Ref, value string) error {
 // does not exist means the reference is wrong.
 func writeGenerated(ref Ref, value string) error {
 	if ref.Section != "" {
-		return WriteField(ref, value)
+		return writeField(ref, value)
 	}
-	_, err := WriteItem(ref.Vault, ref.Item, map[string]string{ref.Field: value})
+	_, err := writeItem(ref.Vault, ref.Item, map[string]string{ref.Field: value})
 	return err
 }
+
+// The two writers writeGenerated chooses between, as variables so a test can
+// see which one it chose without a vault.
+var (
+	writeField = WriteField
+	writeItem  = WriteItem
+)
 
 // EnsureField returns the value at ref, generating and storing one if the
 // field is absent or empty.

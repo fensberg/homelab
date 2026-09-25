@@ -2169,6 +2169,24 @@ generated field directly on an item now creates the item when it is missing.
 A field inside a section still refuses a missing section, because that means
 the reference is wrong.
 
+#### A pasted private key lost its line breaks, and the provider blamed the host
+
+The second `build-site` stopped at Compute with `unable to authenticate user
+"svc-terraform" over SSH ... attempted methods [none password]`. The disk-import
+key had been copied from the old `homelab` vault into `site0` by hand, and the
+paste put it on one line: `op read` returned it with a line count of 1. A key
+without its line breaks cannot be parsed, and the Proxmox provider does not say
+so. It offers no key, falls back, and reports a handshake failure against the
+host, after the disk image has already downloaded. The same thing happened
+earlier to procurement's App key.
+
+Compute now refuses a key that is not a BEGIN line, a body and an END line,
+before anything is applied, and the refusal gives the recovery. That recovery is
+never a re-paste: delete the two fields, and the Hypervisor phase generates a
+key, authorizes it and reads it back. It is the general lesson for moving vaults
+too: a credential the automation generated should be regenerated, not carried
+across by hand.
+
 #### Proven
 
 The first `lawyer build-estate` completed on 2026-09-25, on the third run. It
