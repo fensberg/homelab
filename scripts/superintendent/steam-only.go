@@ -135,6 +135,13 @@ func (j judge) compare(from, to string, o workorders.Order) ([]string, error) {
 var commentOrBlank = regexp.MustCompile(`^[+-]\s*(#.*)?$`)
 
 func (j judge) diff(from, to string, paths ...string) ([]string, []string, error) {
+	// Anchored at the top of the repository: the verb runs from
+	// scripts/superintendent, where a bare pathspec would name nothing.
+	top := make([]string, len(paths))
+	for i, p := range paths {
+		top[i] = ":(top)" + p
+	}
+	paths = top
 	args := append([]string{"diff", "--name-only", from, to, "--"}, paths...)
 	names, err := j.git(args...)
 	if err != nil {
