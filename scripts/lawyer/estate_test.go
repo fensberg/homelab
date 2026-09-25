@@ -247,7 +247,7 @@ func TestStateIsReadAsEmptyOnlyWhenThereIsNone(t *testing.T) {
 		}
 	}
 
-	got, err := stateResources([]byte(`{"version":4,"serial":3,"resources":[
+	got, err := stateResources([]byte(`{"version":4,"serial":3,"lineage":"l","resources":[
 		{"mode":"data","type":"cloudflare_accounts","name":"a"},
 		{"mode":"managed","type":"cloudflare_zero_trust_access_application","name":"enrollment"},
 		{"mode":"managed","type":"cloudflare_zero_trust_split_tunnel","name":"estate"}]}`))
@@ -258,7 +258,7 @@ func TestStateIsReadAsEmptyOnlyWhenThereIsNone(t *testing.T) {
 		t.Errorf("got %v; want the two managed resources and no data source", got)
 	}
 
-	if got, err := stateResources([]byte(`{"version":4,"serial":1,"resources":[]}`)); err != nil || len(got) != 0 {
+	if got, err := stateResources([]byte(`{"version":4,"serial":1,"lineage":"l","resources":[]}`)); err != nil || len(got) != 0 {
 		t.Errorf("an emptied estate: got %v, %v", got, err)
 	}
 	for _, bad := range []string{`not json`, `{"version":4}`} {

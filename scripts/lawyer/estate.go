@@ -17,6 +17,7 @@ import (
 	"homelab/details/repopath"
 	"homelab/details/secrets"
 	"homelab/details/stateencryption"
+	"homelab/details/tofustate"
 )
 
 // estateVault is the vault the estate's secrets live in. One vault per scope,
@@ -288,32 +289,14 @@ func stateResources(state []byte) ([]string, error) {
 	if len(bytes.TrimSpace(state)) == 0 {
 		return nil, nil
 	}
-	var st struct {
-		Resources *[]struct {
-			Module string `json:"module"`
-			Mode   string `json:"mode"`
-			Type   string `json:"type"`
-			Name   string `json:"name"`
-		} `json:"resources"`
-	}
-	if err := json.Unmarshal(state, &st); err != nil {
+	st, err := tofustate.Parse(state)
+	if err != nil {
 		return nil, fmt.Errorf("the estate's state is present and cannot be read: %w", err)
 	}
-	if st.Resources == nil {
-		return nil, errors.New("the estate's state is present and has no resources list, so it is not state this lawyer can read")
+	if st.Version == 0 || st.Lineage == "" {
+		return nil, errors.New("the estate's state is present and has no version or lineage, so it is not state this lawyer can read")
 	}
-	var addrs []string
-	for _, r := range *st.Resources {
-		if r.Mode != "managed" {
-			continue
-		}
-		addr := r.Type + "." + r.Name
-		if r.Module != "" {
-			addr = r.Module + "." + addr
-		}
-		addrs = append(addrs, addr)
-	}
-	return addrs, nil
+	return st.Managed(), nil
 }
 
 // backendEnv reaches the estate's bucket with its own credential and no other,

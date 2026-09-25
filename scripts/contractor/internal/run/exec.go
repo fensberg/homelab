@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"homelab/details/tofustate"
 )
 
 // Cmd runs an external command with inherited stdio, in dir. Go already
@@ -225,13 +227,11 @@ func StateSerial(ctx *Context) (serial int64, ok bool) {
 	if err != nil {
 		return 0, false
 	}
-	var st struct {
-		Serial *int64 `json:"serial"`
-	}
-	if err := json.Unmarshal([]byte(out), &st); err != nil || st.Serial == nil {
+	st, err := tofustate.Parse([]byte(out))
+	if err != nil || st.Lineage == "" {
 		return 0, false
 	}
-	return *st.Serial, true
+	return int64(st.Serial), true
 }
 
 // TofuApplyArgs runs an apply whose flags the caller builds, through the same
