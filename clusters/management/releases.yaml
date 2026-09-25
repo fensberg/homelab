@@ -26,5 +26,5 @@ spec:
   # rather than falling back to anonymous access (flux_source_secret_test.go).
   url: oci://${RELEASE_REPOSITORY}-valheim-release
   ref:
-    tag: "1.0.16-1"
-    digest: "sha256:0de11d66bcb6e88449b0fad8129f4912975a6c0b783f17ab1ba44adeab4ec580"
+    tag: "1.0.16-2"
+    digest: "sha256:c3e074d7dd752002657b9927398631da701b0b3f83f94c826f388b7abde05a76"
