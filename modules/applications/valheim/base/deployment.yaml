@@ -21,7 +21,7 @@ metadata:
     # "unknown" for the image pinned by hand before expediting existed: its
     # build was never recorded, so the first check will take a delivery and
     # replace both lines, which also proves the whole path end to end.
-    homelab.fensberg.com/steam-build: "25390671"
+    homelab.fensberg.com/steam-build: "25527701"
 spec:
   replicas: 1
   # Recreate, not RollingUpdate. The volume is ReadWriteOnce and the world is a
@@ -106,7 +106,7 @@ spec:
       # so. Scripts: modules/applications/valheim/image/world-*.sh.
       initContainers:
         - name: world-restore
-          image: ghcr.io/fensberg/homelab-valheim@sha256:f5181088ab0047438b53c02e583e26af391604f9af174f04cc163a9e7792f0fd
+          image: ghcr.io/fensberg/homelab-valheim@sha256:b3230f707c692d609567b1ad3504722d8170ab7a77b7d257c94a58c24f81f986
           command: ["/usr/local/bin/world-restore"]
           securityContext:
             allowPrivilegeEscalation: false
@@ -140,7 +140,7 @@ spec:
               cpu: 100m
 
         - name: world-backup
-          image: ghcr.io/fensberg/homelab-valheim@sha256:f5181088ab0047438b53c02e583e26af391604f9af174f04cc163a9e7792f0fd
+          image: ghcr.io/fensberg/homelab-valheim@sha256:b3230f707c692d609567b1ad3504722d8170ab7a77b7d257c94a58c24f81f986
           command: ["/usr/local/bin/world-backup"]
           restartPolicy: Always
           securityContext:
@@ -190,7 +190,7 @@ spec:
           # This carries no Renovate annotation, deliberately. The build that
           # makes this digest already knows it; asking a bot to watch this
           # estate's own registry to rediscover it would be circular (#375).
-          image: ghcr.io/fensberg/homelab-valheim@sha256:f5181088ab0047438b53c02e583e26af391604f9af174f04cc163a9e7792f0fd
+          image: ghcr.io/fensberg/homelab-valheim@sha256:b3230f707c692d609567b1ad3504722d8170ab7a77b7d257c94a58c24f81f986
 
           securityContext:
             allowPrivilegeEscalation: false
