@@ -2156,6 +2156,19 @@ Things that turned out to matter:
   tunnel token for this account. Whether the tunnel is _connected_ needs the
   estate's token, so that check moves to the estate's lane (#535).
 
+#### A new vault has no items, and generated secrets assumed one
+
+The first `build-site` against the new `site0` vault stopped at once, with
+`state encryption passphrase: reading item site0/database`. The contractor
+generates the state passphrase and the database password into the `database`
+item, and the write only knew how to add a field to an item that already
+existed. The `homelab` vault had always had that item, from before anything
+generated into it; a vault created for the scope split had none. A value only a
+program invents should never need a person to make somewhere to put it, so a
+generated field directly on an item now creates the item when it is missing.
+A field inside a section still refuses a missing section, because that means
+the reference is wrong.
+
 #### Proven
 
 The first `lawyer build-estate` completed on 2026-09-25, on the third run. It
