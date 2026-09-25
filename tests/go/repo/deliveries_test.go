@@ -85,9 +85,11 @@ task order-deliveries, and install it with:
 //
 // Procurement is one program with several duties. Expediting is the only one
 // that holds elevated permission - its App may merge its own delivery without
-// a review, bounded by `superintendent enforce-standing-order`. Ordering writes
-// scripts/deliveries.lock and holds nothing; its output is committed through an
-// ordinary review.
+// a review, bounded by `superintendent enforce-standing-order`. Delivering
+// holds the same credential to open a pull request moving a release pin, and
+// never merges one: the standing order refuses a delivery under -bypass.
+// Ordering writes scripts/deliveries.lock and holds nothing; its output is
+// committed through an ordinary review.
 //
 // So the credential must never run a verb outside its duty. A job that mints
 // it and then runs `procurement order` would write the lock with a token that
@@ -132,6 +134,15 @@ func TestOnlyTheExpediteDutyRunsUnderItsCredential(t *testing.T) {
 					"workstation installs. It is run by a person and committed through review; "+
 					"no workflow orders, and above all not one that could hold the expedite "+
 					"credential.", name)
+			case verb == "deliver":
+				// Delivering holds the credential too, to open the pull request
+				// that moves a release pin - and nothing it opens is merged
+				// without review: enforce-standing-order refuses a delivery
+				// under -bypass. It is the one other verb the credential runs.
+				if !holds {
+					t.Errorf("%s runs `procurement deliver` and holds no procurement credential, "+
+						"so the pull request it would open has nothing to open it with", name)
+				}
 			case !strings.HasPrefix(verb, "expedite-"):
 				if holds {
 					t.Errorf("%s holds the expedite credential and runs `procurement %s`, "+

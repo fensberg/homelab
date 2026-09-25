@@ -6,11 +6,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/release"
 )
 
 // Every release production runs is pinned by digest.
@@ -25,7 +26,6 @@ import (
 // Found by walking clusters/, so a source added anywhere Flux reads is held to
 // it without this test being told.
 func TestEveryReleaseIsPinnedByDigest(t *testing.T) {
-	digest := regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	root := repoRoot(t)
 	found := 0
 	for _, rel := range trackedMatching(t, func(p string) bool {
@@ -63,7 +63,7 @@ func TestEveryReleaseIsPinnedByDigest(t *testing.T) {
 				continue
 			}
 			found++
-			if !digest.MatchString(doc.Spec.Ref.Digest) {
+			if !release.Digest.MatchString(doc.Spec.Ref.Digest) {
 				t.Errorf("%s: the release %q is not pinned by digest (ref.digest is %q).\n\n"+
 					"A tag can be moved in the registry without a pull request, so production "+
 					"would run whatever it points at today. Pin the digest the fabricator "+

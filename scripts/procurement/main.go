@@ -11,6 +11,7 @@
 //	                       versions: every delivery pinned by version and hash
 //	expedite-check         has Valve published anything? one HTTPS call, no key
 //	expedite-release-due   is it the hour when taking delivery disturbs nobody?
+//	deliver                move a workload's production pin to a new release
 //
 // THE BYPASS BELONGS TO THE DUTY, NOT THE ROLE. Expediting is the one duty here
 // that holds elevated permission: its GitHub App may merge its own delivery
@@ -61,6 +62,7 @@ func verbs() []verb {
 		{"order", "write scripts/deliveries.lock: every delivery pinned by version and hash", order},
 		{"expedite-check", "ask whether the game server's supplier has published anything worth collecting", expediteCheck},
 		{"expedite-release-due", "say whether now is the hour an expedited delivery may disturb the site", expediteReleaseDue},
+		{"deliver", "move a workload's production pin to the release just published", deliver},
 	}
 }
 
