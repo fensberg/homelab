@@ -1,0 +1,15 @@
+{
+  "access": {
+    "provider": "cloudflare",
+    "vault_provider": "{{ op://estate/access/provider }}",
+    "account_id": "{{ op://estate/access/account_id }}",
+    "api_token": "{{ op://estate/access/api_token }}",
+    "members": "{{ op://estate/access/members }}"
+  },
+
+  "state": {
+    "bucket": "{{ op://estate/state/bucket }}",
+    "access_key_id": "{{ op://estate/state/access_key_id }}",
+    "secret_access_key": "{{ op://estate/state/secret_access_key }}"
+  }
+}

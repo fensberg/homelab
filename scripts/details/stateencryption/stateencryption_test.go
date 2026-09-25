@@ -1,6 +1,8 @@
-package phases
+package stateencryption
 
 import (
+	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -15,7 +17,7 @@ import (
 // docs/state-and-secret-rotation.md draws the loop that motivates it.
 
 func TestEncryptionConfig_CarriesThePassphraseAndNothingElse(t *testing.T) {
-	got := encryptionConfig("s3cr3t-passphrase")
+	got := Block("s3cr3t-passphrase")
 
 	for _, want := range []string{
 		`key_provider "pbkdf2" "primary"`,
@@ -36,7 +38,7 @@ func TestEncryptionConfig_CarriesThePassphraseAndNothingElse(t *testing.T) {
 // refused". A fresh estate is encrypted from its first apply and never has
 // unencrypted state to fall back to, so the weaker form buys nothing here.
 func TestEncryptionConfig_HasNoUnencryptedFallback(t *testing.T) {
-	got := encryptionConfig("anything")
+	got := Block("anything")
 	for _, forbidden := range []string{"fallback", "unencrypted"} {
 		if strings.Contains(got, forbidden) {
 			t.Errorf(`the encryption config contains %q.
@@ -58,14 +60,46 @@ from that runbook, not a mode this program offers.
 // this cannot happen today; the escaping is here so that it still cannot if
 // somebody sets the field by hand.
 func TestEncryptionConfig_EscapesThePassphrase(t *testing.T) {
-	got := encryptionConfig(`a"b\c`)
+	got := Block(`a"b\c`)
 	if !strings.Contains(got, `passphrase = "a\"b\\c"`) {
 		t.Errorf("the passphrase was not escaped:\n%s", got)
 	}
 }
 
 func TestEncryptionConfig_RefusesAnEmptyPassphrase(t *testing.T) {
-	if got := encryptionConfig(""); got != "" {
+	if got := Block(""); got != "" {
 		t.Errorf("an empty passphrase must produce no config at all, got:\n%s", got)
+	}
+}
+
+// A block already in the environment is somebody's cutover in progress, and
+// replacing it loses their fallback; a passphrase that cannot be had, or is
+// empty, must stop the run before tofu writes plaintext.
+func TestEstablishNeverWritesAnUnencryptedOrReplacedBlock(t *testing.T) {
+	t.Setenv("TF_ENCRYPTION", "somebody else's block")
+	asked := false
+	if err := Establish(func() (string, error) { asked = true; return "p", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if asked || os.Getenv("TF_ENCRYPTION") != "somebody else's block" {
+		t.Fatal("a block already in the environment was replaced")
+	}
+
+	os.Unsetenv("TF_ENCRYPTION")
+	if err := Establish(func() (string, error) { return "", errors.New("vault unreachable") }); err == nil {
+		t.Error("a passphrase that could not be read was accepted")
+	}
+	if err := Establish(func() (string, error) { return "  ", nil }); err == nil {
+		t.Error("an empty passphrase was accepted")
+	}
+	if _, set := os.LookupEnv("TF_ENCRYPTION"); set {
+		t.Fatal("a failed Establish left TF_ENCRYPTION set")
+	}
+
+	if err := Establish(func() (string, error) { return "s3cr3t", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(os.Getenv("TF_ENCRYPTION"), `"s3cr3t"`) {
+		t.Error("TF_ENCRYPTION does not carry the passphrase")
 	}
 }

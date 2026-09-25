@@ -519,15 +519,13 @@ func validTunnel() Tunnel {
 		VaultProvider: TunnelProvider,
 		APIToken:      "fixture",
 		Secret:        "fixture-tunnel-secret-at-least-thirty-two-bytes",
-		Members:       "someone@example.com",
 	}
 }
 
-// The tunnel's token decides who may enroll a device and what an enrolled
-// device can reach, so its vendor is held to the same three-way agreement as
-// every site concern, and an empty member list is refused rather than
-// converged into an enrollment rule that admits nobody - or, worse, one the
-// vendor reads as "anyone".
+// The tunnel's token decides what an enrolled device can reach, so its vendor
+// is held to the same three-way agreement as every site concern. Who may
+// enroll is the estate's, checked by the lawyer and by a precondition in
+// management/estate/.
 func TestTheTunnelIsHeldToItsDeclarations(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -537,7 +535,6 @@ func TestTheTunnelIsHeldToItsDeclarations(t *testing.T) {
 		{"another vendor declared", func(tn *Tunnel) { tn.Provider = "tailscale" }, "provider mismatch in tunnel"},
 		{"no attestation", func(tn *Tunnel) { tn.VaultProvider = "" }, "tunnel.vault_provider"},
 		{"another vendor attested", func(tn *Tunnel) { tn.VaultProvider = "tailscale" }, "tunnel.vault_provider"},
-		{"nobody may enroll", func(tn *Tunnel) { tn.Members = "  " }, "tunnel.members is empty"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tn := validTunnel()

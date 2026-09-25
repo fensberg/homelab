@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"homelab/details/cloudflare"
 )
 
 // Bucket is one of the estate's object-storage buckets.
@@ -204,7 +206,7 @@ func RcloneEnv(acct ObjectStorageAccount, cred ObjectStorageCredential) []string
 		prefix + "PROVIDER=Cloudflare",
 		prefix + "ACCESS_KEY_ID=" + cred.AccessKeyID,
 		prefix + "SECRET_ACCESS_KEY=" + cred.SecretAccessKey,
-		prefix + "ENDPOINT=https://" + acct.AccountID + ".r2.cloudflarestorage.com",
+		prefix + "ENDPOINT=" + cloudflare.R2Endpoint(acct.AccountID),
 		prefix + "NO_CHECK_BUCKET=true",
 	}
 }

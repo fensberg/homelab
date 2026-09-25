@@ -70,7 +70,6 @@
     "provider": "cloudflare",
     "vault_provider": "cloudflare",
     "api_token": "fixture",
-    "secret": "fixture-tunnel-secret-at-least-thirty-two-bytes",
-    "members": "someone@example.com"
+    "secret": "fixture-tunnel-secret-at-least-thirty-two-bytes"
   }
 }

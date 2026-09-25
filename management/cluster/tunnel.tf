@@ -27,19 +27,10 @@
 # =============================================================================
 
 locals {
-  # What an enrolled device may reach, by name. Each is a fixed cluster
-  # address, set as `clusterIP` on the Service it names - the two are held
-  # together by tests/go/repo/tunnel_routes_test.go, because a route to an
-  # address nothing answers on converges cleanly and reaches nothing.
-  #
-  # Addresses come from the bottom of the service range, which Kubernetes
-  # reserves for addresses chosen by hand, so none can already be taken by a
-  # Service that was allocated one.
-  tunnel_routes = {
-    "game-server" = "10.96.0.46"
-  }
-
-  tunnel_members = [for m in split(",", local.tunnel.members) : trimspace(m) if trimspace(m) != ""]
+  # What an enrolled device may reach, by name. Written once, in
+  # management/tunnel-routes.json, because the estate reads the same list for
+  # the account-wide split tunnel.
+  tunnel_routes = jsondecode(file("${path.module}/../tunnel-routes.json")).routes
 }
 
 # WHERE THE ACCOUNT ID COMES FROM. `object_storage.account_id`, which reads
@@ -92,89 +83,11 @@ resource "cloudflare_zero_trust_tunnel_route" "estate" {
   comment    = each.key
 }
 
-# WARP sends ONLY these addresses through Cloudflare. Everything else a device
-# does goes out its own connection as it would without WARP.
-#
-# Include mode rather than the default exclude mode, for two reasons. The
-# default excludes every private range - 10.0.0.0/8 among them - so the routes
-# above would never enter the tunnel without editing that list. And an include
-# list says exactly what an enrolled device is given, where an exclude list
-# says everything except.
-resource "cloudflare_zero_trust_split_tunnel" "estate" {
-  provider   = cloudflare.tunnel
-  account_id = local.object_storage_account.account_id
-  mode       = "include"
-
-  dynamic "tunnels" {
-    for_each = local.tunnel_routes
-    content {
-      address     = "${tunnels.value}/32"
-      description = tunnels.key
-    }
-  }
-}
-
-# Who may enroll a device. The list is personal data, so it lives in the vault.
-resource "cloudflare_zero_trust_access_policy" "members" {
-  provider   = cloudflare.tunnel
-  account_id = local.object_storage_account.account_id
-  name       = "estate members"
-  decision   = "allow"
-
-  include {
-    email = local.tunnel_members
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-# Device enrollment is an Access application of type `warp`: enrolling a WARP
-# client is a login to it, and the policy above decides who succeeds.
-#
-# ADOPTED, NEVER CREATED. Cloudflare creates this application along with every
-# Zero Trust organisation and allows only one, so creating it fails with
-# `application_already_exists` - which is how the first converge of this file
-# ended (#453). The organisation's own application is found by the name
-# Cloudflare gives it and imported, so OpenTofu manages the one that exists.
-# The id comes from Cloudflare rather than from git; once the application is
-# in state the import is a no-op.
-locals {
-  enrollment_app_name = "Warp Login App"
-}
-
-data "cloudflare_zero_trust_access_application" "enrollment" {
-  provider   = cloudflare.tunnel
-  account_id = local.object_storage_account.account_id
-  name       = local.enrollment_app_name
-}
-
-import {
-  provider = cloudflare.tunnel
-  to       = cloudflare_zero_trust_access_application.enrollment
-  id       = "${local.object_storage_account.account_id}/${data.cloudflare_zero_trust_access_application.enrollment.id}"
-}
-
-resource "cloudflare_zero_trust_access_application" "enrollment" {
-  provider         = cloudflare.tunnel
-  account_id       = local.object_storage_account.account_id
-  name             = local.enrollment_app_name
-  type             = "warp"
-  session_duration = "24h"
-
-  # Declared because the plan otherwise wants to change it on every run: the
-  # application is adopted rather than created, so its attributes come from
-  # what Cloudflare already had, and an attribute this file does not mention
-  # is one the provider defaults differently (#474). A plan that always shows
-  # a change teaches whoever reads it to skim, and the next real drift arrives
-  # in the same colour as the noise.
-  #
-  # false because enrolling a device is not something anybody launches from
-  # the App Launcher; it happens in the WARP client.
-  app_launcher_visible = false
-  policies             = [cloudflare_zero_trust_access_policy.members.id]
-}
+# The account-wide half - who may enroll a device (the Access policy), the
+# enrollment application, and the split tunnel that decides what an enrolled
+# device sends through Cloudflare - is the estate's, and lives in
+# management/estate/. A site's build cannot reach it, so a site demolish cannot
+# delete it (#531).
 
 # The connector's namespace and credential, for the Deployment Flux applies.
 resource "kubernetes_namespace" "tunnel" {

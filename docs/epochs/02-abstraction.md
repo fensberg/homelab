@@ -1875,10 +1875,222 @@ term and the construction term for where materials are gathered before use; and
 `dev` collides with the name of the privileged user account, in a repository
 where the privilege boundary is the thing most important to read correctly.
 
-### The split is two roots sharing one config, and the seam is two values
+### The first split is by scope: estate, site, node
 
-The design for the provider split named as a constraint above. Written before
-any code moved, because the state migration is the expensive half to get wrong
+Decided 2026-09-25, after a site `demolish` deleted the WARP enrollment
+application for the whole Cloudflare account and the next build failed looking
+for it (#531). The application had been adopted into the site's state, so the
+site's teardown destroyed it. That is a scope error, not a teardown bug, and it
+re-plans this epoch's split: **the first cut is by scope, and the
+infrastructure/platform cut below happens inside a site.**
+
+#### Three scopes, and an operation at one cannot harm a wider one
+
+| Scope      | What it is                                             | What it owns                                                                     | Program      |
+| ---------- | ------------------------------------------------------ | -------------------------------------------------------------------------------- | ------------ |
+| **estate** | the Cloudflare account and its Zero Trust organisation | the enrollment application, who may enroll (the Access policy), the split tunnel | `lawyer`     |
+| **site**   | one cluster                                            | its machines, control plane, database, buckets, and its own tunnel and routes    | `contractor` |
+| **node**   | raw compute, ready to be adopted by a site             | nothing                                                                          | -            |
+
+"The organisation" and "the estate" are the same thing here: the account _is_
+the estate, so the boundary is "the estate's, not the site's".
+
+**Nodes are owned, not owners.** They are the site's keyed resources, in the
+site's root and the site's state, and no node has a root or a verb of its own.
+What "nothing done to a node may harm its site" asks for is already the
+disposable-VM rule: a node is replaced, never repaired, and it holds nothing
+the site needs back.
+
+**A site's buckets are the site's**, even though they deliberately outlive a
+rebuild of its machines. That is a statement about lifetime, not scope, and it
+is not evidence that they belong to the estate.
+
+#### The boundary is state, not a list of things to spare
+
+The estate has its own OpenTofu root, `management/estate/`, with its own state
+in its own R2 bucket (S3 backend, `use_lockfile`, encrypted with
+`TF_ENCRYPTION` like every other state). A site's plan has no handle on any
+estate object, so a site's destroy cannot reach one. The alternative, keeping
+the objects in site state and having each teardown forget them first, is the
+careful-handling fix: it works until somebody adds an object and not the
+matching forget.
+
+`tests/go/repo/estate_scope_test.go` holds the boundary in both directions.
+It walks every `.tf` file in the repository and refuses:
+
+- an estate type owned (by `resource` or `import`) anywhere but the estate
+  root;
+- any type in the estate root not declared as the estate's.
+
+A new estate object is therefore a decision written into that test, never an
+accident. The mutation ledger proves both directions.
+
+What both roots need, they read from a file rather than from each other:
+`management/tunnel-routes.json` is read by the site root, for the routes
+through its own tunnel, and by the estate root, for the account's split tunnel.
+
+#### The lawyer holds the estate's credentials, and only those
+
+"Contractors don't build estates - lawyers do." The estate's verbs belong to a
+second program, `scripts/lawyer`, and the name is a credential boundary as much
+as a theme. In the user's words: "the lawyer holds the estate credentials and
+estate credentials only. The contractor holds the site credentials and the site
+credentials only."
+
+| Verb              | Program    | Refuses when                                                      |
+| ----------------- | ---------- | ----------------------------------------------------------------- |
+| `build-estate`    | lawyer     | the estate's state already holds anything                         |
+| `converge-estate` | lawyer     | the estate's state is empty                                       |
+| `demolish-estate` | lawyer     | any tunnel stands in the account, i.e. any site, or no `-confirm` |
+| `build-site`      | contractor | (renamed from `break-ground`, #534)                               |
+| `converge-site`   | contractor | (renamed from `converge`)                                         |
+| `demolish-site`   | contractor | (renamed from `demolish`)                                         |
+
+Build and converge each refuse the other's case, so a converge can never
+quietly build an estate from nothing.
+
+**One vault per scope, named for the scope.** The estate's secrets are in a
+1Password vault called `estate`, and each site's will be in a vault called by
+its key (`site0`, `site1`). A service account token is granted per vault, so
+the vault is the unit a program's reach can be drawn around. With one shared
+vault, "only those" would hold only because each program renders its own
+template, since either token could still read the other's fields. An umbrella
+vault such as `homelab` groups exactly the things that must not share a token,
+and repeating the scope inside the path (`op://homelab/site0/...`) says what the
+vault should already say. So references read `op://estate/access/api_token`
+and `op://site0/hypervisor/token_id`. The names are generic, so they sit in git
+without costing forkability.
+
+#### Four kinds of vault, and who may do what in each
+
+Settled 2026-09-25. `-shared` means one thing everywhere: **the lawyer writes it,
+a narrower scope reads it.**
+
+| Vault           | Holds                                                                                                                                                            | lawyer       | site0        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------ |
+| `estate`        | account-wide credentials: Access, the tailnet admin, R2 admin, the estate's state                                                                                | read + write | none         |
+| `estate-shared` | what every site needs and nobody is harmed by: org name, account id, repo URL, the backup recipient (a public key), the alerting webhook, the foreman key (#539) | read + write | read         |
+| `site0-shared`  | what the lawyer grants site0 alone: its tunnel's run token, its buckets' keys, its tailnet client                                                                | read + write | read         |
+| `site0`         | what site0 generates or holds for itself: the hypervisor token, database, workloads                                                                              | **none**     | read + write |
+
+Read-only is what stops a site harming its siblings through a shared vault:
+site0 cannot overwrite a value site1 depends on, and 1Password enforces that
+rather than this code. The lawyer never reads a site's own vault, and a site
+never reads the estate's, so neither side needs an exception.
+
+The lawyer lists the vaults its token can see and **refuses one that is neither
+`estate` nor a `-shared` vault**. The contractor will do the same for its site:
+its own vault and the two it reads, and nothing else.
+
+#### The lawyer grants each site its plot
+
+Three credentials a site uses today can harm another site, because the vendor
+cannot scope them to one:
+
+- **the tunnel API token**: anything that can create site0's tunnel can
+  delete site1's;
+- **the object storage admin token**: it reaches every bucket in the account,
+  state backups included;
+- **the tailnet**: every site mints keys with the same `tag:homelab-router`, and
+  the policy auto-approves any route in `10.0.0.0/8` for that tag, so a leaked
+  site0 client can advertise site1's `/16` and take its traffic.
+
+So the lawyer creates what only an account-wide credential can create, and grants
+the site a credential narrowed to it. That means the tunnel and its run token,
+which serves that tunnel alone; the site's buckets and keys scoped to them; and a
+tailnet OAuth client that can mint keys only for `tag:site0-router` and
+`tag:site0-node`. The lawyer also owns the **tailnet policy**, which
+`overlay-network.tf` already declined to manage because "every site deployment
+clobbers the policy every other site depends on", and which was a manual console
+step in `docs/tailnet-setup.md`. Generated from the site list, the policy
+approves each site's router for that site's own `/16` only. That is the "precise"
+option the setup doc called a chore; generating it removes the chore.
+
+This is the vending pattern organisation-scale estates use, such as a landing
+zone handing workload accounts narrow roles. Most homelab GitOps repositories
+instead feed one vault through one token to the cluster, which is simpler and
+hands a compromised cluster everything. The concrete threat here is the
+self-hosted runner inside the cluster, which runs CI jobs beside a game server.
+Today a site converge renders the account-wide R2 admin token onto it, so one
+bad job could empty every bucket, backups included.
+
+#### Where 1Password stops, and OpenBao takes over
+
+A 1Password service account's vault grants cannot be changed after it is
+created. Adding site1 would mean new `site1` and `site1-shared` vaults, and a new
+lawyer service account to reach `site1-shared`: a rotation of everything the
+lawyer holds. That is the right price for one site and the wrong one for many.
+**OpenBao arrives before site1**, and per-path policies with dynamic
+credentials are the ecosystem's answer to exactly this. So the vaults are built
+for site0 alone, and the second site is OpenBao's to make cheap.
+
+#### The order
+
+1. #538: the estate root, the lawyer, and its vault check.
+2. The site's vaults: `op://site0/...` and `op://site0-shared/...`, one
+   template per site, and `homelab` retired.
+3. The grants: the lawyer creates each site's tunnel, buckets and tailnet
+   client, and owns the tailnet policy.
+
+All three land before the rebuild.
+
+The estate vault holds:
+
+| Item     | Fields                                                                  | Notes                                                                                                                                                                                                    |
+| -------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access` | `provider`, `account_id`, `api_token`, `members`                        | who may enroll and what an enrolled device reaches; the token may edit Access applications and policies, device settings, and read tunnels; `members` moved here from the site config's `tunnel.members` |
+| `state`  | `bucket`, `access_key_id`, `secret_access_key`, `encryption_passphrase` | the passphrase is generated by the first build                                                                                                                                                           |
+
+Two facts now exist in both vaults: the account id, and the fact that the
+account is Cloudflare's. That is the price of a vault boundary, since a program
+that cannot read the other vault cannot share a field with it.
+
+What each program shares in code comes from `scripts/details`: the 1Password
+wrapper, the password generator, the console, the state-encryption block and a
+Cloudflare API client all moved there so the lawyer did not grow a copy of any
+of them. Writing the console's first test found a live bug: the phase banner's
+closing bar printed colour codes into pipes (#537).
+
+#### Consequences for the site
+
+- The site's `tunnel.api_token` now needs Cloudflare Tunnel edit and nothing
+  else. It used to administer Access too, because the site owned the enrollment
+  application. Narrowing it is what makes the boundary hold at the vendor as
+  well as in the code.
+- `tunnel.members` left the site's config, its Go type, its fixtures and its
+  precondition. Who may enroll is checked where it is declared, in the estate.
+- An estate-only change no longer counts as site work in the deploy workflow.
+
+#### Proven
+
+The first `lawyer build-estate` completed on 2026-09-25, on the third run. It
+built from an empty estate bucket into state encrypted under the estate's own
+generated passphrase. The account had no enrollment application to adopt, so
+the apply created all three objects (the enrollment application, the Access
+policy and the split tunnel) and stopped there. The two failed runs before it
+are the `state list` / blank-state gotcha below.
+
+#### Found on the way, and not fixed here
+
+- **Nothing converges the estate on merge** (#535). The site converge runs on a
+  runner inside a site, which is the wrong place for the estate's token and
+  does not exist while no site stands. So the estate's lane needs a
+  GitHub-hosted runner, and `op` delivered to it. Until then an estate change
+  is converged by hand with `task converge-estate`.
+- **The tunnel routes collide as soon as there are two sites** (#536). The game
+  server's route is a fixed `clusterIP`. Every cluster has the same service
+  range, every site's routes share the account's one virtual network, and the
+  split tunnel is one list for the account. This is harmless with one site and
+  decided before the second.
+- **The estate has no plan-on-pull-request.** A reviewer sees the estate's
+  change as a diff, not as a plan. That belongs with #535, since a check must
+  run the same operation as the action.
+
+### Inside a site, the split is two roots sharing one config, and the seam is two values
+
+The design for the provider split named as a constraint above, and the second
+cut: it divides one site's root, after the scope split has taken the estate's
+objects out of it. Written before any code moved, because the state migration is the expensive half to get wrong
 and it is an operation only `dev` can run.
 
 **Re-measured 2026-09-21.** Every count below is from the tree rather than from
@@ -1888,10 +2100,10 @@ the earlier description of it.
 
 Eighteen resources move. Everything else stays.
 
-| Layer            | Files                                                                                                                                               | Providers                             |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `infrastructure` | `compute.tf`, `pools.tf`, `talos.tf`, `overlay-network.tf`, `object-storage.tf`, `cilium.tf`, `registry.tf`, and the Cloudflare half of `tunnel.tf` | proxmox, talos, tailscale, cloudflare |
-| `platform`       | `database.tf`, `gitops.tf`, `monitoring.tf`, `runner.tf`, `workloads.tf`, and the Kubernetes half of `tunnel.tf`                                    | kubernetes                            |
+| Layer            | Files                                                                                                                                             | Providers                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `infrastructure` | `compute.tf`, `pools.tf`, `talos.tf`, `overlay-network.tf`, `object-storage.tf`, `cilium.tf`, `registry.tf`, and the site's tunnel in `tunnel.tf` | proxmox, talos, tailscale, cloudflare |
+| `platform`       | `database.tf`, `gitops.tf`, `monitoring.tf`, `runner.tf`, `workloads.tf`, and the Kubernetes half of `tunnel.tf`                                  | kubernetes                            |
 
 The eighteen, by kind, because this list is the migration inventory and a
 resource missing from it is a resource the platform root would propose to
@@ -2892,6 +3104,32 @@ agree about.
 The general form, which is the third time this epoch has produced one: the
 repository declaring something is not evidence the estate has it. Wherever a
 declaration has an observable effect, something automated has to observe it.
+
+### `tofu state list` fails on the one run where empty is the answer
+
+The first real `lawyer build-estate` stopped at Take over with "No state file
+was found". It asked for the estate's resources with `tofu state list`, and
+`list` treats "there is no state yet" as an error. A first build is exactly the
+run where no state is the correct and expected answer. `tofu state pull` prints
+nothing and exits 0 in the same situation, which is why the contractor already
+used it, and the lawyer does now. It also parses what it pulls: state that is
+present but unreadable is an error, never an empty estate, because build-estate
+would take an empty estate as permission to build over it.
+
+The second run found the other half. Against R2, pull did not print nothing: the
+S3 backend answers an empty bucket with a **blank state**, with a version, serial
+0, no lineage and no resources. The local backend, where this was checked, prints
+nothing. So "no state yet" has two spellings, and the lawyer now reads both as
+empty. A lineage is assigned by the first write, so an empty lineage claiming
+resources or a serial is still refused.
+
+The refusal that caught it could not say what it had seen, so the next run could
+not tell us either. It now describes what came back by shape alone: size, and the
+top-level keys, never values. That turned the second run into the diagnosis.
+
+The unit tests had covered which verb admits which state, but not the command
+that produced the state they judged, and a check against the local backend
+stood in for the real one. Both halves needed the real backend to find.
 
 ### The pre-merge check and the post-merge action were different commands
 

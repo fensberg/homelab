@@ -8,7 +8,7 @@ import (
 
 // The generated password is spliced into a URI:
 //
-//	postgres://tofu:<pw>@10.10.10.100:30432/tofu_state?sslmode=require
+//	postgres://tofu:<pw>@192.0.2.100:30432/tofu_state?sslmode=require
 //
 // and buildStateConnStr parses a host and port back out of it with a regex.
 // A password containing @ : / ? or # silently produces a different URI than
@@ -27,11 +27,11 @@ func TestPassword_IsConnectionStringSafe(t *testing.T) {
 		}
 		// Prove it, rather than trusting the alphabet: the parsed host must
 		// still be the host.
-		u, err := url.Parse("postgres://tofu:" + pw + "@10.10.10.100:30432/tofu_state?sslmode=require")
+		u, err := url.Parse("postgres://tofu:" + pw + "@192.0.2.100:30432/tofu_state?sslmode=require")
 		if err != nil {
 			t.Fatalf("password %q produced an unparsable URI: %v", pw, err)
 		}
-		if u.Hostname() != "10.10.10.100" || u.Port() != "30432" {
+		if u.Hostname() != "192.0.2.100" || u.Port() != "30432" {
 			t.Fatalf("password %q moved the host to %s:%s", pw, u.Hostname(), u.Port())
 		}
 		if got, _ := u.User.Password(); got != pw {

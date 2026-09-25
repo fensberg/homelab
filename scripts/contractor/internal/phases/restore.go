@@ -1,15 +1,15 @@
 package phases
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
 	"homelab/contractor/config"
-	"homelab/contractor/internal/onepassword"
 	"homelab/contractor/internal/run"
+	"homelab/details/onepassword"
+	"homelab/details/tofustate"
 )
 
 // Restore brings the age-encrypted state back from object storage.
@@ -229,13 +229,8 @@ func validateRestoredState(body []byte) (stateSummary, error) {
 		return stateSummary{}, fmt.Errorf("the restore produced no data at all")
 	}
 
-	var st struct {
-		Version   int               `json:"version"`
-		Serial    int               `json:"serial"`
-		Lineage   string            `json:"lineage"`
-		Resources []json.RawMessage `json:"resources"`
-	}
-	if err := json.Unmarshal(body, &st); err != nil {
+	st, err := tofustate.Parse(body)
+	if err != nil {
 		return stateSummary{}, fmt.Errorf(`what came back is not JSON, so it is not OpenTofu state.
 
 The usual cause is that the object was never state - or that it was never

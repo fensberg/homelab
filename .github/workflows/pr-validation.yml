@@ -335,6 +335,16 @@ jobs:
           tofu init -backend=false -input=false
           tofu validate
 
+      # The estate's root reads none of a site's config, so it is validated
+      # against its own test fixture rather than the placeholder above.
+      - name: Validate OpenTofu (estate)
+        working-directory: management/estate
+        env:
+          TF_VAR_config_path: ./tests/fixtures/valid.json
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+
       # `tofu test` used to run here. It moved to the Test lane below, along
       # with `go test`: this lane answers "does it resolve", that one answers
       # "does it behave", and one owner per check is the rule everywhere else
@@ -565,6 +575,14 @@ jobs:
       # case added to one side and forgotten on the other fails there.
       - name: Invariant tests (OpenTofu)
         working-directory: management/cluster
+        run: |
+          tofu init -backend=false -input=false
+          tofu test
+
+      # The estate's root against a mocked Cloudflare, so no credential is
+      # needed: who may enroll, and that the split tunnel carries every route.
+      - name: Invariant tests (OpenTofu, estate)
+        working-directory: management/estate
         run: |
           tofu init -backend=false -input=false
           tofu test

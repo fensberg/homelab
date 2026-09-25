@@ -109,6 +109,27 @@ tasks:
       - go build -C scripts/signedpush -o ../../toolshed/signedpush .
       - ./toolshed/signedpush {{.CLI_ARGS}}
 
+  # The estate: the Cloudflare account every site stands on, held by the
+  # lawyer rather than the contractor. Run with the estate's own 1Password
+  # service account exported as OP_SERVICE_ACCOUNT_TOKEN - the lawyer refuses
+  # a token that reaches any vault but the estate's. A Ctrl-C reaches tofu and
+  # the lawyer waits for it, so these are safe to wrap; demolish-estate is
+  # printed rather than run only so that -confirm is typed by a person.
+  build-estate:
+    desc: "Establish the estate, before any site is built on it"
+    cmds:
+      - go run -C scripts/lawyer . build-estate
+
+  converge-estate:
+    desc: "Apply management/estate/ to the estate that stands"
+    cmds:
+      - go run -C scripts/lawyer . converge-estate
+
+  demolish-estate:
+    desc: "Print the command that tears the estate down, once no site stands"
+    cmds:
+      - 'echo "go run -C scripts/lawyer . demolish-estate -confirm"'
+
   survey:
     desc: "Probe every overlay peer from here and report this host's row"
     # Must run on a member of the overlay - the workstation deliberately is
@@ -483,6 +504,10 @@ tasks:
       - bash .github/scripts/placeholder-config.sh
       - tofu -chdir=management/cluster init -backend=false -input=false
       - TF_VAR_config_path=../../config/management.placeholder.json tofu -chdir=management/cluster validate
+      # The estate's root, validated against its test fixture: it reads none
+      # of a site's config, so the placeholder above means nothing to it.
+      - tofu -chdir=management/estate init -backend=false -input=false
+      - TF_VAR_config_path=./tests/fixtures/valid.json tofu -chdir=management/estate validate
       - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
       - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
       # flux-system was absent here, which is how its components stayed tag
@@ -554,13 +579,15 @@ tasks:
         done
 
   test:tofu:
-    desc: "OpenTofu unit tests: registry.tf's invariants against fixture configs"
+    desc: "OpenTofu unit tests: each root's invariants against fixture configs"
     # Fixture configs, never the real rendered one, so this needs no secrets
     # and is safe to run at any time. init is required before test and is a
     # no-op once .terraform exists.
     cmds:
       - tofu -chdir=management/cluster init -backend=false -input=false
       - tofu -chdir=management/cluster test
+      - tofu -chdir=management/estate init -backend=false -input=false
+      - tofu -chdir=management/estate test
 
   test:repo:
     desc: "Repository invariants: config keys that are silently declared twice"

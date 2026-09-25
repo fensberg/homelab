@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"homelab/contractor/internal/onepassword"
 	"homelab/contractor/internal/run"
-	"homelab/contractor/internal/secrets"
+	"homelab/details/onepassword"
+	"homelab/details/secrets"
 )
 
 // The estate's break-glass keypair, addressed once so that the Render, Backup

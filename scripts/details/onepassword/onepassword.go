@@ -4,11 +4,15 @@ package onepassword
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 )
+
+// ErrNoCLI is what every program says when there is no `op` to ask.
+var ErrNoCLI = errors.New("1Password CLI ('op') not found on PATH")
 
 // Available reports whether the op CLI is on PATH at all.
 func Available() bool {
@@ -71,4 +75,31 @@ func Read(ref string) (string, error) {
 		return "", fmt.Errorf("1Password read (%s): %w", ref, err)
 	}
 	return strings.TrimRight(string(out), "\n"), nil
+}
+
+// Vaults names every vault the signed-in account can see.
+//
+// The lawyer's service account is scoped to the estate vault alone, so the
+// answer is how it finds that vault without the repository naming it - and a
+// second name in the answer means the token reaches more than the estate.
+func Vaults() ([]string, error) {
+	out, err := exec.Command("op", "vault", "list", "--format=json").Output()
+	if err != nil {
+		return nil, fmt.Errorf("1Password vault list: %w", err)
+	}
+	return vaultNames(out)
+}
+
+func vaultNames(out []byte) ([]string, error) {
+	var vaults []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(out, &vaults); err != nil {
+		return nil, fmt.Errorf("1Password vault list: %w", err)
+	}
+	names := make([]string, 0, len(vaults))
+	for _, v := range vaults {
+		names = append(names, v.Name)
+	}
+	return names, nil
 }

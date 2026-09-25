@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"homelab/contractor/config"
-	"homelab/contractor/internal/onepassword"
 	"homelab/contractor/internal/run"
+	"homelab/details/onepassword"
 )
 
 // Compute creates the Talos VMs, then waits for them to answer.

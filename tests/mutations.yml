@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 162
+floor: 164
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -159,14 +159,35 @@ mutations:
       which carries no UDP and so no game server (#455).
 
   - guard: TestEveryTunnelRouteIsAServiceAddressAndTheReverse
-    file: management/cluster/tunnel.tf
-    find: '"game-server" = "10.96.0.46"'
-    replace: '"game-server" = "10.96.0.47"'
+    file: management/tunnel-routes.json
+    find: '"game-server": "10.96.0.46"'
+    replace: '"game-server": "10.96.0.47"'
     mentions: "no Service in git sets clusterIP"
     why: >
       The tunnel route and the Service's fixed address live in files read by
       different tools. Moving one without the other converges cleanly and
       hands an enrolled device a route to an address nothing answers on.
+
+  - guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
+    file: management/cluster/tunnel.tf
+    find: 'resource "cloudflare_zero_trust_tunnel_route" "estate" {'
+    replace: 'resource "cloudflare_zero_trust_split_tunnel" "estate" {'
+    mentions: "which is the estate's"
+    why: >
+      An estate object declared in a site root is in that site's state, so the
+      site's demolish destroys it for every site in the account. That is how
+      the WARP enrollment application was lost and the next build failed
+      (#531).
+
+  - guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
+    file: management/estate/zero-trust.tf
+    find: 'resource "cloudflare_zero_trust_split_tunnel" "estate" {'
+    replace: 'resource "cloudflare_zero_trust_tunnel_cloudflared" "estate" {'
+    mentions: "not listed as the estate's"
+    why: >
+      Whatever the estate root declares survives every site and is shared by
+      all of them. Something belonging to one site put there instead outlives
+      the site, and is changed for all sites by work meant for one.
 
   - guard: TestThePostMergeHookSaysWhenItCouldNotCollect
     file: githooks/post-merge

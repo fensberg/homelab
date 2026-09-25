@@ -8,21 +8,21 @@ import "testing"
 // into the wrong place and reports success.
 
 func TestParseRef_WithSection(t *testing.T) {
-	r, err := ParseRef("op://homelab/site0/database/password")
+	r, err := ParseRef("op://example/item/section/field")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if r.Vault != "homelab" || r.Item != "site0" || r.Section != "database" || r.Field != "password" {
+	if r.Vault != "example" || r.Item != "item" || r.Section != "section" || r.Field != "field" {
 		t.Errorf("got %+v", r)
 	}
 }
 
 func TestParseRef_WithoutSection(t *testing.T) {
-	r, err := ParseRef("op://homelab/source-control/token")
+	r, err := ParseRef("op://example/item/field")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if r.Vault != "homelab" || r.Item != "source-control" || r.Field != "token" {
+	if r.Vault != "example" || r.Item != "item" || r.Field != "field" {
 		t.Errorf("got %+v", r)
 	}
 	if r.Section != "" {
@@ -51,8 +51,8 @@ func TestParseRef_Rejects(t *testing.T) {
 // parsed parts is not the value read back through the original reference.
 func TestRef_StringRoundTrips(t *testing.T) {
 	for _, ref := range []string{
-		"op://homelab/site0/database/password",
-		"op://homelab/source-control/token",
+		"op://example/item/section/field",
+		"op://example/item/field",
 	} {
 		r, err := ParseRef(ref)
 		if err != nil {

@@ -58,6 +58,13 @@
     "injectable covered the paths that decide whether a run is cancelled - a",
     "404 meaning a branch is gone, a 409 meaning it already finished. 48.3.",
     "",
+    "go/details lowered 75 -> 62 when the 1Password wrapper, the password",
+    "generator, the console and the state encryption block moved in from the",
+    "contractor so the lawyer could share them. No test was dropped: most of the",
+    "1Password wrapper runs `op` and never had a unit test, and it now counts",
+    "here rather than in the contractor. Measured 62.6. go/lawyer set at 29: its",
+    "decisions are tested, and what is left runs a real vault and tofu. 29.9.",
+    "",
     "fuzz is counted wherever it lives rather than by directory, because a fuzz",
     "target beside the unit tests is still a fuzz target and the interesting",
     "number is how many exist at all. It is the tier most likely to go quietly to",
@@ -75,7 +82,8 @@
     "go/signedpush": 40.4,
     "go/tests-helpers": 51.8,
     "js": 0,
-    "go/details": 75
+    "go/details": 62,
+    "go/lawyer": 29
   },
   "tiers": {
     "unit": 453,

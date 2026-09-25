@@ -53,7 +53,6 @@ debt:
   - "fensberg/homelab"
   - "gotk-sync.yaml"
   - "http://127.0.0.1:1"
-  - "https://api.cloudflare.com/client/v4/accounts/"
   - "hypervisor-prep.yml"
   - "management.rendered.json"
   - "management.tpl.json"
@@ -125,3 +124,22 @@ debt:
   # tests/go/repo/world_backup_test.go reads that file. Goes when the standing
   # order moves off it to releases.yaml (#510, R2b).
   - "modules/applications/valheim/base/deployment.yaml"
+
+  # --- Field names two separate documents happen to share (9)
+  #
+  # The estate's rendered config (config/estate.tpl.json, read by the lawyer)
+  # and a site's (config/management.tpl.json, read by the contractor) describe
+  # the same vendor's credentials in the same words. They are kept as two types
+  # on purpose: sharing one would put the lawyer's reading of its config in the
+  # contractor's package, across the credential boundary the two programs
+  # exist to hold. errors and result are Cloudflare's envelope, which also
+  # happens to be GitHub's and Prometheus's vocabulary.
+  - 'json:"access_key_id"'
+  - 'json:"account_id"'
+  - 'json:"api_token"'
+  - 'json:"errors"'
+  - 'json:"provider"'
+  - 'json:"result"'
+  - 'json:"secret_access_key"'
+  - 'json:"state"'
+  - 'json:"vault_provider"'
