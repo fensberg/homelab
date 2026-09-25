@@ -150,7 +150,13 @@ jobs:
 
           echo "changed files:"; echo "${files}"
           mgmt=false; work=false
-          grep -qE '^(management/|config/management\.tpl\.json$)' <<<"${files}" && mgmt=true
+          # The estate's root is the lawyer's, and converging a site does not
+          # touch it, so a change only there is no site's work. Filtered into
+          # a variable rather than piped: under pipefail, grep -q exiting at
+          # its first match can fail the writer with SIGPIPE and turn a match
+          # into a miss.
+          site_files="$(grep -vE '^management/estate/' <<<"${files}" || true)"
+          grep -qE '^(management/|config/management\.tpl\.json$)' <<<"${site_files}" && mgmt=true
           # The same paths the trigger filters on, not a broader guess at them.
           # This used to match any file under environments/ or modules/, so a
           # change to an application module - the game server's Deployment -
