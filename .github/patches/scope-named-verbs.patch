@@ -1,0 +1,1040 @@
+diff --git a/.github/dependabot.yml b/.github/dependabot.yml
+index 56c2a34..2c0b8b8 100644
+--- a/.github/dependabot.yml
++++ b/.github/dependabot.yml
+@@ -75,7 +75,7 @@ updates:
+ 
+   # The test-only Go module, tracked separately from /scripts/contractor because
+   # it is a separate module with a completely different dependency profile:
+-  # break-ground has none at all, and this one has Terratest's ~280. Keeping them
++  # build-site has none at all, and this one has Terratest's ~280. Keeping them
+   # apart is what stops a Terratest bump ever appearing as a pull request
+   # against the program that can destroy infrastructure.
+   #
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 7b908f7..43a9cc7 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -339,7 +339,7 @@ jobs:
+   # Not `apply` with a different directory. The workload tier is plain
+   # OpenTofu in a folder; the estate is a phased program that renders
+   # secrets, attaches to state living in this cluster, applies, re-backs-up
+-  # and sterilises. `contractor converge` is that sequence.
++  # and sterilises. `contractor converge-site` is that sequence.
+   #
+   # READ BEFORE WIDENING: this runner lives inside the cluster it is
+   # converging. Adding a control-plane node is safe. A change that disrupts
+@@ -406,7 +406,7 @@ jobs:
+           # path, and a real ignition printed one of them.
+           go build -C scripts/contractor -o ../../toolshed/contractor .
+           set +e
+-          ./toolshed/contractor converge -site "$SITE"
++          ./toolshed/contractor converge-site -site "$SITE"
+           code=$?
+           set -e
+           # The verdict, not just the failure. contractor exits 2 when the
+diff --git a/.github/workflows/integration-tests.yml b/.github/workflows/integration-tests.yml
+index d43a9be..5649d00 100644
+--- a/.github/workflows/integration-tests.yml
++++ b/.github/workflows/integration-tests.yml
+@@ -105,7 +105,7 @@ jobs:
+       # Sterilize phase below is the teardown, so this job leaves the runner
+       # in the state it found it.
+       #
+-      # -keep-on-failure is what stops break-ground sterilizing the workspace the
++      # -keep-on-failure is what stops build-site sterilizing the workspace the
+       # moment this single phase succeeds. Without it, Render wipes the file
+       # it just wrote and every step below reads nothing.
+       - name: Render the config from 1Password
+@@ -114,7 +114,7 @@ jobs:
+           SITE: ${{ inputs.site || 'site0' }}
+         run: |
+           go build -C scripts/contractor -o ../../toolshed/contractor .
+-          ./toolshed/contractor break-ground -site "$SITE" -phase render -keep-on-failure
++          ./toolshed/contractor build-site -site "$SITE" -phase render -keep-on-failure
+ 
+       - name: API contract tests
+         if: ${{ inputs.tier == 'api' || inputs.tier == 'both' }}
+@@ -154,7 +154,7 @@ jobs:
+         env:
+           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+           SITE: ${{ inputs.site || 'site0' }}
+-        run: ./toolshed/contractor break-ground -site "$SITE" -phase backup -keep-on-failure
++        run: ./toolshed/contractor build-site -site "$SITE" -phase backup -keep-on-failure
+ 
+       # Run through the contractor, not beside it.
+       #
+@@ -193,4 +193,4 @@ jobs:
+         if: always()
+         env:
+           SITE: ${{ inputs.site || 'site0' }}
+-        run: ./toolshed/contractor break-ground -site "$SITE" -phase sterilize
++        run: ./toolshed/contractor build-site -site "$SITE" -phase sterilize
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 6ec6672..c51e4c7 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -82,12 +82,12 @@ depends on.
+ 
+ Each gates one thing, and none overlaps another:
+ 
+-| Environment   | Gates                                       | Triggered by                 |
+-| ------------- | ------------------------------------------- | ---------------------------- |
+-| `management`  | the platform itself - `contractor converge` | merge touching `management/` |
+-| `staging`     | workload deploys                            | merge to `main`              |
+-| `production`  | workload deploys                            | tag `v*`                     |
+-| `integration` | the test tiers that need a real estate      | nightly, or dispatch         |
++| Environment   | Gates                                            | Triggered by                 |
++| ------------- | ------------------------------------------------ | ---------------------------- |
++| `management`  | the platform itself - `contractor converge-site` | merge touching `management/` |
++| `staging`     | workload deploys                                 | merge to `main`              |
++| `production`  | workload deploys                                 | tag `v*`                     |
++| `integration` | the test tiers that need a real estate           | nightly, or dispatch         |
+ 
+ `management` is a fourth environment rather than a reuse of `staging`
+ deliberately. Reusing one would look leaner and would mislabel the job with the
+@@ -117,7 +117,7 @@ belongs in an epoch record.
+   by OpenTofu, which `tests/go/repo` enforces.
+ 
+   Everything below that floor is generated: the state database password is
+-  created by break-ground and written to 1Password, because the rule that decides is
++  created by build-site and written to 1Password, because the rule that decides is
+   where a secret ends up. A secret that becomes a resource attribute is
+   written into OpenTofu state, so a leaked state file yields a live
+   credential; those are ours to generate. A secret that only configures a
+@@ -134,13 +134,13 @@ belongs in an epoch record.
+   _Convergence_ applies a config change to an estate that already exists. The
+   circular dependency ignition has does not apply - the cluster is already
+   there, holding the state - so a converge may run wherever it can reach the
+-  estate, including on the self-hosted runner inside it. `contractor converge`
++  estate, including on the self-hosted runner inside it. `contractor converge-site`
+   attaches to the state in Postgres instead of starting from an empty
+   workspace, never runs Migrate, and never destroys on failure.
+ 
+   The distinction is load-bearing rather than pedantic. After a successful
+   ignition, Sterilize removes both the local state file and `backend_pg.tf`,
+-  so a second `break-ground` run starts empty, plans to create every VM again, and
++  so a second `build-site` run starts empty, plans to create every VM again, and
+   would copy that empty state over the real one with `-force-copy`. Changing
+   `management/` had no supported path at all until converge existed.
+ 
+@@ -208,7 +208,7 @@ belongs in an epoch record.
+   pipes `tofu state pull` straight into `age` and wipes the buffer - and state
+   is encrypted at rest with OpenTofu's own state encryption, keyed from
+   1Password. The whole `encryption` block is carried in `TF_ENCRYPTION`, set by
+-  break-ground before the first phase, so nothing in git reveals the scheme or the
++  build-site before the first phase, so nothing in git reveals the scheme or the
+   key and a bare `tofu` run cannot read state at all. That is the lock, not a
+   side effect - and it matters more than protecting the local file, because the
+   state _is_ the Postgres database, which CloudNativePG streams to object
+@@ -231,7 +231,7 @@ belongs in an epoch record.
+   bucket and cannot separate write from delete, so sharing a bucket meant
+   sharing a credential - and the credential that lives permanently in a cluster
+   Secret could delete the copy that exists to survive that cluster being lost.
+-  It also meant `demolish` destroyed the state dumps, because it empties the
++  It also meant `demolish-site` destroyed the state dumps, because it empties the
+   bucket it is about to delete (#94). The bucket layout, and what belongs at
+   the estate, site and node levels, is in
+   [`02-abstraction.md`](docs/epochs/02-abstraction.md).
+@@ -264,23 +264,23 @@ One entrypoint, a Go program, run from the Linux workstation:
+ 
+ ```sh
+ ./scripts/install-dependencies.sh   # once
+-task start SITE=site0               # builds break-ground and prints the command to run it
+-./toolshed/contractor break-ground -site site0 # the actual run - always run this directly, never through task
++task start SITE=site0               # builds the contractor and prints the command to run it
++./toolshed/contractor build-site -site site0 # the actual run - always run this directly, never through task
+ ```
+ 
+-**`task start` deliberately does not run break-ground itself.** `task` intercepts
++**`task start` deliberately does not run build-site itself.** `task` intercepts
+ Ctrl-C for its own purposes but does not proxy the signal to the process it's
+ supervising - a confirmed, currently-open upstream limitation
+ (`go-task/task#1408`). Ignite's own destroy-then-sterilize cleanup on
+ interrupt only runs if something actually delivers it the signal, so the
+ real ignition run has to be invoked directly. Every other `task`-wrapped
+-break-ground phase (`render-secrets`, `verify`, `configure-hypervisor`,
++build-site phase (`render-secrets`, `verify`, `configure-hypervisor`,
+ `backup-state`, `kubeconfig`, `clean-secrets`) stays safe to wrap regardless, because none
+ of them can reach the Compute phase - an interrupted one leaves stale
+ secrets at worst, recoverable with `task clean-secrets`, never an orphaned
+ VM.
+ 
+-**Changing a running estate is `contractor converge`** (`task converge`). It
++**Changing a running estate is `contractor converge-site`** (`task converge`). It
+ renders, attaches to the state already in the cluster, and applies - the same
+ phases as ignition minus `hypervisor` and `migrate`, plus `take-over` in front.
+ 
+@@ -330,7 +330,7 @@ the same reason: the output is most useful exactly when somebody wants to paste
+ it somewhere. The saved plan file is removed by the phase that made it, and
+ listed in Sterilize for the run that dies first.
+ 
+-**Tearing it down is `contractor demolish`**, run directly for the same
++**Tearing it down is `contractor demolish-site`**, run directly for the same
+ signal-handling reason `start` is. It renders the config first, which is the
+ credential check rather than a formality - no 1Password session means no
+ Proxmox token and no hypervisor endpoint, so the command is inert in the
+@@ -367,7 +367,7 @@ so an empty field does not fail Render at all — it surfaces much later inside
+ provider as something like "credentials are empty", naming no field.
+ 
+ **Agent commits are published with `task push`** (`scripts/signedpush`), which
+-is beside break-ground and never inside it — different job, different blast radius,
++is beside build-site and never inside it — different job, different blast radius,
+ and a bug in a push tool has no business living in the binary that can destroy
+ the estate. Both are zero-dependency Go for the same reason: this one reads
+ the GitHub App private key, so a supply chain that reaches it can mint tokens
+diff --git a/docs/ideas.md b/docs/ideas.md
+index af43296..abe28ed 100644
+--- a/docs/ideas.md
++++ b/docs/ideas.md
+@@ -42,7 +42,7 @@ once it's actually being worked on.
+   this is a real CI restructure (new egress allowlists per job, a rewrite
+   of the CI section in the root `CLAUDE.md`), not a small tweak.
+ 
+-- **Give break-ground a supported teardown, and an honest name for `-keep-on-failure`.**
++- **Give build-site a supported teardown, and an honest name for `-keep-on-failure`.**
+   Two related gaps, both found while building the test tiers. First: a
+   successful single-phase run sterilizes the workspace on the way out
+   (`main.go`'s "belt and braces" block), which means `task render-secrets`
+@@ -102,7 +102,7 @@ once it's actually being worked on.
+   the point. So the risk worth guarding is destroying the _wrong_ estate, not
+   destroying one at all, and the two remaining guards already address exactly
+   that: a build tag, and the site named twice - the same thing
+-  `contractor demolish` asks of a human.
++  `contractor demolish-site` asks of a human.
+ 
+   It stays absent from CI. A destructive nuke-and-pave should not be one
+   dropdown selection away in a web UI, and that is unchanged.
+diff --git a/docs/state-and-secret-rotation.md b/docs/state-and-secret-rotation.md
+index d58bacf..7472d50 100644
+--- a/docs/state-and-secret-rotation.md
++++ b/docs/state-and-secret-rotation.md
+@@ -256,7 +256,7 @@ do, which is where the work is:
+ Because of (3), the honest sequencing for a suspected state leak is: rotate
+ everything in Layer 2 first, then decide whether the Talos PKI rotation is
+ warranted, and if it is, treat rebuilding the cluster from scratch as a
+-serious alternative. `contractor demolish` followed by a fresh ignition is well
++serious alternative. `contractor demolish-site` followed by a fresh ignition is well
+ tested, fully automated, and takes less time than a careful CA rotation — and
+ it leaves nothing behind to be uncertain about.
+ 
+@@ -407,7 +407,7 @@ task check-inventory SITE=site0
+ #    state in a cluster; there is no cluster yet. Ignition finds the restored
+ #    state locally, refreshes it, sees that the VMs it describes are gone, and
+ #    plans to create them.
+-./toolshed/contractor break-ground -site site0
++./toolshed/contractor build-site -site site0
+ ```
+ 
+ **Restoring first is what makes it the same estate rather than a new one.** A
+diff --git a/docs/tailnet-setup.md b/docs/tailnet-setup.md
+index 0f45594..384e861 100644
+--- a/docs/tailnet-setup.md
++++ b/docs/tailnet-setup.md
+@@ -28,8 +28,8 @@ existing rules do.
+     // The development workstation. Tagged rather than left owned by whoever
+     // enrolled it, because a user-owned device's node key expires - 180 days
+     // by default - and it then leaves the tailnet silently. A workstation that
+-    // drops off cannot reach the hypervisor, and every local `break-ground` or
+-    // `demolish` hangs on a provider call with no error, which is a failure
++    // drops off cannot reach the hypervisor, and every local `build-site` or
++    // `demolish-site` hangs on a provider call with no error, which is a failure
+     // that has already cost a day once.
+     //
+     // Deliberately not the router tag. That tag is what autoApprovers trusts
+diff --git a/management/cluster/variables.tf b/management/cluster/variables.tf
+index 3cd85c0..265912b 100644
+--- a/management/cluster/variables.tf
++++ b/management/cluster/variables.tf
+@@ -421,7 +421,7 @@ locals {
+   #
+   # Bumped here rather than later because #97: a Talos image change cannot reach
+   # a running estate, so a rebuild is the only delivery mechanism there is. This
+-  # branch is merged between a demolish and a break-ground, which is the only
++  # branch is merged between a demolish and a build-site, which is the only
+   # window in which this costs nothing.
+   talos_version = "v1.13.9"
+ 
+@@ -443,7 +443,7 @@ locals {
+   # above: #97 means an image change cannot reach a running estate, and
+   # changing the control plane's Kubernetes version on a live cluster is an
+   # upgrade rather than an apply - epoch 05's work, not epoch 01's. This
+-  # branch is merged between a demolish and a break-ground, which is the only
++  # branch is merged between a demolish and a build-site, which is the only
+   # window in which it costs nothing. Ignite on 1.31 and the estate carries an
+   # out-of-support control plane until epoch 05 exists to move it.
+   #
+diff --git a/scripts/contractor/failure_report_test.go b/scripts/contractor/failure_report_test.go
+index 904556f..93a66a4 100644
+--- a/scripts/contractor/failure_report_test.go
++++ b/scripts/contractor/failure_report_test.go
+@@ -14,7 +14,7 @@ import (
+ // and a revert is exact.
+ func TestPreexistingFailure_UntouchedGetsItsOwnExitCode(t *testing.T) {
+ 	ctx := &run.Context{Site: "site0"}
+-	if got := reportPreexistingFailure(ctx, "converge"); got != exitUntouched {
++	if got := reportPreexistingFailure(ctx, "converge-site"); got != exitUntouched {
+ 		t.Fatalf("got exit %d, want %d for a run that never attached", got, exitUntouched)
+ 	}
+ }
+@@ -24,7 +24,7 @@ func TestPreexistingFailure_UntouchedGetsItsOwnExitCode(t *testing.T) {
+ // for anything automating on this.
+ func TestPreexistingFailure_CannotTellIsTreatedAsChanged(t *testing.T) {
+ 	ctx := &run.Context{Site: "site0", TakenOverOK: true, ClusterDir: t.TempDir()}
+-	if got := reportPreexistingFailure(ctx, "converge"); got != exitMayHaveChanged {
++	if got := reportPreexistingFailure(ctx, "converge-site"); got != exitMayHaveChanged {
+ 		t.Fatalf("got exit %d, want %d when the estate's state could not be read", got, exitMayHaveChanged)
+ 	}
+ }
+diff --git a/scripts/contractor/internal/phases/destroy_test.go b/scripts/contractor/internal/phases/destroy_test.go
+index 74572db..1c41917 100644
+--- a/scripts/contractor/internal/phases/destroy_test.go
++++ b/scripts/contractor/internal/phases/destroy_test.go
+@@ -121,7 +121,7 @@ func TestMachinesInStateOnEmptyStateReportsNone(t *testing.T) {
+ // different one from being shown what will go (#213).
+ //
+ // The irreversible line in that list is the object storage. The machines are
+-// disposable and come back from a break-ground; the age-encrypted state dumps
++// disposable and come back from a build-site; the age-encrypted state dumps
+ // do not, and the teardown empties the bucket because Cloudflare will not
+ // delete a non-empty one (#94).
+ func TestTheTeardownNamesTheObjectStorageBeforeEmptyingIt(t *testing.T) {
+diff --git a/scripts/contractor/internal/phases/health.go b/scripts/contractor/internal/phases/health.go
+index b3afdd1..821d75d 100644
+--- a/scripts/contractor/internal/phases/health.go
++++ b/scripts/contractor/internal/phases/health.go
+@@ -160,7 +160,7 @@ This is NOT a verdict about the cluster. Nothing was measured, so nothing is
+ known - the estate may be perfectly well. Install %s where this runs, then
+ re-run from here:
+ 
+-    ./toolshed/contractor break-ground -site %s -from health`,
++    ./toolshed/contractor build-site -site %s -from health`,
+ 				what, missing.Tool, missing.Why, missing.Tool, ctx.Site)
+ 		}
+ 
+@@ -173,7 +173,7 @@ The cluster is still running and its state is still local, so nothing has been
+ lost - this phase refuses to continue rather than migrating state into a
+ degraded cluster. Look at what is listed above, then re-run from here:
+ 
+-    ./toolshed/contractor break-ground -site %s -from health`, what, timeout, last, ctx.Site)
++    ./toolshed/contractor build-site -site %s -from health`, what, timeout, last, ctx.Site)
+ 		}
+ 		// Say it when it changes, and once a minute otherwise.
+ 		//
+diff --git a/scripts/contractor/internal/phases/pendingdeploys_test.go b/scripts/contractor/internal/phases/pendingdeploys_test.go
+index 61a991b..8bd944c 100644
+--- a/scripts/contractor/internal/phases/pendingdeploys_test.go
++++ b/scripts/contractor/internal/phases/pendingdeploys_test.go
+@@ -138,7 +138,7 @@ func pointAt(t *testing.T, url, slug string) func() {
+ 
+ // A run the listing calls queued and GitHub calls finished is not a hazard.
+ //
+-// THE RUN THAT PRODUCED THIS. break-ground refused to start:
++// THE RUN THAT PRODUCED THIS. build-site refused to start:
+ //
+ //	[FAIL] HALTED: 5 deploy run(s) would converge site0 during this ignition.
+ //	  #152 (main, pending) - gh run cancel 34532646382
+diff --git a/scripts/contractor/internal/phases/restore.go b/scripts/contractor/internal/phases/restore.go
+index 4346267..b612396 100644
+--- a/scripts/contractor/internal/phases/restore.go
++++ b/scripts/contractor/internal/phases/restore.go
+@@ -132,7 +132,7 @@ the estate was torn down, which deletes the bucket and everything in it`, key, e
+   What usually comes next:
+ 
+     tofu -chdir=management/cluster plan   # see how far reality has drifted
+-    ./toolshed/contractor demolish -site %s -confirm %s
++    ./toolshed/contractor demolish-site -site %s -confirm %s
+ 
+ `, summary.Resources, ctx.Site, ctx.Site)
+ 	return nil
+diff --git a/scripts/contractor/internal/run/exec.go b/scripts/contractor/internal/run/exec.go
+index 1867676..21849b5 100644
+--- a/scripts/contractor/internal/run/exec.go
++++ b/scripts/contractor/internal/run/exec.go
+@@ -495,7 +495,7 @@ If it complained that a locked provider does not match its version
+ constraint, the committed lock file is behind management/cluster/versions.tf.
+ Re-resolve and commit the result:
+ 
+-    ./contractor break-ground -phase overlay -upgrade
++    ./contractor build-site -phase overlay -upgrade
+     git add management/cluster/.terraform.lock.hcl && git commit`, err)
+ 	}
+ 	return fmt.Errorf("tofu init -upgrade failed: %w", err)
+diff --git a/scripts/contractor/main.go b/scripts/contractor/main.go
+index e3db109..f508ae9 100644
+--- a/scripts/contractor/main.go
++++ b/scripts/contractor/main.go
+@@ -60,29 +60,39 @@ func repoRoot() string {
+ // of merely refused: each verb registers only the flags that mean something
+ // for it, so `contractor restore -phase compute` fails on an undefined flag
+ // before any of this code runs.
+-var knownVerbs = []string{"break-ground", "converge", "plan", "demolish", "restore", "kubeconfig", "talosconfig", "check-inventory", "survey"}
++// retiredVerbs are the old names, answered with the new one rather than with
++// "unknown verb". break-ground and demolish said how the work felt, not what
++// it built or took down; they became build-site and demolish-site when the
++// estate got a build of its own (docs/epochs/02-abstraction.md).
++var retiredVerbs = map[string]string{
++	"break-ground": "build-site",
++	"demolish":     "demolish-site",
++	"converge":     "converge-site",
++}
++
++var knownVerbs = []string{"build-site", "converge-site", "plan", "demolish-site", "restore", "kubeconfig", "talosconfig", "check-inventory", "survey"}
+ 
+ const usage = `contractor manages the lifecycle of a site.
+ 
+ usage: contractor <verb> [flags]
+ 
+ verbs:
+-  break-ground Build a site that does not exist yet. Local-only: it creates
+-               the cluster that later converges run inside.
+-  converge     Apply the config to a site that already exists, taking over
+-               the state in its cluster. Never destroys on failure.
+-  plan         Show what a converge would change, and change nothing. Reports
+-               addresses and actions only, never a value.
+-  demolish     Tear a site down, then wipe the workspace. Requires -confirm.
+-  restore      Bring the age-encrypted state back from object storage.
+-  kubeconfig   Write this site's kubeconfig into the workspace and exit, or
+-               run a command with one that lives only that long: put the
+-               command after --. Everything before it runs once per
+-               invocation, so several checks belong in a single call:
+-                 contractor kubeconfig -site site0 -- \
+-                   bash -c 'kubectl get nodes; kubectl get ds -A'
+-  talosconfig  Run a command against this site's machines with a talosconfig
+-               that lives only as long as the command.
++  build-site     Build a site that does not exist yet. Local-only: it creates
++                 the cluster that later converges run inside.
++  converge-site  Apply the config to a site that already exists, taking over
++                 the state in its cluster. Never destroys on failure.
++  plan           Show what a converge would change, and change nothing. Reports
++                 addresses and actions only, never a value.
++  demolish-site  Tear a site down, then wipe the workspace. Requires -confirm.
++  restore        Bring the age-encrypted state back from object storage.
++  kubeconfig     Write this site's kubeconfig into the workspace and exit, or
++                 run a command with one that lives only that long: put the
++                 command after --. Everything before it runs once per
++                 invocation, so several checks belong in a single call:
++                   contractor kubeconfig -site site0 -- \
++                     bash -c 'kubectl get nodes; kubectl get ds -A'
++  talosconfig    Run a command against this site's machines with a talosconfig
++                 that lives only as long as the command.
+   check-inventory  Prove every op:// reference in the config template resolves.
+   survey       Walk the overlay from here and report what answers. A surveyor
+                checks the ground before anybody builds on it; this one probes
+@@ -102,6 +112,10 @@ func main() {
+ 		fmt.Print(usage)
+ 		return
+ 	}
++	if renamed, ok := retiredVerbs[verb]; ok {
++		fmt.Fprintf(os.Stderr, "%q is now %q: verbs are named for the scope they build or tear down - an estate, a site.\n", verb, renamed)
++		os.Exit(2)
++	}
+ 	if !slices.Contains(knownVerbs, verb) {
+ 		fmt.Fprintf(os.Stderr, "unknown verb %q\n\n%s", verb, usage)
+ 		os.Exit(2)
+@@ -125,7 +139,7 @@ func main() {
+ 	upgrade, skipOverlay, skipUpgrade := o.upgrade, o.skipOverlay, o.skipUpgrade
+ 	dryRun := o.dryRun
+ 	keepOnFailure, whatIf := o.keepOnFailure, o.whatIf
+-	converge := verb == "converge"
++	converge := verb == "converge-site"
+ 	toRun, err := selectPhases(deref(phase), deref(from), verb)
+ 	if err != nil {
+ 		fmt.Fprintln(os.Stderr, "error:", err)
+@@ -135,7 +149,7 @@ func main() {
+ 		toRun = slices.DeleteFunc(toRun, func(p string) bool { return p == "overlay" })
+ 	}
+ 
+-	if on(whatIf) && verb == "demolish" {
++	if on(whatIf) && verb == "demolish-site" {
+ 		fmt.Printf(`
+ Would destroy site %q:
+ 
+@@ -222,7 +236,7 @@ Nothing has been touched. Re-run without -whatif to do it.
+ 		}
+ 	}
+ 
+-	if verb == "demolish" {
++	if verb == "demolish-site" {
+ 		os.Exit(runDestroy(ctx, deref(confirm)))
+ 	}
+ 
+@@ -344,14 +358,14 @@ Nothing has been touched. Re-run without -whatif to do it.
+ 	// told, leaving the estate unverified and a broken monitoring stack
+ 	// unnoticed (#461). A landmine check that stops a run which cannot step on
+ 	// one is not caution; it is an outage with a tidy message.
+-	if verb == "break-ground" && buildsMachines(toRun) {
++	if verb == "build-site" && buildsMachines(toRun) {
+ 		run.Info("surveying the ground ...")
+ 		if err := phases.CheckBreakGroundPreconditions(ctx.Site); err != nil {
+ 			fmt.Println()
+ 			run.Fail("HALTED: " + err.Error())
+ 			os.Exit(exitUntouched)
+ 		}
+-	} else if verb == "break-ground" {
++	} else if verb == "build-site" {
+ 		run.Info("no machines are built by this run, so nothing is waiting to fire into it")
+ 	}
+ 
+@@ -561,7 +575,7 @@ func selectPhases(phase, from, verb string) ([]string, error) {
+ 	// somebody ask for a phase that cannot happen.
+ 	seq := phases.AllPhases
+ 	switch verb {
+-	case "converge":
++	case "converge-site":
+ 		seq = phases.ConvergePhases
+ 	case "plan":
+ 		seq = phases.PlanPhases
+@@ -686,7 +700,7 @@ func runInterruptibly(ctx *run.Context, toRun []string) error {
+ //
+ // Which flags exist is the safety property that standaloneFlagsOK used to
+ // enforce by hand. A verb that has no phases does not define -phase, so
+-// `contractor demolish -phase verify` - a command somebody could read as "destroy,
++// `contractor demolish-site -phase verify` - a command somebody could read as "destroy,
+ // but only the safe part" - fails on an undefined flag instead of being
+ // interpreted. Refusing a combination and being unable to express it are
+ // different guarantees, and this is the second one.
+@@ -707,7 +721,7 @@ func flagsFor(verb string) *opts {
+ 
+ 	// Only ignite and converge run a sequence of phases, so only they can be
+ 	// asked to run part of one.
+-	if verb == "break-ground" || verb == "converge" || verb == "plan" {
++	if verb == "build-site" || verb == "converge-site" || verb == "plan" {
+ 		o.phase = fs.String("phase", "", "Run a single phase instead of all of them.")
+ 		o.from = fs.String("from", "", "Start at this phase and run everything after it.")
+ 		o.upgrade = fs.Bool("upgrade", false, "Re-resolve providers against the version constraints instead of the committed lock file.")
+@@ -725,7 +739,7 @@ func flagsFor(verb string) *opts {
+ 	// Absent from converge deliberately: a converge never destroys on failure,
+ 	// so there is nothing here to opt out of, and offering the flag would
+ 	// suggest the default is the other way round.
+-	if verb == "break-ground" {
++	if verb == "build-site" {
+ 		o.keepOnFailure = fs.Bool("keep-on-failure", false, "On error, skip the automatic destroy and keep local state for debugging.")
+ 	}
+ 
+@@ -737,7 +751,7 @@ func flagsFor(verb string) *opts {
+ 		o.commentOut = fs.String("comment-out", "", "Write the pull request comment body to this file.")
+ 	}
+ 
+-	if verb == "demolish" {
++	if verb == "demolish-site" {
+ 		o.confirm = fs.String("confirm", "", "Name the site again, to confirm the destroy.")
+ 		o.whatIf = fs.Bool("whatif", false, "Say what would be destroyed, without destroying it.")
+ 	}
+@@ -757,7 +771,7 @@ func on(p *bool) bool { return p != nil && *p }
+ // finds. Split out so the decision is testable per verb rather than inferred
+ // from reading main.
+ func applyDestroyPolicy(ctx *run.Context, verb string) {
+-	ctx.PreexistingEstate = verb != "break-ground"
++	ctx.PreexistingEstate = verb != "build-site"
+ }
+ 
+ // commandAfterDoubleDash returns the argv following a bare "--", which flag
+diff --git a/scripts/contractor/main_test.go b/scripts/contractor/main_test.go
+index e949e7a..8af9f04 100644
+--- a/scripts/contractor/main_test.go
++++ b/scripts/contractor/main_test.go
+@@ -18,7 +18,7 @@ import (
+ // is an orphaned VM or a leaked secret.
+ 
+ func TestSelectPhases_DefaultsToTheFullSequence(t *testing.T) {
+-	got, err := selectPhases("", "", "break-ground")
++	got, err := selectPhases("", "", "build-site")
+ 	if err != nil {
+ 		t.Fatalf("unexpected error: %v", err)
+ 	}
+@@ -32,7 +32,7 @@ func TestSelectPhases_DefaultsToTheFullSequence(t *testing.T) {
+ // shared backing array would let one run's flag mutate the package-level
+ // sequence for everything after it.
+ func TestSelectPhases_DoesNotAliasThePackageSequence(t *testing.T) {
+-	got, err := selectPhases("", "", "break-ground")
++	got, err := selectPhases("", "", "build-site")
+ 	if err != nil {
+ 		t.Fatalf("unexpected error: %v", err)
+ 	}
+@@ -55,7 +55,7 @@ func TestSelectPhases_DoesNotAliasThePackageSequence(t *testing.T) {
+ // What must stay true is that it does not become a full run. Two phases, the
+ // second of which is the one asked for.
+ func TestSelectPhases_SinglePhaseRunsItsPrerequisiteAndNothingElse(t *testing.T) {
+-	got, err := selectPhases("compute", "", "break-ground")
++	got, err := selectPhases("compute", "", "build-site")
+ 	if err != nil {
+ 		t.Fatalf("unexpected error: %v", err)
+ 	}
+@@ -72,7 +72,7 @@ func TestSelectPhases_SinglePhaseRunsItsPrerequisiteAndNothingElse(t *testing.T)
+ // until somebody asks why a teardown pulled credentials out of the vault.
+ func TestSelectPhases_RenderAndSterilizeGainNoPrerequisite(t *testing.T) {
+ 	for _, phase := range []string{"render", "sterilize"} {
+-		got, err := selectPhases(phase, "", "break-ground")
++		got, err := selectPhases(phase, "", "build-site")
+ 		if err != nil {
+ 			t.Fatalf("unexpected error for %q: %v", phase, err)
+ 		}
+@@ -90,9 +90,9 @@ func TestSelectPhases_RenderAndSterilizeGainNoPrerequisite(t *testing.T) {
+ // add a hypervisor with `-phase hypervisor`, and that had never worked.
+ func TestEveryPhaseIsRunnableOnItsOwn(t *testing.T) {
+ 	verbs := map[string][]string{
+-		"break-ground": phases.AllPhases,
+-		"converge":     phases.ConvergePhases,
+-		"plan":         phases.PlanPhases,
++		"build-site":    phases.AllPhases,
++		"converge-site": phases.ConvergePhases,
++		"plan":          phases.PlanPhases,
+ 	}
+ 	for verb, seq := range verbs {
+ 		for _, phase := range seq {
+@@ -119,7 +119,7 @@ cannot fix that by rendering separately.`, verb, phase, got)
+ }
+ 
+ func TestSelectPhases_FromIsInclusiveAndRunsToTheEnd(t *testing.T) {
+-	got, err := selectPhases("", "migrate", "break-ground")
++	got, err := selectPhases("", "migrate", "build-site")
+ 	if err != nil {
+ 		t.Fatalf("unexpected error: %v", err)
+ 	}
+@@ -133,7 +133,7 @@ func TestSelectPhases_FromIsInclusiveAndRunsToTheEnd(t *testing.T) {
+ // is the boundary case where an off-by-one would silently skip Render and
+ // leave every later phase reading a config that was never written.
+ func TestSelectPhases_FromTheFirstPhaseIsTheWholeSequence(t *testing.T) {
+-	got, err := selectPhases("", phases.AllPhases[0], "break-ground")
++	got, err := selectPhases("", phases.AllPhases[0], "build-site")
+ 	if err != nil {
+ 		t.Fatalf("unexpected error: %v", err)
+ 	}
+@@ -144,7 +144,7 @@ func TestSelectPhases_FromTheFirstPhaseIsTheWholeSequence(t *testing.T) {
+ 
+ func TestSelectPhases_FromTheLastPhaseIsJustThatPhase(t *testing.T) {
+ 	last := phases.AllPhases[len(phases.AllPhases)-1]
+-	got, err := selectPhases("", last, "break-ground")
++	got, err := selectPhases("", last, "build-site")
+ 	if err != nil {
+ 		t.Fatalf("unexpected error: %v", err)
+ 	}
+@@ -157,7 +157,7 @@ func TestSelectPhases_FromTheLastPhaseIsJustThatPhase(t *testing.T) {
+ // choice to pin: the alternative reading (run -from, ignore -phase) would
+ // turn a command someone believed was a single safe step into a full run.
+ func TestSelectPhases_PhaseWinsOverFrom(t *testing.T) {
+-	got, err := selectPhases("verify", "render", "break-ground")
++	got, err := selectPhases("verify", "render", "build-site")
+ 	if err != nil {
+ 		t.Fatalf("unexpected error: %v", err)
+ 	}
+@@ -171,7 +171,7 @@ func TestSelectPhases_UnknownNamesAreRejectedAndListTheValidOnes(t *testing.T) {
+ 		{"nope", ""},
+ 		{"", "nope"},
+ 	} {
+-		_, err := selectPhases(tc.phase, tc.from, "break-ground")
++		_, err := selectPhases(tc.phase, tc.from, "build-site")
+ 		if err == nil {
+ 			t.Errorf("selectPhases(%q, %q): expected an error", tc.phase, tc.from)
+ 			continue
+@@ -189,7 +189,7 @@ func TestSelectPhases_UnknownNamesAreRejectedAndListTheValidOnes(t *testing.T) {
+ // "Compute" would create infrastructure from what the operator typed rather
+ // than from what the program documents.
+ func TestSelectPhases_IsCaseSensitive(t *testing.T) {
+-	if _, err := selectPhases("Compute", "", "break-ground"); err == nil {
++	if _, err := selectPhases("Compute", "", "build-site"); err == nil {
+ 		t.Error("expected -phase Compute to be rejected; the documented names are lower-case")
+ 	}
+ }
+@@ -198,7 +198,7 @@ func TestSelectPhases_IsCaseSensitive(t *testing.T) {
+ // exist at all. A command reading "destroy, but only the verify phase" would be
+ // understood by somebody as a safe thing to run, so it must not parse.
+ func TestFlagsFor_VerbsWithoutPhasesDoNotDefinePhaseSelectors(t *testing.T) {
+-	for _, verb := range []string{"demolish", "restore", "kubeconfig", "check-inventory"} {
++	for _, verb := range []string{"demolish-site", "restore", "kubeconfig", "check-inventory"} {
+ 		o := flagsFor(verb)
+ 		for _, name := range []string{"phase", "from"} {
+ 			if o.fs.Lookup(name) != nil {
+@@ -212,7 +212,7 @@ func TestFlagsFor_VerbsWithoutPhasesDoNotDefinePhaseSelectors(t *testing.T) {
+ }
+ 
+ func TestFlagsFor_SequencedVerbsDefinePhaseSelectors(t *testing.T) {
+-	for _, verb := range []string{"break-ground", "converge"} {
++	for _, verb := range []string{"build-site", "converge-site"} {
+ 		o := flagsFor(verb)
+ 		for _, name := range []string{"phase", "from", "whatif"} {
+ 			if o.fs.Lookup(name) == nil {
+@@ -226,10 +226,10 @@ func TestFlagsFor_SequencedVerbsDefinePhaseSelectors(t *testing.T) {
+ // -keep-on-failure to opt out of. Offering it would imply the default is the
+ // other way round, which is the opposite of true.
+ func TestFlagsFor_ConvergeHasNoKeepOnFailure(t *testing.T) {
+-	if flagsFor("converge").fs.Lookup("keep-on-failure") != nil {
++	if flagsFor("converge-site").fs.Lookup("keep-on-failure") != nil {
+ 		t.Error("converge defines -keep-on-failure, implying it might destroy on failure; it never does")
+ 	}
+-	if flagsFor("break-ground").fs.Lookup("keep-on-failure") == nil {
++	if flagsFor("build-site").fs.Lookup("keep-on-failure") == nil {
+ 		t.Error("ignite does not define -keep-on-failure, so a failed run cannot be kept for debugging")
+ 	}
+ }
+@@ -237,10 +237,10 @@ func TestFlagsFor_ConvergeHasNoKeepOnFailure(t *testing.T) {
+ // -confirm belongs to destroy alone. Anywhere else it would be a flag that
+ // reads like a safety check and does nothing.
+ func TestFlagsFor_ConfirmBelongsToDestroyOnly(t *testing.T) {
+-	if flagsFor("demolish").fs.Lookup("confirm") == nil {
++	if flagsFor("demolish-site").fs.Lookup("confirm") == nil {
+ 		t.Fatal("destroy does not define -confirm, so the typo guard is gone")
+ 	}
+-	for _, verb := range []string{"break-ground", "converge", "restore", "kubeconfig", "check-inventory"} {
++	for _, verb := range []string{"build-site", "converge-site", "restore", "kubeconfig", "check-inventory"} {
+ 		if flagsFor(verb).fs.Lookup("confirm") != nil {
+ 			t.Errorf("verb %q defines -confirm, which would read as a safety check while doing nothing", verb)
+ 		}
+@@ -261,7 +261,7 @@ func TestFlagsFor_EveryVerbTakesASite(t *testing.T) {
+ // run migrate, whose -force-copy would overwrite that state with whatever this
+ // workspace happened to hold.
+ func TestSelectPhases_ConvergeNeverMigrates(t *testing.T) {
+-	got, err := selectPhases("", "", "converge")
++	got, err := selectPhases("", "", "converge-site")
+ 	if err != nil {
+ 		t.Fatalf("unexpected error: %v", err)
+ 	}
+@@ -280,10 +280,10 @@ func TestSelectPhases_ConvergeNeverMigrates(t *testing.T) {
+ // either against the wrong sequence would let somebody ask for a phase that
+ // cannot happen in the run they are actually starting.
+ func TestSelectPhases_SequencesDoNotLeak(t *testing.T) {
+-	if _, err := selectPhases("take-over", "", "break-ground"); err == nil {
++	if _, err := selectPhases("take-over", "", "build-site"); err == nil {
+ 		t.Error("ignition accepted -phase take-over, which only exists in a converge")
+ 	}
+-	if _, err := selectPhases("migrate", "", "converge"); err == nil {
++	if _, err := selectPhases("migrate", "", "converge-site"); err == nil {
+ 		t.Error("converge accepted -phase migrate, which would overwrite the estate's state")
+ 	}
+ }
+@@ -291,7 +291,7 @@ func TestSelectPhases_SequencesDoNotLeak(t *testing.T) {
+ // Ignition ends by sterilizing, and so must a converge: the workstation should
+ // hold no state and no secrets afterwards either way.
+ func TestSelectPhases_ConvergeStillSterilizes(t *testing.T) {
+-	got, err := selectPhases("", "", "converge")
++	got, err := selectPhases("", "", "converge-site")
+ 	if err != nil {
+ 		t.Fatalf("unexpected error: %v", err)
+ 	}
+@@ -336,7 +336,7 @@ func TestPreexistingEstate_OnlyIgniteMayDestroy(t *testing.T) {
+ 		ctx := run.NewContext(t.TempDir(), "site0")
+ 		applyDestroyPolicy(ctx, verb)
+ 
+-		if verb == "break-ground" {
++		if verb == "build-site" {
+ 			if ctx.PreexistingEstate {
+ 				t.Error("ignite cannot clean up after itself; a half-finished ignition would leave VMs nothing tracks")
+ 			}
+@@ -375,7 +375,7 @@ func TestCompletionMessage_MeasuresAgainstTheRightSequence(t *testing.T) {
+ // inside the cluster being built and a queued job would acquire it partway
+ // through. A run that creates nothing gives it nothing to fire into.
+ //
+-// Keyed on the verb instead, it refused `break-ground -phase render`, which is
++// Keyed on the verb instead, it refused `build-site -phase render`, which is
+ // how the test tiers get a config to read - and the nightly integration tier
+ // then died at setup every night for a week, unnoticed, leaving the estate
+ // unverified (#461).
+@@ -391,7 +391,7 @@ func TestOnlyARunThatBuildsMachinesIsGatedOnQueuedDeploys(t *testing.T) {
+ 		{"the compute phase itself", "compute", true},
+ 	} {
+ 		t.Run(tc.name, func(t *testing.T) {
+-			toRun, err := selectPhases(tc.phase, "", "break-ground")
++			toRun, err := selectPhases(tc.phase, "", "build-site")
+ 			if err != nil {
+ 				t.Fatalf("selecting phases: %v", err)
+ 			}
+diff --git a/taskfile.yml b/taskfile.yml
+index 93d3b60..80996fc 100644
+--- a/taskfile.yml
++++ b/taskfile.yml
+@@ -22,28 +22,28 @@ vars:
+ 
+ tasks:
+   build:
+-    desc: "Build the break-ground binary"
++    desc: "Build the contractor binary"
+     cmds:
+       - go build -C scripts/contractor -o ../../toolshed/contractor .
+ 
+   start:
+-    desc: "Builds break-ground, then tells you to run it directly - see comment"
+-    # This does not exec break-ground itself, on purpose. `task` intercepts SIGINT
++    desc: "Builds the contractor, then tells you to run it directly - see comment"
++    # This does not exec build-site itself, on purpose. `task` intercepts SIGINT
+     # for itself but does not proxy it to the subprocess it's supervising -
+     # a confirmed, currently-open upstream limitation
+     # (github.com/go-task/task/issues/1408). A Ctrl-C aimed at `task start`
+-    # can kill break-ground before its own signal handler ever runs, which is
+-    # exactly what leaves VMs orphaned instead of destroyed. break-ground's
++    # can kill build-site before its own signal handler ever runs, which is
++    # exactly what leaves VMs orphaned instead of destroyed. build-site's
+     # destroy-then-sterilize cleanup on interrupt only works when something
+     # actually delivers it the signal - which means running the binary
+-    # yourself, not through task. Every other break-ground-invoking task below is
++    # yourself, not through task. Every other contractor-invoking task below is
+     # safe to wrap because none of them can reach the Compute phase, so an
+     # interrupted one leaves stale secrets at worst - recoverable with
+     # `task clean-secrets` - never an orphaned VM.
+     cmds:
+       - task: build
+       - 'echo "Built. Run directly so Ctrl-C can safely destroy and sterilize:"'
+-      - 'echo "  ./toolshed/contractor break-ground -site {{.SITE}}"'
++      - 'echo "  ./toolshed/contractor build-site -site {{.SITE}}"'
+ 
+   plan:
+     desc: "Show what a converge would change, without changing it"
+@@ -58,14 +58,14 @@ tasks:
+     desc: "Apply the config to an estate that already exists"
+     # Safe to wrap, unlike start, and for a reason that is worth stating
+     # rather than assumed. start is unwrapped because an interrupted ignition
+-    # can leave VMs nothing is tracking, and only break-ground's own signal handler
++    # can leave VMs nothing is tracking, and only build-site's own signal handler
+     # destroys them. A converge cannot reach that state: the estate already
+-    # exists, its state already lives in Postgres, and break-ground never destroys
++    # exists, its state already lives in Postgres, and build-site never destroys
+     # on failure or interrupt in this mode. An interrupted converge leaves a
+     # running estate and a state file that still describes it.
+     cmds:
+       - task: build
+-      - ./toolshed/contractor converge -site {{.SITE}}
++      - ./toolshed/contractor converge-site -site {{.SITE}}
+ 
+   phases:
+     desc: "List the phases an ignition would run, without running them"
+@@ -74,7 +74,7 @@ tasks:
+     # estate". The second is the one anybody means by "plan".
+     cmds:
+       - task: build
+-      - ./toolshed/contractor break-ground -site {{.SITE}} -whatif
++      - ./toolshed/contractor build-site -site {{.SITE}} -whatif
+ 
+   render-secrets:
+     desc: "Prove every template renders from 1Password, then wipe what it wrote"
+@@ -94,7 +94,7 @@ tasks:
+     # question - do the references resolve - without pulling a single value.
+     cmds:
+       - task: build
+-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase render
++      - ./toolshed/contractor build-site -site {{.SITE}} -phase render
+ 
+   push:
+     desc: "Publish the current branch as GitHub-signed commits"
+@@ -223,13 +223,13 @@ tasks:
+     desc: "Check the network path to the hypervisor and the SDN gateway"
+     cmds:
+       - task: build
+-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase verify
++      - ./toolshed/contractor build-site -site {{.SITE}} -phase verify
+ 
+   configure-hypervisor:
+     desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
+     cmds:
+       - task: build
+-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase hypervisor
++      - ./toolshed/contractor build-site -site {{.SITE}} -phase hypervisor
+ 
+   check-hypervisor:
+     desc: "Dry-run the playbook: show what would change, change nothing"
+@@ -248,13 +248,13 @@ tasks:
+     # refuses a play that matched nothing.
+     cmds:
+       - task: build
+-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase hypervisor -check
++      - ./toolshed/contractor build-site -site {{.SITE}} -phase hypervisor -check
+ 
+   backup-state:
+     desc: "Encrypt the current state and push it to Cloudflare R2"
+     cmds:
+       - task: build
+-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase backup
++      - ./toolshed/contractor build-site -site {{.SITE}} -phase backup
+ 
+   apply-patches:
+     desc: "Apply every outstanding handover patch, or none of them"
+@@ -732,25 +732,25 @@ tasks:
+       - codespell
+ 
+   destroy:
+-    desc: "Builds break-ground, then tells you how to tear a site down - see comment"
++    desc: "Builds the contractor, then tells you how to tear a site down - see comment"
+     # Same shape as `start`, and for the same reason: this reaches real
+     # infrastructure, and `task` intercepts Ctrl-C without proxying it to the
+     # process it supervises (go-task/task#1408). An interrupted destroy that
+     # never received the signal cannot wait for tofu to release its state
+     # lock, which is precisely how a half-finished teardown turns into VMs
+-    # nothing is tracking. Every other break-ground-wrapped task here is safe to
++    # nothing is tracking. Every other contractor-wrapped task here is safe to
+     # exec directly because none of them can reach real infrastructure; this
+     # one can, so it prints the command instead of running it.
+     cmds:
+       - task: build
+       - 'echo "Built. Run directly so Ctrl-C can wait for tofu to release its lock:"'
+-      - 'echo "  ./toolshed/contractor demolish -site {{.SITE}} -confirm {{.SITE}}"'
++      - 'echo "  ./toolshed/contractor demolish-site -site {{.SITE}} -confirm {{.SITE}}"'
+       - 'echo ""'
+       - 'echo "Add -whatif first if you want to see what that would do."'
+ 
+   kubeconfig:
+     desc: "Write this site's kubeconfig into the workspace, for looking at the cluster"
+-    # Safe to wrap, like every other break-ground task except start and destroy: it
++    # Safe to wrap, like every other build-site task except start and destroy: it
+     # reads one tofu output and writes one file, and can no more reach the
+     # Compute phase than `render` can. An interrupted run leaves a credential
+     # on disk at worst, which `task clean-secrets` removes.
+@@ -801,4 +801,4 @@ tasks:
+     desc: "Wipe every rendered secret and the local state file"
+     cmds:
+       - task: build
+-      - ./toolshed/contractor break-ground -site {{.SITE}} -phase sterilize
++      - ./toolshed/contractor build-site -site {{.SITE}} -phase sterilize
+diff --git a/tests/README.md b/tests/README.md
+index 13ea843..106ba53 100644
+--- a/tests/README.md
++++ b/tests/README.md
+@@ -257,14 +257,14 @@ the start button reads. So the setup step is `task render-secrets` and the
+ teardown is `task clean-secrets` - no separate secret plumbing exists for
+ tests, and nothing is left on disk that ignite would not have left there.
+ 
+-> **A wrinkle worth knowing.** `contractor break-ground -phase render` sterilizes the workspace
++> **A wrinkle worth knowing.** `contractor build-site -phase render` sterilizes the workspace
+ > on the way out, which deletes the config it just wrote. Pass
+ > `-keep-on-failure` to stop it:
+-> `./toolshed/contractor break-ground -site site0 -phase render -keep-on-failure`.
++> `./toolshed/contractor build-site -site site0 -phase render -keep-on-failure`.
+ > The flag name describes the failure path rather than this one; see
+ > `docs/ideas.md`.
+ 
+-**Tearing an estate down** is `contractor demolish`, which is what the e2e tier
++**Tearing an estate down** is `contractor demolish-site`, which is what the e2e tier
+ calls and what a human should call. It renders the config first - that is the
+ credential check, not a formality: without a 1Password session there is no
+ Proxmox token and no hypervisor endpoint, so somebody with a terminal and a
+@@ -274,8 +274,8 @@ hold the credentials.
+ 
+ ```sh
+ task destroy SITE=site0     # prints the command; does not run it
+-./toolshed/contractor break-ground -site site0 -destroy -whatif
+-./toolshed/contractor demolish -site site0 -confirm site0
++./toolshed/contractor build-site -site site0 -destroy -whatif
++./toolshed/contractor demolish-site -site site0 -confirm site0
+ ```
+ 
+ ## The backup alarm
+@@ -412,11 +412,11 @@ disposable second estate looked likely. It is not coming, and that guard was
+ not making this tier safer; it was making it unrunnable, which is worse than
+ not having the tier at all. The estate here is disposable by design, so the
+ risk worth guarding is destroying the _wrong_ one, and naming the site twice is
+-exactly what `contractor demolish` asks of a human. See `docs/ideas.md`.
++exactly what `contractor demolish-site` asks of a human. See `docs/ideas.md`.
+ 
+ It covers the whole ignition sequence - Render through Backup, including
+ moving state off local disk into cluster Postgres and pushing an encrypted
+-copy off-site. Teardown runs `contractor demolish`, the same supported entrypoint
++copy off-site. Teardown runs `contractor demolish-site`, the same supported entrypoint
+ a human uses, rather than driving `tofu destroy` itself: a test that tore down
+ its own way would be exercising the test's teardown instead of the one that
+ has to work at 2am.
+diff --git a/tests/coverage-blocklist.yml b/tests/coverage-blocklist.yml
+index ef4554f..9bd7eca 100644
+--- a/tests/coverage-blocklist.yml
++++ b/tests/coverage-blocklist.yml
+@@ -79,7 +79,7 @@ blocked:
+   - integration:openebs # 303
+   - integration:self-hosted # 300
+   - verb:check-inventory # 307
+-  - verb:converge # 299
++  - verb:converge-site # 299
+   - verb:kubeconfig # 305
+   - verb:restore # 298
+   - verb:survey # 308
+diff --git a/tests/go/e2e/ignition_test.go b/tests/go/e2e/ignition_test.go
+index 0e4b0fc..512333f 100644
+--- a/tests/go/e2e/ignition_test.go
++++ b/tests/go/e2e/ignition_test.go
+@@ -21,7 +21,7 @@
+ // There will not be one for years, so that guard did not make this tier safer;
+ // it made it unrunnable. The estate here is disposable by design, and the two
+ // guards above already require the site to be named twice, which is exactly
+-// what `contractor demolish` asks of a human.
++// what `contractor demolish-site` asks of a human.
+ //
+ // # What it covers
+ //
+@@ -30,7 +30,7 @@
+ // off-site. It used to stop before Migrate, because after that point tearing
+ // down means destroying the database holding the only record of what there is
+ // to destroy, and the code that unwinds that lived only on the failure route.
+-// `contractor demolish` is now a supported entrypoint that handles it, so this
++// `contractor demolish-site` is now a supported entrypoint that handles it, so this
+ // tier can cover the part of ignition that was previously untestable - which
+ // is also the part with the most ways to go wrong.
+ //
+@@ -75,7 +75,7 @@ func guard(t *testing.T) string {
+ 	// unrunnable, which is a worse outcome than running it. An untestable test
+ 	// protects nothing.
+ 	//
+-	// What remains is the same shape `contractor demolish` uses and for the same
++	// What remains is the same shape `contractor demolish-site` uses and for the same
+ 	// reason: the site has to be named twice, once to select it and once to
+ 	// confirm it, which is not something that happens by accident. The estate
+ 	// this project builds is disposable by design - re-running ignition
+@@ -107,7 +107,7 @@ func buildIgnite(t *testing.T) {
+ 	require.NoError(t, build.Run(), "building ignite")
+ }
+ 
+-// covers: verb:break-ground
++// covers: verb:build-site
+ func TestIgnitionBuildsAndTearsDownAnEstate(t *testing.T) {
+ 	site := guard(t)
+ 	buildIgnite(t)
+@@ -148,13 +148,13 @@ func TestIgnitionBuildsAndTearsDownAnEstate(t *testing.T) {
+ // test has to say it twice.
+ func teardown(t *testing.T, site string) {
+ 	if err := ignite(t, site, "-destroy", "-confirm", site); err != nil {
+-		t.Errorf(`contractor demolish failed: %v
++		t.Errorf(`contractor demolish-site failed: %v
+ 
+ State and secrets have been left in place on purpose - that is what the
+ destroy path does when it cannot finish, because wiping them is how VMs get
+ orphaned. Check Proxmox by hand, then re-run:
+ 
+-    ./toolshed/contractor demolish -site %s -confirm %s`, err, site, site)
++    ./toolshed/contractor demolish-site -site %s -confirm %s`, err, site, site)
+ 	}
+ }
+ 
+diff --git a/tests/go/e2e/teardown_test.go b/tests/go/e2e/teardown_test.go
+index 9deeab4..4d849d3 100644
+--- a/tests/go/e2e/teardown_test.go
++++ b/tests/go/e2e/teardown_test.go
+@@ -33,7 +33,7 @@ import (
+ // The unit test that shipped with that change asserted the flag was present.
+ // It passed throughout. A test that asserts a change is present is not
+ // coverage; this asserts the property the change broke.
+-// covers: verb:demolish
++// covers: verb:demolish-site
+ func TestDemolishRemovesAnEstateWhoseMachinesAreStopped(t *testing.T) {
+ 	site := guard(t)
+ 	buildIgnite(t)
+diff --git a/tests/go/repo/workstation_overlay_test.go b/tests/go/repo/workstation_overlay_test.go
+index 3fb7f9b..7bbae04 100644
+--- a/tests/go/repo/workstation_overlay_test.go
++++ b/tests/go/repo/workstation_overlay_test.go
+@@ -13,7 +13,7 @@ import (
+ // address that works from inside the cluster as well as outside it (#99). A
+ // devbox on the LAN alone hands that address to the LAN gateway, which
+ // black-holes it - and a provider given an unreachable API does not fail, it
+-// waits. Every local `break-ground` and `demolish` then hangs with no error at
++// waits. Every local `build-site` and `demolish-site` then hangs with no error at
+ // all. That cost a full day before anybody read a route table.
+ //
+ // So the provisioning has to put the machine on the overlay, and has to refuse
+diff --git a/workstation/provision.yml b/workstation/provision.yml
+index 0a9dcde..b1a6bbb 100644
+--- a/workstation/provision.yml
++++ b/workstation/provision.yml
+@@ -53,7 +53,7 @@
+     # cluster as well as outside it - see #99. A devbox on the LAN alone
+     # therefore cannot reach the hypervisor it sits on: it hands the overlay
+     # address to the LAN gateway, which black-holes it, and every provider call
+-    # in `break-ground` and `demolish` waits forever without ever reporting an
++    # in `build-site` and `demolish-site` waits forever without ever reporting an
+     # error. That cost a full day before anybody looked at a route table.
+     #
+     # Tagged rather than user-owned, and the reason is expiry. A device
