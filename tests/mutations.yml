@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 163
+floor: 164
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -180,6 +180,16 @@ mutations:
       is the plausible version of losing the rule: it reads as a harmless
       edit, and it turns "off the control plane" into "only the control
       plane".
+
+  - guard: TestAlertsLandWhereTheEstateDecided
+    file: clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml
+    find: 'alertname = "InfoInhibitor"'
+    replace: 'alertname = "InfoInhibit0r"'
+    mentions: "InfoInhibitor lands on"
+    why: >
+      A route that no longer matches its alert is silent until the alert
+      arrives somewhere it was not meant to - here, Slack, every hour, which
+      is what #532 was. A typo in a matcher is the plausible way to lose it.
 
   - guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
     file: management/cluster/tunnel.tf
@@ -2372,6 +2382,12 @@ unprovable:
   - test: TestTheTrackedEnumerationSeesTheWholeRepository
     reason: meta
   - test: TestEveryUnauthoredPathStillExists
+    reason: meta
+  # Like TestEveryDeclaredRetryStillExists: it checks that each file the
+  # plain-workload guard declares as owned elsewhere still exists, so what it
+  # reads is another guard's declaration list, and that guard's own entry
+  # proves the guard itself.
+  - test: TestEveryPlainWorkloadExemptionNamesARealFile
     reason: meta
   #
   # A pure function whose test table already contains the failing case. The

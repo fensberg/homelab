@@ -243,6 +243,15 @@ spec:
               group_wait: 0s
               group_interval: 12h
               repeat_interval: 12h
+            # InfoInhibitor is the chart's helper, not an alert: it exists to
+            # inhibit info-level alerts and says itself it is not to be acted
+            # on. It carries severity "none", so the info route below misses
+            # it, and it reached Slack every hour, burying real alerts (#532).
+            # Routed nowhere, which is the chart's own documented answer.
+            - matchers:
+                - alertname = "InfoInhibitor"
+              receiver: "nowhere"
+              continue: false
             # Info-level alerts are recorded and not sent. They are the ones
             # the first week exists to survey, and an alert that arrives before
             # anybody has decided it means something is how a channel becomes
