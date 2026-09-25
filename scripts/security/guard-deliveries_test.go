@@ -167,3 +167,17 @@ func TestTheGateRefusesOutsideACheckout(t *testing.T) {
 			"read some other directory's configuration or silently check nothing")
 	}
 }
+
+// A hook in a linked worktree inherits GIT_DIR, which outranks -C: every
+// cached clone then answers with this repository's remote (#488). The
+// variables that locate a repository are dropped; nothing else is.
+func TestAskingAnotherRepositoryDropsWhatLocatesThisOne(t *testing.T) {
+	got := withoutRepositoryLocation([]string{
+		"GIT_DIR=/repo/.git/worktrees/w", "GIT_WORK_TREE=/repo", "GIT_INDEX_FILE=/i",
+		"PATH=/bin", "GIT_AUTHOR_NAME=x",
+	})
+	want := []string{"PATH=/bin", "GIT_AUTHOR_NAME=x"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}

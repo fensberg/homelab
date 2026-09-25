@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -291,7 +292,9 @@ func cachedRepos() ([]string, error) {
 		}
 		dir := filepath.Join(root, e.Name())
 		// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-		remote, err := exec.Command("git", "-C", dir, "remote", "get-url", "origin").Output()
+		cmd := exec.Command("git", "-C", dir, "remote", "get-url", "origin")
+		cmd.Env = withoutRepositoryLocation(os.Environ())
+		remote, err := cmd.Output()
 		if err != nil {
 			// A directory under the cache with no git remote is not a clone
 			// this guard can vouch for. Reported rather than skipped: "I could
@@ -302,4 +305,30 @@ func cachedRepos() ([]string, error) {
 		out = append(out, strings.TrimSpace(string(remote)))
 	}
 	return out, nil
+}
+
+// repositoryLocation is every variable git reads to decide which repository
+// it is in. Each one outranks -C.
+var repositoryLocation = []string{
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_NAMESPACE", "GIT_PREFIX", "GIT_CEILING_DIRECTORIES",
+}
+
+// withoutRepositoryLocation is env without anything that points git at a
+// repository, so `git -C <dir>` asks <dir>.
+//
+// -C is not authoritative. git exports GIT_DIR, as an absolute path, to hooks
+// running in a linked worktree, and it outranks -C - so every cached clone
+// this guard asked answered with this repository's own remote, and a delivery
+// the guard exists to vet was never looked at (#488).
+func withoutRepositoryLocation(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		if !slices.Contains(repositoryLocation, name) {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
