@@ -7,10 +7,12 @@ variable "config_path" {
 locals {
   config = jsondecode(file(var.config_path))
 
-  # The Cloudflare account is the estate.
-  account = local.config.account
+  # Who may enroll a device and what an enrolled device reaches, and the
+  # credential that administers both. Named for the function, not the vendor:
+  # access.provider is the one field that says whose it is.
+  access = local.config.access
 
-  members = [for m in split(",", local.config.members) : trimspace(m) if trimspace(m) != ""]
+  members = [for m in split(",", local.access.members) : trimspace(m) if trimspace(m) != ""]
 
   # Written once, read by both roots.
   tunnel_routes = jsondecode(file("${path.module}/../tunnel-routes.json")).routes

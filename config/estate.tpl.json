@@ -1,12 +1,11 @@
 {
-  "account": {
+  "access": {
     "provider": "cloudflare",
-    "vault_provider": "{{ op://estate/cloudflare/provider }}",
-    "account_id": "{{ op://estate/cloudflare/account_id }}",
-    "api_token": "{{ op://estate/cloudflare/api_token }}"
+    "vault_provider": "{{ op://estate/access/provider }}",
+    "account_id": "{{ op://estate/access/account_id }}",
+    "api_token": "{{ op://estate/access/api_token }}",
+    "members": "{{ op://estate/access/members }}"
   },
-
-  "members": "{{ op://estate/access/members }}",
 
   "state": {
     "bucket": "{{ op://estate/state/bucket }}",

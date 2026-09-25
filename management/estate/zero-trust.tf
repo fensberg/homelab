@@ -4,7 +4,7 @@
 
 # Who may enroll a device. The list is personal data, so it lives in the vault.
 resource "cloudflare_zero_trust_access_policy" "members" {
-  account_id = local.account.account_id
+  account_id = local.access.account_id
   name       = "estate members"
   decision   = "allow"
 
@@ -17,7 +17,7 @@ resource "cloudflare_zero_trust_access_policy" "members" {
 
     precondition {
       condition     = length(local.members) > 0
-      error_message = "members is empty, so this policy would admit nobody and no device could enroll. List the members' emails, comma-separated, in the estate vault's access item."
+      error_message = "members is empty, so this policy would admit nobody and no device could enroll. List the members' emails, comma-separated, in op://estate/access/members."
     }
   }
 }
@@ -31,7 +31,7 @@ resource "cloudflare_zero_trust_access_policy" "members" {
 # creates it only when there is none - in Go, because an import block or a
 # data source fails outright when its target is missing (run.AdoptIfOrphaned).
 resource "cloudflare_zero_trust_access_application" "enrollment" {
-  account_id       = local.account.account_id
+  account_id       = local.access.account_id
   name             = "Warp Login App"
   type             = "warp"
   session_duration = "24h"
@@ -54,7 +54,7 @@ resource "cloudflare_zero_trust_access_application" "enrollment" {
 # One list for the whole account, which is why it is here: two sites each
 # writing it from their own builds would overwrite each other's routes.
 resource "cloudflare_zero_trust_split_tunnel" "estate" {
-  account_id = local.account.account_id
+  account_id = local.access.account_id
   mode       = "include"
 
   dynamic "tunnels" {

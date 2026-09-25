@@ -45,5 +45,5 @@ terraform {
 # device settings. It is not the site's tunnel token, and the site's is not
 # this; the vendor refuses each one what the other owns.
 provider "cloudflare" {
-  api_token = local.account.api_token
+  api_token = local.access.api_token
 }

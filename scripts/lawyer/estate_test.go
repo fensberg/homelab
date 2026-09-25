@@ -59,11 +59,11 @@ func TestEachVerbRefusesTheEstateItWasNotMeantFor(t *testing.T) {
 
 func validConfig() config {
 	var c config
-	c.Account.Provider = "cloudflare"
-	c.Account.VaultProvider = "cloudflare"
-	c.Account.AccountID = "fixture-account"
-	c.Account.APIToken = "fixture-token"
-	c.Members = "someone@example.com"
+	c.Access.Provider = "cloudflare"
+	c.Access.VaultProvider = "cloudflare"
+	c.Access.AccountID = "fixture-account"
+	c.Access.APIToken = "fixture-token"
+	c.Access.Members = "someone@example.com"
 	c.State.Bucket = "example-estate"
 	c.State.AccessKeyID = "fixture-key"
 	c.State.SecretAccessKey = "fixture-secret"
@@ -81,11 +81,11 @@ func TestTheRenderedEstateConfigIsRefusedWhenAFieldIsMissing(t *testing.T) {
 		mutate func(*config)
 		want   string
 	}{
-		{"nobody may enroll", func(c *config) { c.Members = " " }, "access/members"},
+		{"nobody may enroll", func(c *config) { c.Access.Members = " " }, "access/members"},
 		{"no bucket", func(c *config) { c.State.Bucket = "" }, "state/bucket"},
-		{"no token", func(c *config) { c.Account.APIToken = "" }, "cloudflare/api_token"},
-		{"another vendor's item", func(c *config) { c.Account.VaultProvider = "aws" }, "attests a provider"},
-		{"the estate declared for a vendor it does not implement", func(c *config) { c.Account.Provider = "aws" }, "implements cloudflare"},
+		{"no token", func(c *config) { c.Access.APIToken = "" }, "access/api_token"},
+		{"another vendor's item", func(c *config) { c.Access.VaultProvider = "aws" }, "attests a provider"},
+		{"the estate declared for a vendor it does not implement", func(c *config) { c.Access.Provider = "aws" }, "implements cloudflare"},
 	} {
 		cfg := validConfig()
 		c.mutate(&cfg)

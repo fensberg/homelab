@@ -32,14 +32,16 @@ const enrollmentAddress = "cloudflare_zero_trust_access_application.enrollment"
 
 // config is config/estate.rendered.json.
 type config struct {
-	Account struct {
+	// Who may enroll a device and what it reaches, and the credential that
+	// administers both. Named for the function; Provider says whose it is.
+	Access struct {
 		Provider      string `json:"provider"`
 		VaultProvider string `json:"vault_provider"`
 		AccountID     string `json:"account_id"`
 		APIToken      string `json:"api_token"`
-	} `json:"account"`
-	Members string `json:"members"`
-	State   struct {
+		Members       string `json:"members"`
+	} `json:"access"`
+	State struct {
 		Bucket          string `json:"bucket"`
 		AccessKeyID     string `json:"access_key_id"`
 		SecretAccessKey string `json:"secret_access_key"`
@@ -49,16 +51,16 @@ type config struct {
 // validate names the first field that would make a run fail later and further
 // from its cause. Field names only: a value never reaches the log.
 func (c config) validate() error {
-	if c.Account.Provider != "cloudflare" {
-		return fmt.Errorf("account.provider is %q; management/estate/ implements cloudflare", c.Account.Provider)
+	if c.Access.Provider != "cloudflare" {
+		return fmt.Errorf("access.provider is %q; management/estate/ implements cloudflare", c.Access.Provider)
 	}
-	if strings.TrimSpace(c.Account.VaultProvider) != "cloudflare" {
-		return errors.New("the estate vault's cloudflare item attests a provider other than cloudflare, so its credentials may belong to another vendor")
+	if strings.TrimSpace(c.Access.VaultProvider) != "cloudflare" {
+		return errors.New("op://estate/access/provider attests a provider other than cloudflare, so its credentials may belong to another vendor")
 	}
 	for field, v := range map[string]string{
-		"cloudflare/account_id":   c.Account.AccountID,
-		"cloudflare/api_token":    c.Account.APIToken,
-		"access/members":          c.Members,
+		"access/account_id":       c.Access.AccountID,
+		"access/api_token":        c.Access.APIToken,
+		"access/members":          c.Access.Members,
 		"state/bucket":            c.State.Bucket,
 		"state/access_key_id":     c.State.AccessKeyID,
 		"state/secret_access_key": c.State.SecretAccessKey,
@@ -152,7 +154,7 @@ func execute(verb string) error {
 		return err
 	}
 
-	api := cloudflare{account: e.cfg.Account.AccountID, token: e.cfg.Account.APIToken}
+	api := cloudflare{account: e.cfg.Access.AccountID, token: e.cfg.Access.APIToken}
 	if verb == "demolish-estate" {
 		console.Phase("Demolish", "Tear the estate down, once no site stands on it.")
 		live, err := api.liveTunnels()
@@ -247,7 +249,7 @@ func (e *estate) adoptEnrollment(api cloudflare, resources []string) error {
 		return nil
 	}
 	console.Info("adopting the account's enrollment application")
-	return e.run("import", "-input=false", enrollmentAddress, e.cfg.Account.AccountID+"/"+id)
+	return e.run("import", "-input=false", enrollmentAddress, e.cfg.Access.AccountID+"/"+id)
 }
 
 func (e *estate) stateList() ([]string, error) {
@@ -264,7 +266,7 @@ func (e *estate) backendEnv() []string {
 	return append(os.Environ(),
 		"AWS_ACCESS_KEY_ID="+e.cfg.State.AccessKeyID,
 		"AWS_SECRET_ACCESS_KEY="+e.cfg.State.SecretAccessKey,
-		"AWS_ENDPOINT_URL_S3="+cf.R2Endpoint(e.cfg.Account.AccountID),
+		"AWS_ENDPOINT_URL_S3="+cf.R2Endpoint(e.cfg.Access.AccountID),
 	)
 }
 
