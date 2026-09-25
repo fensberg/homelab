@@ -1,12 +1,14 @@
 package phases
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/details/cloudflare"
 )
 
 // Cluster applies the Talos config, bootstraps etcd, and installs Flux.
@@ -56,6 +58,9 @@ func Cluster(ctx *run.Context) error {
 	}
 
 	if err := adoptOrphanedR2Buckets(ctx); err != nil {
+		return err
+	}
+	if err := adoptEnrollmentApp(ctx); err != nil {
 		return err
 	}
 
@@ -161,5 +166,72 @@ func r2BucketExists(acct config.ObjectStorageAccount, bucket string) (bool, erro
 		return false, nil
 	default:
 		return false, fmt.Errorf("querying the R2 bucket: HTTP %d", resp.StatusCode)
+	}
+}
+
+// adoptEnrollmentApp imports the organisation's device-enrollment application
+// when it exists, and leaves OpenTofu to create it when it does not.
+//
+// It was a data source and an import block in tunnel.tf, and that is exactly
+// the shape run.AdoptIfOrphaned exists to avoid: an import block hard-fails
+// when its target is missing, and so does a data source. Both were fine while
+// the application always existed - until a teardown destroyed it, and every
+// OpenTofu command after that failed evaluating the data source, including the
+// bucket import that happened to run first.
+//
+// Found by type rather than by name. Cloudflare allows one `warp` application
+// per organisation, so the type identifies it, and the name stays written once,
+// in tunnel.tf.
+func adoptEnrollmentApp(ctx *run.Context) error {
+	cfg, err := config.LoadRendered(ctx.ConfigRendered)
+	if err != nil {
+		return err
+	}
+	account := cfg.ObjectStorage.AccountID
+	client := &http.Client{Timeout: 15 * time.Second}
+	return run.AdoptIfOrphaned(ctx, config.EnrollmentAppAddress, func() (string, error) {
+		id, err := findEnrollmentApp(client, config.AccessAppsAPIURL(account), cfg.Tunnel.APIToken)
+		if err != nil || id == "" {
+			return "", err
+		}
+		return account + "/" + id, nil
+	})
+}
+
+// findEnrollmentApp returns the id of the account's `warp` Access application,
+// or "" when it has none. Any answer that is not a readable list is an error:
+// "could not tell" must never read as "there is none", because the apply would
+// then try to create a second one and Cloudflare would refuse.
+func findEnrollmentApp(client *http.Client, url, token string) (string, error) {
+	for page := 1; ; page++ {
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s?per_page=100&page=%d", url, page), nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("listing Access applications: %w", err)
+		}
+		var body cloudflare.Answer[[]struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+		}]
+		decodeErr := json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("listing Access applications: HTTP %d", resp.StatusCode)
+		}
+		if decodeErr != nil || !body.Success {
+			return "", fmt.Errorf("listing Access applications: the answer was not a list (%v)", decodeErr)
+		}
+		for _, app := range body.Result {
+			if app.Type == "warp" {
+				return app.ID, nil
+			}
+		}
+		if page >= body.ResultInfo.TotalPages {
+			return "", nil
+		}
 	}
 }

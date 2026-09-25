@@ -133,27 +133,18 @@ resource "cloudflare_zero_trust_access_policy" "members" {
 # Device enrollment is an Access application of type `warp`: enrolling a WARP
 # client is a login to it, and the policy above decides who succeeds.
 #
-# ADOPTED, NEVER CREATED. Cloudflare creates this application along with every
-# Zero Trust organisation and allows only one, so creating it fails with
-# `application_already_exists` - which is how the first converge of this file
-# ended (#453). The organisation's own application is found by the name
-# Cloudflare gives it and imported, so OpenTofu manages the one that exists.
-# The id comes from Cloudflare rather than from git; once the application is
-# in state the import is a no-op.
+# THE ORGANISATION'S, NOT THE ESTATE'S. Cloudflare creates this application
+# with every Zero Trust organisation and allows only one, so creating it while
+# one exists fails with `application_already_exists` (#453). The contractor's
+# Cluster phase adopts the one that exists before this is applied, and creates
+# it only when there is none; a teardown forgets it rather than destroying it
+# (adoptEnrollmentApp and forgetEnrollmentApp, and config.EnrollmentAppAddress).
+#
+# It was a data source and an import block here, and a demolish destroyed the
+# application - after which the data source failed every OpenTofu command that
+# evaluated it, which is why adoption lives in Go (see run.AdoptIfOrphaned).
 locals {
   enrollment_app_name = "Warp Login App"
-}
-
-data "cloudflare_zero_trust_access_application" "enrollment" {
-  provider   = cloudflare.tunnel
-  account_id = local.object_storage_account.account_id
-  name       = local.enrollment_app_name
-}
-
-import {
-  provider = cloudflare.tunnel
-  to       = cloudflare_zero_trust_access_application.enrollment
-  id       = "${local.object_storage_account.account_id}/${data.cloudflare_zero_trust_access_application.enrollment.id}"
 }
 
 resource "cloudflare_zero_trust_access_application" "enrollment" {

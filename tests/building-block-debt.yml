@@ -66,7 +66,12 @@ debt:
   - "tests/mutations.yml"
   - "variables.tf"
 
-  # --- Everything else: tool flags, vendor identifiers, status wording (50)
+  # --- Everything else: tool flags, vendor identifiers, status wording (51)
+  #
+  # json:"result" is two vendors' wording, not one fact: Cloudflare's v4
+  # envelope (homelab/details/cloudflare) and Prometheus's query API
+  # (tests/go/integration/monitoring_test.go) both call their payload result.
+  - 'json:"result"'
   - " --hash=sha256:"
   - "-auto-approve"
   - "-input=false"

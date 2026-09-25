@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"homelab/details/cloudflare"
 	"homelab/tests/harness"
 )
 
@@ -54,13 +55,10 @@ func TestTheTunnelIsDeclaredAtTheVendorAndConnected(t *testing.T) {
 		"Cloudflare answered %d to the tunnel token listing its own tunnels. The token may have "+
 			"been revoked or lost the Cloudflare Tunnel read permission.", resp.StatusCode)
 
-	var answer struct {
-		Success bool `json:"success"`
-		Result  []struct {
-			Name   string `json:"name"`
-			Status string `json:"status"`
-		} `json:"result"`
-	}
+	var answer cloudflare.Answer[[]struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}]
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&answer), "decoding Cloudflare's answer")
 	require.True(t, answer.Success, "Cloudflare reported the tunnel listing as unsuccessful")
 	require.Len(t, answer.Result, 1,

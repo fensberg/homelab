@@ -1040,8 +1040,8 @@ mutations:
   - guard: TestBucketsThatOutliveTheEstateAreReleasedBeforeAnythingDeletes
     file: scripts/contractor/internal/phases/sterilize.go
     reads_source: true
-    find: "\tforgetKeptBuckets(ctx)\n\temptyObjectStorage(ctx)"
-    replace: "\temptyObjectStorage(ctx)\n\tforgetKeptBuckets(ctx)"
+    find: "\tforgetKeptBuckets(ctx)\n\tforgetEnrollmentApp(ctx)\n\temptyObjectStorage(ctx)"
+    replace: "\temptyObjectStorage(ctx)\n\tforgetKeptBuckets(ctx)\n\tforgetEnrollmentApp(ctx)"
     mentions: "before it releases the kept buckets"
     why: >
       reads_source, because this guard reads sterilize.go as text rather than

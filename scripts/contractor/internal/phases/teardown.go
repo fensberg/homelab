@@ -231,3 +231,25 @@ func emptyObjectStorage(ctx *run.Context) {
 	}
 	run.Ok("object storage emptied")
 }
+
+// forgetEnrollmentApp takes the device-enrollment application out of state
+// before the destroy, so the destroy leaves it in Cloudflare.
+//
+// It is the organisation's, not the estate's: Cloudflare creates it with the
+// Zero Trust organisation and allows one. A demolish on 2026-09-25 destroyed
+// it, and the ignition after it failed looking for the application it expected
+// to adopt. The next ignition adopts it back (adoptEnrollmentApp).
+//
+// Best-effort, like the buckets: a failure is reported and the teardown goes
+// on, because stopping here would leave the machines running.
+func forgetEnrollmentApp(ctx *run.Context) {
+	if !run.InState(ctx, config.EnrollmentAppAddress) {
+		return
+	}
+	if _, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "rm", config.EnrollmentAppAddress); err != nil {
+		run.Warn("could not forget the device-enrollment application: " + err.Error())
+		run.Warn("The destroy will delete it from Cloudflare, and the next ignition will create a new one - enrolled devices may have to enroll again.")
+		return
+	}
+	run.Ok("kept the device-enrollment application; the next ignition will adopt it")
+}
