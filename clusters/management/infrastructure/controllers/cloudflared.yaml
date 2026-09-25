@@ -30,6 +30,18 @@ spec:
       automountServiceAccountToken: false
       priorityClassName: interactive
 
+      # Off the machines holding quorum, like every workload here. It had a
+      # priority and a spread and no affinity, so nothing kept it off a
+      # control plane; the plain-workload guard found that on its first run
+      # (#492).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+
       securityContext:
         runAsNonRoot: true
         # The image's own nonroot user.

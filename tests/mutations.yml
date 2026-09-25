@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 162
+floor: 163
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -167,6 +167,19 @@ mutations:
       The tunnel route and the Service's fixed address live in files read by
       different tools. Moving one without the other converges cleanly and
       hands an enrolled device a route to an address nothing answers on.
+
+  - guard: TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority
+    file: modules/applications/valheim/base/deployment.yaml
+    find: "operator: DoesNotExist"
+    replace: "operator: Exists"
+    mentions: "would schedule onto a control-plane node"
+    why: >
+      The game server is a plain Deployment, which the HelmRelease table could
+      not express, so it shipped once with nothing keeping an 8 GiB pod off a
+      4 GiB control plane and no guard said so (#492). Flipping the operator
+      is the plausible version of losing the rule: it reads as a harmless
+      edit, and it turns "off the control plane" into "only the control
+      plane".
 
   - guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
     file: management/cluster/tunnel.tf
