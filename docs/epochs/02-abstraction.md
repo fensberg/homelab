@@ -1489,6 +1489,61 @@ Then epoch 04 measures it, and epoch 05 makes it elastic if that is ever worth
 anything - which [`05-node-lifecycle.md`](05-node-lifecycle.md) records that it
 currently is not.
 
+## Known driver: a Steam update needed two pull requests and two nights
+
+Production runs pinned releases (#510). A new Valheim build from Valve then
+took the operator two merges: the expediter's pull request pinning the new
+image in the base deployment, and procurement's delivery moving the release
+pin. Each needed a review, neither contained a decision, and between them a
+Steam patch reached production a night or more after players' clients started
+refusing the old server. The operator: "Why are there two PRs for updating the
+Valheim version? That seems really clunky."
+
+Reading the pieces showed more than clunkiness. The expediter built its own
+image and pinned it in the base deployment, but production never ran that
+digest: a release pins the image the fabricator builds, and the Dockerfile
+gave `VALHEIM_BUILDID` an empty default, which the fabricator never fills. So
+every Steam update was built twice, and the image production ran was whatever
+Valve served on the day the fabricator ran, not the build the repository
+recorded.
+
+**R2b, as #510 decided it:**
+
+- **The Steam build is a pin.** `VALHEIM_STEAM_BUILD_VERSION` sits in
+  `scripts/versions.env`, and the Dockerfile takes it with no default, so the
+  fabricator builds exactly the recorded build. The name ends in `_VERSION`
+  because the versions action exports nothing else, a boundary against fork
+  pull requests writing arbitrary environment variables.
+- **The expediter records; it doesn't build.** Its pull request changes that
+  one line, and the standing order covers that one line.
+- **One window takes both.** At 4am the expediter's pull request merges, the
+  job waits for the fabricator to build and deliver the release, and then
+  merges the delivery, but only if the release differs from production's by
+  the Steam build alone.
+- **"Steam-only" is judged from the source, not the pull request.** The
+  registry records the commit each release was built from (the `revision`
+  annotation `flux push artifact` writes). Between production's commit and the
+  new one, the image's inputs may differ by the Steam build line alone, the
+  manifests by comments alone, and the work orders not at all. A release whose
+  source can't be read is not merged without review.
+
+**#514, alongside:** the fabricator fingerprints what each image is made from
+(its build context and the pins passed to it) and what each release ships
+(its manifests, rendered with the image pinned). It reuses a build or a release
+that already exists with that fingerprint. A comment renders to nothing, so it
+no longer produces a release: #542 was a release whose only change was a
+comment, delivered for the operator to merge.
+
+The operator's input for a Steam update becomes nothing. A release carrying a
+change somebody wrote still arrives as a pull request for a person.
+
+**Issues closed by reading rather than building (2026-09-25).** A review of the
+backlog found five issues already fixed by #475, whose body listed them as
+"Closes #426, #429, #448, #458, #461, #466, #474". GitHub closes only the first
+issue in such a list, so the other six stayed open for five days, telling
+anyone who read the tracker that the estate had problems it no longer had
+(#550).
+
 ## Acceptance tests
 
 ### A step is declared once, and every verb that shares it reads that declaration
