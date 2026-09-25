@@ -273,7 +273,8 @@ func (e *estate) adoptEnrollment(api cloudflare, resources []string) error {
 //
 // `state pull` rather than `state list`: list fails with "No state file was
 // found" on the first build, which is the one run where an empty answer is
-// the correct one, while pull prints nothing.
+// the correct one. Pull answers it - with nothing on the local backend, and
+// with a blank, lineage-less state on the S3 backend the estate uses.
 func (e *estate) stateList() ([]string, error) {
 	out, err := e.tofuOutput("state", "pull")
 	if err != nil {
@@ -293,8 +294,19 @@ func stateResources(state []byte) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the estate's state is present and cannot be read (%s): %w", shape(state), err)
 	}
-	if st.Version == 0 || st.Lineage == "" {
-		return nil, fmt.Errorf("the estate's state is present and has no version or lineage, so it is not state this lawyer can read. What came back: %s", shape(state))
+	if st.Version == 0 {
+		return nil, fmt.Errorf("the estate's state is present and has no version, so it is not state this lawyer can read. What came back: %s", shape(state))
+	}
+	// The S3 backend's answer when its bucket holds no state: not nothing, as
+	// the local backend gives, but a blank state with no lineage. A lineage is
+	// assigned by the first write, so none at all is no state - provided it
+	// also claims nothing. A blank lineage beside resources is not a blank
+	// state, and is refused rather than read as one.
+	if st.Lineage == "" {
+		if st.Serial == 0 && len(st.Resources) == 0 {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("the estate's state has resources or a serial but no lineage, so it is not state this lawyer can read. What came back: %s", shape(state))
 	}
 	return st.Managed(), nil
 }

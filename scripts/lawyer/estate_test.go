@@ -240,7 +240,13 @@ func TestSterilizeRemovesWhatTheRunWrote(t *testing.T) {
 // rather than fail; state that is present and unreadable must fail rather than
 // read as empty, or build-estate would build over it.
 func TestStateIsReadAsEmptyOnlyWhenThereIsNone(t *testing.T) {
-	for _, none := range []string{"", "\n"} {
+	for _, none := range []string{
+		"",
+		"\n",
+		// What the S3 backend pulls from an empty bucket, as the first real
+		// build against R2 received it.
+		`{"version":4,"terraform_version":"1.12.6","serial":0,"lineage":"","outputs":{},"resources":[],"check_results":null}` + "\n",
+	} {
 		got, err := stateResources([]byte(none))
 		if err != nil || len(got) != 0 {
 			t.Errorf("no state %q: got %v, %v", none, got, err)
@@ -261,7 +267,12 @@ func TestStateIsReadAsEmptyOnlyWhenThereIsNone(t *testing.T) {
 	if got, err := stateResources([]byte(`{"version":4,"serial":1,"lineage":"l","resources":[]}`)); err != nil || len(got) != 0 {
 		t.Errorf("an emptied estate: got %v, %v", got, err)
 	}
-	for _, bad := range []string{`not json`, `{"version":4}`} {
+	for _, bad := range []string{
+		`not json`,
+		`{"lineage":"l","resources":[]}`,
+		`{"version":4,"serial":2,"lineage":"","resources":[]}`,
+		`{"version":4,"serial":0,"lineage":"","resources":[{"mode":"managed","type":"t","name":"n"}]}`,
+	} {
 		if _, err := stateResources([]byte(bad)); err == nil {
 			t.Errorf("unreadable state %q was taken for an empty estate", bad)
 		}
@@ -271,7 +282,7 @@ func TestStateIsReadAsEmptyOnlyWhenThereIsNone(t *testing.T) {
 // A refusal describes what came back by its shape alone, so the next run
 // says what the backend returned without printing any of the estate's values.
 func TestAnUnreadableStateIsDescribedByItsShapeNeverItsValues(t *testing.T) {
-	_, err := stateResources([]byte(`{"serial":1,"meta":{"secret":"do-not-print"}}`))
+	_, err := stateResources([]byte(`{"serial":1,"meta":{"secret":"do-not-print"}}`)) // no version
 	if err == nil {
 		t.Fatal("state with no version or lineage was accepted")
 	}

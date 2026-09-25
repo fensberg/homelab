@@ -3107,9 +3107,20 @@ used it, and the lawyer does now. It also parses what it pulls: state that is
 present but unreadable is an error, never an empty estate, because build-estate
 would take an empty estate as permission to build over it.
 
+The second run found the other half. Against R2, pull did not print nothing: the
+S3 backend answers an empty bucket with a **blank state**, with a version, serial
+0, no lineage and no resources. The local backend, where this was checked, prints
+nothing. So "no state yet" has two spellings, and the lawyer now reads both as
+empty. A lineage is assigned by the first write, so an empty lineage claiming
+resources or a serial is still refused.
+
+The refusal that caught it could not say what it had seen, so the next run could
+not tell us either. It now describes what came back by shape alone: size, and the
+top-level keys, never values. That turned the second run into the diagnosis.
+
 The unit tests had covered which verb admits which state, but not the command
-that produced the state they judged. It took the first run against a real
-backend to find it.
+that produced the state they judged, and a check against the local backend
+stood in for the real one. Both halves needed the real backend to find.
 
 ### The pre-merge check and the post-merge action were different commands
 
