@@ -1,10 +1,10 @@
 package repo
 
 import (
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -14,7 +14,9 @@ import (
 
 // Every address the tunnel routes is a Service's fixed address, and the reverse.
 //
-// management/cluster/tunnel.tf gives an enrolled WARP device a route to a
+// management/tunnel-routes.json - read by the site's tunnel.tf for the routes
+// and by the estate's split tunnel for what a device sends - gives an enrolled
+// WARP device a route to a
 // specific cluster address, and a Service somewhere in git sets `clusterIP` to
 // that address so something answers there. The two live in different files,
 // read by different tools - OpenTofu and Flux - and neither would notice the
@@ -22,28 +24,26 @@ import (
 // enrolls cleanly, and reaches nothing; a Service at a fixed address nothing
 // routes to is an address somebody believes the tunnel serves.
 //
-// Both sides are discovered: the routes from tunnel.tf, every Service from
+// Both sides are discovered: the routes from that file, every Service from
 // every manifest in the repository. A Service with a hand-set address in the
 // reserved band that the tunnel does not route is refused as well, because the
 // only reason to set one here is the tunnel.
-var tunnelRouteEntry = regexp.MustCompile(`(?m)^\s*"?([a-z0-9_-]+)"?\s*=\s*"(10\.96\.0\.\d{1,3})"`)
+const tunnelRoutesFile = "management/tunnel-routes.json"
 
 func TestEveryTunnelRouteIsAServiceAddressAndTheReverse(t *testing.T) {
 	root := repoRoot(t)
-	body := readRepoFile(t, "management/cluster/tunnel.tf")
-
-	start := strings.Index(body, "tunnel_routes = {")
-	if start < 0 {
-		t.Fatal("management/cluster/tunnel.tf has no `tunnel_routes = {` block, so this reads nothing")
+	var file struct {
+		Routes map[string]string `json:"routes"`
 	}
-	end := strings.Index(body[start:], "}")
-	routes := map[string]string{}
-	for _, m := range tunnelRouteEntry.FindAllStringSubmatch(body[start:start+end], -1) {
-		routes[m[2]] = m[1]
+	if err := json.Unmarshal([]byte(readRepoFile(t, tunnelRoutesFile)), &file); err != nil {
+		t.Fatalf("%s: %v", tunnelRoutesFile, err)
+	}
+	routes := map[string]string{} // address -> name
+	for name, addr := range file.Routes {
+		routes[addr] = name
 	}
 	if len(routes) == 0 {
-		t.Fatal("tunnel_routes declares no address in the fixed band, so this checked nothing - " +
-			"the pattern has stopped matching how routes are written")
+		t.Fatalf("%s declares no route, so this checked nothing", tunnelRoutesFile)
 	}
 
 	services := map[string]string{} // clusterIP -> file
@@ -92,11 +92,11 @@ func TestEveryTunnelRouteIsAServiceAddressAndTheReverse(t *testing.T) {
 				a, routes[a], a)
 		}
 	}
-	for a, file := range services {
+	for a, manifest := range services {
 		if _, ok := routes[a]; !ok {
-			t.Errorf("%s sets clusterIP: %s, and management/cluster/tunnel.tf routes no such address.\n\n"+
+			t.Errorf("%s sets clusterIP: %s, and %s routes no such address.\n\n"+
 				"A hand-set address in the reserved band exists here only for the tunnel. Either add it "+
-				"to tunnel_routes, or let Kubernetes allocate the address.", file, a)
+				"to it, or let Kubernetes allocate the address.", manifest, a, tunnelRoutesFile)
 		}
 	}
 }

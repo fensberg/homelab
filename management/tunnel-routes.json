@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "What an enrolled device may reach, by name. Each is a fixed cluster address,",
+    "set as `clusterIP` on the Service it names - held together by",
+    "tests/go/repo/tunnel_routes_test.go, because a route to an address nothing",
+    "answers on converges cleanly and reaches nothing.",
+    "",
+    "Read by both OpenTofu roots, so the list is written once: each site routes",
+    "these through its own tunnel (management/cluster/tunnel.tf), and the estate",
+    "puts them in the account-wide split tunnel (management/estate/), which is one",
+    "list for the whole Cloudflare account.",
+    "",
+    "Addresses come from the bottom of the service range, which Kubernetes reserves",
+    "for addresses chosen by hand."
+  ],
+  "routes": {
+    "game-server": "10.96.0.46"
+  }
+}

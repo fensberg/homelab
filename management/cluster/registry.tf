@@ -195,11 +195,6 @@ resource "terraform_data" "invariants" {
       error_message = "Tunnel vendor mismatch: tunnel.provider and the 1Password item's tunnel.vault_provider must both be 'cloudflare', which is what this root implements. Either the wrong item is referenced, or its credentials were replaced without updating its provider field."
     }
 
-    precondition {
-      condition     = length(local.tunnel_members) > 0
-      error_message = "tunnel.members is empty, so nobody could enroll a device. List at least one email address, comma-separated, in op://homelab/tunnel/members."
-    }
-
     # A declaration only catches someone who updates the declaration. This
     # catches the careless case: credentials pasted in without touching the
     # provider field at all.

@@ -1,7 +1,7 @@
 ---
 # The game server's address on the cluster network.
 #
-# Fixed rather than allocated, because management/cluster/tunnel.tf routes it
+# Fixed rather than allocated, because management/tunnel-routes.json routes it
 # to enrolled devices and a route names an address;
 # tests/go/repo/tunnel_routes_test.go holds the two together. A device on the
 # member list reaches 10.96.0.46:2456 from any network, as if it were on the
