@@ -6,7 +6,7 @@
 // contractor arrives. So the estate has a program of its own, and the split
 // is a credential boundary as much as a name. The lawyer holds the estate's
 // credentials and only those: it renders config/estate.tpl.json from the
-// `estate` vault, and refuses to run if its token can see any other. The
+// `estate` vault, and refuses to run if its token can see a site's own vault. The
 // contractor holds a site's credentials and only those. Neither program can
 // change what the other owns, because neither is given the means to.
 //
@@ -41,7 +41,7 @@ verbs:
                    requires -confirm.
 
 Every verb renders the estate's secrets from the estate vault, refuses a
-1Password token that can see any other vault, and wipes them on the way out.
+1Password token that can see a site's own vault, and wipes them on the way out.
 `
 
 func main() {

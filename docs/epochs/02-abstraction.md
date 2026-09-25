@@ -1961,9 +1961,78 @@ vault should already say. So references read `op://estate/access/api_token`
 and `op://site0/hypervisor/token_id`. The names are generic, so they sit in git
 without costing forkability.
 
-The lawyer lists the vaults its token can see and **refuses unless the answer is
-`estate` and nothing else**, so the separation is checked on every run rather
-than assumed.
+#### Four kinds of vault, and who may do what in each
+
+Settled 2026-09-25. `-shared` means one thing everywhere: **the lawyer writes it,
+a narrower scope reads it.**
+
+| Vault           | Holds                                                                                                                                                            | lawyer       | site0        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------ |
+| `estate`        | account-wide credentials: Access, the tailnet admin, R2 admin, the estate's state                                                                                | read + write | none         |
+| `estate-shared` | what every site needs and nobody is harmed by: org name, account id, repo URL, the backup recipient (a public key), the alerting webhook, the foreman key (#539) | read + write | read         |
+| `site0-shared`  | what the lawyer grants site0 alone: its tunnel's run token, its buckets' keys, its tailnet client                                                                | read + write | read         |
+| `site0`         | what site0 generates or holds for itself: the hypervisor token, database, workloads                                                                              | **none**     | read + write |
+
+Read-only is what stops a site harming its siblings through a shared vault:
+site0 cannot overwrite a value site1 depends on, and 1Password enforces that
+rather than this code. The lawyer never reads a site's own vault, and a site
+never reads the estate's, so neither side needs an exception.
+
+The lawyer lists the vaults its token can see and **refuses one that is neither
+`estate` nor a `-shared` vault**. The contractor will do the same for its site:
+its own vault and the two it reads, and nothing else.
+
+#### The lawyer grants each site its plot
+
+Three credentials a site uses today can harm another site, because the vendor
+cannot scope them to one:
+
+- **the tunnel API token**: anything that can create site0's tunnel can
+  delete site1's;
+- **the object storage admin token**: it reaches every bucket in the account,
+  state backups included;
+- **the tailnet**: every site mints keys with the same `tag:homelab-router`, and
+  the policy auto-approves any route in `10.0.0.0/8` for that tag, so a leaked
+  site0 client can advertise site1's `/16` and take its traffic.
+
+So the lawyer creates what only an account-wide credential can create, and grants
+the site a credential narrowed to it. That means the tunnel and its run token,
+which serves that tunnel alone; the site's buckets and keys scoped to them; and a
+tailnet OAuth client that can mint keys only for `tag:site0-router` and
+`tag:site0-node`. The lawyer also owns the **tailnet policy**, which
+`overlay-network.tf` already declined to manage because "every site deployment
+clobbers the policy every other site depends on", and which was a manual console
+step in `docs/tailnet-setup.md`. Generated from the site list, the policy
+approves each site's router for that site's own `/16` only. That is the "precise"
+option the setup doc called a chore; generating it removes the chore.
+
+This is the vending pattern organisation-scale estates use, such as a landing
+zone handing workload accounts narrow roles. Most homelab GitOps repositories
+instead feed one vault through one token to the cluster, which is simpler and
+hands a compromised cluster everything. The concrete threat here is the
+self-hosted runner inside the cluster, which runs CI jobs beside a game server.
+Today a site converge renders the account-wide R2 admin token onto it, so one
+bad job could empty every bucket, backups included.
+
+#### Where 1Password stops, and OpenBao takes over
+
+A 1Password service account's vault grants cannot be changed after it is
+created. Adding site1 would mean new `site1` and `site1-shared` vaults, and a new
+lawyer service account to reach `site1-shared`: a rotation of everything the
+lawyer holds. That is the right price for one site and the wrong one for many.
+**OpenBao arrives before site1**, and per-path policies with dynamic
+credentials are the ecosystem's answer to exactly this. So the vaults are built
+for site0 alone, and the second site is OpenBao's to make cheap.
+
+#### The order
+
+1. #538: the estate root, the lawyer, and its vault check.
+2. The site's vaults: `op://site0/...` and `op://site0-shared/...`, one
+   template per site, and `homelab` retired.
+3. The grants: the lawyer creates each site's tunnel, buckets and tailnet
+   client, and owns the tailnet policy.
+
+All three land before the rebuild.
 
 The estate vault holds:
 

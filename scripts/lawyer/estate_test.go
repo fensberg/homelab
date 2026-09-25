@@ -14,18 +14,20 @@ import (
 // second vault can read a site's credentials, so it is refused rather than
 // used with care.
 func TestTheLawyerRefusesATokenThatReachesMoreThanTheEstate(t *testing.T) {
-	if err := checkVaults([]string{"estate"}); err != nil {
-		t.Fatalf("a token reaching the estate vault alone was refused: %v", err)
+	for _, ok := range [][]string{
+		{"estate"},
+		{"estate", "estate-shared", "site0-shared"},
+	} {
+		if err := checkVaults(ok); err != nil {
+			t.Errorf("%v was refused: %v", ok, err)
+		}
 	}
-	if err := checkVaults(nil); err == nil {
-		t.Error("a token reaching no vault was accepted")
+	if err := checkVaults([]string{"estate-shared", "site0-shared"}); err == nil {
+		t.Error("a token that cannot see the estate vault was accepted")
 	}
-	if err := checkVaults([]string{"site0"}); err == nil {
-		t.Error("a token reaching a site's vault instead of the estate's was accepted")
-	}
-	err := checkVaults([]string{"estate", "site0"})
+	err := checkVaults([]string{"estate", "estate-shared", "site0"})
 	if err == nil {
-		t.Fatal("a token reaching a site's vault as well was accepted, so the lawyer could read a site's credentials")
+		t.Fatal("a token reaching a site's own vault was accepted, so the lawyer could read what a site generates for itself")
 	}
 	if strings.Contains(err.Error(), "site0") {
 		t.Errorf("the refusal names another vault, and it reaches a public log: %v", err)
