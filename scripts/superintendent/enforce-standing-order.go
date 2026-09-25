@@ -43,6 +43,8 @@ func enforceStandingOrder(args []string) int {
 	base := fs.String("base", "", "the pull request's base commit")
 	head := fs.String("head", "", "the pull request's head commit")
 	pin := fs.String("pin", "modules/applications/valheim/base/deployment.yaml", "the one file the order covers")
+	releases := fs.String("releases", "clusters/management/releases.yaml", "the production releases file a delivery moves a pin in")
+	bypass := fs.Bool("bypass", false, "judge for a merge without review: only what the order covers passes, and a delivery does not")
 	_ = fs.Parse(args)
 
 	switch {
@@ -68,7 +70,23 @@ func enforceStandingOrder(args []string) int {
 		return 2
 	}
 
-	problems := withinStandingOrder(nonEmptyLines(string(files)), changedLines(string(diff)), *pin)
+	changedFiles, lines := nonEmptyLines(string(files)), changedLines(string(diff))
+
+	// A delivery: procurement bringing a release the fabricator published to
+	// the gate, as a pull request that moves one pin in the releases file.
+	// Procurement may open it, and it passes here so a person can merge it -
+	// but it is never merged without review, so a merge under the order
+	// (-bypass) refuses it however clean it is.
+	if isDelivery(changedFiles, lines, *releases) {
+		if *bypass {
+			fmt.Printf("REFUSED: %s is a delivery, and a delivery is merged by a person, never under the standing order.\n", *author)
+			return 1
+		}
+		fmt.Printf("%s delivered a release; it waits for a review\n", *author)
+		return 0
+	}
+
+	problems := withinStandingOrder(changedFiles, lines, *pin)
 	if len(problems) > 0 {
 		fmt.Printf("REFUSED: %s changed more than its standing order covers.\n\n", *author)
 		for _, p := range problems {
@@ -139,4 +157,24 @@ func nonEmptyLines(s string) []string {
 		}
 	}
 	return out
+}
+
+var (
+	deliveredTag    = regexp.MustCompile(`^[+-]\s+tag:\s+"[0-9][0-9A-Za-z.]*-[0-9]+"\s*$`)
+	deliveredDigest = regexp.MustCompile(`^[+-]\s+digest:\s+"sha256:[0-9a-f]{64}"\s*$`)
+)
+
+// isDelivery reports whether a change moves release pins in the releases file
+// and does nothing else: one file, and every changed line a release tag or a
+// digest.
+func isDelivery(files, changed []string, releases string) bool {
+	if len(files) != 1 || files[0] != releases || len(changed) == 0 {
+		return false
+	}
+	for _, line := range changed {
+		if !deliveredTag.MatchString(line) && !deliveredDigest.MatchString(line) {
+			return false
+		}
+	}
+	return true
 }

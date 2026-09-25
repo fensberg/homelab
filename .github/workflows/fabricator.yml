@@ -300,3 +300,136 @@ jobs:
             echo ""
             echo "Released as \`${ARTIFACT}:${TAG}\` (\`${pushed}\`), from \`${overlay}\`."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Procurement brings the finished work to the gate. For every work order that
+  # makes a release, the newest one the registry holds is compared with the pin
+  # in clusters/management/releases.yaml, and when they differ a pull request
+  # moves the pin. Merging it is letting the delivery in, and that is a
+  # person's: superintendent enforce-standing-order passes a delivery so it can
+  # be merged, and refuses it whenever anything would merge it without review.
+  #
+  # The fabricator's own jobs hold no credential that can write to the
+  # repository. This one holds procurement's, scoped to contents and pull
+  # requests on this repository, and runs one procurement verb: deliver.
+  deliver:
+    name: Bring the releases to the gate
+    needs: [orders, build]
+    runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+    # is what GitHub's default timeout allows.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # The registry's list of releases, read with this workflow's own token.
+      packages: read
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            proxy.golang.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
+      - name: Setup Go
+        uses: $/.github/workflows/setup-go
+
+      - name: Mint the procurement token
+        id: token
+        uses: $/.github/workflows/app-token
+        with:
+          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
+          # Contents to commit the moved pin; pull requests to open the
+          # delivery and close the one it supersedes. Nothing else the App was
+          # granted at installation.
+          permission-contents: write
+          permission-pull-requests: write
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+
+      # Through the API rather than git push: a commit created there is signed
+      # by GitHub on the App's behalf, which the ruleset requiring signatures
+      # on every branch accepts. One pull request per release, on a branch
+      # named for it; an older delivery of the same workload still open is
+      # closed, because branches here cannot be force-updated.
+      - name: Deliver
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          READ_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          ORDERS: ${{ needs.orders.outputs.orders }}
+          RELEASES: clusters/management/releases.yaml
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          case "$(GH_TOKEN="$READ_TOKEN" gh api "users/${OWNER}" --jq .type)" in
+            Organization) base_path="orgs/${OWNER}" ;;
+            User) base_path="users/${OWNER}" ;;
+            *) echo "::error::could not tell whether ${OWNER} is an organization or a user"; exit 1 ;;
+          esac
+          main="$(gh api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)"
+          base_tree="$(gh api "repos/${REPO}/git/commits/${main}" --jq .tree.sha)"
+
+          while IFS= read -r name; do
+            package="${REPO_NAME}-${name}-release"
+            read -r tag digest < <(GH_TOKEN="$READ_TOKEN" gh api --paginate "${base_path}/packages/container/${package}/versions" \
+              --jq '.[] | select(.metadata.container.tags | length > 0) | "\(.created_at) \(.metadata.container.tags[0]) \(.name)"' \
+              | sort -r | head -n 1 | cut -d' ' -f2-)
+            if [ -z "${tag:-}" ]; then
+              echo "::error::${package} holds no release, although the ${name} order makes one"
+              exit 1
+            fi
+
+            gh api "repos/${REPO}/contents/${RELEASES}?ref=${main}" --jq .content | base64 -d > "$RUNNER_TEMP/releases.yaml"
+            before="$(sha256sum < "$RUNNER_TEMP/releases.yaml")"
+            go run -C scripts/procurement . deliver -releases "$RUNNER_TEMP/releases.yaml" -name "$name" -tag "$tag" -digest "$digest"
+            if [ "$(sha256sum < "$RUNNER_TEMP/releases.yaml")" = "$before" ]; then
+              echo "${name}: production already runs ${tag}" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            branch="deliver/${name}-${tag}"
+            if [ -n "$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq '.[0].number // empty')" ]; then
+              echo "${name}: ${tag} is already at the gate" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            blob="$(gh api "repos/${REPO}/git/blobs" -f content="$(base64 -w0 "$RUNNER_TEMP/releases.yaml")" -f encoding=base64 --jq .sha)"
+            tree="$(gh api "repos/${REPO}/git/trees" -f base_tree="$base_tree" \
+              -f "tree[][path]=${RELEASES}" -f "tree[][mode]=100644" -f "tree[][type]=blob" -f "tree[][sha]=${blob}" --jq .sha)"
+            commit="$(gh api "repos/${REPO}/git/commits" -f tree="$tree" -f "parents[]=${main}" \
+              -f message="feat(${name}): release ${tag}" --jq .sha)"
+            gh api "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="$commit" >/dev/null
+            url="$(gh pr create --repo "$REPO" --base main --head "$branch" --title "feat(${name}): release ${tag}" \
+              --body "$(printf '%s\n' \
+                "## Actions for you" "" \
+                "Merging this releases ${name} ${tag} to production, which restarts it. Merge when that disturbs nobody." "" \
+                "## What this is" "" \
+                "The fabricator published \`${tag}\` (\`${digest}\`). This moves the pin in \`${RELEASES}\` to it, and changes nothing else." "" \
+                "Procurement opened this; it is never merged without review." "" \
+                "Delivered by: ${RUN_URL}")")"
+            echo "${name}: ${tag} delivered as ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
+
+            # Older deliveries of this workload are superseded by this one.
+            gh pr list --repo "$REPO" --state open --json number,headRefName \
+              --jq ".[] | select(.headRefName | startswith(\"deliver/${name}-\")) | select(.headRefName != \"${branch}\") | .number" \
+              | while IFS= read -r old; do
+                  gh pr close "$old" --repo "$REPO" --delete-branch --comment "Superseded by ${url##*/}, which delivers a newer release." >/dev/null
+                done
+          done < <(jq -r '.[] | select(.release) | .name' <<<"$ORDERS")

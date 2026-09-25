@@ -579,7 +579,9 @@ jobs:
           fi
           base="$(gh api "repos/${REPO}/compare/${target}...${head}" --jq .merge_base_commit.sha)"
           git fetch --no-tags --depth=1 origin "$base" "$head"
-          if ! go run -C scripts/superintendent . enforce-standing-order -author "$author" -base "$base" -head "$head"; then
+          # -bypass: this merge skips review, so only what the order covers
+          # passes - a delivery of a release never does.
+          if ! go run -C scripts/superintendent . enforce-standing-order -bypass -author "$author" -base "$base" -head "$head"; then
             gh pr comment "$PR" --repo "$REPO" --body "Refused under the standing order at merge time: this changes more than the image digest and Steam build. It waits for a review."
             exit 1
           fi

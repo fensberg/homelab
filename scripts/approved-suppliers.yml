@@ -654,6 +654,18 @@ egress:
       Builds with Docker, which needs the Docker socket that
       disable-sudo-and-containers removes.
 
+  - job: fabricator.yml/deliver
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - proxy.golang.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+      - sum.golang.org:443
+
   - job: expedite.yml/check
     policy: block
     hosts:
