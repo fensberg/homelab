@@ -235,8 +235,9 @@ func emptyObjectStorage(ctx *run.Context) {
 // forgetEnrollmentApp takes the device-enrollment application out of state
 // before the destroy, so the destroy leaves it in Cloudflare.
 //
-// It is the organisation's, not the estate's: Cloudflare creates it with the
-// Zero Trust organisation and allows one. A demolish on 2026-09-25 destroyed
+// It is the estate's, not the site's: the Cloudflare account is the estate, and
+// its Zero Trust organisation creates this application and allows one. A site
+// teardown must not reach it. A demolish on 2026-09-25 destroyed
 // it, and the ignition after it failed looking for the application it expected
 // to adopt. The next ignition adopts it back (adoptEnrollmentApp).
 //

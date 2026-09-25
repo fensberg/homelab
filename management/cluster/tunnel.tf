@@ -133,8 +133,8 @@ resource "cloudflare_zero_trust_access_policy" "members" {
 # Device enrollment is an Access application of type `warp`: enrolling a WARP
 # client is a login to it, and the policy above decides who succeeds.
 #
-# THE ORGANISATION'S, NOT THE ESTATE'S. Cloudflare creates this application
-# with every Zero Trust organisation and allows only one, so creating it while
+# THE ESTATE'S, NOT THE SITE'S. The Cloudflare account is the estate, and its
+# Zero Trust organisation creates this application and allows only one, so creating it while
 # one exists fails with `application_already_exists` (#453). The contractor's
 # Cluster phase adopts the one that exists before this is applied, and creates
 # it only when there is none; a teardown forgets it rather than destroying it
