@@ -1949,16 +1949,21 @@ credentials only."
 Build and converge each refuse the other's case, so a converge can never
 quietly build an estate from nothing.
 
-**The estate's secrets are in a separate 1Password vault**, reached by a service
-account that can see that vault alone. With one vault, "only those" would hold
-only because each program renders its own template, and either token could
-still read the other's fields. The lawyer asks 1Password which vaults its token
-can see and **refuses unless the answer is exactly one**. That makes the
-separation checkable rather than conventional, and it also means the
-repository never names the vault:
-`config/estate.tpl.json` references `op://${ESTATE_VAULT}/...`, and the lawyer
-sets `ESTATE_VAULT` to the one vault it found. A fork with a differently named
-vault changes nothing.
+**One vault per scope, named for the scope.** The estate's secrets are in a
+1Password vault called `estate`, and each site's will be in a vault called by
+its key (`site0`, `site1`). A service account token is granted per vault, so
+the vault is the unit a program's reach can be drawn around. With one shared
+vault, "only those" would hold only because each program renders its own
+template, since either token could still read the other's fields. An umbrella
+vault such as `homelab` groups exactly the things that must not share a token,
+and repeating the scope inside the path (`op://homelab/site0/...`) says what the
+vault should already say. So references read `op://estate/cloudflare/api_token`
+and `op://site0/hypervisor/token_id`. The names are generic, so they sit in git
+without costing forkability.
+
+The lawyer lists the vaults its token can see and **refuses unless the answer is
+`estate` and nothing else**, so the separation is checked on every run rather
+than assumed.
 
 The estate vault holds:
 

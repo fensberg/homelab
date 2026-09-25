@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	cf "homelab/details/cloudflare"
@@ -18,10 +19,11 @@ import (
 	"homelab/details/stateencryption"
 )
 
-// vaultEnv is the variable config/estate.tpl.json names its vault by. The
-// repository never spells the vault: it is whichever one the lawyer's token
-// reaches, so a fork with its own vault needs no edit.
-const vaultEnv = "ESTATE_VAULT"
+// estateVault is the vault the estate's secrets live in. One vault per scope,
+// named for the scope: the estate's is `estate`, a site's is its key. A token
+// is granted per vault, so the vault is the unit the lawyer's reach is drawn
+// around, and the name is generic enough to sit in git without naming anybody.
+const estateVault = "estate"
 
 // enrollmentAddress is the one estate object that may already exist before
 // the estate is built: Cloudflare keeps a single WARP enrollment application
@@ -68,20 +70,19 @@ func (c config) validate() error {
 	return nil
 }
 
-// pickVault is the credential boundary. The lawyer's token must reach exactly
-// one vault, the estate's: none means there is nothing to hold, and more than
-// one means the token can read a site's credentials too, which is the split
-// this program exists to keep. Counted, never named - vault names reach a
-// public Actions log.
-func pickVault(names []string) (string, error) {
-	switch len(names) {
-	case 1:
-		return names[0], nil
-	case 0:
-		return "", errors.New("the 1Password token reaches no vault. The lawyer's service account must be granted the estate vault")
-	default:
-		return "", fmt.Errorf("the 1Password token reaches %d vaults. The lawyer holds the estate's credentials and only those, so its service account must be scoped to the estate vault alone", len(names))
+// checkVaults is the credential boundary. The lawyer's token must reach the
+// estate vault and nothing else: without it there is nothing to hold, and a
+// second vault means the token can read a site's credentials too, which is
+// the split this program exists to keep. Other vaults are counted, never
+// named - their names reach a public Actions log.
+func checkVaults(names []string) error {
+	if !slices.Contains(names, estateVault) {
+		return fmt.Errorf("the 1Password token cannot see the %q vault. The lawyer's service account must be granted it", estateVault)
 	}
+	if len(names) > 1 {
+		return fmt.Errorf("the 1Password token reaches %d vaults besides %q. The lawyer holds the estate's credentials and only those, so its service account must be scoped to that vault alone", len(names)-1, estateVault)
+	}
+	return nil
 }
 
 // admit decides whether a verb may run against what the estate's state holds.
@@ -129,11 +130,10 @@ func execute(verb string) error {
 	defer e.sterilize()
 
 	console.Phase("Render", "Pull the estate's secrets from the estate vault.")
-	vault, err := e.vault()
-	if err != nil {
+	if err := e.vault(); err != nil {
 		return err
 	}
-	if err := e.encrypt(vault); err != nil {
+	if err := e.encrypt(); err != nil {
 		return err
 	}
 	if err := e.render(); err != nil {
@@ -172,33 +172,29 @@ func execute(verb string) error {
 	return e.run("apply", "-input=false", "-auto-approve")
 }
 
-func (e *estate) vault() (string, error) {
+func (e *estate) vault() error {
 	if !onepassword.Available() {
-		return "", onepassword.ErrNoCLI
+		return onepassword.ErrNoCLI
 	}
 	if !onepassword.SignedIn() {
-		return "", errors.New("1Password is not signed in. The lawyer runs on the estate's service account: export OP_SERVICE_ACCOUNT_TOKEN from the estate token")
+		return errors.New("1Password is not signed in. The lawyer runs on the estate's service account: export OP_SERVICE_ACCOUNT_TOKEN from the estate token")
 	}
 	names, err := onepassword.Vaults()
 	if err != nil {
-		return "", err
+		return err
 	}
-	vault, err := pickVault(names)
-	if err != nil {
-		return "", err
-	}
-	if err := os.Setenv(vaultEnv, vault); err != nil {
-		return "", err
+	if err := checkVaults(names); err != nil {
+		return err
 	}
 	console.Ok("the token reaches the estate vault and nothing else")
-	return vault, nil
+	return nil
 }
 
 // encrypt puts the estate's own passphrase into TF_ENCRYPTION, generating it
 // on the first build. The estate's, not any site's: a site's passphrase lives
 // in the site's vault, which this token cannot read.
-func (e *estate) encrypt(vault string) error {
-	ref := onepassword.Ref{Vault: vault, Item: "state", Field: stateencryption.PassphraseField}
+func (e *estate) encrypt() error {
+	ref := onepassword.Ref{Vault: estateVault, Item: "state", Field: stateencryption.PassphraseField}
 	return stateencryption.Establish(func() (string, error) {
 		passphrase, status, err := onepassword.EnsureField(ref, func() (string, error) { return secrets.Password(32) })
 		if status == "generated" {

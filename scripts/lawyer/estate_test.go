@@ -14,18 +14,21 @@ import (
 // second vault can read a site's credentials, so it is refused rather than
 // used with care.
 func TestTheLawyerRefusesATokenThatReachesMoreThanTheEstate(t *testing.T) {
-	if v, err := pickVault([]string{"example"}); err != nil || v != "example" {
-		t.Fatalf("one vault: got %q, %v", v, err)
+	if err := checkVaults([]string{"estate"}); err != nil {
+		t.Fatalf("a token reaching the estate vault alone was refused: %v", err)
 	}
-	if _, err := pickVault(nil); err == nil {
+	if err := checkVaults(nil); err == nil {
 		t.Error("a token reaching no vault was accepted")
 	}
-	_, err := pickVault([]string{"example", "homelab"})
-	if err == nil {
-		t.Fatal("a token reaching two vaults was accepted, so the lawyer could read a site's credentials")
+	if err := checkVaults([]string{"site0"}); err == nil {
+		t.Error("a token reaching a site's vault instead of the estate's was accepted")
 	}
-	if strings.Contains(err.Error(), "homelab") || strings.Contains(err.Error(), "example") {
-		t.Errorf("the refusal names a vault, and it reaches a public log: %v", err)
+	err := checkVaults([]string{"estate", "site0"})
+	if err == nil {
+		t.Fatal("a token reaching a site's vault as well was accepted, so the lawyer could read a site's credentials")
+	}
+	if strings.Contains(err.Error(), "site0") {
+		t.Errorf("the refusal names another vault, and it reaches a public log: %v", err)
 	}
 }
 
