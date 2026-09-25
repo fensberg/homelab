@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -85,9 +86,15 @@ var unfinished = map[string]bool{
 	"requested": true, "pending": true,
 }
 
-// convergeJobFor is the job name the deploy workflow renders for a site:
-// `Converge ${{ matrix.site }}`.
-func convergeJobFor(site string) string { return "Converge " + site }
+// siteJobs is every job the deploy workflow renders for a site that needs the
+// site's own runner: `Converge ${{ matrix.site }}` and `Plan ${{ matrix.site }}`.
+//
+// Plans as well as converges (#541). A plan changes nothing, but it waits for
+// a runner inside the cluster being built, starts the moment Flux brings one
+// up, and takes the state lock against a tree that may be days old while the
+// build is still finishing - the Backup phase at the end of the build then
+// meets that lock.
+func siteJobs(site string) []string { return []string{"Converge " + site, "Plan " + site} }
 
 // pendingForSite picks the runs that would converge this particular site.
 //
@@ -97,7 +104,7 @@ func convergeJobFor(site string) string { return "Converge " + site }
 // is not the same as knowing it will do nothing, and the window being guarded
 // is twenty minutes long with nobody watching the middle of it.
 func pendingForSite(runs []activeRun, site string) []activeRun {
-	want := convergeJobFor(site)
+	want := siteJobs(site)
 	var out []activeRun
 	for _, r := range runs {
 		if !unfinished[r.Status] {
@@ -107,8 +114,10 @@ func pendingForSite(runs []activeRun, site string) []activeRun {
 			out = append(out, r)
 			continue
 		}
+		// Exact names, not substrings: "Converge site1" is inside
+		// "Converge site10", and a busy site10 must not block site1.
 		for _, j := range r.Jobs {
-			if strings.Contains(j, want) {
+			if slices.Contains(want, j) {
 				out = append(out, r)
 				break
 			}
@@ -151,14 +160,15 @@ Underlying error: %w`, deployWorkflow, site, err)
 		}
 		names = append(names, line)
 	}
-	return fmt.Errorf(`%d deploy run(s) would converge %s during this ignition.
+	return fmt.Errorf(`%d deploy run(s) would plan or converge %s during this ignition.
 
     %s
 
 The runner is a pod inside the cluster this run is about to build, so those
 jobs are waiting for it. Flux brings it up near the end of the sequence - they
-would acquire a runner partway through and converge against a half-built
-estate, applying whatever commit they were queued at.
+would acquire a runner partway through: a converge applies whatever commit it
+was queued at against a half-built estate, and a plan takes the state lock the
+build still needs.
 
 Runs that only touch other sites are ignored, so everything listed above
 genuinely targets this one`, len(pending), site, strings.Join(names, "\n    "))
