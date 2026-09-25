@@ -30,7 +30,6 @@ homelab/
 │ ├── talos.tf # Machine config, bootstrap, kubeconfig
 │ ├── database.tf # Namespace and secrets for the state database
 │ ├── overlay-network.tf # Tagged auth key for this site
-│ ├── object-storage.tf # Backup bucket
 │ ├── gitops.tf # Flux bootstrap
 │ └── versions.tf # Provider definitions
 │

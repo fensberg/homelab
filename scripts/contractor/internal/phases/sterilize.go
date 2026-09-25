@@ -119,7 +119,6 @@ func tearDown(ctx *run.Context) teardownResult {
 	forgetClusterInternalResources(ctx)
 	// Before the emptying, so a failure to forget it stops short of deleting
 	// what it holds rather than after.
-	forgetKeptBuckets(ctx)
 	emptyObjectStorage(ctx)
 
 	if err := run.TofuDestroy(ctx, "tofu destroy"); err != nil {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 )
 
@@ -158,4 +159,84 @@ func EnsureField(ref Ref, generate func() (string, error)) (string, string, erro
 		return "", "", err
 	}
 	return value, "generated", nil
+}
+
+// WriteItem makes an item hold the given fields, creating the item when the
+// vault does not have it yet, and editing it once for all of them.
+//
+// For a program that owns an item outright - the lawyer publishing what it
+// grants a site - rather than one field inside an item a person keeps. Fields
+// whose value is already right are left alone, and when every one is, nothing
+// is written at all: a converge that changed nothing must not rewrite a vault
+// that sites read, or every run looks like a rotation.
+//
+// Returns the names of the fields it changed, never their values.
+func WriteItem(vault, title string, fields map[string]string) ([]string, error) {
+	raw, err := exec.Command("op", "item", "get", title, "--vault", vault, "--format=json").Output()
+	if err != nil {
+		create := exec.Command("op", "item", "create", "--category=Secure Note", "--title="+title, "--vault="+vault, "--format=json")
+		if raw, err = create.Output(); err != nil {
+			return nil, fmt.Errorf("creating item %s in vault %s: %w", title, vault, err)
+		}
+	}
+
+	changed, updated, err := upsertFields(raw, fields)
+	if err != nil {
+		return nil, fmt.Errorf("updating item %s in vault %s: %w", title, vault, err)
+	}
+	if len(changed) == 0 {
+		return nil, nil
+	}
+
+	edit := exec.Command("op", "item", "edit", title, "--vault", vault)
+	edit.Stdin = strings.NewReader(string(updated))
+	if out, err := edit.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("writing item %s in vault %s: %w: %s", title, vault, err, strings.TrimSpace(string(out)))
+	}
+
+	for _, f := range changed {
+		ref := Ref{Vault: vault, Item: title, Field: f}
+		back, err := Read(ref.String())
+		if err != nil {
+			return nil, fmt.Errorf("reading back %s to verify the write: %w", ref, err)
+		}
+		if back != fields[f] {
+			return nil, fmt.Errorf("%s did not round-trip: the value written and the value read back differ", ref)
+		}
+	}
+	return changed, nil
+}
+
+// upsertFields applies each field that differs from what the item holds, on
+// the item itself rather than in a section, and says which ones it changed.
+// Sorted, so the same input always produces the same edit and the same report.
+func upsertFields(raw []byte, fields map[string]string) ([]string, []byte, error) {
+	var it item
+	if err := json.Unmarshal(raw, &it); err != nil {
+		return nil, nil, fmt.Errorf("parsing the item: %w", err)
+	}
+	current := map[string]string{}
+	for _, f := range it.Fields {
+		if f.Section.ID == "" {
+			current[f.Label] = f.Value
+		}
+	}
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var changed []string
+	for _, name := range names {
+		if have, ok := current[name]; ok && have == fields[name] {
+			continue
+		}
+		var err error
+		if raw, err = upsertField(raw, "", name, fields[name]); err != nil {
+			return nil, nil, err
+		}
+		changed = append(changed, name)
+	}
+	return changed, raw, nil
 }

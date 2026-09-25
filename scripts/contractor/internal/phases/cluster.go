@@ -1,11 +1,6 @@
 package phases
 
 import (
-	"fmt"
-	"net/http"
-	"time"
-
-	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 )
 
@@ -39,23 +34,13 @@ func Cluster(ctx *run.Context) error {
 		return err
 	}
 
-	// Before the bucket adopt, not after, and not optional.
-	//
-	// adoptOrphanedR2Buckets shells out to `tofu import`, and import configures
-	// EVERY provider in the root - including the kubernetes provider, which
-	// versions.tf configures from this very resource's attributes. Until
-	// talos_cluster_kubeconfig.this is in state those attributes are unknown,
-	// so the import fails with "Invalid provider configuration" pointing at
-	// versions.tf rather than at anything to do with the bucket. Materialising
-	// it first is what makes the import below possible at all; the same
-	// mechanism made the disk-image adopt in the Compute phase impossible,
-	// which is why that one deletes instead - see reclaimOrphanedDiskImage.
+	// The kubeconfig before the rest, so the providers that read it configure
+	// from a known value. It used to exist for the bucket adopt that followed
+	// it - `tofu import` configures every provider in the root - and the
+	// buckets are the estate's now, so a site has nothing to adopt. It stays
+	// because the apply below has only ever run with it in state.
 	run.Info("materialising the kubeconfig so the providers that read it can configure")
 	if err := run.TofuApply(ctx, "tofu apply (kubeconfig)", "talos_cluster_kubeconfig.this"); err != nil {
-		return err
-	}
-
-	if err := adoptOrphanedR2Buckets(ctx); err != nil {
 		return err
 	}
 
@@ -69,97 +54,4 @@ func Cluster(ctx *run.Context) error {
 
 	run.Ok("cluster is up and Flux is reconciling")
 	return nil
-}
-
-// adoptOrphanedR2Buckets imports any estate bucket that already exists.
-//
-// Two different situations bring a bucket here, and the distinction is worth
-// keeping because it decides how alarming a hit is.
-//
-// A bucket with Keep=false is found because a teardown FAILED part-way and
-// left it behind. That is the recovery case.
-//
-// A bucket with Keep=true is found because a teardown SUCCEEDED: Sterilize
-// forgets those deliberately so the destroy cannot take them with it, which
-// makes finding them here the NORMAL case rather than the exceptional one.
-//
-// If this ever stops working the symptom is a second bucket appearing beside
-// the first with a name Cloudflare had to disambiguate, and a workload
-// restoring from an empty one.
-//
-// See run.AdoptIfOrphaned for why this is Go and not a `.tf` import block.
-func adoptOrphanedR2Buckets(ctx *run.Context) error {
-	cfg, err := config.LoadRendered(ctx.ConfigRendered)
-	if err != nil {
-		return err
-	}
-	// ResolveSiteNetwork is the only lookup needed here, and it refuses an
-	// unknown site itself - so there is no separate existence check to drift
-	// out of step with it.
-	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
-	if err != nil {
-		return err
-	}
-
-	// Every bucket, including the two nothing holds an S3 credential for.
-	//
-	// This asks the Cloudflare API with the account's admin token rather than
-	// speaking S3, so it needs no per-bucket credential at all - which is what
-	// lets staging and production be adopted before anything is given a key to
-	// write to them.
-	for _, bucket := range config.Buckets {
-		name := bucket.Name(net)
-
-		// Before the adopt, not after. A bucket's name is derived from the
-		// site slug, so a site renamed in the vault renames every bucket -
-		// and the provider cannot rename one in place, so the apply would
-		// plan destroy-and-create and then fail on a destroy the vendor
-		// refuses. Releasing first lets the adopt below pick up the real one.
-		if err := run.ReleaseIfRenamed(ctx, bucket.Address(), name); err != nil {
-			return fmt.Errorf("releasing the old bucket that held %s: %w", bucket.Holds, err)
-		}
-
-		if err := run.AdoptIfOrphaned(ctx, bucket.Address(), func() (string, error) {
-			exists, err := r2BucketExists(cfg.ObjectStorage, name)
-			if err != nil || !exists {
-				return "", err
-			}
-			return cfg.ObjectStorage.AccountID + "/" + name, nil
-		}); err != nil {
-			return fmt.Errorf("adopting the bucket holding %s: %w", bucket.Holds, err)
-		}
-	}
-	return nil
-}
-
-// r2BucketExists queries the Cloudflare API directly - not through
-// Terraform, which cannot answer "does this exist" without already having
-// it in state.
-func r2BucketExists(acct config.ObjectStorageAccount, bucket string) (bool, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-
-	url := config.BucketAPIURL(acct.AccountID, bucket)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return false, err
-	}
-	req.Header.Set("Authorization", "Bearer "+acct.AdminToken)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, fmt.Errorf("querying the R2 bucket: %w", err)
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		return true, nil
-	case http.StatusNotFound:
-		// Confirmed against the real API, not assumed: a missing bucket is
-		// a genuine 404 ({"errors":[{"code":10006,"message":"The specified
-		// bucket does not exist."}]}), not a 200 with an error body.
-		return false, nil
-	default:
-		return false, fmt.Errorf("querying the R2 bucket: HTTP %d", resp.StatusCode)
-	}
 }

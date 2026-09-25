@@ -45,6 +45,10 @@ func validConfig() config {
 	c.State.Bucket = "example-estate"
 	c.State.AccessKeyID = "fixture-key"
 	c.State.SecretAccessKey = "fixture-secret"
+	c.Organization.Name = "Example"
+	c.Plots = map[string]struct {
+		Name string `json:"name"`
+	}{"site0": {Name: "Placeholder Site"}}
 	return c
 }
 
@@ -62,6 +66,13 @@ func TestTheRenderedEstateConfigIsRefusedWhenAFieldIsMissing(t *testing.T) {
 		{"nobody may enroll", func(c *config) { c.Access.Members = " " }, "access/members"},
 		{"no bucket", func(c *config) { c.State.Bucket = "" }, "state/bucket"},
 		{"no token", func(c *config) { c.Access.APIToken = "" }, "access/api_token"},
+		{"no estate name", func(c *config) { c.Organization.Name = "" }, "organization/name"},
+		{"no plots", func(c *config) { c.Plots = nil }, "lists no plots"},
+		{"a nameless site", func(c *config) {
+			c.Plots = map[string]struct {
+				Name string `json:"name"`
+			}{"site0": {Name: " "}}
+		}, "site0/name"},
 		{"another vendor's item", func(c *config) { c.Access.VaultProvider = "aws" }, "attests a provider"},
 		{"the estate declared for a vendor it does not implement", func(c *config) { c.Access.Provider = "aws" }, "implements cloudflare"},
 	} {
@@ -113,11 +124,22 @@ func TestTheEnrollmentApplicationIsFoundByItsType(t *testing.T) {
 	}
 }
 
-// Every tunnel in the account is a site's, so any live one refuses a demolish.
-func TestLiveTunnelsCountsTheSitesStandingOnTheEstate(t *testing.T) {
-	api := serve(t, "/cfd_tunnel", `{"success":true,"result":[{"id":"t1"},{"id":"t2"}]}`, 200)
-	if n, err := api.liveTunnels(); err != nil || n != 2 {
-		t.Fatalf("got %d, %v; want 2", n, err)
+// A tunnel existing says only that the estate granted a plot - the estate
+// creates them. A connected one says a site stands on it, and that is what
+// refuses a demolish.
+func TestOnlyAConnectedTunnelCountsAsAStandingSite(t *testing.T) {
+	api := serve(t, "/cfd_tunnel", `{"success":true,"result":[
+		{"status":"healthy"},{"status":"degraded"},{"status":"inactive"},{"status":"down"}]}`, 200)
+	if n, err := api.connectedTunnels(); err != nil || n != 2 {
+		t.Fatalf("got %d, %v; want the healthy and the degraded one", n, err)
+	}
+}
+
+func TestBucketNamesReadsTheAccountsBuckets(t *testing.T) {
+	api := serve(t, "/r2/buckets", `{"success":true,"result":{"buckets":[{"name":"a"},{"name":"b"}]}}`, 200)
+	got, err := api.bucketNames()
+	if err != nil || !got["a"] || !got["b"] || len(got) != 2 {
+		t.Fatalf("got %v, %v", got, err)
 	}
 }
 
@@ -126,7 +148,7 @@ func TestLiveTunnelsCountsTheSitesStandingOnTheEstate(t *testing.T) {
 // while a site still stands.
 func TestARefusalFromCloudflareIsAnErrorNotAnEmptyAnswer(t *testing.T) {
 	api := serve(t, "/cfd_tunnel", `{"success":false,"errors":[{"code":9109,"message":"Unauthorized to access requested resource"}],"result":null}`, 403)
-	n, err := api.liveTunnels()
+	n, err := api.connectedTunnels()
 	if err == nil {
 		t.Fatalf("a 403 was read as %d live tunnels", n)
 	}

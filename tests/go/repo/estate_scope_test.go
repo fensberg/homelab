@@ -30,9 +30,17 @@ import (
 // must be a type listed here as the estate's. A new estate object is a
 // decision about scope, and this is where that decision is written down.
 var estateTypes = map[string]bool{
-	"cloudflare_zero_trust_access_policy":      true,
-	"cloudflare_zero_trust_access_application": true,
-	"cloudflare_zero_trust_split_tunnel":       true,
+	// Who may enroll a device, and what an enrolled device reaches.
+	"cloudflare_zero_trust_access_policy":          true,
+	"cloudflare_zero_trust_access_application":     true,
+	"cloudflare_zero_trust_device_default_profile": true,
+	// Each site's plot, created by the estate because only an account-wide
+	// token can create it, and granted to the site as narrowed credentials.
+	"cloudflare_r2_bucket":                            true,
+	"cloudflare_account_token":                        true,
+	"cloudflare_zero_trust_tunnel_cloudflared":        true,
+	"cloudflare_zero_trust_tunnel_cloudflared_config": true,
+	"cloudflare_zero_trust_tunnel_cloudflared_route":  true,
 }
 
 const estateRoot = "management/estate"
@@ -65,7 +73,9 @@ func TestEstateObjectsAreDeclaredOnlyInTheEstateRoot(t *testing.T) {
 	estateDeclares := 0
 	for _, path := range files {
 		rel, _ := filepath.Rel(root, path)
-		inEstate := filepath.Dir(rel) == estateRoot
+		// The estate root and the modules beneath it: a site's plot is
+		// declared once in management/estate/site and instantiated per site.
+		inEstate := filepath.Dir(rel) == estateRoot || strings.HasPrefix(filepath.Dir(rel), estateRoot+"/")
 		body, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("reading %s: %v", rel, err)

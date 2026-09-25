@@ -466,38 +466,35 @@ func reportObjectStorageAtRisk(ctx *run.Context) {
 	if !ok {
 		return
 	}
-	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
-	if err != nil {
-		run.Warn("  object storage: could not resolve the site, so this cannot name the buckets")
-		return
-	}
 
 	for _, bucket := range config.Buckets {
-		name := bucket.Name(net)
+		cred, _ := site.ObjectStorage.CredentialFor(bucket.Key)
+		name := cred.Bucket
+		if strings.TrimSpace(name) == "" {
+			name = "the " + bucket.Key + " bucket"
+		}
 
 		// A bucket that survives needs no reading. Saying so is the useful
 		// half of this report - an operator who believes their backups are
 		// about to be destroyed makes worse decisions in the five minutes
-		// before a demolish - and it costs no credential, which matters
-		// because staging and production have none.
-		if bucket.Keep {
+		// before a demolish. Every bucket is the estate's now, so none is
+		// destroyed by a site teardown; only the database bucket is emptied.
+		if !bucket.EmptiedAtTeardown {
 			run.Info("  object storage: " + name + " SURVIVES - holds " + bucket.Holds)
 			continue
 		}
 
-		cred, err := site.ObjectStorage.CredentialFor(bucket.Key)
-		if err != nil || strings.TrimSpace(cred.AccessKeyID) == "" {
-			// Loud rather than skipped. This bucket is about to be emptied and
-			// destroyed, and not being able to say what is in it is a worse
-			// answer than any number - it means the line below that normally
-			// warns about contents will simply not appear.
-			run.Warn("  object storage: " + name + " WILL BE DESTROYED, and no credential here can read it")
+		if strings.TrimSpace(cred.AccessKeyID) == "" {
+			// Loud rather than skipped. This bucket is about to be emptied,
+			// and not being able to say what is in it is a worse answer than
+			// any number.
+			run.Warn("  object storage: " + name + " WILL BE EMPTIED, and no credential here can read it")
 			run.Warn("  So this cannot tell you what is in it. Check it in the vendor's console before continuing.")
 			continue
 		}
 
 		remote := config.BucketRemote(name)
-		size, err := run.CmdOutputEnv(ctx.ClusterDir, config.RcloneEnv(cfg.ObjectStorage, cred), "rclone", "--log-level", "ERROR", "size", remote)
+		size, err := run.CmdOutputEnv(ctx.ClusterDir, config.RcloneEnv(site.ObjectStorage.AccountID, cred), "rclone", "--log-level", "ERROR", "size", remote)
 		if err != nil {
 			// Not alarming on its own: a bucket that was never created because
 			// an earlier run failed reads exactly like this.
@@ -511,10 +508,9 @@ func reportObjectStorageAtRisk(ctx *run.Context) {
 			continue
 		}
 		run.Warn("  object storage: " + name + " - " + summary)
-		run.Warn("  THIS HOLDS " + strings.ToUpper(bucket.Holds) + ", AND THE TEARDOWN DESTROYS IT.")
-		run.Warn("  Cloudflare will not delete a bucket with objects in it, so the teardown")
-		run.Warn("  empties it first. The age-encrypted state dumps are NOT in here - they")
-		run.Warn("  have a bucket of their own that this operation leaves alone (#94).")
+		run.Warn("  THIS HOLDS " + strings.ToUpper(bucket.Holds) + ", AND THE TEARDOWN EMPTIES IT.")
+		run.Warn("  The bucket itself is the estate's and stays. The age-encrypted state dumps")
+		run.Warn("  are NOT in here - they have a bucket of their own that this leaves alone (#94).")
 	}
 }
 

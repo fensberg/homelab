@@ -3,57 +3,45 @@
 package api_test
 
 import (
-	"fmt"
-	"net/url"
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"homelab/details/cloudflare"
 	"homelab/tests/harness"
 )
 
-// The tunnel exists at the vendor, and its connector is connected.
+// The run token the estate granted is a tunnel token for this estate's
+// account.
 //
-// WHAT THIS IS FOR. Everything an enrolled device reaches from off the LAN
-// arrives through one Cloudflare Tunnel, carried by cloudflared pods that dial
-// out to Cloudflare. If the token is revoked, the tunnel deleted in the
-// dashboard, or every connector unable to reach the edge, the estate looks
-// exactly as it did - pods Running, Services present - and every remote join
-// times out. Only Cloudflare can say whether the tunnel is up, which is why
-// this lives in this tier rather than in tests/go/repo.
-//
-// It asks with the tunnel's own token, so it also proves that token can still
-// read what it manages.
+// A site holds the run token alone now - the estate creates the tunnel, and
+// the token serves that one tunnel and can ask the API nothing. So whether the
+// tunnel is CONNECTED is a question for the estate's token, and belongs to the
+// estate's lane (#535). What a site can check is that its grant is a real run
+// token, for the account its buckets are in: a token from another account, or
+// a value pasted into the wrong field, would leave cloudflared failing to
+// connect with nothing naming the grant.
 //
 // covers: api:tunnel
-func TestTheTunnelIsDeclaredAtTheVendorAndConnected(t *testing.T) {
+func TestTheGrantedTunnelTokenIsForThisEstatesAccount(t *testing.T) {
 	tunnel := harness.Tunnel(t)
 	require.Equal(t, "cloudflare", tunnel.Provider,
-		"the rendered config declares tunnel.provider %q, and this test knows how to ask Cloudflare. "+
-			"A different vendor needs its own live check rather than this one passing by accident.",
+		"the rendered config declares tunnel.provider %q, and this test knows how to read a Cloudflare "+
+			"run token. A different vendor needs its own check rather than this one passing by accident.",
 		tunnel.Provider)
-	require.NotEmpty(t, tunnel.APIToken, "the rendered config has no tunnel.api_token")
+	require.NotEmpty(t, tunnel.Token, "the rendered config has no tunnel.token")
 
-	account := harness.ObjectStorageAccount(t).AccountID
-	name := fmt.Sprintf("%s-%s", harness.LoadConfig(t).Organization.Name, harness.Site())
-
-	q := url.Values{"name": {name}, "is_deleted": {"false"}}
-	tunnels, err := cloudflare.Get[[]struct {
-		Name   string `json:"name"`
-		Status string `json:"status"`
-	}](cloudflare.API+"/accounts/"+account, tunnel.APIToken, "/cfd_tunnel", q)
-	require.NoError(t, err, "the tunnel token listing its own tunnels. The token may have been "+
-		"revoked or lost the Cloudflare Tunnel read permission.")
-	require.Len(t, tunnels, 1,
-		"Cloudflare holds %d live tunnels named %q; management/cluster/tunnel.tf declares exactly one",
-		len(tunnels), name)
-
-	// healthy: every connector up. degraded: some. inactive and down mean no
-	// connector is carrying anything, which is the silent failure above.
-	status := tunnels[0].Status
-	require.Contains(t, []string{"healthy", "degraded"}, status,
-		"the tunnel %q is %q: no cloudflared connector is carrying traffic, so every enrolled "+
-			"device's route leads nowhere. Check the cloudflared pods in the tunnel namespace.",
-		name, status)
+	raw, err := base64.StdEncoding.DecodeString(tunnel.Token)
+	require.NoError(t, err, "the granted tunnel token is not base64, so it is not a Cloudflare run token")
+	var token struct {
+		Account string `json:"a"`
+		Tunnel  string `json:"t"`
+		Secret  string `json:"s"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &token), "the granted tunnel token does not decode to a run token")
+	require.NotEmpty(t, token.Tunnel, "the granted run token names no tunnel")
+	require.NotEmpty(t, token.Secret, "the granted run token carries no secret")
+	require.Equal(t, harness.SiteConfig(t).ObjectStorage.AccountID, token.Account,
+		"the granted run token is for a different account than this site's buckets")
 }

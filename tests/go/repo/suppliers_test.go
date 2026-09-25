@@ -489,31 +489,39 @@ func TestEveryProviderIsADeclaredSupplier(t *testing.T) {
 		t.Fatal("approved-suppliers.yml declares no providers, so this test proves nothing")
 	}
 
-	body, err := os.ReadFile(filepath.Join(root, "management", "cluster", "versions.tf"))
-	if err != nil {
-		t.Fatalf("reading versions.tf: %v", err)
-	}
-
+	// Every OpenTofu file in the repository, not one root's versions.tf. This
+	// read management/cluster/versions.tf alone, so the estate root's provider
+	// was required with nothing checking it was approved - and when the site
+	// root stopped requiring Cloudflare, the approval looked unused.
 	// `name = { source = "owner/name", version = "~> x.y" }`
-	declared := map[string]bool{}
-	for _, m := range regexp.MustCompile(`source\s*=\s*"([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)"`).FindAllStringSubmatch(string(body), -1) {
-		declared[m[1]] = true
+	declared := map[string]string{}                                                                 // source -> first file requiring it
+	sourceRe := regexp.MustCompile(`source\s*=\s*"([a-zA-Z0-9_-][a-zA-Z0-9._-]*/[a-zA-Z0-9._-]+)"`) // not "./x": a local module
+	for _, rel := range tracked(t, func(rel string) bool { return strings.HasSuffix(rel, ".tf") }) {
+		body, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatalf("reading %s: %v", rel, err)
+		}
+		for _, m := range sourceRe.FindAllStringSubmatch(string(body), -1) {
+			if _, seen := declared[m[1]]; !seen {
+				declared[m[1]] = rel
+			}
+		}
 	}
 	if len(declared) == 0 {
-		t.Fatal("no providers found in versions.tf, so this test proves nothing")
+		t.Fatal("no providers found in any .tf file, so this test proves nothing")
 	}
 
-	for source := range declared {
+	for source, rel := range declared {
 		if !approved[source] {
-			t.Errorf("management/cluster/versions.tf requires the provider %q, which is not an approved supplier.\n\n"+
+			t.Errorf("%s requires the provider %q, which is not an approved supplier.\n\n"+
 				"A provider runs with this estate's credentials, so taking delivery from a new party is a "+
 				"decision rather than a line of HCL. Declare it in scripts/approved-suppliers.yml with a "+
-				"reason, in its own pull request.", source)
+				"reason, in its own pull request.", rel, source)
 		}
 	}
 	for source := range approved {
-		if !declared[source] {
-			t.Errorf("scripts/approved-suppliers.yml approves the provider %q and versions.tf does not require it.\n\n"+
+		if _, ok := declared[source]; !ok {
+			t.Errorf("scripts/approved-suppliers.yml approves the provider %q and no .tf file requires it.\n\n"+
 				"Remove the entry - an approval that outlives the thing it approved is how a supplier list "+
 				"stops describing what the estate actually takes.", source)
 		}

@@ -125,21 +125,32 @@ debt:
   # order moves off it to releases.yaml (#510, R2b).
   - "modules/applications/valheim/base/deployment.yaml"
 
-  # --- Field names two separate documents happen to share (9)
+  # --- Field names two separate documents happen to share (11)
   #
   # The estate's rendered config (config/estate.tpl.json, read by the lawyer)
   # and a site's (config/management.tpl.json, read by the contractor) describe
   # the same vendor's credentials in the same words. They are kept as two types
   # on purpose: sharing one would put the lawyer's reading of its config in the
   # contractor's package, across the credential boundary the two programs
-  # exist to hold. errors and result are Cloudflare's envelope, which also
-  # happens to be GitHub's and Prometheus's vocabulary.
+  # exist to hold. change is a plan's per-resource change and, separately, an
+  # apply summary's count of changed resources. errors and result are
+  # Cloudflare's envelope, which also happens to be GitHub's and Prometheus's
+  # vocabulary.
   - 'json:"access_key_id"'
   - 'json:"account_id"'
-  - 'json:"api_token"'
+  - 'json:"bucket"'
+  - 'json:"change"'
   - 'json:"errors"'
+  - 'json:"organization"'
   - 'json:"provider"'
   - 'json:"result"'
   - 'json:"secret_access_key"'
   - 'json:"state"'
   - 'json:"vault_provider"'
+
+  # --- The resource type a site's buckets are (1)
+  #
+  # The lawyer finds the buckets it adopts and releases by this type, and the
+  # estate scope guard declares the type the estate's. A Go constant cannot be
+  # shared: the lawyer is a main package, which nothing may import.
+  - "cloudflare_r2_bucket"

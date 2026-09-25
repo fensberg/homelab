@@ -167,8 +167,8 @@ maintenance-mode banner:
 // and would not be for others. The image is derived data: re-downloading costs
 // a couple of minutes, and compute.tf already accepts an adopt-then-replace
 // cycle whenever the stored image came from a different talos_version. A
-// bucket holding backups, by contrast, must still be adopted - see
-// adoptOrphanedR2Bucket, which runs late enough for import to work.
+// bucket holding backups, by contrast, must be adopted rather than recreated,
+// which is why buckets are the estate's: the lawyer adopts them on every build.
 //
 // The expected file name embeds talos_version, which lives only in
 // variables.tf; matching by pattern instead avoids keeping a second copy of

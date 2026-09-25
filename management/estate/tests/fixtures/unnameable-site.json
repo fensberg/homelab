@@ -7,7 +7,7 @@
     "vault_provider": "cloudflare",
     "account_id": "0123456789abcdef0123456789abcdef",
     "api_token": "fixture",
-    "members": " , "
+    "members": "someone@example.com, another@example.com"
   },
   "state": {
     "bucket": "example-estate",
@@ -16,7 +16,7 @@
   },
   "plots": {
     "site0": {
-      "name": "North Street Office"
+      "name": "---"
     }
   }
 }

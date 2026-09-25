@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"homelab/contractor/internal/run"
+	"homelab/details/tofustate"
 )
 
 // Plan shows what a converge would do to an estate that already exists,
@@ -209,56 +210,10 @@ func commentMarker(site string) string {
 	return "<!-- plan:" + site + " -->"
 }
 
-type planChange struct {
-	Address string `json:"address"`
-	Mode    string `json:"mode"`
-	Change  struct {
-		Actions []string `json:"actions"`
-		// Top-level attributes only, and never their contents. See
-		// changedAttributes for why the depth limit is the safety property
-		// rather than an approximation.
-		Before       map[string]json.RawMessage `json:"before"`
-		After        map[string]json.RawMessage `json:"after"`
-		AfterUnknown map[string]json.RawMessage `json:"after_unknown"`
-		// Which attributes forced a replacement. The most valuable field in a
-		// plan and the one nothing here was reading: "this machine is being
-		// rebuilt" and "this machine is being rebuilt BECAUSE ITS DISK
-		// CHANGED" are different decisions.
-		ReplacePaths [][]json.RawMessage `json:"replace_paths"`
-	} `json:"change"`
-}
-
-type outputChange struct {
-	Actions         []string        `json:"actions"`
-	BeforeSensitive json.RawMessage `json:"before_sensitive"`
-	AfterSensitive  json.RawMessage `json:"after_sensitive"`
-}
-
-// sensitive reports whether tofu marked either side of this output secret.
-// Both sides matter: an output that stops being sensitive is still one whose
-// old value must not be printed.
-func (o outputChange) sensitive() bool {
-	return string(o.BeforeSensitive) == "true" || string(o.AfterSensitive) == "true"
-}
-
-// planDoc is the part of a tofu plan this summary reads.
-//
-// FormatVersion is not decoration. Every field below is optional in JSON - a
-// document with none of them unmarshals cleanly into an empty struct, and an
-// empty struct used to render "No changes. The estate already matches the
-// config.", which is a positive claim about reality made from having read
-// nothing. A plan document always carries a format version, so requiring it
-// is what separates "this plan holds no changes" from "this is not a plan".
-//
-// There is deliberately no third status for the second case. A plan that
-// examined nothing means the tool is broken, not that the estate is quiet, and
-// inventing a calm-looking way to say so would put the reassuring words in
-// front of the reader at exactly the wrong moment. It is an error.
-type planDoc struct {
-	FormatVersion   string                  `json:"format_version"`
-	ResourceChanges []planChange            `json:"resource_changes"`
-	OutputChanges   map[string]outputChange `json:"output_changes"`
-}
+// The plan's shape is read by details/tofustate, which the lawyer shares.
+// FormatVersion is required there for the reason Plan's comment gives: a plan
+// that examined nothing means the tool is broken, not that the estate is
+// quiet, and it is an error rather than a third, calm-looking status.
 
 // summarisePlan renders a plan as addresses and verbs.
 //
@@ -266,8 +221,8 @@ type planDoc struct {
 // reaches the output - is testable against a plan full of them, without tofu
 // or an estate.
 func summarisePlan(raw []byte) (string, error) {
-	var doc planDoc
-	if err := json.Unmarshal(raw, &doc); err != nil {
+	doc, err := tofustate.ParsePlan(raw)
+	if err != nil {
 		return "", fmt.Errorf("this is not a tofu plan in JSON form: %w", err)
 	}
 	if doc.FormatVersion == "" {
@@ -336,7 +291,7 @@ func summarisePlan(raw []byte) (string, error) {
 			continue
 		}
 		d := ""
-		if doc.OutputChanges[name].sensitive() {
+		if doc.OutputChanges[name].Sensitive() {
 			// Worth saying out loud rather than leaving to inference. A
 			// sensitive output is one this summary will never show, so a
 			// reader who cannot see a value should know it was withheld on

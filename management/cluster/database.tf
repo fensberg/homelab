@@ -71,7 +71,7 @@ resource "kubernetes_secret" "cluster_vars" {
   }
 
   data = {
-    OBJECT_STORAGE_BUCKET   = "${local.site_name}-database"
+    OBJECT_STORAGE_BUCKET   = local.object_storage.database.bucket
     OBJECT_STORAGE_ENDPOINT = local.object_storage_endpoint
     STATE_DB_NAMESPACE      = local.state_db_namespace
     STATE_DB_CLUSTER        = local.state_db_cluster

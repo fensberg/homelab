@@ -45,7 +45,7 @@ files:
     uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/cluster.go
-    uncovered: 3
+    uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/compute.go
     uncovered: 6
@@ -88,7 +88,7 @@ files:
     uncovered: 6
     covered_by: e2e
   - path: contractor/internal/phases/teardown.go
-    uncovered: 3
+    uncovered: 2
     covered_by: e2e
   - path: contractor/internal/phases/verify.go
     uncovered: 1
@@ -162,7 +162,7 @@ files:
     uncovered: 2
     covered_by: nothing
   - path: details/onepassword/upsert.go
-    uncovered: 2
+    uncovered: 3
     covered_by: nothing
   - path: contractor/internal/phases/checkvault.go
     uncovered: 1
@@ -177,12 +177,19 @@ files:
     uncovered: 3
     covered_by: nothing
   - path: contractor/internal/phases/secrets.go
-    uncovered: 6
+    uncovered: 5
     covered_by: nothing
   # The lawyer's run itself: signing in, rendering from the estate vault,
   # and driving tofu against the estate's bucket. Each needs the estate's
   # real vault and account. Its decisions - the vault boundary, which verb
   # admits which state, adoption, sterilize - are extracted and unit-tested.
+  # The lawyer's grants and its bucket adoption and release: each runs tofu
+  # against the estate's state and op against its vaults. What they decide -
+  # which planned bucket already exists, which addresses are buckets, how the
+  # grants output reads - is extracted and unit-tested in grants_test.go.
+  - path: lawyer/grants.go
+    uncovered: 4
+    covered_by: nothing
   - path: lawyer/estate.go
     uncovered: 7
     covered_by: nothing

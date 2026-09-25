@@ -52,7 +52,6 @@ func TestRestoreReadsTheIdentityFromAPipe(t *testing.T) {
 func TestGeneratedSecretsLandInTheSitesOwnVault(t *testing.T) {
 	for name, ref := range map[string]string{
 		"world backup key": WorldBackupKeyRef("site0"),
-		"tunnel secret":    TunnelSecretRef("site0"),
 	} {
 		if !strings.HasPrefix(ref, "op://site0/") {
 			t.Errorf("the %s is written to %s, not the site's own vault", name, ref)

@@ -10,10 +10,6 @@
       "private_key": "not-a-key-these-fixtures-are-shape-only"
     }
   },
-  "object_storage": {
-    "account_id": "fixture-account-id",
-    "admin_token": "fixture-admin-token"
-  },
   "state_backup": {
     "recipient": "age1fixturefixturefixturefixturefixturefixturefixturefixture"
   },
@@ -44,19 +40,24 @@
       "object_storage": {
         "provider": "cloudflare",
         "vault_provider": "cloudflare",
+        "account_id": "fixture-account-id",
         "database": {
+          "bucket": "example-site0-database",
           "access_key_id": "f1e2d3c4b5a697887766554433221100",
           "secret_access_key": "fixture-secret-access-key"
         },
         "state": {
+          "bucket": "example-site0-state",
           "access_key_id": "00112233445566778899aabbccddeeff",
           "secret_access_key": "fixture-secret-access-key"
         },
         "staging": {
+          "bucket": "example-site0-staging",
           "access_key_id": "11112222333344445555666677778888",
           "secret_access_key": "fixture-secret-access-key"
         },
         "production": {
+          "bucket": "example-site0-production",
           "access_key_id": "99990000aaaabbbbccccddddeeeeffff",
           "secret_access_key": "fixture-secret-access-key"
         }
@@ -69,7 +70,6 @@
   "tunnel": {
     "provider": "cloudflare",
     "vault_provider": "cloudflare",
-    "api_token": "fixture",
-    "secret": "fixture-tunnel-secret-at-least-thirty-two-bytes"
+    "token": "fixture-run-token"
   }
 }
