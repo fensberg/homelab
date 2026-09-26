@@ -1,0 +1,353 @@
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 3daea26..ddad98f 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -1,5 +1,13 @@
+ name: Deploy Infrastructure
+ 
++# Named for what each run does (#155). A pull request only plans and a merge
++# converges, and "Deploy Infrastructure  main  Queued" could not say which -
++# so cancelling one at 2am was a guess about whether it lost a plan or
++# prevented an apply.
++run-name: >-
++  ${{ github.event_name == 'pull_request' && format('Plan: {0}', github.event.pull_request.title)
++  || format('Converge: {0}', github.event.head_commit.message) }}
++
+ # Two halves of one gate.
+ #
+ # A pull request touching infrastructure gets a plan, posted back to it. A
+@@ -15,6 +23,11 @@ name: Deploy Infrastructure
+ # first real deployment and awkward to retrofit after.
+ on:
+   pull_request:
++    # closed as well, so closing a pull request cancels its plan: the run it
++    # starts joins the same concurrency group, cancels whatever of that pull
++    # request is still queued, and does nothing itself. A plan left waiting
++    # for a runner fires the day one exists, against a tree nobody wants.
++    types: [opened, synchronize, reopened, closed]
+     paths:
+       - "environments/**/infrastructure/**"
+       - "modules/infrastructure/**"
+@@ -35,11 +48,14 @@ on:
+ permissions:
+   contents: read
+ 
+-# One at a time, and never cancelled mid-flight. There is one estate and one
+-# state lock; a cancelled apply is how state gets left locked or half-written.
++# One at a time per ref. A converge is never cancelled mid-flight: there is one
++# estate and one state lock, and a cancelled apply is how state gets left
++# locked or half-written. A pull request's plan is: it reads and changes
++# nothing, so a newer push, or the pull request closing, replaces it rather
++# than queueing behind it. Only the newest plan of a pull request ever waits.
+ concurrency:
+   group: deploy-infrastructure-${{ github.ref }}
+-  cancel-in-progress: false
++  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+ 
+ # GitHub's default shell for `run:` is `bash -e {0}`, which has no
+ # pipefail: in `a | b` only b's exit status counts, so a failing command
+@@ -72,6 +88,9 @@ jobs:
+   # ---------------------------------------------------------------------
+   changes:
+     name: What changed
++    # Nothing to plan for a pull request that has closed; that run exists only
++    # to cancel the plan before it.
++    if: github.event.action != 'closed'
+     runs-on: ubuntu-latest
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+@@ -196,7 +215,8 @@ jobs:
+     # what keeps an outside contributor's branch away from them - the same
+     # boundary pr-validation.yml holds by being hermetic.
+     runs-on: homelab-management
+-    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
++    # The plan's own environment, as for plan-estate below (#438).
++    environment: ${{ github.ref_type == 'tag' && 'production-plan' || 'staging-plan' }}
+     permissions:
+       contents: read
+       pull-requests: write
+@@ -713,7 +733,12 @@ jobs:
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       needs.changes.outputs.management == 'true'
+     runs-on: homelab-management
+-    environment: management
++    # Its own environment, not the converge's (#438). A reviewer on an
++    # environment gates every job that names it, so sharing one meant a click
++    # for every "show me what would change" - and it meant the plan, which
++    # runs on every pull request, held the converge's read-write vault token.
++    # management-plan has no reviewer and a read-only token.
++    environment: management-plan
+     permissions:
+       contents: read
+       pull-requests: write
+diff --git a/.github/workflows/github-script/plan-absence-comment.js b/.github/workflows/github-script/plan-absence-comment.js
+index 0a9b67e..2dee527 100644
+--- a/.github/workflows/github-script/plan-absence-comment.js
++++ b/.github/workflows/github-script/plan-absence-comment.js
+@@ -6,6 +6,18 @@
+ // directly. Values arrive through process.env, set on the calling step.
+ module.exports = async ({ github, context }) => {
+   const marker = '<!-- plan-absence -->';
++
++  // A plan cancelled because something replaced it is not an absent plan. A
++  // newer push supersedes a pull request's plan, and closing the pull request
++  // cancels it; both runs end "cancelled", and neither means the change went
++  // unplanned. Only a plan for the pull request's current head counts.
++  const {data: pr} = await github.rest.pulls.get({
++    owner: context.repo.owner, repo: context.repo.repo,
++    pull_number: context.issue.number,
++  });
++  if (pr.state !== 'open' || pr.head.sha !== context.payload.pull_request.head.sha) {
++    return;
++  }
+   const body = [
+     marker,
+     '## No plan was produced for this change',
+diff --git a/CLAUDE.md b/CLAUDE.md
+index e92c4db..888fa36 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -78,23 +78,29 @@ wrong the moment a production workload lands on the same cluster - a job
+ labelled `staging` would be the one restarting a control plane that production
+ depends on.
+ 
+-### The four GitHub environments
+-
+-Each gates one thing, and none overlaps another:
+-
+-| Environment   | Gates                                            | Triggered by                 |
+-| ------------- | ------------------------------------------------ | ---------------------------- |
+-| `management`  | the platform itself - `contractor converge-site` | merge touching `management/` |
+-| `staging`     | workload deploys                                 | merge to `main`              |
+-| `production`  | workload deploys                                 | tag `v*`                     |
+-| `integration` | the test tiers that need a real estate           | nightly, or dispatch         |
+-
+-`management` is a fourth environment rather than a reuse of `staging`
++### The GitHub environments
++
++Each gates one thing, and none overlaps another. A job that only reads has an
++environment of its own (#438): a reviewer gates every job naming its
++environment, so a shared one put a click on every plan and handed every plan
++the converge's read-write token. `tests/go/repo` refuses a read-only job and a
++mutating one sharing an environment.
++
++| Environment                        | Gates                                            | Triggered by                        | Reviewer |
++| ---------------------------------- | ------------------------------------------------ | ----------------------------------- | -------- |
++| `management`                       | the platform itself - `contractor converge-site` | merge touching `management/`        | yes      |
++| `management-plan`                  | `contractor plan`, read-only                     | pull request touching `management/` | no       |
++| `staging` / `production`           | workload deploys                                 | merge to `main` / tag `v*`          | optional |
++| `staging-plan` / `production-plan` | workload plans, read-only                        | pull request                        | no       |
++| `integration`                      | the test tiers that need a real estate           | nightly, or dispatch                | no       |
++
++`management` is its own environment rather than a reuse of `staging`
+ deliberately. Reusing one would look leaner and would mislabel the job with the
+ largest blast radius in the repository. The secret it holds is scoped to match:
+ the site's own service account, with read and write on `site0` and read on
+ `site0-shared` and `estate-shared`, and nothing else. The contractor refuses a
+-token that can see more (`scripts/details/vaults`).
++token that can see more (`scripts/details/vaults`). `management-plan` holds a
++separate, **read-only** service account on the same three vaults.
+ 
+ ## Invariants
+ 
+diff --git a/tests/go/repo/environment_separation_test.go b/tests/go/repo/environment_separation_test.go
+new file mode 100644
+index 0000000..15ec5c9
+--- /dev/null
++++ b/tests/go/repo/environment_separation_test.go
+@@ -0,0 +1,104 @@
++package repo
++
++import (
++	"regexp"
++	"sort"
++	"strings"
++	"testing"
++
++	"gopkg.in/yaml.v3"
++)
++
++// A job that only reads and a job that changes the estate never share a GitHub
++// environment (#438).
++//
++// A reviewer on an environment gates every job that names it, and GitHub cannot
++// tell them apart. So when the plan and the converge shared `management`, a
++// reviewer there asked for a click on every "show me what would change", and
++// the plan - which runs on every pull request - held the converge's read-write
++// vault token. Plans have environments of their own; this keeps it that way.
++//
++// Every job in every workflow is walked. The read-only jobs are declared
++// here, because whether a job writes is a property nothing in the YAML states;
++// every other job naming an environment is treated as one that changes things.
++var readOnlyJobs = map[string]bool{
++	"deploy-infrastructure.yml/plan":        true,
++	"deploy-infrastructure.yml/plan-estate": true,
++}
++
++// An environment's name as a job gives it: a plain string, a map with name:,
++// or an expression choosing between quoted names - the ones after && and ||,
++// not the ones a condition compares against (github.ref_type == 'tag').
++var quotedName = regexp.MustCompile(`(?:&&|\|\|)\s*'([A-Za-z0-9_-]+)'`)
++
++func jobEnvironments(raw any) []string {
++	switch v := raw.(type) {
++	case string:
++		if strings.Contains(v, "${{") {
++			var out []string
++			for _, m := range quotedName.FindAllStringSubmatch(v, -1) {
++				out = append(out, m[1])
++			}
++			return out
++		}
++		return []string{v}
++	case map[string]any:
++		return jobEnvironments(v["name"])
++	}
++	return nil
++}
++
++func TestReadOnlyJobsAndMutatingJobsNeverShareAnEnvironment(t *testing.T) {
++	usedBy := map[string][]string{} // environment -> jobs
++	seen := map[string]bool{}
++	for file, body := range workflowTexts(t) {
++		var wf struct {
++			Jobs map[string]struct {
++				Environment any `yaml:"environment"`
++			} `yaml:"jobs"`
++		}
++		if err := yaml.Unmarshal([]byte(body), &wf); err != nil {
++			t.Fatalf("parsing %s: %v", file, err)
++		}
++		for name, job := range wf.Jobs {
++			id := file + "/" + name
++			seen[id] = true
++			for _, env := range jobEnvironments(job.Environment) {
++				usedBy[env] = append(usedBy[env], id)
++			}
++		}
++	}
++
++	for id := range readOnlyJobs {
++		if !seen[id] {
++			t.Errorf("%s is declared read-only and no longer exists: delete it from readOnlyJobs", id)
++		}
++	}
++	if len(usedBy) == 0 {
++		t.Fatal("no job names an environment, so this checked nothing")
++	}
++
++	envs := make([]string, 0, len(usedBy))
++	for env := range usedBy {
++		envs = append(envs, env)
++	}
++	sort.Strings(envs)
++	for _, env := range envs {
++		var reads, writes []string
++		for _, id := range usedBy[env] {
++			if readOnlyJobs[id] {
++				reads = append(reads, id)
++			} else {
++				writes = append(writes, id)
++			}
++		}
++		if len(reads) > 0 && len(writes) > 0 {
++			sort.Strings(reads)
++			sort.Strings(writes)
++			t.Errorf("the environment %q is named by read-only %v and by %v, which change things.\n\n"+
++				"A reviewer on it would gate the read-only job too, and the read-only job holds whatever "+
++				"credential the other needs. Give the read-only job an environment of its own (#438).",
++				env, reads, writes)
++		}
++	}
++}
+diff --git a/tests/js/unit/plan-absence-comment.test.ts b/tests/js/unit/plan-absence-comment.test.ts
+new file mode 100644
+index 0000000..145931b
+--- /dev/null
++++ b/tests/js/unit/plan-absence-comment.test.ts
+@@ -0,0 +1,55 @@
++import { describe, expect, it } from "vitest";
++import { createRequire } from "node:module";
++
++// The comment that says a management change went unplanned. It runs whenever
++// the plan job did not succeed - and since a newer push or a closed pull
++// request now cancels a plan (#438), "cancelled" often means "replaced", not
++// "missing". This holds it to speaking only when the plan it is about was
++// for the pull request as it stands.
++const require = createRequire(import.meta.url);
++const comment = require("../../../.github/workflows/github-script/plan-absence-comment.js");
++
++function fakeGitHub(pr: { state: string; head: { sha: string } }) {
++  const created: string[] = [];
++  const github = {
++    rest: {
++      pulls: { get: async () => ({ data: pr }) },
++      issues: {
++        listComments: async () => ({ data: [] }),
++        deleteComment: async () => ({}),
++        createComment: async ({ body }: { body: string }) => {
++          created.push(body);
++          return {};
++        },
++      },
++    },
++  };
++  const context = {
++    repo: { owner: "example", repo: "homelab" },
++    issue: { number: 7 },
++    payload: { pull_request: { head: { sha: "run-head" } } },
++  };
++  return { github, context, created };
++}
++
++describe("the plan-absence comment", () => {
++  it("speaks when the plan for the current head did not run", async () => {
++    const { github, context, created } = fakeGitHub({ state: "open", head: { sha: "run-head" } });
++    process.env.RESULT = "cancelled";
++    await comment({ github, context });
++    expect(created).toHaveLength(1);
++    expect(created[0]).toContain("No plan was produced");
++  });
++
++  it("stays quiet when a newer push replaced the plan", async () => {
++    const { github, context, created } = fakeGitHub({ state: "open", head: { sha: "newer" } });
++    await comment({ github, context });
++    expect(created).toHaveLength(0);
++  });
++
++  it("stays quiet when the pull request closed", async () => {
++    const { github, context, created } = fakeGitHub({ state: "closed", head: { sha: "run-head" } });
++    await comment({ github, context });
++    expect(created).toHaveLength(0);
++  });
++});
+diff --git a/tests/mutations.yml b/tests/mutations.yml
+index a4bd889..7476725 100644
+--- a/tests/mutations.yml
++++ b/tests/mutations.yml
+@@ -85,7 +85,7 @@
+ # require editing two places, and removing one should always require a visible,
+ # reviewable act rather than a quiet deletion. Same shape as
+ # tests/coverage-baseline.json, for the same reason.
+-floor: 166
++floor: 167
+ 
+ mutations:
+   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
+@@ -191,6 +191,16 @@ mutations:
+       arrives somewhere it was not meant to - here, Slack, every hour, which
+       is what #532 was. A typo in a matcher is the plausible way to lose it.
+ 
++  - guard: TestReadOnlyJobsAndMutatingJobsNeverShareAnEnvironment
++    file: .github/workflows/deploy-infrastructure.yml
++    find: "    environment: management-plan\n"
++    replace: "    environment: management\n"
++    mentions: "named by read-only"
++    why: >
++      Pointing the plan back at the converge's environment reads as tidying up
++      a duplicate. It puts the reviewer's click back on every plan, and hands
++      every pull request's plan the read-write vault token (#438).
++
+   - guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
+     file: management/cluster/tunnel.tf
+     find: 'resource "kubernetes_namespace" "tunnel" {'
