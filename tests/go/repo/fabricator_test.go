@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/workorders"
 )
 
 // The fabricator builds from scripts/work-orders.json, filling each
@@ -130,23 +132,13 @@ func TestTheFabricatorReadsEveryWorkOrder(t *testing.T) {
 	}
 }
 
-type workOrder struct {
-	Name    string `json:"name"`
-	Context string `json:"context"`
-}
-
-func workOrders(t *testing.T) []workOrder {
+func workOrders(t *testing.T) []workorders.Order {
 	t.Helper()
-	var f struct {
-		Orders []workOrder `json:"orders"`
+	orders, err := workorders.Parse([]byte(readRepoFile(t, workorders.Path)))
+	if err != nil {
+		t.Fatalf("%v, so the fabricator builds nothing", err)
 	}
-	if err := json.Unmarshal([]byte(readRepoFile(t, "scripts/work-orders.json")), &f); err != nil {
-		t.Fatalf("parsing scripts/work-orders.json: %v", err)
-	}
-	if len(f.Orders) == 0 {
-		t.Fatal("scripts/work-orders.json holds no orders, so the fabricator builds nothing")
-	}
-	return f.Orders
+	return orders
 }
 
 // Every Dockerfile gets every pin it asks for, at the value versions.env
@@ -270,17 +262,13 @@ func fakeTools(t *testing.T, tools map[string]string) string {
 
 func valheimRelease(t *testing.T) string {
 	t.Helper()
-	var f struct {
-		Orders []map[string]json.RawMessage `json:"orders"`
-	}
-	if err := json.Unmarshal([]byte(readRepoFile(t, "scripts/work-orders.json")), &f); err != nil {
-		t.Fatal(err)
-	}
-	for _, o := range f.Orders {
-		if string(o["name"]) == `"valheim"` {
-			if r, ok := o["release"]; ok {
-				return string(r)
+	for _, o := range workOrders(t) {
+		if o.Name == "valheim" && o.Release != nil {
+			b, err := json.Marshal(o.Release)
+			if err != nil {
+				t.Fatal(err)
 			}
+			return string(b)
 		}
 	}
 	t.Fatal("the valheim work order asks for no release, so production has nothing to pin")
@@ -387,7 +375,8 @@ echo Organization`})
 // by digest in the overlay - and that is what is pushed.
 func TestTheReleaseCarriesTheOverlayWithTheNewDigest(t *testing.T) {
 	scratch := t.TempDir()
-	path := fakeTools(t, map[string]string{"flux": `path=""
+	path := fakeTools(t, map[string]string{"flux": `if [ "$1" = tag ]; then echo "$@" > "` + scratch + `/tagged"; exit 0; fi
+path=""
 for a in "$@"; do case "$a" in --path=*) path="${a#--path=}" ;; esac; done
 cp -R "$path" "` + scratch + `/pushed"
 echo '{"repository":"ghcr.io/example/homelab-valheim-release","tag":"1.0.15-1","digest":"sha256:` + strings.Repeat("b", 64) + `"}'`})
@@ -395,9 +384,15 @@ echo '{"repository":"ghcr.io/example/homelab-valheim-release","tag":"1.0.15-1","
 	ok, output, logs := runReleaseStep(t, "Stage and publish the release", repoRoot(t), path, []string{
 		"IMAGE=ghcr.io/example/homelab-valheim", "DIGEST=" + digest,
 		"ARTIFACT=ghcr.io/example/homelab-valheim-release", "TAG=1.0.15-1",
-		"RELEASE=" + valheimRelease(t), "SHA=0123456789abcdef", "SOURCE=https://github.com/example/homelab"})
+		"RELEASE=" + valheimRelease(t), "SHA=0123456789abcdef", "SOURCE=https://github.com/example/homelab",
+		"FINGERPRINT=fp-0123456789abcdef"})
 	if !ok {
 		t.Fatalf("the release step failed:\n%s", logs)
+	}
+	tagged, _ := os.ReadFile(filepath.Join(scratch, "tagged"))
+	if !strings.Contains(string(tagged), "1.0.15-1") || !strings.Contains(string(tagged), "--tag fp-0123456789abcdef") {
+		t.Errorf("the published release was not tagged with its fingerprint, so the next build of the "+
+			"same manifests would publish it again (#514): %q", tagged)
 	}
 	if !strings.Contains(output, "digest=sha256:"+strings.Repeat("b", 64)) {
 		t.Errorf("the step did not report the pushed artifact's digest: %q", output)
@@ -418,24 +413,8 @@ echo '{"repository":"ghcr.io/example/homelab-valheim-release","tag":"1.0.15-1","
 // overlay that does not already pin images - the fabricator appends that pin,
 // and a second images: key is invalid YAML nobody sees until Flux does.
 func TestEveryReleaseOrderIsOneTheFabricatorCanFollow(t *testing.T) {
-	var f struct {
-		Orders []struct {
-			Name    string `json:"name"`
-			Release *struct {
-				Overlay string `json:"overlay"`
-				Module  string `json:"module"`
-				Version struct {
-					Env     []string `json:"env"`
-					Pattern string   `json:"pattern"`
-				} `json:"version"`
-			} `json:"release"`
-		} `json:"orders"`
-	}
-	if err := json.Unmarshal([]byte(readRepoFile(t, "scripts/work-orders.json")), &f); err != nil {
-		t.Fatal(err)
-	}
 	releases := 0
-	for _, o := range f.Orders {
+	for _, o := range workOrders(t) {
 		if o.Release == nil {
 			continue
 		}
@@ -457,4 +436,165 @@ func TestEveryReleaseOrderIsOneTheFabricatorCanFollow(t *testing.T) {
 	if releases == 0 {
 		t.Fatal("no work order asks for a release, so production has nothing to pin")
 	}
+}
+
+// --- reusing what already exists (#514) --------------------------------------
+
+// A registry fake for the reuse steps: the owner lookup, and a package listing
+// whose answer the test chooses. gh evaluates its own --jq, so the fake answers
+// with what that filter would have selected.
+func fakeRegistryListing(t *testing.T, listing string) string {
+	t.Helper()
+	return fakeTools(t, map[string]string{"gh": `if [ "$2" = "--paginate" ]; then set -- "$1" "$3"; fi
+case "$2" in
+  users/*) echo Organization ;;
+  *) ` + listing + ` ;;
+esac`})
+}
+
+// The image fingerprint is the build context's tracked files and the pins
+// passed to it: the same inputs give the same fingerprint, and a change to
+// either gives a new one. A build of that fingerprint already in the registry
+// is reused rather than repeated.
+func TestAnImageOfTheSameInputsIsReused(t *testing.T) {
+	repo := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo, "-c", "user.email=a@example.com", "-c", "user.name=t"}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	if err := os.MkdirAll(filepath.Join(repo, "img"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) {
+		if err := os.WriteFile(filepath.Join(repo, "img", "Dockerfile"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run("add", "-A")
+		run("commit", "-qm", "img")
+	}
+	fingerprint := func(pins, listing string) (map[string]string, string) {
+		ok, output, logs := runReleaseStepIn(t, "Reuse a build of the same inputs", repo, fakeRegistryListing(t, listing),
+			[]string{"OWNER=example", "PACKAGE=homelab-valheim", "CONTEXT=img", "PINS=" + pins, "GH_TOKEN=x"})
+		if !ok {
+			t.Fatalf("the reuse step failed:\n%s", logs)
+		}
+		out := map[string]string{}
+		for _, l := range strings.Split(strings.TrimSpace(output), "\n") {
+			if k, v, ok := strings.Cut(l, "="); ok {
+				out[k] = v
+			}
+		}
+		return out, logs
+	}
+
+	write("ARG VALHEIM_STEAM_BUILD_VERSION\nFROM scratch\n")
+	first, _ := fingerprint("--build-arg VALHEIM_STEAM_BUILD_VERSION=1", `echo "gh: Not Found (HTTP 404)" >&2; exit 1`)
+	again, _ := fingerprint("--build-arg VALHEIM_STEAM_BUILD_VERSION=1", `echo "gh: Not Found (HTTP 404)" >&2; exit 1`)
+	if first["fingerprint"] == "" || first["fingerprint"] != again["fingerprint"] {
+		t.Fatalf("the same inputs fingerprinted differently: %v then %v", first, again)
+	}
+	if first["digest"] != "" {
+		t.Errorf("an image was reused when the registry holds no build at all: %v", first)
+	}
+	newPin, _ := fingerprint("--build-arg VALHEIM_STEAM_BUILD_VERSION=2", `echo "gh: Not Found (HTTP 404)" >&2; exit 1`)
+	if newPin["fingerprint"] == first["fingerprint"] {
+		t.Error("a new Steam build kept the old fingerprint, so its image would never be built")
+	}
+	write("ARG VALHEIM_STEAM_BUILD_VERSION\nFROM scratch\nUSER 1\n")
+	newFile, _ := fingerprint("--build-arg VALHEIM_STEAM_BUILD_VERSION=1", `echo "gh: Not Found (HTTP 404)" >&2; exit 1`)
+	if newFile["fingerprint"] == first["fingerprint"] {
+		t.Error("a change to the build context kept the old fingerprint, so its image would never be built")
+	}
+
+	digest := "sha256:" + strings.Repeat("c", 64)
+	reused, _ := fingerprint("--build-arg VALHEIM_STEAM_BUILD_VERSION=1", "echo "+digest)
+	if reused["digest"] != digest {
+		t.Errorf("a build of these inputs exists and was not reused: %v", reused)
+	}
+
+	ok, _, logs := runReleaseStepIn(t, "Reuse a build of the same inputs", repo,
+		fakeRegistryListing(t, `echo "gh: Server Error (HTTP 500)" >&2; exit 1`),
+		[]string{"OWNER=example", "PACKAGE=homelab-valheim", "CONTEXT=img", "PINS=x", "GH_TOKEN=x"})
+	if ok {
+		t.Errorf("a registry that could not be read was taken to hold no build:\n%s", logs)
+	}
+}
+
+// A release is fingerprinted from the manifests it would ship, rendered with
+// the image pinned. A comment renders to nothing, so it makes no new release -
+// the #514 case, where a comment in the overlay was delivered as a release
+// identical to the one running. A new image digest is a new release.
+func TestAReleaseOfTheSameManifestsIsNotRepeated(t *testing.T) {
+	stage := t.TempDir()
+	for _, dir := range []string{"environments/production/applications/valheim", "modules/applications/valheim"} {
+		if err := exec.Command("mkdir", "-p", filepath.Join(stage, filepath.Dir(dir))).Run(); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := exec.Command("cp", "-R", filepath.Join(repoRoot(t), dir), filepath.Join(stage, dir)).CombinedOutput(); err != nil {
+			t.Fatalf("copying %s: %v\n%s", dir, err, out)
+		}
+	}
+	// The image name the module's own manifest uses, which is what the
+	// workflow's IMAGE resolves to: kustomize replaces an image only by name.
+	image := ""
+	for _, l := range strings.Split(readRepoFile(t, "modules/applications/valheim/base/deployment.yaml"), "\n") {
+		if name, _, ok := strings.Cut(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "image:")), "@"); ok && strings.HasPrefix(strings.TrimSpace(l), "image:") {
+			image = strings.TrimSpace(name)
+			break
+		}
+	}
+	if image == "" {
+		t.Fatal("the module names no image by digest, so the release has nothing to pin")
+	}
+	fingerprint := func(digest, listing string) map[string]string {
+		ok, output, logs := runReleaseStepIn(t, "Reuse a release of the same manifests", stage, fakeRegistryListing(t, listing),
+			[]string{"OWNER=example", "PACKAGE=homelab-valheim-release", "IMAGE=" + image,
+				"DIGEST=" + digest, "RELEASE=" + valheimRelease(t), "GH_TOKEN=x"})
+		if !ok {
+			t.Fatalf("the release fingerprint step failed:\n%s", logs)
+		}
+		out := map[string]string{}
+		for _, l := range strings.Split(strings.TrimSpace(output), "\n") {
+			if k, v, ok := strings.Cut(l, "="); ok {
+				out[k] = v
+			}
+		}
+		return out
+	}
+	none := `echo "gh: Not Found (HTTP 404)" >&2; exit 1`
+	a := "sha256:" + strings.Repeat("a", 64)
+
+	first := fingerprint(a, none)
+	if first["needed"] != "true" {
+		t.Fatalf("a release nobody has published was not needed: %v", first)
+	}
+
+	kustomization := filepath.Join(stage, "environments/production/applications/valheim/kustomization.yaml")
+	body, err := os.ReadFile(kustomization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(kustomization, append([]byte("# a comment reaches no cluster\n"), body...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commented := fingerprint(a, none)
+	if commented["fingerprint"] != first["fingerprint"] {
+		t.Error("a comment in the overlay changed the release fingerprint, so it would make a release of nothing (#514)")
+	}
+	if other := fingerprint("sha256:"+strings.Repeat("b", 64), none); other["fingerprint"] == first["fingerprint"] {
+		t.Error("a new image kept the release fingerprint, so the new build would never be released")
+	}
+	if again := fingerprint(a, "printf '%s\\n' 1.0.16-1 "+first["fingerprint"]); again["needed"] != "false" {
+		t.Errorf("a release of these exact manifests exists and another was needed: %v", again)
+	}
+}
+
+func runReleaseStepIn(t *testing.T, step, dir, path string, env []string) (ok bool, output, logs string) {
+	t.Helper()
+	return runReleaseStep(t, step, dir, path, env)
 }

@@ -14,6 +14,7 @@ import (
 	cf "homelab/details/cloudflare"
 	"homelab/details/console"
 	"homelab/details/onepassword"
+	"homelab/details/procenv"
 	"homelab/details/repopath"
 	"homelab/details/secrets"
 	"homelab/details/stateencryption"
@@ -324,11 +325,11 @@ func shape(body []byte) string {
 // backendEnv reaches the estate's bucket with its own credential and no other,
 // through the environment of one process so it is never written to disk.
 func (e *estate) backendEnv() []string {
-	return append(os.Environ(),
-		"AWS_ACCESS_KEY_ID="+e.cfg.State.AccessKeyID,
-		"AWS_SECRET_ACCESS_KEY="+e.cfg.State.SecretAccessKey,
-		"AWS_ENDPOINT_URL_S3="+cf.R2Endpoint(e.cfg.Access.AccountID),
-	)
+	return procenv.With(os.Environ(), []string{
+		"AWS_ACCESS_KEY_ID=" + e.cfg.State.AccessKeyID,
+		"AWS_SECRET_ACCESS_KEY=" + e.cfg.State.SecretAccessKey,
+		"AWS_ENDPOINT_URL_S3=" + cf.R2Endpoint(e.cfg.Access.AccountID),
+	})
 }
 
 func (e *estate) tofu(args ...string) error {

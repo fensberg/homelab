@@ -105,3 +105,28 @@ func TestUnfinishedStatusesAreListedNotInferred(t *testing.T) {
 		}
 	}
 }
+
+// A queued plan for this site blocks it too (#541): it starts on the new
+// site's runner the moment Flux brings one up, and takes the state lock the
+// build still needs.
+func TestAQueuedPlanForThisSiteBlocksIt(t *testing.T) {
+	runs := []activeRun{{
+		Number: 45, Status: "waiting", HeadBranch: "feat/x",
+		Jobs: []string{"What changed", "Plan site0"},
+	}}
+	if got := pendingForSite(runs, "site0"); len(got) != 1 {
+		t.Fatalf("a queued plan for site0 did not block an ignition of it: %v", got)
+	}
+}
+
+// Job names are matched whole. "Converge site1" is a substring of
+// "Converge site10", and a busy site10 must not block site1.
+func TestASiteWhoseKeyPrefixesAnotherIsNotBlockedByIt(t *testing.T) {
+	runs := []activeRun{{
+		Number: 46, Status: "queued", HeadBranch: "main",
+		Jobs: []string{"Converge site10", "Plan site10"},
+	}}
+	if got := pendingForSite(runs, "site1"); len(got) != 0 {
+		t.Fatalf("a run for site10 blocked site1: %v", got)
+	}
+}

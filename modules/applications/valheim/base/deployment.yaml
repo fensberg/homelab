@@ -11,17 +11,6 @@ metadata:
   namespace: valheim
   labels:
     app.kubernetes.io/name: valheim
-  annotations:
-    # The Steam build the pinned image below contains, recorded beside it by
-    # procurement's expedite duty so its next check has something to compare against. The
-    # two lines change together and nothing else here does - which is exactly
-    # what its standing order permits and what the superintendent
-    # refuses to let it exceed.
-    #
-    # "unknown" for the image pinned by hand before expediting existed: its
-    # build was never recorded, so the first check will take a delivery and
-    # replace both lines, which also proves the whole path end to end.
-    homelab.fensberg.com/steam-build: "25527701"
 spec:
   replicas: 1
   # Recreate, not RollingUpdate. The volume is ReadWriteOnce and the world is a
@@ -175,17 +164,12 @@ spec:
 
       containers:
         - name: valheim
-          # A digest, not a tag, and this is the version of the software -
-          # the git tag production reconciles from versions the declaration
-          # around it. Changing what the server runs means changing this line,
-          # which is a commit, which is a release.
-          #
-          # Procurement's expedite duty keeps it current. When Valve publishes a new build
-          # of the server - and players' clients update themselves and refuse
-          # an older server - it builds the image, opens a pull request
-          # changing this line and the steam-build annotation above, merges it
-          # under its standing order once every required check passes, and
-          # tags the release. See .github/workflows/expedite.yml.
+          # A digest, not a tag - but production does not run this one. A release pins the image the
+          # fabricator built into its own overlay, by digest, and production
+          # runs the release clusters/management/releases.yaml names - so this
+          # line only names the image the release replaces. The Steam build is
+          # pinned in scripts/versions.env, which is what the expediter moves
+          # when Valve publishes one.
           #
           # This carries no Renovate annotation, deliberately. The build that
           # makes this digest already knows it; asking a bot to watch this

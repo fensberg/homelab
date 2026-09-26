@@ -7,29 +7,37 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"homelab/details/workorders"
 )
 
-// enforce-standing-order holds procurement's expedite duty to the one thing it
-// may change.
+// enforce-standing-order holds procurement's standing order to the one thing it
+// covers: a new build of the game server from Valve, and nothing else.
 //
-// Expediting watches Valve for a new build of the game server, builds it, and
-// opens a pull request pinning the new digest. So that a Steam patch does not
-// wait for a person, the expedite GitHub App may be allowed to merge that pull
-// request without a review - it is a bypass actor on the ruleset that requires
-// one. That permission is a standing order in the construction sense: approval
+// So that a Steam patch does not wait for a person - players' clients update
+// the day Valve ships and refuse an older server - the procurement App may
+// merge without review: it is a bypass actor on the ruleset that requires one.
+// That permission is a standing order in the construction sense: approval
 // given once, for one specified recurring item, and not for anything the holder
-// feels like buying. It belongs to the expediting duty, not to procurement as a
-// role: procurement's other duties run under no such credential (#416).
+// feels like buying.
 //
-// This is what makes it that narrow. It refuses any pull request authored by
-// the holder that changes anything except the game server's image digest and
-// the Steam build recorded beside it. It runs twice: in the Sensitive Paths
-// check, so the verdict is visible on the pull request, and in expedite.yml
-// immediately before the merge, against the exact head commit merged. The
-// second is the one that binds, because the review rule and the required
-// checks share one ruleset and a bypass actor skips both. It also refuses a
-// digest from a different image repository, which is the change that would
-// read exactly like a routine update in a diff.
+// Two kinds of pull request ride it, and each is held to exactly that item:
+//
+//   - The expediter's: it records Valve's new build as the VALHEIM_STEAM_BUILD_VERSION
+//     line in scripts/versions.env and changes nothing else. The fabricator
+//     builds the image from that pin.
+//   - A delivery: procurement moving production's release pin in
+//     clusters/management/releases.yaml. Under the bypass it passes only when
+//     the release it brings differs from production's by the Steam build
+//     alone - read from the source commits the two releases were built from,
+//     which the registry records - so a release carrying anything somebody
+//     wrote waits for a review however it arrived.
+//
+// It runs twice: in the Sensitive Paths check, so the verdict is visible on the
+// pull request, and in expedite.yml immediately before the merge, against the
+// exact head commit merged. The second is the one that binds, because the
+// review rule and the required checks share one ruleset and a bypass actor
+// skips both.
 //
 // The holder's login comes from the PROCUREMENT_BOT_LOGIN repository variable, so
 // no name of this estate is written here. With it unset there is no standing
@@ -42,7 +50,9 @@ func enforceStandingOrder(args []string) int {
 	holder := fs.String("holder", os.Getenv("PROCUREMENT_BOT_LOGIN"), "the login the standing order was given to")
 	base := fs.String("base", "", "the pull request's base commit")
 	head := fs.String("head", "", "the pull request's head commit")
-	pin := fs.String("pin", "modules/applications/valheim/base/deployment.yaml", "the one file the order covers")
+	pin := fs.String("pin", "scripts/versions.env", "the one file the expediter's pull request may change")
+	orders := fs.String("orders", workorders.Path, "the work orders that say what each release is built from")
+	repository := fs.String("repository", os.Getenv("GITHUB_REPOSITORY"), "owner/name, which names each release's package in the registry")
 	releases := fs.String("releases", "clusters/management/releases.yaml", "the production releases file a delivery moves a pin in")
 	bypass := fs.Bool("bypass", false, "judge for a merge without review: only what the order covers passes, and a delivery does not")
 	_ = fs.Parse(args)
@@ -74,15 +84,28 @@ func enforceStandingOrder(args []string) int {
 
 	// A delivery: procurement bringing a release the fabricator published to
 	// the gate, as a pull request that moves one pin in the releases file.
-	// Procurement may open it, and it passes here so a person can merge it -
-	// but it is never merged without review, so a merge under the order
-	// (-bypass) refuses it however clean it is.
+	// Without the bypass it passes, so a person can merge it. Under the bypass
+	// it passes only when the release changes nothing but the Steam build.
 	if isDelivery(changedFiles, lines, *releases) {
-		if *bypass {
-			fmt.Printf("REFUSED: %s is a delivery, and a delivery is merged by a person, never under the standing order.\n", *author)
+		if !*bypass {
+			fmt.Printf("%s delivered a release. The 4am window merges it if the Steam build is all that changed; otherwise it waits for a review\n", *author)
+			return 0
+		}
+		j := judge{repository: *repository, releases: *releases, orders: *orders, pin: *pin, git: gitRunner}
+		problems, err := j.steamOnly(*base, *head)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "superintendent enforce-standing-order: could not tell what this release changes, so it is not merged without review:", err)
+			return 2
+		}
+		if len(problems) > 0 {
+			fmt.Printf("REFUSED: %s delivered a release that changes more than the Steam build.\n\n", *author)
+			for _, p := range problems {
+				fmt.Println("  " + p)
+			}
+			fmt.Println("\nIt waits for a review.")
 			return 1
 		}
-		fmt.Printf("%s delivered a release; it waits for a review\n", *author)
+		fmt.Printf("%s delivered a release whose only change is the Steam build\n", *author)
 		return 0
 	}
 
@@ -92,7 +115,7 @@ func enforceStandingOrder(args []string) int {
 		for _, p := range problems {
 			fmt.Println("  " + p)
 		}
-		fmt.Printf("\nThe order covers the image digest and Steam build in %s, and nothing else.\n"+
+		fmt.Printf("\nThe order covers the VALHEIM_STEAM_BUILD_VERSION line in %s, and nothing else.\n"+
 			"Anything more needs a review, and the expedite duty should never have been able to write it.\n", *pin)
 		return 1
 	}
@@ -100,13 +123,12 @@ func enforceStandingOrder(args []string) int {
 	return 0
 }
 
-var (
-	pinnedImage = regexp.MustCompile(`^[+-]\s+image:\s+(\S+)@sha256:[0-9a-f]{64}\s*$`)
-	steamBuild  = regexp.MustCompile(`^[+-]\s+[a-z0-9.-]+/steam-build:\s+"[0-9A-Za-z-]+"\s*$`)
-)
+// steamBuildLine is the one line the expediter's pull request may change.
+var steamBuildLine = regexp.MustCompile(`^[+-]VALHEIM_STEAM_BUILD_VERSION=[0-9]+$`)
 
-// withinStandingOrder lists everything about a change that the order does not
-// cover. An empty list is the only permitted answer.
+// withinStandingOrder lists everything about the expediter's change that the
+// order does not cover: exactly one Steam build replaced by another, in the
+// pin file. An empty list is the only permitted answer.
 func withinStandingOrder(files, changed []string, pin string) []string {
 	if len(files) == 0 {
 		return []string{"the pull request changes nothing, which is not a delivery"}
@@ -117,19 +139,27 @@ func withinStandingOrder(files, changed []string, pin string) []string {
 			problems = append(problems, "changes "+f)
 		}
 	}
-	repos := map[string]bool{}
+	return append(problems, onlyTheSteamBuild(changed)...)
+}
+
+// onlyTheSteamBuild lists every changed line that is not the Steam build
+// moving from one number to another.
+func onlyTheSteamBuild(changed []string) []string {
+	var problems []string
+	removed, added := 0, 0
 	for _, line := range changed {
-		if m := pinnedImage.FindStringSubmatch(line); m != nil {
-			repos[m[1]] = true
+		if !steamBuildLine.MatchString(line) {
+			problems = append(problems, "changes a line the order does not cover: "+strings.TrimSpace(line))
 			continue
 		}
-		if steamBuild.MatchString(line) {
-			continue
+		if strings.HasPrefix(line, "-") {
+			removed++
+		} else {
+			added++
 		}
-		problems = append(problems, "changes a line the order does not cover: "+strings.TrimSpace(line))
 	}
-	if len(repos) > 1 {
-		problems = append(problems, "moves the pin to a different image repository")
+	if len(problems) == 0 && (removed != 1 || added != 1) {
+		problems = append(problems, "does not replace exactly one Steam build with another")
 	}
 	return problems
 }

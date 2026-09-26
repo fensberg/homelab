@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 162
+floor: 166
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -167,6 +167,29 @@ mutations:
       The tunnel route and the Service's fixed address live in files read by
       different tools. Moving one without the other converges cleanly and
       hands an enrolled device a route to an address nothing answers on.
+
+  - guard: TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority
+    file: modules/applications/valheim/base/deployment.yaml
+    find: "operator: DoesNotExist"
+    replace: "operator: Exists"
+    mentions: "would schedule onto a control-plane node"
+    why: >
+      The game server is a plain Deployment, which the HelmRelease table could
+      not express, so it shipped once with nothing keeping an 8 GiB pod off a
+      4 GiB control plane and no guard said so (#492). Flipping the operator
+      is the plausible version of losing the rule: it reads as a harmless
+      edit, and it turns "off the control plane" into "only the control
+      plane".
+
+  - guard: TestAlertsLandWhereTheEstateDecided
+    file: clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml
+    find: 'alertname = "InfoInhibitor"'
+    replace: 'alertname = "InfoInhibit0r"'
+    mentions: "InfoInhibitor lands on"
+    why: >
+      A route that no longer matches its alert is silent until the alert
+      arrives somewhere it was not meant to - here, Slack, every hour, which
+      is what #532 was. A typo in a matcher is the plausible way to lose it.
 
   - guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
     file: management/cluster/tunnel.tf
@@ -593,6 +616,27 @@ mutations:
       Without the digest pin the release runs whatever image the manifests in
       git name, which is not the image this build made - the release and its
       contents would disagree.
+
+  - guard: TestAnImageOfTheSameInputsIsReused
+    file: .github/workflows/fabricator.yml
+    find: 'printf ''%s\n'' "$PINS"; } | sha256sum'
+    replace: "true; } | sha256sum"
+    mentions: "a new Steam build kept the old fingerprint"
+    why: >
+      A fingerprint that leaves out the pins reuses the old image when only a
+      pin moved - which is exactly what a new Steam build is. The expediter's
+      update would merge, the fabricator would reuse yesterday's image, and
+      production would never get the build players' clients now demand.
+
+  - guard: TestAReleaseOfTheSameManifestsIsNotRepeated
+    file: .github/workflows/fabricator.yml
+    find: 'fingerprint="fp-$(kubectl kustomize "${rendered}/${overlay}" | sha256sum | cut -c1-16)"'
+    replace: 'fingerprint="fp-$(cat "${rendered}/${overlay}/kustomization.yaml" | sha256sum | cut -c1-16)"'
+    mentions: "a comment in the overlay changed the release fingerprint"
+    why: >
+      Fingerprinting the files rather than what they render to counts a
+      comment as a change, which is #514 again: a release of nothing, and a
+      pull request for the operator asking to deploy it.
 
   - guard: TestEveryReleaseOrderIsOneTheFabricatorCanFollow
     file: environments/production/applications/valheim/kustomization.yaml
@@ -2359,6 +2403,12 @@ unprovable:
   - test: TestTheTrackedEnumerationSeesTheWholeRepository
     reason: meta
   - test: TestEveryUnauthoredPathStillExists
+    reason: meta
+  # Like TestEveryDeclaredRetryStillExists: it checks that each file the
+  # plain-workload guard declares as owned elsewhere still exists, so what it
+  # reads is another guard's declaration list, and that guard's own entry
+  # proves the guard itself.
+  - test: TestEveryPlainWorkloadExemptionNamesARealFile
     reason: meta
   #
   # A pure function whose test table already contains the failing case. The
