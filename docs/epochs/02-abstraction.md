@@ -3133,6 +3133,15 @@ Ten sensitive values came back, all strings the config computes (namespace
 names, a username), which the report shows as computed rather than failing on:
 the offline plan can only compute from the record and public code.
 
+**What the real estate showed (2026-09-26, devbox).** The same: the real
+plan was empty, and the record was quiet after two rounds. 164 values
+replaced (84 vault forms, 58 machine secrets, 22 sensitive), and nothing real
+survived. The ten computed values were the same ten the fixture produced. The
+residuals the spike feared from real provider-private data did not appear, so
+the open question in #554 is settled: a record of this estate is quiet, and a
+plan against it shows only what a change actually does. Eight seconds for the
+whole phase.
+
 ## Gotchas
 
 ### Do not taint the control planes in the change that adds workers
