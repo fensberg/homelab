@@ -336,7 +336,7 @@ index 84d4a22..cbac8a0 100644
 +            echo "merged #${pr}: ${title}" >> "$GITHUB_STEP_SUMMARY"
 +          done
 diff --git a/.github/workflows/fabricator.yml b/.github/workflows/fabricator.yml
-index 042ff78..026f977 100644
+index 042ff78..57ebbb6 100644
 --- a/.github/workflows/fabricator.yml
 +++ b/.github/workflows/fabricator.yml
 @@ -138,6 +138,47 @@ jobs:
@@ -516,9 +516,13 @@ index 042ff78..026f977 100644
            echo "digest=${pushed}" >> "$GITHUB_OUTPUT"
            {
              echo ""
-@@ -389,7 +491,7 @@ jobs:
+@@ -388,8 +490,11 @@ jobs:
+ 
            while IFS= read -r name; do
              package="${REPO_NAME}-${name}-release"
++            # $tag is jq's own variable, inside jq's program, so single quotes
++            # are right: the shell must not expand it.
++            # shellcheck disable=SC2016
              read -r tag digest < <(GH_TOKEN="$READ_TOKEN" gh api --paginate "${base_path}/packages/container/${package}/versions" \
 -              --jq '.[] | select(.metadata.container.tags | length > 0) | "\(.created_at) \(.metadata.container.tags[0]) \(.name)"' \
 +              --jq '.[] | (.metadata.container.tags | map(select(startswith("fp-") | not)) | .[0]) as $tag | select($tag != null) | "\(.created_at) \($tag) \(.name)"' \
