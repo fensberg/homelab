@@ -167,6 +167,12 @@ files:
   - path: contractor/internal/phases/checkvault.go
     uncovered: 1
     covered_by: nothing
+  # Record and the tofu it runs. The sequence they wrap is details/asbuilt's,
+  # and the integration tier runs that nightly against the deployed estate;
+  # this wrapper and the exec beneath it are run by nothing but an operator.
+  - path: contractor/internal/phases/record.go
+    uncovered: 2
+    covered_by: nothing
   - path: contractor/internal/phases/converge_preconditions.go
     uncovered: 1
     covered_by: nothing

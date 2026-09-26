@@ -70,7 +70,7 @@ var retiredVerbs = map[string]string{
 	"converge":     "converge-site",
 }
 
-var knownVerbs = []string{"build-site", "converge-site", "plan", "demolish-site", "restore", "kubeconfig", "talosconfig", "check-inventory", "survey"}
+var knownVerbs = []string{"build-site", "converge-site", "plan", "record-as-built", "demolish-site", "restore", "kubeconfig", "talosconfig", "check-inventory", "survey"}
 
 const usage = `contractor manages the lifecycle of a site.
 
@@ -83,6 +83,9 @@ verbs:
                  the state in its cluster. Never destroys on failure.
   plan           Show what a converge would change, and change nothing. Reports
                  addresses and actions only, never a value.
+  record-as-built  Take the site's as-built record: its state with every real
+                 value replaced, proven quiet against a plan that reaches
+                 nothing. Reports names and counts only; publishes nothing yet.
   demolish-site  Tear a site down, then wipe the workspace. Requires -confirm.
   restore        Bring the age-encrypted state back from object storage.
   kubeconfig     Write this site's kubeconfig into the workspace and exit, or
@@ -579,6 +582,8 @@ func selectPhases(phase, from, verb string) ([]string, error) {
 		seq = phases.ConvergePhases
 	case "plan":
 		seq = phases.PlanPhases
+	case "record-as-built":
+		seq = phases.RecordPhases
 	}
 
 	switch {

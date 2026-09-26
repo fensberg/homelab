@@ -22,7 +22,7 @@ import (
 // a test nobody runs.
 func TestASilentReadStillReportsItself(t *testing.T) {
 	// One progress event, then a stream that stays open and says nothing.
-	stream, writer := blockingStream(t, `{"type":"apply_progress","hook":{"resource":{"addr":"data.talos_cluster_health.this"},"elapsed_seconds":10}}`)
+	stream, writer := blockingStream(t, `{"type":"apply_progress","hook":{"resource":{"addr":"data.talos_cluster_health.this[0]"},"elapsed_seconds":10}}`)
 	defer writer()
 
 	tick := make(chan time.Time)
@@ -57,7 +57,7 @@ func TestASilentReadStillReportsItself(t *testing.T) {
 // Silence is alarming; silence with "this usually takes about two minutes" is
 // information. Measured on the ignition of 2026-09-04 rather than guessed.
 func TestASlowReadSaysWhatItIsExpectedToCost(t *testing.T) {
-	stream, writer := blockingStream(t, `{"type":"apply_progress","hook":{"resource":{"addr":"data.talos_cluster_health.this"},"elapsed_seconds":10}}`)
+	stream, writer := blockingStream(t, `{"type":"apply_progress","hook":{"resource":{"addr":"data.talos_cluster_health.this[0]"},"elapsed_seconds":10}}`)
 	defer writer()
 
 	tick := make(chan time.Time)
