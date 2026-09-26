@@ -131,3 +131,7 @@ management/cluster/kubeconfig
 scripts/contractor/contractor
 scripts/signedpush/signedpush
 scripts/survey/survey
+
+# The Record phase's workspace: an offline copy of the cluster root and a
+# throwaway CA. Removed by the phase and by Sterilize.
+/.as-built/

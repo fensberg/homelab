@@ -3080,6 +3080,68 @@ Unlike the talosconfig this cannot be fixed by setting another argument - it
 needs a virtual IP or a load balancer in front of the API, and the address band
 at `.20.0/24` was reserved for exactly that. Filed as #316 rather than fixed here.
 
+## Known driver: the as-built record (#554)
+
+A pull request's plan decrypts the live state, and the state holds the
+cluster's root of trust, so any code that can plan can own the cluster. The
+agreed direction is to plan against an **as-built record** instead: the state
+as last converged, with nothing real in it, planned on a hosted runner with no
+credential.
+
+**Who makes it, and why nobody gains a token.** The record is made by runs
+that already decrypt the state: the converge, as its last step, and the
+nightly. Survey stays credential-free and reads published records. A new
+credential would have been the obvious design and was declined on the
+estate's own rule, that output should be worthless rather than guarded.
+
+**What went in first.** `contractor record-as-built` (`task record-as-built`)
+takes the record on the devbox and reports names and counts only; it
+publishes nothing. It exists to measure what a fabricated state could not:
+whether the record comes out quiet against the real estate. If it is noisy,
+every plan against it would show changes that are not real, and the design
+is reconsidered before anything is wired into CI.
+
+The sequence, all in `internal/asbuilt` with the tofu calls in the Record
+phase:
+
+1. The real plan must be empty, or the phase refuses before reading state:
+   folding pending changes in would describe them as built.
+2. The Talos CA and machine secrets are swapped for a throwaway set generated
+   by the same provider, and every copy of the real values elsewhere is
+   replaced with the throwaway value from the same position.
+3. Every vault value is replaced with an HMAC stand-in, shaped where the code
+   needs a shape, in every form it is stored in: as written, lower case, the
+   cluster root's DNS label, base64.
+4. Every other value the plan marks sensitive is replaced where it is a whole
+   string. Not as a substring: a secret's data map is sensitive as a whole, so
+   `database` and `tofu` are marked too, and replacing those everywhere
+   corrupted every resource named after them. The end-to-end run against the
+   spike's fixture found this; it was the largest source of noise.
+5. The offline copy is planned with `-refresh=false` and `var.offline`, and
+   its differences folded back, at most six rounds.
+6. A scan looks for every real value, in every form, and the record is not fit
+   to publish if one survived.
+
+**The key is random per record and discarded.** Drift between converges is
+already reported by the nightly's real plan, as attribute names. A
+fingerprint only has to agree with itself inside one record, and a key that no
+longer exists cannot be used to test guesses against a record afterwards.
+
+**What the fixture run showed.** Quiet after two rounds; 137 values replaced
+(60 vault forms, 57 machine secrets, 20 sensitive); nothing real survived.
+Ten sensitive values came back, all strings the config computes (namespace
+names, a username), which the report shows as computed rather than failing on:
+the offline plan can only compute from the record and public code.
+
+**What the real estate showed (2026-09-26, devbox).** The same: the real
+plan was empty, and the record was quiet after two rounds. 164 values
+replaced (84 vault forms, 58 machine secrets, 22 sensitive), and nothing real
+survived. The ten computed values were the same ten the fixture produced. The
+residuals the spike feared from real provider-private data did not appear, so
+the open question in #554 is settled: a record of this estate is quiet, and a
+plan against it shows only what a change actually does. Eight seconds for the
+whole phase.
+
 ## Gotchas
 
 ### Do not taint the control planes in the change that adds workers

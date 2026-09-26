@@ -22,6 +22,12 @@ type Context struct {
 	// so it is sterilized like a secret rather than treated as a build artifact.
 	TofuPlanFile string
 
+	// AsBuiltDir is where the Record phase works: an offline copy of the
+	// cluster root and a throwaway CA. Two levels below the repository, the
+	// same depth as the root it copies, so "${path.module}/../../" still
+	// reaches the repository.
+	AsBuiltDir string
+
 	// CommentOut, when set, is where the plan writes the pull request comment
 	// body. Empty means write nothing, which is every case but CI.
 	CommentOut   string
@@ -78,6 +84,7 @@ func NewContext(repoRoot, site string) *Context {
 		ClusterDir:        clusterDir,
 		TofuBackendRecord: filepath.Join(clusterDir, ".terraform", "terraform.tfstate"),
 		TofuPlanFile:      filepath.Join(clusterDir, "tfplan"),
+		AsBuiltDir:        filepath.Join(repoRoot, ".as-built"),
 		BackendPgOff:      filepath.Join(clusterDir, "backend_pg.tf.disabled"),
 		BackendPgOn:       filepath.Join(clusterDir, "backend_pg.tf"),
 		LocalState:        filepath.Join(clusterDir, "terraform.tfstate"),

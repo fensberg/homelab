@@ -44,7 +44,8 @@ debt:
   - "refs/signing/"
   - "user.email=a@example.com"
 
-  # --- Paths into this repository (18)
+  # --- Paths into this repository (19)
+  - "backend_pg.tf"
   - ".pre-commit-config.yaml"
   - "age-encryption.org/v1"
   - "approved-suppliers.yml"
@@ -64,7 +65,8 @@ debt:
   - "tests/mutations.yml"
   - "variables.tf"
 
-  # --- Everything else: tool flags, vendor identifiers, status wording (50)
+  # --- Everything else: tool flags, vendor identifiers, status wording (51)
+  - "-refresh=false"
   - " --hash=sha256:"
   - "-auto-approve"
   - "-input=false"
@@ -123,7 +125,8 @@ debt:
   # tests/go/repo/world_backup_test.go reads that file. Goes when the standing
   # order moves off it to releases.yaml (#510, R2b).
 
-  # --- Field names two separate documents happen to share (12)
+  # --- Field names two separate documents happen to share (13)
+  - "talos_version"
   #
   # The estate's rendered config (config/estate.tpl.json, read by the lawyer)
   # and a site's (config/management.tpl.json, read by the contractor) describe

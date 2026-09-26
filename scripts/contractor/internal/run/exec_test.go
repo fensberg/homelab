@@ -56,6 +56,27 @@ func TestRemoveIfExists_NonEmptyDirectoryReportsAnError(t *testing.T) {
 	}
 }
 
+// A directory a phase owns outright goes with everything in it, and one
+// already gone is not an error.
+func TestRemoveTreeIfExistsRemovesTheWholeTree(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "owned")
+	if err := os.MkdirAll(filepath.Join(dir, "nested"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "nested", "child"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveTreeIfExists(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("the tree is still there: %v", err)
+	}
+	if err := RemoveTreeIfExists(dir); err != nil {
+		t.Errorf("removing a tree that is already gone returned %v", err)
+	}
+}
+
 func TestFilepathBase(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"/a/b/c.json", "c.json"},
