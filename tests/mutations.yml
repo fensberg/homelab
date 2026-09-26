@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 164
+floor: 166
 
 mutations:
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
@@ -616,6 +616,27 @@ mutations:
       Without the digest pin the release runs whatever image the manifests in
       git name, which is not the image this build made - the release and its
       contents would disagree.
+
+  - guard: TestAnImageOfTheSameInputsIsReused
+    file: .github/workflows/fabricator.yml
+    find: 'printf ''%s\n'' "$PINS"; } | sha256sum'
+    replace: "true; } | sha256sum"
+    mentions: "a new Steam build kept the old fingerprint"
+    why: >
+      A fingerprint that leaves out the pins reuses the old image when only a
+      pin moved - which is exactly what a new Steam build is. The expediter's
+      update would merge, the fabricator would reuse yesterday's image, and
+      production would never get the build players' clients now demand.
+
+  - guard: TestAReleaseOfTheSameManifestsIsNotRepeated
+    file: .github/workflows/fabricator.yml
+    find: 'fingerprint="fp-$(kubectl kustomize "${rendered}/${overlay}" | sha256sum | cut -c1-16)"'
+    replace: 'fingerprint="fp-$(cat "${rendered}/${overlay}/kustomization.yaml" | sha256sum | cut -c1-16)"'
+    mentions: "a comment in the overlay changed the release fingerprint"
+    why: >
+      Fingerprinting the files rather than what they render to counts a
+      comment as a change, which is #514 again: a release of nothing, and a
+      pull request for the operator asking to deploy it.
 
   - guard: TestEveryReleaseOrderIsOneTheFabricatorCanFollow
     file: environments/production/applications/valheim/kustomization.yaml

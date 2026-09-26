@@ -1,14 +1,15 @@
 name: "Expedite"
 
-# Expediting: image update automation for the game server.
+# Expediting: keeping the game server on the build Valve publishes.
 #
 # Expediting is one duty of procurement (scripts/procurement), and the only one
 # that holds elevated permission. On a construction site, expediting chases an
 # order with a supplier and gets material to site when it is needed, without
 # building or installing anything. This does the same for one item from one
 # approved supplier: when Valve
-# publishes a new build of the Valheim dedicated server, it takes delivery -
-# builds the image, pins the digest - and submits it.
+# publishes a new build of the Valheim dedicated server, it records the build
+# in scripts/versions.env and submits that one line. The fabricator builds the
+# image and the release from it.
 #
 # WHY IT EXISTS. Valheim clients update themselves through Steam and refuse a
 # server on an older build, so every game patch strands every player until the
@@ -20,10 +21,11 @@ name: "Expedite"
 # THREE JOBS, BECAUSE THEY COST WILDLY DIFFERENT AMOUNTS.
 #
 #   check    one HTTPS call to Steam's news API. Has Valve posted anything?
-#   deliver  the expensive half, and only when check says to look: SteamCMD for
-#            the real build id, then a 2 GB download, a build, a push, and a
-#            pull request changing the pinned digest and the recorded build
-#   release  at 4am local, merge what is waiting
+#   deliver  only when check says to look: SteamCMD for the real build id,
+#            and a pull request changing VALHEIM_STEAM_BUILD_VERSION
+#   release  at 4am local: merge that pull request, wait for the fabricator
+#            to deliver the release built from it, and merge the delivery if
+#            the Steam build is all that changed
 #
 # The first version of this ran the whole check every fifteen minutes, which
 # meant installing a 32-bit library and SteamCMD ninety-six times a day to ask
@@ -39,22 +41,24 @@ name: "Expedite"
 # estate believes it is current: the daily pass below takes the authoritative
 # route whatever the doorbell said.
 #
-# WHAT A MERGE DOES NOW. Production no longer follows main or a tag: it runs
-# the release pinned in clusters/management/releases.yaml (#510). Merging a
-# delivery changes what the fabricator builds into the next release, and a
-# release reaches production only when a pull request moves that pin. The
-# 4am window still governs the merge, so an unattended delivery lands when it
-# disturbs nobody; moving the pin automatically, under a narrower standing
-# order, is the next part of #510.
+# WHAT A MERGE DOES NOW. Production runs the release pinned in
+# clusters/management/releases.yaml (#510). Merging the expediter's pull
+# request changes what the fabricator builds; the fabricator publishes a
+# release and procurement delivers it as a pull request moving that pin. The
+# 4am window takes both - the second only when its release differs from
+# production's by the Steam build alone - so a Steam patch reaches production
+# in one window with nobody pressing anything, and anything a person wrote
+# still waits for a person.
 #
 # WHAT KEEPS IT HONEST. The standing order is the procurement GitHub App
 # being a bypass actor on the "protected branches" ruleset. That ruleset holds
 # the review rule and the required checks together, so the bypass skips both:
 # a required check cannot bound it. The release job therefore takes only pull
 # requests the App itself opened, runs `superintendent enforce-standing-order`
-# against the exact head commit it is about to merge - refusing anything but
-# the digest and the recorded build, or a digest from another image
-# repository - and merges that commit and no later one. The same check runs in
+# against the exact head commit it is about to merge - refusing an expediter
+# change beyond the Steam build line, and a delivery whose release differs
+# from production's by more than that build, judged from the commits both
+# releases were built from - and merges that commit and no later one. The same check runs in
 # Sensitive Paths so the verdict shows on the pull request, but it is the one
 # here that binds.
 #
@@ -131,10 +135,11 @@ defaults:
     shell: bash
 
 env:
-  PIN: modules/applications/valheim/base/deployment.yaml
+  # The one line the expediter moves. The fabricator builds the image and the
+  # release from it; the expediter builds nothing.
+  PIN: scripts/versions.env
   APP_ID: "896660"
   REPO: ${{ github.repository }}
-  IMAGE: ghcr.io/${{ github.repository }}-valheim
 
 jobs:
   check:
@@ -203,13 +208,11 @@ jobs:
     needs: check
     if: needs.check.outputs.look == 'true'
     runs-on: ubuntu-latest
-    # Bounded so a stuck run cannot bill forever. The longest honest path is a
-    # 2 GB download, a build and a push; waiting for checks belongs to the
-    # release job, so this no longer has to cover that too.
-    timeout-minutes: 45
+    # Bounded so a stuck run cannot bill forever. It asks SteamCMD one
+    # question and commits one line; the image is the fabricator's to build.
+    timeout-minutes: 20
     permissions:
       contents: read
-      packages: write
     steps:
       # Audit, not block, and this is why: SteamCMD reaches Valve's content
       # servers, which are a changing set of hosts - approved-suppliers.yml
@@ -225,12 +228,6 @@ jobs:
           # pre-step, before any step of this job can run.
           egress-policy: audit
           disable-sudo-and-containers: "false"
-
-      # The image takes rclone at the version scripts/versions.env pins, as a
-      # build argument - the fabricator passes it automatically, and this
-      # build has to pass it too until expediting stops building (#510).
-      - name: Read pinned versions
-        uses: ./.github/actions/versions
 
       - name: Ask SteamCMD what the build actually is
         id: build
@@ -286,8 +283,8 @@ jobs:
             exit 1
           fi
 
-          recorded="$(sed -n 's/^[[:space:]]*[a-z0-9.-]*\/steam-build:[[:space:]]*"\([^"]*\)".*/\1/p' "$PIN" | head -n 1)"
-          echo "Steam's public build: ${build}; recorded beside the pin: ${recorded:-nothing}"
+          recorded="$(sed -n 's/^VALHEIM_STEAM_BUILD_VERSION=\([0-9]*\)$/\1/p' "$PIN" | head -n 1)"
+          echo "Steam's public build: ${build}; pinned in ${PIN}: ${recorded:-nothing}"
 
           if [ "$build" = "$recorded" ]; then
             echo "no delivery: the server already runs build ${build}" >> "$GITHUB_STEP_SUMMARY"
@@ -300,38 +297,6 @@ jobs:
             echo "build=${build}"
             echo "recorded=${recorded}"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Build the image for exactly that build
-        id: image
-        if: steps.build.outputs.deliver == 'true'
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ACTOR: ${{ github.actor }}
-          BUILD: ${{ steps.build.outputs.build }}
-        run: |
-          set -euo pipefail
-          echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-
-          # The build argument makes the image refuse to build if Steam serves
-          # anything but this build, so the label - and the record in git - is
-          # true of what is inside.
-          docker build \
-            --build-arg VALHEIM_BUILDID="$BUILD" \
-            --build-arg RCLONE_DEB_VERSION="$RCLONE_DEB_VERSION" \
-            -t "${IMAGE}:steam-${BUILD}" \
-            modules/applications/valheim/image
-          docker push "${IMAGE}:steam-${BUILD}"
-
-          # The manifest digest from the registry, not the local image id -
-          # the two sit side by side in a build log and are not the same thing.
-          digest="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE}:steam-${BUILD}")"
-          digest="${digest#*@}"
-          case "$digest" in
-            sha256:*) ;;
-            *) echo "::error::the registry gave no manifest digest for ${IMAGE}:steam-${BUILD}"; exit 1 ;;
-          esac
-          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
-          echo "built ${IMAGE}@${digest}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Mint the expedite token
         id: token
@@ -361,7 +326,6 @@ jobs:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           BUILD: ${{ steps.build.outputs.build }}
           RECORDED: ${{ steps.build.outputs.recorded }}
-          DIGEST: ${{ steps.image.outputs.digest }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -381,10 +345,9 @@ jobs:
           base_tree="$(gh api "repos/${REPO}/git/commits/${base}" --jq .tree.sha)"
           gh api "repos/${REPO}/contents/${PIN}?ref=${base}" --jq .content | base64 -d > "$RUNNER_TEMP/pin.yaml"
 
-          sed -i -E "s#(image:[[:space:]]+[^@[:space:]]+@)sha256:[0-9a-f]{64}#\1${DIGEST}#" "$RUNNER_TEMP/pin.yaml"
-          sed -i -E "s#([a-z0-9.-]+/steam-build:[[:space:]]+)\"[^\"]*\"#\1\"${BUILD}\"#" "$RUNNER_TEMP/pin.yaml"
-          if ! grep -q "@${DIGEST}" "$RUNNER_TEMP/pin.yaml" || ! grep -q "steam-build: \"${BUILD}\"" "$RUNNER_TEMP/pin.yaml"; then
-            echo "::error::could not find the pinned image and the steam-build annotation in ${PIN}; its shape has changed and this needs updating"
+          sed -i -E "s#^VALHEIM_STEAM_BUILD_VERSION=[0-9]*\$#VALHEIM_STEAM_BUILD_VERSION=${BUILD}#" "$RUNNER_TEMP/pin.yaml"
+          if ! grep -qx "VALHEIM_STEAM_BUILD_VERSION=${BUILD}" "$RUNNER_TEMP/pin.yaml"; then
+            echo "::error::could not find the VALHEIM_STEAM_BUILD_VERSION line in ${PIN}; its shape has changed and this needs updating"
             exit 1
           fi
 
@@ -400,10 +363,8 @@ jobs:
             "feat: take delivery of Valheim server build ${BUILD}" \
             "" \
             "Valve published a new build of the dedicated server, and clients refuse" \
-            "a server on an older one. Pins the image built from it." \
-            "" \
-            "Image:  ${IMAGE}" \
-            "Digest: ${DIGEST}" \
+            "a server on an older one. Pins it; the fabricator builds the image and" \
+            "the release from the pin." \
             "" \
             "Taken by expediting: ${RUN_URL}")"
           # No author, committer or signature field: GitHub signs on the App's
@@ -416,18 +377,11 @@ jobs:
             --body "$(printf '%s\n' \
               "## What this is" \
               "" \
-              "Valve published build **${BUILD}** of the Valheim dedicated server. Players' clients update themselves and refuse a server on an older build, so this pins the image built from it." \
-              "" \
-              "| | |" \
-              "| --- | --- |" \
-              "| Steam build | \`${RECORDED:-unknown}\` → \`${BUILD}\` |" \
-              "| Image | \`${IMAGE}@${DIGEST}\` |" \
+              "Valve published build **${BUILD}** of the Valheim dedicated server. Players' clients update themselves and refuse a server on an older build, so this pins it in \`${PIN}\`: Steam build \`${RECORDED:-unknown}\` → \`${BUILD}\`." \
               "" \
               "## What happens next" \
               "" \
-              "Every required check runs, including \`superintendent enforce-standing-order\`, which refuses this pull request if it changes anything but the digest and the recorded build." \
-              "" \
-              "**Merging this does not release it.** It changes what the fabricator builds into the next release; production moves when a pull request changes the pin in \`clusters/management/releases.yaml\`. Leave it and it merges at 4am America/Chicago. Nothing here waits for an approval." \
+              "Nothing needs you. At 4am America/Chicago the expediter merges this under its standing order, which covers this one line and refuses anything more. The fabricator then builds the image and the release, procurement delivers it, and the same window merges that delivery if the Steam build is all that changed. A release carrying anything else waits for a review." \
               "" \
               "Taken by expediting: ${RUN_URL}")")"
           echo "opened ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
@@ -444,7 +398,13 @@ jobs:
        github.event.schedule == '0 9 * * *' ||
        github.event.schedule == '0 10 * * *')
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # Long enough to merge the expediter's pull request, wait for the
+    # fabricator to build and deliver the release, and take that too.
+    timeout-minutes: 100
+    # Actions read, to find and follow the fabricator's run on the merge.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
@@ -457,6 +417,7 @@ jobs:
           disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
+            ghcr.io:443
             github.com:443
             go.dev:443
             objects.githubusercontent.com:443
@@ -582,7 +543,7 @@ jobs:
           # -bypass: this merge skips review, so only what the order covers
           # passes - a delivery of a release never does.
           if ! go run -C scripts/superintendent . enforce-standing-order -bypass -author "$author" -base "$base" -head "$head"; then
-            gh pr comment "$PR" --repo "$REPO" --body "Refused under the standing order at merge time: this changes more than the image digest and Steam build. It waits for a review."
+            gh pr comment "$PR" --repo "$REPO" --body "Refused under the standing order at merge time: this changes more than the Steam build. It waits for a review."
             exit 1
           fi
           build="$(gh pr view "$PR" --repo "$REPO" --json headRefName --jq '.headRefName | sub("^expedite/valheim-steam-"; "")')"
@@ -601,3 +562,80 @@ jobs:
             exit 1
           fi
           echo "merged #${PR}: Steam build ${build}" >> "$GITHUB_STEP_SUMMARY"
+          echo "sha=$(gh pr view "$PR" --repo "$REPO" --json mergeCommit --jq .mergeCommit.oid)" >> "$GITHUB_OUTPUT"
+
+      # The pull request just merged only changes what the fabricator builds.
+      # Production moves when the release built from it is delivered, so the
+      # window waits for that delivery rather than leaving it for tomorrow's:
+      # players' clients update the day Valve ships and refuse an older server.
+      - name: Wait for the fabricator to deliver the release
+        if: steps.merge.outputs.sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.merge.outputs.sha }}
+        run: |
+          set -euo pipefail
+          run=""
+          for _ in $(seq 1 20); do
+            run="$(gh run list --repo "$REPO" --workflow fabricator.yml --commit "$SHA" --json databaseId --jq '.[0].databaseId // empty')"
+            [ -n "$run" ] && break
+            sleep 15
+          done
+          if [ -z "$run" ]; then
+            echo "::error::the fabricator never started for ${SHA}, so there is no release to take"
+            exit 1
+          fi
+          if ! timeout 60m gh run watch "$run" --repo "$REPO" --exit-status --interval 30 >/dev/null; then
+            echo "::error::the fabricator's run ${run} did not succeed, so its release is left for a person"
+            exit 1
+          fi
+          echo "the fabricator finished run ${run}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Every delivery the holder opened is taken if the release changes
+      # nothing but the Steam build - judged against the commits its releases
+      # were built from, which the registry records. Anything else waits for a
+      # review, however it arrived.
+      - name: Release the deliveries whose only change is the Steam build
+        if: steps.window.outputs.due == 'true' && !failure()
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          HOLDER: ${{ vars.PROCUREMENT_BOT_LOGIN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$HOLDER" ]; then
+            echo "no standing order is configured, so no delivery is released" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          prs="$(gh api "repos/${REPO}/pulls?state=open&per_page=100" \
+            --jq '[.[] | select(.user.login == env.HOLDER and .head.repo.full_name == env.REPO and (.head.ref | startswith("deliver/")))] | sort_by(.number) | .[].number')"
+          if [ -z "$prs" ]; then
+            echo "no delivery is waiting" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          for pr in $prs; do
+            for _ in $(seq 1 20); do
+              rc=0
+              gh pr checks "$pr" --repo "$REPO" --required >/dev/null 2>&1 || rc=$?
+              if [ "$rc" -eq 0 ] || [ "$rc" -eq 8 ]; then break; fi
+              sleep 15
+            done
+            if ! timeout 20m gh pr checks "$pr" --repo "$REPO" --required --watch --interval 30 --fail-fast >/dev/null; then
+              echo "#${pr}: a required check did not pass, so it is left for a person" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            read -r author head target <<<"$(gh api "repos/${REPO}/pulls/${pr}" --jq '"\(.user.login) \(.head.sha) \(.base.ref)"')"
+            base="$(gh api "repos/${REPO}/compare/${target}...${head}" --jq .merge_base_commit.sha)"
+            git fetch --no-tags --depth=1 origin "$base" "$head"
+            if ! go run -C scripts/superintendent . enforce-standing-order -bypass -author "$author" -base "$base" -head "$head"; then
+              echo "#${pr}: the release changes more than the Steam build, so it waits for a review" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            title="$(gh pr view "$pr" --repo "$REPO" --json title --jq .title)"
+            if ! gh pr merge "$pr" --repo "$REPO" --squash --admin --match-head-commit "$head" \
+              --subject "${title} (#${pr})" \
+              --body "Merged under the standing order in the 4am window: the release changes nothing but the Steam build."; then
+              gh pr comment "$pr" --repo "$REPO" --body "The release changes nothing but the Steam build and every required check passed, but GitHub refused the merge. It waits for a review."
+              continue
+            fi
+            echo "merged #${pr}: ${title}" >> "$GITHUB_STEP_SUMMARY"
+          done

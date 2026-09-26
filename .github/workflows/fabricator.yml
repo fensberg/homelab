@@ -138,6 +138,47 @@ jobs:
           done < <(sed -n 's/^ARG[[:space:]]\{1,\}\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*$/\1/p' "${CONTEXT}/Dockerfile" | sort -u)
           echo "args=${args# }" >> "$GITHUB_OUTPUT"
 
+      # Whether this exact image already exists (#514). The fingerprint is
+      # every tracked file in the build context and every pin passed to it -
+      # the whole of what the image is made from - and a build of the same
+      # fingerprint is reused rather than repeated. Rebuilding is not free
+      # here even when it succeeds: a game server's build downloads the game
+      # again and is never byte-identical, so every rebuild used to become a
+      # new digest, a new release and a new counter value for nothing.
+      - name: Reuse a build of the same inputs
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: ${{ github.event.repository.name }}-${{ matrix.order.name }}
+          CONTEXT: ${{ matrix.order.context }}
+          PINS: ${{ steps.pins.outputs.args }}
+        run: |
+          fingerprint="fp-$( { git ls-tree -r HEAD -- "$CONTEXT"; printf '%s\n' "$PINS"; } | sha256sum | cut -c1-16)"
+          echo "fingerprint=${fingerprint}" >> "$GITHUB_OUTPUT"
+          case "$(gh api "users/${OWNER}" --jq .type)" in
+            Organization) base="orgs/${OWNER}" ;;
+            User) base="users/${OWNER}" ;;
+            *)
+              echo "::error::could not tell whether ${OWNER} is an organization or a user"
+              exit 1
+              ;;
+          esac
+          if ! listed="$(gh api --paginate "${base}/packages/container/${PACKAGE}/versions" \
+            --jq ".[] | select(.metadata.container.tags | index(\"${fingerprint}\")) | .name" 2>&1)"; then
+            if grep -q "HTTP 404" <<<"$listed"; then
+              listed=""
+            else
+              echo "::error::could not list the builds of ${PACKAGE}: ${listed}"
+              exit 1
+            fi
+          fi
+          digest="${listed%%$'\n'*}"
+          if [ -n "$digest" ]; then
+            echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+            echo "reusing ${digest}: an image built from these exact inputs exists" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Log in to the registry
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -155,16 +196,24 @@ jobs:
           PINS: ${{ steps.pins.outputs.args }}
           SHA: ${{ github.sha }}
           SOURCE: ${{ github.server_url }}/${{ github.repository }}
+          FINGERPRINT: ${{ steps.reuse.outputs.fingerprint }}
+          REUSED: ${{ steps.reuse.outputs.digest }}
         run: |
+          if [ -n "$REUSED" ]; then
+            echo "digest=${REUSED}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # shellcheck disable=SC2086 # PINS is a list of flags by construction
           docker build $PINS \
             --label "org.opencontainers.image.revision=${SHA}" \
             --label "org.opencontainers.image.source=${SOURCE}" \
             -t "${IMAGE}:${SHA}" \
             -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${FINGERPRINT}" \
             "$CONTEXT"
           docker push "${IMAGE}:${SHA}"
           docker push "${IMAGE}:latest"
+          docker push "${IMAGE}:${FINGERPRINT}"
           digest="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE}:${SHA}")"
           {
             echo "### ${IMAGE##*/}"
@@ -186,8 +235,59 @@ jobs:
       # image, what the version line looks like - comes from the order.
       # tests/go/repo/fabricator_test.go runs each of these steps as shipped.
 
-      - name: Take delivery of the Flux CLI
+      # Whether this exact release already exists (#514). Fingerprinted from
+      # the manifests it would ship, rendered, with the image pinned: what
+      # reaches the cluster, and nothing else. A comment in the overlay renders
+      # to nothing, so it makes no release - which is what it did before,
+      # delivering a "new" release identical to the one running.
+      - name: Reuse a release of the same manifests
+        id: release_fp
         if: matrix.order.release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: ${{ github.event.repository.name }}-${{ matrix.order.name }}-release
+          IMAGE: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          RELEASE: ${{ toJSON(matrix.order.release) }}
+        run: |
+          overlay="$(jq -r '.overlay' <<<"$RELEASE")"
+          module="$(jq -r '.module' <<<"$RELEASE")"
+          rendered="${RUNNER_TEMP}/fingerprint"
+          rm -rf "$rendered"
+          for dir in "$module" "$overlay"; do
+            mkdir -p "${rendered}/$(dirname "$dir")"
+            cp -R "$dir" "${rendered}/${dir}"
+          done
+          printf '%s\n' "images:" "  - name: ${IMAGE}" "    digest: ${DIGEST}" >> "${rendered}/${overlay}/kustomization.yaml"
+          fingerprint="fp-$(kubectl kustomize "${rendered}/${overlay}" | sha256sum | cut -c1-16)"
+          echo "fingerprint=${fingerprint}" >> "$GITHUB_OUTPUT"
+          case "$(gh api "users/${OWNER}" --jq .type)" in
+            Organization) base="orgs/${OWNER}" ;;
+            User) base="users/${OWNER}" ;;
+            *)
+              echo "::error::could not tell whether ${OWNER} is an organization or a user"
+              exit 1
+              ;;
+          esac
+          if ! listed="$(gh api --paginate "${base}/packages/container/${PACKAGE}/versions" \
+            --jq ".[] | select(.metadata.container.tags | index(\"${fingerprint}\")) | .metadata.container.tags[]" 2>&1)"; then
+            if grep -q "HTTP 404" <<<"$listed"; then
+              listed=""
+            else
+              echo "::error::could not list the releases of ${PACKAGE}: ${listed}"
+              exit 1
+            fi
+          fi
+          if [ -n "$listed" ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "no release: $(grep -v '^fp-' <<<"$listed" | head -n 1) already ships these exact manifests" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Take delivery of the Flux CLI
+        if: matrix.order.release && steps.release_fp.outputs.needed == 'true'
         run: scripts/take-delivery.sh flux
 
       # Started once, with the environment the order gives it, and read from
@@ -196,7 +296,7 @@ jobs:
       # release.
       - name: Read the version the build carries
         id: version
-        if: matrix.order.release
+        if: matrix.order.release && steps.release_fp.outputs.needed == 'true'
         env:
           IMAGE: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -229,7 +329,7 @@ jobs:
       # holds. None yet - the package does not exist - is the first release.
       - name: Number the release
         id: number
-        if: matrix.order.release
+        if: matrix.order.release && steps.release_fp.outputs.needed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           OWNER: ${{ github.repository_owner }}
@@ -266,7 +366,7 @@ jobs:
 
       - name: Stage and publish the release
         id: release
-        if: matrix.order.release
+        if: matrix.order.release && steps.release_fp.outputs.needed == 'true'
         env:
           IMAGE: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -275,6 +375,7 @@ jobs:
           RELEASE: ${{ toJSON(matrix.order.release) }}
           SHA: ${{ github.sha }}
           SOURCE: ${{ github.server_url }}/${{ github.repository }}
+          FINGERPRINT: ${{ steps.release_fp.outputs.fingerprint }}
         run: |
           overlay="$(jq -r '.overlay' <<<"$RELEASE")"
           module="$(jq -r '.module' <<<"$RELEASE")"
@@ -295,6 +396,7 @@ jobs:
             --reproducible \
             --output=json > "${RUNNER_TEMP}/pushed.json"
           pushed="$(jq -r '.digest' "${RUNNER_TEMP}/pushed.json")"
+          flux tag artifact "oci://${ARTIFACT}:${TAG}" --tag "${FINGERPRINT}"
           echo "digest=${pushed}" >> "$GITHUB_OUTPUT"
           {
             echo ""
@@ -388,8 +490,11 @@ jobs:
 
           while IFS= read -r name; do
             package="${REPO_NAME}-${name}-release"
+            # $tag is jq's own variable, inside jq's program, so single quotes
+            # are right: the shell must not expand it.
+            # shellcheck disable=SC2016
             read -r tag digest < <(GH_TOKEN="$READ_TOKEN" gh api --paginate "${base_path}/packages/container/${package}/versions" \
-              --jq '.[] | select(.metadata.container.tags | length > 0) | "\(.created_at) \(.metadata.container.tags[0]) \(.name)"' \
+              --jq '.[] | (.metadata.container.tags | map(select(startswith("fp-") | not)) | .[0]) as $tag | select($tag != null) | "\(.created_at) \($tag) \(.name)"' \
               | sort -r | head -n 1 | cut -d' ' -f2-)
             if [ -z "${tag:-}" ]; then
               echo "::error::${package} holds no release, although the ${name} order makes one"

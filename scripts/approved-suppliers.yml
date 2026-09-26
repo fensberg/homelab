@@ -691,13 +691,15 @@ egress:
       doorbell above and the release below are both blocked to a list.
 
     root: >-
-      Installs lib32gcc-s1 with apt-get, which SteamCMD needs, and builds the
-      image with Docker. Both need root or the Docker socket, so
-      disable-sudo-and-containers would break the job it exists for.
+      Installs lib32gcc-s1 with apt-get, which SteamCMD needs to ask for the
+      build id. That needs root, so disable-sudo-and-containers would break
+      the job it exists for. It no longer builds anything: the fabricator
+      builds the image from the pin this job records.
   - job: expedite.yml/release
     policy: block
     hosts:
       - api.github.com:443
+      - ghcr.io:443
       - github.com:443
       - go.dev:443
       - objects.githubusercontent.com:443
