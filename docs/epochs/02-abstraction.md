@@ -3142,6 +3142,32 @@ the open question in #554 is settled: a record of this estate is quiet, and a
 plan against it shows only what a change actually does. Eight seconds for the
 whole phase.
 
+**Plans read the record (#558).** The converge takes a record as its last step
+and the nightly takes one too; both publish it as an artifact, and a pull
+request's plan runs `contractor plan-as-built` against the newest one `main`
+published, on GitHub's runner, with no credential. That is what lets the
+environments go without a reviewer: nothing a pull request runs reaches the
+estate, and `tests/go/repo/selfhosted_test.go` now refuses any pull-request job
+on the estate's runner, where it used to require an environment whose reviewer
+it could not see. Three things learned building it:
+
+- **The copy of the cluster root has to sit exactly two levels below the
+  repository**, because the root reads files at `${path.module}/../../`. One
+  level deeper is a perfect copy that fails on a `file()` call, which is how it
+  was found - by the harness, and then again in the nightly test written the
+  same afternoon. `copyRoot` now refuses any other depth.
+- **A vault field a change adds has no value to take a shape from**, only a
+  reference, so an address is recognised by the field's name as well as by its
+  value.
+- **A record failure cannot fail a converge.** By then the apply has landed,
+  and the aftermath would read the failure as a failed converge and revert a
+  change that succeeded. So in a converge it warns, and plans read the previous
+  record, which says when it was taken.
+
+The next step is a runner pool on the estate for pull requests: no secret, and
+egress that cannot reach the estate, so PR Validation can use the estate's
+compute without reaching the estate.
+
 ## Gotchas
 
 ### Do not taint the control planes in the change that adds workers
