@@ -85,9 +85,19 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 167
+floor: 168
 
 mutations:
+  - guard: TestNoCodePicksASiteByName
+    file: .github/workflows/integration-tests.yml
+    find: "          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"
+    replace: "          SITE: ${{ matrix.site || 'site0' }}\n        run: ./toolshed/contractor record-as-built"
+    mentions: "names a site as a value"
+    why: >
+      A fallback to the first site reads as harmless while there is only one.
+      It is the setting that keeps recording site0 under a name that does not
+      say so once site1 exists, and leaves site1 with no record at all.
+
   - guard: TestNoPullRequestJobRunsOnTheEstatesRunner
     file: .github/workflows/deploy-infrastructure.yml
     find: "    # A pull request's code never runs on the estate's runner.\n    runs-on: ubuntu-latest\n"
@@ -2373,7 +2383,7 @@ mutations:
       folder out for itself, and when the backups moved it went on looking in
       the old place.
 
-owed_ceiling: 54
+owed_ceiling: 53
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -2430,6 +2440,11 @@ unprovable:
   - path: tests/go/repo/forkable_test.go
     reason: table
   - path: tests/go/repo/vaultcheck_test.go
+    reason: table
+  # The reader behind TestNoCodePicksASiteByName, whose own ledger entry
+  # proves the guard. Its table holds the values it must find and the prose it
+  # must leave.
+  - test: TestSiteValuesFindsValuesAndLeavesProse
     reason: table
   # The transcript shapes. A pattern that stops matching reports nothing and
   # looks exactly like a repository with no transcripts in it, so the shapes
