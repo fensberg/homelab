@@ -515,6 +515,36 @@ endpoints:
 #                   somebody has to go and find
 
 egress:
+  - job: codeql.yml/report
+    policy: block
+    hosts:
+      - api.github.com:443
+
+  - job: integration-tests.yml/report
+    policy: block
+    hosts:
+      - api.github.com:443
+
+  - job: scorecard.yml/report
+    policy: block
+    hosts:
+      - api.github.com:443
+
+  - job: expedite.yml/report
+    policy: block
+    hosts:
+      - api.github.com:443
+
+  - job: site-sweep.yml/report
+    policy: block
+    hosts:
+      - api.github.com:443
+
+  - job: security-patrol.yml/report
+    policy: block
+    hosts:
+      - api.github.com:443
+
   - job: clerk.yml/read
     policy: block
     hosts:
