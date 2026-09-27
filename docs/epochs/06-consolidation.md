@@ -503,6 +503,17 @@ What would have to differ here:
 
 It bears on #334 and #339, and on the third-party half of #375.
 
+## Deferred
+
+- **One schema for the config (#567).** The config's shape is implemented
+  twice - the HCL's reader and `scripts/contractor/config` - and held together
+  by contract tests over a shared fixture corpus. A published JSON Schema that
+  the editor, CI and both readers validate against removes the second
+  implementation rather than checking it; what a schema cannot say, such as
+  unique octets, stays in code as the stated exception. It is the same goal as
+  the "two config-contract implementations" entry in `docs/ideas.md`. Found in
+  epoch 02's abstraction review, 2026-09-27.
+
 ## Outcome
 
 _To be filled in at close._

@@ -1137,6 +1137,15 @@ bit; and a game release reaching production unreviewed.
 
 ## Deferred
 
+- **A golden path for workloads (#568).** The game server's namespace, network
+  policy, probes and backup were each written for it by hand, and the next
+  workload will copy the directory and keep whatever it forgets out. The
+  enterprise answer is a kit a workload opts into - Kustomize components for a
+  namespace profile chosen by label, probes that mean serving, and a backup
+  declaration - with a guard that every workload uses it or says why not. It
+  grows from the namespace-profile and probe entries in "What the nearest
+  neighbour does" above. Found in epoch 02's abstraction review, 2026-09-27.
+
 ## Gotchas
 
 ### The expediter, and what building it turned up

@@ -1760,6 +1760,45 @@ Named here so the next person does not have to rediscover why.
   one declares what the machines should open, the other dials it. Collapsing
   them would leave the test asserting the declaration against itself.
 
+### A hypervisor's own facts come from its config, not from the code
+
+Added 2026-09-27, from a scan for literals that are really facts about one
+machine. `compute.tf` names the Proxmox storage `local-zfs` and `local-iso` and
+the SDN vnet `vnetint` sixteen times, and the playbook and `verify.go` repeat
+the vnet. Those are properties of a host, not of this estate's design: a second
+hypervisor on LVM rather than ZFS, or with its vnet named otherwise, cannot be
+described without editing code.
+
+**The bar:** each hypervisor's entry in the config names its VM storage, its
+image store and its vnet, and the code reads them from there. A guard refuses
+a Proxmox storage or network name written as a literal anywhere in the code,
+the playbook included.
+
+### Each site has its own Flux directory, over shared bases
+
+Added 2026-09-27. `gitops_target_path` is `clusters/management` for every
+site, so every site would reconcile one tree, and anything site-specific in it
+collides the day a second site exists: the runner scale set registers as
+`homelab-management` from both, and the tunnel's routes collide (#536).
+
+**The bar:** Flux's standard multi-cluster layout - shared bases, and one thin
+directory per site (`clusters/<site>/`) holding what is that site's alone - with
+each site's `gitops_target_path` derived from its key. The runner scale set is
+named for its site. A guard refuses a site-specific value in a shared base.
+
+### A site pins the module version it runs
+
+Added 2026-09-27, for the module move itself. When the cluster root becomes a
+module, every site consuming the module at `main` moves together on every
+merge, and `docs/environments-and-promotion.md`'s answer to "where is staging"
+
+- the second site is - cannot happen: there is nothing to roll to one site
+  first.
+
+**The bar:** each site names the module version it runs, a change reaches one
+site by moving that site's pin, and a guard refuses a site that consumes the
+module unpinned.
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying

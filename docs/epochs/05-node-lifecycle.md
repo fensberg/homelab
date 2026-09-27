@@ -251,6 +251,11 @@ first worker holds the container and tool caches that make CI fast.
 
 ## Deferred
 
+- **Machine classes (#566).** VM sizes are literals in `compute.tf`: control
+  planes 4 cores / 4 GiB, workers 6 / 10 GiB, disks 64 and 32 GB. They belong
+  in named classes a site picks from per role, as cloud instance types are.
+  Deferred until a second host with different hardware makes the literals
+  wrong; found in epoch 02's abstraction review, 2026-09-27.
 - **Placement is still a re-deal.** `vm_placement` recomputes
   `i % length(hypervisors)`, so adding a hypervisor reassigns existing nodes -
   the hazard in `02-abstraction.md`. Adopting Cluster API would retire the
