@@ -51,12 +51,23 @@ func RepoRoot(t *testing.T) string {
 }
 
 // Site is which key in the config's sites map the tier under test is aimed
-// at. Defaults to site0, matching the start button's own default.
+// at: HOMELAB_TEST_SITE, or the only site the config declares - the same
+// rule as the contractor's -site, from the same function.
+//
+// It panics rather than guessing. With two sites declared and none named,
+// a tier aimed at "whichever came first" would report on one site under a
+// name that says nothing about which, and the other would go untested
+// without anything saying so.
 func Site() string {
-	if s := os.Getenv("HOMELAB_TEST_SITE"); s != "" {
-		return s
+	root, err := repopath.Root()
+	if err != nil {
+		panic(err)
 	}
-	return "site0"
+	site, err := config.ResolveSite(os.Getenv("HOMELAB_TEST_SITE"), filepath.Join(root, "config", "management.tpl.json"))
+	if err != nil {
+		panic("HOMELAB_TEST_SITE: " + err.Error())
+	}
+	return site
 }
 
 // RequireEnv fails the test immediately, naming every missing variable at

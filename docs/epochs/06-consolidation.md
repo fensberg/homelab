@@ -469,6 +469,40 @@ The skip is honest only while something runs those guards, so
 `TestHeavyGuardsRunOnEveryPullRequest` refuses a workflow that passes `-short`,
 and the ledger proves it.
 
+### A candidate: one versions file that everything reads, and Renovate driving it
+
+**Not decided.** From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11.
+
+Their `versions.env` is genuinely single: their OpenTofu reads it for Talos,
+Kubernetes and the Cilium bootstrap, Flux substitutes it into chart versions,
+their upgrade controller reads it, and Renovate updates it through one generic
+regex manager over `# renovate:` annotations - the format this estate already
+writes, for a Renovate that does not run (#375). Renovate runs self-hosted in
+Actions with its own GitHub App, and patch and minor updates automerge only
+after a soak (a day for patches, three for minors); majors never do.
+
+**Version holds** are the part worth taking even without the rest. A downgrade
+forced by an upstream regression goes into the versions file with an entry in
+a holds file naming the constraint, the reason and the upstream issue, and a
+weekly job opens an issue here when that upstream issue closes. A hold that
+cannot be forgotten is the fail-closed form of a comment saying "pinned because
+of a bug".
+
+What would have to differ here:
+
+- **Signed commits.** The "all branches" ruleset requires signatures with no
+  bypass, so Renovate needs `platformCommit: "enabled"` to have GitHub sign its
+  commits, or every one of its pull requests is refused with no readable
+  reason.
+- **This estate's own images are not Renovate's to bump.** The fabricator that
+  builds a digest records it; asking a bot to rediscover it is circular.
+- **Flux cannot read `scripts/versions.env` itself.** It needs a ConfigMap
+  generated from it and handed to `postBuild.substituteFrom`, or the file is one
+  of two again.
+- Renovate is a new supplier, and its workflow arrives as a patch.
+
+It bears on #334 and #339, and on the third-party half of #375.
+
 ## Outcome
 
 _To be filled in at close._

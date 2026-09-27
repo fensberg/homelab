@@ -94,6 +94,37 @@ worse version of a thing that already exists, and would then need maintaining.
 **Rejected:** a bespoke roll driver, which is what the first draft of this
 record proposed.
 
+### A candidate for upgrades in place: Tuppr, beside Cluster API
+
+**Not decided.** From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11, the nearest neighbour this estate has.
+
+[Tuppr](https://github.com/home-operations/tuppr) is a small controller. A
+`TalosUpgrade` and a `KubernetesUpgrade` resource each name a version, a
+maintenance window, and health checks written as CEL over live resources: every
+node Ready, the database at its full instance count, storage healthy - the
+questions the Health phase already asks. Bump the version in git and it rolls
+the nodes one at a time, refusing to continue while a check is false.
+
+It solves a different problem from Cluster API: Cluster API replaces machines,
+Tuppr upgrades the ones you have. For "patch Talos without losing a disk" it is
+the smaller tool, and it does not preclude Cluster API later. It would close
+most of #97, where a Talos version reaches these machines only by rebuilding
+them.
+
+What has to be proved before trusting it:
+
+- **That the data partition survives.** OpenEBS hostpath volumes live on it,
+  and whether an upgrade preserves it has been a flag rather than a guarantee
+  across Talos releases. Seed a sentinel on a volume, upgrade that node,
+  check the sentinel - before the world is ever on a node being upgraded.
+- **That the schematic is kept.** The image is a Factory image carrying the
+  Tailscale extension; an upgrade that drops the schematic brings nodes back
+  without the overlay.
+- **That OpenTofu reads the same version** it does, or the next ignition
+  quietly downgrades (#339).
+- It is a new supplier, `home-operations`, so it comes in a pull request of its
+  own.
+
 ### A failed converge does not get to pull this epoch forward
 
 A converge that fails partway through applying leaves machines the config no

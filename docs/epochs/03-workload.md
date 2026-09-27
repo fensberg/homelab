@@ -1045,6 +1045,94 @@ pod. It does not: RWO restricts the volume to one **node**, not one pod, and an
 OpenEBS Local PV carries node affinity that the scheduler uses to place the
 backup pod on the node already holding it. Two pods on one node both mount it.
 
+### What the nearest neighbour does, and what this tier takes from it
+
+From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11: Talos, OpenTofu, Flux, Cilium, CloudNativePG and a Valheim server
+on the same stack, about seventeen hundred pull requests further along. Each
+item says where this estate stands now. Upgrades in place are in
+[05-node-lifecycle.md](05-node-lifecycle.md), the versions file and Renovate
+in [06-consolidation.md](06-consolidation.md), and the separate root for what
+outlives a cluster was built as the estate root in
+[02-abstraction.md](02-abstraction.md).
+
+**Workload data: built differently, and the proof is still owed.** They back up
+volumes with Velero, and keep an exercise worth more than the backup: seed a
+sentinel with a known checksum, back up, destroy the cluster, rebuild, restore,
+compare. They also keep a data-protection matrix - every stateful workload, its
+backup mechanism, recovery point and retention - with a list of what is
+deliberately not backed up. This estate built the world backup into the game
+image instead (`world-backup.sh`, hourly to the production bucket, and
+`world-restore.sh` before the server starts), which fit one workload whose save
+format needs care: a backup taken mid-save catches a half-written world, and
+Valheim writes `_main.N.ok` only when a save completes. The round trip is #529.
+When a second stateful workload arrives, Velero's file-system backup (OpenEBS
+hostpath has no snapshots) is the ecosystem's answer to weigh against a second
+bespoke script, and the matrix should exist before that workload does.
+
+**Secrets: their classification answers #345.** They sort every secret by
+whether it survives a rebuild and whether it is generated or supplied, and give
+each combination one mechanism: a controller for generated-and-ephemeral, the
+External Secrets Operator reading a store for supplied, and OpenTofu generating
+once into the store for generated-and-persistent - which is what this estate
+already does for the state database password. ESO has a 1Password provider, so
+it does not wait on OpenBao, and the per-scope vaults mean its credential can
+be the site's own. One difference: they regenerate the game password in the
+cluster, which is wrong for a password players have to be told. It belongs in
+the supplied tier. See also the OpenBao entry in [ideas.md](../ideas.md).
+
+**Restart when configuration changes: still open.** A changed ConfigMap or
+Secret restarts nothing, and each world, name and password change on 2026-09-11
+needed a `rollout restart` that nothing enforced. They run Reloader. Half of it
+needs no supplier: a kustomize `configMapGenerator` hashes the ConfigMap into
+its name, so a change rolls the Deployment. The Secret is written by OpenTofu
+and needs Reloader or ESO, which would arrive together.
+
+**Promotion: solved here another way.** They package the whole Flux tree as an
+OCI artefact on every merge and let the live cluster follow a semver range,
+straight to production with no human. This estate promotes by a pull request
+changing `releases.yaml` (#510), keeping the decision human. What theirs does
+that ours does not is gate platform configuration as well as workloads, which
+is #357.
+
+**Network policy by namespace profile: an idea worth taking.** A default-deny
+policy covers every application namespace, and a namespace picks one profile
+by label (`isolated`, `internal`, `internal-egress`, `standard`), so onboarding
+an application is creating its namespace. Their internet profile uses Cilium's
+`world` entity, which includes the house network; this estate's egress rule
+excludes the private ranges, which is stricter and should be the base of any
+equivalent. Profiles still need per-application additions, as the game
+server's LAN rule for PlayFab Party's direct path showed. Their verification
+runbook is the part to copy first: Cilium's drop monitor found the game
+server's disconnect after six theories had not.
+
+**Probes that mean "serving": still open.** The game server has no probes, so
+Kubernetes calls it Ready as soon as the process starts, and on 2026-09-11
+`rollout status` reported success over a pod that had not changed. Their image
+has a status endpoint; this one does not, but an exec probe can check for the
+server's UDP socket in `/proc/net/udp` with no new code and no supplier.
+
+**Rejected, with the reasons:**
+
+- **The Steam backend on a LAN LoadBalancer**, inbound from `world`. This
+  estate chose the crossplay relay to have no inbound path, and the isolation
+  design depends on it.
+- **An image that installs the game at runtime.** It would end rebuilding the
+  image on every game patch, at the price of gigabytes of unpinned bytes at
+  every restart, from a pod whose egress is the internet, with nothing reviewed
+  between Valve and production. Their own commit that day pinned the image
+  after a release "rolled onto live unreviewed". Baking the game in and
+  automating the bump was the answer here (the expediter).
+- **Automerge through to production.** Their soak before automerging is worth
+  having; letting it reach production without a human is not.
+- **The rest of their platform** - Istio ambient, Longhorn, Garage, Authelia,
+  Dragonfly - is sized for three clusters and a rack. Longhorn was tried here
+  and removed.
+
+**Problems both estates hit independently**, which makes them likely
+properties of the stack rather than of either estate: Valheim 1.0 making a world
+a directory, which their image broke with a file mode that dropped the search
+bit; and a game release reaching production unreviewed.
+
 ## Outcome
 
 ## Deferred

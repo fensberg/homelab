@@ -10,11 +10,6 @@ once it's actually being worked on.
   node coming and going - not the same problem as a cloud spot instance,
   since a laptop can vanish for days at a time. If it works, the GPU opens up
   local AI / Hugging Face experimentation on the cluster itself.
-- **Add Gemini as a second PR reviewer.** Already paying for the Google One
-  tier that includes Gemini access. Could call the Gemini API directly from
-  `pr-validation.yml`, or use Google's `gemini-code-assist` GitHub App.
-  Pairs with the GPU-node idea above: a locally-hosted model could become a
-  third independent reviewer once that's running.
 - **A lower-tier environment, at least for E2E validation of manifests.** CI
   can only check that `clusters/management/` is structurally valid
   (`kustomize build` + `kubeconform`) - it cannot prove a change (a Flux
@@ -24,47 +19,6 @@ once it's actually being worked on.
   gap: promote a change there, watch Flux actually apply and heal it, then
   promote the same change to the real cluster - the standard staging pattern,
   just not built yet for a single-cluster homelab.
-- **Break the Analyze (Super-Linter) lane into dedicated per-tool jobs.**
-  Go validation, ShellCheck, Trivy, Semgrep and Secrets are already their
-  own lanes; checkov, ansible-lint, tflint, markdownlint, yamllint,
-  PSScriptAnalyzer and zizmor are still bundled into one Super-Linter image.
-  Several of today's real debugging time went straight into that bundling:
-  a golangci-lint version baked into the image that didn't match this
-  project's pinned Go version, Checkov silently ignoring the repo-wide
-  `FILTER_REGEX_EXCLUDE` because it is one of the tools Super-Linter's own
-  docs say always scans the whole workspace regardless, and a confirmed
-  upstream bug in how Super-Linter hands multi-package Go diffs to
-  golangci-lint. Splitting each tool into its own dedicated, individually
-  pinned job would trade one shared version/config surface for eight
-  smaller ones - more jobs to maintain, but each one debuggable and
-  upgradable on its own, matching the pattern already used for Trivy and
-  Semgrep. Coverage has to stay 1:1 with what Super-Linter currently runs;
-  this is a real CI restructure (new egress allowlists per job, a rewrite
-  of the CI section in the root `CLAUDE.md`), not a small tweak.
-
-- **Give build-site a supported teardown, and an honest name for `-keep-on-failure`.**
-  Two related gaps, both found while building the test tiers. First: a
-  successful single-phase run sterilizes the workspace on the way out
-  (`main.go`'s "belt and braces" block), which means `task render-secrets`
-  deletes the config it just rendered unless `-keep-on-failure` is passed. The
-  flag does the right thing; its name describes a different path, so nobody
-  reaches for it. A `-keep` flag, or exempting `render` specifically, would
-  make the per-phase tasks in `taskfile.yml` work as their descriptions read.
-  Second: `tofu destroy` only exists on the failure route, inside
-  `EmergencyDestroy`. There is no supported way to tear down an estate that
-  ignited successfully - which is why `tests/go/e2e` stops before the Migrate
-  phase, and which the "lower-tier environment" idea above will hit
-  immediately, since a staging cluster is only cheap if it can be thrown away.
-  `EmergencyDestroy` already solves the hard part (migrating state back out of
-  the cluster it is about to destroy); this is mostly about exposing it.
-- **Put a plan gate in front of `deploy-infrastructure.yml`.** It runs
-  `tofu apply -auto-approve` on push to `main`, with no plan posted anywhere
-  and no test step. Nothing has ever triggered it - `environments/` and
-  `modules/` do not exist yet - so this is cheap to fix now and expensive to
-  fix later. The standard shape is plan-on-PR (posted as a comment) and
-  apply-on-merge against that same saved plan, so what gets applied is what
-  was reviewed. Worth doing in the same epoch that first creates
-  `environments/`.
 - **Make the two config-contract implementations one implementation.** The
   contract tests added in the test epoch prove `registry.tf` and
   `scripts/contractor/config/config.go` agree, which is a real improvement over hoping.
@@ -85,8 +39,9 @@ once it's actually being worked on.
   calls it and asserts on the result - rehearsed against the workstation, not
   against a second site that is not coming. See
   `docs/state-and-secret-rotation.md` for the rest of the off-site hardening
-  list - bucket locks, per-prefix credentials, a second vendor, and key
-  custody for the age identity.
+  list - bucket locks, a second vendor, and key custody for the age identity.
+  Per-bucket credentials, once on that list, were done in #485. Tracked as
+  #529.
 
 - **What the e2e tier is for.** _Decided: let it run against `site0`._
   `tests/go/e2e` builds an estate from nothing and destroys it again, and it
@@ -141,6 +96,11 @@ once it's actually being worked on.
   secrets and leases would make unnecessary rather than automated.
   That split is what makes this incremental rather than a big-bang cutover,
   which matters a great deal given there is one estate and no rehearsal target.
+  **A classification to start from.** The nearest neighbour sorts every secret
+  by whether it survives a rebuild and whether it is generated or supplied, and
+  gives each combination one mechanism; it is written up in
+  [03-workload.md](epochs/03-workload.md) and answers most of #345 before
+  OpenBao exists, because the External Secrets Operator reads 1Password too.
   **Hard requirement to close this epoch: secrets rotate on a cadence, without
   a human.** Not "OpenBao is deployed" - deployed and still handing out static
   credentials is the same posture as today with more moving parts. The

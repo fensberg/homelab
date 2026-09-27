@@ -15,13 +15,10 @@ extra shouting.
 | `.github/sensitive-paths`               | The list, with a reason per line               | —                                  |
 | `.github/scripts/sensitive-paths.sh`    | Matches a change against it, writes the report | Called by the workflow             |
 | `tests/go/repo/sensitivepaths_test.go`  | Keeps both honest                              | **Already** — inside the Test lane |
-| `.github/workflows/sensitive-paths.yml` | Comments, and fails until acknowledged         | **Needs you to add it**            |
+| `.github/workflows/sensitive-paths.yml` | Comments, and fails until acknowledged         | On every pull request              |
 
-The test needs nothing from you. It runs in `task test:repo`, which is inside
-the **Test (go, tofu, vitest)** lane, which is already a required status check
-on `main`. The workflow is the only piece that needs adding, because the
-agent's App has no `workflows` permission and a push touching that directory is
-rejected server-side.
+The test runs in `task test:repo`, inside the **Test (go, tofu, vitest)** lane,
+which is a required status check on `main`.
 
 ## Editing the list
 

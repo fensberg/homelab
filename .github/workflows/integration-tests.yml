@@ -26,9 +26,9 @@ on:
           - api
           - both
       site:
-        description: "Which site to test against"
-        required: true
-        default: "site0"
+        description: "One site to test; leave empty for every site the config declares"
+        required: false
+        default: ""
         type: string
   schedule:
     # 04:00 UTC daily. The drift check is the reason this runs on a schedule
@@ -64,8 +64,56 @@ defaults:
     shell: bash
 
 jobs:
+  # Every site the config declares, or the one a dispatch names. A nightly
+  # that tested "whichever site it defaulted to" reported on one site under a
+  # name that said nothing about which, and a second site would have gone
+  # untested, undrifted and unrecorded with nothing saying so. The deploy
+  # workflow's matrix reads the same list the same way.
+  sites:
+    name: Which sites
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sites: ${{ steps.sites.outputs.sites }}
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: List the sites to test
+        id: sites
+        env:
+          SITE: ${{ inputs.site }}
+        run: |
+          declared="$(jq -c '.sites | keys' config/management.tpl.json)"
+          if [ -n "${SITE}" ]; then
+            if ! jq -e --arg s "${SITE}" 'index($s) != null' <<<"${declared}" >/dev/null; then
+              echo "::error::site ${SITE} is not declared; the config declares ${declared}"
+              exit 1
+            fi
+            declared="$(jq -cn --arg s "${SITE}" '[$s]')"
+          fi
+          echo "sites=${declared}" >> "$GITHUB_OUTPUT"
+
   test:
-    name: "Integration (${{ inputs.tier || 'integration' }})"
+    name: "Integration (${{ inputs.tier || 'integration' }}, ${{ matrix.site }})"
+    needs: sites
+    strategy:
+      # One site failing is no reason to stop testing another.
+      fail-fast: false
+      matrix:
+        site: ${{ fromJSON(needs.sites.outputs.sites) }}
     runs-on: homelab-management
     # Gated on a GitHub environment so the 1Password service-account token
     # lives behind whatever protection rules that environment carries, rather
@@ -111,7 +159,7 @@ jobs:
       - name: Render the config from 1Password
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          SITE: ${{ inputs.site || 'site0' }}
+          SITE: ${{ matrix.site }}
         run: |
           go build -C scripts/contractor -o ../../toolshed/contractor .
           ./toolshed/contractor build-site -site "$SITE" -phase render -keep-on-failure
@@ -119,7 +167,7 @@ jobs:
       - name: API contract tests
         if: ${{ inputs.tier == 'api' || inputs.tier == 'both' }}
         env:
-          HOMELAB_TEST_SITE: ${{ inputs.site || 'site0' }}
+          HOMELAB_TEST_SITE: ${{ matrix.site }}
         working-directory: tests/go
         run: go test -tags=api -timeout 10m -v ./api/...
 
@@ -153,7 +201,7 @@ jobs:
         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          SITE: ${{ inputs.site || 'site0' }}
+          SITE: ${{ matrix.site }}
         run: ./toolshed/contractor build-site -site "$SITE" -phase backup -keep-on-failure
 
       # Run through the contractor, not beside it.
@@ -179,8 +227,8 @@ jobs:
         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          HOMELAB_TEST_SITE: ${{ inputs.site || 'site0' }}
-          SITE: ${{ inputs.site || 'site0' }}
+          HOMELAB_TEST_SITE: ${{ matrix.site }}
+          SITE: ${{ matrix.site }}
         run: >-
           ./toolshed/contractor kubeconfig -site "$SITE" --
           go test -C tests/go -tags=integration -timeout 20m -v ./integration/...
@@ -195,15 +243,15 @@ jobs:
         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          SITE: ${{ inputs.site || 'site0' }}
+          SITE: ${{ matrix.site }}
         run: ./toolshed/contractor record-as-built -site "$SITE" -record-out "as-built/$SITE"
 
       - name: Publish the as-built record
         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
         uses: $/.github/workflows/upload-artifact
         with:
-          name: as-built-${{ inputs.site || 'site0' }}
-          path: as-built/${{ inputs.site || 'site0' }}/
+          name: as-built-${{ matrix.site }}
+          path: as-built/${{ matrix.site }}/
           if-no-files-found: ignore
           retention-days: 90
 
@@ -214,5 +262,5 @@ jobs:
       - name: Sterilize the workspace
         if: always()
         env:
-          SITE: ${{ inputs.site || 'site0' }}
+          SITE: ${{ matrix.site }}
         run: ./toolshed/contractor build-site -site "$SITE" -phase sterilize
