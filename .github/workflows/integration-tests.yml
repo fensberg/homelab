@@ -185,6 +185,28 @@ jobs:
           ./toolshed/contractor kubeconfig -site "$SITE" --
           go test -C tests/go -tags=integration -timeout 20m -v ./integration/...
 
+      # The as-built record every pull request's plan is compared with (#554).
+      # The converge takes one after each merge that changes the estate; this
+      # takes one every night as well, so a quiet month does not leave plans
+      # reading a record older than the artifact's ninety days - or one taken
+      # before a change made outside a converge. A record that is not quiet,
+      # or still holds a real value, is not saved, and the step says why.
+      - name: Take the as-built record
+        if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SITE: ${{ inputs.site || 'site0' }}
+        run: ./toolshed/contractor record-as-built -site "$SITE" -record-out "as-built/$SITE"
+
+      - name: Publish the as-built record
+        if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
+        uses: $/.github/workflows/upload-artifact
+        with:
+          name: as-built-${{ inputs.site || 'site0' }}
+          path: as-built/${{ inputs.site || 'site0' }}/
+          if-no-files-found: ignore
+          retention-days: 90
+
       # always(), because the whole point is that no secret survives this job
       # whatever happened above. A self-hosted runner is a long-lived machine:
       # unlike an ephemeral GitHub-hosted one, a rendered config left behind

@@ -85,9 +85,20 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 166
+floor: 167
 
 mutations:
+  - guard: TestNoPullRequestJobRunsOnTheEstatesRunner
+    file: .github/workflows/deploy-infrastructure.yml
+    find: "    # A pull request's code never runs on the estate's runner.\n    runs-on: ubuntu-latest\n"
+    replace: "    # A pull request's code never runs on the estate's runner.\n    runs-on: homelab-management\n"
+    mentions: "runs pull-request code on homelab-management"
+    why: >
+      Moving the plan back onto the estate's runner reads as a speed-up - it
+      already holds the providers. It hands every branch pushed to this
+      repository the estate's network and its runner, with no reviewer left to
+      stop it (#554).
+
   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
     file: modules/applications/valheim/base/second-policy.yaml
     create: |
@@ -2527,8 +2538,6 @@ unprovable:
   - test: TestNoCompiledBinaryIsTracked
     owed: true
   - test: TestNoGitCredentialIsCreatedForFlux
-    owed: true
-  - test: TestNoPullRequestJobReachesTheSelfHostedRunnerUnguarded
     owed: true
   - test: TestNoSourceControlTokenInTheConfigTemplate
     owed: true

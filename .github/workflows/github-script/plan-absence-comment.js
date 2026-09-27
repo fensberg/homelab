@@ -26,13 +26,14 @@ module.exports = async ({ github, context }) => {
     ' **`' + process.env.RESULT + '`** rather than succeeding. Nothing here' +
     ' compared the proposed configuration against the estate that exists.',
     '',
-    'That is not a blocker and is not meant to be. The plan runs on a runner' +
-    ' inside the cluster, so when the cluster is down no plan can be produced -' +
-    ' which is exactly when the pull request rebuilding it needs to merge.' +
-    ' Requiring a plan would deadlock that.',
+    'The plan compares this change with the as-built record: the estate as' +
+    ' last converged, published from `main`. It usually fails for one of two' +
+    ' reasons. No record has been published yet, which is the case until the' +
+    ' first converge or nightly after an estate is built. Or the plan itself' +
+    ' failed, and the job log says why.',
     '',
     'What it means for a reviewer: approving this is approving HCL rather than' +
-    ' its consequences. If the estate is up, re-running the plan job is worth' +
+    ' its consequences. Re-running the plan job once a record exists is worth' +
     ' more than reading the diff again.',
   ].join('\n');
 

@@ -548,20 +548,6 @@ egress:
       - api.github.com:443
       - github.com:443
 
-  - job: deploy-infrastructure.yml/plan
-    policy: audit
-    reason: >-
-      Plans the workload tier against a real estate.
-
-      HARDEN-RUNNER DOES NOTHING ON THIS RUNNER. The scale set's pods are
-      detected as ARC, and harden-runner then only writes its policy to
-      stdout for a StepSecurity agent inside the cluster - which this estate
-      does not run. It installs nothing, blocks nothing and records nothing:
-      a real converge's log holds no destinations at all. So `audit` here
-      audits nothing, `block` would block nothing, and there is no observed
-      list to transcribe. Egress for these pods has to be controlled at the
-      cluster's network layer instead (#411); until then it is uncontrolled
-      and unrecorded, and this entry says so rather than implying otherwise.
   - job: deploy-infrastructure.yml/apply
     policy: audit
     reason: >-
@@ -618,19 +604,22 @@ egress:
       - release-assets.githubusercontent.com:443
 
   - job: deploy-infrastructure.yml/plan-estate
-    policy: audit
+    policy: block
     reason: >-
-      Plans a real site, so it reaches the same set converge does.
+      Plans a pull request's change against the as-built record (#554), on
+      GitHub's runner and with no credential. The Go toolchain and OpenTofu
+      with its providers, fetched as the Validate lane fetches them, and
+      GitHub's API to find and download the record.
+    hosts:
+      - api.github.com:443
+      - get.opentofu.org:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - registry.opentofu.org:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
 
-      HARDEN-RUNNER DOES NOTHING ON THIS RUNNER. The scale set's pods are
-      detected as ARC, and harden-runner then only writes its policy to
-      stdout for a StepSecurity agent inside the cluster - which this estate
-      does not run. It installs nothing, blocks nothing and records nothing:
-      a real converge's log holds no destinations at all. So `audit` here
-      audits nothing, `block` would block nothing, and there is no observed
-      list to transcribe. Egress for these pods has to be controlled at the
-      cluster's network layer instead (#411); until then it is uncontrolled
-      and unrecorded, and this entry says so rather than implying otherwise.
   - job: deploy-infrastructure.yml/plan-absence
     policy: block
     hosts:

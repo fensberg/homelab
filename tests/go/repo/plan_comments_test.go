@@ -12,26 +12,12 @@ import (
 // A surface that accumulates is one that teaches a reader to stop looking at
 // it, which costs far more than the thing being reported.
 
-// WHY THERE IS NO "a plan lane declares no environment" CHECK HERE.
-//
-// There was one, briefly, for #158 - deployment records accumulate on a lane
-// that never deploys, and the issue called removing the environment "a
-// straightforward removal regardless". It is not, and the estate already knew
-// why: TestNoPullRequestJobReachesTheSelfHostedRunnerUnguarded REQUIRES an
-// environment on exactly these jobs.
-//
-// `plan` and `plan-estate` run on the self-hosted runner from a `pull_request`
-// event. The fork guard excludes a fork; it does not exclude a branch pushed to
-// this repository, and that set includes every collaborator, every bot with
-// push access, and anything holding a leaked token. A GitHub environment with
-// required reviewers is the only mechanism that makes such a branch wait for a
-// human before it executes on a runner holding a vault token.
-//
-// So the environment on those lanes is doing two jobs, and #158 accounts for
-// one of them. Removing it trades a misleading status surface for a real hole.
-// The issue is reopened with that, and the honest options are marking the
-// deployment inactive when the job finishes, or changing what the Environments
-// view is expected to mean - not removal.
+// There is no "a plan lane declares no environment" check here, and now
+// there does not need to be: plans run on GitHub's runner against the
+// as-built record and name no environment at all (#554), and
+// TestNoPullRequestJobRunsOnTheEstatesRunner holds the reason that is safe.
+// #158 - deployment records accumulating on a lane that never deploys -
+// closes with it.
 
 // Every comment the workflow posts is found and replaced, not appended.
 //
@@ -99,9 +85,11 @@ no longer produced it.`, name, line)
 		}
 	}
 
-	if total < 3 {
+	// Two: the estate's plan and its absence. The workload tier's plan went
+	// with its job (#554).
+	if total < 2 {
 		t.Fatalf(`found %d createComment call(s) across the shared scripts, and there are
-three plan comments.
+two plan comments.
 
 The read has stopped matching, so a path that appends could be added without
 this noticing.`, total)

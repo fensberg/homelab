@@ -80,9 +80,9 @@ depends on.
 
 ### The four GitHub environments
 
-Each gates one thing, and none overlaps another:
+Each holds the credential for one thing, and none overlaps another:
 
-| Environment   | Gates                                            | Triggered by                 |
+| Environment   | Holds the credential for                         | Triggered by                 |
 | ------------- | ------------------------------------------------ | ---------------------------- |
 | `management`  | the platform itself - `contractor converge-site` | merge touching `management/` |
 | `staging`     | workload deploys                                 | merge to `main`              |
@@ -95,6 +95,14 @@ largest blast radius in the repository. The secret it holds is scoped to match:
 the site's own service account, with read and write on `site0` and read on
 `site0-shared` and `estate-shared`, and nothing else. The contractor refuses a
 token that can see more (`scripts/details/vaults`).
+
+**None of them needs a reviewer.** Every job naming an
+environment runs from `main` or on a schedule, never from a pull request: a
+pull request's plan runs on GitHub's runner against the as-built record and
+holds no credential (#554). So the only thing that reaches the estate is a
+merge, and the pull request's approval is the only gate.
+`tests/go/repo/selfhosted_test.go` refuses any pull-request job on the
+estate's runner.
 
 ## Invariants
 
