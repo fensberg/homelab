@@ -358,29 +358,6 @@ func TestResolveSiteNetwork_WorkersUseTheirOwnBandInTheNodeSubnet(t *testing.T) 
 	}
 }
 
-// The bands must not meet. talos.tf merges the control plane and the workers
-// into one map keyed by host octet, and a duplicate key there drops a machine
-// silently rather than failing, so this is the arithmetic that keeps that safe.
-func TestResolveSiteNetwork_TheBandsCannotCollide(t *testing.T) {
-	site := validSite()
-	site.ControlPlaneCount = WorkerBand - ControlPlaneBand
-	site.WorkerCount = 1
-	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
-
-	net, err := ResolveSiteNetwork(cfg, "site0")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	seen := map[string]bool{}
-	for _, ip := range append(append([]string{}, net.NodeIPs...), net.WorkerIPs...) {
-		if seen[ip] {
-			t.Fatalf("%s is used by two machines; the bands overlap", ip)
-		}
-		seen[ip] = true
-	}
-}
-
 func TestResolveSiteNetwork_NegativeWorkerCount(t *testing.T) {
 	site := validSite()
 	site.WorkerCount = -1

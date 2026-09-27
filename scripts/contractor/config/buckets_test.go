@@ -173,34 +173,19 @@ func TestTwoSitesCannotCollapseToOneSlug(t *testing.T) {
 		{"north street office", "north_street_office"},
 		{"north-street-office", "North-Street-Office"},
 	} {
-		if got, want := SiteSlug(tc.a, "site0"), SiteSlug(tc.b, "site1"); got != want {
-			t.Errorf("SiteSlug(%q) = %q and SiteSlug(%q) = %q; this case is only "+
-				"interesting if they collide, so the test needs a different pair",
-				tc.a, got, tc.b, want)
-			continue
-		}
-
-		cfg := &Config{Sites: map[string]Site{
-			"site0": {Name: tc.a, Octet: 10, ControlPlaneCount: 1},
-			"site1": {Name: tc.b, Octet: 20, ControlPlaneCount: 1},
-		}}
+		a, b := validSite(), validSite()
+		a.Name, b.Name, b.Octet = tc.a, tc.b, a.Octet+10
+		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": a, "site1": b}}
 		_, err := ResolveSiteNetwork(cfg, "site0")
 		if err == nil {
-			t.Errorf("two sites named %q and %q were accepted; they share the slug %q, "+
-				"so they share every bucket", tc.a, tc.b, SiteSlug(tc.a, "site0"))
+			t.Errorf("two sites named %q and %q were accepted; they share one slug, "+
+				"so they share every bucket", tc.a, tc.b)
 			continue
 		}
 		if !strings.Contains(err.Error(), "slug") {
 			t.Errorf("names %q and %q were refused, but not for the slug collision: %v",
 				tc.a, tc.b, err)
 		}
-	}
-}
-
-// A site with no name falls back to its key, which is unique by construction.
-func TestAnUnnamedSiteFallsBackToItsKey(t *testing.T) {
-	if got := SiteSlug("", "site7"); got != "site7" {
-		t.Errorf("SiteSlug(\"\", \"site7\") = %q, want \"site7\"", got)
 	}
 }
 
@@ -217,18 +202,14 @@ func TestBackupPathsUseTheRemoteRcloneIsGiven(t *testing.T) {
 	}
 }
 
-// Slug is the transform alone; SiteSlug adds the site's fallback. The split
-// exists so the forkability check can slug an organization's name without
-// inheriting a fallback that only means something for a site.
-func TestSlugHasNoFallbackAndSiteSlugDoes(t *testing.T) {
+// Slug is the transform alone, for the forkability check's organization name.
+// A site's slug, with its fallback to the site's key, is the address plan's.
+func TestSlugHasNoFallback(t *testing.T) {
 	if got := Slug("North Street Office"); got != "north-street-office" {
 		t.Errorf("Slug = %q, want north-street-office", got)
 	}
 	if got := Slug("   "); got != "" {
 		t.Errorf("Slug of nothing = %q, want empty - a fallback here would invent a name", got)
-	}
-	if got := SiteSlug("   ", "site3"); got != "site3" {
-		t.Errorf("SiteSlug with no usable name = %q, want the key", got)
 	}
 }
 

@@ -594,11 +594,18 @@ tasks:
     # Fixture configs, never the real rendered one, so this needs no secrets
     # and is safe to run at any time. init is required before test and is a
     # no-op once .terraform exists.
+    #
+    # Every root with a tests/ directory, discovered rather than listed: a
+    # list of roots is a list a new module is silently missing from, which is
+    # how the address plan's tests would never have run.
     cmds:
-      - tofu -chdir=management/cluster init -backend=false -input=false
-      - tofu -chdir=management/cluster test
-      - tofu -chdir=management/estate init -backend=false -input=false
-      - tofu -chdir=management/estate test
+      - |
+        set -e
+        for root in $(git ls-files '*.tftest.hcl' | xargs -n1 dirname | xargs -n1 dirname | sort -u); do
+          echo "== $root"
+          tofu -chdir="$root" init -backend=false -input=false >/dev/null
+          tofu -chdir="$root" test
+        done
 
   test:repo:
     desc: "Repository invariants: config keys that are silently declared twice"

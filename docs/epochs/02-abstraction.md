@@ -1660,6 +1660,38 @@ no state, that:
 It holds no access rules. Who may reach what is epoch 09's, and refers to the
 plan's names.
 
+**Built, 2026-09-27; two pieces still to land.** `modules/infrastructure/address-plan`
+computes every site's ranges, machines (address, VM id, name, placement),
+template VM ids, the state database's endpoint, the SDN identities, the slug,
+and - once a domain is given - every private name and alias. It is the first
+module under `modules/infrastructure/`.
+
+Everything that used to restate it reads it instead. The cluster root calls it
+and its network locals are views of the answer; `config.ResolveSiteNetwork`
+asks it through `tofu console` (validation stays in Go, at the edge, with
+`registry.tf`), and `sterilize.go`, the Health phase, the Ansible inventory and
+the test harness read that. The contract tests that compared Go's band
+constants with the HCL's are gone with the constants: with one computation
+there is nothing to disagree. It reproduces the addresses that existed exactly
+
+- compared field by field on a config with workers, zones and two
+  hypervisors - so merging it changes no machine.
+
+Found while building it: `tofu console` takes a lock on its state path even
+with no state, so two callers asking at once refused each other. Each question
+now gets a private directory and state path.
+
+Still to land, each its own change:
+
+- **Pods and services on the allocated ranges.** The plan allocates them per
+  site (site0: `10.110.0.0/16`, `10.196.40.0/22`) and nothing reads them yet.
+  Switching Talos to them changes a running cluster's pod range, so site0 is
+  rebuilt from that branch before it merges, and the converge on merge finds
+  nothing to do.
+- **Names.** The module emits every private name and alias once a domain is
+  given; the domain is a vault field the operator adds first, and until then
+  a render would fail on the missing reference.
+
 Four implementations of one scheme today, across two languages:
 
 ```text

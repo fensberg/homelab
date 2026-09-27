@@ -461,6 +461,7 @@ config entry.
 | ---------------------------- | ---------------------------------------------------------- |
 | `management/hypervisor/`     | Ansible: bare-metal Proxmox preparation                    |
 | `management/cluster/`        | OpenTofu: VMs, Talos, overlay network, storage, Flux       |
+| `modules/infrastructure/`    | Pure OpenTofu modules: the estate's address plan           |
 | `clusters/management/`       | Flux-reconciled manifests for this cluster                 |
 | `config/management.tpl.json` | The one config: sites, topology and every secret reference |
 | `tests/`                     | Everything above the unit tier — see `tests/README.md`     |

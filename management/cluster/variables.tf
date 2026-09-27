@@ -87,15 +87,8 @@ locals {
   # Sanitised because these become Proxmox VM names and a Talos cluster name,
   # which are DNS-shaped: a label like "North Street Office" has to collapse
   # to "north-street-office". Falls back to the map key if the name is blank.
-  site_name = (
-    trim(lower(replace(try(local.site.name, ""), "/[^A-Za-z0-9]+/", "-")), "-") != ""
-    ? trim(lower(replace(local.site.name, "/[^A-Za-z0-9]+/", "-")), "-")
-    : var.site
-  )
+  site_name = local.net.slug
 
-  # nodes is a map, so iterate it in sorted key order: node0, node1, node2.
-  # HCL orders map iteration lexicographically, which keeps VM placement
-  # deterministic between runs and matches what the start button does.
   hypervisors = [for k in sort(keys(local.site.hypervisor.nodes)) : local.site.hypervisor.nodes[k]]
 
   # Per-site because two sites are two estates: separate hypervisors, separate
@@ -142,7 +135,7 @@ locals {
   # The cost is that collisions become expressible, so registry.tf asserts
   # uniqueness across every site rather than relying on the schema.
   octet     = local.site.octet
-  site_cidr = "10.${local.octet}.0.0/16"
+  site_cidr = local.net.site_cidr
 
   # The Talos image variant the Factory is asked for.
   #
@@ -213,153 +206,26 @@ locals {
   pod_cidr     = "10.244.0.0/16"
   service_cidr = "10.96.0.0/12"
 
-  # Talos control plane. Infrastructure sits in .0.0/24 and a load-balancer
-  # pool is reserved at .20.0/24 for epoch 02.
-  node_cidr    = "10.${local.octet}.10.0/24"
-  node_gateway = cidrhost(local.node_cidr, 1)
-  # The bands, named rather than inline, because config.go implements the same
-  # two numbers and a contract test can only compare values it can find. An
-  # inline `100 + i` is a number no test can read.
-  control_plane_band = 100
-  worker_band        = 200
+  # Every address, VM id and machine name below is the address plan's
+  # (modules/infrastructure/address-plan, called in address-plan.tf), which
+  # computes them once for every site; these are views of its answer for this
+  # site. The contractor and the test harness ask the same module, so nothing
+  # restates the scheme (docs/epochs/02-abstraction.md).
+  net          = module.address_plan.sites[var.site]
+  node_cidr    = local.net.node_cidr
+  node_gateway = local.net.node_gateway
 
-  # The untrusted zones: one subnet each, not a band inside the node subnet.
-  #
-  # A band would put the machine that takes inbound traffic from strangers on
-  # the same L2 as every control plane. A subnet each - rather than one shared
-  # by every untrusted workload - is because two untrusted workloads on one
-  # segment can reach each other, and what shares a kernel is the whole reason
-  # either gets a machine of its own.
-  #
-  # 30 upwards is the range 02-abstraction.md reserves for tenants with their
-  # own ranges, which is exactly what a zone is. No new overlay route is needed:
-  # hypervisor-prep advertises the site's whole /16.
-  dmz_first_subnet = 30
-  dmz_max_zones    = 10
-  dmz_band         = 100
-
-  # The one number every other identifier is derived from.
-  host_octets = [for i in range(local.node_count) : local.control_plane_band + i]
-
-  # Workers live in the same zone subnet as the control plane and in a
-  # different host-octet band. Same network because a single Talos cluster
-  # needs its members on one subnet; different band because the band is what
-  # makes a machine's role readable off its address, its name and its id at
-  # once. See docs/epochs/02-abstraction.md, "The address carries site, zone
-  # and host, and nothing else".
-  #
-  # Absent means none, which is what every config in this repository described
-  # before workers existed, and is a meaningful value rather than a missing
-  # one - an estate with no workers is the estate epoch 01 shipped.
-  worker_count  = try(local.site.worker_count, 0)
-  worker_octets = [for i in range(local.worker_count) : local.worker_band + i]
-
-  # The control plane, keyed by host octet rather than by position.
-  #
-  # for_each, not count. With count the key is a position, so removing a node
-  # renumbers every node after it and OpenTofu replaces all of them - a running
-  # etcd member destroyed for being third instead of fourth, with nothing
-  # calling `talosctl etcd remove-member` first. Keyed by the host octet,
-  # identity is the machine rather than its place in a list: adding "105" is
-  # one create, removing "102" is one destroy, and nothing else moves.
-  #
-  # That is the difference between a control plane whose nodes can be replaced
-  # one at a time and one that can only be rebuilt.
-  control_plane = {
-    for i, h in local.host_octets : tostring(h) => {
-      host_octet = h
-      ip         = cidrhost(local.node_cidr, h)
-      name       = format("%s-cp-%d", local.site_name, h)
-
-      # Banded by octet so two sites can share a Proxmox cluster without
-      # colliding, and ending in the host octet so the id reads back as the
-      # address: octet 10 uses 10100-10199, octet 11 uses 11100-11199. The
-      # octet is asserted 1-95, so the widest band is 95100-95199 - well
-      # inside Proxmox's range.
-      vm_id = local.octet * 1000 + h
-
-      # Still a re-deal when the hypervisor count changes - see
-      # docs/epochs/02-abstraction.md, "Adding a hypervisor currently re-deals
-      # the control plane". Keying by host octet fixes identity churn, not
-      # placement churn; the placement fix needs the assignment to be recorded
-      # rather than recomputed, which is its own change.
-      #
-      # Guarded rather than indexed directly: a site with no hypervisors has an
-      # empty list, and `i % 0` is an error that aborts evaluation before
-      # registry.tf's precondition can say "site has no hypervisor nodes" in
-      # words. The corpus caught exactly that. The empty string never reaches a
-      # resource, because that precondition stops the plan first.
-      hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[i % length(local.hypervisors)].hostname : ""
-    }
-  }
-
-  # Workers, keyed by host octet for exactly the reasons the control plane is.
-  #
-  # The stakes are lower here - a worker is not an etcd member, so replacing
-  # one is a cordon, a drain and a destroy rather than a quorum event - but the
-  # identity property is worth having for the same reason: removing wk-200
-  # should be one destroy, not a renumbering of every worker after it.
-  workers = {
-    for i, h in local.worker_octets : tostring(h) => {
-      host_octet = h
-      ip         = cidrhost(local.node_cidr, h)
-      name       = format("%s-wk-%d", local.site_name, h)
-      vm_id      = local.octet * 1000 + h
-
-      # Dealt round-robin like the control plane, and carrying the same
-      # re-deal hazard when a hypervisor is added - with one important
-      # difference. Re-placing a worker destroys and recreates a machine that
-      # holds no quorum and no etcd membership, so it is a disruption rather
-      # than the silent quorum damage the control-plane note describes.
-      # Growth is meant to land here for exactly that reason.
-      hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[i % length(local.hypervisors)].hostname : ""
-    }
-  }
-
-  # The untrusted zones, keyed by the workload each exists for.
-  #
-  # Sorted, so a zone's subnet does not move when another is added or removed.
-  # An address that shifts under a workload because a neighbour was deprecated
-  # is a firewall rule silently pointing at somebody else.
-  #
-  # This has to agree with ResolveSiteNetwork in
-  # scripts/contractor/config/config.go, the same contract every other
-  # tier here already implements twice.
+  # Read from the config for registry.tf's checks. The ceiling keeps the
+  # zones' subnets inside the band the address plan reserves for them.
+  worker_count   = try(local.site.worker_count, 0)
   dmz_zones_in   = try(local.site.dmz_zones, {})
   dmz_zone_names = sort(keys(local.dmz_zones_in))
+  dmz_max_zones  = 10
 
-  dmz_zones = {
-    for i, zone in local.dmz_zone_names : zone => {
-      name  = zone
-      index = i
-      cidr  = "10.${local.octet}.${local.dmz_first_subnet + i}.0/24"
-      # Indexed rather than named: a Proxmox vnet id is capped at eight
-      # characters, which a workload name of any length will exceed.
-      vnet = "vnetdmz${i}"
-      # Banded so a second zone at one site cannot collide with a first zone at
-      # another: the node vnet tops out at 11000+octet, and these start at
-      # 12100.
-      vni = 12000 + local.octet * 100 + i
-      # Absent means one. A zone with no machine is a subnet and a VXLAN
-      # identifier nothing sits on.
-      nodes = try(local.dmz_zones_in[zone].node_count, 0) > 0 ? local.dmz_zones_in[zone].node_count : 1
-    }
-  }
-
-  # Every zone's machines, flattened and keyed so one can be removed without
-  # renumbering the rest.
-  dmz = merge([
-    for zone, z in local.dmz_zones : {
-      for j in range(z.nodes) : "${zone}-${local.dmz_band + j}" => {
-        zone       = zone
-        host_octet = local.dmz_band + j
-        ip         = cidrhost(z.cidr, local.dmz_band + j)
-        name       = "${local.site_name}-${zone}-${local.dmz_band + j}"
-        vm_id      = local.octet * 1000 + 300 + z.index * 10 + j
-        hypervisor = length(local.hypervisors) > 0 ? local.hypervisors[(z.index + j) % length(local.hypervisors)].hostname : ""
-      }
-    }
-  ]...)
+  control_plane = local.net.control_planes
+  workers       = local.net.workers
+  dmz_zones     = local.net.dmz_zones
+  dmz           = local.net.dmz
 
   dmz_keys  = sort(keys(local.dmz))
   dmz_ips   = [for k in local.dmz_keys : local.dmz[k].ip]
@@ -559,7 +425,7 @@ locals {
   state_db_cluster   = "tofu-state"
   state_db_name      = "tofu_state"
   state_db_owner     = "tofu"
-  state_db_nodeport  = 30432
+  state_db_nodeport  = local.net.state_database.port
 }
 
 output "site_network" {

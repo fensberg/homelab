@@ -29,33 +29,15 @@ const (
 	OctetMin = 1
 	OctetMax = 95
 
-	// ControlPlaneBand and WorkerBand are the host-octet bands a machine's
-	// address, name and VM id are all derived from. They must not overlap:
-	// talos.tf merges the two maps to share their config patches, and a
-	// duplicate key there drops a machine silently rather than failing.
-	//
-	// The same two numbers live in management/cluster/variables.tf as
-	// control_plane_band and worker_band. contract_test.go asserts they agree,
-	// because both gate a real deployment and a disagreement means the start
-	// button and `tofu plan` build different estates.
-	ControlPlaneBand = 100
-	WorkerBand       = 200
+	// The bands, subnets and VM ids a site's machines are derived from are the
+	// address plan's (modules/infrastructure/address-plan), and this program
+	// asks it rather than restating them; see askAddressPlan.
 
-	// The untrusted zone bands from 100 as well, and does not collide with the
-	// control plane despite sharing the number: it lives in its own /24, so
-	// the pair that has to be unique is (subnet, host) rather than the host
-	// alone. 10.<octet>.10.100 and 10.<octet>.30.100 are different machines on
-	// different networks, which is the entire point of giving the zone a
-	// subnet of its own.
-	DMZBand = 100
-
-	// The third octet the first untrusted zone takes, and how many may exist.
-	//
-	// 02-abstraction.md reserves 10.<site>.30.0/24 and upwards for tenants that
-	// get their own ranges, which is exactly what a zone is. Ten of them keeps
-	// every zone inside 30-39 and well clear of anything else the site uses.
-	DMZFirstSubnet = 30
-	MaxDMZZones    = 10
+	// How many untrusted zones a site may declare. The address plan gives
+	// each a /24 from 10.<octet>.30 upwards; ten keeps them inside 30-39 and
+	// clear of anything else the site uses. A validation, so it lives at the
+	// edge with registry.tf's matching check.
+	MaxDMZZones = 10
 )
 
 // RequiredProvidersByConcern is the one vendor this code implements per
@@ -378,6 +360,11 @@ type SiteNetwork struct {
 	VNetVNI  int
 	NodeIPs  []string
 	VMNames  []string
+	// The control planes' VM ids, the template they are cloned from, and
+	// where the state database answers - all the address plan's.
+	ControlPlaneVMIDs []int
+	TemplateVMID      int
+	StateDatabase     Endpoint
 	// Workers are kept in their own lists rather than appended to NodeIPs.
 	// NodeIPs is what the etcd health check and the cluster endpoint are built
 	// from, and a worker is neither an etcd member nor a candidate endpoint -
@@ -407,32 +394,12 @@ type SiteNetwork struct {
 
 var slugInvalid = regexp.MustCompile(`[^A-Za-z0-9]+`)
 
-// SiteSlug is a site's name reduced to the form that names things.
-//
-// Must match the site_name expression in variables.tf: lowercase, every run of
-// non-alphanumerics collapsed to a hyphen, trimmed. These become Proxmox VM
-// names and R2 bucket names, so "North Street Office" has to become
-// "north-street-office".
-//
-// Exported and used in two places on purpose. It was computed inline, which
-// meant the uniqueness check and the name actually used could not disagree only
-// because they were the same line - and the moment one of them moved, they
-// could. A site with no name at all falls back to its key in sites{}, which is
-// unique by construction.
-func SiteSlug(name, key string) string {
-	if slug := Slug(name); slug != "" {
-		return slug
-	}
-	return key
-}
-
 // Slug is the transform alone, with no fallback: lowercase, every run of
 // non-alphanumerics collapsed to a hyphen, trimmed.
 //
-// Separate from SiteSlug because not every name that gets slugged is a site's
-// - the forkability check slugs the organization too - and the fallback to a
-// sites{} key only means something for a site. That check used to carry its
-// own copy of this transform, with a comment saying it "mirrors" this one.
+// For the forkability check's organization name. A site's slug is the
+// address plan's (modules/infrastructure/address-plan), which falls back to
+// the site's key when the name is empty.
 func Slug(s string) string {
 	return strings.ToLower(strings.Trim(slugInvalid.ReplaceAllString(s, "-"), "-"))
 }
@@ -522,21 +489,6 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	//
 	// Asserted on the slug rather than on the raw name, because "North Street Office" and
 	// "north-street-office " are different names and the same bucket.
-	slugs := map[string][]string{}
-	for key, s := range cfg.Sites {
-		slugs[SiteSlug(s.Name, key)] = append(slugs[SiteSlug(s.Name, key)], key)
-	}
-	var slugDupes []string
-	for slug, keys := range slugs {
-		if len(keys) > 1 {
-			sort.Strings(keys)
-			slugDupes = append(slugDupes, fmt.Sprintf("%q (%s)", slug, strings.Join(keys, ", ")))
-		}
-	}
-	if len(slugDupes) > 0 {
-		sort.Strings(slugDupes)
-		return nil, fmt.Errorf("duplicate site slug(s): %s. The slug names a site's VMs and its object-storage buckets, and every site in an estate shares one storage account - so two sites sharing a slug write into each other's state dumps. Give each site a distinct name in the vault", strings.Join(slugDupes, ", "))
-	}
 	if site.Octet < OctetMin || site.Octet > OctetMax {
 		return nil, fmt.Errorf("octet %d out of range for site '%s'. Use %d-%d; Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16", site.Octet, name, OctetMin, OctetMax)
 	}
@@ -655,105 +607,119 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		}
 	}
 
-	o := site.Octet
+	if len(site.DMZZones) > MaxDMZZones {
+		return nil, fmt.Errorf("site '%s' declares %d untrusted zones; the ceiling is %d, which is what keeps their subnets inside the band reserved for them", name, len(site.DMZZones), MaxDMZZones)
+	}
 
-	// Must match the site_name expression in variables.tf: lowercase, every
-	// run of non-alphanumerics collapsed to a hyphen, trimmed. These become
-	// Proxmox VM names, so "North Street Office" has to become
-	// "north-street-office".
-	slug := SiteSlug(site.Name, name)
+	// Everything below is the address plan's, asked rather than recomputed:
+	// the module is the one implementation of the scheme (askAddressPlan).
+	estate, err := askAddressPlan(cfg.Sites)
+	if err != nil {
+		return nil, err
+	}
+	planned, ok := estate[name]
+	if !ok {
+		return nil, fmt.Errorf("the address plan has no site %q", name)
+	}
+	plan := &planned
+
+	// Two sites whose names sanitise to one slug would share VM names and
+	// bucket names. The slug is the address plan's, so this asks it too.
+	slugs := map[string][]string{}
+	for key, p := range estate {
+		slugs[p.Slug] = append(slugs[p.Slug], key)
+	}
+	var slugDupes []string
+	for slug, keys := range slugs {
+		if len(keys) > 1 {
+			sort.Strings(keys)
+			slugDupes = append(slugDupes, fmt.Sprintf("%q (%s)", slug, strings.Join(keys, ", ")))
+		}
+	}
+	if len(slugDupes) > 0 {
+		sort.Strings(slugDupes)
+		return nil, fmt.Errorf("duplicate site slug(s): %s. The slug names a site's VMs and its object-storage buckets, and every site in an estate shares one storage account - so two sites sharing a slug write into each other's state dumps. Give each site a distinct name in the vault", strings.Join(slugDupes, ", "))
+	}
+
 	label := site.Name
 	if strings.TrimSpace(label) == "" {
-		label = slug
+		label = plan.Slug
 	}
 
-	nodeIPs := make([]string, site.ControlPlaneCount)
-	vmNames := make([]string, site.ControlPlaneCount)
-	for i := 0; i < site.ControlPlaneCount; i++ {
-		// One number, three uses. See the vm_names local in
-		// management/cluster/variables.tf for why they used to differ.
-		host := ControlPlaneBand + i
-		nodeIPs[i] = fmt.Sprintf("10.%d.10.%d", o, host)
-		vmNames[i] = fmt.Sprintf("%s-cp-%d", slug, host)
+	cps := inHostOrder(plan.ControlPlanes)
+	workers := inHostOrder(plan.Workers)
+	var nodeIPs, vmNames, workerIPs, workerNames []string
+	var cpVMIDs []int
+	for _, m := range cps {
+		nodeIPs = append(nodeIPs, m.IP)
+		vmNames = append(vmNames, m.Name)
+		cpVMIDs = append(cpVMIDs, m.VMID)
+	}
+	for _, m := range workers {
+		workerIPs = append(workerIPs, m.IP)
+		workerNames = append(workerNames, m.Name)
 	}
 
-	// Workers share the node subnet and sit in the 200+ host band. Same
-	// subnet because one Talos cluster needs its members on one network;
-	// different band because the band is what makes a machine's role readable
-	// off its address, its name and its id at once. This has to agree with the
-	// worker_octets local in management/cluster/variables.tf - the same
-	// contract nodeIPs above already implements twice.
-	workerIPs := make([]string, site.WorkerCount)
-	workerNames := make([]string, site.WorkerCount)
-	for i := 0; i < site.WorkerCount; i++ {
-		host := WorkerBand + i
-		workerIPs[i] = fmt.Sprintf("10.%d.10.%d", o, host)
-		workerNames[i] = fmt.Sprintf("%s-wk-%d", slug, host)
-	}
-
-	// The untrusted zones. Sorted, so a zone's subnet does not move when
-	// another is added or removed - an address that shifts under a workload
-	// because a neighbour was deprecated is a firewall rule that silently points
-	// at somebody else.
-	zoneNames := make([]string, 0, len(site.DMZZones))
-	for zone := range site.DMZZones {
-		zoneNames = append(zoneNames, zone)
+	zoneNames := make([]string, 0, len(plan.DMZZones))
+	for z := range plan.DMZZones {
+		zoneNames = append(zoneNames, z)
 	}
 	sort.Strings(zoneNames)
-	if len(zoneNames) > MaxDMZZones {
-		return nil, fmt.Errorf("site '%s' declares %d untrusted zones; the ceiling is %d, which is what keeps their subnets inside the band reserved for them", name, len(zoneNames), MaxDMZZones)
-	}
-
-	zones := make([]ResolvedZone, 0, len(zoneNames))
+	var zones []ResolvedZone
 	var dmzIPs, dmzNames []string
-	for i, zone := range zoneNames {
-		nodes := site.DMZZones[zone].NodeCount
-		if nodes == 0 {
-			nodes = 1
+	for _, zn := range zoneNames {
+		z := plan.DMZZones[zn]
+		rz := ResolvedZone{Name: zn, CIDR: z.CIDR, Gateway: z.Gateway, VNet: z.VNet, VNI: z.VNI}
+		members := map[string]machine{}
+		for k, m := range plan.DMZ {
+			if m.Zone == zn {
+				members[k] = m
+			}
 		}
-		third := DMZFirstSubnet + i
-		z := ResolvedZone{
-			Name:    zone,
-			CIDR:    fmt.Sprintf("10.%d.%d.0/24", o, third),
-			Gateway: fmt.Sprintf("10.%d.%d.1", o, third),
-			// Indexed rather than named: a Proxmox vnet id is capped at eight
-			// characters, which a workload name of any length will exceed.
-			VNet: fmt.Sprintf("vnetdmz%d", i),
-			// Banded so a second zone at one site cannot collide with a first
-			// zone at another: the node vnet tops out at 11000+octet, and these
-			// start at 12100.
-			VNI: 12000 + o*100 + i,
+		for _, m := range inHostOrder(members) {
+			rz.IPs = append(rz.IPs, m.IP)
+			rz.Names = append(rz.Names, m.Name)
 		}
-		for j := 0; j < nodes; j++ {
-			host := DMZBand + j
-			z.IPs = append(z.IPs, fmt.Sprintf("10.%d.%d.%d", o, third, host))
-			z.Names = append(z.Names, fmt.Sprintf("%s-%s-%d", slug, zone, host))
-		}
-		dmzIPs = append(dmzIPs, z.IPs...)
-		dmzNames = append(dmzNames, z.Names...)
-		zones = append(zones, z)
+		dmzIPs = append(dmzIPs, rz.IPs...)
+		dmzNames = append(dmzNames, rz.Names...)
+		zones = append(zones, rz)
 	}
 
 	return &SiteNetwork{
-		Name:        slug,
-		Key:         name,
-		Octet:       o,
-		Label:       label,
-		SiteCIDR:    fmt.Sprintf("10.%d.0.0/16", o),
-		NodeCIDR:    fmt.Sprintf("10.%d.10.0/24", o),
-		Gateway:     fmt.Sprintf("10.%d.10.1", o),
-		ASN:         65000 + o,
-		VRFVNI:      10000 + o,
-		VNetVNI:     11000 + o,
-		NodeIPs:     nodeIPs,
-		VMNames:     vmNames,
-		WorkerIPs:   workerIPs,
-		WorkerNames: workerNames,
-		DMZZones:    zones,
-		DMZIPs:      dmzIPs,
-		DMZNames:    dmzNames,
-		Hypervisors: nodes,
+		Name:              plan.Slug,
+		Key:               name,
+		Octet:             site.Octet,
+		Label:             label,
+		SiteCIDR:          plan.SiteCIDR,
+		NodeCIDR:          plan.NodeCIDR,
+		Gateway:           plan.NodeGateway,
+		ASN:               plan.ASN,
+		VRFVNI:            plan.VRFVNI,
+		VNetVNI:           plan.VNetVNI,
+		NodeIPs:           nodeIPs,
+		VMNames:           vmNames,
+		ControlPlaneVMIDs: cpVMIDs,
+		TemplateVMID:      plan.TemplateVMID,
+		StateDatabase:     plan.StateDatabase,
+		WorkerIPs:         workerIPs,
+		WorkerNames:       workerNames,
+		DMZZones:          zones,
+		DMZIPs:            dmzIPs,
+		DMZNames:          dmzNames,
+		Hypervisors:       nodes,
 	}, nil
+}
+
+// inHostOrder lists machines by their host octet, which is the order every
+// caller relied on: the first control plane is the cluster endpoint and the
+// state database's host.
+func inHostOrder(ms map[string]machine) []machine {
+	out := make([]machine, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].HostOctet < out[j].HostOctet })
+	return out
 }
 
 var opRefPattern = regexp.MustCompile(`op://[^\s}]+`)
