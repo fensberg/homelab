@@ -6,6 +6,18 @@
 // directly. Values arrive through process.env, set on the calling step.
 module.exports = async ({ github, context }) => {
   const marker = '<!-- plan-absence -->';
+
+  // A plan cancelled because something replaced it is not an absent plan. A
+  // newer push supersedes a pull request's plan, and closing the pull request
+  // cancels it; both runs end "cancelled", and neither means the change went
+  // unplanned. Only a plan for the pull request's current head counts.
+  const {data: pr} = await github.rest.pulls.get({
+    owner: context.repo.owner, repo: context.repo.repo,
+    pull_number: context.issue.number,
+  });
+  if (pr.state !== 'open' || pr.head.sha !== context.payload.pull_request.head.sha) {
+    return;
+  }
   const body = [
     marker,
     '## No plan was produced for this change',
