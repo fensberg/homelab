@@ -30,9 +30,15 @@ import (
 // this tier already has, rather than running a second contractor that would
 // render and sterilize the workspace out from under the tests after it.
 //
+// Then it is used the way a pull request uses it: saved, and the code as it
+// stands planned against it. That plan has to be quiet too - a record that
+// is quiet on its own terms but not once saved and read back would put false
+// changes in every pull request's plan.
+//
 // Only names reach this log: resource types, attribute names and where each
 // finding came from. Never a value, and never an instance key.
 // covers: verb:record-as-built
+// covers: verb:plan-as-built
 func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
 	opts := harness.TofuOptions(t, nil)
 	terraform.Init(t, opts)
@@ -73,6 +79,26 @@ func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
 	}
 	for _, f := range res.Computed() {
 		t.Logf("computed by the offline plan from the record and public code: %s", f)
+	}
+	if !res.Publishable() {
+		return
+	}
+
+	saved := filepath.Join(work, "saved")
+	if err := asbuilt.Write(saved, res, asbuilt.Meta{Site: harness.Site()}); err != nil {
+		t.Fatal(err)
+	}
+	plan, _, err := asbuilt.PlanAgainst(asbuilt.PlanInputs{
+		Root: opts.TerraformDir, Work: work, Record: saved,
+		Template: tpl, Site: harness.Site(),
+		PluginDir: filepath.Join(opts.TerraformDir, ".terraform", "providers"),
+	}, tofu)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := asbuilt.Pending(plan); len(pending) > 0 {
+		t.Errorf("the code as it stands, planned against its own saved record, would change:\n  %s",
+			strings.Join(pending, "\n  "))
 	}
 }
 

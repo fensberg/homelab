@@ -51,10 +51,14 @@ var RecordPhases = []string{
 // key landed in a local state file that take-over then refused to touch, so every
 // converge reported the same resource as being created for the first time.
 //
+// record is last before sterilize because right after a converge is the one
+// moment the estate is known to match the config, which is what makes a record
+// trustworthy (#554). It cannot fail the converge: see Record.
+//
 // tests/go/repo/converge_order_test.go holds the ordering rule.
 var ConvergePhases = []string{
 	"render", "verify", "take-over",
-	"compute", "cluster", "health", "backup", "sterilize",
+	"compute", "cluster", "health", "backup", "record", "sterilize",
 }
 
 // Sequences is every sequence there is.

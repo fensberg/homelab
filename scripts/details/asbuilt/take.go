@@ -50,6 +50,11 @@ type Result struct {
 	// record, which adds what the offline plan computed from the record and
 	// public code.
 	Before, After []Finding
+
+	// State and Config are the record itself: the state and the rendered
+	// config with every real value replaced, as the last offline plan saw
+	// them. Only worth keeping when Publishable.
+	State, Config map[string]any
 }
 
 // Publishable is a record that is quiet and in which nothing real survived
@@ -103,7 +108,7 @@ func Take(in Inputs, tofu Tofu) (*Result, error) {
 	// changes into the record as though they had been built.
 	say("planning against the estate, to prove it is converged")
 	realPlan := filepath.Join(in.Work, "real.tfplan")
-	if _, stderr, err := tofu(in.Root, nil, "plan", "-input=false", "-out="+realPlan); err != nil {
+	if _, stderr, err := tofu(in.Root, nil, "plan", "-input=false", "-no-color", "-out="+realPlan); err != nil {
 		return nil, fmt.Errorf("the real plan failed:\n%s", ErrorSummary(stderr))
 	}
 	liveRaw, _, err := tofu(in.Root, nil, "show", "-json", realPlan)
@@ -172,7 +177,7 @@ func Take(in Inputs, tofu Tofu) (*Result, error) {
 		return nil, err
 	}
 	env := OfflineEnv(os.Environ(), in.Site, filepath.Join(scratch, "config.json"))
-	if _, stderr, err := tofu(scratch, env, "init", "-input=false", pluginDir(in.Root)); err != nil {
+	if _, stderr, err := tofu(scratch, env, "init", "-input=false", "-no-color", pluginDir(in.Root)); err != nil {
 		return nil, fmt.Errorf("initialising the offline copy:\n%s", ErrorSummary(stderr))
 	}
 
@@ -182,7 +187,7 @@ func Take(in Inputs, tofu Tofu) (*Result, error) {
 		if err := writeJSON(filepath.Join(scratch, "terraform.tfstate"), state); err != nil {
 			return nil, err
 		}
-		if _, stderr, err := tofu(scratch, env, "plan", "-refresh=false", "-lock=false", "-input=false", "-out=tfplan"); err != nil {
+		if _, stderr, err := tofu(scratch, env, "plan", "-refresh=false", "-lock=false", "-input=false", "-no-color", "-out=tfplan"); err != nil {
 			return nil, fmt.Errorf("the offline plan failed in round %d. A value that needs a shape it was not given fails here, and the fingerprint table grows from these:\n%s",
 				res.Rounds, ErrorSummary(stderr))
 		}
@@ -201,6 +206,7 @@ func Take(in Inputs, tofu Tofu) (*Result, error) {
 	}
 
 	res.After = Scan(state, secrets, config)
+	res.State, res.Config = state, config
 	return res, nil
 }
 
@@ -346,7 +352,14 @@ func fingerprintConfig(f *Fingerprinter, r *Replacements, template, rendered []b
 // copyRoot copies the root's configuration: never its provider cache, the
 // backend switch, state, a saved plan or the tests. Without backend_pg.tf the
 // copy's backend is local, which is what points it at the record.
+//
+// It refuses a destination at any other depth than the root's. The copy is
+// otherwise perfect, and the first sign of the wrong depth is a plan failing
+// on a file() call it cannot resolve - which is how it was found.
 func copyRoot(from, to string) error {
+	if depth(from) != depth(to) {
+		return fmt.Errorf("the copy of %s must be two levels below the repository, as the root is, so its \"${path.module}/../../\" references still resolve; %s is not", from, to)
+	}
 	if err := os.MkdirAll(to, 0o700); err != nil {
 		return err
 	}
@@ -416,6 +429,12 @@ func ErrorSummary(stderr []byte) string {
 		return "    (tofu gave no diagnostic)"
 	}
 	return strings.Join(keep, "\n")
+}
+
+// depth counts a path's separators, which is all copyRoot needs: whether two
+// directories sit at the same depth, not where the repository is.
+func depth(p string) int {
+	return strings.Count(filepath.ToSlash(filepath.Clean(p)), "/")
 }
 
 func writeJSON(path string, v any) error {

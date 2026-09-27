@@ -47,6 +47,9 @@ var ipv4 = regexp.MustCompile(`^\d{1,3}(\.\d{1,3}){3}$`)
 // that needed a shape and lacks one fails the offline plan loudly - which is
 // how this table grows, rather than by anybody predicting it.
 var shapes = map[string]func(f *Fingerprinter, v string) string{
+	// An address is recognised by its value, but a field a change adds has
+	// no value yet, only a reference; its name is what says it is one.
+	"ip": (*Fingerprinter).address,
 	// Split on "/" to find the owner and repository.
 	"repo_url":    (*Fingerprinter).url,
 	"webhook_url": (*Fingerprinter).url,
@@ -62,15 +65,20 @@ var shapes = map[string]func(f *Fingerprinter, v string) string{
 // Field fingerprints a value of the named config field.
 func (f *Fingerprinter) Field(field, v string) string {
 	if ipv4.MatchString(v) {
-		// 198.18.0.0/15 is reserved for benchmarking, so a stand-in can never
-		// be mistaken for, or collide with, a real address.
-		d := f.mac(v)
-		return fmt.Sprintf("198.%d.%d.%d", 18+int(d[0]&1), d[1], d[2])
+		return f.address(v)
 	}
 	if shape, ok := shapes[field]; ok {
 		return shape(f, v)
 	}
 	return f.Opaque(v)
+}
+
+// address is a stand-in in 198.18.0.0/15, which is reserved for
+// benchmarking, so it can never be mistaken for, or collide with, a real
+// address.
+func (f *Fingerprinter) address(v string) string {
+	d := f.mac(v)
+	return fmt.Sprintf("198.%d.%d.%d", 18+int(d[0]&1), d[1], d[2])
 }
 
 func (f *Fingerprinter) url(v string) string {

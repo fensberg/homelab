@@ -70,7 +70,7 @@ var retiredVerbs = map[string]string{
 	"converge":     "converge-site",
 }
 
-var knownVerbs = []string{"build-site", "converge-site", "plan", "record-as-built", "demolish-site", "restore", "kubeconfig", "talosconfig", "check-inventory", "survey"}
+var knownVerbs = []string{"build-site", "converge-site", "plan", "record-as-built", "plan-as-built", "demolish-site", "restore", "kubeconfig", "talosconfig", "check-inventory", "survey"}
 
 const usage = `contractor manages the lifecycle of a site.
 
@@ -85,7 +85,9 @@ verbs:
                  addresses and actions only, never a value.
   record-as-built  Take the site's as-built record: its state with every real
                  value replaced, proven quiet against a plan that reaches
-                 nothing. Reports names and counts only; publishes nothing yet.
+                 nothing. Reports names and counts only; -record-out saves it.
+  plan-as-built  Plan this checkout's change against a saved record. Needs
+                 no vault and no state: what a pull request's plan runs.
   demolish-site  Tear a site down, then wipe the workspace. Requires -confirm.
   restore        Bring the age-encrypted state back from object storage.
   kubeconfig     Write this site's kubeconfig into the workspace and exit, or
@@ -179,6 +181,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 
 	ctx := run.NewContext(repoRoot(), *site)
 	ctx.CommentOut = deref(commentOut)
+	ctx.RecordOut = deref(o.recordOut)
 	ctx.Upgrade = on(upgrade)
 	ctx.SkipOverlay = on(skipOverlay)
 	ctx.SkipUpgrade = on(skipUpgrade)
@@ -209,6 +212,18 @@ Nothing has been touched. Re-run without -whatif to do it.
 
 	// OpenTofu reads the same config; this tells it which site to use.
 	os.Setenv("TF_VAR_site", ctx.Site)
+
+	// Ahead of every vault and state step, because it needs neither: it plans
+	// against a record that holds nothing real, on a runner that holds no
+	// credential.
+	if verb == "plan-as-built" {
+		if err := phases.PlanAsBuilt(ctx, deref(o.record)); err != nil {
+			fmt.Println()
+			run.Fail("HALTED: " + err.Error())
+			os.Exit(1)
+		}
+		return
+	}
 
 	// Deliberately ahead of EnsureStateEncryption, which is otherwise the
 	// first thing to run. That function reads the encryption passphrase out of
@@ -714,6 +729,7 @@ type opts struct {
 	site *string
 
 	phase, from, confirm, commentOut  *string
+	recordOut, record                 *string
 	upgrade, skipOverlay, skipUpgrade *bool
 	keepOnFailure, whatIf             *bool
 	dryRun                            *bool
@@ -752,8 +768,14 @@ func flagsFor(verb string) *opts {
 	// assembled in a workflow, for the reason sensitive-paths.yml already
 	// records about its own comment: copy that needs a workflow edit to fix is
 	// copy that stays wrong, because the agent cannot edit workflows.
-	if verb == "plan" {
+	if verb == "plan" || verb == "plan-as-built" {
 		o.commentOut = fs.String("comment-out", "", "Write the pull request comment body to this file.")
+	}
+	if verb == "converge-site" || verb == "record-as-built" {
+		o.recordOut = fs.String("record-out", "", "Save a publishable as-built record to this directory.")
+	}
+	if verb == "plan-as-built" {
+		o.record = fs.String("record", "", "The directory an as-built record was saved to.")
 	}
 
 	if verb == "demolish-site" {

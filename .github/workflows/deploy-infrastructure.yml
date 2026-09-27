@@ -201,94 +201,13 @@ jobs:
           echo "sites=${sites}" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------
-  # PLAN - on a pull request. Reads real state, changes nothing.
+  # The workload tier has no plan on a pull request, deliberately. Its plan
+  # read real state on the estate's runner, and no pull-request job may reach
+  # that runner (#554, tests/go/repo/selfhosted_test.go). environments/*/
+  # infrastructure/ does not exist, so the job could never trigger; when the
+  # workload tier gets infrastructure of its own, it gets a plan against an
+  # as-built record of it, the way the estate's plan works.
   # ---------------------------------------------------------------------
-  plan:
-    name: Plan
-    needs: changes
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      needs.changes.outputs.workload == 'true'
-    # A fork's pull request must never reach this job. It runs on the
-    # self-hosted runner with real credentials, and the condition above is
-    # what keeps an outside contributor's branch away from them - the same
-    # boundary pr-validation.yml holds by being hermetic.
-    runs-on: homelab-management
-    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
-    permissions:
-      contents: read
-      pull-requests: write
-    timeout-minutes: 30
-    steps:
-      - name: Mobilize
-        uses: $/.github/workflows/mobilize
-        with:
-          # audit, not block, for the reason the apply job below gives: the
-          # endpoints this reaches are not known until it has actually run
-          # once, and a guessed allowlist on a job that touches real
-          # infrastructure is worse than an audited one.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: audit
-          disable-sudo-and-containers: "false"
-
-      - name: Determine Target Directory
-        run: echo "DIR=environments/staging/infrastructure/" >> "$GITHUB_ENV"
-
-      - name: Tofu Init
-        run: tofu init -input=false
-        working-directory: ${{ env.DIR }}
-
-      # -detailed-exitcode: 0 = no changes, 2 = changes pending, 1 = the plan
-      # itself failed. Only 1 is a failure worth stopping for; 2 is the normal
-      # reason a deployment pull request exists at all.
-      - name: Tofu Plan
-        id: plan
-        working-directory: ${{ env.DIR }}
-        run: |
-          set +e
-          tofu plan -input=false -no-color -out=tfplan > plan.txt 2>&1
-          code=$?
-          set -e
-          echo "exitcode=${code}" >> "$GITHUB_OUTPUT"
-          if [ "${code}" = "1" ]; then
-            echo "::error::tofu plan failed"
-            tail -50 plan.txt
-            exit 1
-          fi
-          tofu show -no-color tfplan > plan-readable.txt
-
-      # The readable plan goes to the job summary rather than into a pull
-      # request comment. Terraform redacts values it knows are sensitive, but
-      # "sensitive" is a property somebody has to have declared - anything
-      # not marked stays in plain text, and a plan is full of resource
-      # attributes nobody thought of that way. The summary is visible to
-      # whoever can already see the run; the comment below carries only
-      # counts and a link.
-      - name: Write the plan to the job summary
-        working-directory: ${{ env.DIR }}
-        run: |
-          {
-            echo "### Plan: \`${DIR}\`"
-            echo
-            echo '```terraform'
-            head -c 60000 plan-readable.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Comment the plan summary on the pull request
-        uses: $/.github/workflows/github-script
-        env:
-          EXITCODE: ${{ steps.plan.outputs.exitcode }}
-          DIR: ${{ env.DIR }}
-        with:
-          name: workload-plan-comment
-
-  # ---------------------------------------------------------------------
-  # APPLY - on merge to main, or a tag. Applies a plan made in this run.
   # ---------------------------------------------------------------------
   apply:
     name: Apply
@@ -431,7 +350,7 @@ jobs:
           # path, and a real ignition printed one of them.
           go build -C scripts/contractor -o ../../toolshed/contractor .
           set +e
-          ./toolshed/contractor converge-site -site "$SITE"
+          ./toolshed/contractor converge-site -site "$SITE" -record-out "as-built/$SITE"
           code=$?
           set -e
           # The verdict, not just the failure. contractor exits 2 when the
@@ -447,9 +366,22 @@ jobs:
       # Written even on success, so a missing file means the job died rather
       # than that everything was fine. Absent and "exit 0" must not look the
       # same to the job that decides whether to revert.
+      # The as-built record the converge took once the estate matched main
+      # (#554): what every pull request's plan is compared with. Taken only
+      # when it came out quiet and held nothing real; a converge that could
+      # not take one saves nothing, and plans read the previous record.
+      - name: Publish the as-built record
+        if: success()
+        uses: $/.github/workflows/upload-artifact
+        with:
+          name: as-built-${{ matrix.site }}
+          path: as-built/${{ matrix.site }}/
+          if-no-files-found: ignore
+          retention-days: 90
+
       - name: Record the verdict
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: $/.github/workflows/upload-artifact
         with:
           name: converge-verdict-${{ matrix.site }}
           path: verdict/
@@ -506,7 +438,7 @@ jobs:
           fetch-depth: 0
 
       - name: Collect the verdicts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: $/.github/workflows/download-artifact
         with:
           pattern: converge-verdict-*
           path: verdicts
@@ -721,8 +653,16 @@ jobs:
 
   # ---------------------------------------------------------------------
   # PLAN THE ESTATE - on a pull request touching management/.
-  # Reads real state, changes nothing. Structure only, never a value:
-  # this comment is world-readable.
+  #
+  # Against the as-built record, not the estate (#554). The record is the
+  # state as last converged with every real value replaced, published by the
+  # converge and the nightly from main. So this job holds no credential,
+  # needs no environment, and runs on GitHub's runner: nothing a pull request
+  # can run here reaches the estate, which is what lets the environments go
+  # without a reviewer. It cannot see drift since the record was taken; the
+  # nightly's real plan reports that.
+  #
+  # Structure only, never a value: this comment is world-readable.
   # ---------------------------------------------------------------------
   plan-estate:
     name: Plan ${{ matrix.site }}
@@ -731,12 +671,14 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       needs.changes.outputs.management == 'true'
-    runs-on: homelab-management
-    environment: management
+    # A pull request's code never runs on the estate's runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
-    timeout-minutes: 30
+      # To find and download the record another run published.
+      actions: read
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -745,12 +687,23 @@ jobs:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
         with:
+          # The Go toolchain and OpenTofu with its providers, as the Validate
+          # lane fetches them, and GitHub's API for the record.
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
           # The copy lives here because harden-runner reads its policy in a
           # pre-step, before any step of this job can run.
-          egress-policy: audit
-          disable-sudo-and-containers: "false"
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            get.opentofu.org:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            registry.opentofu.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
 
       - name: Read pinned versions
         uses: ./.github/actions/versions
@@ -758,14 +711,46 @@ jobs:
       - name: Setup Go
         uses: $/.github/workflows/setup-go
 
-      - name: Plan
-        id: plan
+      - name: Install OpenTofu
+        run: scripts/take-delivery.sh opentofu
+
+      # The newest record of this site that main published. Only main: a
+      # record is what a plan is trusted to compare with, so one a pull
+      # request uploaded - from its own branch, or a fork's branch that
+      # happens to be called main - is never taken.
+      - name: Find the as-built record
+        id: record
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REPO_ID: ${{ github.repository_id }}
+          SITE: ${{ matrix.site }}
+        run: |
+          run_id="$(gh api "repos/${REPO}/actions/artifacts?name=as-built-${SITE}&per_page=100" --jq "
+            [.artifacts[]
+              | select(.expired | not)
+              | select(.workflow_run.head_branch == \"main\" and .workflow_run.head_repository_id == ${REPO_ID})]
+            | sort_by(.created_at) | last | .workflow_run.id // empty")"
+          if [ -z "${run_id}" ]; then
+            echo "::error::no as-built record of ${SITE} has been published from main yet. The next converge or nightly takes one."
+            exit 1
+          fi
+          echo "run-id=${run_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the as-built record
+        uses: $/.github/workflows/download-artifact
+        with:
+          name: as-built-${{ matrix.site }}
+          run-id: ${{ steps.record.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: as-built-record
+
+      - name: Plan
+        env:
           SITE: ${{ matrix.site }}
         run: |
           go build -C scripts/contractor -o ../../toolshed/contractor .
-          ./toolshed/contractor plan -site "$SITE" -comment-out plan-comment.md
+          ./toolshed/contractor plan-as-built -site "$SITE" -record as-built-record -comment-out plan-comment.md
 
       - name: Comment the plan on the pull request
         uses: $/.github/workflows/github-script
@@ -775,11 +760,14 @@ jobs:
   # ---------------------------------------------------------------------
   # NO PLAN, SAID OUT LOUD - #156.
   #
-  # `Plan site0` is not a required status check, and making it one would
-  # deadlock this estate: the runner is a pod inside the cluster, so when the
-  # cluster is down no plan can be produced - precisely when the estate most
-  # needs the pull request that rebuilds it. That circularity is the one epoch
-  # 01 is built around, and it applies to the gate as much as to the tooling.
+  # `Plan site0` is not a required status check. It used to be that it could
+  # not be: the plan ran on a pod inside the cluster, so with the cluster down
+  # no plan could be produced - precisely when the estate most needed the
+  # pull request that rebuilds it. The plan now runs on GitHub's runner
+  # against the as-built record (#554), which removes that circularity; what
+  # can still stop it is having no record to read, which is exactly the state
+  # of an estate that has never been built, so it stays visibility rather
+  # than a gate.
   #
   # So this is visibility, not enforcement. #140 changed the machine count,
   # its plan job was cancelled against a runner that did not exist, and the

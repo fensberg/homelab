@@ -246,10 +246,10 @@ func TestComputedFindingsAreThoseThePlanAdded(t *testing.T) {
 func TestTheOfflineEnvironmentCarriesNoInheritedCredential(t *testing.T) {
 	env := OfflineEnv([]string{
 		"PATH=/bin", "TF_ENCRYPTION=real", "TF_VAR_config_path=/real", "PROXMOX_VE_ENDPOINT=x",
-		"KUBECONFIG=/k", "KUBE_CONFIG_PATH=/k", "TALOSCONFIG=/t", "OP_SERVICE_ACCOUNT_TOKEN=x", "AWS_PROFILE=x",
+		"KUBECONFIG=/k", "KUBE_CONFIG_PATH=/k", "TALOSCONFIG=/t", "OP_EXAMPLE_TOKEN=x", "AWS_PROFILE=x",
 	}, "site0", "/record/config.json")
 	for _, gone := range []string{"TF_ENCRYPTION=real", "TF_VAR_config_path=/real", "PROXMOX_VE_ENDPOINT=x", "KUBECONFIG=/k",
-		"KUBE_CONFIG_PATH=/k", "TALOSCONFIG=/t", "OP_SERVICE_ACCOUNT_TOKEN=x", "AWS_PROFILE=x"} {
+		"KUBE_CONFIG_PATH=/k", "TALOSCONFIG=/t", "OP_EXAMPLE_TOKEN=x", "AWS_PROFILE=x"} {
 		if slices.Contains(env, gone) {
 			t.Errorf("%s was inherited", gone)
 		}
@@ -306,5 +306,19 @@ func TestPendingNamesTypesNeverKeys(t *testing.T) {
 	}
 	if _, err := Pending([]byte("not json")); err == nil {
 		t.Error("a plan that is not JSON was accepted")
+	}
+}
+
+// The copy must sit at the root's depth, or its "${path.module}/../../"
+// references reach the wrong files.
+func TestTheRootIsCopiedOnlyToItsOwnDepth(t *testing.T) {
+	root := t.TempDir()
+	from := filepath.Join(root, "management", "cluster")
+	_ = os.MkdirAll(from, 0o700)
+	if err := copyRoot(from, filepath.Join(root, ".as-built", "deeper", "plan")); err == nil {
+		t.Error("a copy one level too deep was made")
+	}
+	if err := copyRoot(from, filepath.Join(root, ".as-built", "plan")); err != nil {
+		t.Errorf("a copy at the right depth was refused: %v", err)
 	}
 }

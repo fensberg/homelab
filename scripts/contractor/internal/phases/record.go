@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"homelab/contractor/internal/run"
 	"homelab/details/asbuilt"
@@ -22,10 +23,15 @@ import (
 // is made by a run that already decrypts the state to do its job, and what it
 // produces is worthless by construction.
 //
-// FOR NOW IT PUBLISHES NOTHING. It reports what it found as names and counts
-// and removes everything it wrote. The first question is whether the record
-// comes out quiet against the real estate, which a fabricated state could not
-// settle.
+// It reports what it found as names and counts, and saves the record to
+// ctx.RecordOut when that is set and the record is publishable. Everything
+// else it wrote is removed.
+//
+// IN A CONVERGE IT CANNOT FAIL THE RUN. By the time it runs the apply has
+// succeeded, and a failure here would read to the aftermath as a failed
+// converge and start a revert of a change that landed. So in a converge it
+// warns and saves nothing; plans keep reading the previous record, which says
+// when it was taken, and the nightly takes a fresh one.
 //
 // The report is safe to paste anywhere: resource types, attribute names and
 // counts, the vocabulary summarisePlan already prints to a public log. No
@@ -33,7 +39,19 @@ import (
 func Record(ctx *run.Context) error {
 	run.WritePhase("Record", "Take the as-built record: the estate as converged, with nothing real in it.")
 	defer func() { _ = run.RemoveTreeIfExists(ctx.AsBuiltDir) }()
-	return record(ctx, execTofu)
+	return takeRecord(ctx, execTofu)
+}
+
+// takeRecord is Record with its tofu handed to it, so the converge's rule -
+// warn, never fail - is testable.
+func takeRecord(ctx *run.Context, tofu asbuilt.Tofu) error {
+	err := record(ctx, tofu)
+	if err != nil && ctx.Converge {
+		run.Warn("no as-built record was taken, and the converge stands: " + err.Error())
+		run.Warn("plans read the previous record until the next one is taken")
+		return nil
+	}
+	return err
 }
 
 func record(ctx *run.Context, tofu asbuilt.Tofu) error {
@@ -62,7 +80,30 @@ func record(ctx *run.Context, tofu asbuilt.Tofu) error {
 	}
 	run.Ok("the estate matches its config")
 	run.Ok("replaced " + describeSources(res.Replaced))
-	return report(res)
+	if err := report(res); err != nil {
+		return err
+	}
+	if ctx.RecordOut == "" {
+		return nil
+	}
+	meta := asbuilt.Meta{Site: ctx.Site, Commit: recordedCommit(), Taken: time.Now().UTC()}
+	if err := asbuilt.Write(ctx.RecordOut, res, meta); err != nil {
+		return err
+	}
+	run.Ok("the record is saved to " + ctx.RecordOut)
+	return nil
+}
+
+// recordedCommit is the commit of main the estate was converged to, as a
+// reader would recognise it.
+func recordedCommit() string {
+	if sha := os.Getenv("GITHUB_SHA"); len(sha) >= 7 {
+		return sha[:7]
+	}
+	if head, err := run.CmdOutputQuiet(".", "git", "rev-parse", "--short", "HEAD"); err == nil {
+		return strings.TrimSpace(head)
+	}
+	return ""
 }
 
 // report prints what the record came to, and fails the run unless the record

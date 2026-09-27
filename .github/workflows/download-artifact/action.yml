@@ -1,0 +1,45 @@
+# The one place the actions/download-artifact commit is written.
+#
+# tests/go/repo/action_pins_test.go allows an action's commit to be written
+# once. Empty inputs are passed through as empty, which the action reads as
+# unset: no run-id means this run's own artifacts.
+name: "Download artifact"
+description: Download an artifact of this run, or of another run with run-id.
+
+inputs:
+  name:
+    description: One artifact by name.
+    required: false
+    default: ""
+  pattern:
+    description: Every artifact whose name matches.
+    required: false
+    default: ""
+  path:
+    description: Where to put it.
+    required: true
+  merge-multiple:
+    description: Put every matching artifact in one directory.
+    required: false
+    default: "false"
+  run-id:
+    description: Another run to download from; empty means this one.
+    required: false
+    default: ""
+  github-token:
+    description: A token that may read the other run's artifacts; needed with run-id.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Download artifact
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: ${{ inputs.name }}
+        pattern: ${{ inputs.pattern }}
+        path: ${{ inputs.path }}
+        merge-multiple: ${{ inputs.merge-multiple }}
+        run-id: ${{ inputs.run-id }}
+        github-token: ${{ inputs.github-token }}

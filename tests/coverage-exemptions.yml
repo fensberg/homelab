@@ -135,7 +135,7 @@ files:
     uncovered: 2
     covered_by: integration
   - path: contractor/internal/phases/plan.go
-    uncovered: 2
+    uncovered: 1
     covered_by: integration
   - path: contractor/internal/phases/prune.go
     uncovered: 3
@@ -172,6 +172,12 @@ files:
   # this wrapper and the exec beneath it are run by nothing but an operator.
   - path: contractor/internal/phases/record.go
     uncovered: 2
+    covered_by: nothing
+  # PlanAsBuilt and the tofu beneath it. planAsBuilt is the decision and is
+  # tested; the plan it runs is details/asbuilt's, which the integration tier
+  # runs nightly against a record of the deployed estate.
+  - path: contractor/internal/phases/planasbuilt.go
+    uncovered: 1
     covered_by: nothing
   - path: contractor/internal/phases/converge_preconditions.go
     uncovered: 1
