@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
 
 	"homelab/contractor/internal/run"
+	"homelab/contractor/steps"
+	"homelab/details/asbuilt"
 	"homelab/details/tofustate"
 )
 
@@ -37,41 +41,23 @@ import (
 func Plan(ctx *run.Context) error {
 	run.WritePhase("Plan", "Show what a converge would change, without changing it.")
 
-	// The saved plan file holds the values this summary refuses to print, so
-	// it never outlives the phase that made it. Sterilize lists it too, for
-	// the run that dies before reaching this line.
-	defer func() { _ = os.Remove(ctx.TofuPlanFile) }()
+	// Everything is made in the workspace's .as-built directory and removed
+	// with it: the copy of state, and each step's saved plan, which holds the
+	// values this summary refuses to print. Sterilize removes it too, for the
+	// run that dies first.
+	defer func() { _ = run.RemoveTreeIfExists(ctx.AsBuiltDir) }()
 
-	run.Info("planning")
-	// tofu's own plan output is captured and discarded rather than streamed.
-	//
-	// It is redundant - the summary below is built from `tofu show -json` of
-	// the same plan file - and it is a leak. Resource addresses are not the
-	// safe half they were assumed to be: `for_each` keys come from the config,
-	// so a plan prints things like the hypervisor's name as a map key and the
-	// cluster's name as a data source id, both of which are vault values. A
-	// converge runs in a public repository's Actions log and its output is
-	// pasted into a pull request comment.
-	//
-	// TofuApply already had this discipline, and its comment records a
-	// converge printing the site's real name inside a resource description.
-	// Plan never got it, so the same class of leak went out through the
-	// quieter path.
-	//
-	// Errors are unaffected: tofu writes diagnostics to stderr, which is not
-	// captured here, so a failing plan still says why.
-	if _, err := run.CmdOutput(ctx.ClusterDir, "tofu",
-		"plan", "-input=false", "-out="+ctx.TofuPlanFile,
-	); err != nil {
-		return fmt.Errorf("tofu plan: %w", err)
-	}
-
-	raw, err := run.CmdOutput(ctx.ClusterDir, "tofu", "show", "-json", ctx.TofuPlanFile)
+	// tofu's own output is captured rather than streamed, as it always was
+	// here: resource addresses are not the safe half they were assumed to be -
+	// a for_each key can be the hypervisor's name, a data source id the
+	// cluster's - and this output is pasted into pull requests. A refused
+	// step reports its diagnostic lines, never the detail beneath them.
+	raw, err := planSteps(ctx, execTofu, pushState)
 	if err != nil {
-		return fmt.Errorf("reading the plan back: %w", err)
+		return err
 	}
 
-	summary, err := summarisePlan([]byte(raw))
+	summary, err := summarisePlan(raw)
 	if err != nil {
 		return err
 	}
@@ -535,4 +521,53 @@ func was(n int) string {
 		return "is"
 	}
 	return "are"
+}
+
+// planSteps plans the converge's own steps, in order, against a copy of the
+// estate's state (#497).
+//
+// A converge settles renames and then applies target by target. This used to
+// run one untargeted plan instead, which cannot see a step the converge would
+// have refused - and a green pull request halted every converge on main for a
+// day. So it plans what the converge does, the way the converge does it, in a
+// copy: settling a rename writes state, and a plan must not write the estate's.
+//
+// The copy's state is pushed through stdin, never a plaintext file, and the
+// process's TF_ENCRYPTION encrypts it as it lands, as the real one is.
+func planSteps(ctx *run.Context, tofu asbuilt.Tofu, push func(dir string, state []byte) error) ([]byte, error) {
+	dir := filepath.Join(ctx.AsBuiltDir, "plan")
+	if err := asbuilt.CopyRoot(ctx.ClusterDir, dir); err != nil {
+		return nil, err
+	}
+	run.Info("copying the estate's state, so planning its steps changes nothing")
+	if _, stderr, err := tofu(dir, nil, "init", "-input=false", "-no-color",
+		asbuilt.PluginDir(ctx.ClusterDir)); err != nil {
+		return nil, fmt.Errorf("initialising the copy:\n%s", asbuilt.ErrorSummary(stderr))
+	}
+	state, _, err := tofu(ctx.ClusterDir, nil, "state", "pull")
+	if err != nil {
+		return nil, fmt.Errorf("pulling the state: %w", err)
+	}
+	err = push(dir, state)
+	run.Wipe(state)
+	if err != nil {
+		return nil, fmt.Errorf("copying the state: %w", err)
+	}
+	return asbuilt.PlanSteps(asbuilt.StepsInputs{
+		Dir: dir, Sequence: steps.Plan(), Refresh: true, Say: run.Info,
+	}, tofu)
+}
+
+// pushState writes state into the copy through stdin.
+func pushState(dir string, state []byte) error {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command("tofu", "state", "push", "-lock=false", "-")
+	c.Dir = dir
+	c.Stdin = bytes.NewReader(state)
+	var errb bytes.Buffer
+	c.Stderr = &errb
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("%w:\n%s", err, asbuilt.ErrorSummary(errb.Bytes()))
+	}
+	return nil
 }

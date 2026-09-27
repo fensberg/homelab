@@ -310,9 +310,15 @@ converge starts from an estate that was already running, so answering a
 transient failure by destroying production would be exactly wrong.
 
 **Seeing what a change would do is `contractor plan`** (`task plan`). It renders,
-attaches to the estate's state, plans, and prints what would change - then
-sterilizes. It is the half of the review a pull request could not give:
-approving a diff of HCL used to mean finding out what it meant afterwards.
+copies the estate's state into an encrypted scratch copy, and plans the
+converge's own steps against it - settling pending renames first, then one
+targeted plan per step, in the converge's order - and prints what would
+change, then sterilizes. The steps are declared once, in
+`scripts/contractor/steps`, and a pull request's plan against the as-built
+record walks the same list, so neither plan can pass a change the converge
+would refuse (#497). It is the half of the review a pull request could not
+give: approving a diff of HCL used to mean finding out what it meant
+afterwards.
 
 **A plan shows a change to the control plane's size, and it did not always.**
 `data.talos_cluster_health` is scoped to the nodes the config _asks for_, which

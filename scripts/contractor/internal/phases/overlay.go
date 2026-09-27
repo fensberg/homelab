@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"homelab/contractor/internal/run"
+	"homelab/contractor/steps"
 )
 
 // Overlay mints a tagged auth key for the hypervisor to join the overlay
@@ -60,7 +61,7 @@ func Overlay(ctx *run.Context) error {
 // see the variable for why. `count` produces an indexed address even at
 // count = 1, and -target/-replace both need the instance rather than the
 // resource.
-const overlayKeyAddress = "tailscale_tailnet_key.hypervisor[0]"
+const overlayKeyAddress = steps.OverlayKey
 
 // overlayApplyArgs builds the apply. Split out from the phase so the decision
 // that matters - whether to ask for a replacement - is testable without a

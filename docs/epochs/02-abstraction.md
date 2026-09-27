@@ -1548,6 +1548,33 @@ anyone who read the tracker that the estate had problems it no longer had
 
 ### A step is declared once, and every verb that shares it reads that declaration
 
+**Met, 2026-09-27.** The converge's applies are declared once, in
+`scripts/contractor/steps`, and Compute and Cluster walk that list.
+`contractor plan` walks it too, in an encrypted copy of the estate's state, and
+so does a pull request's plan against the as-built record. Each settles
+pending renames first, the way the converge does, then plans each step with its
+own targets, in order. The last step is the untargeted apply, so its plan is
+the whole of the change.
+
+Every resource address the contractor names is a constant in that package, and
+`TestTheContractorWritesAResourceAddressInOnePlace` refuses one anywhere else,
+so the module move is one edit there. `TestTheDeclaredStepsAreTheConvergesOwn`
+holds every step to a phase the converge runs, in order, ending untargeted.
+
+Proved on the fabricated estate with real tofu. A resource renamed with a
+`moved` block plans cleanly once the rename is settled in the copy; the same
+plan without settling is refused at the first targeted step with "Moved
+resource instances excluded by targeting" - the error that halted converges on
+`main` on 2026-09-22, and one the untargeted plan it replaced would have
+passed.
+
+Two things differ, and why. Against real state the rename is settled with the
+converge's own operation, a targeted `apply -refresh-only`, into the copy.
+Against the record there is no estate to refresh from, so it is recorded with
+`state mv`, which leaves the state in the same place. And the plan includes the
+workers' step even when there are none, because a targeted plan of nothing
+plans nothing, where the converge skips it.
+
 **This epoch is not complete while `contractor plan` and `contractor converge`
 can disagree about what a converge does.**
 

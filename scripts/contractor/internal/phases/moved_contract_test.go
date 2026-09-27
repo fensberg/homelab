@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"homelab/contractor/steps"
 )
 
 // The converge settles a pending rename BEFORE its first targeted apply.
@@ -47,13 +49,21 @@ VMs, not the machine configuration, not the untargeted apply at the end of
 Cluster that would have settled the move itself.`)
 	}
 
-	apply := strings.Index(src, "run.TofuApply(")
+	// The applies are declared in homelab/contractor/steps and walked by
+	// applySteps, so "the first targeted apply" is the first of Compute's
+	// steps - provided Compute is the first phase with any, which is checked
+	// here too: a step declared for an earlier phase would apply before
+	// anything is settled.
+	apply := strings.Index(src, `applySteps(ctx, "compute"`)
 	if apply < 0 {
-		t.Fatal(`compute.go no longer calls run.TofuApply.
+		t.Fatal(`compute.go no longer applies its steps through applySteps.
 
 If the phase was restructured, this contract needs re-examining rather than
 re-pointing: something still has to settle a pending rename before the first
 targeted apply, wherever that apply now lives.`)
+	}
+	if first := steps.Converge[0].Phase; first != "compute" {
+		t.Errorf("the first declared step belongs to %q, so it applies before Compute settles renames", first)
 	}
 
 	if settle > apply {

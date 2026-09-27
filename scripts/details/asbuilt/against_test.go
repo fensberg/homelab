@@ -153,7 +153,7 @@ func TestAChangeIsPlannedAgainstTheRecord(t *testing.T) {
 	plan, meta, err := PlanAgainst(PlanInputs{
 		Root: in.Root, Work: in.Work, Record: record, Site: "site0",
 		Template:  []byte(`{"sites": {"site0": {"name": "{{ op://site0-shared/identity/name }}"}}}`),
-		PluginDir: "/cache",
+		PluginDir: "/cache", Sequence: []PlanStep{{Label: "everything"}},
 	}, run)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,8 @@ func TestPlanningAgainstARecordFailsLoudly(t *testing.T) {
 	in, _ := takeFixture(t)
 	record := filepath.Join(t.TempDir(), "record")
 	_ = Write(record, publishable(), Meta{Site: "site0"})
-	base := PlanInputs{Root: in.Root, Work: in.Work, Record: record, Site: "site0", Template: []byte(`{}`)}
+	base := PlanInputs{Root: in.Root, Work: in.Work, Record: record, Site: "site0", Template: []byte(`{}`),
+		Sequence: []PlanStep{{Label: "everything"}}}
 	ok := func(string, []string, ...string) ([]byte, []byte, error) { return nil, nil, nil }
 
 	other := base

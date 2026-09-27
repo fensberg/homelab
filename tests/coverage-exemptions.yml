@@ -45,7 +45,7 @@ files:
     uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/cluster.go
-    uncovered: 1
+    uncovered: 2
     covered_by: e2e
   - path: contractor/internal/phases/compute.go
     uncovered: 6
@@ -135,7 +135,7 @@ files:
     uncovered: 2
     covered_by: integration
   - path: contractor/internal/phases/plan.go
-    uncovered: 1
+    uncovered: 2
     covered_by: integration
   - path: contractor/internal/phases/prune.go
     uncovered: 3
