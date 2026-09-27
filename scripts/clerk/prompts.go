@@ -142,6 +142,21 @@ The code follows, with line numbers.
 // which is every Markdown record by construction, is not compared at all and is
 // named in the run note instead of being judged against an account of the Go
 // beside it.
+//
+// A fifth shape, on #555, and it went through the both-halves requirement
+// cleanly: two findings on exec.go, each quoting a claim and a statement that
+// say the same thing at different levels of detail. "Updates state for the
+// machines about to be destroyed, and nothing else" beside "-refresh-only
+// writes what it learns back"; "-refresh=false is the load-bearing flag"
+// beside "builds the teardown's arguments with -refresh=false". A summary and
+// the mechanism that achieves it, reported as a contradiction because the
+// wording differs.
+//
+// Answered as the note above says, by a requirement on the finding rather
+// than another prohibition: a finding now has to say why both cannot be true
+// at once. Two statements that can both be true are not a contradiction
+// whatever their wording, and a model that has to name what would be false
+// finds nothing to name.
 const comparePrompt = `Below are files. For each one you are given an account of what THAT FILE does, written by someone who read it with every comment removed, and beside it the commentary that was actually written about THAT FILE.
 
 Report only where a file's commentary makes a claim that ITS OWN account CONTRADICTS. For example: a comment describing a retry where the account describes no retry; a doc string naming a parameter the account says the function does not take.
@@ -158,7 +173,7 @@ Three things are never findings.
 
 Judge only against the account. You have not seen the code and must not guess at what it might also do.
 
-Every finding must name the specific claim in the commentary AND the specific statement in the account that contradicts it. If you cannot quote both, there is no finding.
+Every finding must name the specific claim in the commentary AND the specific statement in the account that contradicts it, AND say why both cannot be true at once. If you cannot quote both, there is no finding. If both could be true - a summary beside the mechanism that achieves it, a function beside the one flag in it that matters, the same fact in different words - there is no finding, however differently they are phrased.
 
 Use the rule "commentary-disagrees" for every finding, and cite the exact line number of the commentary sentence you are quoting - a finding pointing at a line that does not contain the claim costs the reader more than it saves.
 ` + findingRules
