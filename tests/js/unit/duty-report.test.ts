@@ -42,8 +42,8 @@ describe("the duty report", () => {
     run(true, "run/1");
     await report(f);
     expect(f.created).toHaveLength(1);
-    expect(f.created[0].body.startsWith("<!-- duty:Integration Tests -->")).toBe(true);
-    expect(f.created[0].body).toContain("First failure: run/1");
+    expect(f.created[0]?.body.startsWith("<!-- duty:Integration Tests -->")).toBe(true);
+    expect(f.created[0]?.body).toContain("First failure: run/1");
   });
 
   it("updates that issue on the next failure, keeping when it started", async () => {
@@ -52,9 +52,9 @@ describe("the duty report", () => {
     run(true, "run/2");
     await report(f);
     expect(f.created).toHaveLength(0);
-    expect(f.updated[0].issue_number).toBe(7);
-    expect(f.updated[0].body).toContain("First failure: run/1");
-    expect(f.updated[0].body).toContain("Latest failure: run/2");
+    expect(f.updated[0]?.issue_number).toBe(7);
+    expect(f.updated[0]?.body).toContain("First failure: run/1");
+    expect(f.updated[0]?.body).toContain("Latest failure: run/2");
   });
 
   it("closes it on the next success", async () => {
@@ -62,7 +62,7 @@ describe("the duty report", () => {
     run(false, "run/3");
     await report(f);
     expect(f.updated[0]).toMatchObject({ issue_number: 7, state: "closed" });
-    expect(f.updated[0].body).toContain("run/3");
+    expect(f.updated[0]?.body).toContain("run/3");
   });
 
   it("does nothing on a success with nothing open, and ignores other workflows' issues", async () => {
