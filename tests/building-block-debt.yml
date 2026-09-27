@@ -65,7 +65,8 @@ debt:
   - "tests/mutations.yml"
   - "variables.tf"
 
-  # --- Everything else: tool flags, vendor identifiers, status wording (51)
+  # --- Everything else: tool flags, vendor identifiers, status wording (52)
+  - "demolish-site"
   - "-refresh=false"
   - " --hash=sha256:"
   - "-auto-approve"

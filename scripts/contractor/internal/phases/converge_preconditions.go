@@ -94,7 +94,21 @@ and "I could not tell" must not behave like "yes". Underlying error: %w`, err)
 		return nil
 	}
 
-	return fmt.Errorf(`this converge is not running the current tip of main.
+	return &SupersededError{Head: short(head), Tip: short(tip[0])}
+}
+
+// SupersededError is a converge that is no longer the change anybody asked
+// for: main has moved on since it was queued.
+//
+// It is its own type because it is its own outcome. Nothing was applied, like
+// any failure before the first phase - but nothing failed either, and the
+// aftermath must not treat it as a converge that could not land. It exits
+// with exitSuperseded, which the aftermath reads as "nothing to do": the
+// newer commit converges on its own (#557).
+type SupersededError struct{ Head, Tip string }
+
+func (e *SupersededError) Error() string {
+	return fmt.Sprintf(`this converge is not running the current tip of main.
 
 Its checkout is %s and main is now %s.
 
@@ -103,8 +117,9 @@ pod inside the cluster it converges, so tearing the estate down leaves every
 converge queued - and a runner has since appeared. Applying now would converge
 the estate to a commit that has been superseded, which nobody asked for.
 
-Cancel this run. Whatever is on main will converge on its own next merge, or
-can be re-run deliberately`, short(head), short(tip[0]))
+Nothing was applied, and nothing needs undoing. The newer commit converges
+when a merge touching management/ lands; re-running this run cannot help,
+because a re-run is never the tip of main either`, e.Head, e.Tip)
 }
 
 func short(sha string) string {

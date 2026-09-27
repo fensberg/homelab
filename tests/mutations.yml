@@ -85,9 +85,19 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 168
+floor: 169
 
 mutations:
+  - guard: TestTheE2ETierNamesVerbsTheContractorHas
+    file: tests/go/e2e/ignition_test.go
+    find: 'runContractor(t, "demolish-site", site, "-confirm", site); err != nil'
+    replace: 'runContractor(t, "demolish", site, "-confirm", site); err != nil'
+    mentions: "is not a contractor verb"
+    reads_source: true
+    why: >
+      A verb renamed in the contractor and not in the tier that is only run by
+      hand is exactly how that tier lost every command it had (#563).
+
   - guard: TestNoCodePicksASiteByName
     file: .github/workflows/integration-tests.yml
     find: "          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"

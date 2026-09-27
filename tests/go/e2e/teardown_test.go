@@ -42,7 +42,7 @@ func TestDemolishRemovesAnEstateWhoseMachinesAreStopped(t *testing.T) {
 
 	for _, phase := range buildOutPhases {
 		t.Logf("=== phase: %s ===", phase)
-		require.NoErrorf(t, ignite(t, site, "-phase", phase, "-keep-on-failure"),
+		require.NoErrorf(t, runContractor(t, "build-site", site, "-phase", phase, "-keep-on-failure"),
 			"phase %q failed before the machines could be stopped", phase)
 	}
 
@@ -64,7 +64,7 @@ func TestDemolishRemovesAnEstateWhoseMachinesAreStopped(t *testing.T) {
 	// The teardown, run exactly as a human runs it. The cleanup above would
 	// also call it, but a failure here should name this test rather than a
 	// cleanup: this is the assertion, not the tidying.
-	require.NoError(t, ignite(t, site, "-destroy", "-confirm", site),
+	require.NoError(t, runContractor(t, "demolish-site", site, "-confirm", site),
 		"demolish could not tear down an estate whose machines were stopped")
 
 	for i := 0; i < cfg.ControlPlaneCount; i++ {

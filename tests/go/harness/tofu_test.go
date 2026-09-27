@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"homelab/details/onepassword"
 	"strings"
 	"testing"
 )
@@ -22,10 +23,10 @@ func TestStateIsReadableExplainsHowToFixIt(t *testing.T) {
 
 	// Each of these is a thing the reader needs and tofu's own error omits.
 	for _, want := range []string{
-		"TF_ENCRYPTION",            // the variable
-		"encrypted at rest",        // why, so it does not read like a bug
-		"contractor kubeconfig",    // the command that fixes it
-		"OP_SERVICE_ACCOUNT_TOKEN", // what that command itself needs
+		"TF_ENCRYPTION",           // the variable
+		"encrypted at rest",       // why, so it does not read like a bug
+		"contractor kubeconfig",   // the command that fixes it
+		onepassword.TokenVariable, // what that command itself needs
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the failure does not mention %q, so a reader still has to work it out:\n%s", want, err)

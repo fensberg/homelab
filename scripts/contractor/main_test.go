@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -402,5 +403,36 @@ func TestOnlyARunThatBuildsMachinesIsGatedOnQueuedDeploys(t *testing.T) {
 					"runner halfway through.", toRun, got, tc.want)
 			}
 		})
+	}
+}
+
+// A run that stops before its first phase has applied nothing. Against an
+// estate that already exists that is "untouched", not "may have changed" -
+// the second opened a P1 issue over an estate nobody had touched (#557).
+func TestAFailureBeforeAnyPhaseIsUntouchedForAnExistingEstate(t *testing.T) {
+	ctx := &run.Context{PreexistingEstate: true}
+	if got := beforeAnyPhase(ctx); got != exitUntouched {
+		t.Errorf("an existing estate: got %d, want %d", got, exitUntouched)
+	}
+	ctx.PreexistingEstate = false
+	if got := beforeAnyPhase(ctx); got != 1 {
+		t.Errorf("an ignition: got %d, want 1", got)
+	}
+}
+
+// A superseded converge is its own outcome: nothing to revert, nothing to
+// report. Any other precondition is a converge that did not start.
+func TestASupersededConvergeIsNotAFailure(t *testing.T) {
+	if got := preconditionExit(&phases.SupersededError{Head: "a", Tip: "b"}); got != exitSuperseded {
+		t.Errorf("superseded: got %d, want %d", got, exitSuperseded)
+	}
+	if got := preconditionExit(fmt.Errorf("wrapped: %w", &phases.SupersededError{})); got != exitSuperseded {
+		t.Errorf("a wrapped supersession: got %d", got)
+	}
+	if got := preconditionExit(errors.New("could not read the tip of main")); got != exitUntouched {
+		t.Errorf("another precondition: got %d, want %d", got, exitUntouched)
+	}
+	if exitSuperseded == exitUntouched || exitSuperseded == exitMayHaveChanged {
+		t.Error("superseded shares a code with another outcome, so the aftermath cannot tell them apart")
 	}
 }
