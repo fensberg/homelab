@@ -29,9 +29,11 @@ import (
 	"homelab/details/repopath"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"syscall"
 
+	"homelab/contractor/config"
 	"homelab/contractor/internal/phases"
 	"homelab/contractor/internal/run"
 	"homelab/contractor/internal/survey"
@@ -94,7 +96,7 @@ verbs:
                  run a command with one that lives only that long: put the
                  command after --. Everything before it runs once per
                  invocation, so several checks belong in a single call:
-                   contractor kubeconfig -site site0 -- \
+                   contractor kubeconfig -site <site> -- \
                      bash -c 'kubectl get nodes; kubectl get ds -A'
   talosconfig    Run a command against this site's machines with a talosconfig
                  that lives only as long as the command.
@@ -138,6 +140,13 @@ func main() {
 	o := flagsFor(verb)
 
 	_ = o.fs.Parse(os.Args[2:])
+
+	resolved, err := config.ResolveSite(*o.site, filepath.Join(repoRoot(), "config", "management.tpl.json"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(2)
+	}
+	*o.site = resolved
 
 	site, phase, from, confirm := o.site, o.phase, o.from, o.confirm
 	commentOut := o.commentOut
@@ -738,7 +747,7 @@ type opts struct {
 func flagsFor(verb string) *opts {
 	fs := flag.NewFlagSet("contractor "+verb, flag.ExitOnError)
 	o := &opts{fs: fs}
-	o.site = fs.String("site", "site0", "Which key in the config's sites map to act on.")
+	o.site = fs.String("site", "", "Which key in the config's sites map to act on. May be left out only while the config declares one site.")
 
 	// Only ignite and converge run a sequence of phases, so only they can be
 	// asked to run part of one.

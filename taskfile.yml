@@ -1,8 +1,10 @@
 version: "3"
 
 vars:
-  # Which site to deploy. Override: task start SITE=site1
-  SITE: '{{.SITE | default "site0"}}'
+  # Which site to act on: task plan SITE=<site>. May be left out only while
+  # the config declares one site; the contractor then takes that one, and
+  # refuses once there are two rather than guessing (config.ResolveSite).
+  SITE: '{{.SITE | default ""}}'
 
   # Keep this tag in step with the SHA pinned in pr-validation.yml. They are
   # the same release, and the point of running it locally is that it is.
@@ -43,7 +45,7 @@ tasks:
     cmds:
       - task: build
       - 'echo "Built. Run directly so Ctrl-C can safely destroy and sterilize:"'
-      - 'echo "  ./toolshed/contractor build-site -site {{.SITE}}"'
+      - 'echo "  ./toolshed/contractor build-site{{if .SITE}} -site {{.SITE}}{{end}}"'
 
   plan:
     desc: "Show what a converge would change, without changing it"
@@ -52,7 +54,7 @@ tasks:
     # 'task clean-secrets'.
     cmds:
       - task: build
-      - ./toolshed/contractor plan -site {{.SITE}}
+      - ./toolshed/contractor plan -site "{{.SITE}}"
 
   record-as-built:
     desc: "Take the site's as-built record and report whether it is quiet and holds nothing real"
@@ -61,7 +63,7 @@ tasks:
     # and 'task clean-secrets' removes too.
     cmds:
       - task: build
-      - ./toolshed/contractor record-as-built -site {{.SITE}}
+      - ./toolshed/contractor record-as-built -site "{{.SITE}}"
 
   converge:
     desc: "Apply the config to an estate that already exists"
@@ -74,7 +76,7 @@ tasks:
     # running estate and a state file that still describes it.
     cmds:
       - task: build
-      - ./toolshed/contractor converge-site -site {{.SITE}}
+      - ./toolshed/contractor converge-site -site "{{.SITE}}"
 
   phases:
     desc: "List the phases an ignition would run, without running them"
@@ -83,7 +85,7 @@ tasks:
     # estate". The second is the one anybody means by "plan".
     cmds:
       - task: build
-      - ./toolshed/contractor build-site -site {{.SITE}} -whatif
+      - ./toolshed/contractor build-site -site "{{.SITE}}" -whatif
 
   render-secrets:
     desc: "Prove every template renders from 1Password, then wipe what it wrote"
@@ -103,7 +105,7 @@ tasks:
     # question - do the references resolve - without pulling a single value.
     cmds:
       - task: build
-      - ./toolshed/contractor build-site -site {{.SITE}} -phase render
+      - ./toolshed/contractor build-site -site "{{.SITE}}" -phase render
 
   push:
     desc: "Publish the current branch as GitHub-signed commits"
@@ -247,19 +249,19 @@ tasks:
     # it. Run it after editing the template or the vault.
     cmds:
       - task: build
-      - ./toolshed/contractor check-inventory -site {{.SITE}}
+      - ./toolshed/contractor check-inventory -site "{{.SITE}}"
 
   verify:
     desc: "Check the network path to the hypervisor and the SDN gateway"
     cmds:
       - task: build
-      - ./toolshed/contractor build-site -site {{.SITE}} -phase verify
+      - ./toolshed/contractor build-site -site "{{.SITE}}" -phase verify
 
   configure-hypervisor:
     desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
     cmds:
       - task: build
-      - ./toolshed/contractor build-site -site {{.SITE}} -phase hypervisor
+      - ./toolshed/contractor build-site -site "{{.SITE}}" -phase hypervisor
 
   check-hypervisor:
     desc: "Dry-run the playbook: show what would change, change nothing"
@@ -278,13 +280,13 @@ tasks:
     # refuses a play that matched nothing.
     cmds:
       - task: build
-      - ./toolshed/contractor build-site -site {{.SITE}} -phase hypervisor -check
+      - ./toolshed/contractor build-site -site "{{.SITE}}" -phase hypervisor -check
 
   backup-state:
     desc: "Encrypt the current state and push it to Cloudflare R2"
     cmds:
       - task: build
-      - ./toolshed/contractor build-site -site {{.SITE}} -phase backup
+      - ./toolshed/contractor build-site -site "{{.SITE}}" -phase backup
 
   apply-patches:
     desc: "Apply every outstanding handover patch, or none of them"
@@ -780,7 +782,7 @@ tasks:
     cmds:
       - task: build
       - 'echo "Built. Run directly so Ctrl-C can wait for tofu to release its lock:"'
-      - 'echo "  ./toolshed/contractor demolish-site -site {{.SITE}} -confirm {{.SITE}}"'
+      - 'echo "  ./toolshed/contractor demolish-site -site {{if .SITE}}{{.SITE}}{{else}}<site>{{end}} -confirm {{if .SITE}}{{.SITE}}{{else}}<site>{{end}}"'
       - 'echo ""'
       - 'echo "Add -whatif first if you want to see what that would do."'
 
@@ -792,26 +794,26 @@ tasks:
     # on disk at worst, which `task clean-secrets` removes.
     cmds:
       - task: build
-      - ./toolshed/contractor kubeconfig -site {{.SITE}}
+      - ./toolshed/contractor kubeconfig -site "{{.SITE}}"
 
   kubectl:
     desc: "Run a command against this site with a kubeconfig that lives only that long"
     # The form to reach for. `task kubeconfig` leaves a live credential in the
     # workspace until `task clean-secrets` removes it; this one never writes
     # into the repository and removes the file on every exit path.
-    #   task kubectl SITE=site0 -- kubectl -n arc-runners get pods
+    #   task kubectl SITE=<site> -- kubectl -n arc-runners get pods
     #
     # THE SETUP COST IS PER INVOCATION, NOT PER COMMAND. Each run renders the
     # config from the vault, waits for the state database, initialises the
     # backend, reads one output and wipes all of it again - ten seconds or so,
     # for a command that takes under one. Several questions belong in one call:
-    #   task kubectl SITE=site0 -- bash -c 'kubectl get nodes -o wide; kubectl get ds -A'
+    #   task kubectl SITE=<site> -- bash -c 'kubectl get nodes -o wide; kubectl get ds -A'
     # Repeating the single-command form is what makes the safe path tedious, and
     # a tedious safe path is pressure towards `task kubeconfig`, which is the
     # one that leaves a credential lying around.
     cmds:
       - task: build
-      - ./toolshed/contractor kubeconfig -site {{.SITE}} -- {{.CLI_ARGS}}
+      - ./toolshed/contractor kubeconfig -site "{{.SITE}}" -- {{.CLI_ARGS}}
 
   talosctl:
     desc: "Run talosctl against this site with a talosconfig that lives only that long"
@@ -820,7 +822,7 @@ tasks:
     # routing table. The credential authenticates to Talos rather than to
     # Kubernetes and can reboot or reset a machine, so there is deliberately no
     # form that leaves it on disk.
-    #   task talosctl SITE=site0 -- talosctl etcd status
+    #   task talosctl SITE=<site> -- talosctl etcd status
     #
     # No -n: the rendered credential names the control planes as both its
     # endpoints and its nodes, so the quorum commands work with no flags. A
@@ -831,10 +833,10 @@ tasks:
     # answer: put several questions in one call rather than paying for each.
     cmds:
       - task: build
-      - ./toolshed/contractor talosconfig -site {{.SITE}} -- {{.CLI_ARGS}}
+      - ./toolshed/contractor talosconfig -site "{{.SITE}}" -- {{.CLI_ARGS}}
 
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
     cmds:
       - task: build
-      - ./toolshed/contractor build-site -site {{.SITE}} -phase sterilize
+      - ./toolshed/contractor build-site -site "{{.SITE}}" -phase sterilize
