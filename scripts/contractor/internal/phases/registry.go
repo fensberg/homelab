@@ -21,6 +21,13 @@ var PlanPhases = []string{
 	"render", "verify", "take-over", "plan", "sterilize",
 }
 
+// RecordPhases takes the as-built record (#554). It attaches to the estate's
+// state like a plan does and changes nothing in the estate: everything it
+// writes is under the workspace's .as-built directory, and removed.
+var RecordPhases = []string{
+	"render", "verify", "take-over", "record", "sterilize",
+}
+
 // ConvergePhases applies a change to an estate that already exists.
 //
 // Three differences from AllPhases, and each is the point.
@@ -56,7 +63,7 @@ var ConvergePhases = []string{
 // without touching this list would be invisible to the check that every
 // dispatched phase belongs to one, which is the check that stops a phase
 // existing that nothing can ever run.
-var Sequences = [][]string{AllPhases, ConvergePhases, PlanPhases}
+var Sequences = [][]string{AllPhases, ConvergePhases, PlanPhases, RecordPhases}
 
 // Run dispatches a single phase by name and reports how long it took.
 //
@@ -82,6 +89,8 @@ func dispatch(ctx *run.Context, name string) error {
 		return TakeOver(ctx)
 	case "plan":
 		return Plan(ctx)
+	case "record":
+		return Record(ctx)
 	case "compute":
 		return Compute(ctx)
 	case "cluster":

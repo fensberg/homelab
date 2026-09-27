@@ -307,7 +307,7 @@ const heartbeat = 30 * time.Second
 // A short list on purpose. A number here is a measurement, not a guess, and
 // one nobody has measured does not belong.
 var slowReads = map[string]string{
-	"data.talos_cluster_health.this": "a fresh cluster usually answers in about two minutes, and the read gives up at ten",
+	"data.talos_cluster_health.this[0]": "a fresh cluster usually answers in about two minutes, and the read gives up at ten",
 }
 
 // summariseStream is summariseApply with its clock handed to it.
@@ -539,6 +539,24 @@ func RemoveIfExists(path string) error {
 		return err
 	}
 	if err := os.Remove(path); err != nil {
+		return err
+	}
+	Info("removed " + filepathBase(path))
+	return nil
+}
+
+// RemoveTreeIfExists is RemoveIfExists for a directory a phase owns
+// outright, which goes with everything in it. Separate so that a file target
+// that has somehow become a directory is still an error rather than silently
+// taking its contents with it.
+func RemoveTreeIfExists(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if err := os.RemoveAll(path); err != nil {
 		return err
 	}
 	Info("removed " + filepathBase(path))

@@ -22,6 +22,12 @@ func Sterilize(ctx *run.Context, quiet bool) error {
 			return err
 		}
 	}
+	// The Record phase's workspace, a directory the phase owns outright. What
+	// it holds is scrubbed, but a run that dies partway leaves a throwaway CA
+	// and a half-scrubbed record in it.
+	if err := run.RemoveTreeIfExists(ctx.AsBuiltDir); err != nil {
+		return err
+	}
 	run.Ok("workspace sterilized")
 	return nil
 }

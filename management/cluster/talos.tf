@@ -468,6 +468,13 @@ data "talos_client_configuration" "this" {
 # apply is precisely when it should run. It was never the plan's job to
 # answer whether a cluster is healthy.
 data "talos_cluster_health" "this" {
+  # The one read a plan with -refresh=false still makes, once nothing
+  # upstream of it is pending. The as-built record is planned with no
+  # network at all, and this would sit waiting on an address that is not
+  # there (#554). Every use of it is a depends_on, which an empty count
+  # satisfies.
+  count = var.offline ? 0 : 1
+
   depends_on = [
     talos_cluster_kubeconfig.this,
     proxmox_virtual_environment_vm.talos_cp,

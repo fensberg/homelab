@@ -22,6 +22,18 @@ variable "site" {
   }
 }
 
+variable "offline" {
+  type    = bool
+  default = false
+
+  description = <<-EOT
+    Whether this plan must reach nothing: set only by the Record phase, which
+    plans against the as-built record with stand-in credentials and no
+    network. It turns off the cluster health read, the one data source a plan
+    with -refresh=false still performs (#554).
+  EOT
+}
+
 variable "overlay_key_wanted" {
   type    = bool
   default = false

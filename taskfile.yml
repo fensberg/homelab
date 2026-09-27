@@ -54,6 +54,15 @@ tasks:
       - task: build
       - ./toolshed/contractor plan -site {{.SITE}}
 
+  record-as-built:
+    desc: "Take the site's as-built record and report whether it is quiet and holds nothing real"
+    # Safe to wrap for the same reason as plan: it changes nothing in the
+    # estate, and everything it writes is under .as-built/, which it removes
+    # and 'task clean-secrets' removes too.
+    cmds:
+      - task: build
+      - ./toolshed/contractor record-as-built -site {{.SITE}}
+
   converge:
     desc: "Apply the config to an estate that already exists"
     # Safe to wrap, unlike start, and for a reason that is worth stating
