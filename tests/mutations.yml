@@ -85,9 +85,28 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 168
+floor: 170
 
 mutations:
+  - guard: TestEveryScheduledWorkflowReportsItsFailures
+    file: .github/workflows/expedite.yml
+    find: "    needs: [check, deliver, release]\n    if: always() && github.event_name == 'schedule'"
+    replace: "    needs: [check, deliver]\n    if: always() && github.event_name == 'schedule'"
+    mentions: "does not wait on [release]"
+    why: >
+      A job added to a scheduled workflow and not to its report's needs fails
+      silently, which is the whole of #441.
+
+  - guard: TestTheE2ETierNamesVerbsTheContractorHas
+    file: tests/go/e2e/ignition_test.go
+    find: 'runContractor(t, "demolish-site", site, "-confirm", site); err != nil'
+    replace: 'runContractor(t, "demolish", site, "-confirm", site); err != nil'
+    mentions: "is not a contractor verb"
+    reads_source: true
+    why: >
+      A verb renamed in the contractor and not in the tier that is only run by
+      hand is exactly how that tier lost every command it had (#563).
+
   - guard: TestNoCodePicksASiteByName
     file: .github/workflows/integration-tests.yml
     find: "          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"

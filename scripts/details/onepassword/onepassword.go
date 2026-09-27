@@ -11,6 +11,11 @@ import (
 	"strings"
 )
 
+// TokenVariable is the environment variable `op` reads a service account
+// token from. It is the only one it reads: a token in a file is invisible to
+// it until something exports it.
+const TokenVariable = "OP_SERVICE_ACCOUNT_TOKEN"
+
 // ErrNoCLI is what every program says when there is no `op` to ask.
 var ErrNoCLI = errors.New("1Password CLI ('op') not found on PATH")
 

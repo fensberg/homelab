@@ -123,6 +123,13 @@ func EnsureVaultSession(site string) error {
 		return onepassword.ErrNoCLI
 	}
 	if !onepassword.SignedIn() {
+		// A token that is set and still not signed in is a token 1Password
+		// refused - revoked, deleted, or belonging to an account that no
+		// longer exists. Signing in interactively cannot help that, and in
+		// CI there is nobody to do it: the answer is to replace the token.
+		if tokenSet() {
+			return refusedToken()
+		}
 		run.Info("not signed in to 1Password - starting sign-in")
 		_ = onepassword.SignIn()
 		if !onepassword.SignedIn() {
@@ -146,4 +153,18 @@ If the desktop app is installed, enable Settings > Developer > Integrate with
 	}
 	run.Ok("the token reaches this site's vaults and nothing else")
 	return nil
+}
+
+// tokenSet reports whether a service account token was handed to this run.
+func tokenSet() bool { return os.Getenv(onepassword.TokenVariable) != "" }
+
+// refusedToken says what a refused service account token means and where it
+// is replaced, rather than suggesting a sign-in that cannot help (#557).
+func refusedToken() error {
+	return fmt.Errorf(`1Password refused the service account token in OP_SERVICE_ACCOUNT_TOKEN.
+
+It is set, so this is not a missing sign-in: the token was revoked, deleted,
+or belongs to a service account that no longer exists. Replace it where it is
+kept - on a workstation, the file you source it from; in CI, the
+OP_SERVICE_ACCOUNT_TOKEN secret of the environment this job names`)
 }

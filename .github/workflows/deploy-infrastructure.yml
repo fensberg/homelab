@@ -361,6 +361,12 @@ jobs:
           # survives without parsing prose out of a log.
           mkdir -p verdict
           echo "$code" > "verdict/$SITE"
+          # 3 is a converge main had already moved past: nothing applied and
+          # nothing failed, so the run is not red. The verdict still says so,
+          # for the aftermath of a matrix where another site did fail (#557).
+          if [ "$code" = 3 ]; then
+            exit 0
+          fi
           exit $code
 
       # Written even on success, so a missing file means the job died rather
@@ -461,6 +467,7 @@ jobs:
           SITES: ${{ needs.changes.outputs.sites }}
         run: |
           exact=true
+          superseded=false
           detail=""
           for site in $(echo "$SITES" | tr -d '[]"' | tr ',' ' '); do
             f="verdicts/$site"
@@ -473,10 +480,21 @@ jobs:
             case "$code" in
               0) detail="${detail}- ${site}: converged\n" ;;
               2) detail="${detail}- ${site}: failed before anything was applied\n" ;;
+              # Superseded: main moved on before this converge ran. Nothing
+              # was applied and nothing failed; the newer commit converges on
+              # its own, so there is nothing to revert or report (#557).
+              3) superseded=true
+                 detail="${detail}- ${site}: superseded - main had moved on, so it did not run\n" ;;
               *) exact=false
                  detail="${detail}- ${site}: failed with exit ${code} - something may have been written\n" ;;
             esac
           done
+          # A superseded site means main already carries something newer, and
+          # reverting this commit would undo part of what the newer converge
+          # applies. Unless something is unknown, there is nothing to do.
+          if [ "$exact" = true ] && [ "$superseded" = true ]; then
+            exact=none
+          fi
           echo "exact=$exact" >>"$GITHUB_OUTPUT"
           {
             echo "detail<<VERDICT_EOF"
@@ -516,10 +534,29 @@ jobs:
       # asked for is not available. The revert pull request carries the link
       # instead, and reverting it restores the change - which is the same
       # outcome by the only route that exists.
+      # The procurement App's token, not GITHUB_TOKEN. GitHub refuses to let
+      # Actions open a pull request here, and one opened with GITHUB_TOKEN
+      # would run no checks and could never merge - so every revert this job
+      # ever tried pushed a branch and stopped (#380). The App already opens
+      # the expediter's pull requests; a revert is the same kind of
+      # proposal, and the operator approves it like any other.
+      - name: Mint the revert token
+        id: revert-token
+        if: steps.verdict.outputs.exact == 'true'
+        uses: $/.github/workflows/app-token
+        with:
+          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
+          # Contents to make the commit and branch; pull requests to open one.
+          permission-contents: write
+          permission-pull-requests: write
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+
       - name: Revert management/, as a signed pull request
         if: steps.verdict.outputs.exact == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.revert-token.outputs.token }}
           SHA: ${{ github.sha }}
           REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -597,10 +634,9 @@ jobs:
           trail="The original pull request could not be identified from the merge commit."
           if [ -n "$origin" ]; then
             trail="Original: #${origin}. GitHub cannot reopen a merged pull request, so that one stays closed - reverting THIS pull request restores the change once the cause is fixed."
-            gh pr comment "$origin" --body "The converge for \`${SHA::8}\` failed before applying anything, so \`management/\` has been returned to its previous state. See the revert, and the failed run: $RUN_URL"
           fi
 
-          gh pr create --base main --head "$branch" \
+          revert_url=$(gh pr create --base main --head "$branch" \
             --title "revert: the converge for ${SHA::8} failed before it applied anything" \
             --body "$(printf '%s\n' \
               "## What you need to do" \
@@ -621,7 +657,14 @@ jobs:
               "" \
               "$trail" \
               "" \
-              "Failed run: $RUN_URL")"
+              "Failed run: $RUN_URL")")
+
+          # Only now, with a revert that exists to point at. The first
+          # version said "has been returned" before opening anything, and
+          # said it every time the opening failed (#380).
+          if [ -n "$origin" ]; then
+            gh pr comment "$origin" --body "The converge for \`${SHA::8}\` failed before applying anything. The revert that returns \`management/\` to its previous state is ${revert_url}, awaiting approval. Failed run: $RUN_URL"
+          fi
 
       # Not knowing is the loud case.
       #
@@ -630,7 +673,7 @@ jobs:
       # than a passing mention, because this does not self-clear - it stays
       # open until somebody converges or corrects the config.
       - name: Alarm, because the estate's state is not known
-        if: steps.verdict.outputs.exact != 'true'
+        if: steps.verdict.outputs.exact == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHA: ${{ github.sha }}

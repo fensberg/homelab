@@ -24,6 +24,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"homelab/details/repopath"
@@ -259,7 +260,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 	if phases.NeedsStateEncryption(deref(phase)) {
 		if err := phases.EnsureStateEncryption(ctx); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+			os.Exit(beforeAnyPhase(ctx))
 		}
 	}
 
@@ -369,7 +370,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 		if err := phases.CheckConvergePreconditions(); err != nil {
 			fmt.Println()
 			run.Fail("HALTED: " + err.Error())
-			os.Exit(exitUntouched)
+			os.Exit(preconditionExit(err))
 		}
 	}
 	// Only when this run will actually build something.
@@ -505,10 +506,34 @@ func runDestroy(ctx *run.Context, confirm string) int {
 //
 //	exitUntouched  nothing was written; reverting the change is exact
 //	exitMayHaveChanged  something was written, or it could not be determined
+//	exitSuperseded  main moved on before this ran; nothing was applied and
+//	                nothing failed, so there is nothing to revert or report
 const (
 	exitMayHaveChanged = 1
 	exitUntouched      = 2
+	exitSuperseded     = 3
 )
+
+// beforeAnyPhase is the exit code for a run that stopped before its first
+// phase: the vault could not be reached, or the state passphrase could not be
+// read. Against an estate that already exists nothing can have been applied,
+// and saying "may have changed" there opened a P1 issue asking for a manual
+// plan over an estate nobody had touched (#556, #557).
+func beforeAnyPhase(ctx *run.Context) int {
+	if ctx.PreexistingEstate {
+		return exitUntouched
+	}
+	return 1
+}
+
+// preconditionExit says why a converge did not start.
+func preconditionExit(err error) int {
+	var superseded *phases.SupersededError
+	if errors.As(err, &superseded) {
+		return exitSuperseded
+	}
+	return exitUntouched
+}
 
 // reportPreexistingFailure says what is actually known about the estate after
 // a failed converge, and returns the exit code that says the same thing.

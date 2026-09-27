@@ -85,15 +85,20 @@ func guard(t *testing.T) string {
 	return site
 }
 
-// ignite builds the binary fresh and runs one phase, exactly the way the
-// taskfile does - never `go run`, whose wrapper process has no signal handler
-// and can be killed before the program itself gets to clean up.
-func ignite(t *testing.T, site string, args ...string) error {
+// runContractor runs one verb of the binary buildIgnite made, exactly the way
+// the taskfile does - never `go run`, whose wrapper process has no signal
+// handler and can be killed before the program itself gets to clean up.
+//
+// The verb is its own argument, and tests/go/repo checks every call's verb
+// against the contractor's knownVerbs. This helper once put -site first with
+// no verb at all, and -destroy where demolish-site now is, and the tier could
+// not run a single command for as long as nobody ran it by hand (#563).
+func runContractor(t *testing.T, verb, site string, args ...string) error {
 	t.Helper()
 	root := harness.RepoRoot(t)
 	bin := filepath.Join(root, "scripts", "contractor", "contractor")
 
-	cmd := exec.Command(bin, append([]string{"-site", site}, args...)...)
+	cmd := exec.Command(bin, append([]string{verb, "-site", site}, args...)...)
 	cmd.Dir = root
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -124,7 +129,7 @@ func TestIgnitionBuildsAndTearsDownAnEstate(t *testing.T) {
 		// between phases. Without it, a successful single-phase run wipes
 		// the rendered config it just produced, and the next phase has
 		// nothing to read. See tests/README.md.
-		require.NoErrorf(t, ignite(t, site, "-phase", phase, "-keep-on-failure"),
+		require.NoErrorf(t, runContractor(t, "build-site", site, "-phase", phase, "-keep-on-failure"),
 			"phase %q failed; the estate is about to be torn down by the cleanup above", phase)
 	}
 
@@ -147,7 +152,7 @@ func TestIgnitionBuildsAndTearsDownAnEstate(t *testing.T) {
 // -confirm is required and must name the site, which is the point: even the
 // test has to say it twice.
 func teardown(t *testing.T, site string) {
-	if err := ignite(t, site, "-destroy", "-confirm", site); err != nil {
+	if err := runContractor(t, "demolish-site", site, "-confirm", site); err != nil {
 		t.Errorf(`contractor demolish-site failed: %v
 
 State and secrets have been left in place on purpose - that is what the
