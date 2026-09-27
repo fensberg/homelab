@@ -655,6 +655,17 @@ The parser fix in #255 stays open. Prompt and stripper are different layers and
 the durable answer is both - but the prompt is the one that generalises to
 every language the stripper handles badly, and it costs a paragraph.
 
+**Two more misses, on #555**, one shape. Both quoted a claim and a statement
+that agree: a comment summarising what `refreshMachinesArgs` does beside the
+account's description of the flags that do it, and a comment naming
+`-refresh=false` as the flag that matters beside an account saying the
+function returns it. The both-halves requirement was met and did not help,
+because both halves existed; what was missing was any conflict between them.
+Answered with a requirement rather than a rule, as this section's own history
+recommends: a finding must now say why both cannot be true at once. Both were
+on lines the pull request did not change, which is also why they surfaced as
+alerts with nowhere to appear on the diff.
+
 ### The clerk ran the code it was asked to read (#409)
 
 On `issue_comment`, `clerk.yml` runs from the default branch with repository
