@@ -86,7 +86,7 @@ Each holds the credential for one thing, and none overlaps another:
 | ------------- | ------------------------------------------------ | ---------------------------- |
 | `management`  | the platform itself - `contractor converge-site` | merge touching `management/` |
 | `staging`     | workload deploys                                 | merge to `main`              |
-| `production`  | workload deploys                                 | tag `v*`                     |
+| `production`  | workload infrastructure (dormant, #561)          | tag `v*`                     |
 | `integration` | the test tiers that need a real estate           | nightly, or dispatch         |
 
 `management` is a fourth environment rather than a reuse of `staging`
@@ -683,28 +683,19 @@ floor a pull request may not drop below and is free to leave alone.
   nothing and its value is being current. It says nothing unless the change
   took something away.
 
-- **Branch per epoch, and work merges into the epoch rather than into `main`.**
-  `epoch/<nn>-<slug>` targets `main` and stays open for the life of the epoch.
-  Individual pieces open against **that branch as their base**, not against
-  `main`. Set the base deliberately; defaulting to `main` breaks the model.
-
-  The point is to keep the number of pull requests landing on `main` small
-  while still reviewing each piece on its own. A reviewer sees one change at a
-  time, and `main` sees one coherent epoch.
-
-  Two consequences worth stating, because both have bitten:
+- **Every piece branches from `main` and opens its pull request against
+  `main`.** Epoch branches are retired: in September 2026 one had fallen nine
+  pull requests behind `main` with nothing tracking it. An epoch is now a
+  record in `docs/epochs/` and an issue label.
 
   - **Bugs become issues, and fixes batch.** Open an issue for a defect rather
     than only describing it in a pull request body. Fix issues on their own
     branches, then merge several together into one bug-fix pull request that
     closes them all — individually tracked, few landings. Reference the issue
     number so the link survives the branch.
-  - **Merging needs the branch up to date**, so GitHub's "Update branch" lands
-    a merge commit on the epoch branch. That is normal and expected. It also
-    means an epoch branch **must not** require linear history, which would make
-    that button unusable.
 
-- Close an epoch by filling in its record in `docs/epochs/` **before** merging.
+- Close an epoch by filling in its record in `docs/epochs/` and flipping its
+  status, here and in the record.
 - **No `Co-Authored-By: Claude` trailer.** Claude commits here under its own
   git identity, so that trailer credits the same party twice and GitHub shows
   an author avatar beside a redundant co-author badge. It exists to credit a
