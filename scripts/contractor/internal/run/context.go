@@ -28,6 +28,11 @@ type Context struct {
 	// reaches the repository.
 	AsBuiltDir string
 
+	// RecordOut, when set, is where the Record phase saves a publishable
+	// record for a later plan to read. Empty means take it, report it, and
+	// keep nothing.
+	RecordOut string
+
 	// CommentOut, when set, is where the plan writes the pull request comment
 	// body. Empty means write nothing, which is every case but CI.
 	CommentOut   string

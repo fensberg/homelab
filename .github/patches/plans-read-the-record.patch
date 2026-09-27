@@ -1,0 +1,1081 @@
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 6aa4eda..b51e9fa 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -201,94 +201,13 @@ jobs:
+           echo "sites=${sites}" >> "$GITHUB_OUTPUT"
+ 
+   # ---------------------------------------------------------------------
+-  # PLAN - on a pull request. Reads real state, changes nothing.
++  # The workload tier has no plan on a pull request, deliberately. Its plan
++  # read real state on the estate's runner, and no pull-request job may reach
++  # that runner (#554, tests/go/repo/selfhosted_test.go). environments/*/
++  # infrastructure/ does not exist, so the job could never trigger; when the
++  # workload tier gets infrastructure of its own, it gets a plan against an
++  # as-built record of it, the way the estate's plan works.
+   # ---------------------------------------------------------------------
+-  plan:
+-    name: Plan
+-    needs: changes
+-    if: >-
+-      github.event_name == 'pull_request' &&
+-      github.event.pull_request.head.repo.full_name == github.repository &&
+-      needs.changes.outputs.workload == 'true'
+-    # A fork's pull request must never reach this job. It runs on the
+-    # self-hosted runner with real credentials, and the condition above is
+-    # what keeps an outside contributor's branch away from them - the same
+-    # boundary pr-validation.yml holds by being hermetic.
+-    runs-on: homelab-management
+-    environment: ${{ github.ref_type == 'tag' && 'production' || 'staging' }}
+-    permissions:
+-      contents: read
+-      pull-requests: write
+-    timeout-minutes: 30
+-    steps:
+-      - name: Mobilize
+-        uses: $/.github/workflows/mobilize
+-        with:
+-          # audit, not block, for the reason the apply job below gives: the
+-          # endpoints this reaches are not known until it has actually run
+-          # once, and a guessed allowlist on a job that touches real
+-          # infrastructure is worse than an audited one.
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "false"
+-
+-      - name: Determine Target Directory
+-        run: echo "DIR=environments/staging/infrastructure/" >> "$GITHUB_ENV"
+-
+-      - name: Tofu Init
+-        run: tofu init -input=false
+-        working-directory: ${{ env.DIR }}
+-
+-      # -detailed-exitcode: 0 = no changes, 2 = changes pending, 1 = the plan
+-      # itself failed. Only 1 is a failure worth stopping for; 2 is the normal
+-      # reason a deployment pull request exists at all.
+-      - name: Tofu Plan
+-        id: plan
+-        working-directory: ${{ env.DIR }}
+-        run: |
+-          set +e
+-          tofu plan -input=false -no-color -out=tfplan > plan.txt 2>&1
+-          code=$?
+-          set -e
+-          echo "exitcode=${code}" >> "$GITHUB_OUTPUT"
+-          if [ "${code}" = "1" ]; then
+-            echo "::error::tofu plan failed"
+-            tail -50 plan.txt
+-            exit 1
+-          fi
+-          tofu show -no-color tfplan > plan-readable.txt
+-
+-      # The readable plan goes to the job summary rather than into a pull
+-      # request comment. Terraform redacts values it knows are sensitive, but
+-      # "sensitive" is a property somebody has to have declared - anything
+-      # not marked stays in plain text, and a plan is full of resource
+-      # attributes nobody thought of that way. The summary is visible to
+-      # whoever can already see the run; the comment below carries only
+-      # counts and a link.
+-      - name: Write the plan to the job summary
+-        working-directory: ${{ env.DIR }}
+-        run: |
+-          {
+-            echo "### Plan: \`${DIR}\`"
+-            echo
+-            echo '```terraform'
+-            head -c 60000 plan-readable.txt
+-            echo '```'
+-          } >> "$GITHUB_STEP_SUMMARY"
+-
+-      - name: Comment the plan summary on the pull request
+-        uses: $/.github/workflows/github-script
+-        env:
+-          EXITCODE: ${{ steps.plan.outputs.exitcode }}
+-          DIR: ${{ env.DIR }}
+-        with:
+-          name: workload-plan-comment
+-
+-  # ---------------------------------------------------------------------
+-  # APPLY - on merge to main, or a tag. Applies a plan made in this run.
+   # ---------------------------------------------------------------------
+   apply:
+     name: Apply
+@@ -431,7 +350,7 @@ jobs:
+           # path, and a real ignition printed one of them.
+           go build -C scripts/contractor -o ../../toolshed/contractor .
+           set +e
+-          ./toolshed/contractor converge-site -site "$SITE"
++          ./toolshed/contractor converge-site -site "$SITE" -record-out "as-built/$SITE"
+           code=$?
+           set -e
+           # The verdict, not just the failure. contractor exits 2 when the
+@@ -447,9 +366,22 @@ jobs:
+       # Written even on success, so a missing file means the job died rather
+       # than that everything was fine. Absent and "exit 0" must not look the
+       # same to the job that decides whether to revert.
++      # The as-built record the converge took once the estate matched main
++      # (#554): what every pull request's plan is compared with. Taken only
++      # when it came out quiet and held nothing real; a converge that could
++      # not take one saves nothing, and plans read the previous record.
++      - name: Publish the as-built record
++        if: success()
++        uses: $/.github/workflows/upload-artifact
++        with:
++          name: as-built-${{ matrix.site }}
++          path: as-built/${{ matrix.site }}/
++          if-no-files-found: ignore
++          retention-days: 90
++
+       - name: Record the verdict
+         if: always()
+-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
++        uses: $/.github/workflows/upload-artifact
+         with:
+           name: converge-verdict-${{ matrix.site }}
+           path: verdict/
+@@ -506,7 +438,7 @@ jobs:
+           fetch-depth: 0
+ 
+       - name: Collect the verdicts
+-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
++        uses: $/.github/workflows/download-artifact
+         with:
+           pattern: converge-verdict-*
+           path: verdicts
+@@ -721,8 +653,16 @@ jobs:
+ 
+   # ---------------------------------------------------------------------
+   # PLAN THE ESTATE - on a pull request touching management/.
+-  # Reads real state, changes nothing. Structure only, never a value:
+-  # this comment is world-readable.
++  #
++  # Against the as-built record, not the estate (#554). The record is the
++  # state as last converged with every real value replaced, published by the
++  # converge and the nightly from main. So this job holds no credential,
++  # needs no environment, and runs on GitHub's runner: nothing a pull request
++  # can run here reaches the estate, which is what lets the environments go
++  # without a reviewer. It cannot see drift since the record was taken; the
++  # nightly's real plan reports that.
++  #
++  # Structure only, never a value: this comment is world-readable.
+   # ---------------------------------------------------------------------
+   plan-estate:
+     name: Plan ${{ matrix.site }}
+@@ -731,12 +671,14 @@ jobs:
+       github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       needs.changes.outputs.management == 'true'
+-    runs-on: homelab-management
+-    environment: management
++    # A pull request's code never runs on the estate's runner.
++    runs-on: ubuntu-latest
+     permissions:
+       contents: read
+       pull-requests: write
+-    timeout-minutes: 30
++      # To find and download the record another run published.
++      actions: read
++    timeout-minutes: 20
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -745,12 +687,23 @@ jobs:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+         with:
++          # The Go toolchain and OpenTofu with its providers, as the Validate
++          # lane fetches them, and GitHub's API for the record.
+           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+           # which job may reach what; `security guard-egress` refuses any drift.
+           # The copy lives here because harden-runner reads its policy in a
+           # pre-step, before any step of this job can run.
+-          egress-policy: audit
+-          disable-sudo-and-containers: "false"
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            get.opentofu.org:443
++            github.com:443
++            go.dev:443
++            objects.githubusercontent.com:443
++            registry.opentofu.org:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
+ 
+       - name: Read pinned versions
+         uses: ./.github/actions/versions
+@@ -758,14 +711,46 @@ jobs:
+       - name: Setup Go
+         uses: $/.github/workflows/setup-go
+ 
++      - name: Install OpenTofu
++        run: scripts/take-delivery.sh opentofu
++
++      # The newest record of this site that main published. Only main: a
++      # record is what a plan is trusted to compare with, so one a pull
++      # request uploaded - from its own branch, or a fork's branch that
++      # happens to be called main - is never taken.
++      - name: Find the as-built record
++        id: record
++        env:
++          GH_TOKEN: ${{ github.token }}
++          REPO: ${{ github.repository }}
++          REPO_ID: ${{ github.repository_id }}
++          SITE: ${{ matrix.site }}
++        run: |
++          run_id="$(gh api "repos/${REPO}/actions/artifacts?name=as-built-${SITE}&per_page=100" --jq "
++            [.artifacts[]
++              | select(.expired | not)
++              | select(.workflow_run.head_branch == \"main\" and .workflow_run.head_repository_id == ${REPO_ID})]
++            | sort_by(.created_at) | last | .workflow_run.id // empty")"
++          if [ -z "${run_id}" ]; then
++            echo "::error::no as-built record of ${SITE} has been published from main yet. The next converge or nightly takes one."
++            exit 1
++          fi
++          echo "run-id=${run_id}" >> "$GITHUB_OUTPUT"
++
++      - name: Download the as-built record
++        uses: $/.github/workflows/download-artifact
++        with:
++          name: as-built-${{ matrix.site }}
++          run-id: ${{ steps.record.outputs.run-id }}
++          github-token: ${{ github.token }}
++          path: as-built-record
++
+       - name: Plan
+-        id: plan
+         env:
+-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+           SITE: ${{ matrix.site }}
+         run: |
+           go build -C scripts/contractor -o ../../toolshed/contractor .
+-          ./toolshed/contractor plan -site "$SITE" -comment-out plan-comment.md
++          ./toolshed/contractor plan-as-built -site "$SITE" -record as-built-record -comment-out plan-comment.md
+ 
+       - name: Comment the plan on the pull request
+         uses: $/.github/workflows/github-script
+@@ -775,11 +760,14 @@ jobs:
+   # ---------------------------------------------------------------------
+   # NO PLAN, SAID OUT LOUD - #156.
+   #
+-  # `Plan site0` is not a required status check, and making it one would
+-  # deadlock this estate: the runner is a pod inside the cluster, so when the
+-  # cluster is down no plan can be produced - precisely when the estate most
+-  # needs the pull request that rebuilds it. That circularity is the one epoch
+-  # 01 is built around, and it applies to the gate as much as to the tooling.
++  # `Plan site0` is not a required status check. It used to be that it could
++  # not be: the plan ran on a pod inside the cluster, so with the cluster down
++  # no plan could be produced - precisely when the estate most needed the
++  # pull request that rebuilds it. The plan now runs on GitHub's runner
++  # against the as-built record (#554), which removes that circularity; what
++  # can still stop it is having no record to read, which is exactly the state
++  # of an estate that has never been built, so it stays visibility rather
++  # than a gate.
+   #
+   # So this is visibility, not enforcement. #140 changed the machine count,
+   # its plan job was cancelled against a runner that did not exist, and the
+diff --git a/.github/workflows/download-artifact/action.yml b/.github/workflows/download-artifact/action.yml
+new file mode 100644
+index 0000000..1861154
+--- /dev/null
++++ b/.github/workflows/download-artifact/action.yml
+@@ -0,0 +1,45 @@
++# The one place the actions/download-artifact commit is written.
++#
++# tests/go/repo/action_pins_test.go allows an action's commit to be written
++# once. Empty inputs are passed through as empty, which the action reads as
++# unset: no run-id means this run's own artifacts.
++name: "Download artifact"
++description: Download an artifact of this run, or of another run with run-id.
++
++inputs:
++  name:
++    description: One artifact by name.
++    required: false
++    default: ""
++  pattern:
++    description: Every artifact whose name matches.
++    required: false
++    default: ""
++  path:
++    description: Where to put it.
++    required: true
++  merge-multiple:
++    description: Put every matching artifact in one directory.
++    required: false
++    default: "false"
++  run-id:
++    description: Another run to download from; empty means this one.
++    required: false
++    default: ""
++  github-token:
++    description: A token that may read the other run's artifacts; needed with run-id.
++    required: false
++    default: ""
++
++runs:
++  using: composite
++  steps:
++    - name: Download artifact
++      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
++      with:
++        name: ${{ inputs.name }}
++        pattern: ${{ inputs.pattern }}
++        path: ${{ inputs.path }}
++        merge-multiple: ${{ inputs.merge-multiple }}
++        run-id: ${{ inputs.run-id }}
++        github-token: ${{ inputs.github-token }}
+diff --git a/.github/workflows/github-script/plan-absence-comment.js b/.github/workflows/github-script/plan-absence-comment.js
+index 2dee527..fca0d72 100644
+--- a/.github/workflows/github-script/plan-absence-comment.js
++++ b/.github/workflows/github-script/plan-absence-comment.js
+@@ -26,13 +26,14 @@ module.exports = async ({ github, context }) => {
+     ' **`' + process.env.RESULT + '`** rather than succeeding. Nothing here' +
+     ' compared the proposed configuration against the estate that exists.',
+     '',
+-    'That is not a blocker and is not meant to be. The plan runs on a runner' +
+-    ' inside the cluster, so when the cluster is down no plan can be produced -' +
+-    ' which is exactly when the pull request rebuilding it needs to merge.' +
+-    ' Requiring a plan would deadlock that.',
++    'The plan compares this change with the as-built record: the estate as' +
++    ' last converged, published from `main`. It usually fails for one of two' +
++    ' reasons. No record has been published yet, which is the case until the' +
++    ' first converge or nightly after an estate is built. Or the plan itself' +
++    ' failed, and the job log says why.',
+     '',
+     'What it means for a reviewer: approving this is approving HCL rather than' +
+-    ' its consequences. If the estate is up, re-running the plan job is worth' +
++    ' its consequences. Re-running the plan job once a record exists is worth' +
+     ' more than reading the diff again.',
+   ].join('\n');
+ 
+diff --git a/.github/workflows/github-script/workload-plan-comment.js b/.github/workflows/github-script/workload-plan-comment.js
+deleted file mode 100644
+index c202978..0000000
+--- a/.github/workflows/github-script/workload-plan-comment.js
++++ /dev/null
+@@ -1,64 +0,0 @@
+-// The workload plan summary for one directory, on its pull request.
+-//
+-// Run by $/.github/workflows/github-script, which names this file rather than
+-// passing code in: a script handed to a shared action as an input is invisible
+-// to zizmor's and Semgrep's template-injection checks, while a file is read
+-// directly. Values arrive through process.env, set on the calling step.
+-module.exports = async ({ github, context }) => {
+-  const fs = require('fs');
+-  const plan = fs.readFileSync(`${process.env.DIR}/plan-readable.txt`, 'utf8');
+-  const m = plan.match(/Plan: (\d+) to add, (\d+) to change, (\d+) to destroy/);
+-  const counts = m
+-    ? `**${m[1]}** to add · **${m[2]}** to change · **${m[3]}** to destroy`
+-    : (process.env.EXITCODE === '0' ? 'No changes.' : 'Could not parse a change count.');
+-  // A marker as the FIRST line, so the comment can be found again.
+-  //
+-  // Per DIRECTORY, the way the management plan's is per site: a pull
+-  // request touching two directories plans both, and one must not
+-  // overwrite the other (#160).
+-  const marker = `<!-- workload-plan:${process.env.DIR} -->`;
+-  const body = [
+-    marker,
+-    `### OpenTofu plan — \`${process.env.DIR}\``,
+-    '',
+-    counts,
+-    '',
+-    m && Number(m[3]) > 0
+-      ? '> This plan **destroys** resources. Read the full plan before approving.'
+-      : '',
+-    '',
+-    // Which commit this describes. A comment that replaces itself in
+-    // place is only ever as current as the last run that succeeded,
+-    // and nothing else distinguishes a stale one.
+-    `Planned at \`${context.sha.slice(0, 8)}\`.`,
+-    '',
+-    `The full plan is in the [job summary](${context.payload.repository.html_url}/actions/runs/${context.runId}) — it is not posted here, because a plan can contain attribute values nobody remembered to mark sensitive.`,
+-  ].join('\n');
+-
+-  // Replace rather than append.
+-  //
+-  // This posted unconditionally, so every `synchronize` added another
+-  // comment and the oldest sat at the top - on the lane that comments
+-  // about changes to real infrastructure. The other two comment paths
+-  // in this workflow already replace themselves; this one did not,
+-  // and nobody had seen it because the job gates on `environments/`
+-  // and `modules/`, which did not exist when it was written. It would
+-  // have started spamming on the first pull request of epoch 02,
+-  // which is exactly when nobody would remember it was known.
+-  //
+-  // Delete then create rather than update, for the reason #246 gives
+-  // about the management plan: an edited comment keeps the position
+-  // it was first posted at while its contents change underneath, so
+-  // it ends up sitting beside a push that no longer produced it.
+-  const repo = { owner: context.repo.owner, repo: context.repo.repo };
+-  const comments = await github.paginate(github.rest.issues.listComments, {
+-    ...repo, issue_number: context.issue.number, per_page: 100,
+-  });
+-  const existing = comments.find(c => c.body.startsWith(marker));
+-  if (existing) {
+-    await github.rest.issues.deleteComment({ ...repo, comment_id: existing.id });
+-  }
+-  await github.rest.issues.createComment({
+-    ...repo, issue_number: context.issue.number, body,
+-  });
+-};
+diff --git a/.github/workflows/integration-tests.yml b/.github/workflows/integration-tests.yml
+index 5649d00..1d6f66f 100644
+--- a/.github/workflows/integration-tests.yml
++++ b/.github/workflows/integration-tests.yml
+@@ -185,6 +185,28 @@ jobs:
+           ./toolshed/contractor kubeconfig -site "$SITE" --
+           go test -C tests/go -tags=integration -timeout 20m -v ./integration/...
+ 
++      # The as-built record every pull request's plan is compared with (#554).
++      # The converge takes one after each merge that changes the estate; this
++      # takes one every night as well, so a quiet month does not leave plans
++      # reading a record older than the artifact's ninety days - or one taken
++      # before a change made outside a converge. A record that is not quiet,
++      # or still holds a real value, is not saved, and the step says why.
++      - name: Take the as-built record
++        if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
++        env:
++          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
++          SITE: ${{ inputs.site || 'site0' }}
++        run: ./toolshed/contractor record-as-built -site "$SITE" -record-out "as-built/$SITE"
++
++      - name: Publish the as-built record
++        if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
++        uses: $/.github/workflows/upload-artifact
++        with:
++          name: as-built-${{ inputs.site || 'site0' }}
++          path: as-built/${{ inputs.site || 'site0' }}/
++          if-no-files-found: ignore
++          retention-days: 90
++
+       # always(), because the whole point is that no secret survives this job
+       # whatever happened above. A self-hosted runner is a long-lived machine:
+       # unlike an ephemeral GitHub-hosted one, a rendered config left behind
+diff --git a/.github/workflows/upload-artifact/action.yml b/.github/workflows/upload-artifact/action.yml
+new file mode 100644
+index 0000000..1a1baea
+--- /dev/null
++++ b/.github/workflows/upload-artifact/action.yml
+@@ -0,0 +1,37 @@
++# The one place the actions/upload-artifact commit is written.
++#
++# tests/go/repo/action_pins_test.go allows an action's commit to be written
++# once; the converge's verdict and the as-built record from two workflows
++# needed it in three places.
++#
++# An empty retention-days is passed through as empty, which the action reads
++# as the repository's default.
++name: "Upload artifact"
++description: Upload files as an artifact of this run.
++
++inputs:
++  name:
++    description: The artifact's name.
++    required: true
++  path:
++    description: What to upload.
++    required: true
++  if-no-files-found:
++    description: warn, error or ignore.
++    required: false
++    default: warn
++  retention-days:
++    description: How long the artifact is kept; empty means the repository default.
++    required: false
++    default: ""
++
++runs:
++  using: composite
++  steps:
++    - name: Upload artifact
++      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
++      with:
++        name: ${{ inputs.name }}
++        path: ${{ inputs.path }}
++        if-no-files-found: ${{ inputs.if-no-files-found }}
++        retention-days: ${{ inputs.retention-days }}
+diff --git a/CLAUDE.md b/CLAUDE.md
+index e92c4db..a3c118f 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -80,9 +80,9 @@ depends on.
+ 
+ ### The four GitHub environments
+ 
+-Each gates one thing, and none overlaps another:
++Each holds the credential for one thing, and none overlaps another:
+ 
+-| Environment   | Gates                                            | Triggered by                 |
++| Environment   | Holds the credential for                         | Triggered by                 |
+ | ------------- | ------------------------------------------------ | ---------------------------- |
+ | `management`  | the platform itself - `contractor converge-site` | merge touching `management/` |
+ | `staging`     | workload deploys                                 | merge to `main`              |
+@@ -96,6 +96,14 @@ the site's own service account, with read and write on `site0` and read on
+ `site0-shared` and `estate-shared`, and nothing else. The contractor refuses a
+ token that can see more (`scripts/details/vaults`).
+ 
++**None of them needs a reviewer.** Every job naming an
++environment runs from `main` or on a schedule, never from a pull request: a
++pull request's plan runs on GitHub's runner against the as-built record and
++holds no credential (#554). So the only thing that reaches the estate is a
++merge, and the pull request's approval is the only gate.
++`tests/go/repo/selfhosted_test.go` refuses any pull-request job on the
++estate's runner.
++
+ ## Invariants
+ 
+ These hold across all epochs. Changing one is an epoch-level decision that
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index dbc41e5..177fc17 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -548,20 +548,6 @@ egress:
+       - api.github.com:443
+       - github.com:443
+ 
+-  - job: deploy-infrastructure.yml/plan
+-    policy: audit
+-    reason: >-
+-      Plans the workload tier against a real estate.
+-
+-      HARDEN-RUNNER DOES NOTHING ON THIS RUNNER. The scale set's pods are
+-      detected as ARC, and harden-runner then only writes its policy to
+-      stdout for a StepSecurity agent inside the cluster - which this estate
+-      does not run. It installs nothing, blocks nothing and records nothing:
+-      a real converge's log holds no destinations at all. So `audit` here
+-      audits nothing, `block` would block nothing, and there is no observed
+-      list to transcribe. Egress for these pods has to be controlled at the
+-      cluster's network layer instead (#411); until then it is uncontrolled
+-      and unrecorded, and this entry says so rather than implying otherwise.
+   - job: deploy-infrastructure.yml/apply
+     policy: audit
+     reason: >-
+@@ -618,19 +604,22 @@ egress:
+       - release-assets.githubusercontent.com:443
+ 
+   - job: deploy-infrastructure.yml/plan-estate
+-    policy: audit
++    policy: block
+     reason: >-
+-      Plans a real site, so it reaches the same set converge does.
++      Plans a pull request's change against the as-built record (#554), on
++      GitHub's runner and with no credential. The Go toolchain and OpenTofu
++      with its providers, fetched as the Validate lane fetches them, and
++      GitHub's API to find and download the record.
++    hosts:
++      - api.github.com:443
++      - get.opentofu.org:443
++      - github.com:443
++      - go.dev:443
++      - objects.githubusercontent.com:443
++      - registry.opentofu.org:443
++      - release-assets.githubusercontent.com:443
++      - storage.googleapis.com:443
+ 
+-      HARDEN-RUNNER DOES NOTHING ON THIS RUNNER. The scale set's pods are
+-      detected as ARC, and harden-runner then only writes its policy to
+-      stdout for a StepSecurity agent inside the cluster - which this estate
+-      does not run. It installs nothing, blocks nothing and records nothing:
+-      a real converge's log holds no destinations at all. So `audit` here
+-      audits nothing, `block` would block nothing, and there is no observed
+-      list to transcribe. Egress for these pods has to be controlled at the
+-      cluster's network layer instead (#411); until then it is uncontrolled
+-      and unrecorded, and this entry says so rather than implying otherwise.
+   - job: deploy-infrastructure.yml/plan-absence
+     policy: block
+     hosts:
+diff --git a/tests/go/repo/plan_comments_test.go b/tests/go/repo/plan_comments_test.go
+index bf1b560..ce682bb 100644
+--- a/tests/go/repo/plan_comments_test.go
++++ b/tests/go/repo/plan_comments_test.go
+@@ -12,26 +12,12 @@ import (
+ // A surface that accumulates is one that teaches a reader to stop looking at
+ // it, which costs far more than the thing being reported.
+ 
+-// WHY THERE IS NO "a plan lane declares no environment" CHECK HERE.
+-//
+-// There was one, briefly, for #158 - deployment records accumulate on a lane
+-// that never deploys, and the issue called removing the environment "a
+-// straightforward removal regardless". It is not, and the estate already knew
+-// why: TestNoPullRequestJobReachesTheSelfHostedRunnerUnguarded REQUIRES an
+-// environment on exactly these jobs.
+-//
+-// `plan` and `plan-estate` run on the self-hosted runner from a `pull_request`
+-// event. The fork guard excludes a fork; it does not exclude a branch pushed to
+-// this repository, and that set includes every collaborator, every bot with
+-// push access, and anything holding a leaked token. A GitHub environment with
+-// required reviewers is the only mechanism that makes such a branch wait for a
+-// human before it executes on a runner holding a vault token.
+-//
+-// So the environment on those lanes is doing two jobs, and #158 accounts for
+-// one of them. Removing it trades a misleading status surface for a real hole.
+-// The issue is reopened with that, and the honest options are marking the
+-// deployment inactive when the job finishes, or changing what the Environments
+-// view is expected to mean - not removal.
++// There is no "a plan lane declares no environment" check here, and now
++// there does not need to be: plans run on GitHub's runner against the
++// as-built record and name no environment at all (#554), and
++// TestNoPullRequestJobRunsOnTheEstatesRunner holds the reason that is safe.
++// #158 - deployment records accumulating on a lane that never deploys -
++// closes with it.
+ 
+ // Every comment the workflow posts is found and replaced, not appended.
+ //
+@@ -99,9 +85,11 @@ no longer produced it.`, name, line)
+ 		}
+ 	}
+ 
+-	if total < 3 {
++	// Two: the estate's plan and its absence. The workload tier's plan went
++	// with its job (#554).
++	if total < 2 {
+ 		t.Fatalf(`found %d createComment call(s) across the shared scripts, and there are
+-three plan comments.
++two plan comments.
+ 
+ The read has stopped matching, so a path that appends could be added without
+ this noticing.`, total)
+diff --git a/tests/go/repo/selfhosted_test.go b/tests/go/repo/selfhosted_test.go
+index d679d45..6e4e5b9 100644
+--- a/tests/go/repo/selfhosted_test.go
++++ b/tests/go/repo/selfhosted_test.go
+@@ -12,47 +12,37 @@ import (
+ 	"gopkg.in/yaml.v3"
+ )
+ 
+-// A pull request must never reach the self-hosted runner unattended.
++// A pull request's code never runs on the estate's runner (#554).
+ //
+-// The self-hosted runner is a machine on the estate's own network, with the
+-// credentials to plan and apply against real infrastructure. Everything a
+-// pull request can run is supposed to be hermetic - that is the line
+-// tests/README.md draws, and the reason pr-validation.yml can run in full on
+-// a fork's pull request without exposing anything.
++// The management pool is a machine on the estate's own network, holding the
++// credentials that converge real infrastructure. Everything a pull request
++// can run is supposed to reach nothing of value - that is what makes the
++// pull request's approval the only gate this estate needs.
+ //
+-// deploy-infrastructure.yml's Plan job is the exception that proves the rule:
+-// it is pull_request-triggered, runs-on self-hosted, and reads real state. It
+-// carries a fork guard, which is necessary and not sufficient:
++// It used to be enforced the other way round. The estate's plan ran pull
++// request code on that runner, so this test demanded a fork guard and an
++// environment on every such job, and a required reviewer on the environment
++// was what made a branch pushed to this repository wait for a human. Three
++// things were wrong with that: it put a click on every plan; this test could
++// never see whether the environment actually had a reviewer, and one named
++// here without one was open (staging was); and it made every collaborator,
++// bot and leaked token one unreviewed branch away from the vault token.
+ //
+-//	github.event.pull_request.head.repo.full_name == github.repository
+-//
+-// That excludes a fork. It does not exclude a branch pushed to this
+-// repository, which is a much larger set of people than it looks - every
+-// collaborator, every bot with push access, and anything holding a leaked
+-// token. Such a branch opens a pull request whose head repo IS this
+-// repository, sails past the guard, and executes on the runner.
+-//
+-// What closes that is the GitHub environment: `environment: staging` makes
+-// the job wait for a human when that environment carries required reviewers.
+-// So this test insists on both, because either alone leaves the runner
+-// reachable by somebody who should not reach it unattended.
+-//
+-// THE HALF THIS TEST CANNOT SEE: whether the environment actually has
+-// required reviewers configured. That lives in repository settings, not in
+-// the repository. Worse, naming an environment that does not exist is not an
+-// error - GitHub creates it on first use with no protection rules at all, so
+-// the file can look correct while the gate is wide open. The failure messages
+-// say so, because somebody satisfying this test by adding an `environment:`
+-// line and stopping there has not actually closed anything.
++// Plans now run against the as-built record on GitHub's runner and hold no
++// credential, so the rule can be the plain one: a pull-request job runs on a
++// GitHub-hosted runner, or on a pool declared here as the pull-request pool -
++// one with no secret and no route to the estate. Anything else is refused,
++// the management pool by name and any runner this cannot identify by
++// default, because a label nobody declared is a runner nobody vetted.
+ 
+-// forkGuardMarkers are the two halves of the comparison that excludes a
+-// fork's pull request. Both must be present: `head.repo.full_name` alone
+-// could be compared against anything, and `github.repository` appears in
+-// plenty of conditions that guard nothing.
+-var forkGuardMarkers = []string{
+-	"head.repo.full_name",
+-	"github.repository",
+-}
++// pullRequestPools are self-hosted pools built for pull-request work: no
++// secret, and egress that cannot reach the estate. None exists yet; the pool
++// that brings PR Validation onto the estate's compute is declared here when
++// it does, and not before its network policy is.
++var pullRequestPools = map[string]bool{}
++
++// hostedLabel is a runner GitHub provides.
++var hostedLabel = regexp.MustCompile(`^(ubuntu|windows|macos)-[a-z0-9.-]+$`)
+ 
+ // eventPin matches an equality test against a specific triggering event.
+ var eventPin = regexp.MustCompile(`github\.event_name\s*(==|!=)\s*'([a-z_]+)'`)
+@@ -125,115 +115,78 @@ func triggerNames(n *yaml.Node) []string {
+ 	return out
+ }
+ 
+-// isSelfHosted reports whether a runs-on selects a runner this project owns.
+-//
+-// `runs-on` may be a scalar, a list of labels, or a mapping with a `group`.
+-// A runner group is by definition a set of self-hosted runners, so the
+-// mapping form counts even when no label spells "self-hosted".
+-func isSelfHosted(n *yaml.Node) bool {
+-	name := scaleSetName()
++// pullRequestSafe reports whether a runs-on names only runners a pull
++// request may use: a GitHub-hosted one, or a declared pull-request pool. A
++// runner group, an expression, or any label not known is not safe, because
++// nothing here can say what it reaches.
++func pullRequestSafe(n *yaml.Node) bool {
++	safe := func(label string) bool { return hostedLabel.MatchString(label) || pullRequestPools[label] }
+ 	switch n.Kind {
+ 	case yaml.ScalarNode:
+-		return n.Value == name
++		return safe(n.Value)
+ 	case yaml.SequenceNode:
+-		for _, c := range n.Content {
+-			if c.Value == name {
+-				return true
+-			}
++		if len(n.Content) == 0 {
++			return false
+ 		}
+-	case yaml.MappingNode:
+-		for i := 0; i+1 < len(n.Content); i += 2 {
+-			if n.Content[i].Value == "group" {
+-				return true
+-			}
+-			if n.Content[i].Value == "labels" && isSelfHosted(n.Content[i+1]) {
+-				return true
++		for _, c := range n.Content {
++			if !safe(c.Value) {
++				return false
+ 			}
+ 		}
++		return true
+ 	}
+ 	return false
+ }
+ 
+-// auditWorkflow returns one finding per violation, plus the number of
+-// pull_request-reachable self-hosted jobs it examined.
++// auditWorkflow returns one finding per pull-request job on a runner a pull
++// request may not use, plus the number of pull-request jobs it examined.
+ //
+-// Separated from the walk so the rules can be exercised against synthetic
+-// workflows below. A guard test that has only ever been run against a
+-// repository that passes it has not been shown to catch anything.
++// Separated from the walk so the rule can be exercised against synthetic
++// workflows below. A guard that has only ever been run against a repository
++// that passes it has not been shown to catch anything.
+ func auditWorkflow(rel string, body []byte) (findings []string, examined int, err error) {
+ 	var wf workflowFile
+ 	if err := yaml.Unmarshal(body, &wf); err != nil {
+ 		return nil, 0, fmt.Errorf("parsing %s: %w", rel, err)
+ 	}
+ 
+-	var onPR, onPRTarget bool
++	onPR := false
+ 	for _, trigger := range triggerNames(&wf.On) {
+-		switch trigger {
+-		case "pull_request":
++		if trigger == "pull_request" || trigger == "pull_request_target" {
+ 			onPR = true
+-		case "pull_request_target":
+-			onPRTarget = true
+ 		}
+ 	}
+-	if !onPR && !onPRTarget {
++	if !onPR {
+ 		return nil, 0, nil
+ 	}
+ 
+-	// Map iteration is random; findings are sorted at the end so a failure
+-	// message reads the same on every run.
+ 	for name, job := range wf.Jobs {
+-		if !isSelfHosted(&job.RunsOn) || !reachableFromPullRequest(job.If) {
++		if !reachableFromPullRequest(job.If) {
+ 			continue
+ 		}
+ 		examined++
+-
+-		// pull_request_target runs the base repository's workflow with full
+-		// secrets while checking out the contributor's code. On a self-hosted
+-		// runner that is remote code execution on the estate's own network,
+-		// and no `if` makes it safe.
+-		if onPRTarget {
+-			findings = append(findings, fmt.Sprintf(`%s: job %q is triggered by pull_request_target and runs on the self-hosted runner.
+-
+-pull_request_target grants secrets to a workflow evaluating an outside
+-contributor's branch. Pointed at a machine on the estate's network, that is
+-not a gate with a weakness - it is remote code execution by design. Use
+-pull_request, which runs without secrets from a fork.`, rel, name))
++		if pullRequestSafe(&job.RunsOn) {
+ 			continue
+ 		}
+-
+-		missingGuard := false
+-		for _, marker := range forkGuardMarkers {
+-			if !strings.Contains(job.If, marker) {
+-				missingGuard = true
+-			}
+-		}
+-		if missingGuard {
+-			findings = append(findings, fmt.Sprintf("%s: job %q runs on the self-hosted runner from a pull request with no fork guard.\n\n"+
+-				"Its `if:` must compare the head repository against this one, so an outside\n"+
+-				"contributor's branch cannot execute on a machine holding real credentials:\n\n"+
+-				"    github.event.pull_request.head.repo.full_name == github.repository", rel, name))
++		runsOn := job.RunsOn.Value
++		if runsOn == "" {
++			runsOn = "a list, a group or an expression"
+ 		}
++		findings = append(findings, fmt.Sprintf(`%s: job %q runs pull-request code on %s.
+ 
+-		if job.Environment.IsZero() {
+-			findings = append(findings, fmt.Sprintf(`%s: job %q runs on the self-hosted runner from a pull request with no environment.
+-
+-The fork guard alone is not enough. It excludes a fork; it does not exclude a
+-branch pushed to this repository, and that set includes every collaborator,
+-every bot with push access, and anything holding a leaked token. Such a
+-branch's pull request passes the fork guard and executes on the runner.
+-
+-A GitHub environment with required reviewers is what makes that wait for a
+-human. Note that adding this line is only half the fix: an environment named
+-here but not configured in repository settings is created on first use with
+-NO protection rules, so the gate has to be confirmed in Settings ->
+-Environments as well.`, rel, name))
+-		}
++A pull request's code runs on a GitHub-hosted runner, or on a pool declared in
++pullRequestPools: one with no secret and no route to the estate. The
++management pool (%s) converges real infrastructure and is reached from main
++only. A fork guard or an environment does not change that: a branch pushed to
++this repository passes the first, and an environment is only a gate if
++somebody remembers to give it a reviewer - which is the approval this estate
++no longer asks for.`, rel, name, runsOn, scaleSetName()))
+ 	}
+ 	sort.Strings(findings)
+ 	return findings, examined, nil
+ }
+ 
+-func TestNoPullRequestJobReachesTheSelfHostedRunnerUnguarded(t *testing.T) {
++func TestNoPullRequestJobRunsOnTheEstatesRunner(t *testing.T) {
+ 	root := repoRoot(t)
+ 	dir := filepath.Join(root, ".github", "workflows")
+ 
+@@ -270,18 +223,17 @@ func TestNoPullRequestJobReachesTheSelfHostedRunnerUnguarded(t *testing.T) {
+ 		t.Fatalf("only %d workflows were parsed; this test is reading the wrong directory", workflows)
+ 	}
+ 	if examined == 0 {
+-		t.Fatal(`no pull_request-triggered job runs on the self-hosted runner.
+-
+-That is a safer repository than the one this test was written for, but it also
+-means the assertions above ran against nothing. If the Plan job in
+-deploy-infrastructure.yml was deliberately moved off the self-hosted runner,
+-delete this test with it rather than leaving it passing vacuously.`)
++		t.Fatal("no pull-request job was found at all, so this checked nothing: the workflows moved, or the reader stopped matching them")
++	}
++	if scaleSetName() == "" {
++		t.Fatal("the management pool's name could not be read from its manifest, so a finding could not name it")
+ 	}
+ }
+ 
+ // --- the rules themselves ---------------------------------------------------
+ 
+ func TestAuditWorkflowCatchesTheWaysInAndIgnoresTheOthers(t *testing.T) {
++	pool := scaleSetName()
+ 	cases := []struct {
+ 		name     string
+ 		yaml     string
+@@ -289,105 +241,65 @@ func TestAuditWorkflowCatchesTheWaysInAndIgnoresTheOthers(t *testing.T) {
+ 		examined int
+ 	}{
+ 		{
+-			name: "guarded and gated is the shape we want",
+-			yaml: `
+-on: {pull_request: null}
+-jobs:
+-  plan:
+-    runs-on: ` + scaleSetName() + `
+-    environment: staging
+-    if: github.event.pull_request.head.repo.full_name == github.repository
+-`,
++			name:     "a hosted runner is where pull-request code runs",
++			yaml:     "on: {pull_request: null}\njobs:\n  plan:\n    runs-on: ubuntu-latest\n",
+ 			findings: 0, examined: 1,
+ 		},
+ 		{
+-			// The case that motivated this test: a fork guard is not a
+-			// same-repo-branch guard, and this repository's bot can push one.
+-			name: "fork guard without an environment is still reachable",
++			// The shape this estate used to require, and the reason it no
++			// longer counts: both guards present, and still the estate's runner.
++			name: "guarded and gated on the management pool is still refused",
+ 			yaml: `
+ on: {pull_request: null}
+ jobs:
+   plan:
+-    runs-on: ` + scaleSetName() + `
++    runs-on: ` + pool + `
++    environment: management
+     if: github.event.pull_request.head.repo.full_name == github.repository
+ `,
+ 			findings: 1, examined: 1,
+ 		},
+ 		{
+-			name: "no guard at all is two findings",
+-			yaml: `
+-on: {pull_request: null}
+-jobs:
+-  plan:
+-    runs-on: ` + scaleSetName() + `
+-`,
+-			findings: 2, examined: 1,
+-		},
+-		{
+-			// The false positive the first draft produced.
+-			name: "a push-pinned job in a PR-triggered workflow is not reachable",
++			name: "a push-pinned job in a pull-request workflow is not reachable",
+ 			yaml: `
+ on:
+   pull_request: null
+   push: {branches: [main]}
+ jobs:
+-  apply:
+-    runs-on: ` + scaleSetName() + `
++  converge:
++    runs-on: ` + pool + `
+     if: github.event_name == 'push'
+ `,
+ 			findings: 0, examined: 0,
+ 		},
+ 		{
+-			name: "pull_request_target on self-hosted is refused outright",
+-			yaml: `
+-on: {pull_request_target: null}
+-jobs:
+-  plan:
+-    runs-on: ` + scaleSetName() + `
+-    environment: staging
+-    if: github.event.pull_request.head.repo.full_name == github.repository
+-`,
++			name:     "pull_request_target is held to the same rule",
++			yaml:     "on: {pull_request_target: null}\njobs:\n  plan:\n    runs-on: " + pool + "\n",
+ 			findings: 1, examined: 1,
+ 		},
+ 		{
+-			name: "a hosted runner is nobody's business here",
+-			yaml: `
+-on: {pull_request: null}
+-jobs:
+-  lint:
+-    runs-on: ubuntu-latest
+-`,
+-			findings: 0, examined: 0,
++			name:     "the management pool hidden in a label list",
++			yaml:     "on: {pull_request: null}\njobs:\n  plan:\n    runs-on: [" + pool + ", linux]\n",
++			findings: 1, examined: 1,
+ 		},
+ 		{
+-			name: "self-hosted hidden in a label list is still self-hosted",
+-			yaml: `
+-on: {pull_request: null}
+-jobs:
+-  plan:
+-    runs-on: [` + scaleSetName() + `, linux, x64]
+-`,
+-			findings: 2, examined: 1,
++			name:     "a runner group cannot be identified, so it is refused",
++			yaml:     "on: {pull_request: null}\njobs:\n  plan:\n    runs-on:\n      group: estate\n",
++			findings: 1, examined: 1,
+ 		},
+ 		{
+-			name: "a runner group is self-hosted by definition",
+-			yaml: `
+-on: {pull_request: null}
+-jobs:
+-  plan:
+-    runs-on:
+-      group: estate
+-`,
+-			findings: 2, examined: 1,
++			name:     "a label nobody declared is a runner nobody vetted",
++			yaml:     "on: {pull_request: null}\njobs:\n  plan:\n    runs-on: some-new-pool\n",
++			findings: 1, examined: 1,
+ 		},
+ 		{
+-			name: "a workflow no pull request can trigger is out of scope",
+-			yaml: `
+-on: {schedule: [{cron: "0 4 * * *"}]}
+-jobs:
+-  test:
+-    runs-on: ` + scaleSetName() + `
+-`,
++			name:     "an expression cannot be read, so it is refused",
++			yaml:     "on: {pull_request: null}\njobs:\n  plan:\n    runs-on: ${{ inputs.runner }}\n",
++			findings: 1, examined: 1,
++		},
++		{
++			name:     "a workflow no pull request can trigger is out of scope",
++			yaml:     "on: {schedule: [{cron: \"0 4 * * *\"}]}\njobs:\n  test:\n    runs-on: " + pool + "\n",
+ 			findings: 0, examined: 0,
+ 		},
+ 	}
+@@ -406,6 +318,15 @@ jobs:
+ 			}
+ 		})
+ 	}
++
++	// A pool declared for pull requests is allowed, which is how PR
++	// Validation reaches the estate's compute without reaching the estate.
++	pullRequestPools["estate-pull-requests"] = true
++	defer delete(pullRequestPools, "estate-pull-requests")
++	findings, _, _ := auditWorkflow("synthetic.yml", []byte("on: {pull_request: null}\njobs:\n  lint:\n    runs-on: estate-pull-requests\n"))
++	if len(findings) != 0 {
++		t.Errorf("a declared pull-request pool was refused: %v", findings)
++	}
+ }
+ 
+ func TestReachableFromPullRequest(t *testing.T) {
+diff --git a/tests/mutations.yml b/tests/mutations.yml
+index a4bd889..b69abb2 100644
+--- a/tests/mutations.yml
++++ b/tests/mutations.yml
+@@ -85,9 +85,20 @@
+ # require editing two places, and removing one should always require a visible,
+ # reviewable act rather than a quiet deletion. Same shape as
+ # tests/coverage-baseline.json, for the same reason.
+-floor: 166
++floor: 167
+ 
+ mutations:
++  - guard: TestNoPullRequestJobRunsOnTheEstatesRunner
++    file: .github/workflows/deploy-infrastructure.yml
++    find: "    # A pull request's code never runs on the estate's runner.\n    runs-on: ubuntu-latest\n"
++    replace: "    # A pull request's code never runs on the estate's runner.\n    runs-on: homelab-management\n"
++    mentions: "runs pull-request code on homelab-management"
++    why: >
++      Moving the plan back onto the estate's runner reads as a speed-up - it
++      already holds the providers. It hands every branch pushed to this
++      repository the estate's network and its runner, with no reviewer left to
++      stop it (#554).
++
+   - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
+     file: modules/applications/valheim/base/second-policy.yaml
+     create: |
+@@ -2528,8 +2539,6 @@ unprovable:
+     owed: true
+   - test: TestNoGitCredentialIsCreatedForFlux
+     owed: true
+-  - test: TestNoPullRequestJobReachesTheSelfHostedRunnerUnguarded
+-    owed: true
+   - test: TestNoSourceControlTokenInTheConfigTemplate
+     owed: true
+   - test: TestNoWorkflowDeclaresAVersionThatVersionsEnvOwns
