@@ -1,0 +1,142 @@
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 3daea26..6aa4eda 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -1,5 +1,13 @@
+ name: Deploy Infrastructure
+ 
++# Named for what each run does (#155). A pull request only plans and a merge
++# converges, and "Deploy Infrastructure  main  Queued" could not say which -
++# so cancelling one at 2am was a guess about whether it lost a plan or
++# prevented an apply.
++run-name: >-
++  ${{ github.event_name == 'pull_request' && format('Plan: {0}', github.event.pull_request.title)
++  || format('Converge: {0}', github.event.head_commit.message) }}
++
+ # Two halves of one gate.
+ #
+ # A pull request touching infrastructure gets a plan, posted back to it. A
+@@ -15,6 +23,11 @@ name: Deploy Infrastructure
+ # first real deployment and awkward to retrofit after.
+ on:
+   pull_request:
++    # closed as well, so closing a pull request cancels its plan: the run it
++    # starts joins the same concurrency group, cancels whatever of that pull
++    # request is still queued, and does nothing itself. A plan left waiting
++    # for a runner fires the day one exists, against a tree nobody wants.
++    types: [opened, synchronize, reopened, closed]
+     paths:
+       - "environments/**/infrastructure/**"
+       - "modules/infrastructure/**"
+@@ -35,11 +48,14 @@ on:
+ permissions:
+   contents: read
+ 
+-# One at a time, and never cancelled mid-flight. There is one estate and one
+-# state lock; a cancelled apply is how state gets left locked or half-written.
++# One at a time per ref. A converge is never cancelled mid-flight: there is one
++# estate and one state lock, and a cancelled apply is how state gets left
++# locked or half-written. A pull request's plan is: it reads and changes
++# nothing, so a newer push, or the pull request closing, replaces it rather
++# than queueing behind it. Only the newest plan of a pull request ever waits.
+ concurrency:
+   group: deploy-infrastructure-${{ github.ref }}
+-  cancel-in-progress: false
++  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+ 
+ # GitHub's default shell for `run:` is `bash -e {0}`, which has no
+ # pipefail: in `a | b` only b's exit status counts, so a failing command
+@@ -72,6 +88,9 @@ jobs:
+   # ---------------------------------------------------------------------
+   changes:
+     name: What changed
++    # Nothing to plan for a pull request that has closed; that run exists only
++    # to cancel the plan before it.
++    if: github.event.action != 'closed'
+     runs-on: ubuntu-latest
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+diff --git a/.github/workflows/github-script/plan-absence-comment.js b/.github/workflows/github-script/plan-absence-comment.js
+index 0a9b67e..2dee527 100644
+--- a/.github/workflows/github-script/plan-absence-comment.js
++++ b/.github/workflows/github-script/plan-absence-comment.js
+@@ -6,6 +6,18 @@
+ // directly. Values arrive through process.env, set on the calling step.
+ module.exports = async ({ github, context }) => {
+   const marker = '<!-- plan-absence -->';
++
++  // A plan cancelled because something replaced it is not an absent plan. A
++  // newer push supersedes a pull request's plan, and closing the pull request
++  // cancels it; both runs end "cancelled", and neither means the change went
++  // unplanned. Only a plan for the pull request's current head counts.
++  const {data: pr} = await github.rest.pulls.get({
++    owner: context.repo.owner, repo: context.repo.repo,
++    pull_number: context.issue.number,
++  });
++  if (pr.state !== 'open' || pr.head.sha !== context.payload.pull_request.head.sha) {
++    return;
++  }
+   const body = [
+     marker,
+     '## No plan was produced for this change',
+diff --git a/tests/js/unit/plan-absence-comment.test.ts b/tests/js/unit/plan-absence-comment.test.ts
+new file mode 100644
+index 0000000..145931b
+--- /dev/null
++++ b/tests/js/unit/plan-absence-comment.test.ts
+@@ -0,0 +1,55 @@
++import { describe, expect, it } from "vitest";
++import { createRequire } from "node:module";
++
++// The comment that says a management change went unplanned. It runs whenever
++// the plan job did not succeed - and since a newer push or a closed pull
++// request now cancels a plan (#438), "cancelled" often means "replaced", not
++// "missing". This holds it to speaking only when the plan it is about was
++// for the pull request as it stands.
++const require = createRequire(import.meta.url);
++const comment = require("../../../.github/workflows/github-script/plan-absence-comment.js");
++
++function fakeGitHub(pr: { state: string; head: { sha: string } }) {
++  const created: string[] = [];
++  const github = {
++    rest: {
++      pulls: { get: async () => ({ data: pr }) },
++      issues: {
++        listComments: async () => ({ data: [] }),
++        deleteComment: async () => ({}),
++        createComment: async ({ body }: { body: string }) => {
++          created.push(body);
++          return {};
++        },
++      },
++    },
++  };
++  const context = {
++    repo: { owner: "example", repo: "homelab" },
++    issue: { number: 7 },
++    payload: { pull_request: { head: { sha: "run-head" } } },
++  };
++  return { github, context, created };
++}
++
++describe("the plan-absence comment", () => {
++  it("speaks when the plan for the current head did not run", async () => {
++    const { github, context, created } = fakeGitHub({ state: "open", head: { sha: "run-head" } });
++    process.env.RESULT = "cancelled";
++    await comment({ github, context });
++    expect(created).toHaveLength(1);
++    expect(created[0]).toContain("No plan was produced");
++  });
++
++  it("stays quiet when a newer push replaced the plan", async () => {
++    const { github, context, created } = fakeGitHub({ state: "open", head: { sha: "newer" } });
++    await comment({ github, context });
++    expect(created).toHaveLength(0);
++  });
++
++  it("stays quiet when the pull request closed", async () => {
++    const { github, context, created } = fakeGitHub({ state: "closed", head: { sha: "run-head" } });
++    await comment({ github, context });
++    expect(created).toHaveLength(0);
++  });
++});
