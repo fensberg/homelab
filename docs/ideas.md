@@ -96,6 +96,11 @@ once it's actually being worked on.
   secrets and leases would make unnecessary rather than automated.
   That split is what makes this incremental rather than a big-bang cutover,
   which matters a great deal given there is one estate and no rehearsal target.
+  **A classification to start from.** The nearest neighbour sorts every secret
+  by whether it survives a rebuild and whether it is generated or supplied, and
+  gives each combination one mechanism; it is written up in
+  [03-workload.md](epochs/03-workload.md) and answers most of #345 before
+  OpenBao exists, because the External Secrets Operator reads 1Password too.
   **Hard requirement to close this epoch: secrets rotate on a cadence, without
   a human.** Not "OpenBao is deployed" - deployed and still handing out static
   credentials is the same posture as today with more moving parts. The

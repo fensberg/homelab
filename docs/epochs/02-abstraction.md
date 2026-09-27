@@ -1984,6 +1984,13 @@ What both roots need, they read from a file rather than from each other:
 `management/tunnel-routes.json` is read by the site root, for the routes
 through its own tunnel, and by the estate root, for the account's split tunnel.
 
+The nearest neighbour arrived at the same split first. [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11, keeps its
+backup buckets, PKI and persistent secrets in a `global` stack with a state of
+its own, so a cluster can be destroyed without touching it. That was read as a
+recommendation on 2026-09-11, while this estate was forgetting its buckets
+before a destroy and adopting them after; the estate root is that
+recommendation built.
+
 #### The lawyer holds the estate's credentials, and only those
 
 "Contractors don't build estates - lawyers do." The estate's verbs belong to a
