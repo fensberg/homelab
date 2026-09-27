@@ -3177,6 +3177,31 @@ compute without reaching the estate.
 
 ## Gotchas
 
+### What happens after a converge fails was never exercised, and three parts of it were wrong
+
+Found on 2026-09-27, the first converge after the vaults were split, when the
+environment's token turned out to be stale:
+
+- **A failure before any phase said "may have changed".** The contractor
+  exited 1 when the vault or the state passphrase could not be reached, which
+  the aftermath reads as "something may have been written", so it opened a P1
+  asking for a manual plan over an estate nobody had touched (#556). A run
+  that stops before its first phase now exits as untouched (#557).
+- **A converge `main` had moved past exited as a failure.** Its re-run refused
+  correctly - a re-run is never the tip of `main` - with the "untouched" code,
+  which the aftermath reads as "revert". It now has an exit code of its own,
+  and the aftermath does nothing for it.
+- **The revert has never once opened its pull request.** GitHub refuses to let
+  Actions open one, so every run pushed a branch and stopped, and told the
+  original pull request it had been reverted (#380). Three such branches had
+  accumulated. It now opens the pull request with the procurement App's token,
+  and comments only once the revert exists.
+
+The same day showed the scheduled half of the same problem: the nightly had
+failed for four days on that token and nothing said so. Every scheduled
+workflow now ends with a job that opens one issue when it fails and closes it
+on the next success (#441).
+
 ### Do not taint the control planes in the change that adds workers
 
 The instinct once workers exist is to taint the control planes so nothing lands
