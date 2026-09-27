@@ -1638,6 +1638,28 @@ here.
 
 ### The addressing scheme is computed once
 
+**Widened 2026-09-27 into an estate-wide address plan.** The operator wants
+any machine or person at one site to be able to reach another site _if
+granted_ (epoch 09), and names that work across sites. That needs more than
+one computation per site: it needs one computation for the estate, which is
+what guarantees no two sites ever share a range. So the bar is now a pure
+OpenTofu module, `modules/infrastructure/address-plan`, with no providers and
+no state, that:
+
+- **allocates** every site's ranges - machines, the load-balancer pool,
+  untrusted zones, and **pods and services**, which today every site shares
+  (`10.244.0.0/16`, `10.96.0.0/12`) and which would make routing between sites
+  impossible. site0 is allocated like every other site, with no exception for
+  being first; conforming it is a rebuild, and rebuilds are cheap;
+- **names** every addressed thing `<service>.<site>.<domain>`, with declared
+  aliases such as `proxmox.<domain>`, the domain read from the vault;
+- **is read, not restated**: the cluster root calls it, the lawyer reads each
+  site's routes from it (#536), and the contractor and the harness get the
+  same answers from `tofu console` against it.
+
+It holds no access rules. Who may reach what is epoch 09's, and refers to the
+plan's names.
+
 Four implementations of one scheme today, across two languages:
 
 ```text

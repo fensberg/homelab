@@ -75,6 +75,7 @@ earlier epoch whose decisions you are about to touch.
 | 06  | Consolidation  | repository-wide                       | Not started | [06-consolidation.md](06-consolidation.md)   |
 | 07  | Metered Egress | `clusters/management/`, `scripts/`    | Not started | [07-metered-egress.md](07-metered-egress.md) |
 | 08  | Agent Roles    | `.github/`, `scripts/`                | In progress | [08-agent-roles.md](08-agent-roles.md)       |
+| 09  | Access         | `management/estate/`                  | Not started | [09-access.md](09-access.md)                 |
 
 ## Working an epoch
 
