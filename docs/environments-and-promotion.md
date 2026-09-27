@@ -1,8 +1,10 @@
 # Environments and promotion
 
-What is allowed to change, where, and on what trigger. This is a design note
-rather than a plan: nothing here is built yet, and the point is to decide the
-shape before the shape decides itself.
+What is allowed to change, where, and on what trigger. Written as a design
+note before any of it existed. The workload half is now built: the fabricator
+builds each image once and records its digest, and production moves when a
+pull request changes that digest in `clusters/management/releases.yaml`
+(#510). The platform half is as described.
 
 ## Three different things get promoted, and they are not alike
 
@@ -116,12 +118,11 @@ progressive rollout the day a second site exists.
 | Merge to `main` touching `environments/`  | Staging workloads    | Pull request review                     |
 | A pull request bumping the production pin | Production workloads | Review, and staging having been healthy |
 | Merge to `main` touching `management/`    | The platform         | Reviewed plan, then the Health gate     |
-| Tag `v*`                                  | Nothing by itself    | It marks; it does not deploy            |
 
-The fourth row is worth stating because it is easy to get backwards. A tag is a
-label on a commit, and a commit is not an artefact. Deploying "the tag" invites
-the rebuild problem above. The tag records which digest was promoted; the digest
-is what runs.
+Tags play no part. A tag is a label on a commit, and a commit is not an
+artefact: deploying "the tag" invites the rebuild problem above. What moves
+production is the digest in `releases.yaml`, which is what runs. The `v*` tags
+that exist predate that and deploy nothing (#561).
 
 ## What an outside reviewer would criticise
 

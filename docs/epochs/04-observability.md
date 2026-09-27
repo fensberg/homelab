@@ -3,7 +3,7 @@
 - **Tier / path:** `clusters/management/infrastructure/`
 - **Branch:** `epoch/04-observability`
 - **PR:** #
-- **Status:** Not started
+- **Status:** In progress
 
 ## Goal
 

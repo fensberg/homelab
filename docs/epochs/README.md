@@ -9,14 +9,19 @@ earlier epoch whose decisions you are about to touch.
 
 ## State of the world
 
-- **Current epoch:** 03 — Workload, opened 2026-09-10 for the CNI its untrusted
-  workload is blocked on. Epoch 02 remains open rather than closed: the module
-  work is unfinished, and epoch 03 was brought forward because the game server
-  named as its success criterion needs enforced NetworkPolicy before it may run
-  at all. Epoch 01 signed off 2026-09-03; epoch 08 is part-built and paused.
-- **Built:** the phased ignition button (`scripts/contractor`), an
-  idempotent Proxmox playbook, Talos + Flux provisioning, codified overlay-network
-  route auto-approval, and a two-layer state backup story.
+- **Open epochs:** 02 — Abstraction, 03 — Workload, 04 — Observability and
+  08 — Agent Roles, all in progress at once. Epoch 03 was brought forward
+  because the game server named as its success criterion needed enforced
+  NetworkPolicy before it could run at all; epoch 02 carries the estate/site
+  split and the as-built record; epoch 04 built the monitoring stack (#435).
+  Epoch 01 signed off 2026-09-03.
+- **Built:** the site lifecycle program (`scripts/contractor`) and the
+  estate's (`scripts/lawyer`), each holding only its own scope's credentials;
+  an idempotent Proxmox playbook, Talos + Flux provisioning, codified
+  overlay-network route auto-approval, and a two-layer state backup story.
+  Pull requests are planned against the as-built record on GitHub's runner and
+  hold no credential, so no environment has a reviewer and the pull request's
+  approval is the only gate (#554, #558).
 - **Database:** CloudNativePG, reconciled by Flux, streaming backups to object
   storage. Declared in `clusters/management/`.
 - **Not yet built:** `modules/infrastructure/` and
@@ -26,16 +31,15 @@ earlier epoch whose decisions you are about to touch.
   server. The provider split that has to come before the module carving is
   designed but not built — see
   [02-abstraction.md](02-abstraction.md#the-split-is-two-roots-sharing-one-config-and-the-seam-is-two-values).
-- **No longer disposable:** the cluster holds a Valheim world that players
-  brought with them, and nothing gets it out except a hand-run `kubectl cp`
-  (#372). Every earlier record treats a rebuild as the routine answer to a
-  plumbing change, on the stated trigger of "real data on the estate". That
-  trigger has fired, so a rebuild now costs the world until the backup exists.
-  Re-cost anything that reaches for one.
-- **Not measured:** nothing watches the estate between runs. No metrics, no
-  alerts, no scaling thresholds — see epoch 04. There is no metrics-server, so
-  `kubectl top` does not work and the demand factor the capacity plan rests on
-  is unverified.
+- **No longer disposable, but recoverable:** the cluster holds a Valheim world
+  that players brought with them. It is backed up hourly to the site's
+  production bucket and restored before the server starts, which is how it
+  came back after the estate/site rebuild of 2026-09-25. A rebuild is still
+  not free - it costs up to an hour of the world - so re-cost anything that
+  reaches for one.
+- **Measured, partly:** kube-prometheus-stack runs in the cluster and routes
+  alerts to the estate's alerting webhook (#435). What it answers, and what it
+  does not yet, is in [04-observability.md](04-observability.md).
 - **Partitioned by affinity, not by taint:** `Taints: <none>` on every node
   still, but CI and all three operators now carry a **required**
   anti-control-plane node affinity and a priority class, so nothing this
@@ -50,10 +54,12 @@ earlier epoch whose decisions you are about to touch.
   Identity is keyed correctly as of epoch 01, so a single-node change is now
   expressible; nothing drives it in order. Epoch 05 adopts Cluster API and
   `talosctl upgrade` for that rather than building a driver.
-- **Who can do what:** Claude runs unprivileged, with no vault access and a
-  GitHub identity that can push a branch and nothing else — it proposes, a
-  human merges. Enforced by the OS, the absent 1Password account and a
-  fine-grained token, not by instructions. See
+- **Who can do what:** Claude runs unprivileged, with no vault access, and
+  publishes as a GitHub App that can push signed commits and open pull
+  requests but cannot approve one or change `.github/workflows/` - it
+  proposes, a human approves and merges, and workflow changes arrive as
+  patches the human applies. Enforced by the OS, the absent 1Password account
+  and the App's permissions, not by instructions. See
   [the boundary decision](01-ignition.md#the-agents-boundary-is-enforced-not-agreed),
   which carries the commands to re-verify it rather than trust the write-up.
 
@@ -62,9 +68,9 @@ earlier epoch whose decisions you are about to touch.
 | #   | Name           | Tier / path                           | Status      | Record                                       |
 | --- | -------------- | ------------------------------------- | ----------- | -------------------------------------------- |
 | 01  | Ignition       | `management/`                         | Complete    | [01-ignition.md](01-ignition.md)             |
-| 02  | Abstraction    | `modules/`                            | Next        | [02-abstraction.md](02-abstraction.md)       |
+| 02  | Abstraction    | `modules/`                            | In progress | [02-abstraction.md](02-abstraction.md)       |
 | 03  | Workload       | `environments/`                       | In progress | [03-workload.md](03-workload.md)             |
-| 04  | Observability  | `clusters/management/infrastructure/` | Not started | [04-observability.md](04-observability.md)   |
+| 04  | Observability  | `clusters/management/infrastructure/` | In progress | [04-observability.md](04-observability.md)   |
 | 05  | Node Lifecycle | `management/`, `scripts/contractor/`  | Not started | [05-node-lifecycle.md](05-node-lifecycle.md) |
 | 06  | Consolidation  | repository-wide                       | Not started | [06-consolidation.md](06-consolidation.md)   |
 | 07  | Metered Egress | `clusters/management/`, `scripts/`    | Not started | [07-metered-egress.md](07-metered-egress.md) |
@@ -72,11 +78,15 @@ earlier epoch whose decisions you are about to touch.
 
 ## Working an epoch
 
-1. Branch: `epoch/<nn>-<slug>` off `main`.
+1. Branch each piece of work off `main`, and open its pull request against
+   `main`. Epoch branches are retired; an epoch is now a record and an issue
+   label, not a branch.
 2. Do the work. Append decisions to the epoch record _as you make them_ —
    reconstructing a rationale three months later is the expensive part.
-3. Before merging: fill in Outcome, Deferred, and Gotchas; flip the status.
-4. Merge the PR. Tag `v*` when the change should reach production.
+3. When an epoch closes: fill in Outcome, Deferred, and Gotchas; flip the
+   status here and in the record's own header.
+4. Production workloads move by a pull request changing
+   `clusters/management/releases.yaml`, not by a tag (#510).
 
 Start a fresh session per epoch rather than one long chat. `CLAUDE.md` plus
 this log is enough to bring a cold session fully up to speed.

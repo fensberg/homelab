@@ -31,28 +31,30 @@ everything below against that.
 
 ## The off-site copy is two different things
 
-It is tempting to think of the R2 bucket as "the encrypted fallback". One
-_prefix_ is. The bucket is not.
+It is tempting to think of object storage as "the encrypted fallback". One
+bucket is. The other is not.
 
-| Prefix                | Written by                  | Protection                                                                                                                                                 |
-| --------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `management-cluster/` | ignite's Backup phase       | age-encrypted. The private identity is deliberately absent from config, state and the cluster — the automation can write backups and cannot read them back |
-| `postgres/`           | CloudNativePG, continuously | `compression: gzip`. That is the whole of it                                                                                                               |
+| Bucket                     | Written by                  | Protection                                                                                                                                                 |
+| -------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<estate>-<site>-state`    | the Backup phase            | age-encrypted. The private identity is deliberately absent from config, state and the cluster — the automation can write backups and cannot read them back |
+| `<estate>-<site>-database` | CloudNativePG, continuously | `compression: gzip`, under `postgres/`. That is the whole of it                                                                                            |
 
 The second row is the problem, because **the Postgres database _is_ the
-OpenTofu state.** So `postgres/` is a continuously-refreshed, readable copy of
-everything the age file protects: the Talos PKI, the state database password,
-and the R2 credentials themselves.
+OpenTofu state.** So the database bucket is a continuously-refreshed, readable
+copy of everything the age file protects: the Talos PKI, the state database
+password, and the object storage keys themselves.
 
 That closes a loop worth drawing explicitly:
 
 ```text
-leaked state file  ->  R2 credentials  ->  read postgres/  ->  the whole PKI
+leaked state file  ->  the database bucket's key  ->  read postgres/  ->  the whole PKI
 ```
 
 The age encryption does not stand in the way, because an attacker never has to
-touch the age file. They read the other prefix. One set of credentials covers
-both — CloudNativePG and the Backup phase authenticate with the same key.
+touch the age file. They read the other bucket. The two buckets have separate,
+bucket-scoped keys since #485, which stopped the cluster's key deleting the
+state dumps - but the database bucket's key is in state, and that is the one
+the loop needs.
 
 **This is the real argument for Layer 1, and it is stronger than "it protects
 the local file".** Encrypt the state and the ciphertext flows all the way
@@ -89,8 +91,8 @@ because none of them touch state.
 There is no fallback method and no migration mode in the program. A fresh
 estate is encrypted from its first apply and has no unencrypted state to fall
 back to, and a fallback left switched on is precisely what keeps unencrypted
-state readable. If ignite finds `TF_ENCRYPTION` already set it leaves it
-alone, which is what makes the manual cutover below possible without fighting
+state readable. If the contractor finds `TF_ENCRYPTION` already set it
+leaves it alone, which is what makes the manual cutover below possible without fighting
 it.
 
 ```hcl
@@ -108,10 +110,10 @@ state {
 ```
 
 > **Migrating an estate that already has unencrypted state is a deliberate
-> one-time procedure, run by hand.** It is not something ignite offers, because
+> one-time procedure, run by hand.** It is not something the contractor offers, because
 > it would be a code path used once per estate that weakens the property for as
 > long as it stays switched on. Export `TF_ENCRYPTION` yourself with the block
-> below and ignite will leave it alone.
+> below and the contractor will leave it alone.
 >
 > The sequence below has been **rehearsed for real** — as a hermetic test in
 > `tests/go/encryption`, and by hand once against a throwaway Postgres in
@@ -164,8 +166,8 @@ attacker.
 
 Easy because R2 API tokens are created and revoked through the Cloudflare API
 with no downtime, and the credential in the cluster is a Kubernetes secret
-CloudNativePG re-reads. Urgent because of the loop above: these keys read
-`postgres/`, and `postgres/` is the state. **Treat a leaked state file as a
+CloudNativePG re-reads. Urgent because of the loop above: the database
+bucket's key reads `postgres/`, and `postgres/` is the state. **Treat a leaked state file as a
 leaked PKI even if the age dump was never touched.**
 
 The estate mints these keys (management/estate/site/object-storage.tf): one
@@ -272,10 +274,10 @@ re-proposed:
 
 There are two encryption keys and they do different jobs:
 
-| Key                                 | Where it lives              | What it protects                                                                                         | Who can use it       |
-| ----------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------- |
-| OpenTofu `TF_ENCRYPTION` passphrase | 1Password, read by ignite   | State at rest — the local file, the Postgres rows, and therefore the WAL and base backups in `postgres/` | The automation       |
-| age identity                        | Offline, in a human's hands | The standalone dump in `management-cluster/`                                                             | **Nobody automatic** |
+| Key                                 | Where it lives                    | What it protects                                                                                         | Who can use it       |
+| ----------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------- |
+| OpenTofu `TF_ENCRYPTION` passphrase | 1Password, read by the contractor | State at rest — the local file, the Postgres rows, and therefore the WAL and base backups in `postgres/` | The automation       |
+| age identity                        | Offline, in a human's hands       | The standalone dumps in the state bucket                                                                 | **Nobody automatic** |
 
 That is the whole custody story. Day to day there is one key. The age identity
 is used for nothing routine and exists so that one artefact survives the
@@ -288,9 +290,8 @@ deliberate limit, not an oversight.
 
 ### Storage stays flat, and never at the cost of the only copy
 
-`management-cluster/` keeps `latest.tfstate.age` plus **one** previous
-generation. Two objects, fixed, forever. `postgres/` keeps 7 days rather than
-30 — still a real point-in-time-recovery window, at roughly a quarter of the
+The state bucket keeps `latest.tfstate.age` plus **one** previous generation.
+Two objects, fixed, forever. `postgres/` keeps 7 days rather than 30 — still a real point-in-time-recovery window, at roughly a quarter of the
 storage, for a database holding a few hundred kilobytes.
 
 The prune obeys one rule, which is the rule that was asked for: **never delete
@@ -330,8 +331,10 @@ It checks four things:
    fields are not. A last-failure more recent than the last success means
    archiving is broken right now.
 
-**The alert is the workflow failing**, which GitHub already emails about — one
-fewer moving part than a monitoring stack. And the nightly backup is also the
+**The alert is the workflow failing**, which GitHub emails about. That has
+proved weaker than it sounds: the nightly failed on every run from 2026-09-24
+to 2026-09-27 on a stale vault token and nobody noticed until a converge
+failed the same way (#441). And the nightly backup is also the
 repair: if last night's was missing or stale, tonight's replaces it, and if it
 cannot, the run goes red.
 

@@ -3,7 +3,7 @@
 - **Tier / path:** `modules/`
 - **Branch:** `epoch/02-abstraction`
 - **PR:** —
-- **Status:** Not started
+- **Status:** In progress
 
 ## Goal
 
