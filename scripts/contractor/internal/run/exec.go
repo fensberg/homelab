@@ -13,6 +13,7 @@ import (
 
 	"homelab/details/tofustate"
 
+	"homelab/contractor/steps"
 	"homelab/details/procenv"
 )
 
@@ -194,7 +195,7 @@ func refreshMachinesArgs() []string {
 
 // The control-plane VMs, as one address. A destroy that cannot see their real
 // power state is the one that hangs.
-const machinesAddress = "proxmox_virtual_environment_vm.talos_cp"
+const machinesAddress = steps.ControlPlanes
 
 // destroyArgs builds the teardown's arguments. Split out from the call so the
 // one flag that is not obvious is testable without an estate to destroy.
@@ -307,7 +308,7 @@ const heartbeat = 30 * time.Second
 // A short list on purpose. A number here is a measurement, not a guess, and
 // one nobody has measured does not belong.
 var slowReads = map[string]string{
-	"data.talos_cluster_health.this[0]": "a fresh cluster usually answers in about two minutes, and the read gives up at ten",
+	steps.ClusterHealth: "a fresh cluster usually answers in about two minutes, and the read gives up at ten",
 }
 
 // summariseStream is summariseApply with its clock handed to it.

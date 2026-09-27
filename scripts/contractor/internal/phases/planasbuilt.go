@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"homelab/contractor/internal/run"
+	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
 )
 
@@ -37,6 +38,7 @@ func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu) error {
 	raw, meta, err := asbuilt.PlanAgainst(asbuilt.PlanInputs{
 		Root: ctx.ClusterDir, Work: ctx.AsBuiltDir, Record: recordDir,
 		Template: tpl, Site: ctx.Site,
+		Sequence: steps.Plan(),
 	}, tofu)
 	if err != nil {
 		return err

@@ -2,11 +2,9 @@ package run
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
 	"sort"
-	"strings"
+
+	"homelab/details/tofustate"
 )
 
 // A `moved` block and a targeted apply cannot both be pending.
@@ -54,14 +52,6 @@ import (
 // resources. Once a move is recorded the block becomes a no-op, and when
 // somebody eventually deletes it this stops doing anything at all.
 
-// movedBlock matches one `moved { ... }`. These blocks never nest, so
-// stopping at the first closing brace is correct rather than lucky.
-var movedBlock = regexp.MustCompile(`(?s)\bmoved\s*\{(.*?)\}`)
-
-// movedEndpoint pulls the address off a `from =` or `to =` line. Addresses are
-// bare references, never quoted, so this deliberately does not accept a string.
-var movedEndpoint = regexp.MustCompile(`(?m)^\s*(from|to)\s*=\s*([A-Za-z_][\w.\[\]"-]*)\s*$`)
-
 // PendingMoves returns every address named by a `moved` block in the OpenTofu
 // source at dir, sorted and deduplicated.
 //
@@ -69,31 +59,17 @@ var movedEndpoint = regexp.MustCompile(`(?m)^\s*(from|to)\s*=\s*([A-Za-z_][\w.\[
 // "what does the configuration say" and answering it with a plan would need the
 // plan that is refusing to build.
 //
-// Deliberately not in internal/tfsource, which says in its own header that it
-// is not an HCL parser and must not grow into one. This is a second small
-// reader with one job, not an extension of that one.
+// The reading is details/tofustate's Moves, shared with the plan against the
+// as-built record, which has to settle the same moves in its own copy.
 func PendingMoves(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
+	moves, err := tofustate.Moves(dir)
 	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", dir, err)
+		return nil, err
 	}
-
 	seen := map[string]bool{}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".tf") {
-			continue
-		}
-		body, readErr := os.ReadFile(filepath.Join(dir, e.Name()))
-		if readErr != nil {
-			return nil, fmt.Errorf("reading %s: %w", e.Name(), readErr)
-		}
-		for _, block := range movedBlock.FindAllStringSubmatch(string(body), -1) {
-			for _, endpoint := range movedEndpoint.FindAllStringSubmatch(block[1], -1) {
-				seen[endpoint[2]] = true
-			}
-		}
+	for _, m := range moves {
+		seen[m.From], seen[m.To] = true, true
 	}
-
 	out := make([]string, 0, len(seen))
 	for addr := range seen {
 		out = append(out, addr)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gruntwork-io/terratest/modules/terraform"
 
+	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
 	"homelab/tests/harness"
 )
@@ -31,7 +32,7 @@ import (
 // render and sterilize the workspace out from under the tests after it.
 //
 // Then it is used the way a pull request uses it: saved, and the code as it
-// stands planned against it. That plan has to be quiet too - a record that
+// stands planned against it, step by step as the converge would apply it. That plan has to be quiet too - a record that
 // is quiet on its own terms but not once saved and read back would put false
 // changes in every pull request's plan.
 //
@@ -92,6 +93,7 @@ func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
 		Root: opts.TerraformDir, Work: work, Record: saved,
 		Template: tpl, Site: harness.Site(),
 		PluginDir: filepath.Join(opts.TerraformDir, ".terraform", "providers"),
+		Sequence:  steps.Plan(),
 	}, tofu)
 	if err != nil {
 		t.Fatal(err)

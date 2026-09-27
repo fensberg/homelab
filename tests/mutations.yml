@@ -85,9 +85,21 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 170
+floor: 171
 
 mutations:
+  - guard: TestTheContractorWritesAResourceAddressInOnePlace
+    file: scripts/contractor/internal/phases/overlay.go
+    find: "const overlayKeyAddress = steps.OverlayKey"
+    replace: 'const overlayKeyAddress = "tailscale_tailnet_key.hypervisor[0]"'
+    mentions: "writes a resource address"
+    reads_source: true
+    why: >
+      An address written where it is used reads as clearer than a constant a
+      file away. It is the literal that stays unprefixed when the root becomes
+      a module, and the one place the plan and the converge can disagree
+      again (#497).
+
   - guard: TestEveryScheduledWorkflowReportsItsFailures
     file: .github/workflows/expedite.yml
     find: "    needs: [check, deliver, release]\n    if: always() && github.event_name == 'schedule'"
@@ -2464,6 +2476,10 @@ unprovable:
   # proves the guard. Its table holds the values it must find and the prose it
   # must leave.
   - test: TestSiteValuesFindsValuesAndLeavesProse
+    reason: table
+  # The reader behind TestTheContractorWritesAResourceAddressInOnePlace, which
+  # its own ledger entry proves.
+  - test: TestAddressLiteralsAreFoundAndProseIsNot
     reason: table
   # The transcript shapes. A pattern that stops matching reports nothing and
   # looks exactly like a repository with no transcripts in it, so the shapes

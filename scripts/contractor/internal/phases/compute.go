@@ -13,6 +13,7 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/contractor/steps"
 	"homelab/details/onepassword"
 )
 
@@ -93,43 +94,10 @@ func Compute(ctx *run.Context) error {
 		}
 	}
 
-	// Three steps, not one apply targeting everything: download the image
-	// (API only), build one template per hypervisor from it (the only step
-	// that needs SSH - see compute.tf's talos_template resource for why
-	// that's now confined to a single import instead of one per node), then
-	// clone the real control-plane VMs from that template. Cloning is a
-	// native, API-only Proxmox operation the provider documents built-in
-	// retries for, so - unlike the file_id import this replaced - it is
-	// safe to apply all of them together in one call.
-	run.Info("creating the disk image")
-	if err := run.TofuApply(ctx, "tofu apply (compute: disk image)",
-		"proxmox_download_file.talos_disk_image",
-	); err != nil {
+	// The applies are declared in homelab/contractor/steps, which the plans
+	// walk as well, so what a plan checks is what this does (#497).
+	if err := applySteps(ctx, "compute", len(net.WorkerIPs) > 0); err != nil {
 		return err
-	}
-	run.Info("creating the Talos template")
-	if err := run.TofuApply(ctx, "tofu apply (compute: template)",
-		"proxmox_virtual_environment_vm.talos_template",
-	); err != nil {
-		return err
-	}
-	run.Info(fmt.Sprintf("cloning %d control-plane VM(s)", len(net.NodeIPs)))
-	if err := run.TofuApply(ctx, "tofu apply (compute: vms)",
-		"proxmox_virtual_environment_vm.talos_cp",
-	); err != nil {
-		return err
-	}
-	// Workers are applied in their own step rather than folded into the target
-	// above. A worker failing to clone should not be indistinguishable from a
-	// control plane failing to clone: one is a capacity problem and the other
-	// stops the cluster existing at all.
-	if len(net.WorkerIPs) > 0 {
-		run.Info(fmt.Sprintf("cloning %d worker VM(s)", len(net.WorkerIPs)))
-		if err := run.TofuApply(ctx, "tofu apply (compute: workers)",
-			"proxmox_virtual_environment_vm.talos_worker",
-		); err != nil {
-			return err
-		}
 	}
 	run.Ok("VMs created")
 
@@ -180,7 +148,7 @@ maintenance-mode banner:
 func reclaimOrphanedDiskImage(ctx *run.Context, cfg *config.Config, net *config.SiteNetwork) error {
 	site := cfg.Sites[ctx.Site]
 	hv := net.Hypervisors[0]
-	address := fmt.Sprintf("proxmox_download_file.talos_disk_image[%q]", hv.Hostname)
+	address := fmt.Sprintf(steps.DiskImage+"[%q]", hv.Hostname)
 
 	// Already tracked: this is an ordinary re-run and the image is ours.
 	if run.InState(ctx, address) {

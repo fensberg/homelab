@@ -23,14 +23,17 @@ type PlanInputs struct {
 	// Template is the config template as the change would leave it.
 	Template []byte
 	Site     string
+	// Sequence is the converge's steps, planned in order (#497).
+	Sequence []PlanStep
 	// PluginDir, when set, is a provider cache to plan from, so a machine
 	// that already holds the providers does not fetch them again. A hosted
 	// runner leaves it empty and fetches them from the registry.
 	PluginDir string
 }
 
-// PlanAgainst plans a change against a record, offline, and returns the plan
-// in JSON with the record's metadata.
+// PlanAgainst plans a change against a record, offline, the way a converge
+// would apply it - its steps in order - and returns the whole plan in JSON with
+// the record's metadata.
 //
 // The config is the change's template filled in from the record: the change's
 // own literals, which are what it proposes, and the record's stand-ins for
@@ -77,12 +80,9 @@ func PlanAgainst(in PlanInputs, tofu Tofu) ([]byte, Meta, error) {
 	if _, stderr, err := tofu(dir, env, init...); err != nil {
 		return nil, meta, fmt.Errorf("initialising the plan:\n%s", ErrorSummary(stderr))
 	}
-	if _, stderr, err := tofu(dir, env, "plan", "-refresh=false", "-lock=false", "-input=false", "-no-color", "-out=tfplan"); err != nil {
-		return nil, meta, fmt.Errorf("the plan against the record failed:\n%s", ErrorSummary(stderr))
-	}
-	plan, _, err := tofu(dir, env, "show", "-json", "tfplan")
+	plan, err := PlanSteps(StepsInputs{Dir: dir, Env: env, Sequence: in.Sequence}, tofu)
 	if err != nil {
-		return nil, meta, fmt.Errorf("reading the plan back: %w", err)
+		return nil, meta, err
 	}
 	return plan, meta, nil
 }

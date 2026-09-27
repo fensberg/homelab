@@ -263,6 +263,10 @@ func Pending(plan []byte) ([]string, error) {
 	return out, nil
 }
 
+// PluginDir is the flag that points an init at a root's own provider cache,
+// so a copy of the root plans with the providers it already holds.
+func PluginDir(root string) string { return pluginDir(root) }
+
 func pluginDir(root string) string {
 	return "-plugin-dir=" + filepath.Join(root, ".terraform", "providers")
 }
