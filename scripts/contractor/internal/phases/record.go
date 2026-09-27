@@ -39,12 +39,12 @@ import (
 func Record(ctx *run.Context) error {
 	run.WritePhase("Record", "Take the as-built record: the estate as converged, with nothing real in it.")
 	defer func() { _ = run.RemoveTreeIfExists(ctx.AsBuiltDir) }()
-	return recordIn(ctx, execTofu)
+	return takeRecord(ctx, execTofu)
 }
 
-// recordIn is Record with its tofu handed to it, so the converge's rule -
+// takeRecord is Record with its tofu handed to it, so the converge's rule -
 // warn, never fail - is testable.
-func recordIn(ctx *run.Context, tofu asbuilt.Tofu) error {
+func takeRecord(ctx *run.Context, tofu asbuilt.Tofu) error {
 	err := record(ctx, tofu)
 	if err != nil && ctx.Converge {
 		run.Warn("no as-built record was taken, and the converge stands: " + err.Error())

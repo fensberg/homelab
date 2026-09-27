@@ -126,7 +126,7 @@ func TestAPublishableRecordIsSavedWhereAsked(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GITHUB_SHA", "0123456789abcdef")
-	if err := recordIn(ctx, scriptedTofu); err != nil {
+	if err := takeRecord(ctx, scriptedTofu); err != nil {
 		t.Fatal(err)
 	}
 	_, _, meta, err := asbuilt.Read(ctx.RecordOut)
@@ -146,11 +146,11 @@ func TestARecordFailureNeverFailsAConverge(t *testing.T) {
 		return nil, []byte("Error: the estate is unreachable"), os.ErrDeadlineExceeded
 	}
 	ctx := recordContext(t)
-	if err := recordIn(ctx, failing); err == nil {
+	if err := takeRecord(ctx, failing); err == nil {
 		t.Error("a failed record outside a converge was not an error")
 	}
 	ctx.Converge = true
-	if err := recordIn(ctx, failing); err != nil {
+	if err := takeRecord(ctx, failing); err != nil {
 		t.Errorf("a failed record failed the converge: %v", err)
 	}
 }
