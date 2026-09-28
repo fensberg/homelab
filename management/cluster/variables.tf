@@ -93,7 +93,10 @@ locals {
 
   # The Services an enrolled device routes to, by host number in the site's
   # service range. Written once for the site and the estate roots alike.
-  tunnel_routes = jsondecode(file("${path.module}/../tunnel-routes.json")).routes
+  # Reached from the repository's top, as every file outside this root is: a
+  # plan against the as-built record runs a copy of this root at the same
+  # depth, and only a "../../" path still leads to the same file from there.
+  tunnel_routes = jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes
 
   # Each hypervisor's datastores, by the hostname machines are placed on. They
   # are facts about the host, so they come from its config entry.

@@ -33,7 +33,7 @@ locals {
 
   # Written once, read by both roots: a host number in every site's service
   # range, which the address plan turns into each site's own address.
-  tunnel_routes = jsondecode(file("${path.module}/../tunnel-routes.json")).routes
+  tunnel_routes = jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes
 
   # Each site's routes as addresses, by the site key the estate grants a plot
   # to. A plot the sites' template does not declare has none, and the grants

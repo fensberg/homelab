@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 173
+floor: 174
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -117,6 +117,15 @@ mutations:
     why: >
       A pull request closed by merging reports main as its ref, so a group keyed
       by ref lets its closing run cancel the converge the merge started (#573).
+
+  - guard: TestARootReachesOutsideItselfFromTheTop
+    file: management/cluster/variables.tf
+    find: 'jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes'
+    replace: 'jsondecode(file("${path.module}/../tunnel-routes.json")).routes'
+    mentions: "reaches outside its root"
+    why: >
+      The pull-request plan runs a copy of the root at the same depth, so a
+      one-level path points nowhere and the plan refuses before its first step.
 
   - guard: TestEveryScheduledWorkflowReportsItsFailures
     file: .github/workflows/expedite.yml
@@ -2515,6 +2524,10 @@ unprovable:
   # which its own ledger entry proves. Its table holds each way to write a
   # fact down and the forms that read it from the declaration.
   - test: TestHypervisorFactsInCatchesEachWayToWriteOne
+    reason: table
+  # The reader behind TestARootReachesOutsideItselfFromTheTop, which its own
+  # ledger entry proves.
+  - test: TestClimbsWrongFindsEveryOtherWayUp
     reason: table
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.
