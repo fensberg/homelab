@@ -87,6 +87,11 @@ func PlanSteps(in StepsInputs, tofu Tofu) ([]byte, error) {
 // leaves the state in the same place. A move whose old address is not in state
 // - already settled, or never built - has nothing to record.
 func settleMoves(in StepsInputs, tofu Tofu, say func(string)) error {
+	if n, err := ForgetReads(in.Dir, in.Env, tofu, false); err != nil {
+		return err
+	} else if n > 0 {
+		say(fmt.Sprintf("forgot %d cached data-source read(s), as a converge does first", n))
+	}
 	moves, err := tofustate.Moves(in.Dir)
 	if err != nil {
 		return err
@@ -119,6 +124,43 @@ func settleMoves(in StepsInputs, tofu Tofu, say func(string)) error {
 		}
 	}
 	return nil
+}
+
+// ForgetReads removes every data source's cached read from state, and says
+// how many there were.
+//
+// A data source in state is only a cache: every plan reads it again. But a
+// cached read at an address the configuration no longer uses - `x` after `x`
+// gained a count, so the configuration says `x[0]` - is an implicit move, and a
+// pending move refuses every targeted apply. That is how #555, giving the
+// cluster health read a count, would have halted the next converge at its
+// first step; the plan walking the converge's steps is what found it. So the
+// converge and both plans forget the cached reads before their first targeted
+// step, and there is nothing stale left to move.
+//
+// lock is false in a copy of state, where nothing else can hold it.
+func ForgetReads(dir string, env []string, tofu Tofu, lock bool) (int, error) {
+	listed, stderr, err := tofu(dir, env, "state", "list")
+	if err != nil {
+		return 0, fmt.Errorf("listing state to forget its cached reads:\n%s", ErrorSummary(stderr))
+	}
+	var reads []string
+	for _, a := range strings.Fields(string(listed)) {
+		if strings.HasPrefix(a, "data.") || strings.Contains(a, ".data.") {
+			reads = append(reads, a)
+		}
+	}
+	if len(reads) == 0 {
+		return 0, nil
+	}
+	args := []string{"state", "rm"}
+	if !lock {
+		args = append(args, "-lock=false")
+	}
+	if _, stderr, err := tofu(dir, env, append(args, reads...)...); err != nil {
+		return 0, fmt.Errorf("forgetting cached data-source reads:\n%s", ErrorSummary(stderr))
+	}
+	return len(reads), nil
 }
 
 // inState reports whether a resource, or any instance of it, is in state.

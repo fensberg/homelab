@@ -1681,6 +1681,25 @@ Found while building it: `tofu console` takes a lock on its state path even
 with no state, so two callers asking at once refused each other. Each question
 now gets a private directory and state path.
 
+**The step-by-step plan caught a real break on its first run.** This pull
+request's plan against the record was refused at the converge's first step with
+"Moved resource instances excluded by targeting", although nothing here moves.
+The record showed why: its state held `data.talos_cluster_health.this`, while
+the code has said `this[0]` since #555 gave that read a count - and no converge
+had run since, so the real state held the same. A cached read at an address the
+configuration no longer uses is an implicit move, and it refuses every targeted
+apply. So the next converge on `main`, whatever triggered it, would have halted
+at its first step - my own change in #555, invisible to the one untargeted plan
+that used to be all a pull request got. That is #497's whole case, arriving on
+the day it was closed.
+
+The fix is structural rather than a `moved` block, which OpenTofu does not allow
+for data sources: before its first targeted step, the converge and both plans
+forget every cached data-source read (`details/asbuilt.ForgetReads`). A data
+source's state is only a cache that every plan reads again, so forgetting it
+costs nothing, and a renamed or newly counted data source can no longer block a
+converge. Verified against the published record: this branch plans "No changes".
+
 Still to land, each its own change:
 
 - **Pods and services on the allocated ranges.** The plan allocates them per

@@ -1,9 +1,12 @@
 package run
 
 import (
+	"bytes"
 	"fmt"
+	"os/exec"
 	"sort"
 
+	"homelab/details/asbuilt"
 	"homelab/details/tofustate"
 )
 
@@ -79,8 +82,21 @@ func PendingMoves(dir string) ([]string, error) {
 }
 
 // SettleMoves records any pending rename, so the targeted applies that follow
-// are not refused. It is a no-op when the configuration declares no move.
+// are not refused. It is a no-op when there is nothing to settle.
 func SettleMoves(ctx *Context) error {
+	// Cached data-source reads first: a read left at an address the
+	// configuration no longer uses is an implicit move, which refuses every
+	// targeted apply exactly as a `moved` block does. The plans do the same
+	// in their copies (details/asbuilt.ForgetReads), so they refuse what this
+	// would and pass what it would.
+	n, err := asbuilt.ForgetReads(ctx.ClusterDir, nil, captureTofu, true)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		Info(fmt.Sprintf("forgot %d cached data-source read(s); the plan below reads them again", n))
+	}
+
 	addrs, err := PendingMoves(ctx.ClusterDir)
 	if err != nil {
 		return fmt.Errorf("looking for renamed resources: %w", err)
@@ -114,4 +130,20 @@ func settleMovesArgs(addrs []string) []string {
 		args = append(args, "-target="+addr)
 	}
 	return args
+}
+
+// captureTofu runs tofu with both streams captured, so state listings and
+// removals - which name addresses, and a for_each key can be a vault value -
+// never reach a log.
+func captureTofu(dir string, env []string, args ...string) ([]byte, []byte, error) {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command("tofu", args...)
+	c.Dir = dir
+	if env != nil {
+		c.Env = env
+	}
+	var out, errb bytes.Buffer
+	c.Stdout, c.Stderr = &out, &errb
+	err := c.Run()
+	return out.Bytes(), errb.Bytes(), err
 }
