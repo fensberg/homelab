@@ -87,14 +87,15 @@ var unfinished = map[string]bool{
 }
 
 // siteJobs is every job the deploy workflow renders for a site that needs the
-// site's own runner: `Converge ${{ matrix.site }}` and `Plan ${{ matrix.site }}`.
+// site's own runner: `Converge ${{ matrix.site }}`.
 //
-// Plans as well as converges (#541). A plan changes nothing, but it waits for
-// a runner inside the cluster being built, starts the moment Flux brings one
-// up, and takes the state lock against a tree that may be days old while the
-// build is still finishing - the Backup phase at the end of the build then
-// meets that lock.
-func siteJobs(site string) []string { return []string{"Converge " + site, "Plan " + site} }
+// Plans were here as well (#541), when a plan waited for a runner inside the
+// cluster being built and took the state lock the build still needed. A plan
+// now runs on GitHub's runner against the as-built record (#554), holds no
+// lock and reaches nothing of the site, and lives in plan-infrastructure.yml
+// rather than in the workflow this reads - so nothing of it can collide with a
+// build.
+func siteJobs(site string) []string { return []string{"Converge " + site} }
 
 // pendingForSite picks the runs that would converge this particular site.
 //
