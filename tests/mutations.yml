@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 172
+floor: 173
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -108,6 +108,15 @@ mutations:
     why: >
       A storage name written into the code is a host nobody can describe without
       editing it; the second hypervisor on other storage fails to place a disk.
+
+  - guard: TestEveryConcurrencyGroupNamesWhatSupersedesIt
+    file: .github/workflows/deploy-infrastructure.yml
+    find: "group: deploy-infrastructure-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
+    replace: "group: deploy-infrastructure-${{ github.ref }}"
+    mentions: "does not use github.event.pull_request.number"
+    why: >
+      A pull request closed by merging reports main as its ref, so a group keyed
+      by ref lets its closing run cancel the converge the merge started (#573).
 
   - guard: TestEveryScheduledWorkflowReportsItsFailures
     file: .github/workflows/expedite.yml
@@ -2506,6 +2515,10 @@ unprovable:
   # which its own ledger entry proves. Its table holds each way to write a
   # fact down and the forms that read it from the declaration.
   - test: TestHypervisorFactsInCatchesEachWayToWriteOne
+    reason: table
+  # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
+  # its own ledger entry proves. Its table holds each way to share a group.
+  - test: TestAuditConcurrencyCatchesEachWayToShareAGroup
     reason: table
   #
   # Already a mutation proof in the stronger form: it extracts the task's own

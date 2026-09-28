@@ -53,8 +53,13 @@ permissions:
 # locked or half-written. A pull request's plan is: it reads and changes
 # nothing, so a newer push, or the pull request closing, replaces it rather
 # than queueing behind it. Only the newest plan of a pull request ever waits.
+#
+# Keyed by event and pull request number, not by ref alone. A pull request
+# closed by merging reports its BASE branch as github.ref, so under a ref key
+# its closing run joined main's group and, being a pull-request event that may
+# cancel, cancelled the converge its own merge had just started (#573).
 concurrency:
-  group: deploy-infrastructure-${{ github.ref }}
+  group: deploy-infrastructure-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # GitHub's default shell for `run:` is `bash -e {0}`, which has no
