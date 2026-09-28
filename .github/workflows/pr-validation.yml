@@ -569,23 +569,19 @@ jobs:
         # nothing checking what arrived.
         run: scripts/take-delivery.sh opentofu
 
-      # Fixture configs from management/cluster/tests/fixtures, never the real
-      # rendered one, so this needs no credentials. The Go contract tests
-      # above assert that this corpus and the Go one are the same corpus - a
-      # case added to one side and forgotten on the other fails there.
+      # Every OpenTofu root with a tests/ directory, discovered rather than
+      # listed - the cluster and estate roots and every module. A list of
+      # roots is a list a new module is silently missing from. Fixtures and
+      # mocks only, so nothing here needs a credential; the Go contract tests
+      # above assert the cluster root's corpus and the Go one are the same.
       - name: Invariant tests (OpenTofu)
-        working-directory: management/cluster
         run: |
-          tofu init -backend=false -input=false
-          tofu test
-
-      # The estate's root against a mocked Cloudflare, so no credential is
-      # needed: who may enroll, and that the split tunnel carries every route.
-      - name: Invariant tests (OpenTofu, estate)
-        working-directory: management/estate
-        run: |
-          tofu init -backend=false -input=false
-          tofu test
+          for root in $(git ls-files '*.tftest.hcl' | xargs -n1 dirname | xargs -n1 dirname | sort -u); do
+            echo "::group::${root}"
+            tofu -chdir="${root}" init -backend=false -input=false
+            tofu -chdir="${root}" test
+            echo "::endgroup::"
+          done
 
   vet:
     name: "Vet (every tier)"
