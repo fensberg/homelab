@@ -144,7 +144,7 @@ above, then re-run from here:
 	return fmt.Sprintf(`This run now tears the cluster down, so nothing is left orphaned.
 To inspect it instead, build again with the cluster kept:
 
-    ./toolshed/contractor build-site -site %s -keep-on-failure`, ctx.Site)
+    ./toolshed/contractor build-site -site %s -%s`, ctx.Site, run.KeepOnFailureFlag)
 }
 
 // waitFor polls until the check passes or the deadline expires, reporting what

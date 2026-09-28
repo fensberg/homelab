@@ -6,6 +6,10 @@ package run
 
 import "path/filepath"
 
+// KeepOnFailureFlag is the flag that sets KeepOnFailure, named once so the
+// advice that tells an operator to use it cannot name a flag that is not there.
+const KeepOnFailureFlag = "keep-on-failure"
+
 // Context is built once in main and passed to every phase by reference.
 type Context struct {
 	RepoRoot          string

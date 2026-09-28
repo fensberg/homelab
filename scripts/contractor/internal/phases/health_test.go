@@ -292,7 +292,7 @@ func TestHealthAdvisesOnlyWhatThisRunLeavesPossible(t *testing.T) {
 	if strings.Contains(gone, "-from health") {
 		t.Errorf("a run that tears the cluster down advises re-running from Health: %s", gone)
 	}
-	if !strings.Contains(gone, "-keep-on-failure") {
+	if !strings.Contains(gone, "-"+run.KeepOnFailureFlag) {
 		t.Errorf("a run that tears the cluster down does not say how to keep it: %s", gone)
 	}
 }
