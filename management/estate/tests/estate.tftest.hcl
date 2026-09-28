@@ -11,6 +11,7 @@ mock_provider "cloudflare" {
 
 variables {
   config_path = "./tests/fixtures/valid.json"
+  sites_path  = "./tests/fixtures/sites.json"
 }
 
 run "valid_estate_plans_cleanly" {
@@ -24,17 +25,35 @@ run "valid_estate_plans_cleanly" {
 
 # Every route a site sends through its tunnel must also be one an enrolled
 # device sends to Cloudflare, or the site's route leads nowhere from a device.
-# Both read management/tunnel-routes.json; this proves the estate reads all of
-# it.
+# Both come from management/tunnel-routes.json through the address plan; this
+# proves the estate carries every route of every site, each at the site's own
+# address.
 run "the_split_tunnel_carries_every_route" {
   command = plan
 
-  assert {
-    condition = toset([for t in cloudflare_zero_trust_device_default_profile.estate.include : t.address]) == toset([
-      for addr in values(jsondecode(file("../tunnel-routes.json")).routes) : "${addr}/32"
-    ])
-    error_message = "the split tunnel does not carry exactly the routes in management/tunnel-routes.json"
+  variables {
+    config_path = "./tests/fixtures/two-plots.json"
   }
+
+  assert {
+    condition = toset([for t in cloudflare_zero_trust_device_default_profile.estate.include : t.address]) == toset(flatten([
+      for range in ["10.196.40.0/22", "10.196.80.0/22"] : [
+        for n in values(jsondecode(file("../tunnel-routes.json")).routes) : "${cidrhost(range, n)}/32"
+      ]
+    ]))
+    error_message = "the split tunnel does not carry every route in management/tunnel-routes.json at each site's own address"
+  }
+}
+
+# A plot the sites do not declare would get a tunnel that routes nothing.
+run "a_plot_with_no_site_is_refused" {
+  command = plan
+
+  variables {
+    sites_path = "./tests/fixtures/no-sites.json"
+  }
+
+  expect_failures = [output.grants]
 }
 
 # What a site is granted, end to end: named <estate>-<site>-<purpose> from the

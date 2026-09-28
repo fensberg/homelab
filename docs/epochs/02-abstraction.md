@@ -1672,10 +1672,9 @@ asks it through `tofu console` (validation stays in Go, at the edge, with
 `registry.tf`), and `sterilize.go`, the Health phase, the Ansible inventory and
 the test harness read that. The contract tests that compared Go's band
 constants with the HCL's are gone with the constants: with one computation
-there is nothing to disagree. It reproduces the addresses that existed exactly
-
-- compared field by field on a config with workers, zones and two
-  hypervisors - so merging it changes no machine.
+there is nothing to disagree. It reproduces the addresses that existed exactly,
+compared field by field on a config with workers, zones and two hypervisors,
+so merging it changes no machine.
 
 Found while building it: `tofu console` takes a lock on its state path even
 with no state, so two callers asking at once refused each other. Each question
@@ -1700,16 +1699,40 @@ source's state is only a cache that every plan reads again, so forgetting it
 costs nothing, and a renamed or newly counted data source can no longer block a
 converge. Verified against the published record: this branch plans "No changes".
 
-Still to land, each its own change:
+**Landed, 2026-09-28: pods, services, names and routes.**
 
-- **Pods and services on the allocated ranges.** The plan allocates them per
-  site (site0: `10.110.0.0/16`, `10.196.40.0/22`) and nothing reads them yet.
-  Switching Talos to them changes a running cluster's pod range, so site0 is
-  rebuilt from that branch before it merges, and the converge on merge finds
-  nothing to do.
-- **Names.** The module emits every private name and alias once a domain is
-  given; the domain is a vault field the operator adds first, and until then
-  a render would fail on the missing reference.
+- **Pods and services are each site's own.** Talos takes both from the plan
+  (site0: `10.110.0.0/16` and `10.196.40.0/22`). The collision guard used to
+  read two literals from `variables.tf`; it now asks the plan for all 95
+  octets at once (`config.EstateRanges`) and fails on any pod, service or site
+  range that meets another. A changed cluster network is a rebuild, so site0 is
+  rebuilt from the branch before it merges.
+- **Names.** `organization.domain` is read from
+  `op://estate-shared/organization/domain`, and `organization.aliases` points
+  `proxmox` at site0. The plan emits every name. An alias naming a service its
+  site does not have is reported by the module and refused by `registry.tf`,
+  instead of failing inside the module (which would preempt the fixture
+  corpus) or disappearing without a word.
+- **Tunnel routes are addresses in each site's range (#536).**
+  `management/tunnel-routes.json` holds a host number (`game-server: 46`), and
+  the plan turns it into each site's own address in the bottom band of its
+  service range, which Kubernetes never allocates itself. The site root hands
+  it to Flux as `ADDRESS_GAME_SERVER`, and the Service sets `clusterIP` from
+  it; the workloads' Kustomizations substitute from `cluster-vars` for this.
+  The estate root asks the same plan, reading only the committed site
+  template, and gives each site's tunnel its own addresses and the split
+  tunnel every site's. Two sites no longer route one `/32`. A plot the site
+  template does not declare is refused rather than given a tunnel that routes
+  nothing.
+
+The rollout has one ordering constraint worth recording. The game server's
+Service ships inside the published Valheim release, and the release pinned
+before this change sets the old literal address. A rebuilt site0 therefore
+cannot run that release's Service until the release built from this change is
+pinned, and that release only exists after the merge. Valheim is down from the
+rebuild until the fabricator's release pull request merges. The alternative -
+two merges, with the substitution released first - buys an hour of game
+server for a second pull request, and the rebuild takes the game down anyway.
 
 Four implementations of one scheme today, across two languages:
 
@@ -1847,6 +1870,18 @@ image store and its vnet, and the code reads them from there. A guard refuses
 a Proxmox storage or network name written as a literal anywhere in the code,
 the playbook included.
 
+**Built, 2026-09-28.** Each node declares `datastores.disks` and
+`datastores.images`; `compute.tf`, the orphan-image check in `compute.go` and
+the API tier read them, and `registry.tf` and Go refuse a node without them (a
+fixture case holds the two to one verdict). The vnet turned out not to be a
+host fact at all: the playbook creates it, so it is the estate's, and it is
+now the address plan's `vnet`, written to the playbook by Render and read by
+`compute.tf`. `TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode` reads
+every name the declarations hold and refuses it anywhere else, comments and
+tests included, and refuses any quoted `datastore_id` or `bridge` in
+OpenTofu. The devbox's own provisioning file is a declaration of its own:
+it is not part of any site.
+
 ### Each site has its own Flux directory, over shared bases
 
 Added 2026-09-27. `gitops_target_path` is `clusters/management` for every
@@ -1864,9 +1899,8 @@ named for its site. A guard refuses a site-specific value in a shared base.
 Added 2026-09-27, for the module move itself. When the cluster root becomes a
 module, every site consuming the module at `main` moves together on every
 merge, and `docs/environments-and-promotion.md`'s answer to "where is staging"
-
-- the second site is - cannot happen: there is nothing to roll to one site
-  first.
+(the second site is) cannot happen: there is nothing to roll to one site
+first.
 
 **The bar:** each site names the module version it runs, a change reaches one
 site by moving that site's pin, and a guard refuses a site that consumes the
@@ -2120,8 +2154,9 @@ A new estate object is therefore a decision written into that test, never an
 accident. The mutation ledger proves both directions.
 
 What both roots need, they read from a file rather than from each other:
-`management/tunnel-routes.json` is read by the site root, for the routes
-through its own tunnel, and by the estate root, for the account's split tunnel.
+`management/tunnel-routes.json`, through the address plan, gives the site root
+each route's address for the Service that answers there, and the estate root
+every site's addresses for their tunnels and the account's split tunnel.
 
 The nearest neighbour arrived at the same split first. [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11, keeps its
 backup buckets, PKI and persistent secrets in a `global` stack with a state of

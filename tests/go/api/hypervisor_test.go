@@ -68,14 +68,14 @@ func getJSON(t *testing.T, url, authHeader string) (int, []byte) {
 // to create a file that is already there.
 func TestHypervisorDatastoreContentEnvelopeIsUnchanged(t *testing.T) {
 	site := harness.SiteConfig(t)
-	hostname, ip := harness.FirstHypervisor(t)
+	node := harness.FirstHypervisorNode(t)
 
-	url := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/storage/local-iso/content", ip, hostname)
+	url := fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/storage/%s/content", node.IP, node.Hostname, node.Datastores.Images)
 	auth := fmt.Sprintf("PVEAPIToken=%s=%s", site.Hypervisor.TokenID, site.Hypervisor.TokenSecret)
 
 	status, body := getJSON(t, url, auth)
 	require.Equal(t, http.StatusOK, status,
-		"listing the local-iso datastore failed; if this is a 401 the API token in the vault no longer carries Datastore.Audit")
+		"listing the %s datastore failed; if this is a 401 the API token in the vault no longer carries Datastore.Audit", node.Datastores.Images)
 
 	var parsed struct {
 		Data []struct {

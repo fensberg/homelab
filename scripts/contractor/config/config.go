@@ -22,10 +22,9 @@ import (
 // config/contract_test.go asserts these values still match the ones in the
 // OpenTofu source. Change one and the test names the other.
 const (
-	// OctetMin and OctetMax bound a site's declared octet. Kubernetes
-	// defaults occupy 10.96.0.0/12 (services) and 10.244.0.0/16 (pods);
-	// those are cluster-internal and never routed over the overlay, but
-	// overlapping them makes debugging confusing.
+	// OctetMin and OctetMax bound a site's declared octet, which keeps every
+	// site's /16 below the pod ranges the address plan allocates from
+	// 10.101.0.0/16 up and the service block at 10.196.0.0/14.
 	OctetMin = 1
 	OctetMax = 95
 
@@ -63,6 +62,11 @@ type Config struct {
 
 type Organization struct {
 	Name string `json:"name"`
+	// The estate's domain. Every private name is <thing>.<site>.<domain>.
+	Domain string `json:"domain"`
+	// Short names for one site's service: "proxmox" = "site0" makes
+	// proxmox.<domain> the same address as proxmox.site0.<domain>.
+	Aliases map[string]string `json:"aliases"`
 }
 
 // SourceControl carries no credential. Flux clones this public repository
@@ -215,8 +219,21 @@ type Hypervisor struct {
 }
 
 type Node struct {
-	Hostname string `json:"hostname"`
-	IP       string `json:"ip"`
+	Hostname   string     `json:"hostname"`
+	IP         string     `json:"ip"`
+	Datastores Datastores `json:"datastores"`
+}
+
+// Datastores are the Proxmox storages a hypervisor keeps the estate's things
+// on. They are facts about the host - a second one on LVM rather than ZFS
+// names its storage otherwise - so they are declared per node rather than
+// written into the code.
+type Datastores struct {
+	// Disks holds the machines' disks and their templates.
+	Disks string `json:"disks"`
+	// Images holds the downloaded Talos images, and must accept content of
+	// type iso.
+	Images string `json:"images"`
 }
 
 type OverlayNetwork struct {
@@ -358,6 +375,7 @@ type SiteNetwork struct {
 	ASN      int
 	VRFVNI   int
 	VNetVNI  int
+	VNet     string // the Proxmox vnet the nodes sit on
 	NodeIPs  []string
 	VMNames  []string
 	// The control planes' VM ids, the template they are cloned from, and
@@ -490,7 +508,7 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	// Asserted on the slug rather than on the raw name, because "North Street Office" and
 	// "north-street-office " are different names and the same bucket.
 	if site.Octet < OctetMin || site.Octet > OctetMax {
-		return nil, fmt.Errorf("octet %d out of range for site '%s'. Use %d-%d; Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16", site.Octet, name, OctetMin, OctetMax)
+		return nil, fmt.Errorf("octet %d out of range for site '%s'. Use %d-%d; above that, a site's network runs into the estate's pod and service ranges", site.Octet, name, OctetMin, OctetMax)
 	}
 
 	// Declare the vendor three times and make them agree: this code
@@ -591,6 +609,12 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	}
 	if len(nodes) == 0 {
 		return nil, fmt.Errorf("site '%s' has no hypervisor nodes", name)
+	}
+	for _, k := range nodeKeys {
+		d := site.Hypervisor.Nodes[k].Datastores
+		if strings.TrimSpace(d.Disks) == "" || strings.TrimSpace(d.Images) == "" {
+			return nil, fmt.Errorf("sites.%s.hypervisor.nodes.%s does not name its datastores. Declare datastores.disks (where machine disks go) and datastores.images (where Talos images are downloaded)", name, k)
+		}
 	}
 	if site.ControlPlaneCount < 1 {
 		return nil, fmt.Errorf("site '%s' has control_plane_count %d; it must be at least 1", name, site.ControlPlaneCount)
@@ -696,6 +720,7 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		ASN:               plan.ASN,
 		VRFVNI:            plan.VRFVNI,
 		VNetVNI:           plan.VNetVNI,
+		VNet:              plan.VNet,
 		NodeIPs:           nodeIPs,
 		VMNames:           vmNames,
 		ControlPlaneVMIDs: cpVMIDs,

@@ -28,7 +28,7 @@ module "site" {
   prefix          = local.bucket_prefix[each.key]
   site            = each.key
   name            = each.value.name
-  tunnel_routes   = local.tunnel_routes
+  tunnel_routes   = local.site_routes[each.key]
   r2_bucket_write = one(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_write.result).id
 }
 
@@ -37,6 +37,13 @@ module "site" {
 output "grants" {
   sensitive = true
   value     = { for k, m in module.site : k => m.grants }
+
+  # A plot with no site in the sites' template has no addresses, so its tunnel
+  # would route nothing while looking granted.
+  precondition {
+    condition     = length(local.unplanned_plots) == 0
+    error_message = "A plot in the estate vault has no site of that key in config/management.tpl.json, so the address plan has no addresses to route through its tunnel: ${join(", ", local.unplanned_plots)}."
+  }
 
   # R2 names are 3 to 63 characters, and the longest a site gets is its
   # production bucket. Checked here, before anything is created, so an estate

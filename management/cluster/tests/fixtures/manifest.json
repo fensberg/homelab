@@ -67,7 +67,7 @@
       "site": "site0",
       "valid": false,
       "go_error_contains": "out of range",
-      "because": "Octet 100 collides with the Kubernetes service range at 10.96.0.0/12."
+      "because": "Octet 100 is above the band that keeps every site network below the estate's pod and service ranges."
     },
     {
       "name": "duplicate_octet_fails_its_precondition",
@@ -84,6 +84,14 @@
       "valid": false,
       "go_error_contains": "no hypervisor nodes",
       "because": "There is nowhere to place a VM, and every later phase assumes nodes[0] exists."
+    },
+    {
+      "name": "a_hypervisor_without_datastores_fails_its_precondition",
+      "fixture": "undeclared-datastores.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "does not name its datastores",
+      "because": "Where a host keeps disks and images is a fact about that host; with none declared, there is nowhere named to put a machine."
     },
     {
       "name": "control_plane_count_below_one_fails_its_precondition",

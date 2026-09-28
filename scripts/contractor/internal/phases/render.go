@@ -94,7 +94,8 @@ advertise_routes: %q
 sdn_asn: %d
 sdn_vrf_vni: %d
 sdn_vnet_vni: %d
-`, net.NodeCIDR, net.Gateway, net.SiteCIDR, net.ASN, net.VRFVNI, net.VNetVNI) + zoneBlock
+sdn_vnet: %q
+`, net.NodeCIDR, net.Gateway, net.SiteCIDR, net.ASN, net.VRFVNI, net.VNetVNI, net.VNet) + zoneBlock
 	if err := os.WriteFile(ctx.SiteVars, []byte(siteVars), 0o644); err != nil {
 		return err
 	}

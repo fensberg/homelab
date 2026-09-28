@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 171
+floor: 172
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -99,6 +99,15 @@ mutations:
       file away. It is the literal that stays unprefixed when the root becomes
       a module, and the one place the plan and the converge can disagree
       again (#497).
+
+  - guard: TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode
+    file: management/cluster/compute.tf
+    find: "  datastore_id = local.datastores[each.value].images\n  node_name    = each.value\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+    replace: "  datastore_id = \"local-iso\"\n  node_name    = each.value\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+    mentions: "a hypervisor fact the config declares"
+    why: >
+      A storage name written into the code is a host nobody can describe without
+      editing it; the second hypervisor on other storage fails to place a disk.
 
   - guard: TestEveryScheduledWorkflowReportsItsFailures
     file: .github/workflows/expedite.yml
@@ -212,12 +221,12 @@ mutations:
 
   - guard: TestEveryTunnelRouteIsAServiceAddressAndTheReverse
     file: management/tunnel-routes.json
-    find: '"game-server": "10.96.0.46"'
-    replace: '"game-server": "10.96.0.47"'
+    find: '"game-server": 46'
+    replace: '"game-servers": 46'
     mentions: "no Service in git sets clusterIP"
     why: >
       The tunnel route and the Service's fixed address live in files read by
-      different tools. Moving one without the other converges cleanly and
+      different tools. Renaming one without the other converges cleanly and
       hands an enrolled device a route to an address nothing answers on.
 
   - guard: TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority
@@ -1699,10 +1708,10 @@ mutations:
       than an edit, and a value nobody wrote down cannot be reviewed at all.
 
   - guard: TestThePodAndServiceNetworksCannotCollideWithASite
-    file: management/cluster/variables.tf
-    find: '  pod_cidr     = "10.244.0.0/16"'
-    replace: '  pod_cidr     = "10.0.0.0/8"'
-    mentions: "overlaps the site network"
+    file: modules/infrastructure/address-plan/allocation.tf
+    find: '      pod_cidr     = "10.${100 + s.octet}.0.0/16"'
+    replace: '      pod_cidr     = "10.0.0.0/8"'
+    mentions: "overlaps"
     why: >
       10.0.0.0/8 is the shape a CNI default tends to take and it contains
       every site subnet this estate can define, because site octets are
@@ -2492,6 +2501,11 @@ unprovable:
   # table is for: a named constant must count as a floor, and a bare variable
   # must not. Both rows are in TestAFloorIsRecognisedHoweverItIsSpelled.
   - test: TestAFloorIsRecognisedHoweverItIsSpelled
+    reason: table
+  # The reader behind TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode,
+  # which its own ledger entry proves. Its table holds each way to write a
+  # fact down and the forms that read it from the declaration.
+  - test: TestHypervisorFactsInCatchesEachWayToWriteOne
     reason: table
   #
   # Already a mutation proof in the stronger form: it extracts the task's own

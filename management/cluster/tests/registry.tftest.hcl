@@ -146,6 +146,20 @@ run "no_hypervisor_nodes_fails_its_precondition" {
   expect_failures = [terraform_data.invariants]
 }
 
+run "a_hypervisor_without_datastores_fails_its_precondition" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/undeclared-datastores.json"
+  }
+
+  plan_options {
+    target = [terraform_data.invariants]
+  }
+
+  expect_failures = [terraform_data.invariants]
+}
+
 run "control_plane_count_below_one_fails_its_precondition" {
   command = plan
 

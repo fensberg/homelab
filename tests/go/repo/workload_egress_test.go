@@ -25,7 +25,7 @@ import (
 // cannot connect, and 10.0.0.0/8 the obvious range, because it is the one
 // remaining and it looks symmetrical with the two beside it. It is also the
 // range this entire estate is addressed out of: node subnets at
-// 10.<octet>.0.0/16, services at 10.96.0.0/12, pods at 10.244.0.0/16. Opening
+// 10.<octet>.0.0/16, and each site's pods and services beside them. Opening
 // it hands a public-facing game server a UDP path to the API server, the state
 // database, the hypervisor and every other workload - which is precisely what
 // the policy exists to prevent.
@@ -79,8 +79,8 @@ than the first one saying it out loud.`, p.file)
 			t.Errorf(`the egress policy permits %s.
 
 That is inside 10.0.0.0/8, which is the space this entire estate is addressed
-out of - node subnets at 10.<octet>.0.0/16, services at 10.96.0.0/12, pods at
-10.244.0.0/16.
+out of - node subnets at 10.<octet>.0.0/16, and each site's pods and services
+(the address plan's).
 
 This is a public-facing game server. Permitting it a path into that range gives
 a compromised one reach to the API server, the state database, the hypervisor

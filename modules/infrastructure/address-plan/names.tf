@@ -16,7 +16,15 @@ locals {
     )
   ]...)
 
+  # An alias whose target the site does not have is left out and reported,
+  # not failed here: whether a config is acceptable is decided at the edges
+  # (registry.tf), which refuses a plan with any.
   alias_records = var.domain == "" ? {} : {
     for alias, site in var.aliases : "${alias}.${var.domain}" => local.records["${alias}.${site}.${var.domain}"]
+    if contains(keys(local.records), "${alias}.${site}.${var.domain}")
   }
+  unresolved_aliases = var.domain == "" ? [] : sort([
+    for alias, site in var.aliases : "${alias} -> ${site}"
+    if !contains(keys(local.records), "${alias}.${site}.${var.domain}")
+  ])
 }

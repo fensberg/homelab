@@ -1,6 +1,10 @@
 {
   "organization": {
-    "name": "{{ op://estate-shared/organization/name }}"
+    "name": "{{ op://estate-shared/organization/name }}",
+    "domain": "{{ op://estate-shared/organization/domain }}",
+    "aliases": {
+      "proxmox": "site0"
+    }
   },
 
   "source_control": {
@@ -52,7 +56,11 @@
         "nodes": {
           "node0": {
             "hostname": "{{ op://site0/node0/hostname }}",
-            "ip": "{{ op://site0/node0/ip }}"
+            "ip": "{{ op://site0/node0/ip }}",
+            "datastores": {
+              "disks": "local-zfs",
+              "images": "local-iso"
+            }
           }
         }
       },

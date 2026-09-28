@@ -10,6 +10,9 @@ locals {
         dmz_zones      = local.dmz_zones[key]
         dmz            = local.dmz[key]
         hypervisors    = [for h in local.hypervisors[key] : h.hostname]
+        fixed_addresses = {
+          for name, n in var.fixed_addresses : name => cidrhost(local.ranges[key].service_cidr, n)
+        }
       })
     }
     records = merge(local.records, local.alias_records)
@@ -24,4 +27,9 @@ output "sites" {
 output "records" {
   description = "Every private name and its address, aliases included. Empty until the domain is declared."
   value       = local.plan.records
+}
+
+output "unresolved_aliases" {
+  description = "Aliases whose target the site does not have, as \"alias -> site\". Empty in any config worth planning; registry.tf refuses one that is not."
+  value       = local.unresolved_aliases
 }

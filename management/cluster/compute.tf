@@ -35,10 +35,10 @@ resource "proxmox_download_file" "talos_disk_image" {
   for_each = toset(local.all_vm_hypervisors)
 
   content_type = "iso"
-  datastore_id = "local-iso"
+  datastore_id = local.datastores[each.value].images
   node_name    = each.value
   url          = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/${local.image_variant}.raw.xz"
-  # Extension is .iso, not .img, on purpose: local-iso's content=iso bucket
+  # Extension is .iso, not .img, on purpose: the image datastore's content=iso bucket
   # validates the destination file_name against that content type before
   # Proxmox even fetches the URL, independent of the actual bytes. This is
   # the same disk image either way - the extension just has to lie to get
@@ -84,7 +84,7 @@ resource "proxmox_download_file" "talos_disk_image" {
 # file name, and that this once left a template running old bytes because the
 # datastore path never changed. With one schematic that was a subtlety. With two
 # at the same Talos version it would be a collision: both would want
-# local-iso:iso/talos-<version>.iso, and whichever downloaded second would
+# <images>:iso/talos-<version>.iso, and whichever downloaded second would
 # either fail or quietly overwrite the other - putting the overlay-carrying
 # image under the machine whose entire purpose is not to have it, with nothing
 # anywhere reporting the swap.
@@ -97,7 +97,7 @@ resource "proxmox_download_file" "dmz_disk_image" {
   for_each = toset(local.dmz_hypervisors)
 
   content_type = "iso"
-  datastore_id = "local-iso"
+  datastore_id = local.datastores[each.value].images
   node_name    = each.value
   url          = "https://factory.talos.dev/image/${local.dmz_schematic_id}/${local.talos_version}/${local.image_variant}.raw.xz"
 
@@ -147,12 +147,12 @@ resource "proxmox_virtual_environment_vm" "dmz_template" {
   }
 
   network_device {
-    bridge = "vnetint"
+    bridge = local.net.vnet
     model  = "virtio"
   }
 
   disk {
-    datastore_id = "local-zfs"
+    datastore_id = local.datastores[each.value].disks
     file_format  = "raw"
     interface    = "virtio0"
     file_id      = proxmox_download_file.dmz_disk_image[each.key].id
@@ -219,12 +219,12 @@ resource "proxmox_virtual_environment_vm" "talos_template" {
   }
 
   network_device {
-    bridge = "vnetint"
+    bridge = local.net.vnet
     model  = "virtio"
   }
 
   disk {
-    datastore_id = "local-zfs"
+    datastore_id = local.datastores[each.value].disks
     file_format  = "raw"
     interface    = "virtio0"
     file_id      = proxmox_download_file.talos_disk_image[each.value].id
@@ -263,7 +263,7 @@ resource "proxmox_virtual_environment_vm" "talos_template" {
   }
 
   lifecycle {
-    # file_id is a stable string ("local-iso:iso/talos-<version>-<schematic>.iso")
+    # file_id is a stable string ("<images>:iso/talos-<version>-<schematic>.iso")
     # and this template's OS disk is materialized from it once, so replacing the
     # image behind that path changes no attribute here.
     #
@@ -311,12 +311,12 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   }
 
   network_device {
-    bridge = "vnetint"
+    bridge = local.net.vnet
     model  = "virtio"
   }
 
   disk {
-    datastore_id = "local-zfs"
+    datastore_id = local.datastores[each.value.hypervisor].disks
     file_format  = "raw"
     interface    = "virtio0"
     # Grown from the image's native size to the size a real control-plane
@@ -334,7 +334,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   # so a provisioner sharing it has no predictable capacity. talos.tf mounts
   # this one at /var/mnt/storage, which is where OpenEBS hands out volumes.
   disk {
-    datastore_id = "local-zfs"
+    datastore_id = local.datastores[each.value.hypervisor].disks
     file_format  = "raw"
     interface    = "virtio1"
     size         = 32
@@ -353,7 +353,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   }
 
   initialization {
-    datastore_id = "local-zfs"
+    datastore_id = local.datastores[each.value.hypervisor].disks
 
     dns {
       servers = local.dns_resolvers
@@ -444,12 +444,12 @@ resource "proxmox_virtual_environment_vm" "talos_worker" {
   }
 
   network_device {
-    bridge = "vnetint"
+    bridge = local.net.vnet
     model  = "virtio"
   }
 
   disk {
-    datastore_id = "local-zfs"
+    datastore_id = local.datastores[each.value.hypervisor].disks
     file_format  = "raw"
     interface    = "virtio0"
     size         = 64
@@ -459,7 +459,7 @@ resource "proxmox_virtual_environment_vm" "talos_worker" {
   # where a persistent CI tool cache would live - the reason epoch 01 wanted a
   # worker before moving the pull request lanes here at all.
   disk {
-    datastore_id = "local-zfs"
+    datastore_id = local.datastores[each.value.hypervisor].disks
     file_format  = "raw"
     interface    = "virtio1"
     size         = 32
@@ -478,7 +478,7 @@ resource "proxmox_virtual_environment_vm" "talos_worker" {
   }
 
   initialization {
-    datastore_id = "local-zfs"
+    datastore_id = local.datastores[each.value.hypervisor].disks
 
     dns {
       servers = local.dns_resolvers
@@ -555,7 +555,7 @@ resource "proxmox_virtual_environment_vm" "dmz" {
   }
 
   disk {
-    datastore_id = "local-zfs"
+    datastore_id = local.datastores[each.value.hypervisor].disks
     file_format  = "raw"
     interface    = "virtio0"
     size         = 64
@@ -569,7 +569,7 @@ resource "proxmox_virtual_environment_vm" "dmz" {
   # rebuild - see #330. Anything that must outlive one belongs in object
   # storage, not here.
   disk {
-    datastore_id = "local-zfs"
+    datastore_id = local.datastores[each.value.hypervisor].disks
     file_format  = "raw"
     interface    = "virtio1"
     size         = 32

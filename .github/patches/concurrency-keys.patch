@@ -238,21 +238,21 @@ index 0000000..d1c5277
 +	}
 +}
 diff --git a/tests/mutations.yml b/tests/mutations.yml
-index 67e5eef..176dbcf 100644
+index b2fa929..e1dbb1e 100644
 --- a/tests/mutations.yml
 +++ b/tests/mutations.yml
 @@ -85,7 +85,7 @@
  # require editing two places, and removing one should always require a visible,
  # reviewable act rather than a quiet deletion. Same shape as
  # tests/coverage-baseline.json, for the same reason.
--floor: 171
-+floor: 172
+-floor: 172
++floor: 173
  
  mutations:
    - guard: TestTheContractorWritesAResourceAddressInOnePlace
-@@ -100,6 +100,15 @@ mutations:
-       a module, and the one place the plan and the converge can disagree
-       again (#497).
+@@ -109,6 +109,15 @@ mutations:
+       A storage name written into the code is a host nobody can describe without
+       editing it; the second hypervisor on other storage fails to place a disk.
  
 +  - guard: TestEveryConcurrencyGroupNamesWhatSupersedesIt
 +    file: .github/workflows/deploy-infrastructure.yml
@@ -266,3 +266,14 @@ index 67e5eef..176dbcf 100644
    - guard: TestEveryScheduledWorkflowReportsItsFailures
      file: .github/workflows/expedite.yml
      find: "    needs: [check, deliver, release]\n    if: always() && github.event_name == 'schedule'"
+@@ -2507,6 +2516,10 @@ unprovable:
+   # fact down and the forms that read it from the declaration.
+   - test: TestHypervisorFactsInCatchesEachWayToWriteOne
+     reason: table
++  # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
++  # its own ledger entry proves. Its table holds each way to share a group.
++  - test: TestAuditConcurrencyCatchesEachWayToShareAGroup
++    reason: table
+   #
+   # Already a mutation proof in the stronger form: it extracts the task's own
+   # cmd from the playbook and runs it against a stub, so it tests what ships
