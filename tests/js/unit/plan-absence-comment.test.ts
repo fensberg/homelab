@@ -58,7 +58,7 @@ describe("the plan-absence comment", () => {
     const f = fakeGitHub({ pr: open, jobs: [{ name: "Plan site0", conclusion: "failure" }] });
     await comment(f);
     expect(f.created).toHaveLength(1);
-    expect(f.created[0].split("\n")[0]).toBe("<!-- plan:site0 -->");
+    expect(f.created[0]?.split("\n")[0]).toBe("<!-- plan:site0 -->");
     expect(f.created[0]).toContain("No plan was produced for `abcdef0`");
     expect(f.created[0]).toContain("**failure**");
   });
@@ -92,7 +92,7 @@ describe("the plan-absence comment", () => {
     });
     await comment(f);
     expect(f.created).toHaveLength(1);
-    expect(f.created[0].split("\n")[0]).toBe("<!-- plan:site1 -->");
+    expect(f.created[0]?.split("\n")[0]).toBe("<!-- plan:site1 -->");
   });
 
   it("counts every site as unplanned when the jobs cannot be read", async () => {
