@@ -157,6 +157,35 @@ Explicitly out of scope (and which epoch owns it instead):
    belongs to its package manager" is a passing answer. Silence is not. The
    audit driving this is in [`02-abstraction.md`](02-abstraction.md); this
    epoch is where the answer has to exist for all of them.
+4. **Every test double exists once.** One fake of each outside thing, and one
+   builder per shape of input, shared by every test that needs it: a test says
+   only what makes it different. Measured by #575, which added two config
+   fields and a routes file and touched the same stand-ins again each time:
+
+   | Double                                       | Copies when #575 merged                                              |
+   | -------------------------------------------- | -------------------------------------------------------------------- |
+   | A whole config, as a fixture file            | 21 (17 cluster, 4 estate), each restating every field to vary one    |
+   | A site built by hand in Go                   | 30 literals across the config tests, the repo guards and the harness |
+   | A binary faked on `PATH` (`tofu` and others) | 8 test files, each writing its own shell stub                        |
+   | The GitHub API for a `github-script`         | 2 test files, each with its own object                               |
+   | A sites map for the address plan             | the module's tests, the estate fixtures, the cluster fixtures        |
+
+   The shapes that pass: a base config plus a per-case patch, merged at test
+   time - the pattern [`02-abstraction.md`](02-abstraction.md) records under
+   "the config fixture corpus does not scale", now owned here - read by the
+   HCL and Go halves alike; one Go builder of a valid site that every Go tier
+   imports; one helper that puts a fake binary on `PATH`; one fake GitHub for
+   the scripts. **The test is a change, not a count:** adding a config field
+   touches the base and nothing else, and a new case is the lines that differ.
+
+   Why it belongs here rather than in each epoch that adds tests: every copy
+   was written correctly by the change that needed it, which is exactly how a
+   repository accumulates them. And a stand-in drifts the way production code
+   does, but silently - a fixture nobody updated keeps passing while asserting
+   the wrong shape. The guard that keeps it true is the one
+   [`02-abstraction.md`](02-abstraction.md) already asks for, pointed at
+   tests: a new fake or fixture builder outside the shared ones is refused
+   unless declared, with a reason.
 
 ## Decisions
 

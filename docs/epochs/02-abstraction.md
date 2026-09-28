@@ -923,6 +923,10 @@ the interim rather than one of these being chosen in a hurry to unblock a test.
 
 ## Known driver: the config fixture corpus does not scale
 
+**Owned by epoch 06 since 2026-09-28**, as its criterion that every test
+double exists once. This corpus is one of the five kinds of repeated stand-in
+found by #575. The analysis below stays here, where it was found.
+
 Moving two fields from the site plane to the fleet plane - `account_id` and
 `admin_token`, one small, correct change - touched **23 files**. Nine of them
 were test fixtures, and most differed from `valid.json` by two lines out of
