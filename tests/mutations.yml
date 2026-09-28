@@ -1086,8 +1086,8 @@ mutations:
 
   - guard: TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy
     file: management/cluster/talos.tf
-    find: '            name = "none"'
-    replace: '            name = "flannel"'
+    find: '          name = "none"'
+    replace: '          name = "flannel"'
     mentions: "cluster.network.cni.name"
     why: >
       Naming Flannel explicitly is the mutation that matters, because it is the
@@ -1723,8 +1723,8 @@ mutations:
 
   - guard: TestThePodAndServiceNetworksAreDeclared
     file: management/cluster/talos.tf
-    find: "          podSubnets     = [local.pod_cidr]"
-    replace: "          # podSubnets removed"
+    find: "        podSubnets     = [local.pod_cidr]"
+    replace: "        # podSubnets removed"
     mentions: "declares no podSubnets"
     why: >
       The cluster's pod and service ranges are its largest address
