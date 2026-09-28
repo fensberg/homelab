@@ -9,7 +9,7 @@ module.exports = async ({ core }) => {
   if (process.env.PROOF !== 'reached') {
     core.setFailed(
       'An env value set on the step calling $/.github/workflows/github-script ' +
-        'did not reach the script. The plan comments in deploy-infrastructure.yml ' +
+        'did not reach the script. The plan comments in plan-infrastructure.yml ' +
         'read their values this way and would post undefined.',
     );
   }

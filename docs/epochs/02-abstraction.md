@@ -3376,6 +3376,14 @@ failed for four days on that token and nothing said so. Every scheduled
 workflow now ends with a job that opens one issue when it fails and closes it
 on the next success (#441).
 
+Revised 2026-09-28: one workflow, `duty.yml`, watches every scheduled
+workflow finish instead. The job in each was skipped on every run that was not
+scheduled, so a pull request's CodeQL run listed a skipped Report among its
+checks. The same day split the plan out of Deploy Infrastructure into
+`plan-infrastructure.yml`, for the same reason: every pull request listed the
+converge's jobs as skipped, and the "no plan" notice became the plan job's
+last step, writing the site's own plan comment (#576).
+
 ### Do not taint the control planes in the change that adds workers
 
 The instinct once workers exist is to taint the control planes so nothing lands

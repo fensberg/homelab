@@ -110,9 +110,9 @@ mutations:
       editing it; the second hypervisor on other storage fails to place a disk.
 
   - guard: TestEveryConcurrencyGroupNamesWhatSupersedesIt
-    file: .github/workflows/deploy-infrastructure.yml
-    find: "group: deploy-infrastructure-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
-    replace: "group: deploy-infrastructure-${{ github.ref }}"
+    file: .github/workflows/plan-infrastructure.yml
+    find: "group: plan-infrastructure-${{ github.event.pull_request.number }}"
+    replace: "group: plan-infrastructure-${{ github.ref }}"
     mentions: "does not use github.event.pull_request.number"
     why: >
       A pull request closed by merging reports main as its ref, so a group keyed
@@ -127,14 +127,14 @@ mutations:
       The pull-request plan runs a copy of the root at the same depth, so a
       one-level path points nowhere and the plan refuses before its first step.
 
-  - guard: TestEveryScheduledWorkflowReportsItsFailures
-    file: .github/workflows/expedite.yml
-    find: "    needs: [check, deliver, release]\n    if: always() && github.event_name == 'schedule'"
-    replace: "    needs: [check, deliver]\n    if: always() && github.event_name == 'schedule'"
-    mentions: "does not wait on [release]"
+  - guard: TestEveryScheduledWorkflowIsWatchedForFailing
+    file: .github/workflows/duty.yml
+    find: "      - Expedite\n"
+    replace: "      - Expediter\n"
+    mentions: "duty.yml does not watch it"
     why: >
-      A job added to a scheduled workflow and not to its report's needs fails
-      silently, which is the whole of #441.
+      A scheduled workflow the watcher does not name fails silently, which is
+      the whole of #441.
 
   - guard: TestTheE2ETierNamesVerbsTheContractorHas
     file: tests/go/e2e/ignition_test.go
@@ -157,7 +157,7 @@ mutations:
       say so once site1 exists, and leaves site1 with no record at all.
 
   - guard: TestNoPullRequestJobRunsOnTheEstatesRunner
-    file: .github/workflows/deploy-infrastructure.yml
+    file: .github/workflows/plan-infrastructure.yml
     find: "    # A pull request's code never runs on the estate's runner.\n    runs-on: ubuntu-latest\n"
     replace: "    # A pull request's code never runs on the estate's runner.\n    runs-on: homelab-management\n"
     mentions: "runs pull-request code on homelab-management"

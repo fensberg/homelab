@@ -1,14 +1,10 @@
 name: Deploy Infrastructure
 
-# Named for what each run does (#155). A pull request only plans and a merge
-# converges, and "Deploy Infrastructure  main  Queued" could not say which -
-# so cancelling one at 2am was a guess about whether it lost a plan or
-# prevented an apply.
-run-name: >-
-  ${{ github.event_name == 'pull_request' && format('Plan: {0}', github.event.pull_request.title)
-  || format('Converge: {0}', github.event.head_commit.message) }}
+# Named for what the run does (#155): "Deploy Infrastructure  main  Queued"
+# said nothing about which change it was converging.
+run-name: "Converge: ${{ github.event.head_commit.message }}"
 
-# Two halves of one gate.
+# The merge half of one gate; plan-infrastructure.yml is the pull request's.
 #
 # A pull request touching infrastructure gets a plan, posted back to it. A
 # merge applies THAT PLAN - saved to a file and applied from the file, so what
@@ -22,17 +18,6 @@ run-name: >-
 # is exactly why it is worth fixing now - the gate is cheap to add before the
 # first real deployment and awkward to retrofit after.
 on:
-  pull_request:
-    # closed as well, so closing a pull request cancels its plan: the run it
-    # starts joins the same concurrency group, cancels whatever of that pull
-    # request is still queued, and does nothing itself. A plan left waiting
-    # for a runner fires the day one exists, against a tree nobody wants.
-    types: [opened, synchronize, reopened, closed]
-    paths:
-      - "environments/**/infrastructure/**"
-      - "modules/infrastructure/**"
-      - "management/**"
-      - "config/management.tpl.json"
   push:
     branches: [main]
     tags: ["v*"]
@@ -50,17 +35,12 @@ permissions:
 
 # One at a time per ref. A converge is never cancelled mid-flight: there is one
 # estate and one state lock, and a cancelled apply is how state gets left
-# locked or half-written. A pull request's plan is: it reads and changes
-# nothing, so a newer push, or the pull request closing, replaces it rather
-# than queueing behind it. Only the newest plan of a pull request ever waits.
-#
-# Keyed by event and pull request number, not by ref alone. A pull request
-# closed by merging reports its BASE branch as github.ref, so under a ref key
-# its closing run joined main's group and, being a pull-request event that may
-# cancel, cancelled the converge its own merge had just started (#573).
+# locked or half-written. Only pushes start this workflow, so no pull request's
+# run can share its group - which is how #570's converge was cancelled by its
+# own pull request closing, when plans lived in this file (#573).
 concurrency:
-  group: deploy-infrastructure-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: deploy-infrastructure-${{ github.ref }}
+  cancel-in-progress: false
 
 # GitHub's default shell for `run:` is `bash -e {0}`, which has no
 # pipefail: in `a | b` only b's exit status counts, so a failing command
@@ -82,20 +62,12 @@ jobs:
   # ---------------------------------------------------------------------
   # ROUTING - which tier does this change touch, and which sites exist?
   #
-  # Runs on both events. The site list comes from the config and never
-  # depended on the diff; the classification does, and a pull request needs
-  # it just as much as a push - without it, a management-only PR would plan
-  # a workload directory that the change never touched.
-  #
   # Hermetic, so it stays off the self-hosted runner: deciding what to run
   # needs no credentials, and giving it any would widen what a mistake here
   # reaches.
   # ---------------------------------------------------------------------
   changes:
     name: What changed
-    # Nothing to plan for a pull request that has closed; that run exists only
-    # to cancel the plan before it.
-    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
@@ -121,9 +93,9 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             github.com:443
-          # Deep enough to diff a pull request against its base. This
+          # Deep enough to diff a push against the commit before it. This
           # repository is small; the cost is seconds and the alternative is
-          # guessing at a merge base.
+          # guessing.
           fetch-depth: 0
 
       - name: Classify the change
@@ -133,8 +105,6 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.sha }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           # THE WORKLOAD TIER HAS WORK ONLY WHEN ITS DIRECTORY EXISTS (#370).
@@ -166,9 +136,7 @@ jobs:
             exit 0
           fi
 
-          if [ "${EVENT}" = "pull_request" ]; then
-            files="$(git diff --name-only "${PR_BASE}" "${PR_HEAD}")"
-          elif ! files="$(git diff --name-only "${PUSH_BEFORE}" "${PUSH_AFTER}" 2>/dev/null)"; then
+          if ! files="$(git diff --name-only "${PUSH_BEFORE}" "${PUSH_AFTER}" 2>/dev/null)"; then
             files="$(git diff --name-only HEAD~1 HEAD)"
           fi
 
@@ -217,7 +185,7 @@ jobs:
   apply:
     name: Apply
     needs: changes
-    if: github.event_name == 'push' && needs.changes.outputs.workload == 'true'
+    if: needs.changes.outputs.workload == 'true'
     runs-on: homelab-management
     # The environment is the human gate. Configure required reviewers on
     # `production` so a tag cannot deploy unattended; `staging` is where a
@@ -299,7 +267,7 @@ jobs:
   converge:
     name: Converge ${{ matrix.site }}
     needs: changes
-    if: github.event_name == 'push' && needs.changes.outputs.management == 'true'
+    if: needs.changes.outputs.management == 'true'
     runs-on: homelab-management
     environment: management
     permissions:
@@ -698,166 +666,3 @@ jobs:
               "**What to do:** run \`task plan SITE=<site>\` to see what is actually there, then either converge again or correct the config to match. This issue does not close itself." \
               "" \
               "Failed run: $RUN_URL")"
-
-  # ---------------------------------------------------------------------
-  # PLAN THE ESTATE - on a pull request touching management/.
-  #
-  # Against the as-built record, not the estate (#554). The record is the
-  # state as last converged with every real value replaced, published by the
-  # converge and the nightly from main. So this job holds no credential,
-  # needs no environment, and runs on GitHub's runner: nothing a pull request
-  # can run here reaches the estate, which is what lets the environments go
-  # without a reviewer. It cannot see drift since the record was taken; the
-  # nightly's real plan reports that.
-  #
-  # Structure only, never a value: this comment is world-readable.
-  # ---------------------------------------------------------------------
-  plan-estate:
-    name: Plan ${{ matrix.site }}
-    needs: changes
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      needs.changes.outputs.management == 'true'
-    # A pull request's code never runs on the estate's runner.
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      # To find and download the record another run published.
-      actions: read
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        site: ${{ fromJSON(needs.changes.outputs.sites) }}
-    steps:
-      - name: Mobilize
-        uses: $/.github/workflows/mobilize
-        with:
-          # The Go toolchain and OpenTofu with its providers, as the Validate
-          # lane fetches them, and GitHub's API for the record.
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-            get.opentofu.org:443
-            github.com:443
-            go.dev:443
-            objects.githubusercontent.com:443
-            registry.opentofu.org:443
-            release-assets.githubusercontent.com:443
-            storage.googleapis.com:443
-
-      - name: Read pinned versions
-        uses: ./.github/actions/versions
-
-      - name: Setup Go
-        uses: $/.github/workflows/setup-go
-
-      - name: Install OpenTofu
-        run: scripts/take-delivery.sh opentofu
-
-      # The newest record of this site that main published. Only main: a
-      # record is what a plan is trusted to compare with, so one a pull
-      # request uploaded - from its own branch, or a fork's branch that
-      # happens to be called main - is never taken.
-      - name: Find the as-built record
-        id: record
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          REPO_ID: ${{ github.repository_id }}
-          SITE: ${{ matrix.site }}
-        run: |
-          run_id="$(gh api "repos/${REPO}/actions/artifacts?name=as-built-${SITE}&per_page=100" --jq "
-            [.artifacts[]
-              | select(.expired | not)
-              | select(.workflow_run.head_branch == \"main\" and .workflow_run.head_repository_id == ${REPO_ID})]
-            | sort_by(.created_at) | last | .workflow_run.id // empty")"
-          if [ -z "${run_id}" ]; then
-            echo "::error::no as-built record of ${SITE} has been published from main yet. The next converge or nightly takes one."
-            exit 1
-          fi
-          echo "run-id=${run_id}" >> "$GITHUB_OUTPUT"
-
-      - name: Download the as-built record
-        uses: $/.github/workflows/download-artifact
-        with:
-          name: as-built-${{ matrix.site }}
-          run-id: ${{ steps.record.outputs.run-id }}
-          github-token: ${{ github.token }}
-          path: as-built-record
-
-      - name: Plan
-        env:
-          SITE: ${{ matrix.site }}
-        run: |
-          go build -C scripts/contractor -o ../../toolshed/contractor .
-          ./toolshed/contractor plan-as-built -site "$SITE" -record as-built-record -comment-out plan-comment.md
-
-      - name: Comment the plan on the pull request
-        uses: $/.github/workflows/github-script
-        with:
-          name: estate-plan-comment
-
-  # ---------------------------------------------------------------------
-  # NO PLAN, SAID OUT LOUD - #156.
-  #
-  # `Plan site0` is not a required status check. It used to be that it could
-  # not be: the plan ran on a pod inside the cluster, so with the cluster down
-  # no plan could be produced - precisely when the estate most needed the
-  # pull request that rebuilds it. The plan now runs on GitHub's runner
-  # against the as-built record (#554), which removes that circularity; what
-  # can still stop it is having no record to read, which is exactly the state
-  # of an estate that has never been built, so it stays visibility rather
-  # than a gate.
-  #
-  # So this is visibility, not enforcement. #140 changed the machine count,
-  # its plan job was cancelled against a runner that did not exist, and the
-  # pull request read "24 of 25 checks passed" and merged. Nothing anywhere
-  # said a change to real infrastructure had landed unplanned.
-  #
-  # An absent comment currently looks identical to a change nobody thought
-  # needed one. This makes those two different.
-  # ---------------------------------------------------------------------
-  plan-absence:
-    name: Plan absence
-    needs: [changes, plan-estate]
-    # always(), so this still runs when plan-estate was cancelled or skipped -
-    # which is the whole case it exists for.
-    if: >-
-      always() &&
-      github.event_name == 'pull_request' &&
-      needs.changes.outputs.management == 'true' &&
-      needs.plan-estate.result != 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      # To read which sites' plan jobs in this run did not succeed.
-      actions: read
-    timeout-minutes: 5
-    steps:
-      - name: Mobilize
-        uses: $/.github/workflows/mobilize
-        with:
-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
-          # which job may reach what; `security guard-egress` refuses any drift.
-          # The copy lives here because harden-runner reads its policy in a
-          # pre-step, before any step of this job can run.
-          egress-policy: block
-          disable-sudo-and-containers: "true"
-          allowed-endpoints: >
-            api.github.com:443
-          checkout: "false"
-
-      - name: Say that no plan was produced
-        uses: $/.github/workflows/github-script
-        env:
-          SITES: ${{ needs.changes.outputs.sites }}
-        with:
-          name: plan-absence-comment

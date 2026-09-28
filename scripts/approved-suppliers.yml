@@ -515,32 +515,7 @@ endpoints:
 #                   somebody has to go and find
 
 egress:
-  - job: codeql.yml/report
-    policy: block
-    hosts:
-      - api.github.com:443
-
-  - job: integration-tests.yml/report
-    policy: block
-    hosts:
-      - api.github.com:443
-
-  - job: scorecard.yml/report
-    policy: block
-    hosts:
-      - api.github.com:443
-
-  - job: expedite.yml/report
-    policy: block
-    hosts:
-      - api.github.com:443
-
-  - job: site-sweep.yml/report
-    policy: block
-    hosts:
-      - api.github.com:443
-
-  - job: security-patrol.yml/report
+  - job: duty.yml/report
     policy: block
     hosts:
       - api.github.com:443
@@ -633,7 +608,13 @@ egress:
       - objects.githubusercontent.com:443
       - release-assets.githubusercontent.com:443
 
-  - job: deploy-infrastructure.yml/plan-estate
+  - job: plan-infrastructure.yml/sites
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
+  - job: plan-infrastructure.yml/plan
     policy: block
     reason: >-
       Plans a pull request's change against the as-built record (#554), on
@@ -649,11 +630,6 @@ egress:
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
-
-  - job: deploy-infrastructure.yml/plan-absence
-    policy: block
-    hosts:
-      - api.github.com:443
 
   - job: fabricator.yml/orders
     policy: block

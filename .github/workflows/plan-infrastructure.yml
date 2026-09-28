@@ -1,0 +1,198 @@
+name: Plan Infrastructure
+
+# A pull request that touches what a site is built from gets a plan, per site,
+# posted back to it. The merge's converge is Deploy Infrastructure's.
+#
+# Two workflows rather than one with each job gated on the event. As one file,
+# every pull request listed the converge's jobs - Apply, Converge, Aftermath -
+# as skipped checks, and the plan's jobs were skipped on every merge: noise a
+# reviewer had to learn to read past, in the one workflow whose checks matter
+# most.
+run-name: "Plan: ${{ github.event.pull_request.title }}"
+
+on:
+  pull_request:
+    # closed as well, so closing a pull request cancels its plan: the run it
+    # starts joins the same concurrency group, cancels whatever of that pull
+    # request is still queued, and does nothing itself.
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - "environments/**/infrastructure/**"
+      - "modules/infrastructure/**"
+      - "management/**"
+      - "config/management.tpl.json"
+
+permissions:
+  contents: read
+
+# A plan reads and changes nothing, so a newer push, or the pull request
+# closing, replaces it rather than queueing behind it. Keyed by the pull
+# request's number: a merged pull request reports its base branch as
+# github.ref (#573).
+concurrency:
+  group: plan-infrastructure-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# GitHub's default shell for `run:` is `bash -e {0}`, which has no pipefail.
+# tests/go/repo/pipefail_test.go asserts this is present.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # The sites the config declares. The template, not the rendered config:
+  # this job holds no vault credential, and site keys are plaintext structure.
+  sites:
+    name: Sites
+    # Nothing to plan for a pull request that has closed; that run exists only
+    # to cancel the plan before it.
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sites: ${{ steps.sites.outputs.sites }}
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: List the sites the config declares
+        id: sites
+        run: |
+          set -euo pipefail
+          sites="$(jq -c '.sites | keys' config/management.tpl.json)"
+          echo "sites=${sites}" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------
+  # PLAN EACH SITE - on a pull request touching what a site is built from.
+  #
+  # Against the as-built record, not the estate (#554). The record is the
+  # state as last converged with every real value replaced, published by the
+  # converge and the nightly from main. So this job holds no credential,
+  # needs no environment, and runs on GitHub's runner: nothing a pull request
+  # can run here reaches the estate, which is what lets the environments go
+  # without a reviewer. It cannot see drift since the record was taken; the
+  # nightly's real plan reports that.
+  #
+  # Structure only, never a value: this comment is world-readable.
+  # ---------------------------------------------------------------------
+  plan:
+    name: Plan ${{ matrix.site }}
+    needs: sites
+    # A fork's branch plans nothing: the record and the comment are this
+    # repository's.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    # A pull request's code never runs on the estate's runner.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      # To find and download the record another run published.
+      actions: read
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        site: ${{ fromJSON(needs.sites.outputs.sites) }}
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # The Go toolchain and OpenTofu with its providers, as the Validate
+          # lane fetches them, and GitHub's API for the record.
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            get.opentofu.org:443
+            github.com:443
+            go.dev:443
+            objects.githubusercontent.com:443
+            registry.opentofu.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
+      - name: Setup Go
+        uses: $/.github/workflows/setup-go
+
+      - name: Install OpenTofu
+        run: scripts/take-delivery.sh opentofu
+
+      # The newest record of this site that main published. Only main: a
+      # record is what a plan is trusted to compare with, so one a pull
+      # request uploaded - from its own branch, or a fork's branch that
+      # happens to be called main - is never taken.
+      - name: Find the as-built record
+        id: record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REPO_ID: ${{ github.repository_id }}
+          SITE: ${{ matrix.site }}
+        run: |
+          run_id="$(gh api "repos/${REPO}/actions/artifacts?name=as-built-${SITE}&per_page=100" --jq "
+            [.artifacts[]
+              | select(.expired | not)
+              | select(.workflow_run.head_branch == \"main\" and .workflow_run.head_repository_id == ${REPO_ID})]
+            | sort_by(.created_at) | last | .workflow_run.id // empty")"
+          if [ -z "${run_id}" ]; then
+            echo "::error::no as-built record of ${SITE} has been published from main yet. The next converge or nightly takes one."
+            exit 1
+          fi
+          echo "run-id=${run_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the as-built record
+        uses: $/.github/workflows/download-artifact
+        with:
+          name: as-built-${{ matrix.site }}
+          run-id: ${{ steps.record.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: as-built-record
+
+      - name: Plan
+        env:
+          SITE: ${{ matrix.site }}
+        run: |
+          go build -C scripts/contractor -o ../../toolshed/contractor .
+          ./toolshed/contractor plan-as-built -site "$SITE" -record as-built-record -comment-out plan-comment.md
+
+      - name: Comment the plan on the pull request
+        uses: $/.github/workflows/github-script
+        with:
+          name: estate-plan-comment
+
+      # NO PLAN, SAID OUT LOUD (#156). An absent comment looks identical to a
+      # change nobody thought needed one: #140 changed the machine count, its
+      # plan never ran, and the pull request read "24 of 25 checks passed" and
+      # merged. So a plan that failed or was cancelled writes the site's plan
+      # comment anyway, saying so - the same comment, so the latest of the two
+      # always replaces the other (#576).
+      #
+      # A step of this job rather than a job of its own. It was a separate job
+      # when plans waited on a self-hosted runner that might never start, and
+      # it showed as a skipped check on every pull request whose plan
+      # succeeded. Plans run on GitHub's runner now; this job starts.
+      - name: Say that no plan was produced
+        if: failure() || cancelled()
+        uses: $/.github/workflows/github-script
+        env:
+          SITE: ${{ matrix.site }}
+          RESULT: ${{ job.status }}
+        with:
+          name: plan-absence-comment
