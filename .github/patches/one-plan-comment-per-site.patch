@@ -1,0 +1,291 @@
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 28bd501..2b9b1ce 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -838,6 +838,8 @@ jobs:
+     runs-on: ubuntu-latest
+     permissions:
+       pull-requests: write
++      # To read which sites' plan jobs in this run did not succeed.
++      actions: read
+     timeout-minutes: 5
+     steps:
+       - name: Mobilize
+@@ -856,6 +858,6 @@ jobs:
+       - name: Say that no plan was produced
+         uses: $/.github/workflows/github-script
+         env:
+-          RESULT: ${{ needs.plan-estate.result }}
++          SITES: ${{ needs.changes.outputs.sites }}
+         with:
+           name: plan-absence-comment
+diff --git a/.github/workflows/github-script/action.yml b/.github/workflows/github-script/action.yml
+index fbb2fc8..ea62bbf 100644
+--- a/.github/workflows/github-script/action.yml
++++ b/.github/workflows/github-script/action.yml
+@@ -13,7 +13,7 @@
+ #
+ #   - uses: $/.github/workflows/github-script
+ #     env:
+-#       RESULT: ${{ needs.plan-estate.result }}
++#       SITES: ${{ needs.changes.outputs.sites }}
+ #     with:
+ #       name: plan-absence-comment
+ #
+diff --git a/.github/workflows/github-script/plan-absence-comment.js b/.github/workflows/github-script/plan-absence-comment.js
+index fca0d72..e21fb9f 100644
+--- a/.github/workflows/github-script/plan-absence-comment.js
++++ b/.github/workflows/github-script/plan-absence-comment.js
+@@ -1,57 +1,68 @@
+-// Says plainly that a management change was not planned against the estate.
++// Says plainly, per site, that a management change was not planned.
+ //
+ // Run by $/.github/workflows/github-script, which names this file rather than
+ // passing code in: a script handed to a shared action as an input is invisible
+ // to zizmor's and Semgrep's template-injection checks, while a file is read
+ // directly. Values arrive through process.env, set on the calling step.
++//
++// ONE COMMENT PER SITE, WHATEVER HAPPENED. This comment and the plan comment
++// share the plan's marker - `<!-- plan:<site> -->`, the first line of what
++// `contractor plan` writes - so whichever ran last replaces the other. They
++// used to carry different markers, so a failed plan followed by a good one
++// left both on the pull request, the stale one saying no plan existed.
+ module.exports = async ({ github, context }) => {
+-  const marker = '<!-- plan-absence -->';
++  const repo = {owner: context.repo.owner, repo: context.repo.repo};
+ 
+   // A plan cancelled because something replaced it is not an absent plan. A
+   // newer push supersedes a pull request's plan, and closing the pull request
+   // cancels it; both runs end "cancelled", and neither means the change went
+   // unplanned. Only a plan for the pull request's current head counts.
+-  const {data: pr} = await github.rest.pulls.get({
+-    owner: context.repo.owner, repo: context.repo.repo,
+-    pull_number: context.issue.number,
+-  });
+-  if (pr.state !== 'open' || pr.head.sha !== context.payload.pull_request.head.sha) {
++  const {data: pr} = await github.rest.pulls.get({...repo, pull_number: context.issue.number});
++  const head = context.payload.pull_request.head.sha;
++  if (pr.state !== 'open' || pr.head.sha !== head) {
+     return;
+   }
+-  const body = [
+-    marker,
+-    '## No plan was produced for this change',
+-    '',
+-    'This pull request changes `management/`, and the plan job ended as' +
+-    ' **`' + process.env.RESULT + '`** rather than succeeding. Nothing here' +
+-    ' compared the proposed configuration against the estate that exists.',
+-    '',
+-    'The plan compares this change with the as-built record: the estate as' +
+-    ' last converged, published from `main`. It usually fails for one of two' +
+-    ' reasons. No record has been published yet, which is the case until the' +
+-    ' first converge or nightly after an estate is built. Or the plan itself' +
+-    ' failed, and the job log says why.',
+-    '',
+-    'What it means for a reviewer: approving this is approving HCL rather than' +
+-    ' its consequences. Re-running the plan job once a record exists is worth' +
+-    ' more than reading the diff again.',
+-  ].join('\n');
+ 
+-  // One comment per pull request, replaced rather than appended. The
+-  // workload plan comment already does this; the estate plan comment
+-  // does not, which is #160.
+-  const {data: comments} = await github.rest.issues.listComments({
+-    issue_number: context.issue.number,
+-    owner: context.repo.owner, repo: context.repo.repo,
+-  });
+-  const existing = comments.find(c => c.body.startsWith(marker));
+-  const repo = {owner: context.repo.owner, repo: context.repo.repo};
++  // Which sites went unplanned, read from this run's own jobs. A site whose
++  // job cannot be found - the list could not be read, or the job never
++  // started - counts as unplanned: not knowing is not a plan.
++  const sites = JSON.parse(process.env.SITES || '[]');
++  let conclusions = {};
++  try {
++    const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
++      ...repo, run_id: context.runId, filter: 'latest', per_page: 100,
++    });
++    for (const j of jobs) {
++      conclusions[j.name] = j.conclusion;
++    }
++  } catch (e) {
++    conclusions = {};
++  }
++
++  const {data: comments} = await github.rest.issues.listComments({...repo, issue_number: context.issue.number});
++
++  for (const site of sites) {
++    const result = conclusions['Plan ' + site];
++    if (result === 'success') {
++      continue;
++    }
++    const marker = '<!-- plan:' + site + ' -->';
++    const body = [
++      marker,
++      '## Plan — ' + site,
++      '',
++      'No plan was produced for `' + head.slice(0, 7) + '`: the plan ' +
++        (result ? 'ended **' + result + '**' : 'did not run') + '. The job log says why.',
++      '',
++      'Approving this approves the change, not what it does to the estate.',
++    ].join('\n');
+ 
+-  // Deleted and recreated, for the reason given on the plan comment
+-  // above: an edited comment stays where it was first posted, which
+-  // is not where the push it describes happened.
+-  if (existing) {
+-    await github.rest.issues.deleteComment({...repo, comment_id: existing.id});
++    // Deleted and recreated rather than edited, as the plan comment is: an
++    // edited comment stays where it was first posted, beside a push that is no
++    // longer the one it describes.
++    for (const c of comments.filter(c => c.body.startsWith(marker))) {
++      await github.rest.issues.deleteComment({...repo, comment_id: c.id});
++    }
++    await github.rest.issues.createComment({...repo, issue_number: context.issue.number, body});
+   }
+-  await github.rest.issues.createComment({...repo, issue_number: context.issue.number, body});
+ };
+diff --git a/tests/js/unit/plan-absence-comment.test.ts b/tests/js/unit/plan-absence-comment.test.ts
+index 145931b..5f9fc9a 100644
+--- a/tests/js/unit/plan-absence-comment.test.ts
++++ b/tests/js/unit/plan-absence-comment.test.ts
+@@ -1,22 +1,39 @@
+ import { describe, expect, it } from "vitest";
+ import { createRequire } from "node:module";
+ 
+-// The comment that says a management change went unplanned. It runs whenever
+-// the plan job did not succeed - and since a newer push or a closed pull
+-// request now cancels a plan (#438), "cancelled" often means "replaced", not
+-// "missing". This holds it to speaking only when the plan it is about was
+-// for the pull request as it stands.
++// The comment that says a site's plan was not produced. It runs whenever the
++// plan job did not succeed - and since a newer push or a closed pull request
++// now cancels a plan (#438), "cancelled" often means "replaced", not
++// "missing". This holds it to speaking only when the plan it is about was for
++// the pull request as it stands, only for the sites whose plan did not
++// succeed, and in the same comment the plan itself uses: one per site, the
++// latest replacing whatever came before.
+ const require = createRequire(import.meta.url);
+ const comment = require("../../../.github/workflows/github-script/plan-absence-comment.js");
+ 
+-function fakeGitHub(pr: { state: string; head: { sha: string } }) {
++type Comment = { id: number; body: string };
++
++function fakeGitHub(opts: {
++  pr: { state: string; head: { sha: string } };
++  jobs?: { name: string; conclusion: string }[] | "unreadable";
++  comments?: Comment[];
++}) {
+   const created: string[] = [];
++  const deleted: number[] = [];
+   const github = {
++    paginate: async () => {
++      if (opts.jobs === "unreadable") throw new Error("403");
++      return opts.jobs ?? [];
++    },
+     rest: {
+-      pulls: { get: async () => ({ data: pr }) },
++      actions: { listJobsForWorkflowRun: {} },
++      pulls: { get: async () => ({ data: opts.pr }) },
+       issues: {
+-        listComments: async () => ({ data: [] }),
+-        deleteComment: async () => ({}),
++        listComments: async () => ({ data: opts.comments ?? [] }),
++        deleteComment: async ({ comment_id }: { comment_id: number }) => {
++          deleted.push(comment_id);
++          return {};
++        },
+         createComment: async ({ body }: { body: string }) => {
+           created.push(body);
+           return {};
+@@ -27,29 +44,76 @@ function fakeGitHub(pr: { state: string; head: { sha: string } }) {
+   const context = {
+     repo: { owner: "example", repo: "homelab" },
+     issue: { number: 7 },
+-    payload: { pull_request: { head: { sha: "run-head" } } },
++    runId: 1,
++    payload: { pull_request: { head: { sha: "abcdef0123" } } },
+   };
+-  return { github, context, created };
++  return { github, context, created, deleted };
+ }
+ 
++const open = { state: "open", head: { sha: "abcdef0123" } };
++
+ describe("the plan-absence comment", () => {
+-  it("speaks when the plan for the current head did not run", async () => {
+-    const { github, context, created } = fakeGitHub({ state: "open", head: { sha: "run-head" } });
+-    process.env.RESULT = "cancelled";
+-    await comment({ github, context });
+-    expect(created).toHaveLength(1);
+-    expect(created[0]).toContain("No plan was produced");
++  it("speaks for a site whose plan failed, in that site's plan comment", async () => {
++    process.env.SITES = '["site0"]';
++    const f = fakeGitHub({ pr: open, jobs: [{ name: "Plan site0", conclusion: "failure" }] });
++    await comment(f);
++    expect(f.created).toHaveLength(1);
++    expect(f.created[0].split("\n")[0]).toBe("<!-- plan:site0 -->");
++    expect(f.created[0]).toContain("No plan was produced for `abcdef0`");
++    expect(f.created[0]).toContain("**failure**");
++  });
++
++  // The case that left two comments on one pull request: the site's previous
++  // plan comment, written by `contractor plan` with the same first line, is
++  // replaced rather than left beside the new one.
++  it("replaces the site's earlier plan comment rather than adding another", async () => {
++    process.env.SITES = '["site0"]';
++    const f = fakeGitHub({
++      pr: open,
++      jobs: [{ name: "Plan site0", conclusion: "failure" }],
++      comments: [
++        { id: 11, body: "<!-- plan:site0 -->\n## Plan — site0\n\nPlanned against `1234567`" },
++        { id: 12, body: "<!-- plan:site1 -->\n## Plan — site1" },
++      ],
++    });
++    await comment(f);
++    expect(f.deleted).toEqual([11]);
++    expect(f.created).toHaveLength(1);
++  });
++
++  it("leaves a site whose plan succeeded alone", async () => {
++    process.env.SITES = '["site0", "site1"]';
++    const f = fakeGitHub({
++      pr: open,
++      jobs: [
++        { name: "Plan site0", conclusion: "success" },
++        { name: "Plan site1", conclusion: "cancelled" },
++      ],
++    });
++    await comment(f);
++    expect(f.created).toHaveLength(1);
++    expect(f.created[0].split("\n")[0]).toBe("<!-- plan:site1 -->");
++  });
++
++  it("counts every site as unplanned when the jobs cannot be read", async () => {
++    process.env.SITES = '["site0", "site1"]';
++    const f = fakeGitHub({ pr: open, jobs: "unreadable" });
++    await comment(f);
++    expect(f.created).toHaveLength(2);
++    expect(f.created[0]).toContain("did not run");
+   });
+ 
+   it("stays quiet when a newer push replaced the plan", async () => {
+-    const { github, context, created } = fakeGitHub({ state: "open", head: { sha: "newer" } });
+-    await comment({ github, context });
+-    expect(created).toHaveLength(0);
++    process.env.SITES = '["site0"]';
++    const f = fakeGitHub({ pr: { state: "open", head: { sha: "newer" } } });
++    await comment(f);
++    expect(f.created).toHaveLength(0);
+   });
+ 
+   it("stays quiet when the pull request closed", async () => {
+-    const { github, context, created } = fakeGitHub({ state: "closed", head: { sha: "run-head" } });
+-    await comment({ github, context });
+-    expect(created).toHaveLength(0);
++    process.env.SITES = '["site0"]';
++    const f = fakeGitHub({ pr: { state: "closed", head: { sha: "abcdef0123" } } });
++    await comment(f);
++    expect(f.created).toHaveLength(0);
+   });
+ });
