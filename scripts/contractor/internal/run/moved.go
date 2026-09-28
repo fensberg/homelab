@@ -1,9 +1,7 @@
 package run
 
 import (
-	"bytes"
 	"fmt"
-	"os/exec"
 	"sort"
 
 	"homelab/details/asbuilt"
@@ -89,7 +87,7 @@ func SettleMoves(ctx *Context) error {
 	// targeted apply exactly as a `moved` block does. The plans do the same
 	// in their copies (details/asbuilt.ForgetReads), so they refuse what this
 	// would and pass what it would.
-	n, err := asbuilt.ForgetReads(ctx.ClusterDir, nil, captureTofu, true)
+	n, err := asbuilt.ForgetReads(ctx.ClusterDir, nil, asbuilt.Exec, true)
 	if err != nil {
 		return err
 	}
@@ -130,20 +128,4 @@ func settleMovesArgs(addrs []string) []string {
 		args = append(args, "-target="+addr)
 	}
 	return args
-}
-
-// captureTofu runs tofu with both streams captured, so state listings and
-// removals - which name addresses, and a for_each key can be a vault value -
-// never reach a log.
-func captureTofu(dir string, env []string, args ...string) ([]byte, []byte, error) {
-	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-	c := exec.Command("tofu", args...)
-	c.Dir = dir
-	if env != nil {
-		c.Env = env
-	}
-	var out, errb bytes.Buffer
-	c.Stdout, c.Stderr = &out, &errb
-	err := c.Run()
-	return out.Bytes(), errb.Bytes(), err
 }

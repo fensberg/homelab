@@ -68,7 +68,7 @@ func PlanSteps(in StepsInputs, tofu Tofu) ([]byte, error) {
 			args = append(args, "-target="+t)
 		}
 		if _, stderr, err := tofu(in.Dir, in.Env, args...); err != nil {
-			return nil, fmt.Errorf("the converge's step %q would be refused:\n%s", step.Label, ErrorSummary(stderr))
+			return nil, fmt.Errorf("the converge's step %q would be refused (%v):\n%s", step.Label, err, ErrorSummary(stderr))
 		}
 	}
 	plan, _, err := tofu(in.Dir, in.Env, "show", "-json", "step.tfplan")
@@ -106,7 +106,7 @@ func settleMoves(in StepsInputs, tofu Tofu, say func(string)) error {
 			args = append(args, "-target="+m.From, "-target="+m.To)
 		}
 		if _, stderr, err := tofu(in.Dir, in.Env, args...); err != nil {
-			return fmt.Errorf("settling renamed resources, as a converge would, failed:\n%s", ErrorSummary(stderr))
+			return fmt.Errorf("settling renamed resources, as a converge would, failed (%v):\n%s", err, ErrorSummary(stderr))
 		}
 		return nil
 	}
@@ -120,7 +120,7 @@ func settleMoves(in StepsInputs, tofu Tofu, say func(string)) error {
 			continue
 		}
 		if _, stderr, err := tofu(in.Dir, in.Env, "state", "mv", "-lock=false", m.From, m.To); err != nil {
-			return fmt.Errorf("recording the rename of %s:\n%s", m.From, ErrorSummary(stderr))
+			return fmt.Errorf("recording the rename of %s (%v):\n%s", m.From, err, ErrorSummary(stderr))
 		}
 	}
 	return nil
@@ -142,7 +142,7 @@ func settleMoves(in StepsInputs, tofu Tofu, say func(string)) error {
 func ForgetReads(dir string, env []string, tofu Tofu, lock bool) (int, error) {
 	listed, stderr, err := tofu(dir, env, "state", "list")
 	if err != nil {
-		return 0, fmt.Errorf("listing state to forget its cached reads:\n%s", ErrorSummary(stderr))
+		return 0, fmt.Errorf("listing state to forget its cached reads (%v):\n%s", err, ErrorSummary(stderr))
 	}
 	var reads []string
 	for _, a := range strings.Fields(string(listed)) {
@@ -158,7 +158,7 @@ func ForgetReads(dir string, env []string, tofu Tofu, lock bool) (int, error) {
 		args = append(args, "-lock=false")
 	}
 	if _, stderr, err := tofu(dir, env, append(args, reads...)...); err != nil {
-		return 0, fmt.Errorf("forgetting cached data-source reads:\n%s", ErrorSummary(stderr))
+		return 0, fmt.Errorf("forgetting cached data-source reads (%v):\n%s", err, ErrorSummary(stderr))
 	}
 	return len(reads), nil
 }

@@ -241,3 +241,46 @@ func TestAPlanForgetsCachedReadsFirst(t *testing.T) {
 		t.Errorf("the cached read was forgotten at call %d, the first plan was at %d", rm, firstPlan)
 	}
 }
+
+// fakeOnPath puts a tofu first on PATH that reports its directory, an
+// environment variable and its arguments, writes to stderr, and fails when
+// asked to.
+func fakeOnPath(t *testing.T) {
+	t.Helper()
+	bin := t.TempDir()
+	script := "#!/bin/sh\npwd\necho \"marker=$EXEC_MARKER\"\necho \"args=$*\"\necho 'Error: from tofu' >&2\n[ \"$1\" = fail ] && exit 3\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "tofu"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// Exec runs tofu where it is told, with the environment it is given - or the
+// caller's own when given none - and captures both streams rather than
+// printing them, because what tofu prints can name a vault value.
+func TestExecRunsInItsDirWithItsEnvAndCapturesBoth(t *testing.T) {
+	fakeOnPath(t)
+	dir := t.TempDir()
+	t.Setenv("EXEC_MARKER", "inherited")
+
+	out, errb, err := Exec(dir, nil, "plan", "-input=false")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{dir, "marker=inherited", "args=plan -input=false"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("stdout does not carry %q:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(string(errb), "Error: from tofu") || strings.Contains(string(out), "Error: from tofu") {
+		t.Errorf("stderr was not captured apart from stdout: out %q, err %q", out, errb)
+	}
+
+	out, _, err = Exec(dir, append(os.Environ(), "EXEC_MARKER=given"), "fail")
+	if err == nil {
+		t.Error("tofu's failure was not returned")
+	}
+	if !strings.Contains(string(out), "marker=given") {
+		t.Errorf("the environment given was not used:\n%s", out)
+	}
+}

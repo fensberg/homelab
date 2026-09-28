@@ -24,7 +24,7 @@ import (
 func PlanAsBuilt(ctx *run.Context, recordDir string) error {
 	run.WritePhase("Plan", "Show what this change would do, planned against the as-built record.")
 	defer func() { _ = run.RemoveTreeIfExists(ctx.AsBuiltDir) }()
-	return planAsBuilt(ctx, recordDir, execTofu)
+	return planAsBuilt(ctx, recordDir, asbuilt.Exec)
 }
 
 func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu) error {

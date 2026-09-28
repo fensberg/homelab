@@ -52,7 +52,7 @@ func Plan(ctx *run.Context) error {
 	// a for_each key can be the hypervisor's name, a data source id the
 	// cluster's - and this output is pasted into pull requests. A refused
 	// step reports its diagnostic lines, never the detail beneath them.
-	raw, err := planSteps(ctx, execTofu, pushState)
+	raw, err := planSteps(ctx, asbuilt.Exec, pushState)
 	if err != nil {
 		return err
 	}
