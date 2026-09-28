@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -109,7 +110,7 @@ func Take(in Inputs, tofu Tofu) (*Result, error) {
 	say("planning against the estate, to prove it is converged")
 	realPlan := filepath.Join(in.Work, "real.tfplan")
 	if _, stderr, err := tofu(in.Root, nil, "plan", "-input=false", "-no-color", "-out="+realPlan); err != nil {
-		return nil, fmt.Errorf("the real plan failed:\n%s", ErrorSummary(stderr))
+		return nil, fmt.Errorf("the real plan failed (%v):\n%s", err, ErrorSummary(stderr))
 	}
 	liveRaw, _, err := tofu(in.Root, nil, "show", "-json", realPlan)
 	_ = os.Remove(realPlan)
@@ -178,7 +179,7 @@ func Take(in Inputs, tofu Tofu) (*Result, error) {
 	}
 	env := OfflineEnv(os.Environ(), in.Site, filepath.Join(scratch, "config.json"))
 	if _, stderr, err := tofu(scratch, env, "init", "-input=false", "-no-color", pluginDir(in.Root)); err != nil {
-		return nil, fmt.Errorf("initialising the offline copy:\n%s", ErrorSummary(stderr))
+		return nil, fmt.Errorf("initialising the offline copy (%v):\n%s", err, ErrorSummary(stderr))
 	}
 
 	for res.Rounds < MaxRounds && !res.Quiet {
@@ -189,7 +190,7 @@ func Take(in Inputs, tofu Tofu) (*Result, error) {
 		}
 		if _, stderr, err := tofu(scratch, env, "plan", "-refresh=false", "-lock=false", "-input=false", "-no-color", "-out=tfplan"); err != nil {
 			return nil, fmt.Errorf("the offline plan failed in round %d. A value that needs a shape it was not given fails here, and the fingerprint table grows from these:\n%s",
-				res.Rounds, ErrorSummary(stderr))
+				res.Rounds, ErrorSummary(stderr)+fmt.Sprintf("\n    (%v)", err))
 		}
 		if res.LastPlan, _, err = tofu(scratch, env, "show", "-json", "tfplan"); err != nil {
 			return nil, fmt.Errorf("reading the offline plan back: %w", err)
@@ -317,7 +318,7 @@ func throwawayMachineSecrets(in Inputs, tofu Tofu, version string) (map[string]a
 		{"apply", "-auto-approve", "-input=false"},
 	} {
 		if _, stderr, err := tofu(dir, env, args...); err != nil {
-			return nil, fmt.Errorf("generating the throwaway CA (tofu %s):\n%s", args[0], ErrorSummary(stderr))
+			return nil, fmt.Errorf("generating the throwaway CA (tofu %s: %v):\n%s", args[0], err, ErrorSummary(stderr))
 		}
 	}
 	raw, _, err := tofu(dir, env, "state", "pull")
@@ -439,6 +440,24 @@ func ErrorSummary(stderr []byte) string {
 // directories sit at the same depth, not where the repository is.
 func depth(p string) int {
 	return strings.Count(filepath.ToSlash(filepath.Clean(p)), "/")
+}
+
+// Exec is the Tofu every caller outside a test uses: tofu, run in dir, with
+// both streams captured. Captured because what tofu prints can name an address
+// whose for_each key is a vault value, and the callers decide what reaches a
+// log - a diagnostic line through ErrorSummary, never the detail. A nil env is
+// the caller's own.
+func Exec(dir string, env []string, args ...string) ([]byte, []byte, error) {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	c := exec.Command("tofu", args...)
+	c.Dir = dir
+	if env != nil {
+		c.Env = env
+	}
+	var out, errb bytes.Buffer
+	c.Stdout, c.Stderr = &out, &errb
+	err := c.Run()
+	return out.Bytes(), errb.Bytes(), err
 }
 
 func writeJSON(path string, v any) error {

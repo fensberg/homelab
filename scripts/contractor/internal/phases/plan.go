@@ -52,7 +52,7 @@ func Plan(ctx *run.Context) error {
 	// a for_each key can be the hypervisor's name, a data source id the
 	// cluster's - and this output is pasted into pull requests. A refused
 	// step reports its diagnostic lines, never the detail beneath them.
-	raw, err := planSteps(ctx, execTofu, pushState)
+	raw, err := planSteps(ctx, asbuilt.Exec, pushState)
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func commentBody(site, summary, commit string) string {
 	// compare that against the pull request in one glance.
 	provenance := ""
 	if commit != "" {
-		provenance = fmt.Sprintf("\nPlanned against `%s`, as it would be once merged.\n", commit)
+		provenance = fmt.Sprintf("\nPlanned against `%s`\n", commit)
 	}
 	return fmt.Sprintf("%s\n## Plan — %s\n%s\n```text\n%s\n```\n",
 		commentMarker(site), site, provenance, strings.TrimRight(summary, "\n"))

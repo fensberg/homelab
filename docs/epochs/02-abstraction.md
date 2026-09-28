@@ -1638,6 +1638,79 @@ here.
 
 ### The addressing scheme is computed once
 
+**Widened 2026-09-27 into an estate-wide address plan.** The operator wants
+any machine or person at one site to be able to reach another site _if
+granted_ (epoch 09), and names that work across sites. That needs more than
+one computation per site: it needs one computation for the estate, which is
+what guarantees no two sites ever share a range. So the bar is now a pure
+OpenTofu module, `modules/infrastructure/address-plan`, with no providers and
+no state, that:
+
+- **allocates** every site's ranges - machines, the load-balancer pool,
+  untrusted zones, and **pods and services**, which today every site shares
+  (`10.244.0.0/16`, `10.96.0.0/12`) and which would make routing between sites
+  impossible. site0 is allocated like every other site, with no exception for
+  being first; conforming it is a rebuild, and rebuilds are cheap;
+- **names** every addressed thing `<service>.<site>.<domain>`, with declared
+  aliases such as `proxmox.<domain>`, the domain read from the vault;
+- **is read, not restated**: the cluster root calls it, the lawyer reads each
+  site's routes from it (#536), and the contractor and the harness get the
+  same answers from `tofu console` against it.
+
+It holds no access rules. Who may reach what is epoch 09's, and refers to the
+plan's names.
+
+**Built, 2026-09-27; two pieces still to land.** `modules/infrastructure/address-plan`
+computes every site's ranges, machines (address, VM id, name, placement),
+template VM ids, the state database's endpoint, the SDN identities, the slug,
+and - once a domain is given - every private name and alias. It is the first
+module under `modules/infrastructure/`.
+
+Everything that used to restate it reads it instead. The cluster root calls it
+and its network locals are views of the answer; `config.ResolveSiteNetwork`
+asks it through `tofu console` (validation stays in Go, at the edge, with
+`registry.tf`), and `sterilize.go`, the Health phase, the Ansible inventory and
+the test harness read that. The contract tests that compared Go's band
+constants with the HCL's are gone with the constants: with one computation
+there is nothing to disagree. It reproduces the addresses that existed exactly
+
+- compared field by field on a config with workers, zones and two
+  hypervisors - so merging it changes no machine.
+
+Found while building it: `tofu console` takes a lock on its state path even
+with no state, so two callers asking at once refused each other. Each question
+now gets a private directory and state path.
+
+**The step-by-step plan caught a real break on its first run.** This pull
+request's plan against the record was refused at the converge's first step with
+"Moved resource instances excluded by targeting", although nothing here moves.
+The record showed why: its state held `data.talos_cluster_health.this`, while
+the code has said `this[0]` since #555 gave that read a count - and no converge
+had run since, so the real state held the same. A cached read at an address the
+configuration no longer uses is an implicit move, and it refuses every targeted
+apply. So the next converge on `main`, whatever triggered it, would have halted
+at its first step - my own change in #555, invisible to the one untargeted plan
+that used to be all a pull request got. That is #497's whole case, arriving on
+the day it was closed.
+
+The fix is structural rather than a `moved` block, which OpenTofu does not allow
+for data sources: before its first targeted step, the converge and both plans
+forget every cached data-source read (`details/asbuilt.ForgetReads`). A data
+source's state is only a cache that every plan reads again, so forgetting it
+costs nothing, and a renamed or newly counted data source can no longer block a
+converge. Verified against the published record: this branch plans "No changes".
+
+Still to land, each its own change:
+
+- **Pods and services on the allocated ranges.** The plan allocates them per
+  site (site0: `10.110.0.0/16`, `10.196.40.0/22`) and nothing reads them yet.
+  Switching Talos to them changes a running cluster's pod range, so site0 is
+  rebuilt from that branch before it merges, and the converge on merge finds
+  nothing to do.
+- **Names.** The module emits every private name and alias once a domain is
+  given; the domain is a vault field the operator adds first, and until then
+  a render would fail on the missing reference.
+
 Four implementations of one scheme today, across two languages:
 
 ```text
@@ -1759,6 +1832,45 @@ Named here so the next person does not have to rediscover why.
 - **The control-plane listener table** added with #498. Two places by design:
   one declares what the machines should open, the other dials it. Collapsing
   them would leave the test asserting the declaration against itself.
+
+### A hypervisor's own facts come from its config, not from the code
+
+Added 2026-09-27, from a scan for literals that are really facts about one
+machine. `compute.tf` names the Proxmox storage `local-zfs` and `local-iso` and
+the SDN vnet `vnetint` sixteen times, and the playbook and `verify.go` repeat
+the vnet. Those are properties of a host, not of this estate's design: a second
+hypervisor on LVM rather than ZFS, or with its vnet named otherwise, cannot be
+described without editing code.
+
+**The bar:** each hypervisor's entry in the config names its VM storage, its
+image store and its vnet, and the code reads them from there. A guard refuses
+a Proxmox storage or network name written as a literal anywhere in the code,
+the playbook included.
+
+### Each site has its own Flux directory, over shared bases
+
+Added 2026-09-27. `gitops_target_path` is `clusters/management` for every
+site, so every site would reconcile one tree, and anything site-specific in it
+collides the day a second site exists: the runner scale set registers as
+`homelab-management` from both, and the tunnel's routes collide (#536).
+
+**The bar:** Flux's standard multi-cluster layout - shared bases, and one thin
+directory per site (`clusters/<site>/`) holding what is that site's alone - with
+each site's `gitops_target_path` derived from its key. The runner scale set is
+named for its site. A guard refuses a site-specific value in a shared base.
+
+### A site pins the module version it runs
+
+Added 2026-09-27, for the module move itself. When the cluster root becomes a
+module, every site consuming the module at `main` moves together on every
+merge, and `docs/environments-and-promotion.md`'s answer to "where is staging"
+
+- the second site is - cannot happen: there is nothing to roll to one site
+  first.
+
+**The bar:** each site names the module version it runs, a change reaches one
+site by moving that site's pin, and a guard refuses a site that consumes the
+module unpinned.
 
 ## Open questions to settle first
 

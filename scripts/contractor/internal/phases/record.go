@@ -1,11 +1,9 @@
 package phases
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -39,7 +37,7 @@ import (
 func Record(ctx *run.Context) error {
 	run.WritePhase("Record", "Take the as-built record: the estate as converged, with nothing real in it.")
 	defer func() { _ = run.RemoveTreeIfExists(ctx.AsBuiltDir) }()
-	return takeRecord(ctx, execTofu)
+	return takeRecord(ctx, asbuilt.Exec)
 }
 
 // takeRecord is Record with its tofu handed to it, so the converge's rule -
@@ -156,17 +154,4 @@ func describeSources(counts map[string]int) string {
 		parts = append(parts, fmt.Sprintf("%d %s", counts[k], k))
 	}
 	return fmt.Sprintf("%d real values (%s)", total, strings.Join(parts, ", "))
-}
-
-func execTofu(dir string, env []string, args ...string) ([]byte, []byte, error) {
-	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-	c := exec.Command("tofu", args...)
-	c.Dir = dir
-	if env != nil {
-		c.Env = env
-	}
-	var out, errb bytes.Buffer
-	c.Stdout, c.Stderr = &out, &errb
-	err := c.Run()
-	return out.Bytes(), errb.Bytes(), err
 }

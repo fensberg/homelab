@@ -419,17 +419,19 @@ func TestHeadFromEventPrefersNothingToSomethingWrong(t *testing.T) {
 	}
 }
 
-// The comment has to say the plan covers the merge result, not the branch
-// alone. Naming the branch head without that would be precise about the wrong
-// thing: what was planned is the tree that exists after merging.
-func TestCommentBodySaysThePlanCoversTheMerge(t *testing.T) {
+// The comment names the commit and states the result, and nothing about how
+// it was reached. The operator's words: "The operator shouldn't care when it
+// was compared against because the estate is robust and will only show it a
+// comparison that is up-to-date and correct."
+func TestCommentBodyNamesTheCommitAndNothingElse(t *testing.T) {
 	body := commentBody("site0", "  add  x", "28b3e08")
-	if !strings.Contains(body, "28b3e08") {
-		t.Fatalf("the commit is missing:\n%s", body)
+	if !strings.Contains(body, "Planned against `28b3e08`\n") {
+		t.Fatalf("the commit is not named on a line of its own:\n%s", body)
 	}
-	if !strings.Contains(strings.ToLower(body), "merged") {
-		t.Errorf(`the comment does not say the plan covers the merge result, so the SHA reads as "the branch was planned":
-%s`, body)
+	for _, internal := range []string{"merged", "recorded", "compared", "drift"} {
+		if strings.Contains(strings.ToLower(body), internal) {
+			t.Errorf("the comment explains its own machinery (%q):\n%s", internal, body)
+		}
 	}
 }
 

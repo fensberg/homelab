@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"homelab/details/asbuilt"
 	"homelab/details/tofustate"
 )
 
@@ -79,8 +80,21 @@ func PendingMoves(dir string) ([]string, error) {
 }
 
 // SettleMoves records any pending rename, so the targeted applies that follow
-// are not refused. It is a no-op when the configuration declares no move.
+// are not refused. It is a no-op when there is nothing to settle.
 func SettleMoves(ctx *Context) error {
+	// Cached data-source reads first: a read left at an address the
+	// configuration no longer uses is an implicit move, which refuses every
+	// targeted apply exactly as a `moved` block does. The plans do the same
+	// in their copies (details/asbuilt.ForgetReads), so they refuse what this
+	// would and pass what it would.
+	n, err := asbuilt.ForgetReads(ctx.ClusterDir, nil, asbuilt.Exec, true)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		Info(fmt.Sprintf("forgot %d cached data-source read(s); the plan below reads them again", n))
+	}
+
 	addrs, err := PendingMoves(ctx.ClusterDir)
 	if err != nil {
 		return fmt.Errorf("looking for renamed resources: %w", err)

@@ -78,7 +78,7 @@ func PlanAgainst(in PlanInputs, tofu Tofu) ([]byte, Meta, error) {
 		init = append(init, "-plugin-dir="+in.PluginDir)
 	}
 	if _, stderr, err := tofu(dir, env, init...); err != nil {
-		return nil, meta, fmt.Errorf("initialising the plan:\n%s", ErrorSummary(stderr))
+		return nil, meta, fmt.Errorf("initialising the plan (%v):\n%s", err, ErrorSummary(stderr))
 	}
 	plan, err := PlanSteps(StepsInputs{Dir: dir, Env: env, Sequence: in.Sequence}, tofu)
 	if err != nil {

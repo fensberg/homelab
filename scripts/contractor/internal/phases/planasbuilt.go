@@ -3,7 +3,6 @@ package phases
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"homelab/contractor/internal/run"
 	"homelab/contractor/steps"
@@ -24,7 +23,7 @@ import (
 func PlanAsBuilt(ctx *run.Context, recordDir string) error {
 	run.WritePhase("Plan", "Show what this change would do, planned against the as-built record.")
 	defer func() { _ = run.RemoveTreeIfExists(ctx.AsBuiltDir) }()
-	return planAsBuilt(ctx, recordDir, execTofu)
+	return planAsBuilt(ctx, recordDir, asbuilt.Exec)
 }
 
 func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu) error {
@@ -35,7 +34,7 @@ func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu) error {
 	if err != nil {
 		return err
 	}
-	raw, meta, err := asbuilt.PlanAgainst(asbuilt.PlanInputs{
+	raw, _, err := asbuilt.PlanAgainst(asbuilt.PlanInputs{
 		Root: ctx.ClusterDir, Work: ctx.AsBuiltDir, Record: recordDir,
 		Template: tpl, Site: ctx.Site,
 		Sequence: steps.Plan(),
@@ -50,22 +49,10 @@ func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu) error {
 	fmt.Println()
 	fmt.Println(summary)
 	if ctx.CommentOut != "" {
-		body := againstRecord(commentBody(ctx.Site, summary, plannedCommit()), meta)
+		body := commentBody(ctx.Site, summary, plannedCommit())
 		if err := os.WriteFile(ctx.CommentOut, []byte(body), 0o644); err != nil {
 			return fmt.Errorf("writing the comment body: %w", err)
 		}
 	}
 	return nil
-}
-
-// againstRecord says, under the heading, what the plan was compared with. A
-// record is only as current as the last converge or nightly that took it, so
-// the reader is told which commit and when rather than left to assume the
-// estate as of this morning.
-func againstRecord(body string, meta asbuilt.Meta) string {
-	head, rest, _ := strings.Cut(body, "\n## ")
-	title, after, _ := strings.Cut(rest, "\n")
-	note := fmt.Sprintf("Compared with the estate as recorded after `%s` converged, on %s. Drift since then is the nightly's to report.",
-		meta.Commit, meta.Taken.Format("2006-01-02 15:04 UTC"))
-	return head + "\n## " + title + "\n\n" + note + "\n" + after
 }

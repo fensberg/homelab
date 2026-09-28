@@ -17,16 +17,16 @@ import (
 
 // buildStateConnStr in sterilize.go rebuilds the state database's address
 // from first principles, because the break-glass path it serves has to run at
-// the moment Terraform can no longer reach its own state. A unit test proves
-// those hard-coded values still match variables.tf. This proves they still
-// match the estate - which is the question that actually matters when the
+// the moment Terraform can no longer reach its own state. The address plan is
+// the one place that endpoint is computed. This proves it still matches the
+// estate - which is the question that actually matters when the
 // emergency destroy runs, and the one no amount of reading source can answer.
 func TestDerivedStateDatabaseAddressMatchesTheDeployedOne(t *testing.T) {
 	t.Parallel()
-	site := harness.SiteConfig(t)
-
-	// Derived exactly the way the break-glass path derives it.
-	derived := fmt.Sprintf("10.%d.10.100:30432", site.Octet)
+	// Derived exactly the way the break-glass path derives it: from the
+	// address plan, through the same resolution the contractor uses.
+	db := harness.SiteNetwork(t).StateDatabase
+	derived := fmt.Sprintf("%s:%d", db.Host, db.Port)
 
 	// Reported by the cluster that actually exists.
 	deployed := terraform.OutputRequired(t, harness.TofuOptions(t, nil), "state_db_endpoint")

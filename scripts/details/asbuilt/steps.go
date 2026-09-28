@@ -68,7 +68,7 @@ func PlanSteps(in StepsInputs, tofu Tofu) ([]byte, error) {
 			args = append(args, "-target="+t)
 		}
 		if _, stderr, err := tofu(in.Dir, in.Env, args...); err != nil {
-			return nil, fmt.Errorf("the converge's step %q would be refused:\n%s", step.Label, ErrorSummary(stderr))
+			return nil, fmt.Errorf("the converge's step %q would be refused (%v):\n%s", step.Label, err, ErrorSummary(stderr))
 		}
 	}
 	plan, _, err := tofu(in.Dir, in.Env, "show", "-json", "step.tfplan")
@@ -87,6 +87,11 @@ func PlanSteps(in StepsInputs, tofu Tofu) ([]byte, error) {
 // leaves the state in the same place. A move whose old address is not in state
 // - already settled, or never built - has nothing to record.
 func settleMoves(in StepsInputs, tofu Tofu, say func(string)) error {
+	if n, err := ForgetReads(in.Dir, in.Env, tofu, false); err != nil {
+		return err
+	} else if n > 0 {
+		say(fmt.Sprintf("forgot %d cached data-source read(s), as a converge does first", n))
+	}
 	moves, err := tofustate.Moves(in.Dir)
 	if err != nil {
 		return err
@@ -101,7 +106,7 @@ func settleMoves(in StepsInputs, tofu Tofu, say func(string)) error {
 			args = append(args, "-target="+m.From, "-target="+m.To)
 		}
 		if _, stderr, err := tofu(in.Dir, in.Env, args...); err != nil {
-			return fmt.Errorf("settling renamed resources, as a converge would, failed:\n%s", ErrorSummary(stderr))
+			return fmt.Errorf("settling renamed resources, as a converge would, failed (%v):\n%s", err, ErrorSummary(stderr))
 		}
 		return nil
 	}
@@ -115,10 +120,47 @@ func settleMoves(in StepsInputs, tofu Tofu, say func(string)) error {
 			continue
 		}
 		if _, stderr, err := tofu(in.Dir, in.Env, "state", "mv", "-lock=false", m.From, m.To); err != nil {
-			return fmt.Errorf("recording the rename of %s:\n%s", m.From, ErrorSummary(stderr))
+			return fmt.Errorf("recording the rename of %s (%v):\n%s", m.From, err, ErrorSummary(stderr))
 		}
 	}
 	return nil
+}
+
+// ForgetReads removes every data source's cached read from state, and says
+// how many there were.
+//
+// A data source in state is only a cache: every plan reads it again. But a
+// cached read at an address the configuration no longer uses - `x` after `x`
+// gained a count, so the configuration says `x[0]` - is an implicit move, and a
+// pending move refuses every targeted apply. That is how #555, giving the
+// cluster health read a count, would have halted the next converge at its
+// first step; the plan walking the converge's steps is what found it. So the
+// converge and both plans forget the cached reads before their first targeted
+// step, and there is nothing stale left to move.
+//
+// lock is false in a copy of state, where nothing else can hold it.
+func ForgetReads(dir string, env []string, tofu Tofu, lock bool) (int, error) {
+	listed, stderr, err := tofu(dir, env, "state", "list")
+	if err != nil {
+		return 0, fmt.Errorf("listing state to forget its cached reads (%v):\n%s", err, ErrorSummary(stderr))
+	}
+	var reads []string
+	for _, a := range strings.Fields(string(listed)) {
+		if strings.HasPrefix(a, "data.") || strings.Contains(a, ".data.") {
+			reads = append(reads, a)
+		}
+	}
+	if len(reads) == 0 {
+		return 0, nil
+	}
+	args := []string{"state", "rm"}
+	if !lock {
+		args = append(args, "-lock=false")
+	}
+	if _, stderr, err := tofu(dir, env, append(args, reads...)...); err != nil {
+		return 0, fmt.Errorf("forgetting cached data-source reads (%v):\n%s", err, ErrorSummary(stderr))
+	}
+	return len(reads), nil
 }
 
 // inState reports whether a resource, or any instance of it, is in state.

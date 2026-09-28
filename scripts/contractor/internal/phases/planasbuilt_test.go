@@ -24,8 +24,9 @@ func savedRecord(t *testing.T) string {
 	return dir
 }
 
-// A change planned against a record is reported like any plan, and its
-// comment says which record it was compared with.
+// A change planned against a record is reported like any plan, and nothing
+// about the record reaches the comment: the estate keeps the record current,
+// so the operator reads the change and nothing about how it was found.
 func TestAChangeIsPlannedAgainstTheRecordAndSaysWhich(t *testing.T) {
 	ctx := recordContext(t)
 	ctx.CommentOut = filepath.Join(t.TempDir(), "comment.md")
@@ -44,10 +45,13 @@ func TestAChangeIsPlannedAgainstTheRecordAndSaysWhich(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := os.ReadFile(ctx.CommentOut)
-	for _, want := range []string{"## Plan — site0", "after `c0ffee1` converged, on 2026-09-27 04:00 UTC", "add", "proxmox_vm.worker[3]"} {
+	for _, want := range []string{"## Plan — site0", "add", "proxmox_vm.worker[3]"} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("the comment does not say %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(string(body), "c0ffee1") || strings.Contains(string(body), "recorded") {
+		t.Errorf("the comment talks about the record:\n%s", body)
 	}
 	if !strings.HasPrefix(string(body), commentMarker("site0")) {
 		t.Error("the comment lost its marker, so the next plan would add another rather than replace it")

@@ -175,21 +175,11 @@ func demigrateStateToLocal(ctx *run.Context) error {
 // turning a duplication the comment below merely acknowledges into one a test
 // actually enforces.
 const (
-	// variables.tf: local.state_db_nodeport / state_db_name / state_db_owner.
-	stateDBNodePort = 30432
-	stateDBName     = "tofu_state"
-	stateDBOwner    = "tofu"
-
-	// variables.tf: host_octets is 100 + i and node_ips indexes it, so
-	// node_cidr is "10.<octet>.10.0/24", so the first control-plane node -
-	// the one hosting the NodePort - is always at .10.100.
-	stateDBFirstNodeHost = 100
-
-	// The octet multiplier in the VM id band: an id is octet*1000 + host, so
-	// octet 10 owns 10100-10199. Duplicated from variables.tf because the hint
-	// below is printed when state is gone, and pinned by
-	// TestContract_VMIDBandMatchesTheOpenTofuSource.
-	vmIDOctetMultiplier = 1000
+	// variables.tf: local.state_db_name / state_db_owner. Where the database
+	// answers - host and port - is the address plan's, read through
+	// config.ResolveSiteNetwork.
+	stateDBName  = "tofu_state"
+	stateDBOwner = "tofu"
 )
 
 // buildStateConnStr reconstructs the pg backend's connection string from the
@@ -211,12 +201,17 @@ func buildStateConnStr(ctx *run.Context) (connStr, host string, port int, err er
 	if !ok {
 		return "", "", 0, fmt.Errorf("site %q not found in rendered config", ctx.Site)
 	}
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return "", "", 0, err
+	}
 
-	host = fmt.Sprintf("10.%d.10.%d", site.Octet, stateDBFirstNodeHost)
+	// Where the state database answers is the address plan's.
+	host, port = net.StateDatabase.Host, net.StateDatabase.Port
 	connStr = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=require",
-		stateDBOwner, site.Database.Password, host, stateDBNodePort, stateDBName)
+		stateDBOwner, site.Database.Password, host, port, stateDBName)
 
-	return connStr, host, stateDBNodePort, nil
+	return connStr, host, port, nil
 }
 
 // vmIDHint names the VM ids this site would have used, so an operator cleaning
@@ -228,11 +223,10 @@ func vmIDHint(ctx *run.Context) string {
 	if err != nil {
 		return "this site's VMs"
 	}
-	site, ok := cfg.Sites[ctx.Site]
-	if !ok || site.ControlPlaneCount < 1 {
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil || len(net.ControlPlaneVMIDs) == 0 {
 		return "this site's VMs"
 	}
-	first := site.Octet*vmIDOctetMultiplier + stateDBFirstNodeHost
-	return fmt.Sprintf("VMs %d-%d and the template at %d",
-		first, first+site.ControlPlaneCount-1, site.Octet*vmIDOctetMultiplier+199)
+	ids := net.ControlPlaneVMIDs
+	return fmt.Sprintf("VMs %d-%d and the template at %d", ids[0], ids[len(ids)-1], net.TemplateVMID)
 }
