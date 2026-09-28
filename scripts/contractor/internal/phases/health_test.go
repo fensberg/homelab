@@ -230,3 +230,69 @@ func TestAReconcileRequestThatCannotBeMadeDoesNotStopTheConverge(t *testing.T) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	requestFluxReconcile(&run.Context{ClusterDir: dir}, filepath.Join(dir, "kubeconfig"), time.Now())
 }
+
+// fakeKubectlGet puts a kubectl on PATH that answers every `get` with body.
+func fakeKubectlGet(t *testing.T, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "out.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := "#!/bin/sh\ncat " + filepath.Join(dir, "out.json") + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return dir
+}
+
+// A source that cannot fetch is named with its own reason, ahead of the
+// Kustomization that only says its artifact is missing (#579).
+func TestFluxNamesTheSourceThatCannotFetchAheadOfWhatWaitsOnIt(t *testing.T) {
+	dir := fakeKubectlGet(t, `{"items":[
+	  {"kind":"Kustomization","metadata":{"name":"flux-system","namespace":"flux-system"},
+	   "status":{"conditions":[{"type":"Ready","status":"False","message":"Source artifact not found, retrying in 30s"}]}},
+	  {"kind":"GitRepository","metadata":{"name":"flux-system","namespace":"flux-system"},
+	   "status":{"conditions":[{"type":"Ready","status":"False","message":"failed to checkout: dial tcp: lookup github.com: i/o timeout"}]}}
+	]}`)
+	err := checkFlux(&run.Context{ClusterDir: dir}, filepath.Join(dir, "kubeconfig"))
+	if err == nil {
+		t.Fatal("a source that cannot fetch was reported as reconciled")
+	}
+	line := summariseWait(err)
+	src := strings.Index(line, "GitRepository flux-system/flux-system: failed to checkout")
+	if src < 0 {
+		t.Fatalf("the source's own reason is not in the progress line: %s", line)
+	}
+	if k := strings.Index(line, "Source artifact not found"); k >= 0 && k < src {
+		t.Errorf("the Kustomization's consequence is named before the source's cause: %s", line)
+	}
+}
+
+// Sources on their own are not a reconciled cluster.
+func TestFluxWithOnlySourcesIsNotReconciled(t *testing.T) {
+	dir := fakeKubectlGet(t, `{"items":[
+	  {"kind":"GitRepository","metadata":{"name":"flux-system","namespace":"flux-system"},
+	   "status":{"conditions":[{"type":"Ready","status":"True"}]}}
+	]}`)
+	err := checkFlux(&run.Context{ClusterDir: dir}, filepath.Join(dir, "kubeconfig"))
+	if err == nil || !strings.Contains(err.Error(), "no Kustomizations or HelmReleases") {
+		t.Fatalf("a cluster with a source and nothing reading it passed: %v", err)
+	}
+}
+
+// The advice is true for the run that gives it: re-run from Health only when
+// the cluster is kept, and otherwise say how to keep it (#579).
+func TestHealthAdvisesOnlyWhatThisRunLeavesPossible(t *testing.T) {
+	kept := rerunAdvice(&run.Context{Site: "site0", KeepOnFailure: true})
+	if !strings.Contains(kept, "-from health") || strings.Contains(kept, "tears the cluster down") {
+		t.Errorf("a kept cluster is not advised to re-run from Health: %s", kept)
+	}
+	gone := rerunAdvice(&run.Context{Site: "site0"})
+	if strings.Contains(gone, "-from health") {
+		t.Errorf("a run that tears the cluster down advises re-running from Health: %s", gone)
+	}
+	if !strings.Contains(gone, "-keep-on-failure") {
+		t.Errorf("a run that tears the cluster down does not say how to keep it: %s", gone)
+	}
+}
