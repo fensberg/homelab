@@ -99,7 +99,7 @@ func commentBody(site, summary, commit string) string {
 	// compare that against the pull request in one glance.
 	provenance := ""
 	if commit != "" {
-		provenance = fmt.Sprintf("\nPlanned against `%s`, as it would be once merged.\n", commit)
+		provenance = fmt.Sprintf("\nPlanned against `%s`\n", commit)
 	}
 	return fmt.Sprintf("%s\n## Plan — %s\n%s\n```text\n%s\n```\n",
 		commentMarker(site), site, provenance, strings.TrimRight(summary, "\n"))
