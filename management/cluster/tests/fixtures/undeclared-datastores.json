@@ -22,12 +22,7 @@
       "name": "Fixture Site",
       "octet": 10,
       "control_plane_count": 3,
-      "worker_count": 0,
-      "dmz_zones": {
-        "example": {
-          "node_count": -1
-        }
-      },
+      "worker_count": 1,
       "hypervisor": {
         "provider": "proxmox",
         "vault_provider": "proxmox",
@@ -36,11 +31,7 @@
         "nodes": {
           "node0": {
             "hostname": "fixture-hv0",
-            "ip": "10.10.0.5",
-            "datastores": {
-              "disks": "fixture-disks",
-              "images": "fixture-images"
-            }
+            "ip": "10.10.0.5"
           }
         }
       },

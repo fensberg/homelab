@@ -91,6 +91,17 @@ locals {
 
   hypervisors = [for k in sort(keys(local.site.hypervisor.nodes)) : local.site.hypervisor.nodes[k]]
 
+  # The Services an enrolled device routes to, by host number in the site's
+  # service range. Written once for the site and the estate roots alike.
+  # Reached from the repository's top, as every file outside this root is: a
+  # plan against the as-built record runs a copy of this root at the same
+  # depth, and only a "../../" path still leads to the same file from there.
+  tunnel_routes = jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes
+
+  # Each hypervisor's datastores, by the hostname machines are placed on. They
+  # are facts about the host, so they come from its config entry.
+  datastores = { for h in local.hypervisors : h.hostname => try(h.datastores, {}) }
+
   # Per-site because two sites are two estates: separate hypervisors, separate
   # tailnets when the engagement calls for it, separate buckets, and separate
   # state databases. Sharing any of them means compromising one site reaches
@@ -175,36 +186,25 @@ locals {
   # decision that belongs in code where it can be reviewed.
   dns_resolvers = ["1.1.1.1", "1.0.0.1"]
 
-  # The two largest address commitments in the estate, declared rather than
-  # defaulted.
+  # The two largest address commitments in the estate, the site's own.
   #
-  # These were nowhere. talos.tf set no clusterNetwork fields, so the cluster
-  # ran on whatever Talos defaults to - correct values, chosen by nobody, and
-  # absent from the addressing decision in docs/epochs/02-abstraction.md that
-  # records every other range down to the VM id bands. A value nobody wrote
-  # down cannot be reviewed, and a reviewer checking the scheme for collisions
-  # would have found no pod network to check against (#240).
-  #
-  # Set to what the live cluster already resolves to, so declaring them changes
-  # nothing today and makes the current state reviewable. Confirmed against the
-  # running estate: `kubectl describe node` reports PodCIDR 10.244.1.0/24 out of
-  # the /16 below, and services at 10.96.0.0/12.
+  # They were Kubernetes' defaults once (#240), then declared as those defaults
+  # - 10.244.0.0/16 and 10.96.0.0/12 at every site - which was harmless until
+  # two sites route to each other, and then impossible to route. The address
+  # plan now allocates each site its own (pods 10.<100+octet>.0.0/16, services
+  # a /22 of 10.196.0.0/14), site0 included, and checks that none can meet a
+  # site network or each other (cluster_network_test.go asks it for every
+  # octet a site may have).
   #
   # WHY THIS IS NOT AN EDIT LATER. clusterNetwork is fixed at cluster creation.
-  # Getting it wrong costs a rebuild rather than an apply, which makes "we never
-  # decided it" a worse position than it looks.
+  # A change here is a rebuild, not an apply: the site is rebuilt from the
+  # branch that changes it, before it merges.
   #
-  # WHAT IT CAPS. A /16 handing out a /24 per node is 256 nodes, whatever the
-  # node subnet allows. Not a live constraint, and it is the wall that binds
-  # first at scale - ahead of anything in the node addressing.
-  #
-  # WHY THESE RANGES AND NOT WIDER ONES. Both sit above 10.95.0.0, and the site
-  # octet is asserted 1-95, so no site's /16 can reach either. Widening the pod
-  # range downward - to 10.0.0.0/8, which is the shape a CNI default tends to
-  # take - would swallow every site subnet the addressing decision defines.
-  # TestThePodAndServiceNetworksCannotCollideWithASite refuses that.
-  pod_cidr     = "10.244.0.0/16"
-  service_cidr = "10.96.0.0/12"
+  # WHAT IT CAPS. A /16 handing out a /24 per node is 256 nodes, and a /22 is
+  # 1024 Services, of which Kubernetes keeps the bottom 64 for addresses chosen
+  # by hand (management/tunnel-routes.json).
+  pod_cidr     = local.net.pod_cidr
+  service_cidr = local.net.service_cidr
 
   # Every address, VM id and machine name below is the address plan's
   # (modules/infrastructure/address-plan, called in address-plan.tf), which

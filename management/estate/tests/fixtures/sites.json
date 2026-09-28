@@ -1,0 +1,31 @@
+{
+  "sites": {
+    "site0": {
+      "name": "{{ op://site0-shared/identity/name }}",
+      "octet": 10,
+      "control_plane_count": 3,
+      "worker_count": 1,
+      "hypervisor": {
+        "nodes": {
+          "node0": {
+            "hostname": "{{ op://site0/node0/hostname }}",
+            "ip": "{{ op://site0/node0/ip }}"
+          }
+        }
+      }
+    },
+    "site1": {
+      "name": "{{ op://site1-shared/identity/name }}",
+      "octet": 20,
+      "control_plane_count": 1,
+      "hypervisor": {
+        "nodes": {
+          "node0": {
+            "hostname": "{{ op://site1/node0/hostname }}",
+            "ip": "{{ op://site1/node0/ip }}"
+          }
+        }
+      }
+    }
+  }
+}

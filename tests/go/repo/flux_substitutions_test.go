@@ -54,31 +54,35 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 		t.Fatal("tests/flux-substitutions.env declares no stand-ins, so this checked nothing")
 	}
 
+	// clusters/ and environments/: the workloads' Kustomizations substitute
+	// too, and CI substitutes the stand-ins into both before validating.
 	used := map[string][]string{}
-	err := filepath.WalkDir(filepath.Join(root, "clusters"), func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !(strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
-			return err
-		}
-		rel, _ := filepath.Rel(root, path)
-		if strings.HasPrefix(rel, filepath.Join("clusters", "bootstrap")) {
+	for _, dir := range []string{"clusters", "environments"} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !(strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
+				return err
+			}
+			rel, _ := filepath.Rel(root, path)
+			if strings.HasPrefix(rel, filepath.Join("clusters", "bootstrap")) {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for _, line := range strings.Split(string(body), "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), "#") {
+					continue
+				}
+				for _, m := range fluxVariable.FindAllStringSubmatch(line, -1) {
+					used[m[1]] = append(used[m[1]], rel)
+				}
+			}
 			return nil
-		}
-		body, err := os.ReadFile(path)
+		})
 		if err != nil {
-			return err
+			t.Fatalf("walking %s/: %v", dir, err)
 		}
-		for _, line := range strings.Split(string(body), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "#") {
-				continue
-			}
-			for _, m := range fluxVariable.FindAllStringSubmatch(line, -1) {
-				used[m[1]] = append(used[m[1]], rel)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking clusters/: %v", err)
 	}
 
 	names := make([]string, 0, len(used))
@@ -98,7 +102,7 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 	}
 	for name := range declared {
 		if _, ok := used[name]; !ok {
-			t.Errorf("tests/flux-substitutions.env declares %s, and no manifest under clusters/ uses it.\n\n"+
+			t.Errorf("tests/flux-substitutions.env declares %s, and no manifest under clusters/ or environments/ uses it.\n\n"+
 				"Either the variable was renamed or removed and this was left behind, or the manifest "+
 				"that needed it never landed. A stand-in for nothing reads as coverage that does not exist.",
 				name)

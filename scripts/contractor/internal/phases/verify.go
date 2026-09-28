@@ -66,7 +66,7 @@ func Verify(ctx *run.Context) error {
   This is the single most common reason ignition hangs. Two usual causes:
 
     a) The Proxmox SDN was never applied to the kernel.
-       On the Proxmox host, run:  ip -br addr show vnetint
+       On the Proxmox host, run:  ip -br addr show %s
        You want to see it UP with the site's node subnet.
 
     b) The subnet route is advertised but not approved.
@@ -79,7 +79,7 @@ func Verify(ctx *run.Context) error {
 
        See docs/tailnet-setup.md.
 
-`)
+`, net.VNet)
 		return fmt.Errorf("site %s's SDN gateway is unreachable - stopping before OpenTofu (the address is in config/management.rendered.json)", ctx.Site)
 	}
 	run.Ok("SDN gateway reachable - the path to your future nodes works")

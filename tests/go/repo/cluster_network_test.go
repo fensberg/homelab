@@ -3,8 +3,11 @@ package repo
 import (
 	"net"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
+
+	"homelab/contractor/config"
 )
 
 // The pod and service networks are declared, and cannot collide with a site.
@@ -55,49 +58,65 @@ It is fixed at cluster creation, so the cost of getting it wrong is a rebuild.`,
 	}
 }
 
+// Asked of the address plan rather than read from a file, because the ranges
+// are computed now: every site gets its own pods and services (epoch 02), and
+// whether they collide is a property of the computation over every octet a
+// site may have, not of one value somebody wrote down.
 func TestThePodAndServiceNetworksCannotCollideWithASite(t *testing.T) {
+	// The cluster root takes both from the plan, or the plan's answer below
+	// describes nothing the cluster runs.
 	variables := readRepoFile(t, "management/cluster/variables.tf")
-
-	// Every site's /16, at the extremes of the octet registry.tf permits.
-	var sites []*net.IPNet
-	for octet := lowestSiteOctet; octet <= highestSiteOctet; octet++ {
-		_, n, err := net.ParseCIDR("10." + itoaSmall(octet) + ".0.0/16")
-		if err != nil {
-			t.Fatalf("building site /16 for octet %d: %v", octet, err)
+	for _, name := range []string{"pod_cidr", "service_cidr"} {
+		if !regexp.MustCompile(name + `\s*=\s*local\.net\.` + name + `\b`).MatchString(variables) {
+			t.Errorf("variables.tf does not take %s from the address plan (local.net.%s), so the range the "+
+				"cluster runs is not the one the plan allocated and checked", name, name)
 		}
-		sites = append(sites, n)
 	}
 
-	checked := 0
-	for _, name := range []string{"pod_cidr", "service_cidr"} {
-		m := regexp.MustCompile(name + `\s*=\s*"([^"]+)"`).FindStringSubmatch(variables)
-		if m == nil {
-			t.Errorf("variables.tf declares no %s, so talos.tf has nothing to read", name)
-			continue
-		}
-		_, cluster, err := net.ParseCIDR(m[1])
-		if err != nil {
-			t.Errorf("%s is %q, which is not a CIDR", name, m[1])
-			continue
-		}
-		checked++
+	// Every site the octet range permits, at once: the plan answers for the
+	// estate, and a collision between two sites is as real as one with a site.
+	sites := map[string]config.Site{}
+	for octet := lowestSiteOctet; octet <= highestSiteOctet; octet++ {
+		sites["s"+itoaSmall(octet)] = config.Site{Octet: octet, ControlPlaneCount: 1}
+	}
+	plan, err := config.EstateRanges(repoRoot(t), sites)
+	if err != nil {
+		t.Fatalf("asking the address plan: %v", err)
+	}
+	if len(plan) != len(sites) {
+		t.Fatalf("the plan answered for %d of %d sites, so this proves less than it claims", len(plan), len(sites))
+	}
 
-		for _, site := range sites {
-			if overlaps(cluster, site) {
-				t.Errorf(`%s is %s, which overlaps the site network %s.
+	type owned struct {
+		site, kind string
+		n          *net.IPNet
+	}
+	var all []owned
+	for key, r := range plan {
+		for kind, cidr := range map[string]string{"site network": r.Site, "pods": r.Pods, "services": r.Services} {
+			_, n, err := net.ParseCIDR(cidr)
+			if err != nil {
+				t.Fatalf("%s's %s is %q, which is not a CIDR", key, kind, cidr)
+			}
+			all = append(all, owned{key, kind, n})
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].site+all[i].kind < all[j].site+all[j].kind })
+	for i := range all {
+		for j := i + 1; j < len(all); j++ {
+			a, b := all[i], all[j]
+			if a.kind == "site network" && b.kind == "site network" {
+				continue // distinct octets are registry.tf's to assert
+			}
+			if overlaps(a.n, b.n) {
+				t.Errorf(`%s's %s (%s) overlaps %s's %s (%s).
 
-Site octets are asserted 1-95, so that is a range a real site can occupy. Pods
-or services sharing addresses with the machines they run on is not a subtle
-failure - it is routing that works until the moment two things want the same
-address, and clusterNetwork cannot be changed without rebuilding the cluster.`,
-					name, m[1], site)
-				break
+Site octets are asserted 1-95, so both are ranges real sites can hold. Pods or
+services sharing addresses with machines, or with another site's, is routing
+that works until two things want the same address, and clusterNetwork cannot
+be changed without rebuilding the cluster.`, a.site, a.kind, a.n, b.site, b.kind, b.n)
 			}
 		}
-	}
-	if checked != 2 {
-		t.Fatalf("only %d of the two cluster networks were checked, so this proves "+
-			"less than it claims", checked)
 	}
 }
 

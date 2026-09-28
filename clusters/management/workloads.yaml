@@ -28,6 +28,12 @@ spec:
     name: flux-system
   path: ./environments/staging/applications
   prune: true
+  # The site's own values, such as the address a tunnel route reaches
+  # (ADDRESS_<NAME>), which a Service sets as its clusterIP.
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: cluster-vars
   wait: false
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -50,4 +56,10 @@ spec:
     name: valheim
   path: ./environments/production/applications/valheim
   prune: true
+  # The site's own values, such as the address a tunnel route reaches
+  # (ADDRESS_<NAME>), which a Service sets as its clusterIP.
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: cluster-vars
   wait: false

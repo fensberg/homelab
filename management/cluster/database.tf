@@ -70,7 +70,12 @@ resource "kubernetes_secret" "cluster_vars" {
     namespace = "flux-system"
   }
 
-  data = {
+  # Each tunnel route's address in this site, as ADDRESS_<NAME>: the Service of
+  # that name sets it as its clusterIP, so the address the tunnel routes and the
+  # one that answers come from the same plan.
+  data = merge({
+    for name, addr in local.net.fixed_addresses : "ADDRESS_${upper(replace(name, "-", "_"))}" => addr
+    }, {
     OBJECT_STORAGE_BUCKET   = local.object_storage.database.bucket
     OBJECT_STORAGE_ENDPOINT = local.object_storage_endpoint
     STATE_DB_NAMESPACE      = local.state_db_namespace
@@ -90,7 +95,7 @@ resource "kubernetes_secret" "cluster_vars" {
       split("/", local.config.source_control.repo_url)[3],
       trimsuffix(split("/", local.config.source_control.repo_url)[4], ".git"),
     ]))
-  }
+  })
 }
 
 output "state_db_endpoint" {

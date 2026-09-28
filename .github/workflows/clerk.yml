@@ -71,7 +71,16 @@ permissions:
 concurrency:
   # One read per pull request. A second request supersedes a first that is
   # still running, because a newer answer is strictly better.
-  group: clerk-${{ github.event.pull_request.number }}
+  #
+  # A comment is keyed by its issue, since a comment event has no
+  # pull_request, and one that is not a request to the clerk gets a group of
+  # its own: every comment starts this workflow and joins its group before the
+  # job filter runs, so under a shared key any comment anywhere cancelled a
+  # reading part-way through its metered call (#574).
+  group: >-
+    clerk-${{ github.event.pull_request.number || github.event.issue.number }}-${{
+    (github.event_name == 'issue_comment' && !startsWith(github.event.comment.body, '@clerk'))
+    && github.run_id || 'read' }}
   cancel-in-progress: true
 
 defaults:

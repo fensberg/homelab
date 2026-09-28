@@ -136,8 +136,8 @@ spec:
     # So 172.16.0.0/12 is open on the same terms as the house LAN.
     #
     # 10.0.0.0/8 STAYS CLOSED, AND IT IS THE INTERESTING ONE. It is the range
-    # this estate is built on - node subnets at 10.<octet>.0.0/16, services at
-    # 10.96.0.0/12, pods at 10.244.0.0/16 - so a player on a 10.x network cannot
+    # this estate is built on - node subnets at 10.<octet>.0.0/16, and each
+    # site's pods and services beside them - so a player on a 10.x network cannot
     # be given a direct path without reopening the exact thing this policy
     # exists to close. The isolation boundary wins and that player stays on the
     # relay. That is a worse experience for them and it is the correct trade.

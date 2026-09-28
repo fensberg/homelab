@@ -94,7 +94,10 @@
     disk_import_key_path: "/var/tmp/{{ disk_import_user }}_ed25519"
 
     sdn_zone: "internal"
-    sdn_vnet: "vnetint"
+    # The vnet the nodes sit on. Named by the address plan
+    # (modules/infrastructure/address-plan) and written by the Render phase,
+    # so the playbook and the machines' network devices read one name.
+    sdn_vnet: "UNSET"
 
     # The untrusted zones share the EVPN zone and take a vnet each.
     #
@@ -201,6 +204,7 @@
           - sdn_subnet != "UNSET"
           - sdn_gateway != "UNSET"
           - advertise_routes != "UNSET"
+          - sdn_vnet != "UNSET"
           - (sdn_asn | int) > 0
           - (sdn_vrf_vni | int) > 0
           - (sdn_vnet_vni | int) > 0

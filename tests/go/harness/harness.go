@@ -219,6 +219,14 @@ func SiteConfig(t *testing.T) Site_ {
 // run and the same one variables.tf picks.
 func FirstHypervisor(t *testing.T) (hostname, ip string) {
 	t.Helper()
+	n := FirstHypervisorNode(t)
+	return n.Hostname, n.IP
+}
+
+// FirstHypervisorNode is the same node with everything its config declares,
+// its datastores included.
+func FirstHypervisorNode(t *testing.T) config.Node {
+	t.Helper()
 	site := SiteConfig(t)
 	keys := make([]string, 0, len(site.Hypervisor.Nodes))
 	for k := range site.Hypervisor.Nodes {
@@ -228,8 +236,7 @@ func FirstHypervisor(t *testing.T) (hostname, ip string) {
 		t.Fatalf("site %q declares no hypervisor nodes", Site())
 	}
 	slices.Sort(keys)
-	n := site.Hypervisor.Nodes[keys[0]]
-	return n.Hostname, n.IP
+	return site.Hypervisor.Nodes[keys[0]]
 }
 
 // ControlPlaneIP is the address of control-plane node i, as the program

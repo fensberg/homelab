@@ -106,16 +106,27 @@ func TestUnfinishedStatusesAreListedNotInferred(t *testing.T) {
 	}
 }
 
-// A queued plan for this site blocks it too (#541): it starts on the new
-// site's runner the moment Flux brings one up, and takes the state lock the
-// build still needs.
-func TestAQueuedPlanForThisSiteBlocksIt(t *testing.T) {
+// A queued converge for this site blocks it: it would start on the new site's
+// runner the moment Flux brings one up, against a build still finishing.
+func TestAQueuedConvergeForThisSiteBlocksIt(t *testing.T) {
 	runs := []activeRun{{
-		Number: 45, Status: "waiting", HeadBranch: "feat/x",
-		Jobs: []string{"What changed", "Plan site0"},
+		Number: 45, Status: "waiting", HeadBranch: "main",
+		Jobs: []string{"What changed", "Converge site0"},
 	}}
 	if got := pendingForSite(runs, "site0"); len(got) != 1 {
-		t.Fatalf("a queued plan for site0 did not block an ignition of it: %v", got)
+		t.Fatalf("a queued converge for site0 did not block an ignition of it: %v", got)
+	}
+}
+
+// A plan does not (#554): it runs on GitHub's runner against the as-built
+// record, and reaches nothing of the site being built.
+func TestAQueuedPlanDoesNotBlockABuild(t *testing.T) {
+	runs := []activeRun{{
+		Number: 47, Status: "queued", HeadBranch: "feat/x",
+		Jobs: []string{"Sites", "Plan site0"},
+	}}
+	if got := pendingForSite(runs, "site0"); len(got) != 0 {
+		t.Fatalf("a queued plan blocked a build it cannot reach: %v", got)
 	}
 }
 

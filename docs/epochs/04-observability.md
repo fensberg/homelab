@@ -455,7 +455,7 @@ metrics and fails when they are zero, and a repo guard refuses an unpinned MTU.
 the tunnel. The tunnel carries connections the player starts, and crossplay
 insists on one the _server_ starts. The first test is crossplay on, joining
 with WARP connected. If that still fails at +5 s, the second test is crossplay
-off, joining by `10.96.0.46:2456`. That drops console players, and puts the
+off, joining by the game server's tunnel address on port 2456. That drops console players, and puts the
 friend who plays today on the member list too.
 
 ### The control plane is scraped, and it took two tiers (done 2026-09-20)

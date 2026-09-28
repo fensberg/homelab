@@ -69,6 +69,50 @@ run "no_two_sites_share_a_range" {
     condition     = output.sites.site1.asn == 65020 && output.sites.site1.vnet_vni == 11020
     error_message = "a site's SDN identities are not derived from its octet"
   }
+  # Proxmox caps a vnet id at eight characters, and the nodes' vnet must not
+  # be an untrusted zone's: that is the whole of what a zone's own vnet buys.
+  assert {
+    condition = alltrue([
+      for s in values(output.sites) :
+      length(s.vnet) > 0 && length(s.vnet) <= 8 && !contains([for z in values(s.dmz_zones) : z.vnet], s.vnet)
+    ])
+    error_message = "a site's nodes do not sit on a vnet of their own that Proxmox accepts"
+  }
+}
+
+# A route is declared once and lands in each site's own service range, at
+# the same host number, inside the band Kubernetes never allocates itself.
+run "a_fixed_address_is_each_sites_own" {
+  command = plan
+
+  variables {
+    fixed_addresses = { game-server = 46 }
+  }
+
+  assert {
+    condition     = output.sites.site0.fixed_addresses["game-server"] == "10.196.40.46" && output.sites.site1.fixed_addresses["game-server"] == "10.196.80.46"
+    error_message = "a fixed address is not the host number in each site's own service range"
+  }
+}
+
+run "a_fixed_address_outside_the_hand_picked_band_is_refused" {
+  command = plan
+
+  variables {
+    fixed_addresses = { game-server = 64 }
+  }
+
+  expect_failures = [var.fixed_addresses]
+}
+
+run "two_fixed_addresses_cannot_share_a_host" {
+  command = plan
+
+  variables {
+    fixed_addresses = { game-server = 46, dashboard = 46 }
+  }
+
+  expect_failures = [var.fixed_addresses]
 }
 
 run "names_wait_for_a_domain" {
@@ -130,5 +174,21 @@ run "the_bands_cannot_collide" {
       [for m in values(output.sites.a.workers) : m.ip],
     ))) == 101
     error_message = "a control plane and a worker share an address; the bands overlap"
+  }
+}
+
+# An alias to something the site does not have is reported for the edge to
+# refuse, rather than failing the plan here or vanishing without a word.
+run "an_alias_to_a_missing_service_is_reported" {
+  command = plan
+
+  variables {
+    domain  = "example.invalid"
+    aliases = { grafana = "site0" }
+  }
+
+  assert {
+    condition     = length(output.unresolved_aliases) == 1 && output.unresolved_aliases[0] == "grafana -> site0" && !contains(keys(output.records), "grafana.example.invalid")
+    error_message = "an alias with no target was not reported, or was given a record"
   }
 }

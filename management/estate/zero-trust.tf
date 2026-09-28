@@ -52,11 +52,16 @@ resource "cloudflare_zero_trust_access_application" "enrollment" {
 # include list.
 #
 # One list for the whole account, which is why it is here: two sites each
-# writing it from their own builds would overwrite each other's routes.
+# writing it from their own builds would overwrite each other's routes. Every
+# site's addresses are its own, so the list carries each route once per site.
 resource "cloudflare_zero_trust_device_default_profile" "estate" {
   account_id = local.access.account_id
-  include = [for name, addr in local.tunnel_routes : {
-    address     = "${addr}/32"
-    description = name
-  }]
+  include = flatten([
+    for site in sort(keys(local.site_routes)) : [
+      for name in sort(keys(local.site_routes[site])) : {
+        address     = "${local.site_routes[site][name]}/32"
+        description = "${name} (${site})"
+      }
+    ]
+  ])
 }

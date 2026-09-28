@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 171
+floor: 174
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -100,14 +100,41 @@ mutations:
       a module, and the one place the plan and the converge can disagree
       again (#497).
 
-  - guard: TestEveryScheduledWorkflowReportsItsFailures
-    file: .github/workflows/expedite.yml
-    find: "    needs: [check, deliver, release]\n    if: always() && github.event_name == 'schedule'"
-    replace: "    needs: [check, deliver]\n    if: always() && github.event_name == 'schedule'"
-    mentions: "does not wait on [release]"
+  - guard: TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode
+    file: management/cluster/compute.tf
+    find: "  datastore_id = local.datastores[each.value].images\n  node_name    = each.value\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+    replace: "  datastore_id = \"local-iso\"\n  node_name    = each.value\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+    mentions: "a hypervisor fact the config declares"
     why: >
-      A job added to a scheduled workflow and not to its report's needs fails
-      silently, which is the whole of #441.
+      A storage name written into the code is a host nobody can describe without
+      editing it; the second hypervisor on other storage fails to place a disk.
+
+  - guard: TestEveryConcurrencyGroupNamesWhatSupersedesIt
+    file: .github/workflows/plan-infrastructure.yml
+    find: "group: plan-infrastructure-${{ github.event.pull_request.number }}"
+    replace: "group: plan-infrastructure-${{ github.ref }}"
+    mentions: "does not use github.event.pull_request.number"
+    why: >
+      A pull request closed by merging reports main as its ref, so a group keyed
+      by ref lets its closing run cancel the converge the merge started (#573).
+
+  - guard: TestARootReachesOutsideItselfFromTheTop
+    file: management/cluster/variables.tf
+    find: 'jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes'
+    replace: 'jsondecode(file("${path.module}/../tunnel-routes.json")).routes'
+    mentions: "reaches outside its root"
+    why: >
+      The pull-request plan runs a copy of the root at the same depth, so a
+      one-level path points nowhere and the plan refuses before its first step.
+
+  - guard: TestEveryScheduledWorkflowIsWatchedForFailing
+    file: .github/workflows/duty.yml
+    find: "      - Expedite\n"
+    replace: "      - Expediter\n"
+    mentions: "duty.yml does not watch it"
+    why: >
+      A scheduled workflow the watcher does not name fails silently, which is
+      the whole of #441.
 
   - guard: TestTheE2ETierNamesVerbsTheContractorHas
     file: tests/go/e2e/ignition_test.go
@@ -130,7 +157,7 @@ mutations:
       say so once site1 exists, and leaves site1 with no record at all.
 
   - guard: TestNoPullRequestJobRunsOnTheEstatesRunner
-    file: .github/workflows/deploy-infrastructure.yml
+    file: .github/workflows/plan-infrastructure.yml
     find: "    # A pull request's code never runs on the estate's runner.\n    runs-on: ubuntu-latest\n"
     replace: "    # A pull request's code never runs on the estate's runner.\n    runs-on: homelab-management\n"
     mentions: "runs pull-request code on homelab-management"
@@ -212,12 +239,12 @@ mutations:
 
   - guard: TestEveryTunnelRouteIsAServiceAddressAndTheReverse
     file: management/tunnel-routes.json
-    find: '"game-server": "10.96.0.46"'
-    replace: '"game-server": "10.96.0.47"'
+    find: '"game-server": 46'
+    replace: '"game-servers": 46'
     mentions: "no Service in git sets clusterIP"
     why: >
       The tunnel route and the Service's fixed address live in files read by
-      different tools. Moving one without the other converges cleanly and
+      different tools. Renaming one without the other converges cleanly and
       hands an enrolled device a route to an address nothing answers on.
 
   - guard: TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority
@@ -1699,10 +1726,10 @@ mutations:
       than an edit, and a value nobody wrote down cannot be reviewed at all.
 
   - guard: TestThePodAndServiceNetworksCannotCollideWithASite
-    file: management/cluster/variables.tf
-    find: '  pod_cidr     = "10.244.0.0/16"'
-    replace: '  pod_cidr     = "10.0.0.0/8"'
-    mentions: "overlaps the site network"
+    file: modules/infrastructure/address-plan/allocation.tf
+    find: '      pod_cidr     = "10.${100 + s.octet}.0.0/16"'
+    replace: '      pod_cidr     = "10.0.0.0/8"'
+    mentions: "overlaps"
     why: >
       10.0.0.0/8 is the shape a CNI default tends to take and it contains
       every site subnet this estate can define, because site octets are
@@ -2492,6 +2519,19 @@ unprovable:
   # table is for: a named constant must count as a floor, and a bare variable
   # must not. Both rows are in TestAFloorIsRecognisedHoweverItIsSpelled.
   - test: TestAFloorIsRecognisedHoweverItIsSpelled
+    reason: table
+  # The reader behind TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode,
+  # which its own ledger entry proves. Its table holds each way to write a
+  # fact down and the forms that read it from the declaration.
+  - test: TestHypervisorFactsInCatchesEachWayToWriteOne
+    reason: table
+  # The reader behind TestARootReachesOutsideItselfFromTheTop, which its own
+  # ledger entry proves.
+  - test: TestClimbsWrongFindsEveryOtherWayUp
+    reason: table
+  # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
+  # its own ledger entry proves. Its table holds each way to share a group.
+  - test: TestAuditConcurrencyCatchesEachWayToShareAGroup
     reason: table
   #
   # Already a mutation proof in the stronger form: it extracts the task's own

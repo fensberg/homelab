@@ -155,7 +155,7 @@ func reclaimOrphanedDiskImage(ctx *run.Context, cfg *config.Config, net *config.
 		return nil
 	}
 
-	volID, err := findStoredImage(site.Hypervisor, hv, clusterImagePrefix)
+	volID, err := findStoredImage(site.Hypervisor, hv, clusterImage)
 	if err != nil {
 		return fmt.Errorf("checking whether a disk image already exists outside Terraform: %w", err)
 	}
@@ -218,15 +218,15 @@ func deleteDatastoreFile(hv config.Hypervisor, node config.Node, volID string) e
 	return fmt.Errorf("the delete was accepted but %s is still in the datastore two minutes later", volID)
 }
 
-// datastoreContentURL lists what is in the local-iso datastore on a node.
+// datastoreContentURL lists what is in a node's image datastore.
 func datastoreContentURL(node config.Node) string {
-	return fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/storage/local-iso/content", node.IP, node.Hostname)
+	return fmt.Sprintf("https://%s:8006/api2/json/nodes/%s/storage/%s/content", node.IP, node.Hostname, node.Datastores.Images)
 }
 
 // datastoreFileURL addresses one volume in that datastore.
 //
 // PathEscape, not QueryEscape and not raw. A Proxmox volume id looks like
-// "local-iso:iso/talos-v1.13.9.iso" - it carries both a colon
+// "<images>:iso/talos-v1.13.9.iso" - it carries both a colon
 // and a slash, and it occupies a single path segment. Left raw, that slash
 // would split the segment and address a URL that does not exist; QueryEscape
 // would turn the spaces-as-plus rule loose on a path, which is a different
@@ -235,7 +235,7 @@ func datastoreFileURL(node config.Node, volID string) string {
 	return datastoreContentURL(node) + "/" + urlpkg.PathEscape(volID)
 }
 
-// Volume id prefixes for the two images compute.tf stores.
+// The two images compute.tf stores, by the start of their file names.
 //
 // They differ at the FRONT rather than by a qualifier on the end, and that is
 // what makes deciding which image a stored volume is a matter of reading its
@@ -249,11 +249,17 @@ func datastoreFileURL(node config.Node, volID string) string {
 // entire job. Go does not hold that pin - it lives in management/cluster/
 // variables.tf - so the prefix is as explicit as this side can be.
 const (
-	clusterImagePrefix = "local-iso:iso/talos-"
-	dmzImagePrefix     = "local-iso:iso/dmz-"
+	clusterImage = "talos-"
+	dmzImage     = "dmz-"
 )
 
-// listDatastoreVolumes lists the local-iso datastore's content directly via the
+// imagePrefix is how every volume id of one image starts on a node: its
+// image datastore, the iso content type, and the image's name.
+func imagePrefix(node config.Node, image string) string {
+	return node.Datastores.Images + ":iso/" + image
+}
+
+// listDatastoreVolumes lists a node's image datastore directly via the
 // Proxmox API - not through Terraform, which cannot answer "does this exist"
 // without already having it in state.
 func listDatastoreVolumes(hv config.Hypervisor, node config.Node) ([]string, error) {
@@ -278,7 +284,7 @@ func listDatastoreVolumes(hv config.Hypervisor, node config.Node) ([]string, err
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("querying the local-iso datastore: %w", err)
+		return nil, fmt.Errorf("querying the %s datastore: %w", node.Datastores.Images, err)
 	}
 	defer resp.Body.Close()
 
@@ -287,7 +293,7 @@ func listDatastoreVolumes(hv config.Hypervisor, node config.Node) ([]string, err
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("querying the local-iso datastore: HTTP %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("querying the %s datastore: HTTP %d: %s", node.Datastores.Images, resp.StatusCode, body)
 	}
 
 	var parsed struct {
@@ -306,14 +312,15 @@ func listDatastoreVolumes(hv config.Hypervisor, node config.Node) ([]string, err
 	return vols, nil
 }
 
-// findStoredImage returns the volid of the stored image with this prefix, or ""
-// if none is there.
+// findStoredImage returns the volid of the stored image, or "" if none is
+// there.
 //
 // One prefix per call rather than "any Talos image": the two images live in the
 // same datastore, and a search that could return either would let a run adopt
 // or delete the wrong one.
-func findStoredImage(hv config.Hypervisor, node config.Node, prefix string) (string, error) {
+func findStoredImage(hv config.Hypervisor, node config.Node, image string) (string, error) {
 	vols, err := listDatastoreVolumes(hv, node)
+	prefix := imagePrefix(node, image)
 	if err != nil {
 		return "", err
 	}

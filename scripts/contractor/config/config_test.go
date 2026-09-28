@@ -17,7 +17,7 @@ func validSite() Site {
 			Provider:      "proxmox",
 			VaultProvider: "proxmox",
 			Nodes: map[string]Node{
-				"node0": {Hostname: "hv0", IP: "10.10.0.5"},
+				"node0": {Hostname: "hv0", IP: "10.10.0.5", Datastores: Datastores{Disks: "tank-disks", Images: "tank-images"}},
 			},
 		},
 		OverlayNetwork: OverlayNetwork{

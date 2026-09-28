@@ -41,11 +41,15 @@ locals {
         port = 30432
       }
 
-      # The Proxmox SDN's identities for the site: its BGP autonomous system
-      # and the two VXLAN network identifiers the playbook configures.
+      # The Proxmox SDN's identities for the site: its BGP autonomous system,
+      # the two VXLAN network identifiers the playbook configures, and the name
+      # of the vnet the nodes sit on. The playbook creates the vnet, so its
+      # name is the estate's rather than a fact about any host; one name at
+      # every site is safe because each site is its own Proxmox cluster.
       asn      = 65000 + s.octet
       vrf_vni  = 10000 + s.octet
       vnet_vni = 11000 + s.octet
+      vnet     = "vnetint"
     }
   }
 }

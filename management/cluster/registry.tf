@@ -20,9 +20,9 @@ locals {
     : k
   ]
 
-  # Octets must stay clear of the Kubernetes defaults at 10.96.0.0/12
-  # (services) and 10.244.0.0/16 (pods). Those are cluster-internal and never
-  # routed over the overlay, but overlapping them makes debugging confusing.
+  # Octets stop at 95 so every site's /16 stays below the pod ranges the
+  # address plan allocates from 10.101.0.0/16 up, and the service block at
+  # 10.196.0.0/14 (modules/infrastructure/address-plan).
   octet_min = 1
   octet_max = 95
 
@@ -82,12 +82,27 @@ resource "terraform_data" "invariants" {
 
     precondition {
       condition     = alltrue([for o in local.all_octets : o >= local.octet_min && o <= local.octet_max])
-      error_message = "Octet out of range. Use ${local.octet_min}-${local.octet_max}: Kubernetes defaults occupy 10.96.0.0/12 and 10.244.0.0/16."
+      error_message = "Octet out of range. Use ${local.octet_min}-${local.octet_max}: above that, a site's network runs into the estate's pod and service ranges."
     }
 
     precondition {
       condition     = length(local.hypervisors) > 0
       error_message = "Site '${var.site}' has no hypervisor nodes. Add at least one to sites.${var.site}.hypervisor.nodes."
+    }
+
+    precondition {
+      condition     = length(module.address_plan.unresolved_aliases) == 0
+      error_message = "An alias under organization.aliases points at something its site does not have: ${join(", ", module.address_plan.unresolved_aliases)}. An alias names one of a site's own services, such as proxmox."
+    }
+
+    # Where a host keeps disks and images is a fact about that host, so each
+    # node declares it rather than the code assuming every host has the same.
+    precondition {
+      condition = alltrue([
+        for h in local.hypervisors :
+        trimspace(try(h.datastores.disks, "")) != "" && trimspace(try(h.datastores.images, "")) != ""
+      ])
+      error_message = "A node under sites.${var.site}.hypervisor.nodes does not name its datastores. Declare datastores.disks (where machine disks go) and datastores.images (where Talos images are downloaded)."
     }
 
     # A node's identity must be its host octet, not its position in a list.

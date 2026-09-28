@@ -36,3 +36,28 @@ variable "aliases" {
     error_message = "An alias points at a site the config does not declare."
   }
 }
+
+variable "fixed_addresses" {
+  type        = map(number)
+  default     = {}
+  description = <<-EOT
+    Services that need an address known before they exist, because something
+    outside the cluster routes to it: name => host number in each site's
+    service range. management/tunnel-routes.json declares them. Every site gets
+    the same host number in its own range, so a route is one line however
+    many sites there are, and no two sites ever share the address.
+  EOT
+
+  # Kubernetes keeps the bottom of a service range for addresses chosen by
+  # hand and allocates from the rest: min(max(16, size/16), 256) addresses,
+  # which is 64 for a site's /22. Inside that band an address cannot already
+  # have been handed to some other Service.
+  validation {
+    condition     = alltrue([for n in values(var.fixed_addresses) : n >= 1 && n <= 63 && floor(n) == n])
+    error_message = "A fixed address must be a whole host number from 1 to 63: the band of a site's service range that Kubernetes never allocates by itself."
+  }
+  validation {
+    condition     = length(distinct(values(var.fixed_addresses))) == length(var.fixed_addresses)
+    error_message = "Two fixed addresses share a host number, so two Services would claim one address."
+  }
+}

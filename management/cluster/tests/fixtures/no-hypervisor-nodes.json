@@ -1,6 +1,10 @@
 {
   "organization": {
-    "name": "Fixture Org"
+    "name": "Fixture Org",
+    "domain": "example.invalid",
+    "aliases": {
+      "proxmox": "site0"
+    }
   },
   "source_control": {
     "repo_url": "https://example.invalid/fixture/repo",

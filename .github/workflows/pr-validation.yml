@@ -25,7 +25,7 @@ env:
 
 # Cancel in-progress runs if a new commit is pushed to the PR
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 # All lanes run in parallel, Format included. Formatting is enforced by the

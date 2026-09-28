@@ -17,11 +17,14 @@ import (
 type plannedSite struct {
 	Slug          string             `json:"slug"`
 	SiteCIDR      string             `json:"site_cidr"`
+	PodCIDR       string             `json:"pod_cidr"`
+	ServiceCIDR   string             `json:"service_cidr"`
 	NodeCIDR      string             `json:"node_cidr"`
 	NodeGateway   string             `json:"node_gateway"`
 	ASN           int                `json:"asn"`
 	VRFVNI        int                `json:"vrf_vni"`
 	VNetVNI       int                `json:"vnet_vni"`
+	VNet          string             `json:"vnet"`
 	TemplateVMID  int                `json:"template_vm_id"`
 	StateDatabase Endpoint           `json:"state_database"`
 	ControlPlanes map[string]machine `json:"control_planes"`
@@ -67,6 +70,31 @@ type Endpoint struct {
 	Port int    `json:"port"`
 }
 
+// Ranges is what a site owns, as the address plan allocates it.
+type Ranges struct {
+	Site     string
+	Pods     string
+	Services string
+}
+
+// EstateRanges asks the address plan in the repository at root for every
+// site's ranges, in one question. For checks about the estate as a whole -
+// that no two sites and no two kinds of range ever meet - which
+// ResolveSiteNetwork, answering for one validated site, cannot put. The root
+// is the caller's so a guard asks the tree it is checking, which is not always
+// the one this package was built from.
+func EstateRanges(root string, sites map[string]Site) (map[string]Ranges, error) {
+	plan, err := askAddressPlanAt(root, sites)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Ranges, len(plan))
+	for k, p := range plan {
+		out[k] = Ranges{Site: p.SiteCIDR, Pods: p.PodCIDR, Services: p.ServiceCIDR}
+	}
+	return out, nil
+}
+
 // askAddressPlan asks the address plan module for every site's plan.
 //
 // Asked, not recomputed: the module is the one implementation of the scheme,
@@ -82,6 +110,11 @@ func askAddressPlan(sites map[string]Site) (map[string]plannedSite, error) {
 	if err != nil {
 		return nil, err
 	}
+	return askAddressPlanAt(root, sites)
+}
+
+// askAddressPlanAt asks the module in the repository at root.
+func askAddressPlanAt(root string, sites map[string]Site) (map[string]plannedSite, error) {
 	dir := filepath.Join(root, filepath.FromSlash(AddressPlanDir))
 
 	input := map[string]planInput{}
