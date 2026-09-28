@@ -1729,6 +1729,18 @@ converge. Verified against the published record: this branch plans "No changes".
   template does not declare is refused rather than given a tunnel that routes
   nothing.
 
+**The first rebuild on the new ranges stopped at Health (#578).** Nodes came
+up Ready, and Flux could resolve no name: every pod on a worker asked for DNS
+at `10.96.0.10`, while cluster DNS answered at `10.196.40.10`. A kubelet takes
+the DNS address from the tenth of its own machine's `serviceSubnets`, and the
+network patch had only ever been on the control planes' config - the workers
+took Talos's default range. That was invisible for as long as the declared
+ranges equalled the defaults, which is exactly what #240 declared. The patch is
+now one local that every machine class gets, and a guard refuses a machine
+configuration without it. Health said only "Source artifact not found" for
+fifteen minutes and then tore the cluster down; it now names the source's own
+reason (#579), which is what found this.
+
 The rollout has one ordering constraint worth recording. The game server's
 Service ships inside the published Valheim release, and the release pinned
 before this change sets the old literal address. A rebuilt site0 therefore

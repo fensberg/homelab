@@ -305,27 +305,38 @@ data "talos_machine_configuration" "controlplane" {
       }
     }),
 
-    yamlencode({
-      cluster = {
-        network = {
-          cni = {
-            name = "none"
-          }
-
-          # Declared rather than defaulted - see variables.tf for why these two
-          # numbers are the estate's largest address commitment and the reason
-          # they had to be written down (#240). They are the values Talos was
-          # already choosing, so this changes nothing about a cluster built
-          # today and makes what it chose reviewable.
-          podSubnets     = [local.pod_cidr]
-          serviceSubnets = [local.service_cidr]
-        }
-        proxy = {
-          disabled = true
-        }
-      }
-    }),
+    local.cluster_network_patch,
   ], local.machine_patches[each.key])
+}
+
+# The cluster's network, in every machine's config - control plane, worker and
+# untrusted alike.
+#
+# It was on the control planes' alone, as a fact about the cluster. But each
+# machine's kubelet reads it too: the address pods are told to ask for DNS is
+# the tenth of the machine's own serviceSubnets. With the patch missing, the
+# workers took Talos's default range and sent every pod to 10.96.0.10, while
+# cluster DNS answered at the site's own 10.196.40.10 - harmless while the
+# declared ranges equalled the defaults, and total the moment each site got its
+# own (#578). Flux on a worker could resolve nothing, and the build stopped.
+locals {
+  cluster_network_patch = yamlencode({
+    cluster = {
+      network = {
+        cni = {
+          name = "none"
+        }
+
+        # The site's own ranges, from the address plan - see variables.tf for
+        # why they are the estate's largest address commitment (#240).
+        podSubnets     = [local.pod_cidr]
+        serviceSubnets = [local.service_cidr]
+      }
+      proxy = {
+        disabled = true
+      }
+    }
+  })
 }
 
 resource "talos_machine_configuration_apply" "control_plane" {
@@ -345,11 +356,9 @@ data "talos_machine_configuration" "worker" {
   machine_secrets    = talos_machine_secrets.this.machine_secrets
   kubernetes_version = local.kubernetes_version
 
-  # No cluster-level patch. `allowSchedulingOnControlPlanes` is a property of
-  # the cluster rather than of a machine, so it is set once, on the control
-  # plane's config, and a worker repeating it would be a second declaration of
-  # one fact.
-  config_patches = local.machine_patches[each.key]
+  # The cluster's network, as every machine's kubelet needs it (#578), and
+  # not `allowSchedulingOnControlPlanes`, which only a control plane reads.
+  config_patches = concat([local.cluster_network_patch], local.machine_patches[each.key])
 }
 
 resource "talos_machine_configuration_apply" "worker" {
@@ -379,8 +388,9 @@ data "talos_machine_configuration" "dmz" {
   kubernetes_version = local.kubernetes_version
 
   # dmz_patches, not machine_patches: the difference between them is the
-  # overlay, and it is the whole reason this zone exists.
-  config_patches = local.dmz_patches[each.key]
+  # overlay, and it is the whole reason this zone exists. The cluster's network
+  # as every machine's kubelet needs it (#578).
+  config_patches = concat([local.cluster_network_patch], local.dmz_patches[each.key])
 }
 
 resource "talos_machine_configuration_apply" "dmz" {

@@ -278,3 +278,30 @@ on different Talos releases are different bytes at the same path.`, name)
 		}
 	}
 }
+
+// Every machine is told the cluster's network, not only the control planes.
+//
+// A kubelet tells its pods to ask the tenth address of its own machine's
+// serviceSubnets for DNS. The network patch sat on the control planes' config
+// alone, so the workers took Talos's default range and pointed every pod at
+// 10.96.0.10, while cluster DNS answered in the site's own range: nothing on a
+// worker could resolve a name, and site0's rebuild stopped at Health (#578).
+// It was invisible for as long as the declared ranges equalled the defaults.
+//
+// Asserted of every talos_machine_configuration in talos.tf, discovered rather
+// than listed, so a machine class added later is held to it too.
+func TestEveryMachineIsToldTheClustersNetwork(t *testing.T) {
+	talos := readRepoFile(t, "management/cluster/talos.tf")
+	blocks := regexp.MustCompile(`(?s)data "talos_machine_configuration" "([^"]+)" \{(.*?)\n\}`).FindAllStringSubmatch(talos, -1)
+	if len(blocks) < 3 {
+		t.Fatalf("found %d machine configurations in talos.tf; there are at least three classes, so the reader has stopped matching", len(blocks))
+	}
+	for _, b := range blocks {
+		if !strings.Contains(b[2], "local.cluster_network_patch") {
+			t.Errorf(`the %q machine configuration is not given local.cluster_network_patch.
+
+Its kubelet then takes Talos's default service range, and tells every pod on
+that machine to ask for DNS at an address nothing answers on (#578).`, b[1])
+		}
+	}
+}
