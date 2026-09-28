@@ -795,7 +795,7 @@ func flagsFor(verb string) *opts {
 	// so there is nothing here to opt out of, and offering the flag would
 	// suggest the default is the other way round.
 	if verb == "build-site" {
-		o.keepOnFailure = fs.Bool("keep-on-failure", false, "On error, skip the automatic destroy and keep local state for debugging.")
+		o.keepOnFailure = fs.Bool(run.KeepOnFailureFlag, false, "On error, skip the automatic destroy and keep local state for debugging.")
 	}
 
 	// The pull request comment's body is written by this program rather than

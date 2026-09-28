@@ -128,6 +128,25 @@ var healthChecks = []struct {
 	{"etcd membership", 5 * time.Minute, checkEtcd},
 }
 
+// rerunAdvice says what to do next, and it has to be true for this run.
+//
+// It used to promise that the cluster was still running and to re-run from
+// Health, and the next lines of the same run tore the cluster down (#579):
+// only -keep-on-failure keeps it, so only then is re-running from here
+// possible.
+func rerunAdvice(ctx *run.Context) string {
+	if ctx.KeepOnFailure {
+		return fmt.Sprintf(`The cluster and its local state are kept. Look at what is listed
+above, then re-run from here:
+
+    ./toolshed/contractor build-site -site %s -from health`, ctx.Site)
+	}
+	return fmt.Sprintf(`This run now tears the cluster down, so nothing is left orphaned.
+To inspect it instead, build again with the cluster kept:
+
+    ./toolshed/contractor build-site -site %s -%s`, ctx.Site, run.KeepOnFailureFlag)
+}
+
 // waitFor polls until the check passes or the deadline expires, reporting what
 // is still outstanding as it goes. Flux takes minutes on a cold cluster -
 // pulling images, establishing CRDs, waiting on its own dependency ordering -
@@ -158,10 +177,8 @@ func waitFor(ctx *run.Context, kubeconfig, what string, timeout time.Duration, c
 
 This is NOT a verdict about the cluster. Nothing was measured, so nothing is
 known - the estate may be perfectly well. Install %s where this runs, then
-re-run from here:
-
-    ./toolshed/contractor build-site -site %s -from health`,
-				what, missing.Tool, missing.Why, missing.Tool, ctx.Site)
+%s`,
+				what, missing.Tool, missing.Why, missing.Tool, rerunAdvice(ctx))
 		}
 
 		if time.Now().After(deadline) {
@@ -169,11 +186,8 @@ re-run from here:
 
 %v
 
-The cluster is still running and its state is still local, so nothing has been
-lost - this phase refuses to continue rather than migrating state into a
-degraded cluster. Look at what is listed above, then re-run from here:
-
-    ./toolshed/contractor build-site -site %s -from health`, what, timeout, last, ctx.Site)
+This phase refuses to continue rather than migrating state into a degraded
+cluster. %s`, what, timeout, last, rerunAdvice(ctx))
 		}
 		// Say it when it changes, and once a minute otherwise.
 		//
@@ -265,7 +279,7 @@ func summariseWait(err error) string {
 
 // A Flux resource whose only complaint is that something it depends on has
 // not finished. It is a consequence of another item in the same list.
-var dependencyWaiter = regexp.MustCompile(`dependency '[^']+' is not ready`)
+var dependencyWaiter = regexp.MustCompile(`dependency '[^']+' is not ready|Source artifact not found`)
 
 // --- the checks -------------------------------------------------------------
 
@@ -389,8 +403,18 @@ func expectedNodeCount(ctx *run.Context) (int, error) {
 	return len(net.AllMachineIPs()), nil
 }
 
+// fluxKinds is everything Flux reconciles that the cluster's health waits on:
+// the consumers, and the sources they read.
+//
+// Sources as well as consumers (#579). A GitRepository that cannot fetch shows
+// on its Kustomization only as "Source artifact not found", a consequence with
+// no cause in it, and the source's own Ready message - which says why it could
+// not fetch - was never read. The first build of site0 on its own ranges spent
+// fifteen minutes on that line and was torn down knowing nothing more.
+const fluxKinds = "kustomizations,helmreleases,gitrepositories,ocirepositories,helmrepositories"
+
 func checkFlux(ctx *run.Context, kubeconfig string) error {
-	out, err := kubectl(ctx, kubeconfig, "get", "kustomizations,helmreleases", "-A", "-o", "json")
+	out, err := kubectl(ctx, kubeconfig, "get", fluxKinds, "-A", "-o", "json")
 	if err != nil {
 		return err
 	}
@@ -405,13 +429,22 @@ func checkFlux(ctx *run.Context, kubeconfig string) error {
 	// An empty list is not health. It means the CRDs are installed and Flux
 	// has not created anything yet, which reads identically to "everything is
 	// fine" if you only count failures.
+	// Counted by kind: a source on its own is not a reconciled cluster.
 	var list struct {
-		Items []json.RawMessage `json:"items"`
+		Items []struct {
+			Kind string `json:"kind"`
+		} `json:"items"`
 	}
 	if err := json.Unmarshal(out, &list); err != nil {
 		return err
 	}
-	if len(list.Items) == 0 {
+	consumers := 0
+	for _, it := range list.Items {
+		if it.Kind == "Kustomization" || it.Kind == "HelmRelease" {
+			consumers++
+		}
+	}
+	if consumers == 0 {
 		return fmt.Errorf("no Kustomizations or HelmReleases exist yet")
 	}
 	return nil
