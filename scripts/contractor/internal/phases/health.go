@@ -486,6 +486,9 @@ func notReady(body []byte) ([]string, error) {
 				Name      string `json:"name"`
 				Namespace string `json:"namespace"`
 			} `json:"metadata"`
+			Spec struct {
+				Type string `json:"type"`
+			} `json:"spec"`
 			Status struct {
 				Conditions []struct {
 					Type    string `json:"type"`
@@ -502,6 +505,14 @@ func notReady(body []byte) ([]string, error) {
 
 	var out []string
 	for _, item := range list.Items {
+		// An OCI HelmRepository is never reconciled, by Flux's design: it is
+		// only an address the HelmRelease pulls from, so it never gets a Ready
+		// condition at all. Waiting for one held site0's build at Health until
+		// its timeout while everything it served was installed. Whether the
+		// chart could be pulled is its HelmRelease's condition, which is read.
+		if item.Kind == "HelmRepository" && item.Spec.Type == "oci" {
+			continue
+		}
 		name := item.Metadata.Name
 		if item.Metadata.Namespace != "" {
 			name = item.Metadata.Namespace + "/" + name

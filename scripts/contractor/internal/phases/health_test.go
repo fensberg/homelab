@@ -296,3 +296,19 @@ func TestHealthAdvisesOnlyWhatThisRunLeavesPossible(t *testing.T) {
 		t.Errorf("a run that tears the cluster down does not say how to keep it: %s", gone)
 	}
 }
+
+// An OCI HelmRepository never has a Ready condition, by Flux's design, so it
+// is not waited on; its HelmRelease says whether the chart could be pulled. A
+// classic HelmRepository is still a source like any other.
+func TestAnOCIHelmRepositoryIsNotWaitedOn(t *testing.T) {
+	got, err := notReady([]byte(`{"items":[
+	  {"kind":"HelmRepository","metadata":{"name":"oci-charts","namespace":"flux-system"},"spec":{"type":"oci"},"status":{}},
+	  {"kind":"HelmRepository","metadata":{"name":"classic","namespace":"flux-system"},"spec":{},"status":{}}
+	]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !strings.Contains(got[0], "HelmRepository flux-system/classic") {
+		t.Fatalf("want only the classic repository waited on, got %v", got)
+	}
+}

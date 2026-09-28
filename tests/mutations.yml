@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 174
+floor: 175
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -126,6 +126,15 @@ mutations:
     why: >
       The pull-request plan runs a copy of the root at the same depth, so a
       one-level path points nowhere and the plan refuses before its first step.
+
+  - guard: TestEveryMachineIsToldTheClustersNetwork
+    file: management/cluster/talos.tf
+    find: "  config_patches = concat([local.cluster_network_patch], local.machine_patches[each.key])"
+    replace: "  config_patches = local.machine_patches[each.key]"
+    mentions: "is not given local.cluster_network_patch"
+    why: >
+      A worker without the cluster's network points its pods at Talos's default
+      DNS address, and nothing on it can resolve a name (#578).
 
   - guard: TestEveryScheduledWorkflowIsWatchedForFailing
     file: .github/workflows/duty.yml
@@ -1077,8 +1086,8 @@ mutations:
 
   - guard: TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy
     file: management/cluster/talos.tf
-    find: '            name = "none"'
-    replace: '            name = "flannel"'
+    find: '          name = "none"'
+    replace: '          name = "flannel"'
     mentions: "cluster.network.cni.name"
     why: >
       Naming Flannel explicitly is the mutation that matters, because it is the
@@ -1714,8 +1723,8 @@ mutations:
 
   - guard: TestThePodAndServiceNetworksAreDeclared
     file: management/cluster/talos.tf
-    find: "          podSubnets     = [local.pod_cidr]"
-    replace: "          # podSubnets removed"
+    find: "        podSubnets     = [local.pod_cidr]"
+    replace: "        # podSubnets removed"
     mentions: "declares no podSubnets"
     why: >
       The cluster's pod and service ranges are its largest address
