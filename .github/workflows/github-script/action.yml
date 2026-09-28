@@ -13,7 +13,7 @@
 #
 #   - uses: $/.github/workflows/github-script
 #     env:
-#       RESULT: ${{ needs.plan-estate.result }}
+#       SITES: ${{ needs.changes.outputs.sites }}
 #     with:
 #       name: plan-absence-comment
 #

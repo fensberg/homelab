@@ -838,6 +838,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+      # To read which sites' plan jobs in this run did not succeed.
+      actions: read
     timeout-minutes: 5
     steps:
       - name: Mobilize
@@ -856,6 +858,6 @@ jobs:
       - name: Say that no plan was produced
         uses: $/.github/workflows/github-script
         env:
-          RESULT: ${{ needs.plan-estate.result }}
+          SITES: ${{ needs.changes.outputs.sites }}
         with:
           name: plan-absence-comment
