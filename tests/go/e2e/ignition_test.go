@@ -51,6 +51,8 @@ import (
 
 	"homelab/details/tcp"
 	"homelab/tests/harness"
+
+	"homelab/details/repopath"
 )
 
 // buildOutPhases is the full ignition sequence minus sterilize, which is left
@@ -96,7 +98,7 @@ func guard(t *testing.T) string {
 // not run a single command for as long as nobody ran it by hand (#563).
 func runContractor(t *testing.T, verb, site string, args ...string) error {
 	t.Helper()
-	root := harness.RepoRoot(t)
+	root := repopath.RootOrFail(t)
 	bin := filepath.Join(root, "scripts", "contractor", "contractor")
 
 	cmd := exec.Command(bin, append([]string{verb, "-site", site}, args...)...)
@@ -108,7 +110,7 @@ func runContractor(t *testing.T, verb, site string, args ...string) error {
 
 func buildIgnite(t *testing.T) {
 	t.Helper()
-	build := exec.Command("go", "build", "-C", filepath.Join(harness.RepoRoot(t), "scripts", "contractor"), "-o", "contractor", ".")
+	build := exec.Command("go", "build", "-C", filepath.Join(repopath.RootOrFail(t), "scripts", "contractor"), "-o", "contractor", ".")
 	build.Stdout, build.Stderr = os.Stdout, os.Stderr
 	require.NoError(t, build.Run(), "building ignite")
 }

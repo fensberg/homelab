@@ -34,20 +34,9 @@ import (
 // All of this is ordinary `go test`: no tofu binary, no network, no
 // credentials. The HCL side runs separately as `tofu test`.
 
-// repoRoot walks up from this source file rather than the working directory,
-// so the path holds regardless of where `go test` was invoked from.
-func repoRoot(t *testing.T) string {
-	t.Helper()
-	root, err := repopath.Root()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return root
-}
-
 func clusterPath(t *testing.T, parts ...string) string {
 	t.Helper()
-	return filepath.Join(append([]string{repoRoot(t), "management", "cluster"}, parts...)...)
+	return filepath.Join(append([]string{repopath.RootOrFail(t), "management", "cluster"}, parts...)...)
 }
 
 func readTF(t *testing.T, name string) string {
@@ -251,7 +240,7 @@ func TestContract_EveryFixtureFileIsClaimedByACase(t *testing.T) {
 // to declare a vendor this code does not implement, which no fixture would
 // ever catch because fixtures are written to match.
 func TestContract_ConfigTemplateDeclaresImplementedVendors(t *testing.T) {
-	path := filepath.Join(repoRoot(t), "config", "management.tpl.json")
+	path := filepath.Join(repopath.RootOrFail(t), "config", "management.tpl.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading the config template: %v", err)

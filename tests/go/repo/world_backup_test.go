@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"homelab/details/files"
 )
 
 // The world's backup and restore scripts, run as shipped against a fake
@@ -87,10 +89,7 @@ func newWorldFixture(t *testing.T) worldFixture {
 
 func (f worldFixture) put(t *testing.T, path, body string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := files.Write(path, []byte(body)); err != nil {
 		t.Fatal(err)
 	}
 }

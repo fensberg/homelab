@@ -1,11 +1,11 @@
 package main
 
 import (
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"homelab/details/files"
 )
 
 const pinFile = "scripts/versions.env"
@@ -84,10 +84,7 @@ func gitRepo(t *testing.T) func(args ...string) string {
 
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := files.Write(path, []byte(body)); err != nil {
 		t.Fatal(err)
 	}
 }

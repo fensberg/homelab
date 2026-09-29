@@ -8,6 +8,8 @@ import (
 
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/terraform"
+
+	"homelab/details/repopath"
 )
 
 // TofuOptions builds Terratest options aimed at the management cluster root.
@@ -27,7 +29,7 @@ func TofuOptions(t *testing.T, vars map[string]any) *terraform.Options {
 	}
 	return terraform.WithDefaultRetryableErrors(t, &terraform.Options{
 		TerraformBinary: "tofu",
-		TerraformDir:    filepath.Join(RepoRoot(t), "management", "cluster"),
+		TerraformDir:    filepath.Join(repopath.RootOrFail(t), "management", "cluster"),
 		Vars:            mergeVars(map[string]any{"site": Site()}, vars),
 		NoColor:         true,
 

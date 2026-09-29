@@ -128,3 +128,21 @@ func hasAll(dir string, names []string) bool {
 	}
 	return true
 }
+
+// Failer is the part of testing.TB that RootOrFail needs, named here so this
+// package does not import testing into every program that finds the root.
+type Failer interface {
+	Helper()
+	Fatal(args ...any)
+}
+
+// RootOrFail is Root for a test: the root, or the test fails. The contractor's
+// tests and tests/go each wrote this themselves.
+func RootOrFail(t Failer) string {
+	t.Helper()
+	root, err := Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}

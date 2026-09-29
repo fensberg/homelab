@@ -57,7 +57,9 @@ func TestPackagesThatShellToGitNeutraliseUserConfig(t *testing.T) {
 				strings.Contains(text, `exec.CommandContext(ctx, "git"`) {
 				invokesGit[dir] = true
 			}
-			if strings.Contains(text, "GIT_CONFIG_GLOBAL") {
+			// gitenv.Isolate is the one place that does it; setting the
+			// variables directly is still accepted.
+			if strings.Contains(text, "GIT_CONFIG_GLOBAL") || strings.Contains(text, "gitenv.Isolate()") {
 				neutralises[dir] = true
 			}
 			return nil
@@ -94,8 +96,7 @@ func TestPackagesThatShellToGitNeutraliseUserConfig(t *testing.T) {
 		rel, _ := filepath.Rel(root, dir)
 		t.Errorf("%s runs git in its tests and does not neutralise the developer's "+
 			"git configuration.\n\n"+
-			"Add a TestMain setting GIT_CONFIG_GLOBAL and GIT_CONFIG_SYSTEM to "+
-			"os.DevNull. Without it a fixture inherits whatever the machine has - "+
+			"Add a TestMain that calls gitenv.Isolate() (homelab/details/gitenv). Without it a fixture inherits whatever the machine has - "+
 			"commit.gpgsign is the one that has already caused this - and the test "+
 			"reports the machine rather than the code.", rel)
 	}

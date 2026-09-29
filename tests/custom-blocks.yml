@@ -1,0 +1,37 @@
+# Custom blocks: things built here that deliberately reuse nothing.
+#
+# The rule, in order (docs/epochs/02-abstraction.md, "A new custom block is
+# refused unless somebody says why"): reuse the reusable block that exists; if
+# none exists, build one that is reusable; only when it genuinely cannot be
+# reusable, build something custom - and say why here. A custom block is not
+# forbidden. It costs a reason, the way an unapproved tool costs a pull
+# request in scripts/approved-suppliers.yml.
+#
+# A machine cannot tell a reusable component from a custom one; that is a
+# judgement. What it can do is refuse an undeclared one, so an omission and a
+# considered exception never look the same. tests/go/repo/custom_blocks_test.go
+# finds every candidate by walking the repository, and fails on one that is not
+# declared here, and on a declaration that no longer matches anything.
+#
+# If this ever becomes a box people tick, the criterion has failed, and the
+# epoch record should say so rather than the guard being loosened.
+
+# Kubernetes objects declared directly in an environment rather than as an
+# overlay of a base in modules/applications/. One entry per object:
+# "<file> <Kind> <namespace>/<name>".
+kubernetes:
+  - object: environments/production/applications/valheim/server.yaml ConfigMap valheim/valheim-world
+    reason: >-
+      The world's settings are the environment's choice and have no default a
+      base could hold: an unset dial means "leave it alone", so a base value
+      would be a setting nobody chose. A workload's configuration belongs to
+      its environment.
+  - object: environments/production/applications/valheim/service.yaml Service valheim/game-server
+    reason: >-
+      The address a tunnel route reaches exists only where the workload runs
+      and is routed to, which is production. Staging does not run this
+      workload, so a base Service would be one staging never deploys.
+
+# Go functions whose bodies are identical in more than one package. One entry
+# per group: every function in it, as "<package directory>.<name>".
+go: []

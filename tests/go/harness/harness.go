@@ -36,20 +36,6 @@ import (
 	"homelab/details/repopath"
 )
 
-// RepoRoot is repopath.Root with the test's failure attached.
-//
-// It used to count its own way up with a fixed chain of "..", one of eight
-// copies of that answer across two modules. Each was right until the file
-// holding it moved.
-func RepoRoot(t *testing.T) string {
-	t.Helper()
-	root, err := repopath.Root()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return root
-}
-
 // Site is which key in the config's sites map the tier under test is aimed
 // at: HOMELAB_TEST_SITE, or the only site the config declares - the same
 // rule as the contractor's -site, from the same function.
@@ -115,7 +101,7 @@ func RenderedConfigPath(t *testing.T) string {
 	if p := os.Getenv("HOMELAB_TEST_CONFIG"); p != "" {
 		return p
 	}
-	return filepath.Join(RepoRoot(t), "config", "management.rendered.json")
+	return filepath.Join(repopath.RootOrFail(t), "config", "management.rendered.json")
 }
 
 // LoadConfig reads the rendered config, failing with the command that would

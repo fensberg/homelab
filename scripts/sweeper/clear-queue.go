@@ -9,6 +9,8 @@ import (
 	"os"
 	"sort"
 	"time"
+
+	"homelab/details/ghapi"
 )
 
 // clear-queue cancels queued runs that can never produce a useful result.
@@ -127,7 +129,7 @@ func deadBecause(branchExists bool) (string, bool) {
 
 // branchExists asks whether the run's head branch is still in the repository.
 func (c *github) branchExists(branch string) (bool, error) {
-	status, err := c.head(c.endpoint("/repos/%s/branches/%s", c.repo, branch))
+	status, err := c.head(ghapi.URL(c.api, "/repos/%s/branches/%s", c.repo, branch))
 	if err != nil {
 		return false, err
 	}
@@ -162,7 +164,7 @@ func (c *github) head(url string) (int, error) {
 // the run is no longer queued either way.
 func (c *github) cancel(id int64) error {
 	req, err := http.NewRequest(http.MethodPost,
-		c.endpoint("/repos/%s/actions/runs/%d/cancel", c.repo, id), nil)
+		ghapi.URL(c.api, "/repos/%s/actions/runs/%d/cancel", c.repo, id), nil)
 	if err != nil {
 		return err
 	}
@@ -211,14 +213,6 @@ type workflowRun struct {
 	Branch    string    `json:"head_branch"`
 }
 
-func (c *github) endpoint(format string, args ...any) string {
-	base := c.api
-	if base == "" {
-		base = "https://api.github.com"
-	}
-	return base + fmt.Sprintf(format, args...)
-}
-
 func (c *github) get(url string) ([]byte, int, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -237,7 +231,7 @@ func (c *github) get(url string) ([]byte, int, error) {
 
 // runs asks for one page of runs in a given status.
 func (c *github) runs(status string) ([]workflowRun, error) {
-	body, code, err := c.get(c.endpoint("/repos/%s/actions/runs?per_page=100&status=%s", c.repo, status))
+	body, code, err := c.get(ghapi.URL(c.api, "/repos/%s/actions/runs?per_page=100&status=%s", c.repo, status))
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +253,7 @@ func (c *github) runs(status string) ([]workflowRun, error) {
 // An error is reported rather than swallowed: "I could not ask" is not "nobody
 // is waiting", and a run in that state is left alone rather than cancelled.
 func (c *github) awaitingApproval(id int64) (bool, error) {
-	body, code, err := c.get(c.endpoint("/repos/%s/actions/runs/%d/pending_deployments", c.repo, id))
+	body, code, err := c.get(ghapi.URL(c.api, "/repos/%s/actions/runs/%d/pending_deployments", c.repo, id))
 	if err != nil {
 		return false, err
 	}

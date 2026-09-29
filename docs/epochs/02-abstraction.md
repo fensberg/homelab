@@ -1870,6 +1870,25 @@ that ever becomes a box people tick, this criterion has failed and the record
 should say so rather than the guard being widened until it is noisy enough to
 disable.
 
+**Built, 2026-09-29: the Kubernetes and Go legs.** `tests/custom-blocks.yml`
+is the registry, and `tests/go/repo/custom_blocks_test.go` refuses anything
+undeclared and any declaration that no longer matches.
+
+- **Kubernetes.** Two objects are written directly in production's overlay,
+  and both are declared with their reason: the world settings (a workload's
+  configuration belongs to its environment) and the game server's Service
+  (the address a tunnel route reaches exists only where the workload runs).
+- **Go.** Functions of three or more statements are compared by the printed
+  form of their signature and body, names ignored. Its first run found six
+  groups, all fixed rather than declared: the repository root for a test, the
+  tofu runner, the `versions.env` parser, the GitHub endpoint builder, the
+  git-isolating `TestMain`, and the make-parents-and-write test helper. Each
+  is now one function in `homelab/details` (`repopath.RootOrFail`,
+  `asbuilt.Exec`, `envfile`, `ghapi`, `gitenv`, `files`), and `go: []` is the
+  registry's honest state.
+- **OpenTofu** waits for the module move: until the cluster root is a module,
+  every resource is outside one, and the rule has nothing to distinguish.
+
 ### Considered, and deliberately not made criteria
 
 Named here so the next person does not have to rediscover why.

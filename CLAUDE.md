@@ -746,9 +746,9 @@ floor a pull request may not drop below and is free to leave alone.
 
   Both reported the machine rather than the code. Where a test shells out to a
   tool that reads user configuration, neutralise that configuration rather than
-  hoping it is absent; `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` pointed at
-  `/dev/null` do it for git, and `tests/go/repo` asserts any test package
-  invoking git does so.
+  hoping it is absent; for git that is `gitenv.Isolate()`
+  (`homelab/details/gitenv`) from the package's `TestMain`, and `tests/go/repo`
+  asserts any test package invoking git does so.
 
 - **Prove a test fails for the reason it claims.** Breaking the code and
   watching something go red is not enough — check that _this_ assertion is what

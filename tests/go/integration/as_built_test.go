@@ -3,10 +3,8 @@
 package integration_test
 
 import (
-	"bytes"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +14,8 @@ import (
 	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
 	"homelab/tests/harness"
+
+	"homelab/details/repopath"
 )
 
 // The as-built record of the deployed estate is quiet and holds nothing real
@@ -44,7 +44,7 @@ func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
 	opts := harness.TofuOptions(t, nil)
 	terraform.Init(t, opts)
 
-	root := harness.RepoRoot(t)
+	root := repopath.RootOrFail(t)
 	tpl, err := os.ReadFile(filepath.Join(root, "config", "management.tpl.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
 		Root: opts.TerraformDir, Work: work,
 		Template: tpl, Rendered: rendered, Site: harness.Site(),
 		Progress: func(s string) { t.Log(s) },
-	}, tofu)
+	}, asbuilt.Exec)
 	var pending *asbuilt.NotConvergedError
 	if errors.As(err, &pending) {
 		t.Fatal("the estate has pending changes, so no record can be taken; TestDeployedEstateMatchesTheCode says which")
@@ -94,7 +94,7 @@ func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
 		Template: tpl, Site: harness.Site(),
 		PluginDir: filepath.Join(opts.TerraformDir, ".terraform", "providers"),
 		Sequence:  steps.Plan(),
-	}, tofu)
+	}, asbuilt.Exec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,16 +102,4 @@ func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
 		t.Errorf("the code as it stands, planned against its own saved record, would change:\n  %s",
 			strings.Join(pending, "\n  "))
 	}
-}
-
-func tofu(dir string, env []string, args ...string) ([]byte, []byte, error) {
-	c := exec.Command("tofu", args...)
-	c.Dir = dir
-	if env != nil {
-		c.Env = env
-	}
-	var out, errb bytes.Buffer
-	c.Stdout, c.Stderr = &out, &errb
-	err := c.Run()
-	return out.Bytes(), errb.Bytes(), err
 }

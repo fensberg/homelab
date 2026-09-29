@@ -34,6 +34,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"homelab/details/ghapi"
 )
 
 // A check is one question with one answer. Each returns a short status line.
@@ -112,15 +114,6 @@ type client struct {
 	// run already finished - is most of what can go wrong with them, and it
 	// cannot be exercised at all while the address is a constant.
 	api string
-}
-
-// endpoint builds a URL against GitHub, or against whatever a test stood up.
-func (c *client) endpoint(format string, args ...any) string {
-	base := c.api
-	if base == "" {
-		base = "https://api.github.com"
-	}
-	return base + fmt.Sprintf(format, args...)
 }
 
 type run struct {
@@ -205,7 +198,7 @@ var stuckStatuses = map[string]bool{"queued": true, "pending": true}
 // dropping it.
 func (c *client) awaitingApproval(id int64) (bool, error) {
 	req, err := http.NewRequest(http.MethodGet,
-		c.endpoint("/repos/%s/actions/runs/%d/pending_deployments", c.repo, id), nil)
+		ghapi.URL(c.api, "/repos/%s/actions/runs/%d/pending_deployments", c.repo, id), nil)
 	if err != nil {
 		return false, err
 	}

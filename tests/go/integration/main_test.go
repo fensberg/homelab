@@ -5,6 +5,8 @@ package integration
 import (
 	"os"
 	"testing"
+
+	"homelab/details/gitenv"
 )
 
 // The developer's git configuration must not reach this tier.
@@ -21,7 +23,6 @@ import (
 // and nothing else. Per-repository configuration still applies, which is
 // correct: that belongs to the repository being examined.
 func TestMain(m *testing.M) {
-	os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	os.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	gitenv.Isolate()
 	os.Exit(m.Run())
 }
