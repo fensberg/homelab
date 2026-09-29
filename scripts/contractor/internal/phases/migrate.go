@@ -2,6 +2,7 @@ package phases
 
 import (
 	"fmt"
+	"homelab/details/tcp"
 	"io"
 	"os"
 	"regexp"
@@ -34,7 +35,7 @@ func Migrate(ctx *run.Context) error {
 	pgPort, _ := strconv.Atoi(m[2])
 
 	run.Info(fmt.Sprintf("waiting for Postgres at %s:%d ...", pgHost, pgPort))
-	if !run.WaitForPort(pgHost, pgPort, 10*time.Minute, 15*time.Second) {
+	if !tcp.Await(tcp.Addr(pgHost, pgPort), 10*time.Minute, 15*time.Second) {
 		return fmt.Errorf("postgres at %s:%d never became reachable. Has Flux finished reconciling it?", pgHost, pgPort)
 	}
 	run.Ok("Postgres reachable")

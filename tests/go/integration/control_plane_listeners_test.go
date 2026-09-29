@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"homelab/details/tcp"
 	"homelab/tests/harness"
 )
 
@@ -86,7 +87,7 @@ func TestEveryControlPlaneOpensTheListenersItWasConfiguredFor(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/%s", listener.Component, ip), func(t *testing.T) {
 				t.Parallel()
 
-				if !portOpen(ip, listener.Port, 10*time.Second) {
+				if !tcp.Listening(net.JoinHostPort(ip, listener.Port), 10*time.Second) {
 					assert.Fail(t, "a declared listener is not open", `%s is not listening on %s:%s.
 
 management/cluster/talos.tf configures cluster.%s to open it, so the machine is

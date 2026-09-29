@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"testing"
+
+	"homelab/details/gitenv"
 )
 
 // TestMain cuts this package's tests off from the developer's git
@@ -14,7 +16,6 @@ import (
 // out twice - silently changes what the fixture is. Per-repository config
 // still applies, which is correct: the fixture sets that itself.
 func TestMain(m *testing.M) {
-	os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	os.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	gitenv.Isolate()
 	os.Exit(m.Run())
 }

@@ -42,6 +42,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"homelab/details/envfile"
 )
 
 // Fixed paths rather than flags, for the reason security gives: a program that
@@ -162,7 +164,7 @@ func declaredDeliveries(root string) ([]declaredDelivery, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", versionsPath, err)
 	}
-	deliveries, err := deliveriesIn(string(suppliers), parseVersions(string(versions)))
+	deliveries, err := deliveriesIn(string(suppliers), envfile.Parse(string(versions)))
 	if err != nil {
 		return nil, err
 	}
@@ -250,21 +252,6 @@ func deliveriesIn(suppliers string, versions map[string]string) ([]declaredDeliv
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
-}
-
-// parseVersions reads KEY=VALUE lines.
-func parseVersions(body string) map[string]string {
-	out := map[string]string{}
-	for _, line := range strings.Split(body, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if k, v, ok := strings.Cut(line, "="); ok {
-			out[strings.TrimSpace(k)] = strings.TrimSpace(v)
-		}
-	}
-	return out
 }
 
 // formatDeliveriesLock renders the lock.

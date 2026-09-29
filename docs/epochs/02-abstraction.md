@@ -1808,6 +1808,21 @@ costs nothing to the contractor, whose zero-dependency property is about
 _external_ packages. Worth stating explicitly, because the alternative that
 looks cheaper - copying it a fourth time - is what produced this list.
 
+**Built, 2026-09-29.** The rclone mapping had already become one:
+`config.RcloneEnv` in the contractor, which the contractor's phases and both
+test tiers import. The port check was four copies, not three - the e2e tier
+also carried its own `waitForPort` - and is now `homelab/details/tcp`
+(`Listening`, `Await`, `Addr`), with the contractor's `run.TestPort` and
+`run.WaitForPort` gone.
+
+The module boundary was settled by a module that did not exist when this was
+written: `homelab/details`, the standard details, which every program and
+`tests/go` already import through a local replace, and which stays
+dependency-free. So nothing had to leave the contractor's `internal/` and
+`tests/go` took on no dependency on the contractor for this. What still lacks
+a mechanical check is the next one of these: two identical Go functions in two
+packages. That is the next criterion's Go guard.
+
 ### A new custom block is refused unless somebody says why
 
 The three criteria above remove the duplication that exists today. This one is
@@ -1854,6 +1869,37 @@ only because adding to it is a moment where somebody has to type a reason. If
 that ever becomes a box people tick, this criterion has failed and the record
 should say so rather than the guard being widened until it is noisy enough to
 disable.
+
+**Built, 2026-09-29: the Kubernetes and Go legs.** `tests/custom-blocks.yml`
+is the registry, and `tests/go/repo/custom_blocks_test.go` refuses anything
+undeclared and any declaration that no longer matches.
+
+- **Kubernetes needs no registry, and the first version was wrong to keep
+  one.** It declared each object written directly in an environment, which
+  put the game server's name in `tests/custom-blocks.yml` twice - for its
+  world settings and its Service - and a declaration that no longer matches
+  fails, so removing the application meant editing the guard's list. An
+  application is modular, and removing one must touch only its own
+  directories. The premise was also backwards: a workload's configuration
+  belongs to its environment, so those two objects were the design, not
+  exceptions to it. The check is now a shape that names no application: an
+  environment lists application directories, each builds on
+  `modules/applications/<same name>/base`, and adds only objects that
+  configure or reach what the module runs - a Deployment, StatefulSet,
+  DaemonSet, Job, CronJob, ReplicaSet or Pod written in an environment is
+  refused. Its limit: a custom object of another kind in an overlay is
+  allowed without a word, because telling "configures" from "is its own
+  thing" for every kind is the judgement a machine cannot make.
+- **Go.** Functions of three or more statements are compared by the printed
+  form of their signature and body, names ignored. Its first run found six
+  groups, all fixed rather than declared: the repository root for a test, the
+  tofu runner, the `versions.env` parser, the GitHub endpoint builder, the
+  git-isolating `TestMain`, and the make-parents-and-write test helper. Each
+  is now one function in `homelab/details` (`repopath.RootOrFail`,
+  `asbuilt.Exec`, `envfile`, `ghapi`, `gitenv`, `files`), and `go: []` is the
+  registry's honest state.
+- **OpenTofu** waits for the module move: until the cluster root is a module,
+  every resource is outside one, and the rule has nothing to distinguish.
 
 ### Considered, and deliberately not made criteria
 

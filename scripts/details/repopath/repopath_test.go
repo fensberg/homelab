@@ -127,3 +127,15 @@ func TestANestedClaudeMdDoesNotBecomeTheRoot(t *testing.T) {
 			"check only that subtree and go on reporting green.", got, root)
 	}
 }
+
+type recorder struct{ failed bool }
+
+func (r *recorder) Helper()      {}
+func (r *recorder) Fatal(...any) { r.failed = true }
+
+func TestRootOrFailAnswersFromInsideTheRepository(t *testing.T) {
+	var r recorder
+	if got := RootOrFail(&r); got == "" || r.failed {
+		t.Fatalf("got %q, failed=%v", got, r.failed)
+	}
+}

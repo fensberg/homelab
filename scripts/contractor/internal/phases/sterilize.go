@@ -2,6 +2,7 @@ package phases
 
 import (
 	"fmt"
+	"homelab/details/tcp"
 	"os"
 	"time"
 
@@ -154,7 +155,7 @@ func demigrateStateToLocal(ctx *run.Context) error {
 	}
 
 	run.Info(fmt.Sprintf("checking Postgres at %s:%d is still reachable ...", host, port))
-	if !run.WaitForPort(host, port, 10*time.Second, 2*time.Second) {
+	if !tcp.Await(tcp.Addr(host, port), 10*time.Second, 2*time.Second) {
 		return fmt.Errorf("postgres at %s:%d is not reachable - it may already be gone", host, port)
 	}
 

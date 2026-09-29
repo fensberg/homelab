@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 175
+floor: 177
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -135,6 +135,35 @@ mutations:
     why: >
       A worker without the cluster's network points its pods at Talos's default
       DNS address, and nothing on it can resolve a name (#578).
+
+  - guard: TestAnEnvironmentHoldsOnlyOverlaysOfModules
+    file: environments/staging/applications/kustomization.yaml
+    find: "resources: []"
+    replace: "resources: [deployment.yaml]"
+    mentions: a manifest here would be an application with no module
+    why:
+      "A manifest written straight into an environment is the copy-paste the epoch exists to stop,
+      arriving in manifests instead of code.
+
+      "
+  - guard: TestAGoFunctionWrittenTwiceIsDeclared
+    file: scripts/sweeper/clear-queue.go
+    reads_source: true
+    find: "func clearQueue(args []string) int {
+
+      "
+    replace:
+      "func parseVersions(body string) map[string]string {\n\tout := map[string]string{}\n\tfor _,\
+      \ line := range strings.Split(body, \"\\n\") {\n\t\tline = strings.TrimSpace(line)\n\t\tif line ==\
+      \ \"\" || strings.HasPrefix(line, \"#\") {\n\t\t\tcontinue\n\t\t}\n\t\tif k, v, ok := strings.Cut(line,\
+      \ \"=\"); ok {\n\t\t\tout[strings.TrimSpace(k)] = strings.TrimSpace(v)\n\t\t}\n\t}\n\treturn out\n\
+      }\n\nfunc clearQueue(args []string) int {\n"
+    mentions: has the same signature and body in more than one package
+    why:
+      "The versions.env parser was written twice, in procurement and the security guard, until this guard
+      found it; pasting it back is the regression.
+
+      "
 
   - guard: TestEveryScheduledWorkflowIsWatchedForFailing
     file: .github/workflows/duty.yml
@@ -2537,6 +2566,12 @@ unprovable:
   # The reader behind TestARootReachesOutsideItselfFromTheTop, which its own
   # ledger entry proves.
   - test: TestClimbsWrongFindsEveryOtherWayUp
+    reason: table
+  # The readers behind the two custom-block guards, which their own ledger
+  # entries prove. Their tables hold each case they must find and must leave.
+  - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
+    reason: table
+  - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
     reason: table
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.

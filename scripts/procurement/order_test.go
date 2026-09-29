@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"homelab/details/envfile"
 )
 
 const suppliersFixture = `egress:
@@ -38,7 +40,7 @@ hooks:
 const fixtureVersions = "CHECKOV_VERSION=3.3.17\nPRE_COMMIT_VERSION=4.6.2\nHADOLINT_VERSION=2.15.1\n"
 
 func TestDeliveriesAreReadFromTheToolsSectionOnly(t *testing.T) {
-	got, err := deliveriesIn(suppliersFixture, parseVersions(fixtureVersions))
+	got, err := deliveriesIn(suppliersFixture, envfile.Parse(fixtureVersions))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +121,7 @@ func TestFetchHashesExactlyWhatWasServed(t *testing.T) {
 }
 
 func TestVersionsAreReadAsKeyValuePairs(t *testing.T) {
-	got := parseVersions("# comment\nA_VERSION=1.2\n\nB_SHA256 = abc\nnot a pair\n")
+	got := envfile.Parse("# comment\nA_VERSION=1.2\n\nB_SHA256 = abc\nnot a pair\n")
 	if got["A_VERSION"] != "1.2" || got["B_SHA256"] != "abc" || len(got) != 2 {
 		t.Fatalf("got %v", got)
 	}

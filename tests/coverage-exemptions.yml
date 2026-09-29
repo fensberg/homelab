@@ -253,7 +253,7 @@ files:
     uncovered: 3
     covered_by: nothing
   - path: security/patrol.go
-    uncovered: 9
+    uncovered: 8
     covered_by: nothing
   - path: superintendent/enforce-push.go
     uncovered: 2

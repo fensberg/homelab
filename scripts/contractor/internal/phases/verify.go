@@ -2,6 +2,7 @@ package phases
 
 import (
 	"fmt"
+	"homelab/details/tcp"
 	"time"
 
 	"homelab/contractor/config"
@@ -30,7 +31,7 @@ func Verify(ctx *run.Context) error {
 	// this locally has config/management.rendered.json in front of them, which
 	// is where the address already is.
 	run.Info(fmt.Sprintf("checking the Proxmox API for site %s ...", ctx.Site))
-	if !run.TestPort(pveHost, 8006, 10*time.Second) {
+	if !tcp.Listening(tcp.Addr(pveHost, 8006), 10*time.Second) {
 		return fmt.Errorf("cannot reach site %s's hypervisor on the Proxmox API port. Fix that before continuing (the address is in config/management.rendered.json)", ctx.Site)
 	}
 	run.Ok("Proxmox API reachable")
@@ -102,7 +103,7 @@ func verifyNodeSubnetReachable(ctx *run.Context, nodeIPs []string, timeout time.
 
 	run.Info(fmt.Sprintf("checking the node subnet for site %s ...", ctx.Site))
 	for _, ip := range nodeIPs {
-		if run.TestPort(ip, 6443, timeout) {
+		if tcp.Listening(tcp.Addr(ip, 6443), timeout) {
 			run.Ok("node subnet reachable - the path to this estate works")
 			return nil
 		}

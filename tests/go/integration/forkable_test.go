@@ -13,6 +13,8 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/tests/harness"
+
+	"homelab/details/repopath"
 )
 
 // The complete check that this estate's own names are not committed.
@@ -77,7 +79,7 @@ func TestEstateNamesAreNotCommitted(t *testing.T) {
 		t.Fatal("the rendered config yielded no names to check, which means this test is not testing anything")
 	}
 
-	root := harness.RepoRoot(t)
+	root := repopath.RootOrFail(t)
 	exts := map[string]bool{
 		".go": true, ".md": true, ".yml": true, ".yaml": true, ".tf": true,
 		".json": true, ".sh": true, ".hcl": true, ".ts": true, ".js": true,

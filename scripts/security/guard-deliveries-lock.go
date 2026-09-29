@@ -26,6 +26,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"homelab/details/envfile"
 )
 
 const (
@@ -82,7 +84,7 @@ func declaredDeliveries(root string) ([]lockedDelivery, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", versionsPath, err)
 	}
-	deliveries, err := deliveriesIn(string(suppliers), parseVersions(string(versions)))
+	deliveries, err := deliveriesIn(string(suppliers), envfile.Parse(string(versions)))
 	if err != nil {
 		return nil, err
 	}
@@ -165,21 +167,6 @@ func deliveriesIn(suppliers string, versions map[string]string) ([]lockedDeliver
 		return nil, err
 	}
 	return out, nil
-}
-
-// parseVersions reads KEY=VALUE lines.
-func parseVersions(body string) map[string]string {
-	out := map[string]string{}
-	for _, line := range strings.Split(body, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if k, v, ok := strings.Cut(line, "="); ok {
-			out[strings.TrimSpace(k)] = strings.TrimSpace(v)
-		}
-	}
-	return out
 }
 
 // parseDeliveriesLock reads the lock's sections, keyed "kind:name".
