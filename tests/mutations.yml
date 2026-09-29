@@ -136,20 +136,14 @@ mutations:
       A worker without the cluster's network points its pods at Talos's default
       DNS address, and nothing on it can resolve a name (#578).
 
-  - guard: TestAKubernetesObjectOutsideABaseIsDeclared
-    file: tests/custom-blocks.yml
-    find:
-      "  - object: environments/production/applications/valheim/service.yaml Service valheim/game-server
-
-      "
-    replace:
-      "  - object: environments/production/applications/valheim/service.yaml Service valheim/game-servers
-
-      "
-    mentions: is written directly in an environment
+  - guard: TestAnEnvironmentHoldsOnlyOverlaysOfModules
+    file: environments/staging/applications/kustomization.yaml
+    find: "resources: []"
+    replace: "resources: [deployment.yaml]"
+    mentions: a manifest here would be an application with no module
     why:
-      "An object written straight into an environment, with nobody saying why, is the copy-paste the
-      epoch exists to stop, arriving in manifests instead of code.
+      "A manifest written straight into an environment is the copy-paste the epoch exists to stop,
+      arriving in manifests instead of code.
 
       "
   - guard: TestAGoFunctionWrittenTwiceIsDeclared
@@ -2577,7 +2571,7 @@ unprovable:
   # entries prove. Their tables hold each case they must find and must leave.
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
-  - test: TestEnvironmentObjectsNamesEachObjectAndSkipsKustomize
+  - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
     reason: table
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.

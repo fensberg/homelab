@@ -16,21 +16,9 @@
 # If this ever becomes a box people tick, the criterion has failed, and the
 # epoch record should say so rather than the guard being loosened.
 
-# Kubernetes objects declared directly in an environment rather than as an
-# overlay of a base in modules/applications/. One entry per object:
-# "<file> <Kind> <namespace>/<name>".
-kubernetes:
-  - object: environments/production/applications/valheim/server.yaml ConfigMap valheim/valheim-world
-    reason: >-
-      The world's settings are the environment's choice and have no default a
-      base could hold: an unset dial means "leave it alone", so a base value
-      would be a setting nobody chose. A workload's configuration belongs to
-      its environment.
-  - object: environments/production/applications/valheim/service.yaml Service valheim/game-server
-    reason: >-
-      The address a tunnel route reaches exists only where the workload runs
-      and is routed to, which is production. Staging does not run this
-      workload, so a base Service would be one staging never deploys.
+# No Kubernetes section. An environment is a list of applications, each an
+# overlay of its module, adding only what configures or reaches it; that is a
+# shape the guard checks without a list, so nothing here names an application.
 
 # Go functions whose bodies are identical in more than one package. One entry
 # per group: every function in it, as "<package directory>.<name>".

@@ -1874,10 +1874,22 @@ disable.
 is the registry, and `tests/go/repo/custom_blocks_test.go` refuses anything
 undeclared and any declaration that no longer matches.
 
-- **Kubernetes.** Two objects are written directly in production's overlay,
-  and both are declared with their reason: the world settings (a workload's
-  configuration belongs to its environment) and the game server's Service
-  (the address a tunnel route reaches exists only where the workload runs).
+- **Kubernetes needs no registry, and the first version was wrong to keep
+  one.** It declared each object written directly in an environment, which
+  put the game server's name in `tests/custom-blocks.yml` twice - for its
+  world settings and its Service - and a declaration that no longer matches
+  fails, so removing the application meant editing the guard's list. An
+  application is modular, and removing one must touch only its own
+  directories. The premise was also backwards: a workload's configuration
+  belongs to its environment, so those two objects were the design, not
+  exceptions to it. The check is now a shape that names no application: an
+  environment lists application directories, each builds on
+  `modules/applications/<same name>/base`, and adds only objects that
+  configure or reach what the module runs - a Deployment, StatefulSet,
+  DaemonSet, Job, CronJob, ReplicaSet or Pod written in an environment is
+  refused. Its limit: a custom object of another kind in an overlay is
+  allowed without a word, because telling "configures" from "is its own
+  thing" for every kind is the judgement a machine cannot make.
 - **Go.** Functions of three or more statements are compared by the printed
   form of their signature and body, names ignored. Its first run found six
   groups, all fixed rather than declared: the repository root for a test, the
