@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"homelab/details/tcp"
 	"io"
 	"net/http"
 	urlpkg "net/url"
@@ -105,7 +106,7 @@ func Compute(ctx *run.Context) error {
 	// has to boot. Poll its API port rather than guessing at a sleep.
 	for _, node := range net.AllMachineIPs() {
 		run.Info(fmt.Sprintf("waiting for the Talos API on %s:50000 ...", node))
-		if !run.WaitForPort(node, 50000, 5*time.Minute, 10*time.Second) {
+		if !tcp.Await(tcp.Addr(node, 50000), 5*time.Minute, 10*time.Second) {
 			return fmt.Errorf(`Talos on %s never came up within 5 minutes.
 
 Open that VM's console in the Proxmox web UI. Talos prints its IP on the

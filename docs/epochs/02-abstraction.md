@@ -1808,6 +1808,21 @@ costs nothing to the contractor, whose zero-dependency property is about
 _external_ packages. Worth stating explicitly, because the alternative that
 looks cheaper - copying it a fourth time - is what produced this list.
 
+**Built, 2026-09-29.** The rclone mapping had already become one:
+`config.RcloneEnv` in the contractor, which the contractor's phases and both
+test tiers import. The port check was four copies, not three - the e2e tier
+also carried its own `waitForPort` - and is now `homelab/details/tcp`
+(`Listening`, `Await`, `Addr`), with the contractor's `run.TestPort` and
+`run.WaitForPort` gone.
+
+The module boundary was settled by a module that did not exist when this was
+written: `homelab/details`, the standard details, which every program and
+`tests/go` already import through a local replace, and which stays
+dependency-free. So nothing had to leave the contractor's `internal/` and
+`tests/go` took on no dependency on the contractor for this. What still lacks
+a mechanical check is the next one of these: two identical Go functions in two
+packages. That is the next criterion's Go guard.
+
 ### A new custom block is refused unless somebody says why
 
 The three criteria above remove the duplication that exists today. This one is

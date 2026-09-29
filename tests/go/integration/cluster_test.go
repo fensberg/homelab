@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"homelab/details/tcp"
 	"homelab/tests/harness"
 )
 
@@ -85,7 +86,7 @@ func TestControlPlaneNodesAnswerTheTalosAPI(t *testing.T) {
 	for i := 0; i < site.ControlPlaneCount; i++ {
 		ip := harness.ControlPlaneIP(t, i)
 		t.Run(ip, func(t *testing.T) {
-			assert.True(t, portOpen(ip, "50000", 10*time.Second),
+			assert.True(t, tcp.Listening(tcp.Addr(ip, 50000), 10*time.Second),
 				"no Talos API on %s:50000. Open that VM's console in Proxmox: no IP on the maintenance banner means the SDN bridge is down, a different IP means cloud-init did not apply the static address.", ip)
 		})
 	}

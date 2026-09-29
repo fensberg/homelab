@@ -49,6 +49,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"homelab/details/tcp"
 	"homelab/tests/harness"
 )
 
@@ -139,7 +140,7 @@ func TestIgnitionBuildsAndTearsDownAnEstate(t *testing.T) {
 	cfg := harness.SiteConfig(t)
 	for i := 0; i < cfg.ControlPlaneCount; i++ {
 		ip := harness.ControlPlaneIP(t, i)
-		assert.Truef(t, waitForPort(ip, "50000", 5*time.Minute),
+		assert.Truef(t, tcp.Await(tcp.Addr(ip, 50000), 5*time.Minute, 10*time.Second),
 			"ignition reported success but %s never answered on the Talos API port", ip)
 	}
 }
@@ -161,15 +162,4 @@ orphaned. Check Proxmox by hand, then re-run:
 
     ./toolshed/contractor demolish-site -site %s -confirm %s`, err, site, site)
 	}
-}
-
-func waitForPort(host, port string, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if portOpen(host, port, 5*time.Second) {
-			return true
-		}
-		time.Sleep(10 * time.Second)
-	}
-	return false
 }

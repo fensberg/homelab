@@ -4,7 +4,6 @@ package integration_test
 
 import (
 	"fmt"
-	"net"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"homelab/details/tcp"
 	"homelab/tests/harness"
 )
 
@@ -34,21 +34,6 @@ func TestDerivedStateDatabaseAddressMatchesTheDeployedOne(t *testing.T) {
 	require.Equal(t, deployed, derived,
 		"the emergency destroy would dial %s, but the state database is at %s.\n\nThat path runs only when a deployment has already failed, so a mismatch here surfaces for the first time at the exact moment there is no second chance: state gets migrated out of a cluster that is about to be torn down, to an address that answers nothing.", derived, deployed)
 
-	assert.True(t, portOpen(derived, "", 15*time.Second),
+	assert.True(t, tcp.Listening(derived, 15*time.Second),
 		"nothing is listening on %s. Has Flux finished reconciling CloudNativePG?", derived)
-}
-
-// portOpen is the same single-TCP-dial check run.TestPort makes: is anything
-// listening. host may carry the port already, in which case port is "".
-func portOpen(host, port string, timeout time.Duration) bool {
-	addr := host
-	if port != "" {
-		addr = net.JoinHostPort(host, port)
-	}
-	conn, err := net.DialTimeout("tcp", addr, timeout)
-	if err != nil {
-		return false
-	}
-	_ = conn.Close()
-	return true
 }

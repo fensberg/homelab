@@ -2,6 +2,7 @@ package phases
 
 import (
 	"fmt"
+	"homelab/details/tcp"
 	"os"
 	"regexp"
 	"sort"
@@ -255,7 +256,7 @@ func DestroyPreconditions(probe time.Duration) []destroyPrecondition {
 				if len(net.Hypervisors) == 0 {
 					return fmt.Errorf("this site declares no hypervisor, so there is nothing to destroy against")
 				}
-				if run.TestPort(net.Hypervisors[0].IP, proxmoxAPIPort, probe) {
+				if tcp.Listening(tcp.Addr(net.Hypervisors[0].IP, proxmoxAPIPort), probe) {
 					return nil
 				}
 				// The address is deliberately absent: it comes from the vault
