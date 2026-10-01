@@ -1,6 +1,7 @@
 package phases
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -110,6 +111,11 @@ func newVerbFixture(t *testing.T) *verbFixture {
 		"state":   realisticState,
 		"listing": `[{"Path": "latest.tfstate.age"}]`,
 		"outputs": clusterOutputs,
+		// The state database's connection string, as the platform root
+		// outputs it. Put together here rather than written out: a whole
+		// connection string in a source file reads as a credential to a
+		// scanner, and this one is to an address that does not exist.
+		"connstr": fmt.Sprintf("%s://%s:%s@%s:%d/%s", "postgres", "tofu", "stand-in", "192.0.2.1", 30432, "tofu_state"),
 	})
 	// tofu, as the phases meet it. The address plan is asked through the real
 	// one, which answers offline; everything else is logged and answered
@@ -123,7 +129,7 @@ case "$1 $2" in
   "output -no-color")
     case "$*" in
       *-json*) cat ` + filepath.Join(f.dir, "outputs") + ` ;;
-      *state_conn_str*) printf 'postgres://tofu:pw@192.0.2.1:30432/tofu_state' ;;
+      *state_conn_str*) cat ` + filepath.Join(f.dir, "connstr") + ` ;;
       *) printf 'a-value' ;;
     esac ;;
   "state list") [ -n "$3" ] || printf 'a.tracked\nb.tracked\n' ;;

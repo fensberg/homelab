@@ -44,9 +44,14 @@
 # contraction written without its apostrophe. Removed when: the report stops
 # being generated into the working tree.
 #
+# ./.pinned holds each site's modules as they were at its pinned commit, and
+# the checks' link to the working tree: copies of this repository, gitignored
+# like ./coverage and so the same divergence between a local run and the lane.
+# Removed when: the contractor stops placing pinned trees in the working tree.
+#
 # The flagged fragments are described rather than quoted on purpose. An earlier
 # version of this note spelled two of them out literally and codespell promptly
 # flagged the comment instead of the file it was excluding.
 [codespell]
 ignore-words-list = iif
-skip = ./.git,./coverage,./node_modules,./clusters/core/flux-system,./clusters/bootstrap,./pnpm-lock.yaml,*/go.sum,*/node_modules
+skip = ./.git,./.pinned,./coverage,./node_modules,./clusters/core/flux-system,./clusters/bootstrap,./pnpm-lock.yaml,*/go.sum,*/node_modules

@@ -276,7 +276,7 @@ func TestRootsNamedRefusesEachWayOfNamingARoot(t *testing.T) {
 	}{
 		"a path into a root":             {`read("ground/alpha/widgets.tf")`, "a path into the root ground/alpha"},
 		"a directory inside a root":      {`walk("ground/beta/parts")`, "a path into the root ground/beta"},
-		"a file's name alone":            {`readIn(dir, "widgets.tf")`, `names the OpenTofu file "widgets.tf"`},
+		"a file's name alone":            {`readFrom(dir, "widgets.tf")`, `names the OpenTofu file "widgets.tf"`},
 		"a file's name on a built path":  {`read(prefix + "/widgets.tf")`, `names the OpenTofu file "/widgets.tf"`},
 		"a root built from its parts":    {`join(top, "ground", "alpha")`, "builds the root ground/alpha from its parts"},
 		"the root as a scope":            {`const scope = "ground/alpha"`, ""},

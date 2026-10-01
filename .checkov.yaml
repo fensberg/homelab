@@ -71,6 +71,12 @@ skip-check:
   - CKV_K8S_35
 
 skip-path:
+  # Each site's modules as they were at its pinned commit, placed by the
+  # contractor, and the checks' link to the working tree. Both are copies of
+  # this repository: scanning them reports every finding twice, and the link
+  # points back at the top, so a scan that follows it does not finish. Ignored
+  # by git, so absent from CI and present on any machine that has run a verb.
+  - \.pinned
   - clusters/core/flux-system
   # clusters/bootstrap/ is Cilium's own chart output, committed verbatim for
   # the same reason flux-system is: a version bump should be a reviewable diff
@@ -89,11 +95,18 @@ skip-path:
   # the manifest is committed, so that change appears in a pull request diff -
   # which is the whole reason it is committed rather than fetched at apply time.
   - clusters/bootstrap
-  # The root kustomization.yaml lists flux-system as a resource, so
-  # Checkov's kustomize build starting from this file pulls in the same
-  # vendored Deployment/ClusterRole objects and attributes findings about
-  # them here instead - same reasoning as the exclusion above.
-  - clusters/core/kustomization.yaml
+  # The core's kustomization.yaml lists flux-system as a resource, and each
+  # site's builds on the core, so Checkov's kustomize build starting from any
+  # of them pulls in the same vendored Deployment/ClusterRole objects and
+  # attributes findings about them to that file instead - same reasoning as
+  # the exclusion above.
+  #
+  # A pattern, not the two paths there are today: a site that is given work
+  # gets a directory, and the next one would fail this scan on Flux's own
+  # install the day it was added. Only the kustomization.yaml that assembles
+  # a directory is skipped; every manifest it lists is still scanned as the
+  # file it is.
+  - clusters/[^/]+/kustomization\.yaml
   # tofu test fixtures - deliberately fake values, some deliberately shaped
   # like a real credential (aws-shaped-key.json exists specifically to
   # trigger the AKIA/ASIA check). Checkov's secrets scanner can't tell fake

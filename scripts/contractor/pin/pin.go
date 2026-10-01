@@ -199,6 +199,11 @@ func PlaceWorkingTree(repoRoot string) error {
 	return os.Symlink("..", target)
 }
 
+// largestFile bounds one extracted file. The largest this repository tracks
+// is Flux's generated install at about a megabyte; this leaves room for it to
+// grow many times over and still refuses an archive that is not a source tree.
+const largestFile = 64 << 20
+
 // extract writes a tar archive of a tree under dst. Only what a git tree
 // holds is written - directories, files and links - and nothing outside dst.
 func extract(archive []byte, dst string) error {
@@ -235,7 +240,15 @@ func extract(archive []byte, dst string) error {
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(f, tr); err != nil {
+			// Exactly as many bytes as the archive says the file has, and
+			// never more than a file of this repository could be: what is
+			// extracted is bounded by the archive's own header rather than
+			// by however much the stream turns out to hold.
+			if h.Size < 0 || h.Size > largestFile {
+				f.Close()
+				return fmt.Errorf("the archive holds %q at %d bytes, which is more than any file of this repository", h.Name, h.Size)
+			}
+			if _, err := io.CopyN(f, tr, h.Size); err != nil {
 				f.Close()
 				return err
 			}
