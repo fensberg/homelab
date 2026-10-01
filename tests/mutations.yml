@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 177
+floor: 178
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -144,6 +144,17 @@ mutations:
     why:
       "A manifest written straight into an environment is the copy-paste the epoch exists to stop,
       arriving in manifests instead of code.
+
+      "
+  - guard: TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas
+    file: modules/applications/valheim/before-teardown.json
+    find: '"container": "world-backup"'
+    replace: '"container": "world-backups"'
+    mentions: "no pod the workload declares has one"
+    why:
+      "Before a site is destroyed each workload is asked to back up, in a container its declaration
+      names. A name the manifest no longer has is a backup nothing can run, found at the moment a
+      teardown is about to start.
 
       "
   - guard: TestAGoFunctionWrittenTwiceIsDeclared
