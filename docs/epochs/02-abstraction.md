@@ -1968,6 +1968,27 @@ first.
 site by moving that site's pin, and a guard refuses a site that consumes the
 module unpinned.
 
+### Removing an application touches only its own directories
+
+Added 2026-10-01, from #590. An application is a module, and the test of that
+is what removing it costs: `modules/applications/<app>/`,
+`environments/<env>/applications/<app>/`, and one line in each environment's
+list. The game server fails that test by a wide margin. Its name, its
+Service's name or its supplier appears in 34 files outside those directories:
+a workflow, the superintendent and procurement programs, the site root's
+`workloads.tf`, the vault template, the tunnel routes, the pins and lists, and
+seven guards. Some of those are general mechanisms with one application as
+their only example, and some are application-specific checks kept in shared
+places.
+
+**The bar:** a general mechanism reads what applications declare, from inside
+their own directories, rather than naming one; an application's own checks,
+pins and declarations live with it. A guard enumerates `modules/applications/*`
+and refuses any application's name outside that application's directories, so
+the second application is covered without anybody editing the guard. The
+proof is the removal itself, done on a scratch copy by a test: delete the
+directories and the list line, and every guard still passes.
+
 ## Open questions to settle first
 
 - Which epoch-01 resources genuinely want to be modules, versus staying
