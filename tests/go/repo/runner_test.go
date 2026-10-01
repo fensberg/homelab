@@ -58,7 +58,7 @@ func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
 // runner scale sets it matches the installation name exactly rather than being
 // one label among several. A rename on either side silently orphans every
 // workflow targeting it - the job queues forever rather than failing.
-func TestRunnerScaleSetNameMatchesRunsOn(t *testing.T) {
+func TestEveryJobOnTheEstatesRunnersNamesItsSite(t *testing.T) {
 	// Read from the manifest, which is where the name is declared. It used to
 	// be read from an OpenTofu local that nothing in OpenTofu used - a value
 	// kept alive only so this test could compare against it, which tflint
@@ -67,14 +67,39 @@ func TestRunnerScaleSetNameMatchesRunsOn(t *testing.T) {
 	_, manifest := fluxObject(t, kindHelmRelease, runnerScaleSet)
 	name := yamlScalar(t, manifest, "runnerScaleSetName")
 
-	for _, wf := range []string{
-		".github/workflows/deploy-infrastructure.yml",
-		".github/workflows/integration-tests.yml",
-	} {
-		body := readRepoFile(t, wf)
-		if !strings.Contains(body, "runs-on: "+name) {
-			t.Errorf("%s does not declare `runs-on: %s`. The scale set is registered under that name, so a job asking for anything else waits for a runner that will never appear.", wf, name)
+	// One manifest serves every site, so the name has to carry the site: a
+	// fixed name would register two sites' runners as one pool, and a job
+	// for one site would be handed to the other.
+	prefix, perSite := strings.CutSuffix(name, "${SITE}")
+	if !perSite || prefix == "" {
+		t.Fatalf("the runner scale set is named %q. Every site reconciles this manifest, so the name must end in ${SITE} - under one fixed name, two sites offer their runners for each other's work.", name)
+	}
+
+	// Every workflow, not the two that used the runners when this was
+	// written: a job anywhere that asks for one of the estate's runners has
+	// to ask for a site's, by the matrix it runs for or by a site the config
+	// declares. Anything else waits for a runner that will never appear.
+	runsOn := regexp.MustCompile(`(?m)^\s*runs-on:\s*(\S.*?)\s*$`)
+	asked := 0
+	for _, wf := range tracked(t, func(rel string) bool {
+		return strings.HasPrefix(rel, ".github/workflows/") && strings.HasSuffix(rel, ".yml") && strings.Count(rel, "/") == 2
+	}) {
+		for _, m := range runsOn.FindAllStringSubmatch(readRepoFile(t, wf), -1) {
+			site, estate := strings.CutPrefix(m[1], prefix)
+			if !estate {
+				continue
+			}
+			asked++
+			// An expression, never a site written out: which sites there are
+			// is the config's to say, and a name here is one the next site
+			// is not.
+			if !strings.HasPrefix(site, "${{") || !strings.HasSuffix(site, "}}") || !strings.Contains(site, "site") {
+				t.Errorf("%s declares `runs-on: %s`. The estate's runners are registered per site, as %s<site>, so a job names the site it runs for with an expression: %s${{ matrix.site }} for a job that runs once per site.", wf, m[1], prefix, prefix)
+			}
 		}
+	}
+	if asked == 0 {
+		t.Fatalf("no workflow asks for a runner named %s<site>, so either nothing runs on the estate or this has stopped reading the workflows", prefix)
 	}
 }
 

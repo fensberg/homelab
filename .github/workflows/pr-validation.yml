@@ -389,24 +389,31 @@ jobs:
           set +a
 
           schema='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
-          for dir in clusters/management/infrastructure/*/ clusters/management/flux-system/; do
+          for dir in clusters/core/infrastructure/*/ clusters/core/flux-system/; do
             echo "==> ${dir}"
             kubectl kustomize "${dir}" | envsubst | kubeconform \
               -strict -summary -ignore-missing-schemas \
               -schema-location default -schema-location "${schema}" -
           done
 
-          # Every entrypoint at the top of clusters/management, globbed rather
-          # than listed: releases.yaml arrived after the list was written, and
-          # a list only validates what somebody remembered to add to it. The
-          # kustomization.yaml there is kustomize's own and has no schema to
+          # Every entrypoint at the top of every directory a site's Flux can
+          # be pointed at - the core, and each site's own - found by the
+          # kustomization.yaml that makes it one rather than listed: a list
+          # only validates what somebody remembered to add to it, and the next
+          # site's directory is not one anybody will remember. The
+          # kustomization.yaml itself is kustomize's own and has no schema to
           # hold it to. Substituted like the directories above, because Flux
           # substitutes these too.
-          echo "==> clusters/management (Flux entrypoints)"
-          for file in clusters/management/*.yaml; do
-            [ "$(basename "$file")" = kustomization.yaml ] && continue
-            envsubst < "$file" | kubeconform -strict -summary -ignore-missing-schemas \
-              -schema-location default -schema-location "${schema}" -
+          for dir in clusters/*/; do
+            [ -f "${dir}kustomization.yaml" ] || continue
+            echo "==> ${dir} (Flux entrypoints)"
+            for file in "${dir}"*.yaml; do
+              [ "$(basename "$file")" = kustomization.yaml ] && continue
+              envsubst < "$file" | kubeconform -strict -summary -ignore-missing-schemas \
+                -schema-location default -schema-location "${schema}" -
+            done
+            # And the directory builds: a site's reaches the core through it.
+            kubectl kustomize "${dir}" > /dev/null
           done
 
           # The workload tier's overlays. Globbed rather than listed, so a
@@ -1157,7 +1164,7 @@ jobs:
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
-          # clusters/management/flux-system/ is Flux's own generated install
+          # clusters/core/flux-system/ is Flux's own generated install
           # manifest, committed verbatim (.checkov.yaml carries the full
           # reasoning, and excludes it for the same reason). Its ClusterRoles need broad permissions to reconcile
           # arbitrary resource types - that is how Flux has to work, not a
@@ -1173,7 +1180,7 @@ jobs:
           # away here. The cost is that a future chart version adding a new
           # mount would not be flagged; the compensating control is that the
           # manifest is committed, so it shows up in a pull request diff.
-          skip-dirs: "clusters/management/flux-system,clusters/bootstrap"
+          skip-dirs: "clusters/core/flux-system,clusters/bootstrap"
 
   # -----------------------------------------------------------------
   # LANE 8: Secrets - waits for nothing

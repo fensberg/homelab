@@ -90,7 +90,11 @@ spec:
     # tests/go/repo/runner_test.go asserts this and runs-on still agree, and
     # selfhosted_test.go reads this value rather than hard-coding it, so the
     # pull-request guard cannot come apart from the name it guards.
-    runnerScaleSetName: homelab-management
+    #
+    # Named for the site, because the name is what a job asks for and every
+    # site reconciles this one file: under one name, two sites would offer
+    # their runners for each other's converge.
+    runnerScaleSetName: homelab-${SITE}
 
     # Scale to nothing when idle. A runner pod that exists between jobs is a
     # runner pod that can be reached between jobs, and there is no warm-start

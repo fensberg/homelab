@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 185
+floor: 186
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -233,6 +233,17 @@ mutations:
     why:
       "The core is what every site runs. One site's work listed in it is every site's work the day
       a second site exists, which is what one shared directory was.
+
+      "
+  - guard: TestEveryJobOnTheEstatesRunnersNamesItsSite
+    file: .github/workflows/integration-tests.yml
+    find: "    runs-on: homelab-${{ matrix.site }}\n"
+    replace: "    runs-on: homelab-production\n"
+    mentions: "names the site it runs for with an expression"
+    why:
+      "The estate's runners are registered per site. A job that asks for a name no site registers
+      waits for a runner that never appears, and one that names a site by hand is right for that
+      site and wrong for the next.
 
       "
   - guard: TestAGoFunctionWrittenTwiceIsDeclared
@@ -2568,7 +2579,7 @@ mutations:
       backup's location out for itself, and when the backups moved it went on
       looking in the old place.
 
-owed_ceiling: 53
+owed_ceiling: 52
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -2799,8 +2810,6 @@ unprovable:
   - test: TestRunnerImageCarriesEveryBinaryTheContractorInvokes
     owed: true
   - test: TestRunnerManifestsAgreeWithOpenTofu
-    owed: true
-  - test: TestRunnerScaleSetNameMatchesRunsOn
     owed: true
   - test: TestRunnerScaleSetPinsItsImageByDigest
     owed: true

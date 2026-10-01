@@ -186,7 +186,9 @@ jobs:
     name: Apply
     needs: changes
     if: needs.changes.outputs.workload == 'true'
-    runs-on: homelab-management
+    # A site's runners, since the estate's are registered per site. This tier
+    # has no sites of its own yet, so it takes the first the config declares.
+    runs-on: homelab-${{ fromJSON(needs.changes.outputs.sites)[0] }}
     # The environment is the human gate. Configure required reviewers on
     # `production` so a tag cannot deploy unattended; `staging` is where a
     # merge to main lands.
@@ -268,7 +270,9 @@ jobs:
     name: Converge ${{ matrix.site }}
     needs: changes
     if: needs.changes.outputs.management == 'true'
-    runs-on: homelab-management
+    # Each site's converge runs on that site's own runners: the scale set is
+    # named for the site it is in (clusters/core, runner-scale-set.yaml).
+    runs-on: homelab-${{ matrix.site }}
     environment: management
     permissions:
       contents: read

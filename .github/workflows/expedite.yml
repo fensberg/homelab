@@ -42,7 +42,7 @@ name: "Expedite"
 # route whatever the doorbell said.
 #
 # WHAT A MERGE DOES NOW. Production runs the release pinned in
-# clusters/management/releases.yaml (#510). Merging the expediter's pull
+# clusters/site0/releases.yaml (#510). Merging the expediter's pull
 # request changes what the fabricator builds; the fabricator publishes a
 # release and procurement delivers it as a pull request moving that pin. The
 # 4am window takes both - the second only when its release differs from
