@@ -3,7 +3,7 @@
 #
 # The same division as database.tf: OpenTofu creates only what Flux cannot -
 # the namespace and the secret - and the stack itself is declared in git under
-# clusters/management/ and reconciled by Flux.
+# clusters/core/ and reconciled by Flux.
 #
 # WHY THE NAMESPACE IS HERE RATHER THAN IN THE FLUX MANIFEST. A secret has to
 # exist in a namespace, and OpenTofu creating one that Flux also declares is a
@@ -60,7 +60,7 @@ resource "kubernetes_secret" "alerting_webhook" {
 
   # The key is the filename Alertmanager reads: the operator mounts a secret at
   # /etc/alertmanager/secrets/<secret name>/<key>, and the path in
-  # clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml
+  # clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
   # has to match this exactly. Two halves of one path in two files is a real
   # cost; the alternative is the credential in git.
   data = {

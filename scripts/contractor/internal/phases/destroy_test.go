@@ -108,6 +108,9 @@ func TestMachinesInStateIgnoresTheTemplateAndEverythingElse(t *testing.T) {
 		// The same resource outside the cluster's module, and in another.
 		`proxmox_virtual_environment_vm.talos_cp["node8"]`,
 		`module.something.proxmox_virtual_environment_vm.talos_cp["node9"]`,
+		// The cluster's own address, nested inside another module: only a
+		// match from the start of the line tells it from this cluster's.
+		`module.elsewhere.` + steps.ControlPlanes + `["node7"]`,
 	}, "\n")
 
 	if got := machinesInState(out); len(got) != 0 {

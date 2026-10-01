@@ -148,7 +148,7 @@ func TestSplitTakesCommentsAwayInEveryLanguageWritten(t *testing.T) {
 		// repository uses the first essentially always.
 		{"HCL with a hash", "modules/infrastructure/cluster/talos.tf", "# why this resource exists", `resource "talos_machine_secrets" "this" {}`},
 		{"HCL with slashes", "modules/infrastructure/cluster/talos.tf", "// also legal HCL", `resource "talos_machine_secrets" "this" {}`},
-		{"YAML", "clusters/management/infrastructure/controllers/openebs.yaml", "# why this value", "chart: openebs"},
+		{"YAML", "clusters/core/infrastructure/controllers/openebs.yaml", "# why this value", "chart: openebs"},
 		{"shell", "scripts/install-dependencies.sh", "# why this step", "set -euo pipefail"},
 		{"Go", "scripts/clerk/strip.go", "// why this function", "package main"},
 		{"TypeScript", "web/app.ts", "// why this export", "export const a = 1;"},

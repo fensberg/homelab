@@ -1,7 +1,7 @@
 # =============================================================================
 # GitOps controller. Vendor: Flux.
 #
-# Flux's own install and sync manifests (clusters/management/flux-system/)
+# Flux's own install and sync manifests (clusters/core/flux-system/)
 # are committed to the repository like every other manifest here, reviewed
 # through a normal pull request - not generated and pushed by this apply.
 # flux_bootstrap_git (the fluxcd/flux provider's usual bootstrap resource)
@@ -44,14 +44,21 @@ resource "kubernetes_namespace" "flux_system" {
 }
 
 resource "terraform_data" "flux_bootstrap_apply" {
-  depends_on = [kubernetes_namespace.flux_system]
+  # After cluster-vars as well as the namespace: Flux fills the sync's own
+  # path in from that secret the first time it applies itself, and a sync
+  # that reconciles before the secret exists fails until it does.
+  depends_on = [kubernetes_namespace.flux_system, kubernetes_secret.cluster_vars]
 
   # Re-applies whenever the committed manifests change, not just on first
   # create - a Flux version bump or a new controller lands the same way any
   # other reviewed change to this path does.
+  #
+  # And whenever the directory this site reconciles changes: giving a site
+  # work, or taking it all away, repoints its Flux.
   triggers_replace = [
-    filesha256("${path.module}/../../../${local.gitops_target_path}/flux-system/gotk-components.yaml"),
-    filesha256("${path.module}/../../../${local.gitops_target_path}/flux-system/gotk-sync.yaml"),
+    filesha256("${path.module}/../../../${local.flux_core}/flux-system/gotk-components.yaml"),
+    filesha256("${path.module}/../../../${local.flux_core}/flux-system/gotk-sync.yaml"),
+    local.gitops_path,
   ]
 
   provisioner "local-exec" {
@@ -62,6 +69,7 @@ resource "terraform_data" "flux_bootstrap_apply" {
     # the workstation past the run that needed it.
     environment = {
       KUBECONFIG_CONTENT = var.kubeconfig
+      GITOPS_PATH        = local.gitops_path
     }
     command = <<-EOT
       set -euo pipefail
@@ -69,7 +77,7 @@ resource "terraform_data" "flux_bootstrap_apply" {
       trap 'rm -f "$tmp"' EXIT
       printf '%s' "$KUBECONFIG_CONTENT" >"$tmp"
       export KUBECONFIG="$tmp"
-      flux_system="${path.module}/../../../${local.gitops_target_path}/flux-system"
+      flux_system="${path.module}/../../../${local.flux_core}/flux-system"
 
       # Two applies, not one kubectl apply -k: a single invocation builds its
       # REST-mapping cache once at the start, before the CRDs it is about to
@@ -84,7 +92,19 @@ resource "terraform_data" "flux_bootstrap_apply" {
       kubectl apply -f "$flux_system/gotk-components.yaml"
       kubectl wait --for condition=established --timeout=60s \
         crd -l app.kubernetes.io/part-of=flux
-      kubectl apply -f "$flux_system/gotk-sync.yaml"
+      # The sync names the directory this site reconciles as a variable, and
+      # Flux fills it in from cluster-vars every time it applies its own
+      # manifest. This first apply is before Flux is there to do that, so it
+      # is filled in here, with the same value OpenTofu writes to cluster-vars.
+      sed 's|[$]{GITOPS_PATH}|'"$GITOPS_PATH"'|' "$flux_system/gotk-sync.yaml" | kubectl apply -f -
     EOT
   }
+}
+
+# Which directory this site's Flux reconciles: the core, or the site's own.
+# An output so a plan says when it changes - which is the moment a site is
+# given work, or has it all taken away.
+output "gitops_path" {
+  description = "The directory of the repository this site's Flux reconciles."
+  value       = local.gitops_path
 }

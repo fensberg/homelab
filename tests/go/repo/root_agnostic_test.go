@@ -6,7 +6,6 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -14,10 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
-	"homelab/details/repopath"
 	"homelab/details/tofufiles"
+	"homelab/tests/harness"
 )
 
 // No test reads a root's OpenTofu by where it is.
@@ -130,7 +127,9 @@ func rootsNamed(rel string, src []byte, roots []string, tofuNames map[string]boo
 					return true
 				}
 			}
-			if rest, in := strings.CutPrefix(v, fluxTree+"/"); in && rest != "" {
+			// A pattern enumerates; it is the reading of one named place that
+			// is refused.
+			if rest, in := strings.CutPrefix(v, fluxTree+"/"); in && rest != "" && !strings.ContainsAny(rest, "*?[") {
 				say(x, fmt.Sprintf("names %q, a path into the Flux tree.", v))
 				return true
 			}
@@ -142,6 +141,12 @@ func rootsNamed(rel string, src []byte, roots []string, tofuNames map[string]boo
 				a, okA := literal(x.Args[i])
 				b, okB := literal(x.Args[i+1])
 				if !okA || !okB {
+					continue
+				}
+				// The Flux tree, then a directory in it: the same path, in
+				// parts.
+				if a == fluxTree && !strings.ContainsAny(b, "*?[") {
+					say(x, fmt.Sprintf("builds a path into the Flux tree from its parts (%s, %s).", a, b))
 					continue
 				}
 				for _, r := range roots {
@@ -198,7 +203,7 @@ func tofuAll(t *testing.T) string {
 
 // The Flux tree: what each cluster reconciles. Named whole it is a scope; a
 // path into it names where a manifest is today.
-const fluxTree = "clusters"
+const fluxTree = harness.FluxTree
 
 // What the guards find a manifest by: an object it declares.
 const (
@@ -209,75 +214,11 @@ const (
 	cniKind, cniName = "DaemonSet", "cilium"
 )
 
-var (
-	fluxOnce    sync.Once
-	fluxObjects map[string][]string
-	fluxErr     error
-)
-
 // fluxObjectPath is the one tracked manifest in the Flux tree that declares
-// an object of this kind and name, wherever in the tree it is.
+// an object of this kind and name, wherever in the tree it is. The reader is
+// the harness's, so every tier finds a manifest the same way.
 func fluxObjectPath(kind, name string) (string, error) {
-	fluxOnce.Do(func() { fluxObjects, fluxErr = readFluxObjects() })
-	if fluxErr != nil {
-		return "", fluxErr
-	}
-	switch found := fluxObjects[kind+"/"+name]; len(found) {
-	case 1:
-		return found[0], nil
-	case 0:
-		return "", fmt.Errorf("no manifest under %s declares a %s named %q. If it was renamed or removed, the check that reads it has nothing to read", fluxTree, kind, name)
-	default:
-		return "", fmt.Errorf("%s %q is declared in %d manifests (%s), so there is no one file to read", kind, name, len(found), strings.Join(found, ", "))
-	}
-}
-
-// readFluxObjects is every object each tracked manifest in the Flux tree
-// declares, as "<kind>/<name>" against the manifests declaring it.
-func readFluxObjects() (map[string][]string, error) {
-	root, err := repopath.Root()
-	if err != nil {
-		return nil, err
-	}
-	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-	out, err := exec.Command("git", "-C", root, "ls-files", "-z", "--", fluxTree+"/*.yaml", fluxTree+"/*.yml").Output()
-	if err != nil {
-		return nil, fmt.Errorf("listing the manifests tracked under %s: %w", fluxTree, err)
-	}
-	objects := map[string][]string{}
-	for _, rel := range strings.Split(string(out), "\x00") {
-		if rel == "" {
-			continue
-		}
-		body, err := os.ReadFile(filepath.Join(root, rel))
-		if err != nil {
-			return nil, err
-		}
-		dec := yaml.NewDecoder(strings.NewReader(string(body)))
-		seen := map[string]bool{}
-		for {
-			var doc struct {
-				Kind     string `yaml:"kind"`
-				Metadata struct {
-					Name string `yaml:"name"`
-				} `yaml:"metadata"`
-			}
-			// The end of the file, or a document that is not YAML: either
-			// way there is nothing more this file can be found by.
-			if dec.Decode(&doc) != nil {
-				break
-			}
-			id := doc.Kind + "/" + doc.Metadata.Name
-			if doc.Kind != "" && !seen[id] {
-				seen[id] = true
-				objects[id] = append(objects[id], rel)
-			}
-		}
-	}
-	if len(objects) == 0 {
-		return nil, fmt.Errorf("no manifest under %s declares anything, so nothing there can be found", fluxTree)
-	}
-	return objects, nil
+	return harness.FluxManifest(kind, name)
 }
 
 // fluxObject is that manifest's path and body. The test fails if no manifest
@@ -292,11 +233,8 @@ func fluxObject(t *testing.T, kind, name string) (path, body string) {
 }
 
 // beside is a file in the same directory as a manifest found by what it
-// declares: the kustomization that patches it, the values it was rendered
-// from.
-func beside(manifest, name string) string {
-	return filepath.ToSlash(filepath.Join(filepath.Dir(manifest), name))
-}
+// declares.
+func beside(manifest, name string) string { return harness.Beside(manifest, name) }
 
 var (
 	tofuOnce  sync.Once
@@ -349,6 +287,8 @@ func TestRootsNamedRefusesEachWayOfNamingARoot(t *testing.T) {
 		"another directory":              {`read("elsewhere/alpha/thing.json")`, ""},
 		"a path into the Flux tree":      {`read("` + fluxTree + `/somewhere/thing.yaml")`, "a path into the Flux tree"},
 		"the Flux tree as a scope":       {`under(rel, "` + fluxTree + `/")`, ""},
+		"a pattern over the Flux tree":   {`glob("` + fluxTree + `/*/thing.yaml")`, ""},
+		"a Flux path built from parts":   {`join(top, "` + fluxTree + `", "somewhere", "thing.yaml")`, "builds a path into the Flux tree from its parts"},
 	} {
 		body := tc.body
 		if strings.HasPrefix(body, "const") {

@@ -59,6 +59,17 @@ variable "kubeconfig" {
   EOT
 }
 
+variable "site_directory" {
+  type        = bool
+  description = <<-EOT
+    Whether the repository has a directory of this site's own in the Flux
+    tree, which is how a site is given work. With one, the site's Flux
+    reconciles that directory, which builds on the core; with none it
+    reconciles the core alone. The root says, because the root reads the
+    repository as it is, and this module is read as it was at the site's pin.
+  EOT
+}
+
 locals {
   config = jsondecode(file(var.config_path))
   site   = local.config.sites[var.site]
@@ -134,7 +145,11 @@ locals {
     backup_key  = ""
   })
 
-  gitops_target_path = "clusters/management"
+  # --- what the site's Flux reconciles --------------------------------------
+  # The core is what every site runs, and holds Flux's own install. A site
+  # that has been given work has a directory named for it beside the core.
+  flux_core   = "clusters/core"
+  gitops_path = var.site_directory ? "clusters/${var.site}" : local.flux_core
 
   # --- state database ------------------------------------------------------
   state_db_namespace = "database"

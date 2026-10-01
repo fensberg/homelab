@@ -8,11 +8,15 @@
 # install and the two Kustomization objects below - each of those then
 # independently reconciles its own subtree, in the order dependsOn
 # actually enforces.
+#
+# THE CORE, and only the core: what every site runs to be a site at all. A
+# site nobody has given work reconciles this directory and nothing else, so
+# bringing one online needs no directory of its own. Work is assigned in
+# clusters/<site>/, which builds on this; nothing here may name a site or a
+# workload, and tests/go/repo refuses one that does.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - flux-system
   - infra-controllers.yaml
   - infra-configs.yaml
-  - releases.yaml
-  - workloads.yaml

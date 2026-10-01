@@ -4,7 +4,7 @@
 #
 # Same division of labour as the state database: OpenTofu creates only what
 # Flux cannot hold - the namespaces and the credential - and the controller and
-# the scale set are declared in clusters/management/ and reconciled from git.
+# the scale set are declared in clusters/core/ and reconciled from git.
 #
 # WHY THE CREDENTIAL IS SCOPED THE WAY IT IS
 # ------------------------------------------

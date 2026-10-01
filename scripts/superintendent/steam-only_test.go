@@ -49,7 +49,7 @@ func releaseRepo(t *testing.T) (git func(...string) string, commit func(msg stri
 	writeFile(t, "img/Dockerfile", "ARG VALHEIM_STEAM_BUILD_VERSION\nFROM scratch\n")
 	writeFile(t, "env/kustomization.yaml", "# production\nresources: [../mod]\n")
 	writeFile(t, "mod/deployment.yaml", "kind: Deployment\nspec:\n  replicas: 1\n")
-	writeFile(t, "clusters/management/releases.yaml", releasesFile('a'))
+	writeFile(t, "clusters/site0/releases.yaml", releasesFile('a'))
 	git("add", "-A")
 	git("commit", "-qm", "base")
 	commit = func(msg string, files map[string]string) string {
@@ -81,7 +81,7 @@ func TestADeliveryRidesTheBypassOnlyWhenTheSteamBuildIsAllThatChanged(t *testing
 	manifest := commit("manifest", map[string]string{"mod/deployment.yaml": "kind: Deployment\nspec:\n  replicas: 2\n"})
 	context := commit("context", map[string]string{"img/Dockerfile": "ARG VALHEIM_STEAM_BUILD_VERSION\nFROM scratch\nUSER root\n"})
 
-	j := judge{repository: "Example/homelab", releases: "clusters/management/releases.yaml",
+	j := judge{repository: "Example/homelab", releases: "clusters/site0/releases.yaml",
 		orders: workorders.Path, pin: "scripts/versions.env",
 		git: func(args ...string) (string, error) {
 			if args[0] == "fetch" {
@@ -104,7 +104,7 @@ func TestADeliveryRidesTheBypassOnlyWhenTheSteamBuildIsAllThatChanged(t *testing
 		t.Run(tc.name, func(t *testing.T) {
 			fakeRegistry(t, map[string]string{"sha256:" + digest('a'): production, "sha256:" + digest('b'): tc.builtAt})
 			base := git("rev-parse", "HEAD")
-			writeFile(t, "clusters/management/releases.yaml", releasesFile('b'))
+			writeFile(t, "clusters/site0/releases.yaml", releasesFile('b'))
 			git("commit", "-qam", "deliver "+tc.name)
 			head := git("rev-parse", "HEAD")
 			t.Cleanup(func() { git("reset", "-q", "--hard", base) })
@@ -128,7 +128,7 @@ func TestADeliveryRidesTheBypassOnlyWhenTheSteamBuildIsAllThatChanged(t *testing
 func TestADeliveryIsNotMergedWhenItsSourceCannotBeRead(t *testing.T) {
 	git, _ := releaseRepo(t)
 	base := git("rev-parse", "HEAD")
-	writeFile(t, "clusters/management/releases.yaml", releasesFile('b'))
+	writeFile(t, "clusters/site0/releases.yaml", releasesFile('b'))
 	git("commit", "-qam", "deliver")
 	head := git("rev-parse", "HEAD")
 	fakeRegistry(t, map[string]string{}) // knows neither release
@@ -141,7 +141,7 @@ func TestADeliveryIsNotMergedWhenItsSourceCannotBeRead(t *testing.T) {
 }
 
 func TestReleasePinsReadsThisRepositorysReleasesFile(t *testing.T) {
-	body, err := os.ReadFile("../../clusters/management/releases.yaml")
+	body, err := os.ReadFile("../../clusters/site0/releases.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

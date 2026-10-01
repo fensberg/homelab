@@ -127,7 +127,7 @@ func TestTheVerbJudgesARealPullRequest(t *testing.T) {
 // that also changes anything else in the releases file is not a delivery.
 func TestADeliveryPassesForAPersonAndNothingRidesAlongWithIt(t *testing.T) {
 	git := gitRepo(t)
-	const releases = "clusters/management/releases.yaml"
+	const releases = "clusters/site0/releases.yaml"
 	write := func(tag string, d byte, extra string) {
 		writeFile(t, releases, "kind: OCIRepository\nmetadata:\n  name: valheim\nspec:\n  interval: 1m\n"+extra+
 			"  ref:\n    tag: \""+tag+"\"\n    digest: \"sha256:"+digest(d)+"\"\n")
@@ -157,7 +157,10 @@ func TestADeliveryPassesForAPersonAndNothingRidesAlongWithIt(t *testing.T) {
 }
 
 func TestIsDeliveryAcceptsOnlyPinLines(t *testing.T) {
-	const f = "clusters/management/releases.yaml"
+	const (
+		pattern = "clusters/*/releases.yaml"
+		f       = "clusters/north/releases.yaml"
+	)
 	tag := `-    tag: "1.0.15-5"`
 	newTag := `+    tag: "1.0.15-6"`
 	dig := `+    digest: "sha256:` + digest('c') + `"`
@@ -165,14 +168,18 @@ func TestIsDeliveryAcceptsOnlyPinLines(t *testing.T) {
 		files, lines []string
 		want         bool
 	}{
-		"a pin move":                  {[]string{f}, []string{tag, newTag, dig}, true},
-		"another file too":            {[]string{f, "x.yaml"}, []string{newTag}, false},
-		"latest instead of a release": {[]string{f}, []string{`+    tag: "latest"`}, false},
-		"a line that is not a pin":    {[]string{f}, []string{newTag, `+  suspend: true`}, false},
-		"an empty change":             {[]string{f}, nil, false},
+		"a pin move":                         {[]string{f}, []string{tag, newTag, dig}, true},
+		"another file too":                   {[]string{f, "x.yaml"}, []string{newTag}, false},
+		"latest instead of a release":        {[]string{f}, []string{`+    tag: "latest"`}, false},
+		"a line that is not a pin":           {[]string{f}, []string{newTag, `+  suspend: true`}, false},
+		"an empty change":                    {[]string{f}, nil, false},
+		"another site's releases":            {[]string{"clusters/south/releases.yaml"}, []string{tag, newTag, dig}, true},
+		"a file of that name elsewhere":      {[]string{"environments/releases.yaml"}, []string{newTag}, false},
+		"a releases file a level down":       {[]string{"clusters/north/extra/releases.yaml"}, []string{newTag}, false},
+		"another file in a site's directory": {[]string{"clusters/north/workloads.yaml"}, []string{newTag}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := isDelivery(tc.files, tc.lines, f); got != tc.want {
+			if got := isDelivery(tc.files, tc.lines, pattern); got != tc.want {
 				t.Errorf("isDelivery = %v, want %v", got, tc.want)
 			}
 		})

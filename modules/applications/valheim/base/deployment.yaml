@@ -166,7 +166,7 @@ spec:
         - name: valheim
           # A digest, not a tag - but production does not run this one. A release pins the image the
           # fabricator built into its own overlay, by digest, and production
-          # runs the release clusters/management/releases.yaml names - so this
+          # runs the release clusters/site0/releases.yaml names - so this
           # line only names the image the release replaces. The Steam build is
           # pinned in scripts/versions.env, which is what the expediter moves
           # when Valve publishes one.

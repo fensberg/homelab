@@ -464,12 +464,13 @@ config entry.
 | `management/platform/`       | A site's platform root: the kubernetes provider and state. Calls the platform module                                   |
 | `modules/infrastructure/`    | OpenTofu modules: `cluster` (machines, Talos, Cilium), `platform` (what Flux cannot create, then Flux), `address-plan` |
 | `management/pins.json`       | Which commit of the modules each site runs: an estate default and per-site lines                                       |
-| `clusters/management/`       | Flux-reconciled manifests for this cluster                                                                             |
+| `clusters/core/`             | The Flux core every site reconciles: Flux itself, the controllers and their configuration                              |
+| `clusters/<site>/`           | What one site runs beyond the core. Present only for a site that has been given work                                   |
 | `config/management.tpl.json` | The one config: sites, topology and every secret reference                                                             |
 | `tests/`                     | Everything above the unit tier — see `tests/README.md`                                                                 |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator
-and the database itself are declared in `clusters/management/` and reconciled
+and the database itself are declared in `clusters/core/` and reconciled
 by Flux, in two layers: `infra-controllers` installs CRDs, `infra-configs`
 depends on it and uses them.
 

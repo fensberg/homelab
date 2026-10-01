@@ -13,7 +13,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./clusters/management/infrastructure/controllers
+  path: ./clusters/core/infrastructure/controllers
   prune: true
   wait: true
   # etcd's addresses are node addresses, which this repository keeps out of

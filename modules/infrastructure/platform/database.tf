@@ -3,7 +3,7 @@
 #
 # OpenTofu creates only the things Flux cannot: the namespace and the secrets.
 # The operator and the Cluster resource itself are declared in git under
-# clusters/management/ and reconciled by Flux.
+# clusters/core/ and reconciled by Flux.
 #
 # WHY SECRETS COME FROM HERE
 # --------------------------
@@ -74,6 +74,12 @@ resource "kubernetes_secret" "cluster_vars" {
   data = merge({
     for name, addr in local.net.fixed_addresses : "ADDRESS_${upper(replace(name, "-", "_"))}" => addr
     }, {
+    # Which site this is, by its key, and which directory its Flux
+    # reconciles. The shared core is written once for every site, so anything
+    # in it that differs by site is one of these.
+    SITE        = var.site
+    GITOPS_PATH = local.gitops_path
+
     OBJECT_STORAGE_BUCKET   = local.object_storage.database.bucket
     OBJECT_STORAGE_ENDPOINT = local.object_storage_endpoint
     STATE_DB_NAMESPACE      = local.state_db_namespace
@@ -84,7 +90,7 @@ resource "kubernetes_secret" "cluster_vars" {
 
     # Where production's releases are published: the fabricator pushes each
     # one to ghcr.io/<owner>/<repository>-<workload>-release, and
-    # clusters/management/releases.yaml pins them. Derived from the configured
+    # clusters/site0/releases.yaml pins them. Derived from the configured
     # repository rather than written into that file, so a fork reads its own
     # releases by changing its config, not by editing a manifest. Lower case,
     # because the registry is.

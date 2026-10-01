@@ -8,7 +8,7 @@
 # Flux reconciles OpenEBS, CloudNativePG and the runner, and it can only do
 # that once nodes are Ready - but a node with no CNI never reaches Ready, so
 # the CNI has to be in place first. That is why it is here, in the tier that
-# builds the cluster, rather than in clusters/management/ with the rest.
+# builds the cluster, rather than in clusters/core/ with the rest.
 #
 # The full reasoning, including why Talos inlineManifests and the Helm provider
 # were both rejected, is in docs/epochs/03-workload.md.

@@ -103,8 +103,8 @@ func dockerBuildCommand(workflow string) (string, bool) {
 var scaleSetImage = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
 
 func TestRunnerScaleSetPinsItsImageByDigest(t *testing.T) {
-	path := filepath.Join(repoRoot(t), "clusters", "management", "infrastructure", "configs", "runner-scale-set.yaml")
-	m := scaleSetImage.FindStringSubmatch(readFile(t, path))
+	_, manifest := fluxObject(t, kindHelmRelease, runnerScaleSet)
+	m := scaleSetImage.FindStringSubmatch(manifest)
 	if m == nil {
 		t.Fatal("runner-scale-set.yaml names no image.\n\nWithout one the scale set silently falls back to the chart's default runner, which carries none of the toolchain the program shells out to - a converge would fail at Render with \"1Password CLI not found on PATH\".")
 	}

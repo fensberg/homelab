@@ -16,7 +16,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./clusters/management/infrastructure/configs
+  path: ./clusters/core/infrastructure/configs
   prune: true
   wait: true
   # Bucket name, account endpoint and database identifiers are injected here

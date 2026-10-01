@@ -18,7 +18,7 @@
 # configuration behaves differently from one kept here: codespell run by hand
 # would not honour it, so a clean local run stopped predicting a clean lane.
 #
-# clusters/management/flux-system/ is Flux's own generated install and sync
+# clusters/core/flux-system/ is Flux's own generated install and sync
 # manifest, committed verbatim so it goes through normal review like everything
 # else. It is not ours to edit, so a finding inside it is a finding about
 # Flux's upstream manifest rather than about this codebase; codespell objects
@@ -49,4 +49,4 @@
 # flagged the comment instead of the file it was excluding.
 [codespell]
 ignore-words-list = iif
-skip = ./.git,./coverage,./node_modules,./clusters/management/flux-system,./clusters/bootstrap,./pnpm-lock.yaml,*/go.sum,*/node_modules
+skip = ./.git,./coverage,./node_modules,./clusters/core/flux-system,./clusters/bootstrap,./pnpm-lock.yaml,*/go.sum,*/node_modules

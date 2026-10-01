@@ -150,7 +150,7 @@ updates:
 
 # What Dependabot has no ecosystem for at all, so it isn't a config gap here:
 # - Ansible Galaxy collections (management/hypervisor/requirements.yml)
-# - A Flux HelmRelease's chart version (clusters/management/.../longhorn.yaml)
+# - A Flux HelmRelease's chart version (clusters/core/.../longhorn.yaml)
 # - A container image pinned inside a workflow's container: block
 #   (pr-validation.yml's Semgrep job)
 # All three are Renovate's job, once there's a cluster for it to run in -

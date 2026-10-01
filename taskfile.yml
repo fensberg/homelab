@@ -411,8 +411,8 @@ tasks:
             exit 1
           fi
         done
-        components=clusters/management/flux-system/gotk-components.yaml
-        kustomization=clusters/management/flux-system/kustomization.yaml
+        components=clusters/core/flux-system/gotk-components.yaml
+        kustomization=clusters/core/flux-system/kustomization.yaml
         tmp=$(mktemp)
         trap 'rm -f "$tmp"' EXIT
 
@@ -525,12 +525,15 @@ tasks:
       # of a site's config, so the placeholder above means nothing to it.
       - tofu -chdir=management/estate init -backend=false -input=false
       - TF_VAR_config_path=./tests/fixtures/valid.json tofu -chdir=management/estate validate
-      - kubectl kustomize clusters/management/infrastructure/controllers > /dev/null
-      - kubectl kustomize clusters/management/infrastructure/configs > /dev/null
+      - kubectl kustomize clusters/core/infrastructure/controllers > /dev/null
+      - kubectl kustomize clusters/core/infrastructure/configs > /dev/null
       # flux-system was absent here, which is how its components stayed tag
       # pinned unnoticed. It carries an image transformer now, and a
       # transformer that does not build is a pin that silently is not applied.
-      - kubectl kustomize clusters/management/flux-system > /dev/null
+      - kubectl kustomize clusters/core/flux-system > /dev/null
+      # Every directory a site's Flux can be pointed at: the core, and each
+      # site's own, which reaches the core through it.
+      - for dir in clusters/*/; do [ -f "${dir}kustomization.yaml" ] || continue; kubectl kustomize "${dir}" > /dev/null; done
       # The workload tier. Empty overlays still have to build: an environment
       # with nothing in it is a valid state, and a kustomization that does not
       # parse is not.

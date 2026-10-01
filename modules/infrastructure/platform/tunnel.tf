@@ -16,7 +16,7 @@
 # Three owners. The estate creates the tunnel and its routes and decides who
 # may enroll (management/estate/); this root creates the namespace and the
 # secret the connector runs from, out of the run token the estate granted; the
-# connector itself is declared in git under clusters/management/ and
+# connector itself is declared in git under clusters/core/ and
 # reconciled by Flux.
 #
 # GENERAL, NOT PER-WORKLOAD. This is how anything in the estate is reached

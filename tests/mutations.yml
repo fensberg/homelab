@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 184
+floor: 185
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -195,7 +195,7 @@ mutations:
     file: tests/go/repo/control_plane_metrics_test.go
     reads_source: true
     find: '	_, stack := fluxObject(t, kindHelmRelease, "kube-prometheus-stack")'
-    replace: '	stack := readRepoFile(t, "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml")'
+    replace: '	stack := readRepoFile(t, "clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml")'
     mentions: "a path into the Flux tree"
     why: "reads_source, as the entry above.
 
@@ -223,6 +223,16 @@ mutations:
       "A root that calls its modules by path runs whatever is on the commit being converged, on
       every site at once. The pin is what lets a change reach one site first, and it only holds
       if no root can reach its modules around it.
+
+      "
+  - guard: TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork
+    file: clusters/core/kustomization.yaml
+    find: "  - infra-configs.yaml\n"
+    replace: "  - infra-configs.yaml\n  - ../site0/workloads.yaml\n"
+    mentions: "names site0"
+    why:
+      "The core is what every site runs. One site's work listed in it is every site's work the day
+      a second site exists, which is what one shared directory was.
 
       "
   - guard: TestAGoFunctionWrittenTwiceIsDeclared
@@ -276,8 +286,8 @@ mutations:
   - guard: TestNoPullRequestJobRunsOnTheEstatesRunner
     file: .github/workflows/plan-infrastructure.yml
     find: "    # A pull request's code never runs on the estate's runner.\n    runs-on: ubuntu-latest\n"
-    replace: "    # A pull request's code never runs on the estate's runner.\n    runs-on: homelab-management\n"
-    mentions: "runs pull-request code on homelab-management"
+    replace: "    # A pull request's code never runs on the estate's runner.\n    runs-on: homelab-site0\n"
+    mentions: "runs pull-request code on homelab-site0"
     why: >
       Moving the plan back onto the estate's runner reads as a speed-up - it
       already holds the providers. It hands every branch pushed to this
@@ -331,7 +341,7 @@ mutations:
       cluster teaches everybody to stop reading red targets.
 
   - guard: TestEveryHelmReleaseRetriesRatherThanStalling
-    file: clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml
+    file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
     find: "  install:\n    crds: Create\n    strategy:\n      name: RetryOnFailure"
     replace: "  install:\n    crds: Create\n    strategy:\n      name: RemediateOnFailure"
     mentions: "not RetryOnFailure"
@@ -378,7 +388,7 @@ mutations:
       plane".
 
   - guard: TestAlertsLandWhereTheEstateDecided
-    file: clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml
+    file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
     find: 'alertname = "InfoInhibitor"'
     replace: 'alertname = "InfoInhibit0r"'
     mentions: "InfoInhibitor lands on"
@@ -434,7 +444,7 @@ mutations:
       that converged the estate.
 
   - guard: TestFluxSourcesOnlyNameSecretsThisRepositoryCreates
-    file: clusters/management/releases.yaml
+    file: clusters/site0/releases.yaml
     find: "  url: oci://"
     replace: "  secretRef:\n    name: flux-system\n  url: oci://"
     mentions: "nothing in this repository creates"
@@ -660,7 +670,7 @@ mutations:
       typosquat.
 
   - guard: TestRunnerPodsCannotScheduleOntoAControlPlane
-    file: clusters/management/infrastructure/configs/runner-scale-set.yaml
+    file: clusters/core/infrastructure/configs/runner-scale-set.yaml
     # Anchored on the priority class above it, because this file now carries
     # the same anti-control-plane rule twice - once for the runner and once for
     # the listener - and "operator: DoesNotExist" alone no longer names one spot.
@@ -845,7 +855,7 @@ mutations:
       when Flux reconciles the release.
 
   - guard: TestEveryReleaseIsPinnedByDigest
-    file: clusters/management/releases.yaml
+    file: clusters/site0/releases.yaml
     find: '    digest: "sha256:'
     replace: '    # digest: "sha256:'
     mentions: "is not pinned by digest"
@@ -918,7 +928,7 @@ mutations:
       Without restartPolicy: Always the backup is an ordinary init container: it would block the server forever on its loop, and never back anything up beside it.
 
   - guard: TestRunnerPodsAreNotBestEffort
-    file: clusters/management/infrastructure/configs/runner-scale-set.yaml
+    file: clusters/core/infrastructure/configs/runner-scale-set.yaml
     find: "memory: 2Gi"
     replace: "ephemeral-storage: 1Gi"
     mentions: "requests no memory"
@@ -947,7 +957,7 @@ mutations:
       and reasonably assuming that is the whole job.
 
   - guard: TestEveryWorkloadIsSizedPlacedAndGivenAPriority
-    file: clusters/management/infrastructure/controllers/openebs.yaml
+    file: clusters/core/infrastructure/controllers/openebs.yaml
     find: "      localpv:"
     replace: "      localpvv:"
     mentions: "the cluster has been running without it"
@@ -962,7 +972,7 @@ mutations:
       configured-looking, and nothing else in this repository would notice.
 
   - guard: TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem
-    file: clusters/management/infrastructure/controllers/actions-runner-controller.yaml
+    file: clusters/core/infrastructure/controllers/actions-runner-controller.yaml
     find: "      runAsNonRoot: true"
     replace: "      runAsNonRoot: false"
     mentions: "runAsNonRoot"
@@ -985,7 +995,7 @@ mutations:
       branch that removed it, which is cheaper by a whole diagnostic.
 
   - guard: TestEveryHelmReleaseSaysWhereItsPodSpecLives
-    file: clusters/management/infrastructure/controllers/undescribed-chart.yaml
+    file: clusters/core/infrastructure/controllers/undescribed-chart.yaml
     create: |
       ---
       apiVersion: helm.toolkit.fluxcd.io/v2
@@ -1010,7 +1020,7 @@ mutations:
       tree to edit into that state.
 
   - guard: TestEveryFluxControllerIsPlacedAndGivenAPriority
-    file: clusters/management/flux-system/kustomization.yaml
+    file: clusters/core/flux-system/kustomization.yaml
     find: "  - target:\n      kind: Deployment\n    patch: |"
     replace: "  - target:\n      kind: Deployment\n      name: source-controller\n    patch: |"
     mentions: "has no required node affinity after the overlay is applied"
@@ -1997,7 +2007,7 @@ mutations:
       rather than an error.
 
   - guard: TestEveryFluxControllerIsPinnedHere
-    file: clusters/management/flux-system/kustomization.yaml
+    file: clusters/core/flux-system/kustomization.yaml
     find: "  - name: ghcr.io/fluxcd/source-controller"
     replace: "  - name: ghcr.io/fluxcd/source-controller-was-here"
     mentions: "does not pin it"
@@ -2385,7 +2395,7 @@ mutations:
       on: push
       jobs:
         planted:
-          runs-on: homelab-management
+          runs-on: homelab-site0
           timeout-minutes: 1
           steps:
             - uses: $/.github/workflows/mobilize
@@ -2407,7 +2417,7 @@ mutations:
       on: push
       jobs:
         planted:
-          runs-on: homelab-management
+          runs-on: homelab-site0
           timeout-minutes: 1
           steps:
             - uses: $/.github/workflows/mobilize
@@ -2651,6 +2661,8 @@ unprovable:
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
   - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
+    reason: table
+  - test: TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn
     reason: table
   - test: TestUnpinnedModulesRefusesEveryWayAroundThePin
     reason: table

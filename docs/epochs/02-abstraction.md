@@ -1998,6 +1998,38 @@ corpus beside them.
 
 Pinning is the next section.
 
+**Built, 2026-10-01.** `clusters/core/` is what every site reconciles: Flux's
+own install, the controllers and their configuration. `clusters/site0/` holds
+what site0 was given on top - the release it runs and the Kustomizations that
+deploy it - and builds on the core.
+
+- **A site's Flux is pointed at its own directory when it has one, and at the
+  core when it does not.** The platform root looks for
+  `clusters/<site>/kustomization.yaml` and tells the module; the module writes
+  the answer into `cluster-vars` as `GITOPS_PATH`. The sync manifest names its
+  path as that variable, so Flux fills it in each time it applies itself, and
+  the bootstrap fills it in for the one apply that happens before Flux is
+  there. The root reads the repository as it is, not as it was at the site's
+  pin, so giving a site work is the commit that adds its directory and needs
+  no pin moved.
+- **The runner scale set is `homelab-<site>`.** One manifest serves every
+  site, so the name carries `${SITE}`, and a job asks for the site it runs
+  for with an expression. No workflow names a site.
+- **The releases file is found, not named.** It moved into the site's
+  directory with the work it pins, and the fabricator and the standing order
+  both read "the one releases file under `clusters/`" rather than a path with
+  a site in it. Two would be a decision nobody has made - which site a release
+  reaches first - and both refuse rather than guess.
+- **The guard:** `TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork` refuses a
+  directory that is not the core, the CNI's bootstrap or a declared site's; a
+  site directory that does not build on the core; and a core that names a
+  site or points Flux at a workload.
+
+Found on the way: the guards for "no test names a path" had not caught a path
+built from its parts with `filepath.Join`, and three tests still read the Flux
+tree that way. The rule now covers it, and the manifest finder is in the test
+harness so the integration tier uses the same one.
+
 ### A site pins the module version it runs
 
 Added 2026-09-27, for the module move itself. When the cluster root becomes a

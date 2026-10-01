@@ -63,6 +63,12 @@ module "platform" {
   site        = var.site
   config_path = var.config_path
   kubeconfig  = var.kubeconfig
+
+  # Whether this site has been given work: a directory of its own in the
+  # Flux tree. Read here, from the repository as it is, and not by the
+  # module, which is read as it was at the site's pin - so giving a site work
+  # is the commit that adds the directory, and needs no pin moved.
+  site_directory = fileexists("${path.module}/../../clusters/${var.site}/kustomization.yaml")
 }
 
 output "state_db_endpoint" {
@@ -72,4 +78,8 @@ output "state_db_endpoint" {
 output "state_conn_str" {
   value     = module.platform.state_conn_str
   sensitive = true
+}
+
+output "gitops_path" {
+  value = module.platform.gitops_path
 }

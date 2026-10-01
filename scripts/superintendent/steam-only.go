@@ -22,7 +22,7 @@ import (
 // anything.
 type judge struct {
 	repository string // owner/name
-	releases   string // clusters/management/releases.yaml
+	releases   string // clusters/site0/releases.yaml
 	orders     string // scripts/work-orders.json
 	pin        string // scripts/versions.env
 	git        func(args ...string) (string, error)

@@ -5,7 +5,7 @@
 # below are unchanged and the reasoning that lived in that file now lives here,
 # because a config deferring to a deleted file explains nothing.
 #
-# clusters/management/flux-system/ is Flux's own generated install and sync
+# clusters/core/flux-system/ is Flux's own generated install and sync
 # manifest, committed verbatim. It is not ours to edit, and the broad
 # ClusterRole permissions Checkov flags in it are inherent to how a GitOps
 # controller has to work rather than a misconfiguration in code we control.
@@ -71,7 +71,7 @@ skip-check:
   - CKV_K8S_35
 
 skip-path:
-  - clusters/management/flux-system
+  - clusters/core/flux-system
   # clusters/bootstrap/ is Cilium's own chart output, committed verbatim for
   # the same reason flux-system is: a version bump should be a reviewable diff
   # of what actually changes in the cluster, not a one-line version bump nobody
@@ -93,7 +93,7 @@ skip-path:
   # Checkov's kustomize build starting from this file pulls in the same
   # vendored Deployment/ClusterRole objects and attributes findings about
   # them here instead - same reasoning as the exclusion above.
-  - clusters/management/kustomization.yaml
+  - clusters/core/kustomization.yaml
   # tofu test fixtures - deliberately fake values, some deliberately shaped
   # like a real credential (aws-shaped-key.json exists specifically to
   # trigger the AKIA/ASIA check). Checkov's secrets scanner can't tell fake

@@ -97,7 +97,7 @@ func TestYAMLDuplicates(t *testing.T) {
 jobs:
   test:
     runs-on: ubuntu-latest
-    runs-on: ` + scaleSetName() + `
+    runs-on: ` + strings.Replace(scaleSetName(), "${SITE}", "alpha", 1) + `
 `
 	got, err := YAMLDuplicates(content)
 	if err != nil {
