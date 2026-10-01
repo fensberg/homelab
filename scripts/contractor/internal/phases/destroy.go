@@ -1,6 +1,7 @@
 package phases
 
 import (
+	"errors"
 	"fmt"
 	"homelab/details/tcp"
 	"os"
@@ -148,6 +149,23 @@ underlying error: %w`, ctx.Site, err)
 		if err := run.TofuInit(ctx); err != nil {
 			return err
 		}
+	}
+
+	// Before anything irreversible, and before the operator is asked: every
+	// workload that has data takes a backup now, so what a planned teardown
+	// loses is nothing rather than everything since the last scheduled one
+	// (#588). A backup that was asked for and failed stops the teardown here.
+	//
+	// A cluster whose API does not answer has no workload running to be
+	// asked. That is said plainly rather than refused, because a refusal
+	// would make a dead cluster impossible to demolish - and it is said
+	// before the confirmation below, so whoever answers it knows.
+	switch err := SaveWorkloads(ctx); {
+	case errors.Is(err, errClusterUnreachable):
+		run.Warn("THE CLUSTER DID NOT ANSWER, SO NO WORKLOAD WAS ASKED TO BACK UP.")
+		run.Warn("Whatever its workloads changed since their last scheduled backup will be lost.")
+	case err != nil:
+		return err
 	}
 
 	// What is actually going to be destroyed, from state, at the last moment

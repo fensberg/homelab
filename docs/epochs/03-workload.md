@@ -1133,6 +1133,47 @@ properties of the stack rather than of either estate: Valheim 1.0 making a world
 a directory, which their image broke with a file mode that dropped the search
 bit; and a game release reaching production unreviewed.
 
+### A planned teardown takes a backup first (#588)
+
+Players were on the game server until an hour before the site was demolished
+for a rebuild. The rebuilt server restored the newest backup, taken forty-five
+minutes before they stopped, and what they did after it was gone. Nothing
+failed: the world is backed up on an interval, and nothing took one when the
+site was about to be destroyed.
+
+**The rule.** Before a site's machines are destroyed, every workload with data
+takes a backup, and the teardown does not start if one was asked for and
+failed. It runs after the hypervisor is known to answer and before the
+operator is asked to confirm, so what they confirm includes whether the
+backups were taken.
+
+**The workload says how.** `modules/applications/<name>/before-teardown.json`
+names the pods, the container and the command that takes a backup now and
+exits zero when it has. The contractor asks every workload that declares one
+and knows none by name. A guard holds each declaration to its manifest: the
+container exists, and the selector picks a pod the workload declares.
+
+**Why a file and not an annotation.** What runs in production is a release.
+An annotation on the pod would have to be released before it could be read,
+and would not protect the teardown that is about to happen. The declaration
+is read from the repository, and its command has to be one the running
+release already has.
+
+**Three outcomes, kept apart.** Backed up: the teardown goes on. Asked and
+failed, or a declaration that cannot be read: it stops, with the command to
+run to see why, and without the workload's own output, which can name what it
+holds. The cluster's API not answering: nothing is running to be asked, so it
+is said in capitals before the confirmation rather than refused - a refusal
+would make a dead cluster impossible to demolish.
+
+**What it does not do.** For the game server, "now" is the last save the
+server completed, which it writes every twenty minutes: the command copies
+that save and cannot make the server write a new one. So a teardown loses at
+most twenty minutes of play rather than up to an hour and twenty. Forcing a
+save first needs the server's behaviour on a signal to be established on a
+real server, and is not built. A build that failed is not asked either: it
+never ran a workload that could hold anything a backup lacks.
+
 ## Outcome
 
 ## Deferred

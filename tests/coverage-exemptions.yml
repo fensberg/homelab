@@ -100,7 +100,7 @@ files:
   # backup fresh and well formed, backup generations bounded, WAL archiving
   # healthy, and the deployed estate matching the code.
   - path: contractor/internal/phases/health.go
-    uncovered: 9
+    uncovered: 8
     covered_by: integration
   - path: contractor/internal/phases/health_etcd.go
     uncovered: 2
