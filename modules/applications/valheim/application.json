@@ -1,0 +1,14 @@
+{
+  "requires": [],
+  "before_teardown": {
+    "what": "the world",
+    "namespace": "valheim",
+    "selector": "app.kubernetes.io/name=valheim",
+    "container": "world-backup",
+    "command": [
+      "/bin/sh",
+      "-c",
+      "WORLD_BACKUP_ONCE=1 exec /usr/local/bin/world-backup"
+    ]
+  }
+}

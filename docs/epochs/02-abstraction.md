@@ -2093,23 +2093,65 @@ neither refinement above delivers it.
 ### Removing an application touches only its own directories
 
 Added 2026-10-01, from #590. An application is a module, and the test of that
-is what removing it costs: `modules/applications/<app>/`,
-`environments/<env>/applications/<app>/`, and one line in each environment's
-list. The game server fails that test by a wide margin. Its name, its
-Service's name or its supplier appears in 34 files outside those directories:
-a workflow, the superintendent and procurement programs, the site root's
-`workloads.tf`, the vault template, the tunnel routes, the pins and lists, and
-seven guards. Some of those are general mechanisms with one application as
-their only example, and some are application-specific checks kept in shared
-places.
+is what removing it costs. The game server failed it by a wide margin: its
+name was in thirty-five files outside its own directories - a workflow, the
+superintendent and procurement programs, the platform module, the vault
+template, the tunnel routes, the pins and lists, and seven guards. Some of
+those are general mechanisms with one application as their only example, and
+some are application-specific checks kept in shared places.
 
-**The bar:** a general mechanism reads what applications declare, from inside
-their own directories, rather than naming one; an application's own checks,
-pins and declarations live with it. A guard enumerates `modules/applications/*`
-and refuses any application's name outside that application's directories, so
-the second application is covered without anybody editing the guard. The
-proof is the removal itself, done on a scratch copy by a test: delete the
-directories and the list line, and every guard still passes.
+**The bar, as agreed 2026-10-02:** delete the application's directory and its
+block in each site that runs it, and every guard still passes.
+
+**The design.**
+
+- **One directory holds everything that is the application's**: its image,
+  its base, its settings for each environment, its tests, pins and proofs,
+  and `application.json`, in which it declares what the estate's general
+  mechanisms need to know about it. `environments/` goes away as a second
+  home for an application; an environment's settings are a directory inside
+  the application.
+- **A site's directory holds one block per application it runs**: which
+  application, which environment's settings, and which release - or that it
+  follows `main`. The environment lists said the same thing a second time,
+  and for production nothing deployed from them; they go.
+- **So two sites can run two versions.** What a site runs is pinned in its own
+  block. The pin that moves into the application's directory is the build
+  input (which upstream build the next image is made from), of which there
+  is one per application. A delivery goes to the sites whose block follows
+  new releases, and to no other.
+- **An application that needs another declares it**: `requires` in its
+  declaration. That is the one place an application may name another. A site
+  given the first must run the second, which starts and is healthy first; a
+  guard holds each site's blocks to the declarations. Removing an application
+  another requires is refused, naming the one that requires it. Something
+  only one application uses is not a second application: it lives in the
+  first one's directory.
+- **Everything else an application needs, it declares and the estate
+  provides**: its secrets and where in the vault they are, the Services that
+  need a fixed address, how to build and release it, how to tell that its
+  upstream has a new version, and how to back it up before a teardown.
+
+**Not covered, on purpose:** an application on one site requiring one on
+another; "this release needs that one or newer"; and a credential one
+application issues to another.
+
+**Built so far, 2026-10-02.** `application.json` and its reader
+(`config.Applications`), holding `requires` and `before_teardown`; every
+directory under `modules/applications/` must have one. And the guard that an
+application is named only where it lives: its own directory, a site that was
+given it, an application that requires it, and prose. Everywhere else is
+listed in `tests/application-debt.yml` with an exact line count - twenty-two
+files and a hundred and seventy lines on the day it was written - which a new
+mention cannot raise and a removed one must lower. What the guard cannot see
+is a thing an application owns under another name, such as the Service a
+route points at; the removal test finds those.
+
+**Still to build, in order:** the application's settings move into its
+directory and each site gets one block per application; secrets and routes
+are declared and provided; build, pins, suppliers and the application's own
+tests and proofs move in; the update flow reads a declaration instead of
+knowing one game; and then the removal test, which is the proof.
 
 ## Open questions to settle first
 

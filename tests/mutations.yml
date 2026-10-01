@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 187
+floor: 188
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -247,7 +247,7 @@ mutations:
 
       "
   - guard: TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas
-    file: modules/applications/valheim/before-teardown.json
+    file: modules/applications/valheim/application.json
     find: '"container": "world-backup"'
     replace: '"container": "world-backups"'
     mentions: "no pod the workload declares has one"
@@ -255,6 +255,17 @@ mutations:
       "Before a site is destroyed each workload is asked to back up, in a container its declaration
       names. A name the manifest no longer has is a backup nothing can run, found at the moment a
       teardown is about to start.
+
+      "
+  - guard: TestAnApplicationIsNamedOnlyWhereItLives
+    file: tests/application-debt.yml
+    find: "  scripts/versions.env: 2"
+    replace: "  scripts/versions.env: 1"
+    mentions: "The debt may only shrink"
+    why:
+      "A mechanism that names an application has to be found and edited when the application is
+      removed. The debt list is exact, so one more mention than it allows is refused: the same as a
+      new mention appearing with the list unchanged.
 
       "
   - guard: TestAGoFunctionWrittenTwiceIsDeclared
@@ -2683,6 +2694,8 @@ unprovable:
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
   - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
+    reason: table
+  - test: TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives
     reason: table
   - test: TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn
     reason: table

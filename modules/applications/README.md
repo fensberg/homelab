@@ -8,9 +8,18 @@ here and supplies the values; nothing here knows which environment it is in.
 
 ```text
 <name>/
-  image/     a Dockerfile this estate builds and publishes itself
-  base/      Kubernetes manifests, environment-agnostic
+  application.json   what the application declares about itself
+  image/             a Dockerfile this estate builds and publishes itself
+  base/              Kubernetes manifests, environment-agnostic
 ```
+
+`application.json` is how the estate's general mechanisms learn about an
+application without knowing it by name: which other applications it cannot
+run without (`requires`), and how to back it up before the site it runs on is
+destroyed (`before_teardown`). Every directory here has one, and nothing
+outside an application's own directory may name it - see "Removing an
+application touches only its own directories" in
+[`docs/epochs/02-abstraction.md`](../../docs/epochs/02-abstraction.md).
 
 The `image/` half exists because most self-hosted software has no official
 container image, and the estate's rule is not to take an unvetted one. The

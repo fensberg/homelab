@@ -19,8 +19,8 @@ type saveFixture struct {
 	dir string
 }
 
-const aDeclaration = `{"what": "its data", "namespace": "apps", "selector": "app=thing",
-  "container": "saver", "command": ["/bin/save", "--now"]}`
+const aDeclaration = `{"before_teardown": {"what": "its data", "namespace": "apps", "selector": "app=thing",
+  "container": "saver", "command": ["/bin/save", "--now"]}}`
 
 func newSaveFixture(t *testing.T, declarations map[string]string, pods, readyz, execExit string) *saveFixture {
 	t.Helper()
@@ -30,7 +30,7 @@ func newSaveFixture(t *testing.T, declarations map[string]string, pods, readyz, 
 		t.Fatal(err)
 	}
 	for workload, body := range declarations {
-		path := filepath.Join(root, filepath.FromSlash(config.ApplicationsDir), workload, config.TeardownDeclaration)
+		path := filepath.Join(root, filepath.FromSlash(config.ApplicationsDir), workload, config.ApplicationDeclaration)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -145,11 +145,13 @@ func TestAClusterThatDoesNotAnswerIsNotAFailedBackup(t *testing.T) {
 // A declaration that cannot be read is a refusal, never a workload with
 // nothing to lose, and every workload that declares is asked.
 func TestADeclarationThatCannotBeReadIsARefusal(t *testing.T) {
+	// What makes a declaration unreadable is the reader's to test
+	// (config.Applications); what matters here is that nothing is run from
+	// one.
 	for name, body := range map[string]string{
-		"not JSON":             `what: its data`,
-		"no namespace":         `{"what": "x", "selector": "a=b", "container": "c", "command": ["s"]}`,
-		"no command":           `{"what": "x", "namespace": "n", "selector": "a=b", "container": "c", "command": []}`,
-		"a field nobody reads": `{"what": "x", "namespace": "n", "selector": "a=b", "container": "c", "command": ["s"], "extra": ["unread"]}`,
+		"not JSON":             `before_teardown: its data`,
+		"no command":           `{"before_teardown": {"what": "x", "namespace": "n", "selector": "a=b", "container": "c", "command": []}}`,
+		"a field nobody reads": `{"before_teardown": {"what": "x", "namespace": "n", "selector": "a=b", "container": "c", "command": ["s"]}, "extra": ["unread"]}`,
 	} {
 		f := newSaveFixture(t, map[string]string{"thing": body}, onePodRunning, "0", "0")
 		err := SaveWorkloads(f.ctx)
