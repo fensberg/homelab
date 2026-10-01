@@ -41,8 +41,8 @@ run "a_site_keeps_its_machines_addresses" {
     error_message = "an untrusted machine moved"
   }
   assert {
-    condition     = output.sites.site0.control_planes["101"].hypervisor == "hv-b"
-    error_message = "placement is no longer round-robin over the sorted hypervisors"
+    condition     = output.sites.site0.control_planes["101"].hypervisor == "node1"
+    error_message = "placement is no longer round-robin over the sorted hypervisors, or a machine names its hypervisor by something other than its config key"
   }
   assert {
     condition     = output.sites.site0.slug == "north-street-office" && output.sites.site1.slug == "site1"

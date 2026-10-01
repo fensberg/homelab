@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 177
+floor: 178
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -144,6 +144,16 @@ mutations:
     why:
       "A manifest written straight into an environment is the copy-paste the epoch exists to stop,
       arriving in manifests instead of code.
+
+      "
+  - guard: TestAHostnameIsNeverAResourceKey
+    file: management/cluster/variables.tf
+    find: "  datastores = { for k, h in local.site.hypervisor.nodes : k => try(h.datastores, {}) }"
+    replace: "  datastores = { for k, h in local.site.hypervisor.nodes : h.hostname => try(h.datastores, {}) }"
+    mentions: reads a hypervisor's hostname
+    why:
+      "A resource keyed by a hypervisor's hostname prints that vault value in every plan, apply and log
+      that names the resource, with no attribute printed at all (#585).
 
       "
   - guard: TestAGoFunctionWrittenTwiceIsDeclared
@@ -2572,6 +2582,8 @@ unprovable:
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
   - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
+    reason: table
+  - test: TestHostnameMisuseAllowsOnlyTheMapAndNodeName
     reason: table
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.

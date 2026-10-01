@@ -126,6 +126,13 @@ func report(res *asbuilt.Result) error {
 		}
 		problems = append(problems, "real values survived the replacing")
 	}
+	if len(res.KeyedByAValue) > 0 {
+		run.Warn(fmt.Sprintf("%d resource(s) are keyed by a real value, so every plan, apply and log that names one prints it:", len(res.KeyedByAValue)))
+		for _, k := range res.KeyedByAValue {
+			fmt.Println("    " + k)
+		}
+		problems = append(problems, "a resource address holds a real value; key the resource by a key from the config instead")
+	}
 	if computed := res.Computed(); len(computed) > 0 {
 		run.Info(fmt.Sprintf("%d value(s) marked sensitive came back, computed by the offline plan from the record and public code:", len(computed)))
 		for _, f := range computed {

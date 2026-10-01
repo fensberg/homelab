@@ -73,7 +73,7 @@ const realState = `{"serial": 5, "lineage": "l", "resources": [
   {"mode": "managed", "type": "talos_machine_secrets", "name": "this",
    "instances": [{"attributes": {"talos_version": "v1.9.0", "certs": {"cert": "REAL-CLUSTER-CA"}}}]},
   {"mode": "managed", "type": "proxmox_vm", "name": "cp", "instances": [
-    {"index_key": "pve-harbour-road", "attributes": {"name": "harbour-road-cp", "ca": "REAL-CLUSTER-CA", "db": "generated-db-password"}}]}
+    {"index_key": "node0", "attributes": {"name": "harbour-road-cp", "ca": "REAL-CLUSTER-CA", "db": "generated-db-password"}}]}
 ], "outputs": {}}`
 
 const noisyOfflinePlan = `{"format_version": "1.2", "resource_changes": [
@@ -136,9 +136,28 @@ func TestARecordIsNotTakenOfAnEstateWithPendingChanges(t *testing.T) {
 	}
 }
 
+// An estate that keys a resource by a real value is not recorded as fit to
+// publish, even though the record itself replaces the key: the address is
+// what the estate's own plans and logs print, and nothing replaces it there.
+func TestAnEstateKeyedByARealValueIsNotPublishable(t *testing.T) {
+	in, f := takeFixture(t)
+	f.state = strings.Replace(realState, `"index_key": "node0"`, `"index_key": "harbour-road"`, 1)
+	f.offlinePlans = []string{quietOfflinePlan}
+	res, err := Take(in, f.run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.KeyedByAValue) != 1 || res.KeyedByAValue[0] != "proxmox_vm.cp" {
+		t.Errorf("reported %v", res.KeyedByAValue)
+	}
+	if !res.Quiet || res.Publishable() {
+		t.Errorf("quiet %v, publishable %v: a resource address holding a real value must refuse the record", res.Quiet, res.Publishable())
+	}
+}
+
 // The whole sequence: the real CA swapped, the vault value and the generated
-// password replaced everywhere including the instance key, the offline copy
-// planned until quiet, and nothing real in what was planned against.
+// password replaced everywhere, the offline copy planned until quiet, and
+// nothing real in what was planned against.
 func TestARecordIsFoldedUntilQuietAndHoldsNothingReal(t *testing.T) {
 	in, f := takeFixture(t)
 	f.offlinePlans = []string{noisyOfflinePlan, quietOfflinePlan}

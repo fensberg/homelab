@@ -36,7 +36,7 @@ resource "proxmox_download_file" "talos_disk_image" {
 
   content_type = "iso"
   datastore_id = local.datastores[each.value].images
-  node_name    = each.value
+  node_name    = local.hostnames[each.value]
   url          = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/${local.image_variant}.raw.xz"
   # Extension is .iso, not .img, on purpose: the image datastore's content=iso bucket
   # validates the destination file_name against that content type before
@@ -98,7 +98,7 @@ resource "proxmox_download_file" "dmz_disk_image" {
 
   content_type = "iso"
   datastore_id = local.datastores[each.value].images
-  node_name    = each.value
+  node_name    = local.hostnames[each.value]
   url          = "https://factory.talos.dev/image/${local.dmz_schematic_id}/${local.talos_version}/${local.image_variant}.raw.xz"
 
   # Same reason as the image above: without the schematic in the path, a
@@ -127,7 +127,7 @@ resource "proxmox_virtual_environment_vm" "dmz_template" {
   for_each = toset(local.dmz_hypervisors)
 
   name      = "${local.site_name}-dmz-template"
-  node_name = each.value
+  node_name = local.hostnames[each.value]
   # The top of the 300 band, above every zone machine that band can hold, the
   # way 199 sits above the control planes.
   vm_id = local.net.dmz_template_vm_id
@@ -198,7 +198,7 @@ resource "proxmox_virtual_environment_vm" "talos_template" {
   for_each = toset(local.all_vm_hypervisors)
 
   name      = "${local.site_name}-talos-template"
-  node_name = each.value
+  node_name = local.hostnames[each.value]
   # One offset per octet band, above every real control-plane ID that band
   # can ever hold: vm_ids end at octet*1000 + 100 + N-1, and N is well
   # under 99, so the top of the band is free.
@@ -291,7 +291,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
   # position - see the control_plane local in variables.tf.
   for_each  = local.control_plane
   name      = each.value.name
-  node_name = each.value.hypervisor
+  node_name = local.hostnames[each.value.hypervisor]
   vm_id     = each.value.vm_id
 
   boot_order = ["virtio0"]
@@ -404,7 +404,7 @@ resource "proxmox_virtual_environment_vm" "talos_cp" {
 resource "proxmox_virtual_environment_vm" "talos_worker" {
   for_each  = local.workers
   name      = each.value.name
-  node_name = each.value.hypervisor
+  node_name = local.hostnames[each.value.hypervisor]
   vm_id     = each.value.vm_id
 
   boot_order = ["virtio0"]
@@ -501,7 +501,7 @@ resource "proxmox_virtual_environment_vm" "dmz" {
   for_each = local.dmz
 
   name      = each.value.name
-  node_name = each.value.hypervisor
+  node_name = local.hostnames[each.value.hypervisor]
   vm_id     = each.value.vm_id
 
   boot_order = ["virtio0"]

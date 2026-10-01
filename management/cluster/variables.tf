@@ -98,9 +98,17 @@ locals {
   # depth, and only a "../../" path still leads to the same file from there.
   tunnel_routes = jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes
 
-  # Each hypervisor's datastores, by the hostname machines are placed on. They
-  # are facts about the host, so they come from its config entry.
-  datastores = { for h in local.hypervisors : h.hostname => try(h.datastores, {}) }
+  # Each hypervisor's datastores and hostname, by its key in the config
+  # (node0), which is what a machine's placement names. They are facts about
+  # the host, so they come from its config entry.
+  #
+  # BY THE KEY, NEVER THE HOSTNAME. Whatever a resource is keyed by is part of
+  # its address, and every tool that touches a resource prints its address:
+  # plans, apply output, the contractor's progress lines, CI logs. The hostname
+  # is a vault value, so it is looked up here, where it is an attribute, and
+  # is never a for_each key (#585; tests/go/repo/resource_addresses_test.go).
+  datastores = { for k, h in local.site.hypervisor.nodes : k => try(h.datastores, {}) }
+  hostnames  = { for k, h in local.site.hypervisor.nodes : k => h.hostname }
 
   # Per-site because two sites are two estates: separate hypervisors, separate
   # tailnets when the engagement calls for it, separate buckets, and separate
@@ -438,7 +446,7 @@ output "site_network" {
     node_ips     = local.node_ips
     cluster_name = local.cluster_name
     vm_names     = local.vm_names
-    hypervisors  = [for h in local.hypervisors : h.hostname]
+    hypervisors  = sort(keys(local.site.hypervisor.nodes))
     vm_placement = local.vm_placement
 
     # The workers belong here for the same reason the control plane does: this

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -229,12 +230,23 @@ func throwawayPEM(kind string) string {
 // resource types, provider addresses, the lineage - are left alone, since
 // they are public vocabulary and rewriting them would make the file something
 // tofu no longer reads.
-func Scrub(state map[string]any, r *Replacements) {
+//
+// It returns each resource, as "<type>.<name>", with an instance key that
+// held a real value. The key is replaced like everything else, so the record
+// is clean either way; what is reported is the estate. An instance key is
+// part of the resource's address, and an address is printed by everything
+// that touches the resource - a plan, an apply, a progress line, a CI log -
+// where nothing replaces it (#585).
+func Scrub(state map[string]any, r *Replacements) []string {
 	sub := r.replacer()
-	instances(state, func(_, inst map[string]any) {
+	keyed := map[string]bool{}
+	instances(state, func(res, inst map[string]any) {
 		inst["attributes"] = rewrite(inst["attributes"], sub)
 		if k, ok := inst["index_key"].(string); ok {
-			inst["index_key"] = sub(k)
+			if s := sub(k); s != k {
+				inst["index_key"] = s
+				keyed[fmt.Sprintf("%v.%v", res["type"], res["name"])] = true
+			}
 		}
 		// private is provider data, base64 of whatever the provider chose to
 		// keep. Kept rather than dropped, because the spike saw providers plan
@@ -253,4 +265,10 @@ func Scrub(state map[string]any, r *Replacements) {
 			}
 		}
 	}
+	out := make([]string, 0, len(keyed))
+	for k := range keyed {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

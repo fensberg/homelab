@@ -51,6 +51,10 @@ type Result struct {
 	// record, which adds what the offline plan computed from the record and
 	// public code.
 	Before, After []Finding
+	// KeyedByAValue is each resource, as "<type>.<name>", with an instance
+	// keyed by a real value. The record replaces it; the estate's own logs
+	// do not, so it is refused rather than recorded.
+	KeyedByAValue []string
 
 	// State and Config are the record itself: the state and the rendered
 	// config with every real value replaced, as the last offline plan saw
@@ -58,9 +62,11 @@ type Result struct {
 	State, Config map[string]any
 }
 
-// Publishable is a record that is quiet and in which nothing real survived
-// the replacing.
-func (r *Result) Publishable() bool { return r.Quiet && len(r.Before) == 0 }
+// Publishable is a record that is quiet, in which nothing real survived the
+// replacing, and of an estate that puts no real value in a resource address.
+func (r *Result) Publishable() bool {
+	return r.Quiet && len(r.Before) == 0 && len(r.KeyedByAValue) == 0
+}
 
 // Computed is what the scan found in the finished record that it did not
 // find before planning: values the offline plan computed from the record's
@@ -161,9 +167,9 @@ func Take(in Inputs, tofu Tofu) (*Result, error) {
 	if err := SensitiveLeaves(f, r, live); err != nil {
 		return nil, err
 	}
-	Scrub(state, r)
+	keyed := Scrub(state, r)
 	secrets := r.Secrets()
-	res := &Result{Replaced: map[string]int{}}
+	res := &Result{Replaced: map[string]int{}, KeyedByAValue: keyed}
 	for _, s := range secrets {
 		res.Replaced[strings.SplitN(s.Source, ":", 2)[0]]++
 	}
