@@ -1,0 +1,16 @@
+# What site0 runs beyond the core: the work it has been given.
+#
+# This directory existing is the assignment. A site with none reconciles
+# clusters/core alone; a site with one reconciles the core through it, plus
+# whatever is listed here. The platform root sees the directory and points
+# the site's Flux at it, so giving a site work is a commit that adds or
+# changes this directory and nothing else.
+#
+# Explicit for the same reason the core's is: without this file Flux
+# generates one that flattens in everything beneath it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../core
+  - releases.yaml
+  - workloads.yaml

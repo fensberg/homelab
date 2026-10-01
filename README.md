@@ -33,7 +33,7 @@ homelab/
 │ ├── gitops.tf # Flux bootstrap
 │ └── versions.tf # Provider definitions
 │
-├── clusters/management/ # Reconciled by Flux, not applied locally
+├── clusters/core/ # Reconciled by Flux, not applied locally
 │ ├── infra-controllers.yaml # Layer 1: operators (installs CRDs)
 │ ├── infra-configs.yaml # Layer 2: resources using those CRDs
 │ └── infrastructure/

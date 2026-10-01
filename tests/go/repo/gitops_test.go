@@ -42,7 +42,10 @@ type syncManifest struct {
 
 func TestFluxSyncsAnonymously(t *testing.T) {
 	root := repoRoot(t)
-	rel := filepath.Join("clusters", "management", "flux-system", "gotk-sync.yaml")
+	// Beside Flux's own install, wherever that is: the sync is the one file
+	// in that directory this repository writes.
+	install, _ := fluxObject(t, fluxInstallKind, fluxInstallName)
+	rel := beside(install, "gotk-sync.yaml")
 
 	// Read by explicit path, not by walking: flux-system is in skipDirs,
 	// because it holds Flux's own generated install manifest. gotk-sync.yaml

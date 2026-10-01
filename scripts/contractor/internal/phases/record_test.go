@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 	"homelab/details/asbuilt"
 )
@@ -17,6 +18,11 @@ import (
 func recordContext(t *testing.T) *run.Context {
 	t.Helper()
 	ctx := run.NewContext(t.TempDir(), "site0")
+	// A run that reaches the platform root puts the cluster's access in the
+	// environment. Registered here so the test puts back what was there.
+	for _, name := range platformInputs {
+		t.Setenv("TF_VAR_"+name, "")
+	}
 	for path, body := range map[string]string{
 		ctx.ConfigTpl:      `{}`,
 		ctx.ConfigRendered: `{}`,
@@ -82,6 +88,7 @@ func TestTheReportFailsExactlyTheUnpublishableRecords(t *testing.T) {
 		"computed values only":  {asbuilt.Result{Quiet: true, Rounds: 2, After: []asbuilt.Finding{computed}}, ""},
 		"not quiet":             {asbuilt.Result{Rounds: asbuilt.MaxRounds, LastPlan: noisy}, "not quiet"},
 		"a real value survived": {asbuilt.Result{Quiet: true, Before: []asbuilt.Finding{survived}, After: []asbuilt.Finding{survived}}, "survived"},
+		"keyed by a real value": {asbuilt.Result{Quiet: true, Rounds: 1, KeyedByAValue: []string{"a.b"}}, "a resource address holds a real value"},
 	} {
 		err := report(&tc.res)
 		switch {
@@ -100,10 +107,21 @@ func TestDescribeSourcesCountsByOrigin(t *testing.T) {
 	}
 }
 
-// scriptedTofu is enough of tofu for a record to be taken and saved: a quiet
-// estate, a state holding a CA, a throwaway CA, and a quiet offline plan.
+// clusterOutputs is the cluster root's outputs the platform root is
+// configured from, as `tofu output -json` and a state both hold them.
+const clusterOutputs = `{"cluster_access": {"sensitive": true, "value": {"host": "https://192.0.2.1:6443"}},
+  "kubeconfig": {"sensitive": true, "value": "a kubeconfig"}}`
+
+// scriptedTofu is enough of tofu for a site's record to be taken and saved: a
+// quiet estate, a cluster state holding a CA and the cluster's access, a
+// platform state holding neither, a throwaway CA, and a quiet offline plan.
 func scriptedTofu(dir string, _ []string, args ...string) ([]byte, []byte, error) {
 	switch {
+	case args[0] == "output":
+		return []byte(clusterOutputs), nil, nil
+	case args[0] == "state" && filepath.Base(dir) == config.PlatformRoot:
+		return []byte(`{"serial": 1, "resources": [{"mode": "managed", "type": "kubernetes_namespace", "name": "database",
+		  "instances": [{"attributes": {"id": "database"}}]}], "outputs": {}}`), nil, nil
 	case args[0] == "show" && strings.Contains(dir, ".as-built"):
 		return []byte(`{"format_version":"1.2","resource_changes":[]}`), nil, nil
 	case args[0] == "show":
@@ -113,7 +131,7 @@ func scriptedTofu(dir string, _ []string, args ...string) ([]byte, []byte, error
 		return []byte(`{"resources": [{"type": "talos_machine_secrets", "instances": [{"attributes": {"ca": "made-up-ca"}}]}]}`), nil, nil
 	case args[0] == "state":
 		return []byte(`{"serial": 1, "resources": [{"mode": "managed", "type": "talos_machine_secrets", "name": "this",
-		  "instances": [{"attributes": {"ca": "estate-ca-stand-in"}}]}], "outputs": {}}`), nil, nil
+		  "instances": [{"attributes": {"ca": "estate-ca-stand-in"}}]}], "outputs": ` + clusterOutputs + `}`), nil, nil
 	}
 	return nil, nil, nil
 }
@@ -122,19 +140,32 @@ func scriptedTofu(dir string, _ []string, args ...string) ([]byte, []byte, error
 func TestAPublishableRecordIsSavedWhereAsked(t *testing.T) {
 	ctx := recordContext(t)
 	ctx.RecordOut = filepath.Join(t.TempDir(), "as-built", "site0")
-	if err := os.MkdirAll(ctx.ClusterDir, 0o700); err != nil {
-		t.Fatal(err)
+	for _, root := range ctx.Roots() {
+		if err := os.MkdirAll(root.Dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("GITHUB_SHA", "0123456789abcdef")
 	if err := takeRecord(ctx, scriptedTofu); err != nil {
 		t.Fatal(err)
 	}
-	_, _, meta, err := asbuilt.Read(ctx.RecordOut)
-	if err != nil {
-		t.Fatal(err)
+	// Both roots, each in its own directory: a record of one would plan half
+	// a site and say nothing about the rest.
+	for _, root := range ctx.Roots() {
+		state, _, meta, err := asbuilt.Read(filepath.Join(ctx.RecordOut, root.Name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if meta.Site != "site0" || meta.Commit != "0123456" || meta.Taken.IsZero() {
+			t.Errorf("the %s root's record says it is of %+v", root.Name, meta)
+		}
+		_, hasCA := state["resources"].([]any)[0].(map[string]any)["type"].(string)
+		if !hasCA {
+			t.Errorf("the %s root's record holds no state", root.Name)
+		}
 	}
-	if meta.Site != "site0" || meta.Commit != "0123456" || meta.Taken.IsZero() {
-		t.Errorf("the record says it is of %+v", meta)
+	if os.Getenv("TF_VAR_kubeconfig") != "a kubeconfig" {
+		t.Error("the platform root was recorded without being handed the cluster's access")
 	}
 }
 

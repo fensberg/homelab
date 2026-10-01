@@ -11,6 +11,7 @@ import (
 
 	"github.com/gruntwork-io/terratest/modules/terraform"
 
+	"homelab/contractor/config"
 	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
 	"homelab/tests/harness"
@@ -41,9 +42,6 @@ import (
 // covers: verb:record-as-built
 // covers: verb:plan-as-built
 func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
-	opts := harness.TofuOptions(t, nil)
-	terraform.Init(t, opts)
-
 	root := repopath.RootOrFail(t)
 	tpl, err := os.ReadFile(filepath.Join(root, "config", "management.tpl.json"))
 	if err != nil {
@@ -54,52 +52,89 @@ func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
 		t.Fatalf("the rendered config is missing; this tier runs after a phase that renders it: %v", err)
 	}
 	work := filepath.Join(root, ".as-built")
+	saved := filepath.Join(t.TempDir(), "saved")
 	t.Cleanup(func() { _ = os.RemoveAll(work) })
 
-	res, err := asbuilt.Take(asbuilt.Inputs{
-		Root: opts.TerraformDir, Work: work,
-		Template: tpl, Rendered: rendered, Site: harness.Site(),
-		Progress: func(s string) { t.Log(s) },
-	}, asbuilt.Exec)
-	var pending *asbuilt.NotConvergedError
-	if errors.As(err, &pending) {
-		t.Fatal("the estate has pending changes, so no record can be taken; TestDeployedEstateMatchesTheCode says which")
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Each of the site's roots, the cluster's first: the platform root's
+	// offline plans run with the stand-ins the cluster's record holds for
+	// the access it is configured from.
+	var access map[string]string
+	for _, name := range config.Roots {
+		opts := harness.TofuOptions(t, name, nil)
+		terraform.Init(t, opts)
+		// The real plan Take makes needs what the options carry: for the
+		// platform root, the cluster's real access.
+		for k, v := range opts.EnvVars {
+			t.Setenv(k, v)
+		}
 
-	t.Logf("replaced %v; quiet: %v after %d round(s)", res.Replaced, res.Quiet, res.Rounds)
-	if !res.Quiet {
-		pending, _ := asbuilt.Pending(res.LastPlan)
-		t.Errorf("the record is not quiet after %d rounds, so every plan against it would show these:\n  %s",
-			res.Rounds, strings.Join(pending, "\n  "))
-	}
-	for _, f := range res.Before {
-		t.Errorf("a real value survived the replacing: %s", f)
-	}
-	for _, f := range res.Computed() {
-		t.Logf("computed by the offline plan from the record and public code: %s", f)
-	}
-	if !res.Publishable() {
-		return
-	}
+		res, err := asbuilt.Take(asbuilt.Inputs{
+			Root: opts.TerraformDir, Work: work,
+			Template: tpl, Rendered: rendered, Site: harness.Site(),
+			MachineSecrets: name == config.ClusterRoot,
+			Vars:           vars(name, access),
+			Progress:       func(s string) { t.Log(name + ": " + s) },
+		}, asbuilt.Exec)
+		_ = os.RemoveAll(work)
+		var pending *asbuilt.NotConvergedError
+		if errors.As(err, &pending) {
+			t.Fatalf("the %s root has pending changes, so no record can be taken; TestDeployedEstateMatchesTheCode says which", name)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	saved := filepath.Join(work, "saved")
-	if err := asbuilt.Write(saved, res, asbuilt.Meta{Site: harness.Site()}); err != nil {
-		t.Fatal(err)
+		t.Logf("%s: replaced %v; quiet: %v after %d round(s)", name, res.Replaced, res.Quiet, res.Rounds)
+		if !res.Quiet {
+			pending, _ := asbuilt.Pending(res.LastPlan)
+			t.Errorf("the %s root's record is not quiet after %d rounds, so every plan against it would show these:\n  %s",
+				name, res.Rounds, strings.Join(pending, "\n  "))
+		}
+		for _, f := range res.Before {
+			t.Errorf("%s: a real value survived the replacing: %s", name, f)
+		}
+		for _, k := range res.KeyedByAValue {
+			t.Errorf("%s: %s is keyed by a real value, so every plan, apply and log that names it prints the value", name, k)
+		}
+		for _, f := range res.Computed() {
+			t.Logf("%s: computed by the offline plan from the record and public code: %s", name, f)
+		}
+		if !res.Publishable() {
+			return
+		}
+		if name == config.ClusterRoot {
+			if access, err = asbuilt.OutputVars(res.State, steps.PlatformInputs...); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		record := filepath.Join(saved, name)
+		if err := asbuilt.Write(record, res, asbuilt.Meta{Site: harness.Site()}); err != nil {
+			t.Fatal(err)
+		}
+		plan, _, err := asbuilt.PlanAgainst(asbuilt.PlanInputs{
+			Root: opts.TerraformDir, Work: work, Record: record,
+			Template: tpl, Site: harness.Site(),
+			PluginDir: filepath.Join(opts.TerraformDir, ".terraform", "providers"),
+			Sequence:  steps.Plan(name),
+			Vars:      vars(name, access),
+		}, asbuilt.Exec)
+		_ = os.RemoveAll(work)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pending, _ := asbuilt.Pending(plan); len(pending) > 0 {
+			t.Errorf("the %s root as it stands, planned against its own saved record, would change:\n  %s",
+				name, strings.Join(pending, "\n  "))
+		}
 	}
-	plan, _, err := asbuilt.PlanAgainst(asbuilt.PlanInputs{
-		Root: opts.TerraformDir, Work: work, Record: saved,
-		Template: tpl, Site: harness.Site(),
-		PluginDir: filepath.Join(opts.TerraformDir, ".terraform", "providers"),
-		Sequence:  steps.Plan(),
-	}, asbuilt.Exec)
-	if err != nil {
-		t.Fatal(err)
+}
+
+// vars is what a root's offline plan is given beyond the site and the config:
+// the cluster's access for the platform root, nothing for the cluster's own.
+func vars(root string, access map[string]string) map[string]string {
+	if root == config.PlatformRoot {
+		return access
 	}
-	if pending, _ := asbuilt.Pending(plan); len(pending) > 0 {
-		t.Errorf("the code as it stands, planned against its own saved record, would change:\n  %s",
-			strings.Join(pending, "\n  "))
-	}
+	return nil
 }

@@ -457,17 +457,20 @@ config entry.
 
 ## What lives where
 
-| Path                         | Holds                                                      |
-| ---------------------------- | ---------------------------------------------------------- |
-| `management/hypervisor/`     | Ansible: bare-metal Proxmox preparation                    |
-| `management/cluster/`        | OpenTofu: VMs, Talos, overlay network, storage, Flux       |
-| `modules/infrastructure/`    | Pure OpenTofu modules: the estate's address plan           |
-| `clusters/management/`       | Flux-reconciled manifests for this cluster                 |
-| `config/management.tpl.json` | The one config: sites, topology and every secret reference |
-| `tests/`                     | Everything above the unit tier — see `tests/README.md`     |
+| Path                         | Holds                                                                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `management/hypervisor/`     | Ansible: bare-metal Proxmox preparation                                                                                |
+| `management/cluster/`        | A site's cluster root: providers, credentials and state. Calls the cluster module                                      |
+| `management/platform/`       | A site's platform root: the kubernetes provider and state. Calls the platform module                                   |
+| `modules/infrastructure/`    | OpenTofu modules: `cluster` (machines, Talos, Cilium), `platform` (what Flux cannot create, then Flux), `address-plan` |
+| `management/pins.json`       | Which commit of the modules each site runs: an estate default and per-site lines                                       |
+| `clusters/core/`             | The Flux core every site reconciles: Flux itself, the controllers and their configuration                              |
+| `clusters/<site>/`           | What one site runs beyond the core. Present only for a site that has been given work                                   |
+| `config/management.tpl.json` | The one config: sites, topology and every secret reference                                                             |
+| `tests/`                     | Everything above the unit tier — see `tests/README.md`                                                                 |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator
-and the database itself are declared in `clusters/management/` and reconciled
+and the database itself are declared in `clusters/core/` and reconciled
 by Flux, in two layers: `infra-controllers` installs CRDs, `infra-configs`
 depends on it and uses them.
 
@@ -603,10 +606,27 @@ and never run on a pull request.
 **The config contract is checked, not assumed.** `registry.tf` and
 `scripts/contractor/config/config.go` implement the same invariants twice, so a bad
 config is refused whether it arrives through the start button or a bare
-`tofu plan`. `management/cluster/tests/fixtures/manifest.json` is the single
+`tofu plan`. `modules/infrastructure/cluster/tests/fixtures/manifest.json` is the single
 corpus both sides are run against, and the contract tests fail if a case
 exists on one side and not the other. Adding an invariant means adding it in
 both places and adding a case to that manifest.
+
+**A test finds what it reads by what it declares, never by where it is.** A
+test that opens `management/<root>/talos.tf` or
+`clusters/<somewhere>/thing.yaml` checks that path, and goes on checking it
+after the thing it guards has moved to another root, a module or a site's own
+directory. So a test asks for "the file that declares this" - `tofuDeclaring`
+and `fluxObject` in `tests/go/repo`, `tofufiles.Declaring` in a program's
+test - or reads every file (`tofuSources`). `TestNoTestNamesTheRootItReads`
+refuses a test that names a root's files or a path into the Flux tree.
+
+**A verb is tested whole.** `scripts/contractor/internal/phases/verbs_test.go`
+runs a build, a converge and a teardown through the real phases with `tofu`,
+`op`, `age` and `rclone` replaced on PATH by programs that log what they were
+asked. It asserts what reaches tofu and in which root, not what a phase
+prints. A phase added to a verb has to be run there or declared not to be.
+`plan_unbuilt_test.go` plans both roots from nothing with the real providers
+and a stand-in for every vault value.
 
 Coverage is a ratchet, not a threshold: `tests/coverage-baseline.json` is a
 floor a pull request may not drop below and is free to leave alone.

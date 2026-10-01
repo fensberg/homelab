@@ -104,7 +104,11 @@ sdn_vnet: %q
 		return err
 	}
 	run.Ok("secrets rendered")
-	return nil
+
+	// And the modules this site runs. Here because Render is the first phase
+	// of every verb that runs tofu against an estate, so no root is ever
+	// initialised before its modules are in place at the site's pin.
+	return placeModules(ctx)
 }
 
 // EnsureVaultSession makes sure `op` is present and signed in, and that the

@@ -39,15 +39,26 @@ func Sterilize(ctx *run.Context, quiet bool) error {
 // secret left on disk or a workspace that no longer validates, and neither
 // failure announces itself - the run still reports success.
 func sterilizeTargets(ctx *run.Context) []string {
-	return []string{
+	targets := []string{
 		ctx.ConfigRendered,
 		ctx.InventoryOut,
 		ctx.OverlayVars,
 		ctx.SiteVars,
-		ctx.BackendPgOn,
-		ctx.LocalState,
-		ctx.LocalState + ".backup",
 		ctx.Kubeconfig,
+	}
+	for _, root := range ctx.Roots() {
+		targets = append(targets, rootTargets(root)...)
+	}
+	return targets
+}
+
+// rootTargets is what a run may leave in one root. Every root, the same list:
+// a root this missed would keep its state and its saved plan on disk.
+func rootTargets(root run.Root) []string {
+	return []string{
+		root.BackendPgOn,
+		root.LocalState,
+		root.LocalState + ".backup",
 
 		// tofu's record of which backend is configured - not state, but it
 		// remembers that the last one was encrypted Postgres. Left behind, the
@@ -59,11 +70,11 @@ func sterilizeTargets(ctx *run.Context) []string {
 		// Safe to delete: take-over, destroy and sterilize all pass
 		// -backend-config explicitly with -reconfigure, so nothing relies on
 		// the cached record.
-		ctx.TofuBackendRecord,
+		root.BackendRecord,
 
 		// A saved plan is a file of resource attributes. Listed here for the
 		// run that fails before the Plan phase removes it itself.
-		ctx.TofuPlanFile,
+		root.PlanFile,
 	}
 }
 
@@ -119,13 +130,18 @@ func tearDown(ctx *run.Context) teardownResult {
 		return teardownResult{SafeToSterilize: true}
 	}
 
-	// Two things tofu cannot do for itself, both learned by watching a real
-	// teardown of a real estate destroy nothing at all. Order matters: state
-	// is already back on local disk by this point, so neither step can strand
-	// the destroy it is clearing the way for. See teardown.go.
-	forgetClusterInternalResources(ctx)
-	// Before the emptying, so a failure to forget it stops short of deleting
-	// what it holds rather than after.
+	// Only the cluster root is destroyed. What the platform root created
+	// lives inside the machines this is about to delete and goes with their
+	// disks; asking a dying cluster to delete its own namespaces first hung
+	// on Flux's finalizers until the destroy gave up having destroyed
+	// nothing. That used to be avoided by forgetting those resources out of
+	// the one state. Now they are in a root this never destroys, and
+	// tests/go/repo refuses a kubernetes resource in the cluster root. The
+	// platform's own state is in the database being deleted, and whatever of
+	// it is on this disk is Sterilize's.
+	//
+	// One thing tofu cannot do for itself, learned by watching a real
+	// teardown of a real estate destroy nothing at all. See teardown.go.
 	emptyObjectStorage(ctx)
 
 	if err := run.TofuDestroy(ctx, "tofu destroy"); err != nil {
@@ -155,7 +171,7 @@ func demigrateStateToLocal(ctx *run.Context) error {
 	}
 
 	run.Info(fmt.Sprintf("checking Postgres at %s:%d is still reachable ...", host, port))
-	if !tcp.Await(tcp.Addr(host, port), 10*time.Second, 2*time.Second) {
+	if !awaitTCP(tcp.Addr(host, port), 10*time.Second, 2*time.Second) {
 		return fmt.Errorf("postgres at %s:%d is not reachable - it may already be gone", host, port)
 	}
 

@@ -3,6 +3,8 @@ package phases
 import (
 	"os"
 	"testing"
+
+	"homelab/details/gitenv"
 )
 
 // No test in this package reaches the real GitHub.
@@ -17,7 +19,12 @@ import (
 // points the API at a closed port on the loopback by default: no DNS, no
 // egress, and an immediate refusal rather than a timeout. A test that wants an
 // answer stands up an httptest server and says so.
+//
+// Nor does any read the developer's git configuration: one builds a
+// repository in a temporary directory and commits to it, and a signing
+// setting or a hook from the machine would decide whether that works.
 func TestMain(m *testing.M) {
+	gitenv.Isolate()
 	githubAPI = "http://127.0.0.1:1"
 	os.Exit(m.Run())
 }

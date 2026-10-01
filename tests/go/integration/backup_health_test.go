@@ -48,9 +48,9 @@ type r2Object struct {
 	IsDir   bool      `json:"IsDir"`
 }
 
-func listBackups(t *testing.T) (loc config.StateBackups, objs []r2Object) {
+func listBackups(t *testing.T, root string) (loc config.StateBackups, objs []r2Object) {
 	t.Helper()
-	loc = harness.StateBackups(t)
+	loc = harness.StateBackups(t, root)
 
 	out, err := harness.RunEnv(t, loc.Env, "rclone", "lsjson", loc.Folder)
 	// rclone's own error, not a theory about it. This message used to add "the
@@ -64,55 +64,65 @@ func listBackups(t *testing.T) (loc config.StateBackups, objs []r2Object) {
 }
 
 func TestNewestBackupIsFreshAndWellFormed(t *testing.T) {
-	loc, objs := listBackups(t)
+	// Each of the site's two states has its own backups, and a site with one
+	// of them fresh and the other missing is not backed up.
+	for _, root := range config.Roots {
+		t.Run(root, func(t *testing.T) {
+			loc, objs := listBackups(t, root)
 
-	var latest *r2Object
-	for i := range objs {
-		if objs[i].Path == config.LatestStateBackup {
-			latest = &objs[i]
-		}
-	}
-	require.NotNil(t, latest, `there is no latest.tfstate.age in the bucket.
+			var latest *r2Object
+			for i := range objs {
+				if objs[i].Path == config.LatestStateBackup {
+					latest = &objs[i]
+				}
+			}
+			require.NotNil(t, latest, `there is no latest.tfstate.age in the bucket.
 
 The nightly job runs the Backup phase immediately before this test, so either
 that step failed silently or something deleted the object.`)
 
-	age := time.Since(latest.ModTime)
-	assert.Lessf(t, age, backupFreshness,
-		"the newest backup is %s old. A backup was supposed to have been taken minutes ago, so the Backup phase is failing without failing loudly.", age.Round(time.Hour))
+			age := time.Since(latest.ModTime)
+			assert.Lessf(t, age, backupFreshness,
+				"the newest backup is %s old. A backup was supposed to have been taken minutes ago, so the Backup phase is failing without failing loudly.", age.Round(time.Hour))
 
-	// A few hundred bytes would be an empty or truncated state.
-	assert.Greaterf(t, latest.Size, int64(1024),
-		"latest.tfstate.age is only %d bytes, which is too small to be a real encrypted state file", latest.Size)
+			// A few hundred bytes would be an empty or truncated state.
+			assert.Greaterf(t, latest.Size, int64(1024),
+				"latest.tfstate.age is only %d bytes, which is too small to be a real encrypted state file", latest.Size)
 
-	head, err := harness.RunEnv(t, loc.Env, "rclone", "cat", "--count", "64", loc.Latest)
-	require.NoError(t, err, "reading the first bytes of the newest backup")
-	assert.Containsf(t, head, ageMagic,
-		"latest.tfstate.age does not start with an age header, so it is not a well-formed encrypted file. Decrypting it to check further is deliberately impossible from here - the identity is offline.")
+			head, err := harness.RunEnv(t, loc.Env, "rclone", "cat", "--count", "64", loc.Latest)
+			require.NoError(t, err, "reading the first bytes of the newest backup")
+			assert.Containsf(t, head, ageMagic,
+				"latest.tfstate.age does not start with an age header, so it is not a well-formed encrypted file. Decrypting it to check further is deliberately impossible from here - the identity is offline.")
+		})
+	}
 }
 
 // Storage must stay flat. If this grows, the prune in the Backup phase has
 // stopped running or is refusing to act - which it does, on purpose, whenever
 // it cannot confirm the new upload landed.
 func TestBackupGenerationsAreBounded(t *testing.T) {
-	_, objs := listBackups(t)
+	for _, root := range config.Roots {
+		t.Run(root, func(t *testing.T) {
+			_, objs := listBackups(t, root)
 
-	var generations []string
-	for _, o := range objs {
-		if o.IsDir || o.Path == config.LatestStateBackup {
-			continue
-		}
-		if strings.HasSuffix(o.Path, ".tfstate.age") {
-			generations = append(generations, o.Path)
-		}
+			var generations []string
+			for _, o := range objs {
+				if o.IsDir || o.Path == config.LatestStateBackup {
+					continue
+				}
+				if strings.HasSuffix(o.Path, ".tfstate.age") {
+					generations = append(generations, o.Path)
+				}
+			}
+			sort.Strings(generations)
+
+			// keepGenerations in scripts/contractor/internal/phases/prune.go.
+			const keep = 2
+			assert.LessOrEqualf(t, len(generations), keep,
+				"%d timestamped generations are stored, expected at most %d: %v\n\nThe prune is not running, or is refusing to delete because it cannot confirm the newest upload landed - check the Backup phase output for a warning.",
+				len(generations), keep, generations)
+		})
 	}
-	sort.Strings(generations)
-
-	// keepGenerations in scripts/contractor/internal/phases/prune.go.
-	const keep = 2
-	assert.LessOrEqualf(t, len(generations), keep,
-		"%d timestamped generations are stored, expected at most %d: %v\n\nThe prune is not running, or is refusing to delete because it cannot confirm the newest upload landed - check the Backup phase output for a warning.",
-		len(generations), keep, generations)
 }
 
 // WAL archiving is what makes point-in-time recovery possible at all, and it

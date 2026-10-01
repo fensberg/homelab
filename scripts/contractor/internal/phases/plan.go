@@ -56,6 +56,9 @@ func Plan(ctx *run.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := refuseVaultKeys(ctx, raw); err != nil {
+		return err
+	}
 
 	summary, err := summarisePlan(raw)
 	if err != nil {
@@ -249,7 +252,7 @@ func summarisePlan(raw []byte) (string, error) {
 		case "replace":
 			d = detail("forced by ", replacedBecause(c.Change.ReplacePaths))
 		}
-		rows = append(rows, row{redactKeys(c.Address), verb, d})
+		rows = append(rows, row{redactKeys(shownAddress(c.Address)), verb, d})
 		counts[verb]++
 	}
 
@@ -496,6 +499,23 @@ var numericKey = regexp.MustCompile(`^[0-9]+$`)
 // proper noun, and are the difference between "a control-plane VM is being
 // replaced" and knowing which one - which is exactly what a reviewer needs
 // when the plan says something is being destroyed.
+// shownAddress is a resource's address as a reader is shown it: without the
+// modules it sits in. Which module a root keeps a resource in is how the code
+// is arranged, and the same for every line of every plan; the type, the name
+// and the key are what say which thing is changing.
+func shownAddress(address string) string {
+	for strings.HasPrefix(address, "module.") {
+		_, rest, found := strings.Cut(strings.TrimPrefix(address, "module."), ".")
+		if !found {
+			break
+		}
+		// A module called with for_each or count carries a key of its own,
+		// which the cut above leaves in front: module.site["a"].x.y.
+		address = rest
+	}
+	return address
+}
+
 func redactKeys(address string) string {
 	return forEachKey.ReplaceAllStringFunc(address, func(m string) string {
 		key := forEachKey.FindStringSubmatch(m)[1]
@@ -523,6 +543,39 @@ func was(n int) string {
 	return "are"
 }
 
+// refuseVaultKeys fails a plan in which a resource is keyed by a value from
+// the vault: the key would be printed, in the address, by every tool that
+// names the resource. The plan against the as-built record refuses the same
+// thing with stand-ins; this is that check against the estate's real config,
+// and what it says names the resource and the config field, never the value.
+func refuseVaultKeys(ctx *run.Context, plan []byte) error {
+	tplRaw, err := os.ReadFile(ctx.ConfigTpl)
+	if err != nil {
+		return err
+	}
+	rendered, err := os.ReadFile(ctx.ConfigRendered)
+	if err != nil {
+		return fmt.Errorf("the rendered config is missing, so Render did not run: %w", err)
+	}
+	defer run.Wipe(rendered)
+	var tpl any
+	if err := json.Unmarshal(tplRaw, &tpl); err != nil {
+		return fmt.Errorf("the config template is not JSON: %w", err)
+	}
+	config, err := asbuilt.Decode(rendered)
+	if err != nil {
+		return fmt.Errorf("the rendered config is not JSON: %w", err)
+	}
+	keyed, err := asbuilt.KeyedByAVaultValue(plan, tpl, config)
+	if err != nil {
+		return err
+	}
+	if len(keyed) > 0 {
+		return &asbuilt.VaultKeyError{Keyed: keyed}
+	}
+	return nil
+}
+
 // planSteps plans the converge's own steps, in order, against a copy of the
 // estate's state (#497).
 //
@@ -534,17 +587,43 @@ func was(n int) string {
 //
 // The copy's state is pushed through stdin, never a plaintext file, and the
 // process's TF_ENCRYPTION encrypts it as it lands, as the real one is.
+//
+// Each root is planned in turn and the two are reported as one plan: what a
+// reader wants is what the change does to the site.
 func planSteps(ctx *run.Context, tofu asbuilt.Tofu, push func(dir string, state []byte) error) ([]byte, error) {
+	var plans [][]byte
+	for _, root := range ctx.Roots() {
+		in, err := rootFor(ctx, root.Name, tofu)
+		if err != nil {
+			return nil, err
+		}
+		run.Info("planning the " + root.Name + " root")
+		plan, err := planRoot(in, tofu, push)
+		// The copy is of one root, in a directory the next root's copy takes.
+		if rmErr := run.RemoveTreeIfExists(ctx.AsBuiltDir); rmErr != nil && err == nil {
+			err = rmErr
+		}
+		if err != nil {
+			return nil, fmt.Errorf("the %s root: %w", root.Name, err)
+		}
+		plans = append(plans, plan)
+	}
+	return asbuilt.MergePlans(plans...)
+}
+
+// planRoot plans the steps of the root ctx runs in, against a copy of its
+// state.
+func planRoot(ctx *run.Context, tofu asbuilt.Tofu, push func(dir string, state []byte) error) ([]byte, error) {
 	dir := filepath.Join(ctx.AsBuiltDir, "plan")
-	if err := asbuilt.CopyRoot(ctx.ClusterDir, dir); err != nil {
+	if err := asbuilt.CopyRoot(ctx.Dir, dir); err != nil {
 		return nil, err
 	}
 	run.Info("copying the estate's state, so planning its steps changes nothing")
 	if _, stderr, err := tofu(dir, nil, "init", "-input=false", "-no-color",
-		asbuilt.PluginDir(ctx.ClusterDir)); err != nil {
+		asbuilt.PluginDir(ctx.Dir)); err != nil {
 		return nil, fmt.Errorf("initialising the copy:\n%s", asbuilt.ErrorSummary(stderr))
 	}
-	state, _, err := tofu(ctx.ClusterDir, nil, "state", "pull")
+	state, _, err := tofu(ctx.Dir, nil, "state", "pull")
 	if err != nil {
 		return nil, fmt.Errorf("pulling the state: %w", err)
 	}
@@ -554,7 +633,7 @@ func planSteps(ctx *run.Context, tofu asbuilt.Tofu, push func(dir string, state 
 		return nil, fmt.Errorf("copying the state: %w", err)
 	}
 	return asbuilt.PlanSteps(asbuilt.StepsInputs{
-		Dir: dir, Sequence: steps.Plan(), Refresh: true, Say: run.Info,
+		Dir: dir, Sequence: steps.Plan(ctx.Name), Refresh: true, Say: run.Info,
 	}, tofu)
 }
 

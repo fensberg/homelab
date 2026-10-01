@@ -152,10 +152,13 @@ func TestTheCodeLawsAreCoveredBySensitivePaths(t *testing.T) {
 
 	// The files existing rules name explicitly. If a rule guards a file, a
 	// change to that file deserves the alarm.
+	// The file that refuses a bad config, wherever it is: found by what it
+	// declares, so a rule keeps covering it when it moves.
+	invariants, _ := tofuDeclaring(t, declInvariants)
 	for _, rel := range []string{
 		"scripts/details/onepassword/probe.go",
 		"config/management.tpl.json",
-		"management/cluster/registry.tf",
+		invariants,
 	} {
 		if !covered(rel) {
 			t.Errorf("%s is named by a building code but no sensitive path covers it", rel)

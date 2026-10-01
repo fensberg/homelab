@@ -19,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"homelab/details/repopath"
+	"homelab/tests/harness"
 )
 
 // The tunnel connector, asked of the cluster rather than of the manifest.
@@ -42,7 +43,10 @@ const tunnelNamespace = "tunnel"
 // is in its own ConfigMap, and the two are only equal if the manifest was
 // re-rendered and re-applied (cilium/cilium#37529).
 func TestTheClusterRunsThePinnedPodMTU(t *testing.T) {
-	values, err := os.ReadFile(filepath.Join(repopath.RootOrFail(t), "clusters", "bootstrap", "cilium-values.yaml"))
+	// Beside the rendered manifest, found by the agent it declares.
+	rendered, err := harness.FluxManifest("DaemonSet", "cilium")
+	require.NoError(t, err, "finding the Cilium manifest")
+	values, err := os.ReadFile(filepath.Join(repopath.RootOrFail(t), filepath.FromSlash(harness.Beside(rendered, "cilium-values.yaml"))))
 	require.NoError(t, err, "reading the Cilium values")
 	m := regexp.MustCompile(`(?m)^MTU:\s*(\d+)\s*$`).FindStringSubmatch(string(values))
 	require.NotNil(t, m, "clusters/bootstrap/cilium-values.yaml pins no MTU")

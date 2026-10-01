@@ -152,8 +152,8 @@ a number that makes the gap look larger than it is.`, chart)
 // one renamed, goes from pinned to mutable with the manifest still building and
 // every other check still green.
 func TestEveryFluxControllerIsPinnedHere(t *testing.T) {
-	components := readRepoFile(t, "clusters/management/flux-system/gotk-components.yaml")
-	overlay := readRepoFile(t, "clusters/management/flux-system/kustomization.yaml")
+	install, components := fluxObject(t, fluxInstallKind, fluxInstallName)
+	overlay := readRepoFile(t, beside(install, "kustomization.yaml"))
 
 	shipped := map[string]bool{}
 	for _, m := range regexp.MustCompile(`ghcr\.io/fluxcd/([a-z-]+):v[0-9.]+`).

@@ -163,7 +163,13 @@ var vaultReference = regexp.MustCompile(`\{\{\s*op://`)
 // vault says a credential belongs to, compared by preconditions against the
 // provider the code was written for. Fingerprinting them would fail those
 // preconditions and hide nothing.
-var attestations = map[string]bool{"provider": true, "vault_provider": true}
+var attestations = map[string]bool{attestedProvider: true, vaultAttestation: true}
+
+// The provider the code was written for, and the vault's word for it.
+const (
+	attestedProvider = "provider"
+	vaultAttestation = "vault_provider"
+)
 
 // Vault fingerprints every value the template says came from the vault, and
 // returns the rendered config with those values replaced.

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 178
+floor: 187
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -101,9 +101,9 @@ mutations:
       again (#497).
 
   - guard: TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode
-    file: management/cluster/compute.tf
-    find: "  datastore_id = local.datastores[each.value].images\n  node_name    = each.value\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
-    replace: "  datastore_id = \"local-iso\"\n  node_name    = each.value\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+    file: modules/infrastructure/cluster/compute.tf
+    find: "  datastore_id = local.datastores[each.value].images\n  node_name    = local.hostnames[each.value]\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+    replace: "  datastore_id = \"local-iso\"\n  node_name    = local.hostnames[each.value]\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
     mentions: "a hypervisor fact the config declares"
     why: >
       A storage name written into the code is a host nobody can describe without
@@ -118,17 +118,17 @@ mutations:
       A pull request closed by merging reports main as its ref, so a group keyed
       by ref lets its closing run cancel the converge the merge started (#573).
 
-  - guard: TestARootReachesOutsideItselfFromTheTop
-    file: management/cluster/variables.tf
-    find: 'jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes'
-    replace: 'jsondecode(file("${path.module}/../tunnel-routes.json")).routes'
-    mentions: "reaches outside its root"
+  - guard: TestAFileReachesOutsideItsDirectoryFromTheTop
+    file: modules/infrastructure/cluster/variables.tf
+    find: 'jsondecode(file("${path.module}/../../../management/tunnel-routes.json")).routes'
+    replace: 'jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes'
+    mentions: "reaches outside its directory"
     why: >
       The pull-request plan runs a copy of the root at the same depth, so a
       one-level path points nowhere and the plan refuses before its first step.
 
   - guard: TestEveryMachineIsToldTheClustersNetwork
-    file: management/cluster/talos.tf
+    file: modules/infrastructure/cluster/talos.tf
     find: "  config_patches = concat([local.cluster_network_patch], local.machine_patches[each.key])"
     replace: "  config_patches = local.machine_patches[each.key]"
     mentions: "is not given local.cluster_network_patch"
@@ -144,6 +144,106 @@ mutations:
     why:
       "A manifest written straight into an environment is the copy-paste the epoch exists to stop,
       arriving in manifests instead of code.
+
+      "
+  - guard: TestEveryOpenTofuRootIsSeenByWhatMustSeeARoot
+    file: .github/dependabot.yml
+    find: "    directory: /management/platform"
+    replace: "    directory: /management/platform-moved"
+    mentions: "has no entry in .github/dependabot.yml"
+    why:
+      "A root split out of another was validated nowhere, watched by nothing and tested by a test
+      of a different root, because each of those was a list written when there was one root.
+
+      "
+  - guard: TestTheDNSResolversAreDeclaredInOnePlace
+    file: modules/infrastructure/platform/variables.tf
+    find: "  object_storage = local.site.object_storage"
+    replace: "  object_storage = local.site.object_storage\n  dns_servers    = [\"9.9.9.9\"]"
+    mentions: "names the resolver"
+    why:
+      "The same restatement, in the root the guard could not see while it read three named files of
+      the other one.
+
+      "
+  - guard: TestEveryUnitIsExecutedByATestOrIsADeclaredDebt
+    file: modules/infrastructure/platform/tests/platform.tftest.hcl
+    find: "  expect_failures = [var.site]"
+    replace: "  expect_failures = []"
+    mentions: "tofu:modules/infrastructure/platform/variables.tf"
+    why:
+      "A validation counted as exercised when a test file held the word expect_failures and the
+      variable's name anywhere, in any root. Emptying the list still passed. The list is read now,
+      from the tests of the root the validation is in.
+
+      "
+  - guard: TestNoTestNamesTheRootItReads
+    file: tests/go/repo/pools_test.go
+    reads_source: true
+    find: "	_, compute := tofuDeclaring(t, declMachines)"
+    replace: '	compute := readRepoFile(t, "management/cluster/root.tf")'
+    mentions: "a path into the root management/cluster"
+    why:
+      "reads_source, because the guard parses the test files for what they name.
+
+      A guard that opens a root's file by its path checks that path. When the root was split,
+      guards written that way went on reading the root they named, and one found nothing left
+      there and kept passing. The files move again when the roots become modules.
+
+      "
+  - guard: TestNoTestNamesTheRootItReads
+    file: tests/go/repo/control_plane_metrics_test.go
+    reads_source: true
+    find: '	_, stack := fluxObject(t, kindHelmRelease, "kube-prometheus-stack")'
+    replace: '	stack := readRepoFile(t, "clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml")'
+    mentions: "a path into the Flux tree"
+    why: "reads_source, as the entry above.
+
+      The Flux tree is about to become a shared core and a directory per site. A guard that opens
+      a manifest by its path would break on that move, or read a directory that no longer holds
+      what it checks.
+
+      "
+  - guard: TestAResourceOutsideAModuleIsDeclared
+    file: management/cluster/root.tf
+    find: 'module "cluster" {'
+    replace: "resource \"terraform_data\" \"one_off\" {}\n\nmodule \"cluster\" {"
+    mentions: "is declared in a root rather than in a module"
+    why:
+      "A resource written into a root is built for one site and copied for the next. The roots were
+      carved into modules so that a second site is the same module called again.
+
+      "
+  - guard: TestEverySiteRootRunsItsModulesAtItsPin
+    file: management/cluster/root.tf
+    find: '  source = "../../.pinned/${var.tree}/modules/infrastructure/cluster"'
+    replace: '  source = "../../modules/infrastructure/cluster"'
+    mentions: "calls a module from"
+    why:
+      "A root that calls its modules by path runs whatever is on the commit being converged, on
+      every site at once. The pin is what lets a change reach one site first, and it only holds
+      if no root can reach its modules around it.
+
+      "
+  - guard: TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork
+    file: clusters/core/kustomization.yaml
+    find: "  - infra-configs.yaml\n"
+    replace: "  - infra-configs.yaml\n  - ../site0/workloads.yaml\n"
+    mentions: "names site0"
+    why:
+      "The core is what every site runs. One site's work listed in it is every site's work the day
+      a second site exists, which is what one shared directory was.
+
+      "
+  - guard: TestEveryJobOnTheEstatesRunnersNamesItsSite
+    file: .github/workflows/integration-tests.yml
+    find: "    runs-on: homelab-${{ matrix.site }}\n"
+    replace: "    runs-on: homelab-production\n"
+    mentions: "names the site it runs for with an expression"
+    why:
+      "The estate's runners are registered per site. A job that asks for a name no site registers
+      waits for a runner that never appears, and one that names a site by hand is right for that
+      site and wrong for the next.
 
       "
   - guard: TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas
@@ -208,8 +308,8 @@ mutations:
   - guard: TestNoPullRequestJobRunsOnTheEstatesRunner
     file: .github/workflows/plan-infrastructure.yml
     find: "    # A pull request's code never runs on the estate's runner.\n    runs-on: ubuntu-latest\n"
-    replace: "    # A pull request's code never runs on the estate's runner.\n    runs-on: homelab-management\n"
-    mentions: "runs pull-request code on homelab-management"
+    replace: "    # A pull request's code never runs on the estate's runner.\n    runs-on: homelab-site0\n"
+    mentions: "runs pull-request code on homelab-site0"
     why: >
       Moving the plan back onto the estate's runner reads as a speed-up - it
       already holds the providers. It hands every branch pushed to this
@@ -252,7 +352,7 @@ mutations:
       state until this guard was written.
 
   - guard: TestScrapingTheControlPlaneChangesBothHalvesTogether
-    file: management/cluster/talos.tf
+    file: modules/infrastructure/cluster/talos.tf
     find: 'listen-metrics-urls = "http://0.0.0.0:2381"'
     replace: 'listen-metrics-urls-disabled = "http://0.0.0.0:2381"'
     mentions: "does not contain"
@@ -263,7 +363,7 @@ mutations:
       cluster teaches everybody to stop reading red targets.
 
   - guard: TestEveryHelmReleaseRetriesRatherThanStalling
-    file: clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml
+    file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
     find: "  install:\n    crds: Create\n    strategy:\n      name: RetryOnFailure"
     replace: "  install:\n    crds: Create\n    strategy:\n      name: RemediateOnFailure"
     mentions: "not RetryOnFailure"
@@ -310,7 +410,7 @@ mutations:
       plane".
 
   - guard: TestAlertsLandWhereTheEstateDecided
-    file: clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml
+    file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
     find: 'alertname = "InfoInhibitor"'
     replace: 'alertname = "InfoInhibit0r"'
     mentions: "InfoInhibitor lands on"
@@ -320,7 +420,7 @@ mutations:
       is what #532 was. A typo in a matcher is the plausible way to lose it.
 
   - guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
-    file: management/cluster/tunnel.tf
+    file: modules/infrastructure/platform/tunnel.tf
     find: 'resource "kubernetes_namespace" "tunnel" {'
     replace: 'resource "cloudflare_zero_trust_tunnel_cloudflared" "tunnel" {'
     mentions: "which is the estate's"
@@ -366,7 +466,7 @@ mutations:
       that converged the estate.
 
   - guard: TestFluxSourcesOnlyNameSecretsThisRepositoryCreates
-    file: clusters/management/releases.yaml
+    file: clusters/site0/releases.yaml
     find: "  url: oci://"
     replace: "  secretRef:\n    name: flux-system\n  url: oci://"
     mentions: "nothing in this repository creates"
@@ -381,7 +481,7 @@ mutations:
       replaced it are held to the same rule.
 
   - guard: TestPoolMembershipDependsOnTheMachineItPlaces
-    file: management/cluster/pools.tf
+    file: modules/infrastructure/cluster/pools.tf
     find: "vm_id   = proxmox_virtual_environment_vm.talos_worker[each.key].vm_id"
     replace: "vm_id   = each.value.vm_id"
     mentions: "no dependency edge"
@@ -395,18 +495,18 @@ mutations:
       stops half-done, leaving state and secrets in place on purpose. It failed
       exactly this way twice in one session.
 
-  - guard: TestEveryKubernetesResourceWaitsForTheCluster
-    file: management/cluster/workloads.tf
-    find: "  depends_on = [data.talos_cluster_health.this]"
-    replace: "  # depends_on removed"
-    mentions: "does not depend on"
+  - guard: TestKubernetesIsOnlyInThePlatformRootAndThatRootComesLast
+    file: modules/infrastructure/cluster/outputs.tf
+    find: 'output "talosconfig" {'
+    replace: "resource \"kubernetes_namespace\" \"early\" {}\n\noutput \"talosconfig\" {"
+    mentions: "Everything that talks to the cluster's API belongs to the platform"
     why: >
-      OpenTofu starts everything it can in the first wave. A kubernetes_*
-      resource with no edge into the cluster's readiness is created while the
-      API server is still starting its static pods, so the provider gets
-      connection refused and the apply dies - which on an ignition tears the
-      whole estate back down. Two resources were unordered this way at once, and
-      neither had anything else wrong with it.
+      A kubernetes resource in the root that builds the machines is planned
+      before the API server is serving, so the apply dies with connection
+      refused and an ignition tears the estate back down; and on a teardown the
+      destroy waits on a dying cluster to delete it, and destroys nothing. Both
+      happened. The split into two roots is what stops them, and only for
+      resources that are in the right one.
 
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
     file: githooks/pre-commit
@@ -579,7 +679,7 @@ mutations:
       gone wrong.
 
   - guard: TestEveryProviderIsADeclaredSupplier
-    file: management/cluster/versions.tf
+    file: management/platform/versions.tf
     find: 'kubernetes = { source = "hashicorp/kubernetes"'
     replace: 'kubernetes = { source = "evilcorp/kubernetes"'
     mentions: "is not an approved supplier"
@@ -592,7 +692,7 @@ mutations:
       typosquat.
 
   - guard: TestRunnerPodsCannotScheduleOntoAControlPlane
-    file: clusters/management/infrastructure/configs/runner-scale-set.yaml
+    file: clusters/core/infrastructure/configs/runner-scale-set.yaml
     # Anchored on the priority class above it, because this file now carries
     # the same anti-control-plane rule twice - once for the runner and once for
     # the listener - and "operator: DoesNotExist" alone no longer names one spot.
@@ -612,7 +712,7 @@ mutations:
       flipped.
 
   - guard: TestEveryMachineClassIsAssignedAPool
-    file: management/cluster/pools.tf
+    file: modules/infrastructure/cluster/pools.tf
     find: "  for_each = local.workers"
     replace: "  for_each = local.control_plane"
     mentions: "never placed in a pool"
@@ -625,7 +725,7 @@ mutations:
       missing, but no line in pool_members iterates local.workers any more.
 
   - guard: TestPoolIdsAreScopedToTheSite
-    file: management/cluster/pools.tf
+    file: modules/infrastructure/cluster/pools.tf
     find: 'pool_id = "${local.site_name}-workers"'
     replace: 'pool_id = "workers"'
     mentions: "does not include the site"
@@ -637,7 +737,7 @@ mutations:
       expressible rather than theoretical, and it is silent.
 
   - guard: TestPoolMembershipNamesTheFunctionInTheResourceName
-    file: management/cluster/pools.tf
+    file: modules/infrastructure/cluster/pools.tf
     find: 'resource "proxmox_pool_membership" "workers"'
     replace: 'resource "proxmox_pool_membership" "by_function"'
     mentions: "named for the grouping rather than for a function"
@@ -777,7 +877,7 @@ mutations:
       when Flux reconciles the release.
 
   - guard: TestEveryReleaseIsPinnedByDigest
-    file: clusters/management/releases.yaml
+    file: clusters/site0/releases.yaml
     find: '    digest: "sha256:'
     replace: '    # digest: "sha256:'
     mentions: "is not pinned by digest"
@@ -850,7 +950,7 @@ mutations:
       Without restartPolicy: Always the backup is an ordinary init container: it would block the server forever on its loop, and never back anything up beside it.
 
   - guard: TestRunnerPodsAreNotBestEffort
-    file: clusters/management/infrastructure/configs/runner-scale-set.yaml
+    file: clusters/core/infrastructure/configs/runner-scale-set.yaml
     find: "memory: 2Gi"
     replace: "ephemeral-storage: 1Gi"
     mentions: "requests no memory"
@@ -879,7 +979,7 @@ mutations:
       and reasonably assuming that is the whole job.
 
   - guard: TestEveryWorkloadIsSizedPlacedAndGivenAPriority
-    file: clusters/management/infrastructure/controllers/openebs.yaml
+    file: clusters/core/infrastructure/controllers/openebs.yaml
     find: "      localpv:"
     replace: "      localpvv:"
     mentions: "the cluster has been running without it"
@@ -894,7 +994,7 @@ mutations:
       configured-looking, and nothing else in this repository would notice.
 
   - guard: TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem
-    file: clusters/management/infrastructure/controllers/actions-runner-controller.yaml
+    file: clusters/core/infrastructure/controllers/actions-runner-controller.yaml
     find: "      runAsNonRoot: true"
     replace: "      runAsNonRoot: false"
     mentions: "runAsNonRoot"
@@ -905,7 +1005,7 @@ mutations:
       take away with no diff here, no event, and a pod that keeps starting.
 
   - guard: TestTheRenderedTalosconfigNamesNodesAndEveryEndpoint
-    file: management/cluster/talos.tf
+    file: modules/infrastructure/cluster/talos.tf
     find: "  nodes                = local.node_ips"
     replace: "  nodes                = []"
     mentions: "nodes"
@@ -917,7 +1017,7 @@ mutations:
       branch that removed it, which is cheaper by a whole diagnostic.
 
   - guard: TestEveryHelmReleaseSaysWhereItsPodSpecLives
-    file: clusters/management/infrastructure/controllers/undescribed-chart.yaml
+    file: clusters/core/infrastructure/controllers/undescribed-chart.yaml
     create: |
       ---
       apiVersion: helm.toolkit.fluxcd.io/v2
@@ -942,7 +1042,7 @@ mutations:
       tree to edit into that state.
 
   - guard: TestEveryFluxControllerIsPlacedAndGivenAPriority
-    file: clusters/management/flux-system/kustomization.yaml
+    file: clusters/core/flux-system/kustomization.yaml
     find: "  - target:\n      kind: Deployment\n    patch: |"
     replace: "  - target:\n      kind: Deployment\n      name: source-controller\n    patch: |"
     mentions: "has no required node affinity after the overlay is applied"
@@ -1111,7 +1211,7 @@ mutations:
       image approved and digest-pinned.
 
   - guard: TestTheHealthGateWaitsForTheCNI
-    file: management/cluster/talos.tf
+    file: modules/infrastructure/cluster/talos.tf
     find: "    terraform_data.cilium,"
     replace: "    talos_cluster_kubeconfig.this,"
     mentions: "does not depend on"
@@ -1125,7 +1225,7 @@ mutations:
       was actually wrong.
 
   - guard: TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy
-    file: management/cluster/talos.tf
+    file: modules/infrastructure/cluster/talos.tf
     find: '          name = "none"'
     replace: '          name = "flannel"'
     mentions: "cluster.network.cni.name"
@@ -1138,7 +1238,7 @@ mutations:
       up healthy and the isolation simply is not there.
 
   - guard: TestKubePrismIsDeclaredRatherThanAssumed
-    file: management/cluster/talos.tf
+    file: modules/infrastructure/cluster/talos.tf
     find: "              port    = 7445\n            }\n          }\n        }\n      }),\n\n      # The taint,"
     replace: "              port    = 7446\n            }\n          }\n        }\n      }),\n\n      # The taint,"
     mentions: "7445"
@@ -1182,7 +1282,7 @@ mutations:
       broken machine rather than a missing line in a chart's values.
 
   - guard: TestEveryZoneResourceIsKeyedOffItsMachines
-    file: management/cluster/compute.tf
+    file: modules/infrastructure/cluster/compute.tf
     find: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.dmz_hypervisors)"
     replace: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.all_vm_hypervisors)"
     mentions: "keyed off"
@@ -1213,7 +1313,7 @@ mutations:
       the property it stood for.
 
   - guard: TestZoneNamesUseAPlaceholder
-    file: management/cluster/tests/fixtures/negative-zone-node-count.json
+    file: modules/infrastructure/cluster/tests/fixtures/negative-zone-node-count.json
     find: '"example": {'
     replace: '"valheim": {'
     mentions: "names an untrusted zone"
@@ -1762,7 +1862,7 @@ mutations:
       rather than on anything in the change.
 
   - guard: TestThePodAndServiceNetworksAreDeclared
-    file: management/cluster/talos.tf
+    file: modules/infrastructure/cluster/talos.tf
     find: "        podSubnets     = [local.pod_cidr]"
     replace: "        # podSubnets removed"
     mentions: "declares no podSubnets"
@@ -1799,7 +1899,7 @@ mutations:
       comes up, so the switch is one word with no other signal.
 
   - guard: TestTheDNSResolversAreDeclaredInOnePlace
-    file: management/cluster/variables.tf
+    file: modules/infrastructure/cluster/variables.tf
     find: '  dns_resolvers = ["1.1.1.1", "1.0.0.1"]'
     replace: "  dns_resolvers        = [\"1.1.1.1\", \"1.0.0.1\"]\n  fallback_dns_servers = [\"9.9.9.9\"]"
     mentions: "names the resolver"
@@ -1913,7 +2013,7 @@ mutations:
       its job gates on directories that did not exist yet.
 
   - guard: TestATalosImagePathCarriesItsSchematic
-    file: management/cluster/compute.tf
+    file: modules/infrastructure/cluster/compute.tf
     find: '  file_name               = "talos-${local.talos_version}-${substr(local.schematic_id, 0, 8)}.iso"'
     replace: '  file_name               = "talos-${local.talos_version}.iso"'
     mentions: "does not carry its schematic id"
@@ -1929,7 +2029,7 @@ mutations:
       rather than an error.
 
   - guard: TestEveryFluxControllerIsPinnedHere
-    file: clusters/management/flux-system/kustomization.yaml
+    file: clusters/core/flux-system/kustomization.yaml
     find: "  - name: ghcr.io/fluxcd/source-controller"
     replace: "  - name: ghcr.io/fluxcd/source-controller-was-here"
     mentions: "does not pin it"
@@ -2317,7 +2417,7 @@ mutations:
       on: push
       jobs:
         planted:
-          runs-on: homelab-management
+          runs-on: homelab-site0
           timeout-minutes: 1
           steps:
             - uses: $/.github/workflows/mobilize
@@ -2339,7 +2439,7 @@ mutations:
       on: push
       jobs:
         planted:
-          runs-on: homelab-management
+          runs-on: homelab-site0
           timeout-minutes: 1
           steps:
             - uses: $/.github/workflows/mobilize
@@ -2451,8 +2551,8 @@ mutations:
   - guard: TestBackupAndRestoreReachTheStateBackupsThroughOneResolver
     file: scripts/contractor/internal/phases/restore.go
     reads_source: true
-    find: "	backups, err := config.StateBackupLocation(cfg, ctx.Site)"
-    replace: "	backups, err := resolveStateBackupsHere(cfg, ctx.Site)"
+    find: "		backups, err := config.StateBackupLocation(cfg, ctx.Site, root.Name)"
+    replace: "		backups, err := resolveStateBackupsHere(cfg, ctx.Site, root.Name)"
     mentions: "does not call config.StateBackupLocation"
     why: >
       reads_source, because the guard parses restore.go for its calls rather
@@ -2479,18 +2579,18 @@ mutations:
     file: tests/go/harness/scrape.go
     reads_source: true
     find: "	sort.Strings(failures)"
-    replace: "	_ = \"management-cluster\"\n\tsort.Strings(failures)"
+    replace: "	_ = \"latest.tfstate.age\"\n\tsort.Strings(failures)"
     mentions: "new instance(s) of a string restated"
     why: >
       reads_source, for the same reason as the two entries above.
 
-      The state-backup folder name, restated in the test module after it was
-      given one home in homelab/contractor/config. That is precisely the
-      regression this guard exists for: the integration tier spelled this
-      folder out for itself, and when the backups moved it went on looking in
-      the old place.
+      The state backup's pointer object, restated in the test module when it
+      has one home in homelab/contractor/config. That is precisely the
+      regression this guard exists for: the integration tier spelled the
+      backup's location out for itself, and when the backups moved it went on
+      looking in the old place.
 
-owed_ceiling: 53
+owed_ceiling: 52
 
 unprovable:
   # --- cannot be proved by mutation ----------------------------------------
@@ -2574,7 +2674,7 @@ unprovable:
   # fact down and the forms that read it from the declaration.
   - test: TestHypervisorFactsInCatchesEachWayToWriteOne
     reason: table
-  # The reader behind TestARootReachesOutsideItselfFromTheTop, which its own
+  # The reader behind TestAFileReachesOutsideItsDirectoryFromTheTop, which its own
   # ledger entry proves.
   - test: TestClimbsWrongFindsEveryOtherWayUp
     reason: table
@@ -2583,6 +2683,24 @@ unprovable:
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
   - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
+    reason: table
+  - test: TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn
+    reason: table
+  - test: TestUnpinnedModulesRefusesEveryWayAroundThePin
+    reason: table
+  - test: TestResourcesInRootsFindsOnlyWhatARootItselfDeclares
+    reason: table
+  - test: TestAssertingDeclarationsAndExpectedFailuresAreReadNotMatched
+    reason: table
+  - test: TestRootsNamedRefusesEachWayOfNamingARoot
+    reason: table
+  - test: TestRootSightingsNamesEachThingThatCannotSeeARoot
+    reason: table
+  - test: TestSiteRootProblemsHoldsTheRootsToTheContractors
+    reason: table
+  - test: TestKubernetesOutsideThePlatformIsRefused
+    reason: table
+  - test: TestStepOrderProblemsRefusesThePlatformBeforeTheClusterIsReady
     reason: table
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.
@@ -2703,8 +2821,6 @@ unprovable:
   - test: TestRunnerImageCarriesEveryBinaryTheContractorInvokes
     owed: true
   - test: TestRunnerManifestsAgreeWithOpenTofu
-    owed: true
-  - test: TestRunnerScaleSetNameMatchesRunsOn
     owed: true
   - test: TestRunnerScaleSetPinsItsImageByDigest
     owed: true

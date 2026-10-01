@@ -119,6 +119,6 @@ tailnet by construction, so `-` is always correct here. Naming the tailnet
 explicitly only matters for a personal API key with access to several, which
 this project does not use.
 
-Ignition takes it from there. `management/cluster/overlay-network.tf` mints a
+Ignition takes it from there. `modules/infrastructure/cluster/overlay-network.tf` mints a
 tagged key per run; the playbook logs the hypervisor in with it; the policy
 above approves the advertised route automatically.

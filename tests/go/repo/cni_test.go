@@ -20,12 +20,28 @@ import (
 // bootstrap and the health gate".
 
 const (
-	talosFile  = "management/cluster/talos.tf"
 	cniApply   = "terraform_data.cilium"
-	cniMani    = "clusters/bootstrap/cilium.yaml"
-	cniValues  = "clusters/bootstrap/cilium-values.yaml"
 	cniVersion = "CILIUM_VERSION"
 )
+
+// The rendered CNI manifest, found by the agent it declares, and the values it
+// was rendered from, which sit beside it.
+func cniPath(t *testing.T) string {
+	t.Helper()
+	path, _ := fluxObject(t, cniKind, cniName)
+	return path
+}
+
+func cniBody(t *testing.T) string {
+	t.Helper()
+	_, body := fluxObject(t, cniKind, cniName)
+	return body
+}
+
+func cniValuesPath(t *testing.T) string {
+	t.Helper()
+	return beside(cniPath(t), "cilium-values.yaml")
+}
 
 // hclBlock returns the text of the top-level block whose header line starts
 // with prefix, from that line to the closing brace in column zero.
@@ -64,7 +80,8 @@ func hclBlock(t *testing.T, body, prefix string) string {
 // CNI, nodes go Ready, gate passes. It is one line, and deleting it is the kind
 // of tidy-up that looks harmless in a diff.
 func TestTheHealthGateWaitsForTheCNI(t *testing.T) {
-	block := hclBlock(t, readRepoFile(t, talosFile), `data "talos_cluster_health"`)
+	talosFile, talos := tofuDeclaring(t, declClusterHealth)
+	block := hclBlock(t, talos, declClusterHealth)
 
 	if !strings.Contains(block, cniApply) {
 		t.Errorf("%s: the health gate does not depend on %s.\n\n"+
@@ -83,7 +100,7 @@ func TestTheHealthGateWaitsForTheCNI(t *testing.T) {
 // fighting over pod networking, or kube-proxy and Cilium both programming
 // service routing - and the second is the quieter of the two failures.
 func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {
-	body := readRepoFile(t, talosFile)
+	talosFile, body := tofuDeclaring(t, declMachineConfig)
 
 	// yamlencode renders these as nested YAML keys, so assert on the HCL that
 	// produces them rather than on rendered output nobody can see from here.
@@ -116,7 +133,7 @@ func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {
 // the pod network fails and nothing in this repository ever said it was
 // required.
 func TestKubePrismIsDeclaredRatherThanAssumed(t *testing.T) {
-	body := readRepoFile(t, talosFile)
+	talosFile, body := tofuDeclaring(t, declMachineConfig)
 
 	// Every collection of machine patches, so a machine class added later
 	// cannot quietly skip it. This used to assert that the file mentioned
@@ -145,7 +162,7 @@ func TestKubePrismIsDeclaredRatherThanAssumed(t *testing.T) {
 		if !strings.Contains(block, "7445") {
 			t.Errorf("%s: %s declares KubePrism without naming port 7445.\n\n"+
 				"The Cilium values in %s point k8sServicePort at 7445. If the port moves, "+
-				"every half has to move with it.", talosFile, name[1], cniValues)
+				"every half has to move with it.", talosFile, name[1], cniValuesPath(t))
 		}
 	}
 }
@@ -175,11 +192,11 @@ func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
 	}
 	want := strings.TrimSpace(pin[1])
 
-	manifest := readRepoFile(t, cniMani)
+	manifest := cniBody(t)
 
 	if !strings.Contains(manifest, "cilium "+want) {
 		t.Errorf("%s: its provenance header does not name chart version %s.\n\n"+
-			"Re-render it with `task render-cni`.", cniMani, want)
+			"Re-render it with `task render-cni`.", cniPath(t), want)
 	}
 
 	// cilium-envoy carries its own upstream version and is deliberately not
@@ -192,12 +209,12 @@ func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
 			t.Errorf("%s: image %s is tagged v%s, but %s pins %s.\n\n"+
 				"The manifest was rendered from a different chart than the one this "+
 				"repository claims to run. Re-render it with `task render-cni`.",
-				cniMani, m[1], m[2], cniVersion, want)
+				cniPath(t), m[1], m[2], cniVersion, want)
 		}
 	}
 	if found == 0 {
 		t.Fatalf("%s contains no quay.io/cilium image references, so this test proves nothing.\n\n"+
-			"Either the manifest is empty or the images moved registry.", cniMani)
+			"Either the manifest is empty or the images moved registry.", cniPath(t))
 	}
 }
 
@@ -222,7 +239,7 @@ func TestTheRenderedCNIManifestMatchesThePinnedChartVersion(t *testing.T) {
 func TestTheCNIReachesEveryNodeIncludingTaintedOnes(t *testing.T) {
 	var checked int
 
-	for _, doc := range strings.Split(readRepoFile(t, cniMani), "\n---\n") {
+	for _, doc := range strings.Split(cniBody(t), "\n---\n") {
 		var d struct {
 			Kind     string `yaml:"kind"`
 			Metadata struct {
@@ -262,13 +279,13 @@ func TestTheCNIReachesEveryNodeIncludingTaintedOnes(t *testing.T) {
 				"A tainted node would get no agent, and a node with no CNI never "+
 				"reaches Ready - so it would never join the cluster. The untrusted "+
 				"zone in docs/epochs/03-workload.md is a NoSchedule-tainted worker, "+
-				"so this is the line that lets it exist at all.", cniMani)
+				"so this is the line that lets it exist at all.", cniPath(t))
 		}
 	}
 
 	if checked == 0 {
 		t.Fatalf("%s contains no DaemonSet named cilium, so this test proves nothing.\n\n"+
-			"Either the manifest is empty or the agent was renamed.", cniMani)
+			"Either the manifest is empty or the agent was renamed.", cniPath(t))
 	}
 }
 
@@ -295,7 +312,7 @@ var (
 )
 
 func TestThePodMTUIsPinnedRatherThanDetected(t *testing.T) {
-	values := readRepoFile(t, "clusters/bootstrap/cilium-values.yaml")
+	values := readRepoFile(t, cniValuesPath(t))
 	m := pinnedMTUValue.FindStringSubmatch(values)
 	if m == nil {
 		t.Fatal(`clusters/bootstrap/cilium-values.yaml pins no MTU.
@@ -321,7 +338,7 @@ Pin MTU to the MTU of the interface pods actually leave by, and re-render.`)
 			"HTTP/2 and carry no UDP (#455).", pinned)
 	}
 
-	rendered := readRepoFile(t, "clusters/bootstrap/cilium.yaml")
+	rendered := cniBody(t)
 	r := renderedMTUConfig.FindStringSubmatch(rendered)
 	if r == nil {
 		t.Fatal("clusters/bootstrap/cilium.yaml carries no mtu in its config, so the pinned value " +

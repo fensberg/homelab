@@ -2,6 +2,7 @@ package repo
 
 import (
 	"fmt"
+	"homelab/details/repopath"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -233,7 +234,8 @@ func TestNoPullRequestJobRunsOnTheEstatesRunner(t *testing.T) {
 // --- the rules themselves ---------------------------------------------------
 
 func TestAuditWorkflowCatchesTheWaysInAndIgnoresTheOthers(t *testing.T) {
-	pool := scaleSetName()
+	// One site's pool, by the name its runners register under.
+	pool := strings.Replace(scaleSetName(), "${SITE}", "alpha", 1)
 	cases := []struct {
 		name     string
 		yaml     string
@@ -361,20 +363,23 @@ func TestReachableFromPullRequest(t *testing.T) {
 // nothing uses, so every job would have looked hermetic and the guard would
 // have protected nothing while still passing.
 func scaleSetName() string {
-	root, err := os.Getwd()
+	// Found by the release it declares, wherever the manifest is. No name is
+	// an answer the callers refuse: a guard that could not read the name
+	// would otherwise compare every job against nothing and pass.
+	path, err := fluxObjectPath(kindHelmRelease, runnerScaleSet)
 	if err != nil {
 		return ""
 	}
-	for i := 0; i < 5; i++ {
-		p := filepath.Join(root, "clusters", "management", "infrastructure", "configs", "runner-scale-set.yaml")
-		if body, err := os.ReadFile(p); err == nil {
-			m := scaleSetNamePattern.FindStringSubmatch(string(body))
-			if m != nil {
-				return m[1]
-			}
-			return ""
-		}
-		root = filepath.Dir(root)
+	root, err := repopath.Root()
+	if err != nil {
+		return ""
+	}
+	body, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		return ""
+	}
+	if m := scaleSetNamePattern.FindStringSubmatch(string(body)); m != nil {
+		return m[1]
 	}
 	return ""
 }

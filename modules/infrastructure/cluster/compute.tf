@@ -1,0 +1,591 @@
+# =============================================================================
+# Compute: the Talos control-plane virtual machines.
+# Vendor: Proxmox VE (bpg/proxmox provider).
+# =============================================================================
+
+# One copy per hypervisor that will host a VM. A Proxmox node can only import a
+# disk image into its own datastore, so this scales with the node list rather
+# than assuming a single box.
+#
+# A pre-installed disk image, not an installer ISO. The ISO-then-install
+# approach - boot from ISO into maintenance mode, apply a config that
+# includes machine.install, let that apply trigger the install - is what
+# every earlier version of this file used, and Talos's own install process
+# reliably corrupted the node's network config the moment it ran (see the
+# epoch record's "Blocked" section for the full diagnosis). A disk image
+# sidesteps the failure mode entirely: Talos is already installed the moment
+# the VM boots, so there is no install-time transition left to corrupt
+# anything. talos.tf's config_patches carry no `machine.install` section any
+# more - there is nothing left for it to do.
+#
+# Image Factory serves this compressed (`.raw.xz`); the provider's own docs
+# are explicit that compressed images cannot use `import_from` - they need
+# `file_id` with `content_type = "iso"`, and Proxmox's zstd decompressor
+# transparently handles the xz stream despite the mismatched name.
+# Orphan adoption (if this file already exists outside Terraform - a prior
+# run's incomplete teardown) happens in Go, in compute.go, before this gets
+# applied - not with a static `import` block here. import blocks always
+# attempt the read and hard-fail if the target genuinely does not exist
+# ("failed reading ..."), which is the normal, common case for this
+# resource; there is no declarative way to make the attempt conditional on
+# the object actually being there first. Confirmed the hard way: an import
+# block here broke a completely ordinary fresh-create run the same day it
+# was added.
+resource "proxmox_download_file" "talos_disk_image" {
+  for_each = toset(local.all_vm_hypervisors)
+
+  content_type = "iso"
+  datastore_id = local.datastores[each.value].images
+  node_name    = local.hostnames[each.value]
+  url          = "https://factory.talos.dev/image/${local.schematic_id}/${local.talos_version}/${local.image_variant}.raw.xz"
+  # Extension is .iso, not .img, on purpose: the image datastore's content=iso bucket
+  # validates the destination file_name against that content type before
+  # Proxmox even fetches the URL, independent of the actual bytes. This is
+  # the same disk image either way - the extension just has to lie to get
+  # stored where compressed non-ISO images are allowed to live.
+  # The SCHEMATIC is in the name, not just the version.
+  #
+  # This resource is identified by its datastore path, and the path was
+  # `talos-<version>.iso`. So re-minting a schematic - which is how an extension
+  # is added, removed or moved - produced NO PLAN DIFF at all: same name, same
+  # resource, nothing to do. The new image was never fetched, and the
+  # replace_triggered_by on the template below could not fire, because the thing
+  # it triggers on had not changed (#97). Confirmed by a real plan against a
+  # live estate that showed only a tailnet key being replaced.
+  #
+  # A prefix of the id rather than the whole thing: the ids are
+  # content-addressed and 64 characters, and the datastore path is read by a
+  # human at a `qm` prompt more often than by anything else. Eight hex
+  # characters distinguish every schematic this estate will ever mint.
+  file_name               = "talos-${local.talos_version}-${substr(local.schematic_id, 0, 8)}.iso"
+  decompression_algorithm = "zst"
+
+  # Without this, the provider compares the URL's advertised size (the
+  # compressed .raw.xz, ~200MB) against the size actually stored in the
+  # datastore (the decompressed raw disk, ~4.5GB), sees a mismatch every
+  # single plan, and forces a destroy-and-reimport - even on a plan that
+  # otherwise has nothing to do with this resource. size is provider-computed
+  # with nothing configured to compare against, so lifecycle.ignore_changes
+  # cannot suppress this; overwrite=false is the mechanism the provider's own
+  # plan output names for exactly this case.
+  overwrite = false
+}
+
+# The same Talos release without the overlay extension, for the untrusted zone.
+#
+# A separate resource rather than a second entry in the one above, because the
+# two are pulled for different reasons and onto different sets of hypervisors:
+# every hypervisor hosting a cluster node needs the first, and only a
+# hypervisor hosting an untrusted machine needs this.
+#
+# THE TWO IMAGES ARE NAMED APART AT THE FRONT, NOT THE BACK.
+#
+# The resource above records that the schematic is deliberately absent from the
+# file name, and that this once left a template running old bytes because the
+# datastore path never changed. With one schematic that was a subtlety. With two
+# at the same Talos version it would be a collision: both would want
+# <images>:iso/talos-<version>.iso, and whichever downloaded second would
+# either fail or quietly overwrite the other - putting the overlay-carrying
+# image under the machine whose entire purpose is not to have it, with nothing
+# anywhere reporting the swap.
+#
+# Distinguishing them by prefix rather than by a qualifier on the end is what
+# lets the orphan check in scripts/contractor/internal/phases/compute.go say
+# which image a stored volume is by reading its first characters, instead of
+# testing suffixes that overlap. Two names, two prefixes, no ambiguity.
+resource "proxmox_download_file" "dmz_disk_image" {
+  for_each = toset(local.dmz_hypervisors)
+
+  content_type = "iso"
+  datastore_id = local.datastores[each.value].images
+  node_name    = local.hostnames[each.value]
+  url          = "https://factory.talos.dev/image/${local.dmz_schematic_id}/${local.talos_version}/${local.image_variant}.raw.xz"
+
+  # Same reason as the image above: without the schematic in the path, a
+  # re-minted schematic is not a change and the untrusted zone's nodes keep the
+  # old bytes (#97).
+  file_name               = "dmz-${local.talos_version}-${substr(local.dmz_schematic_id, 0, 8)}.iso"
+  decompression_algorithm = "zst"
+
+  # Same reason as the image above: the provider compares the compressed
+  # advertised size against the decompressed stored size and forces a
+  # destroy-and-reimport on every plan without this.
+  overwrite = false
+}
+
+# The untrusted zone's own template, and it has to be its own.
+#
+# A template is built from one image, and the whole point of this zone is that
+# its machines run an image without the overlay extension. Cloning the template
+# above would put the overlay-carrying image under the machine whose entire
+# purpose is not to have it - the same swap the two file names exist to prevent,
+# arriving through the clone instead of through the download.
+#
+# Built only on hypervisors that host an untrusted machine, so an estate with no
+# untrusted workload has neither the image nor a template for it.
+resource "proxmox_virtual_environment_vm" "dmz_template" {
+  for_each = toset(local.dmz_hypervisors)
+
+  name      = "${local.site_name}-dmz-template"
+  node_name = local.hostnames[each.value]
+  # The top of the 300 band, above every zone machine that band can hold, the
+  # way 199 sits above the control planes.
+  vm_id = local.net.dmz_template_vm_id
+
+  template = true
+  started  = false
+
+  boot_order = ["virtio0"]
+
+  cpu {
+    cores = 2
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 2048
+  }
+
+  network_device {
+    bridge = local.net.vnet
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = local.datastores[each.value].disks
+    file_format  = "raw"
+    interface    = "virtio0"
+    file_id      = proxmox_download_file.dmz_disk_image[each.key].id
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  stop_on_destroy = true
+
+  smbios {
+    serial       = "${local.site_name}-dmz-template"
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
+  }
+
+  lifecycle {
+    # Same reason as the template above: file_id is a stable string, so
+    # replacing the image behind it changes no attribute here and would leave
+    # this template on the old bytes.
+    replace_triggered_by = [proxmox_download_file.dmz_disk_image[each.key]]
+  }
+}
+
+# One template VM per hypervisor, built once from the downloaded disk image.
+# This is the only place file_id-based disk creation happens - it requires
+# Terraform to SSH into the node and run pvesm/qm commands directly (see
+# versions.tf's ssh block), which bpg/proxmox's own docs frame as an
+# edge-case operation, not the default path. An earlier version of this file
+# ran that same SSH-based import for every control-plane node on every
+# deploy, which turned out to be genuinely unreliable in this environment
+# (a pmxcfs "ipcc_send_rec" IPC error, reproduced even with a single,
+# fully-isolated import - not a concurrency problem, the mechanism itself).
+# Importing once into a template and cloning for every real node is the
+# standard pattern every other Talos-on-Proxmox Terraform example uses:
+# cloning is a native, API-only Proxmox operation with no SSH involved at
+# all, and the provider documents built-in retries for concurrent clones -
+# a resilience feature the file_id path simply has none of.
+resource "proxmox_virtual_environment_vm" "talos_template" {
+  for_each = toset(local.all_vm_hypervisors)
+
+  name      = "${local.site_name}-talos-template"
+  node_name = local.hostnames[each.value]
+  # One offset per octet band, above every real control-plane ID that band
+  # can ever hold: vm_ids end at octet*1000 + 100 + N-1, and N is well
+  # under 99, so the top of the band is free.
+  vm_id = local.net.template_vm_id
+
+  template = true
+  started  = false
+
+  boot_order = ["virtio0"]
+
+  cpu {
+    cores = 4
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 4096
+  }
+
+  network_device {
+    bridge = local.net.vnet
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = local.datastores[each.value].disks
+    file_format  = "raw"
+    interface    = "virtio0"
+    file_id      = proxmox_download_file.talos_disk_image[each.value].id
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  # Stop, do not ask.
+  #
+  # The provider's default is a graceful ACPI shutdown with
+  # timeout_shutdown_vm at 1800 seconds, and its own documentation says that
+  # when the QEMU agent is disabled "the VM may not be able to shutdown
+  # properly, and may need to be forced off", recommending this setting. The
+  # agent is disabled here deliberately - Talos will not report ready without
+  # the extension in the Factory schematic - so this estate is precisely the
+  # configuration that recommendation is written for.
+  #
+  # Found by a real teardown: five VMs sat in "still destroying" while the
+  # provider waited politely for machines that were never going to answer.
+  # Thirty minutes each is the documented worst case.
+  #
+  # The verb decides the manners. A converge is surgical and would want a
+  # clean shutdown; a demolish is demolition, and the machines it is stopping
+  # are ones it is about to delete. There is nothing on them to lose - that is
+  # what makes the whole operation acceptable in the first place.
+  stop_on_destroy = true
+
+  smbios {
+    serial       = "${local.site_name}-talos-template"
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
+  }
+
+  lifecycle {
+    # file_id is a stable string ("<images>:iso/talos-<version>-<schematic>.iso")
+    # and this template's OS disk is materialized from it once, so replacing the
+    # image behind that path changes no attribute here.
+    #
+    # The schematic is in the path now (#97). It was not, so the path did not
+    # change when the image bytes did - which meant the download resource itself
+    # never changed and this trigger had nothing to fire on. Both halves are
+    # needed: the identity so the image is re-fetched, and this so the template
+    # is rebuilt from it. Without this, replacing the disk image resource silently
+    # leaves this template's already-materialized OS disk on the old bytes:
+    # confirmed by a real apply that changed the schematic and still showed
+    # "0 to change" here. replace_triggered_by forces the rebuild on any
+    # change to the upstream resource, independent of whether file_id's own
+    # value looks different. [each.key], not [each.value]: OpenTofu only
+    # permits each.key in this specific expression (confirmed by a real
+    # validate error - each.value, identical in value for this set-keyed
+    # for_each, is still rejected syntactically) - and not the bare
+    # resource name either, which would tie every template to every
+    # hypervisor's image instead of just its own.
+    replace_triggered_by = [proxmox_download_file.talos_disk_image[each.key]]
+  }
+}
+
+resource "proxmox_virtual_environment_vm" "talos_cp" {
+  # Keyed by host octet, so a node's identity is the machine rather than its
+  # position - see the control_plane local in variables.tf.
+  for_each  = local.control_plane
+  name      = each.value.name
+  node_name = local.hostnames[each.value.hypervisor]
+  vm_id     = each.value.vm_id
+
+  boot_order = ["virtio0"]
+
+  clone {
+    vm_id = proxmox_virtual_environment_vm.talos_template[each.value.hypervisor].vm_id
+    full  = true
+  }
+
+  cpu {
+    cores = 4
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 4096
+  }
+
+  network_device {
+    bridge = local.net.vnet
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = local.datastores[each.value.hypervisor].disks
+    file_format  = "raw"
+    interface    = "virtio0"
+    # Grown from the image's native size to the size a real control-plane
+    # node needs. Talos grows its state/ephemeral partitions to fill
+    # whatever the disk actually offers, so this alone is enough. Every
+    # other non-default attribute (datastore_id, file_format) has to be
+    # re-specified here too, or the schema defaults silently override the
+    # cloned source's values - bpg/proxmox's own documented behavior for
+    # modifying a disk inherited from a clone.
+    size = 64
+  }
+
+  # The storage provisioner's data path, kept off the OS disk on purpose:
+  # Talos grows disk 0 to fill with its own state and ephemeral partitions,
+  # so a provisioner sharing it has no predictable capacity. talos.tf mounts
+  # this one at /var/mnt/storage, which is where OpenEBS hands out volumes.
+  disk {
+    datastore_id = local.datastores[each.value.hypervisor].disks
+    file_format  = "raw"
+    interface    = "virtio1"
+    size         = 32
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  smbios {
+    serial       = each.value.name
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
+  }
+
+  initialization {
+    datastore_id = local.datastores[each.value.hypervisor].disks
+
+    dns {
+      servers = local.dns_resolvers
+    }
+
+    ip_config {
+      ipv4 {
+        address = "${each.value.ip}/24"
+        gateway = local.node_gateway
+      }
+    }
+  }
+}
+
+# The worker pool.
+#
+# Deliberately a near-copy of talos_cp rather than a shared module: the two
+# differ in memory, in which machine configuration they receive, and in whether
+# they hold quorum, and the epoch that turns these into modules is the one this
+# is being written for. Sharing them now would mean parameterising a resource
+# that is about to move wholesale.
+#
+# Sized from a measurement rather than a guess. The three control planes use
+# about 1.2 GiB of 3.8 GiB each and the largest memory request the scheduler
+# could accept anywhere was ~1.9 GiB, which is what killed an integration run
+# (#236). 8 GiB leaves roughly 7.2 GiB allocatable after Talos's overhead - the
+# number that actually broke, improved about fourfold. See
+# docs/epochs/02-abstraction.md.
+#
+# Uniform on purpose. A pool whose members differ is a pool that cannot be
+# drained onto itself: the moment one worker is larger than the others, some
+# workload only fits there and the drain that epoch 05 exists to make ordinary
+# has nowhere to put it. Sameness costs a little memory and buys fungibility,
+# which is the property that makes a pool a pool.
+#
+# Two, not three. The count was briefly three because the state database is
+# three CloudNativePG instances on node-pinned volumes and wanted one per
+# machine - and then the database stayed on the control planes, which removed
+# that reason without removing the third worker. Recorded because the second
+# reason survives and is worth stating on its own: two is the floor for
+# tainting the control planes later, since everything that reconciles the
+# estate has to land somewhere when a worker is lost.
+#
+# What a third would be for: a database that does move, or a maxRunners high
+# enough that two workers cannot hold the concurrent heavy jobs. Neither is
+# true, and the 8 GiB it would take is better left in the budget for the
+# untrusted node epoch 03 needs.
+resource "proxmox_virtual_environment_vm" "talos_worker" {
+  for_each  = local.workers
+  name      = each.value.name
+  node_name = local.hostnames[each.value.hypervisor]
+  vm_id     = each.value.vm_id
+
+  boot_order = ["virtio0"]
+
+  clone {
+    vm_id = proxmox_virtual_environment_vm.talos_template[each.value.hypervisor].vm_id
+    full  = true
+  }
+
+  cpu {
+    cores = 6
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    # No `floating`, so no balloon device, so this is a hard allocation.
+    #
+    # Ballooning a Kubernetes node is a trap worth naming here rather than in a
+    # record nobody reads while editing this file: the kubelet computes
+    # Allocatable from what it sees at boot and never revisits it, so a node
+    # deflated afterwards keeps scheduling against memory that no longer
+    # exists. Overcommit belongs inside Kubernetes, where requests and limits
+    # describe it and the kubelet can act on it.
+    #
+    # TEN, RAISED FROM EIGHT BECAUSE OF WHAT NOW RUNS HERE.
+    #
+    # A node's Allocatable is its memory minus what Talos, the kubelet and the
+    # Cilium agent reserve - roughly a gigabyte. A pod requesting 8Gi therefore
+    # does not fit on an 8 GiB node at all: it stays Pending forever, with an
+    # "Insufficient memory" event and nothing wrong that a restart would fix.
+    #
+    # Ten leaves about nine allocatable, which fits an 8Gi request with room
+    # for the daemons that must run everywhere. It is deliberately not more:
+    # the hypervisor was measured at 23 GiB available, and three workers at ten
+    # spends fourteen of it.
+    dedicated = 10240
+  }
+
+  network_device {
+    bridge = local.net.vnet
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = local.datastores[each.value.hypervisor].disks
+    file_format  = "raw"
+    interface    = "virtio0"
+    size         = 64
+  }
+
+  # The provisioner's data path, same as the control plane's. This is also
+  # where a persistent CI tool cache would live - the reason epoch 01 wanted a
+  # worker before moving the pull request lanes here at all.
+  disk {
+    datastore_id = local.datastores[each.value.hypervisor].disks
+    file_format  = "raw"
+    interface    = "virtio1"
+    size         = 32
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  smbios {
+    serial       = each.value.name
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
+  }
+
+  initialization {
+    datastore_id = local.datastores[each.value.hypervisor].disks
+
+    dns {
+      servers = local.dns_resolvers
+    }
+
+    ip_config {
+      ipv4 {
+        address = "${each.value.ip}/24"
+        gateway = local.node_gateway
+      }
+    }
+  }
+}
+
+# The untrusted zone's machines.
+#
+# On its zone's vnet rather than the node one - that is the L2 separation the
+# zone is for, and it is why this cannot simply be another worker with a taint.
+resource "proxmox_virtual_environment_vm" "dmz" {
+  for_each = local.dmz
+
+  name      = each.value.name
+  node_name = local.hostnames[each.value.hypervisor]
+  vm_id     = each.value.vm_id
+
+  boot_order = ["virtio0"]
+
+  clone {
+    vm_id = proxmox_virtual_environment_vm.dmz_template[each.value.hypervisor].vm_id
+    full  = true
+  }
+
+  cpu {
+    # Four, and the clock matters more than the count.
+    #
+    # Sized for the workload this zone was built for, whose published guidance
+    # is in docs/epochs/03-workload.md - it leans on single-thread performance,
+    # so a high base clock is what matters and more cores past four buy very
+    # little. The figures are looked up rather than guessed; the first version
+    # of this file said two cores, which was one too few.
+    #
+    # The zone itself is not sized for that workload or named after it. This is
+    # the machine's allocation, and the next tenant's will be its own.
+    cores = 4
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    # No floating, so no balloon device, for the same reason the workers have
+    # none: the kubelet computes Allocatable at boot and never revisits it, so
+    # a node deflated afterwards keeps scheduling against memory that is gone.
+    # That makes this a hard allocation and the estate's scarcest resource.
+    #
+    # EIGHT, AND THE REASONING IS IN docs/epochs/03-workload.md.
+    #
+    # The workload this zone was built for wants 4 GiB on a fresh install and
+    # 6-8 GiB once it has accumulated state, at the player count it is intended
+    # for. This VM also runs Talos, the kubelet, the Cilium agent and the
+    # OpenEBS provisioner - roughly a gigabyte before the workload starts - so
+    # eight here is about seven for it.
+    #
+    # The top of the band rather than the middle, deliberately. The failure
+    # mode of being short is a service that degrades once it has accumulated
+    # state people care about - which is the moment it is hardest to take away
+    # for a resize, and the moment anyone would mind most. The hypervisor was
+    # measured rather than estimated and has room: raising this later would buy
+    # nothing that taking it now does not, and would cost an outage to do it.
+    dedicated = 8192
+  }
+
+  network_device {
+    bridge = local.dmz_zones[each.value.zone].vnet
+    model  = "virtio"
+  }
+
+  disk {
+    datastore_id = local.datastores[each.value.hypervisor].disks
+    file_format  = "raw"
+    interface    = "virtio0"
+    size         = 64
+  }
+
+  # The provisioner's data path, off the OS disk for the same reason as every
+  # other node: Talos grows disk 0 to fill with its own partitions, so a
+  # provisioner sharing it has no predictable capacity.
+  #
+  # This is where the workload's state lives, and it does NOT survive a
+  # rebuild - see #330. Anything that must outlive one belongs in object
+  # storage, not here.
+  disk {
+    datastore_id = local.datastores[each.value.hypervisor].disks
+    file_format  = "raw"
+    interface    = "virtio1"
+    size         = 32
+  }
+
+  operating_system { type = "l26" }
+
+  agent {
+    enabled = false
+  }
+
+  stop_on_destroy = true
+
+  smbios {
+    serial       = each.value.name
+    manufacturer = "Sidero Labs"
+    product      = "Talos Linux"
+  }
+}

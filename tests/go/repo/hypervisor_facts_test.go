@@ -34,13 +34,17 @@ import (
 // Documentation and the mutation ledger are not read: prose naming a Proxmox
 // default explains it, and the ledger names what it plants to prove this.
 var (
-	hypervisorFactDeclarations = map[string]string{
-		"config/management.tpl.json":                        "each hypervisor node's datastores",
-		"modules/infrastructure/address-plan/allocation.tf": "the vnet a site's nodes sit on",
+	// What declares a hypervisor fact, beside the address plan's own file -
+	// which is found by what it declares (declPlanVNet).
+	hypervisorFactFiles = map[string]string{
+		"config/management.tpl.json": "each hypervisor node's datastores",
 		// The devbox is a machine of its own, not part of any site, and this
 		// is its own declaration of where it lives.
 		"workstation/provision.yml": "where the devbox itself lives",
 	}
+	// The address plan declares the vnet a site's nodes sit on, beside its
+	// network id.
+	declPlanVNet     = "vnet_vni ="
 	planVNet         = regexp.MustCompile(`(?m)^\s*vnet\s*=\s*"([^"]+)"`)
 	literalPlacement = regexp.MustCompile(`(?m)^\s*(datastore_id|bridge)\s*=\s*"`)
 )
@@ -57,8 +61,16 @@ func TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode(t *testing.T) {
 		patterns = append(patterns, regexp.MustCompile(`(^|[^A-Za-z0-9_-])`+regexp.QuoteMeta(n)+`($|[^A-Za-z0-9_-])`))
 	}
 
+	// The files that declare the facts are where the names belong.
+	declarations := map[string]bool{}
+	for rel := range hypervisorFactFiles {
+		declarations[rel] = true
+	}
+	planFile, _ := tofuDeclaring(t, declPlanVNet)
+	declarations[planFile] = true
+
 	files := tracked(t, func(rel string) bool {
-		if _, declared := hypervisorFactDeclarations[rel]; declared {
+		if declarations[rel] {
 			return false
 		}
 		// Prose explains, and the mutation ledger has to name what it plants
@@ -107,7 +119,8 @@ func declaredHypervisorFacts(t *testing.T, root string) []string {
 			seen[n.Datastores.Images] = true
 		}
 	}
-	for _, m := range planVNet.FindAllStringSubmatch(readRepoFile(t, "modules/infrastructure/address-plan/allocation.tf"), -1) {
+	_, plan := tofuDeclaring(t, declPlanVNet)
+	for _, m := range planVNet.FindAllStringSubmatch(plan, -1) {
 		seen[m[1]] = true
 	}
 	out := make([]string, 0, len(seen))

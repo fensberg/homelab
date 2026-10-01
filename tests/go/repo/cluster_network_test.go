@@ -12,7 +12,7 @@ import (
 
 // The pod and service networks are declared, and cannot collide with a site.
 //
-// WHAT WAS WRONG. `management/cluster/talos.tf` set no clusterNetwork fields,
+// WHAT WAS WRONG. `modules/infrastructure/cluster/talos.tf` set no clusterNetwork fields,
 // so the cluster's two largest address ranges were whatever Talos defaulted to
 // (#240). The values in force were correct and nobody had chosen them: they
 // appear in none of the addressing decision in docs/epochs/02-abstraction.md,
@@ -39,7 +39,7 @@ const (
 )
 
 func TestThePodAndServiceNetworksAreDeclared(t *testing.T) {
-	talos := readRepoFile(t, "management/cluster/talos.tf")
+	_, talos := tofuDeclaring(t, declMachineConfig)
 
 	for _, decl := range []struct {
 		name string
@@ -65,10 +65,10 @@ It is fixed at cluster creation, so the cost of getting it wrong is a rebuild.`,
 func TestThePodAndServiceNetworksCannotCollideWithASite(t *testing.T) {
 	// The cluster root takes both from the plan, or the plan's answer below
 	// describes nothing the cluster runs.
-	variables := readRepoFile(t, "management/cluster/variables.tf")
+	variables := tofuAll(t)
 	for _, name := range []string{"pod_cidr", "service_cidr"} {
 		if !regexp.MustCompile(name + `\s*=\s*local\.net\.` + name + `\b`).MatchString(variables) {
-			t.Errorf("variables.tf does not take %s from the address plan (local.net.%s), so the range the "+
+			t.Errorf("nothing takes %s from the address plan (local.net.%s), so the range the "+
 				"cluster runs is not the one the plan allocated and checked", name, name)
 		}
 	}
@@ -132,7 +132,7 @@ be changed without rebuilding the cluster.`, a.site, a.kind, a.n, b.site, b.kind
 // address allocation from a range this repository declares to a default it does
 // not, and the manifest would still render, still install, and still come up.
 func TestCiliumTakesItsPodAddressesFromKubernetes(t *testing.T) {
-	manifest := readRepoFile(t, "clusters/bootstrap/cilium.yaml")
+	_, manifest := fluxObject(t, cniKind, cniName)
 
 	m := regexp.MustCompile(`(?m)^\s*ipam:\s*"?([a-z-]+)"?\s*$`).FindStringSubmatch(manifest)
 	if m == nil {
@@ -183,11 +183,11 @@ func TestTheDNSResolversAreDeclaredInOnePlace(t *testing.T) {
 
 	declared := 0
 	checked := 0
-	for _, path := range []string{
-		"management/cluster/variables.tf",
-		"management/cluster/compute.tf",
-		"management/cluster/talos.tf",
-	} {
+	// Every OpenTofu file, not a list of the three that held the copies: a
+	// restatement in a file nobody listed is the one this exists to find.
+	for _, path := range tracked(t, func(rel string) bool {
+		return strings.HasSuffix(rel, ".tf") && !strings.Contains(rel, "/tests/")
+	}) {
 		body := readRepoFile(t, path)
 		checked++
 		for _, line := range strings.Split(body, "\n") {
@@ -214,8 +214,8 @@ Read it from there.`, path, m[1], trimmed)
 			}
 		}
 	}
-	if checked != 3 {
-		t.Fatalf("only %d file(s) were read, so this proves nothing", checked)
+	if checked < 10 {
+		t.Fatalf("only %d file(s) were read, so the enumeration has stopped matching", checked)
 	}
 	if declared != 1 {
 		t.Errorf("local.dns_resolvers is declared %d time(s); it has to be exactly "+
@@ -245,7 +245,7 @@ Read it from there.`, path, m[1], trimmed)
 // that are already running is node lifecycle, which epoch 05 owns and this does
 // not claim.
 func TestATalosImagePathCarriesItsSchematic(t *testing.T) {
-	compute := readRepoFile(t, "management/cluster/compute.tf")
+	_, compute := tofuDeclaring(t, declMachines)
 
 	names := regexp.MustCompile(`(?m)^\s*file_name\s*=\s*"([^"]+)"`).FindAllStringSubmatch(compute, -1)
 	const bothImages = 2
@@ -291,7 +291,9 @@ on different Talos releases are different bytes at the same path.`, name)
 // Asserted of every talos_machine_configuration in talos.tf, discovered rather
 // than listed, so a machine class added later is held to it too.
 func TestEveryMachineIsToldTheClustersNetwork(t *testing.T) {
-	talos := readRepoFile(t, "management/cluster/talos.tf")
+	// Every machine configuration, in whichever file: a class declared
+	// somewhere else is a class this must still hold to it.
+	talos := tofuAll(t)
 	blocks := regexp.MustCompile(`(?s)data "talos_machine_configuration" "([^"]+)" \{(.*?)\n\}`).FindAllStringSubmatch(talos, -1)
 	if len(blocks) < 3 {
 		t.Fatalf("found %d machine configurations in talos.tf; there are at least three classes, so the reader has stopped matching", len(blocks))

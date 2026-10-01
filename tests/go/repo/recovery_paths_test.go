@@ -48,16 +48,32 @@ func TestRecoveryInstructionsNameTheWorkstationBinary(t *testing.T) {
 		filepath.Join("tests", "go", "repo", "recovery_paths_test.go"): true,
 	}
 
+	// What the repository tracks, and nothing else on disk: a build output,
+	// a dependency and a site's pinned copy of the repository are all there
+	// to be walked, and none of them is this repository's to answer for.
+	ours := map[string]bool{}
+	for _, rel := range tracked(t, func(string) bool { return true }) {
+		ours[rel] = true
+	}
+
 	var checked int
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+		here, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
 		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "node_modules", "toolshed", ".terraform":
+			// A directory that holds nothing tracked is not descended: .git,
+			// and whatever a run left.
+			if here != "." && !holdsTracked(ours, here) {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		if !ours[filepath.ToSlash(here)] {
 			return nil
 		}
 		switch filepath.Ext(path) {
@@ -95,4 +111,15 @@ func TestRecoveryInstructionsNameTheWorkstationBinary(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("no files checked, so this test proves nothing")
 	}
+}
+
+// holdsTracked reports whether any tracked file is under a directory.
+func holdsTracked(tracked map[string]bool, dir string) bool {
+	prefix := filepath.ToSlash(dir) + "/"
+	for rel := range tracked {
+		if strings.HasPrefix(rel, prefix) {
+			return true
+		}
+	}
+	return false
 }

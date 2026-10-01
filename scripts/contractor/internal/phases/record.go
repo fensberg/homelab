@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 	"homelab/details/asbuilt"
 )
@@ -63,30 +65,58 @@ func record(ctx *run.Context, tofu asbuilt.Tofu) error {
 	}
 	defer run.Wipe(rendered)
 
-	res, err := asbuilt.Take(asbuilt.Inputs{
-		Root: ctx.ClusterDir, Work: ctx.AsBuiltDir,
-		Template: tpl, Rendered: rendered, Site: ctx.Site,
-		Progress: run.Info,
-	}, tofu)
-	var pending *asbuilt.NotConvergedError
-	if errors.As(err, &pending) {
-		summary, _ := summarisePlan(pending.Plan)
-		return fmt.Errorf("%w:\n\n%s\nConverge first. A record taken now would describe these changes as built", err, summary)
-	}
-	if err != nil {
-		return err
-	}
-	run.Ok("the estate matches its config")
-	run.Ok("replaced " + describeSources(res.Replaced))
-	if err := report(res); err != nil {
-		return err
+	// Each root on its own, the cluster's first: the platform root is
+	// configured from the cluster root's outputs, so its offline plan runs
+	// with the stand-ins the cluster's record holds for them.
+	meta := asbuilt.Meta{Site: ctx.Site, Commit: recordedCommit(), Taken: time.Now().UTC()}
+	results := map[string]*asbuilt.Result{}
+	for _, root := range ctx.Roots() {
+		in, err := rootFor(ctx, root.Name, tofu)
+		if err != nil {
+			return err
+		}
+		inputs := asbuilt.Inputs{
+			Root: in.Dir, Work: ctx.AsBuiltDir,
+			Template: tpl, Rendered: rendered, Site: ctx.Site,
+			MachineSecrets: root.Name == config.ClusterRoot,
+			Progress:       run.Info,
+		}
+		if root.Name == config.PlatformRoot {
+			if inputs.Vars, err = asbuilt.OutputVars(results[config.ClusterRoot].State, platformInputs...); err != nil {
+				return err
+			}
+		}
+		run.Info("recording the " + root.Name + " root")
+		res, err := asbuilt.Take(inputs, tofu)
+		// The workspace holds one root's offline copy, in a directory the
+		// next root's takes.
+		if rmErr := run.RemoveTreeIfExists(ctx.AsBuiltDir); rmErr != nil && err == nil {
+			err = rmErr
+		}
+		var pending *asbuilt.NotConvergedError
+		if errors.As(err, &pending) {
+			summary, _ := summarisePlan(pending.Plan)
+			return fmt.Errorf("%w:\n\n%s\nConverge first. A record taken now would describe these changes as built", err, summary)
+		}
+		if err != nil {
+			return fmt.Errorf("the %s root: %w", root.Name, err)
+		}
+		run.Ok("the " + root.Name + " root matches its config")
+		run.Ok("replaced " + describeSources(res.Replaced))
+		if err := report(res); err != nil {
+			return fmt.Errorf("the %s root: %w", root.Name, err)
+		}
+		results[root.Name] = res
 	}
 	if ctx.RecordOut == "" {
 		return nil
 	}
-	meta := asbuilt.Meta{Site: ctx.Site, Commit: recordedCommit(), Taken: time.Now().UTC()}
-	if err := asbuilt.Write(ctx.RecordOut, res, meta); err != nil {
-		return err
+	// Written only once every root is publishable: half a record would plan
+	// half a site and say nothing about the rest.
+	for _, root := range ctx.Roots() {
+		if err := asbuilt.Write(filepath.Join(ctx.RecordOut, root.Name), results[root.Name], meta); err != nil {
+			return err
+		}
 	}
 	run.Ok("the record is saved to " + ctx.RecordOut)
 	return nil
@@ -125,6 +155,13 @@ func report(res *asbuilt.Result) error {
 			fmt.Println("    " + f.String())
 		}
 		problems = append(problems, "real values survived the replacing")
+	}
+	if len(res.KeyedByAValue) > 0 {
+		run.Warn(fmt.Sprintf("%d resource(s) are keyed by a real value, so every plan, apply and log that names one prints it:", len(res.KeyedByAValue)))
+		for _, k := range res.KeyedByAValue {
+			fmt.Println("    " + k)
+		}
+		problems = append(problems, "a resource address holds a real value; key the resource by a key from the config instead")
 	}
 	if computed := res.Computed(); len(computed) > 0 {
 		run.Info(fmt.Sprintf("%d value(s) marked sensitive came back, computed by the offline plan from the record and public code:", len(computed)))

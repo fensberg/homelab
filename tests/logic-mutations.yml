@@ -82,8 +82,8 @@ logic:
 
   - decision: machinesInState, on which resources are control-plane machines
     file: internal/phases/destroy.go
-    find: "regexp.MustCompile(`^proxmox_virtual_environment_vm"
-    replace: "regexp.MustCompile(`proxmox_virtual_environment_vm"
+    find: "regexp.MustCompile(`^` + regexp.QuoteMeta(steps.ControlPlanes)"
+    replace: "regexp.MustCompile(regexp.QuoteMeta(steps.ControlPlanes)"
     must_fail: TestMachinesInStateIgnoresTheTemplateAndEverythingElse
     why: >
       The template is a VM too. Counting it overstates the machine count by one

@@ -23,11 +23,16 @@ import (
 // exact failure the migration to local state exists to prevent.
 func TestCleanupSkipsWhatItDidNotCreate(t *testing.T) {
 	dir := t.TempDir()
+	cluster := run.Root{
+		Dir:         dir,
+		LocalState:  filepath.Join(dir, "terraform.tfstate"),
+		BackendPgOn: filepath.Join(dir, "backend_pg.tf"),
+	}
 	ctx := &run.Context{
-		ClusterDir:     dir,
-		LocalState:     filepath.Join(dir, "terraform.tfstate"),
+		Root:           cluster,
+		Cluster:        cluster,
+		Platform:       run.Root{Dir: filepath.Join(dir, "platform"), LocalState: filepath.Join(dir, "platform", "terraform.tfstate")},
 		ConfigRendered: filepath.Join(dir, "management.rendered.json"),
-		BackendPgOn:    filepath.Join(dir, "backend_pg.tf"),
 		InventoryOut:   filepath.Join(dir, "inventory.yml"),
 		SiteVars:       filepath.Join(dir, "site.auto.yml"),
 		OverlayVars:    filepath.Join(dir, "overlay-network.auto.yml"),

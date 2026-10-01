@@ -7,8 +7,11 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"homelab/details/tofufiles"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -38,11 +41,17 @@ import (
 //     It catches copy-paste - four copies of one TCP dial, six such groups
 //     when this was written - and NOT the same idea written differently. The
 //     failure says so rather than letting a green run imply more.
-//   - OpenTofu: a resource outside a module. That leg arrives with the module
-//     the cluster root becomes; until then every resource is outside one.
+//   - OpenTofu: a resource declared in a root. A root is providers,
+//     credentials and state; what it builds is a module's, so a second site
+//     is the same module called again. Roots are found by what a root is, so
+//     the next one is held to this without being listed.
 const customBlocksFile = "tests/custom-blocks.yml"
 
 type customBlocks struct {
+	OpenTofu []struct {
+		Resource string `yaml:"resource"`
+		Reason   string `yaml:"reason"`
+	} `yaml:"opentofu"`
 	Go []struct {
 		Functions []string `yaml:"functions"`
 		Reason    string   `yaml:"reason"`
@@ -177,6 +186,45 @@ func environmentObjects(body []byte) []environmentObject {
 			out = append(out, environmentObject{doc.Kind, doc.Metadata.Namespace + "/" + doc.Metadata.Name})
 		}
 	}
+	return out
+}
+
+func TestAResourceOutsideAModuleIsDeclared(t *testing.T) {
+	declared := map[string]bool{}
+	for _, d := range readCustomBlocks(t).OpenTofu {
+		if strings.TrimSpace(d.Reason) == "" {
+			t.Errorf("%s declares %q with no reason; the reason is the whole price of a custom block", customBlocksFile, d.Resource)
+		}
+		declared[d.Resource] = true
+	}
+	sources := tofuSources(t)
+	roots := openTofuRoots(sources)
+	if len(roots) < 3 {
+		t.Fatalf("found %d OpenTofu root(s), so the enumeration has stopped matching", len(roots))
+	}
+	found := map[string]bool{}
+	for _, r := range resourcesInRoots(sources, roots) {
+		found[r] = true
+	}
+	reportCustomBlocks(t, found, declared, "OpenTofu resource",
+		"is declared in a root rather than in a module. A root holds providers, credentials and state; what it builds goes in a module under modules/infrastructure/, so the next site calls the same block. Move it, or declare it in "+customBlocksFile+" with the reason it can have only one caller.")
+}
+
+var rootResource = regexp.MustCompile(`(?m)^resource\s+"([a-z0-9_]+)"\s+"([A-Za-z0-9_]+)"`)
+
+// resourcesInRoots is every resource declared in a file directly in a root,
+// as "<type>.<name>".
+func resourcesInRoots(sources map[string]string, roots []string) []string {
+	var out []string
+	for rel, body := range sources {
+		if !slices.Contains(roots, filepath.ToSlash(filepath.Dir(rel))) {
+			continue
+		}
+		for _, m := range rootResource.FindAllStringSubmatch(tofufiles.Code(body), -1) {
+			out = append(out, m[1]+"."+m[2])
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -338,5 +386,17 @@ func TestEnvironmentProblemsRefusesWhatIsNotAnOverlay(t *testing.T) {
 		if (w == "") != (got == "") || !strings.Contains(got, w) {
 			t.Errorf("%s: got %q, want %q", rel, got, w)
 		}
+	}
+}
+
+func TestResourcesInRootsFindsOnlyWhatARootItselfDeclares(t *testing.T) {
+	sources := map[string]string{
+		"ground/alpha/access.tf":      "provider \"x\" {}\nresource \"x_thing\" \"here\" {}\n# resource \"x_thing\" \"described\" {}\ndata \"x_thing\" \"read\" {}\n",
+		"ground/alpha/part/inside.tf": "resource \"x_thing\" \"in_a_module_beside_it\" {}\n",
+		"parts/shared/a.tf":           "resource \"x_thing\" \"in_a_module\" {}\n",
+	}
+	got := resourcesInRoots(sources, openTofuRoots(sources))
+	if strings.Join(got, " ") != "x_thing.here" {
+		t.Errorf("got %v, want only the resource the root itself declares", got)
 	}
 }

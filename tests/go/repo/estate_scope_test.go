@@ -1,8 +1,6 @@
 package repo
 
 import (
-	"io/fs"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -51,35 +49,21 @@ const estateRoot = "management/estate"
 var ownedBlock = regexp.MustCompile(`(?m)^resource\s+"([a-z0-9_]+)"|^\s*to\s*=\s*([a-z0-9_]+)\.`)
 
 func TestEstateObjectsAreDeclaredOnlyInTheEstateRoot(t *testing.T) {
-	root := repoRoot(t)
-	var files []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".terraform" || d.Name() == "node_modules") {
-			return filepath.SkipDir
-		}
-		if !d.IsDir() && strings.HasSuffix(path, ".tf") {
-			files = append(files, path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the repository: %v", err)
+	// Every OpenTofu file the repository tracks. This walked the disk, and
+	// read a site's pinned copy of the repository as though it were source.
+	sources := tofuSources(t)
+	files := make([]string, 0, len(sources))
+	for rel := range sources {
+		files = append(files, rel)
 	}
 	sort.Strings(files)
 
 	estateDeclares := 0
-	for _, path := range files {
-		rel, _ := filepath.Rel(root, path)
+	for _, rel := range files {
 		// The estate root and the modules beneath it: a site's plot is
 		// declared once in management/estate/site and instantiated per site.
 		inEstate := filepath.Dir(rel) == estateRoot || strings.HasPrefix(filepath.Dir(rel), estateRoot+"/")
-		body, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("reading %s: %v", rel, err)
-		}
+		body := sources[rel]
 		for _, m := range ownedBlock.FindAllStringSubmatch(string(body), -1) {
 			typ := m[1] + m[2]
 			switch {

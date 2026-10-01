@@ -30,10 +30,10 @@ import (
 // estate deadlocks: the destroy cannot proceed and the rebuild cannot start.
 func TestAFailedPostgresAttachRemovesTheBackendFile(t *testing.T) {
 	dir := t.TempDir()
-	ctx := &run.Context{
+	ctx := &run.Context{Root: run.Root{
 		BackendPgOff: filepath.Join(dir, "backend_pg.tf.disabled"),
 		BackendPgOn:  filepath.Join(dir, "backend_pg.tf"),
-	}
+	}}
 	if err := os.WriteFile(ctx.BackendPgOff, []byte("terraform {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -58,10 +58,10 @@ phase with an error about Postgres, which is not involved.`)
 // meant to enable.
 func TestASuccessfulPostgresAttachKeepsTheBackendFile(t *testing.T) {
 	dir := t.TempDir()
-	ctx := &run.Context{
+	ctx := &run.Context{Root: run.Root{
 		BackendPgOff: filepath.Join(dir, "backend_pg.tf.disabled"),
 		BackendPgOn:  filepath.Join(dir, "backend_pg.tf"),
-	}
+	}}
 	if err := os.WriteFile(ctx.BackendPgOff, []byte("terraform {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

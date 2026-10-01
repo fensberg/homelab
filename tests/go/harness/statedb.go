@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/gruntwork-io/terratest/modules/terraform"
+
+	"homelab/contractor/config"
 )
 
 // StateConnString returns the state database's connection string by reading
@@ -18,5 +20,5 @@ import (
 // asserting one.
 func StateConnString(t *testing.T) string {
 	t.Helper()
-	return terraform.OutputRequired(t, TofuOptions(t, nil), "state_conn_str")
+	return terraform.OutputRequired(t, TofuOptions(t, config.PlatformRoot, nil), "state_conn_str")
 }

@@ -55,12 +55,12 @@ func forEachCollections(t *testing.T, body, resourceType string) map[string]stri
 }
 
 func TestEveryMachineClassIsAssignedAPool(t *testing.T) {
-	compute := readRepoFile(t, "management/cluster/compute.tf")
-	pools := readRepoFile(t, "management/cluster/pools.tf")
+	_, compute := tofuDeclaring(t, declMachines)
+	_, pools := tofuDeclaring(t, declPools)
 
 	machines := forEachCollections(t, compute, "proxmox_virtual_environment_vm")
 	if len(machines) == 0 {
-		t.Fatal("found no proxmox_virtual_environment_vm resources with a for_each in management/cluster/compute.tf, so this test asserts nothing")
+		t.Fatal("found no proxmox_virtual_environment_vm resources with a for_each in modules/infrastructure/cluster/compute.tf, so this test asserts nothing")
 	}
 
 	placed := map[string]bool{}
@@ -68,7 +68,7 @@ func TestEveryMachineClassIsAssignedAPool(t *testing.T) {
 		placed[collection] = true
 	}
 	if len(placed) == 0 {
-		t.Fatal(`management/cluster/pools.tf declares no proxmox_pool_membership with a for_each, so no machine is placed.
+		t.Fatal(`modules/infrastructure/cluster/pools.tf declares no proxmox_pool_membership with a for_each, so no machine is placed.
 
 If pools were removed deliberately, remove this test in the same change - a
 guard left standing over a reversed decision is noise.`)
@@ -87,7 +87,7 @@ guard left standing over a reversed decision is noise.`)
 
   %s
 
-Add a proxmox_pool_membership in management/cluster/pools.tf iterating the same
+Add a proxmox_pool_membership in modules/infrastructure/cluster/pools.tf iterating the same
 collection, in the pool for the function it serves. The hypervisor groups
 machines by what they are for so an operator can tell a control plane from a
 worker at a glance, and a class that is missing does not break that visibly -
@@ -103,11 +103,11 @@ it just quietly stops being true of everything.`,
 // machines into this estate's pool, silently. The config supports several
 // sites by design, so the collision is expressible rather than theoretical.
 func TestPoolIdsAreScopedToTheSite(t *testing.T) {
-	pools := readRepoFile(t, "management/cluster/pools.tf")
+	_, pools := tofuDeclaring(t, declPools)
 
 	ids := regexp.MustCompile(`(?m)^\s*pool_id\s*=\s*"([^"]*)"`).FindAllStringSubmatch(pools, -1)
 	if len(ids) == 0 {
-		t.Fatal("no literal pool_id assignment found in management/cluster/pools.tf, so its scoping has not been checked")
+		t.Fatal("no literal pool_id assignment found in modules/infrastructure/cluster/pools.tf, so its scoping has not been checked")
 	}
 	for _, id := range ids {
 		if !strings.Contains(id[1], "local.site_name") {
@@ -134,7 +134,7 @@ estate's machines into this pool rather than by failing.`, id[1])
 // without weakening redaction, and this fails if somebody consolidates the
 // blocks back into one resource over a map of functions.
 func TestPoolMembershipNamesTheFunctionInTheResourceName(t *testing.T) {
-	pools := readRepoFile(t, "management/cluster/pools.tf")
+	_, pools := tofuDeclaring(t, declPools)
 
 	memberships := forEachCollections(t, pools, "proxmox_pool_membership")
 	if len(memberships) < 2 {
@@ -176,7 +176,7 @@ part a reviewer can read. It has to say which pool this is.`, name)
 // all, which is why it cannot be spelled that way. The number being identical
 // is exactly what makes this easy to get wrong and impossible to see in review.
 func TestPoolMembershipDependsOnTheMachineItPlaces(t *testing.T) {
-	pools := readRepoFile(t, "management/cluster/pools.tf")
+	_, pools := tofuDeclaring(t, declPools)
 
 	block := regexp.MustCompile(`(?s)resource\s+"proxmox_pool_membership"\s+"([A-Za-z0-9_]+)"\s*\{(.*?)\n\}`)
 	vmID := regexp.MustCompile(`(?m)^\s*vm_id\s*=\s*(.+?)\s*$`)

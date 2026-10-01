@@ -21,4 +21,4 @@ useDefault = true
 # neither of which parses a key.
 [[allowlists]]
 description = "tofu test fixtures - fake by construction, and never parsed as credentials"
-paths = ['''management/cluster/tests/fixtures/.*\.json''']
+paths = ['''modules/infrastructure/cluster/tests/fixtures/.*\.json''']

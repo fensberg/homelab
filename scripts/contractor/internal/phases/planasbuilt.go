@@ -3,7 +3,9 @@ package phases
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
@@ -23,6 +25,12 @@ import (
 func PlanAsBuilt(ctx *run.Context, recordDir string) error {
 	run.WritePhase("Plan", "Show what this change would do, planned against the as-built record.")
 	defer func() { _ = run.RemoveTreeIfExists(ctx.AsBuiltDir) }()
+	// Planned with the modules the change would leave the site pinned to:
+	// that is what merging it does to the site. A change to a module alone
+	// moves no site, and plans as no change until a pin does.
+	if err := placeModules(ctx); err != nil {
+		return err
+	}
 	return planAsBuilt(ctx, recordDir, asbuilt.Exec)
 }
 
@@ -34,11 +42,36 @@ func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu) error {
 	if err != nil {
 		return err
 	}
-	raw, _, err := asbuilt.PlanAgainst(asbuilt.PlanInputs{
-		Root: ctx.ClusterDir, Work: ctx.AsBuiltDir, Record: recordDir,
-		Template: tpl, Site: ctx.Site,
-		Sequence: steps.Plan(),
-	}, tofu)
+	// Each root against its own record, reported as one plan. The platform
+	// root is configured from the cluster root's outputs, and plans here
+	// with the stand-ins the cluster's record holds for them.
+	var plans [][]byte
+	for _, root := range ctx.Roots() {
+		inputs := asbuilt.PlanInputs{
+			Root: root.Dir, Work: ctx.AsBuiltDir, Record: filepath.Join(recordDir, root.Name),
+			Template: tpl, Site: ctx.Site,
+			Sequence: steps.Plan(root.Name),
+		}
+		if root.Name == config.PlatformRoot {
+			state, _, _, err := asbuilt.Read(filepath.Join(recordDir, config.ClusterRoot))
+			if err != nil {
+				return err
+			}
+			if inputs.Vars, err = asbuilt.OutputVars(state, platformInputs...); err != nil {
+				return err
+			}
+		}
+		plan, _, err := asbuilt.PlanAgainst(inputs, tofu)
+		// The copy is of one root, in a directory the next root's takes.
+		if rmErr := run.RemoveTreeIfExists(ctx.AsBuiltDir); rmErr != nil && err == nil {
+			err = rmErr
+		}
+		if err != nil {
+			return fmt.Errorf("the %s root: %w", root.Name, err)
+		}
+		plans = append(plans, plan)
+	}
+	raw, err := asbuilt.MergePlans(plans...)
 	if err != nil {
 		return err
 	}

@@ -22,7 +22,13 @@ func realReleases(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(filepath.Join(root, "clusters", "management", "releases.yaml"))
+	// A site's releases file, found rather than named: which site was given
+	// the work is the Flux tree's to say. Exactly one, as a delivery needs.
+	found, err := filepath.Glob(filepath.Join(root, "clusters", "*", "releases.yaml"))
+	if err != nil || len(found) != 1 {
+		t.Fatalf("found %d releases files under clusters/ (%v), and a delivery moves a pin in exactly one", len(found), err)
+	}
+	b, err := os.ReadFile(found[0])
 	if err != nil {
 		t.Fatal(err)
 	}

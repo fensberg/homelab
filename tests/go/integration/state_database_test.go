@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"homelab/contractor/config"
 	"homelab/details/tcp"
 	"homelab/tests/harness"
 )
@@ -29,7 +30,7 @@ func TestDerivedStateDatabaseAddressMatchesTheDeployedOne(t *testing.T) {
 	derived := fmt.Sprintf("%s:%d", db.Host, db.Port)
 
 	// Reported by the cluster that actually exists.
-	deployed := terraform.OutputRequired(t, harness.TofuOptions(t, nil), "state_db_endpoint")
+	deployed := terraform.OutputRequired(t, harness.TofuOptions(t, config.PlatformRoot, nil), "state_db_endpoint")
 
 	require.Equal(t, deployed, derived,
 		"the emergency destroy would dial %s, but the state database is at %s.\n\nThat path runs only when a deployment has already failed, so a mismatch here surfaces for the first time at the exact moment there is no second chance: state gets migrated out of a cluster that is about to be torn down, to an address that answers nothing.", derived, deployed)

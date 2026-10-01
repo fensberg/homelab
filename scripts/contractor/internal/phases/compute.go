@@ -60,9 +60,15 @@ func Compute(ctx *run.Context) error {
 		return err
 	}
 
-	run.Info("tofu init")
-	if err := run.TofuInit(ctx); err != nil {
-		return err
+	// Every root, here: this is the first phase of every verb that applies
+	// anything, and a build started from it skips Overlay. The platform root
+	// is not applied until the Cluster phase, and a root that was never
+	// initialised fails there, after the machines are built.
+	for _, root := range ctx.Roots() {
+		run.Info("tofu init (" + root.Name + ")")
+		if err := run.TofuInit(ctx.In(root)); err != nil {
+			return err
+		}
 	}
 
 	cfg, err := config.LoadRendered(ctx.ConfigRendered)
@@ -106,7 +112,7 @@ func Compute(ctx *run.Context) error {
 	// has to boot. Poll its API port rather than guessing at a sleep.
 	for _, node := range net.AllMachineIPs() {
 		run.Info(fmt.Sprintf("waiting for the Talos API on %s:50000 ...", node))
-		if !tcp.Await(tcp.Addr(node, 50000), 5*time.Minute, 10*time.Second) {
+		if !awaitTCP(tcp.Addr(node, 50000), 5*time.Minute, 10*time.Second) {
 			return fmt.Errorf(`Talos on %s never came up within 5 minutes.
 
 Open that VM's console in the Proxmox web UI. Talos prints its IP on the
@@ -149,14 +155,17 @@ maintenance-mode banner:
 func reclaimOrphanedDiskImage(ctx *run.Context, cfg *config.Config, net *config.SiteNetwork) error {
 	site := cfg.Sites[ctx.Site]
 	hv := net.Hypervisors[0]
-	address := fmt.Sprintf(steps.DiskImage+"[%q]", hv.Hostname)
+	// By the node's key, which is what the resource is keyed by. Asked by
+	// anything else, this finds no image in state on every run, and deletes
+	// the one the state is tracking as though a failed run had left it.
+	address := fmt.Sprintf(steps.DiskImage+"[%q]", hv.Key)
 
 	// Already tracked: this is an ordinary re-run and the image is ours.
 	if run.InState(ctx, address) {
 		return nil
 	}
 
-	volID, err := findStoredImage(site.Hypervisor, hv, clusterImage)
+	volID, err := storedImage(site.Hypervisor, hv, clusterImage)
 	if err != nil {
 		return fmt.Errorf("checking whether a disk image already exists outside Terraform: %w", err)
 	}

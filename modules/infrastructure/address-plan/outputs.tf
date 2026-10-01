@@ -9,7 +9,7 @@ locals {
         workers        = local.workers[key]
         dmz_zones      = local.dmz_zones[key]
         dmz            = local.dmz[key]
-        hypervisors    = [for h in local.hypervisors[key] : h.hostname]
+        hypervisors    = local.hypervisors[key]
         fixed_addresses = {
           for name, n in var.fixed_addresses : name => cidrhost(local.ranges[key].service_cidr, n)
         }

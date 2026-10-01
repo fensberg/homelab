@@ -197,7 +197,7 @@ func TestBackupPathsUseTheRemoteRcloneIsGiven(t *testing.T) {
 	if !strings.Contains(env, "RCLONE_CONFIG_"+remote+"_TYPE=") {
 		t.Errorf("paths address the remote %q, but RcloneEnv configures a different one:\n%s", remote, env)
 	}
-	if got, want := LatestStateBackupPath("b"), BucketRemote("b")+"/"+StateBackupFolder+"/"+LatestStateBackup; got != want {
+	if got, want := LatestStateBackupPath("b", ClusterRoot), BucketRemote("b")+"/"+StateBackupFolder(ClusterRoot)+"/"+LatestStateBackup; got != want {
 		t.Errorf("LatestStateBackupPath = %q, want %q", got, want)
 	}
 }
@@ -221,11 +221,11 @@ func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
 	site := validSite()
 	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
 
-	loc, err := StateBackupLocation(cfg, "site0")
+	loc, err := StateBackupLocation(cfg, "site0", ClusterRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := StateBackupPath(site.ObjectStorage.State.Bucket); loc.Folder != want {
+	if want := StateBackupPath(site.ObjectStorage.State.Bucket, ClusterRoot); loc.Folder != want {
 		t.Errorf("Folder = %q, want %q", loc.Folder, want)
 	}
 	env := strings.Join(loc.Env, "\n")
@@ -247,7 +247,7 @@ func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
 			broken.ObjectStorage.State.Bucket = ""
 		}
 		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": broken}}
-		if _, err := StateBackupLocation(cfg, "site0"); err == nil {
+		if _, err := StateBackupLocation(cfg, "site0", ClusterRoot); err == nil {
 			t.Errorf("an empty state %s was accepted", half)
 		}
 	}
@@ -264,10 +264,21 @@ func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
 // no longer looks. A restore that finds nothing reports that there is no
 // backup, at the moment somebody is recovering an estate.
 func TestTheStateBackupPathIsWhereExistingBackupsAre(t *testing.T) {
-	if got, want := LatestStateBackupPath("my-bucket"), "R2:my-bucket/management-cluster/latest.tfstate.age"; got != want {
-		t.Errorf("LatestStateBackupPath = %q, want %q.\n\n"+
-			"Every backup already stored is at the second path. Changing where new ones go "+
-			"strands the old ones where Restore no longer looks - move them in the same change, "+
-			"or keep the path.", got, want)
+	for root, want := range map[string]string{
+		ClusterRoot:  "R2:my-bucket/management-cluster/latest.tfstate.age",
+		PlatformRoot: "R2:my-bucket/management-platform/latest.tfstate.age",
+	} {
+		if got := LatestStateBackupPath("my-bucket", root); got != want {
+			t.Errorf("LatestStateBackupPath(%s) = %q, want %q.\n\n"+
+				"Every backup already stored is at the second path. Changing where new ones go "+
+				"strands the old ones where Restore no longer looks - move them in the same change, "+
+				"or keep the path.", root, got, want)
+		}
+	}
+	// Each root has a folder of its own, and a root nobody declared has none:
+	// a backup filed under a name Restore never reads is a backup lost.
+	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": validSite()}}
+	if _, err := StateBackupLocation(cfg, "site0", "elsewhere"); err == nil {
+		t.Error("a root that is not one of the site's was given somewhere to keep backups")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"strings"
 
@@ -27,7 +28,7 @@ import (
 //     line in scripts/versions.env and changes nothing else. The fabricator
 //     builds the image from that pin.
 //   - A delivery: procurement moving production's release pin in
-//     clusters/management/releases.yaml. Under the bypass it passes only when
+//     clusters/site0/releases.yaml. Under the bypass it passes only when
 //     the release it brings differs from production's by the Steam build
 //     alone - read from the source commits the two releases were built from,
 //     which the registry records - so a release carrying anything somebody
@@ -53,7 +54,7 @@ func enforceStandingOrder(args []string) int {
 	pin := fs.String("pin", "scripts/versions.env", "the one file the expediter's pull request may change")
 	orders := fs.String("orders", workorders.Path, "the work orders that say what each release is built from")
 	repository := fs.String("repository", os.Getenv("GITHUB_REPOSITORY"), "owner/name, which names each release's package in the registry")
-	releases := fs.String("releases", "clusters/management/releases.yaml", "the production releases file a delivery moves a pin in")
+	releases := fs.String("releases", "clusters/*/releases.yaml", "which files are a site's releases file: a delivery moves a pin in exactly one")
 	bypass := fs.Bool("bypass", false, "judge for a merge without review: only what the order covers passes, and a delivery does not")
 	_ = fs.Parse(args)
 
@@ -91,7 +92,9 @@ func enforceStandingOrder(args []string) int {
 			fmt.Printf("%s delivered a release. The 4am window merges it if the Steam build is all that changed; otherwise it waits for a review\n", *author)
 			return 0
 		}
-		j := judge{repository: *repository, releases: *releases, orders: *orders, pin: *pin, git: gitRunner}
+		// The one file the delivery changed, which isDelivery has just held
+		// to the pattern: whichever site's it is.
+		j := judge{repository: *repository, releases: changedFiles[0], orders: *orders, pin: *pin, git: gitRunner}
 		problems, err := j.steamOnly(*base, *head)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "superintendent enforce-standing-order: could not tell what this release changes, so it is not merged without review:", err)
@@ -194,11 +197,16 @@ var (
 	deliveredDigest = regexp.MustCompile(`^[+-]\s+digest:\s+"sha256:[0-9a-f]{64}"\s*$`)
 )
 
-// isDelivery reports whether a change moves release pins in the releases file
-// and does nothing else: one file, and every changed line a release tag or a
-// digest.
+// isDelivery reports whether a change moves release pins in a site's releases
+// file and does nothing else: one file, a releases file by the pattern that
+// says which those are, and every changed line a release tag or a digest. A
+// pattern rather than a path, because which site was given the work is the
+// Flux tree's to say and not this program's to name.
 func isDelivery(files, changed []string, releases string) bool {
-	if len(files) != 1 || files[0] != releases || len(changed) == 0 {
+	if len(files) != 1 || len(changed) == 0 {
+		return false
+	}
+	if isReleases, err := path.Match(releases, files[0]); err != nil || !isReleases {
 		return false
 	}
 	for _, line := range changed {

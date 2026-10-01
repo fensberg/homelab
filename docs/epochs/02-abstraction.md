@@ -1956,6 +1956,80 @@ directory per site (`clusters/<site>/`) holding what is that site's alone - with
 each site's `gitops_target_path` derived from its key. The runner scale set is
 named for its site. A guard refuses a site-specific value in a shared base.
 
+**Refined 2026-10-01: bringing a site online needs no commit; giving it work
+does.** The older test for this epoch is "adding a site requires no commit",
+and a directory per site looked like a commit per site. The operator's line
+resolves it: a site with no directory of its own reconciles the shared core
+and nothing else, which is also what a build is (the core, and only the core).
+`clusters/<site>/` appears when the site is given work, and that commit is the
+assignment. So `gitops_target_path` is the site's directory when one exists
+and the shared core when none does.
+
+### The roots are modules (built 2026-10-01)
+
+Each of a site's two roots is now a thin caller. `management/cluster/` and
+`management/platform/` hold what makes a root a root - the provider
+constraints and their lock file, the provider blocks and the credentials they
+read, and the state backend - and one `module` call each. Everything a site
+builds is in `modules/infrastructure/cluster` and
+`modules/infrastructure/platform`, with their tests and the config-contract
+corpus beside them.
+
+- **Versions are pinned in one place.** A module declares which providers it
+  uses and the root declares which versions, so a constraint is not written
+  twice and Dependabot watches the directory that holds the lock file.
+- **The contractor's addresses moved in one line.** Every address it writes is
+  a constant in `steps`, so the module prefix was one edit - which is what the
+  "a step is declared once" criterion said it would be. A plan still shows a
+  resource by its type, name and key: which module a root keeps it in is the
+  same on every line and says nothing about what is changing.
+- **A file climbs to the top of the repository by its own depth.** The guard
+  that held a root to `../../` now holds every file to however deep it is, so
+  a module three levels down is checked without being named.
+- **The custom-block guard has its OpenTofu leg.** A resource declared in a
+  root, rather than in a module, is refused unless `tests/custom-blocks.yml`
+  says why. Three are declared: the estate's enrollment policy, application
+  and device profile, each of which Cloudflare keeps one of per organisation.
+- **What the meta-guard was for.** Forty guards had named files in
+  `management/cluster/`. Having been converted to find OpenTofu by what it
+  declares, they followed the files into the modules without an edit; the
+  ones that broke were the three that still named a place - a fixture
+  directory, a path literal in a message, and a scope prefix.
+
+Pinning is the next section.
+
+**Built, 2026-10-01.** `clusters/core/` is what every site reconciles: Flux's
+own install, the controllers and their configuration. `clusters/site0/` holds
+what site0 was given on top - the release it runs and the Kustomizations that
+deploy it - and builds on the core.
+
+- **A site's Flux is pointed at its own directory when it has one, and at the
+  core when it does not.** The platform root looks for
+  `clusters/<site>/kustomization.yaml` and tells the module; the module writes
+  the answer into `cluster-vars` as `GITOPS_PATH`. The sync manifest names its
+  path as that variable, so Flux fills it in each time it applies itself, and
+  the bootstrap fills it in for the one apply that happens before Flux is
+  there. The root reads the repository as it is, not as it was at the site's
+  pin, so giving a site work is the commit that adds its directory and needs
+  no pin moved.
+- **The runner scale set is `homelab-<site>`.** One manifest serves every
+  site, so the name carries `${SITE}`, and a job asks for the site it runs
+  for with an expression. No workflow names a site.
+- **The releases file is found, not named.** It moved into the site's
+  directory with the work it pins, and the fabricator and the standing order
+  both read "the one releases file under `clusters/`" rather than a path with
+  a site in it. Two would be a decision nobody has made - which site a release
+  reaches first - and both refuse rather than guess.
+- **The guard:** `TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork` refuses a
+  directory that is not the core, the CNI's bootstrap or a declared site's; a
+  site directory that does not build on the core; and a core that names a
+  site or points Flux at a workload.
+
+Found on the way: the guards for "no test names a path" had not caught a path
+built from its parts with `filepath.Join`, and three tests still read the Flux
+tree that way. The rule now covers it, and the manifest finder is in the test
+harness so the integration tier uses the same one.
+
 ### A site pins the module version it runs
 
 Added 2026-09-27, for the module move itself. When the cluster root becomes a
@@ -1967,6 +2041,75 @@ first.
 **The bar:** each site names the module version it runs, a change reaches one
 site by moving that site's pin, and a guard refuses a site that consumes the
 module unpinned.
+
+**Refined 2026-10-01, by the same line.** The estate has one default pin,
+which a site with no pin of its own runs, so a new site is pinned without a
+commit. A per-site pin is the commit that moves one site ahead of the others,
+or holds it behind them.
+
+**Built, 2026-10-01.** `management/pins.json` holds a commit for the estate
+(`default`) and one for any site held ahead of it or behind it (`per_site`).
+Moving a site is one line of that file. It sits under `management/` because
+that is what a converge applies: a pull request that changes it is planned,
+the merge converges, and a converge that fails returns it with the rest of
+`management/` - so a pin that did not land is not left asserting that it did.
+
+- **The contractor hands a site its modules; the root fetches nothing.**
+  Before any tofu command against an estate, Render puts the repository as it
+  was at the site's pinned commit into `.pinned/<site>/`, and each root's
+  module source is `../../.pinned/${var.tree}/modules/infrastructure/...`.
+  The whole tree, because a module reads the tunnel routes, the address plan
+  and the manifests it bootstraps Flux from, and those have to be the ones it
+  was written against. A commit the checkout lacks is fetched by its hash.
+- **Why not OpenTofu's git source**, which is the usual way. It sees only
+  branches and tags, so a pin naming a commit a squash merge has orphaned
+  cannot be fetched - and the first pin in this repository is exactly that.
+  It writes the repository's address into the code, and that address is a
+  vault value. And it needs the network at every init. The usual way is built
+  for a module in another repository, consumed with nothing wrapping tofu and
+  versioned by tags; none of that is so here.
+- **There is no default tree.** `var.tree` has none, so a root that was not
+  told which version to run runs nothing. The contractor names the site; the
+  checks that must see a change before it merges - validating a root,
+  planning it from nothing - name `worktree`, a link to the repository itself
+  that is never a site's.
+- **A change to a module moves no site.** It is validated, tested and planned
+  from nothing on its own pull request, and reaches a site when a pin does.
+  A pull request's plan is made with the pin as the change would leave it, so
+  a pin's pull request shows what moving it does, and a module's shows no
+  change to any site, which is true.
+- **The guard:** `TestEverySiteRootRunsItsModulesAtItsPin` refuses a root
+  that reaches a module any other way, a root with a default tree, and a pin
+  that is not a full commit hash.
+
+Not built: the pull request that moves the default pin after a module change
+merges is still opened by hand (#602).
+
+**Still missing for "no commit": a site is declared in the template.** Adding
+one today is an edit to `config/management.tpl.json`. The record's answer is a
+config discovered from the vault rather than declared, and it is not built;
+neither refinement above delivers it.
+
+### Removing an application touches only its own directories
+
+Added 2026-10-01, from #590. An application is a module, and the test of that
+is what removing it costs: `modules/applications/<app>/`,
+`environments/<env>/applications/<app>/`, and one line in each environment's
+list. The game server fails that test by a wide margin. Its name, its
+Service's name or its supplier appears in 34 files outside those directories:
+a workflow, the superintendent and procurement programs, the site root's
+`workloads.tf`, the vault template, the tunnel routes, the pins and lists, and
+seven guards. Some of those are general mechanisms with one application as
+their only example, and some are application-specific checks kept in shared
+places.
+
+**The bar:** a general mechanism reads what applications declare, from inside
+their own directories, rather than naming one; an application's own checks,
+pins and declarations live with it. A guard enumerates `modules/applications/*`
+and refuses any application's name outside that application's directories, so
+the second application is covered without anybody editing the guard. The
+proof is the removal itself, done on a scratch copy by a test: delete the
+directories and the list line, and every guard still passes.
 
 ## Open questions to settle first
 
@@ -2687,6 +2830,151 @@ nothing unresolvable to trip over, which is the concrete form of the payoff.
   exist.** This split is the prerequisite the record names, not the module
   carving itself. It does not on its own advance the epoch's acceptance test,
   which remains "adding a site requires no commit".
+
+#### Built, 2026-10-01: two roots, and what the rebuild made unnecessary
+
+`management/cluster/` keeps the machines, Talos, the overlay key, Cilium and
+the health read, and keeps its schema name. `management/platform/` holds every
+`kubernetes_*` resource and the Flux bootstrap, in `management_platform_state`.
+The cluster root has no `kubernetes` provider at all.
+
+**The seam is one fact, in two forms.** The tunnel token left this list when
+the tunnel became the estate's, so what crosses is the cluster's access:
+`cluster_access` (the provider's structured client configuration) and
+`kubeconfig` (the same, for the bootstrap's `kubectl`). They are outputs of the
+cluster root and variables of the platform root, under the same names
+(`steps.PlatformInputs`). The contractor reads them once and puts them in the
+environment as `TF_VAR_*` before any tofu run in the platform root - not a
+variable file, which would be one more credential on disk, and not
+`terraform_remote_state`, which would have to know whether state is still
+local or already in Postgres. Structured rather than a kubeconfig to parse,
+because each certificate then gets a stand-in of the right shape when the
+platform root is planned against the as-built record.
+
+**A step names its root.** `steps.Converge` gained `Root`; the "materialise
+the kubeconfig" step is gone, since its only job was to let a provider
+configure, and the last two steps are the cluster root's untargeted apply and
+the platform root's. No `depends_on` on the cluster's health survives in the
+platform root: there is no edge to forget, because the order of the steps is
+the edge. `TestKubernetesIsOnlyInThePlatformRootAndThatRootComesLast` checks
+the two things that can still go wrong - a resource in the wrong root, and the
+order - by enumerating every `.tf` file.
+
+**The teardown destroys one root.** What the platform root created is inside
+the machines and goes with their disks, and its state is in the database being
+deleted. So the step that forgot every `kubernetes_*` address out of state
+before a destroy is deleted rather than moved: the cluster root holds none.
+
+**`split-state` was not built.** It was the expensive half of this design and
+it existed to move eighteen resources between two states of a running site.
+Site0 is rebuilt from the branch instead (the machines are disposable and the
+first site gets no exception), so there is no state to move.
+
+**Everything that read "the state" reads both.** Take-over attaches both and
+refuses if either is empty; the state serial that answers "did this run change
+anything" is the two added; Migrate moves both; Backup writes each root to its
+own folder (`management-cluster`, where every earlier backup already is, and
+`management-platform`); Restore fetches, decrypts and checks both before it
+pushes either; the as-built record is a directory per root, and a plan against
+it is each root's plan merged into one, with the platform root given the
+stand-ins the cluster's record holds for its access.
+
+**Found on the way.** The record from before the split has the old shape, so
+a pull request's plan fails until the first converge after this merges
+publishes a new one.
+
+#### What the guards could not see once there were two roots
+
+Checked on 2026-10-01, after the split, by asking of every guard that reads
+OpenTofu whether it enumerates or names files. Four could not see
+`management/platform`, and none of them failed:
+
+- **The list of secrets OpenTofu creates** read one root's directory. After
+  the move it found none and went on passing, so a Flux source naming a secret
+  nothing creates would have been accepted.
+- **"A validation is exercised by a test"** matched a test anywhere that
+  named the same identifier. The platform root's `variable "site"` validation
+  counted as tested by the cluster root's test of its own. A test now has to
+  sit in the root it runs, and the platform root has one: it plans the whole
+  root against a mocked provider, from the cluster's access alone.
+- **The resolver restatement guard** read three named files.
+- **Dependabot** watched one root. The estate root's providers had never been
+  offered an update, which predates the split.
+
+Each was a list of one, written when there was one. So there is a guard for
+the next root rather than for this one:
+`TestEveryOpenTofuRootIsSeenByWhatMustSeeARoot` finds roots by what a root is
+(a directory with a provider block) and holds each to a list - a committed
+lock file, validated by the pull request checks and by `task validate`,
+watched by Dependabot, its switched-on backend file ignored, a test of its own
+if it refuses anything, and known to the contractor (`config.Roots`) unless it
+is the estate's. A root nobody has thought about fails every line at once.
+
+**And a guard for the tests themselves.** The list above was found by
+reading. The operator's question was what stops the next test being written
+the same way, and the answer is `TestNoTestNamesTheRootItReads`: it parses
+every Go test in the repository and refuses a path into a root, the name of
+one of the repository's own OpenTofu files, and a root's directory built from
+its parts. Its first run refused forty places in seventeen files. Each now
+finds what it reads by declaration - "the file that declares
+`data "talos_cluster_health"`" - through one shared reader
+(`homelab/details/tofufiles`), or reads every file. Every existing mutation in
+the ledger is still caught by its converted guard, which is the evidence the
+conversions changed where the guards look and not what they check.
+
+What it permits, on purpose: a root named whole is a scope (the estate-scope
+and kubernetes guards compare every file against one), a root's `tests/`
+directory is fixtures, and a program's own test that builds a pretend
+repository in a temporary directory is not reading this one.
+
+The timing is the point. The module move relocates every file those forty
+places named. Written the old way, each would either have broken or, worse,
+gone on reading a thin root that no longer held what it was checking.
+
+**What a review of the tests found, and what was built for it (2026-10-01).**
+Asked what would bite later, the answer was measured rather than guessed, and
+four of the gaps were closed on the same branch:
+
+- **A verb had never been run by a test (#595).** About 150 of the
+  contractor's functions were covered by nothing or by a tier no workflow
+  runs. `verbs_test.go` now runs a build, a build resumed at Compute, a
+  converge and a teardown through the real phases, against programs on PATH
+  that record what they are asked. Writing it found two faults in the split
+  before any estate did: the orphaned-image check still asked the state for
+  the disk image by the hypervisor's hostname, so on every converge it would
+  have found none tracked and deleted the image the state does track; and the
+  platform root was initialised only in a phase a build can be started after.
+  Twenty functions came off the exemption ledger.
+- **Nothing planned a root's resources before a merge (#596).** Both roots are
+  now planned from nothing, with the real providers and a stand-in for every
+  vault value, step by step as the converge walks them. It needs no record,
+  so the check for a resource keyed by a vault value runs on the change that
+  could introduce one. A vault attestation with no record now takes the
+  provider written beside it, which is the only value the config's own check
+  accepts.
+- **Guards read Flux manifests by path (#597).** The rule for OpenTofu is the
+  rule for the Flux tree: a manifest is found by an object it declares
+  (`fluxObject`), and the meta-guard refuses a path into `clusters/`. Thirty
+  places were converted before the tree is laid out per site, not after.
+- **"A validation is exercised" passed on a word (#598).** It read the test
+  file for the word `expect_failures` and the declaration's name. It now reads
+  each test's expected failures and requires every declaration that refuses
+  something to be in one, in its own root's test.
+
+Left open, and filed: the tests know one site (#599), only `tests/go/repo`
+has proof its tests can fail (#600), workflows are read and never run (#601),
+and the coverage ledger still counts a function as covered when a line of it
+ran.
+
+**The hostname guard was the wrong shape, and is gone.** The first guard
+written for #585 refused the hypervisor's hostname as a resource key, by name. The
+operator's review: that is one value, and not the one that matters. The check
+is now on the result rather than the code. Every plan - against the as-built
+record on a pull request, and against the real estate - is searched for a
+resource whose key or address holds any value the template takes from the
+vault, and refused if one does, naming the resource and the config field and
+never the value (`asbuilt.KeyedByAVaultValue`). It sees a key however it was
+built, in whichever root, on a resource that exists or one the change adds.
 
 #### Why this is not the module carving, and must still come first
 

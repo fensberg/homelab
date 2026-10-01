@@ -259,7 +259,7 @@ func TestChartSourcesAreApproved(t *testing.T) {
 				continue
 			}
 			// And so are its releases: RELEASE_REPOSITORY is derived from this
-			// repository's own configured address (management/cluster/database.tf),
+			// repository's own configured address (modules/infrastructure/platform/database.tf),
 			// and the fabricator publishes there from this repository's code.
 			if strings.HasPrefix(u, "oci://${RELEASE_REPOSITORY}-") {
 				continue

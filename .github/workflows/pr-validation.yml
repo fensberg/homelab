@@ -331,6 +331,21 @@ jobs:
           # phase's, so nothing here can collide with a real run. `tofu
           # validate` takes no -var flag, hence the environment variable.
           TF_VAR_config_path: ../../config/management.placeholder.json
+          # A root reads its modules from a pinned tree. Validating a change
+          # means validating the modules as they are in the working tree, which
+          # the placeholder step above links under this name; it is never a
+          # site's, so nothing here can be mistaken for a pinned run.
+          TF_VAR_tree: worktree
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+
+      # A site is two roots: the cluster above, and what is put on it.
+      - name: Validate OpenTofu (platform)
+        working-directory: management/platform
+        env:
+          TF_VAR_config_path: ../../config/management.placeholder.json
+          TF_VAR_tree: worktree
         run: |
           tofu init -backend=false -input=false
           tofu validate
@@ -374,24 +389,31 @@ jobs:
           set +a
 
           schema='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
-          for dir in clusters/management/infrastructure/*/ clusters/management/flux-system/; do
+          for dir in clusters/core/infrastructure/*/ clusters/core/flux-system/; do
             echo "==> ${dir}"
             kubectl kustomize "${dir}" | envsubst | kubeconform \
               -strict -summary -ignore-missing-schemas \
               -schema-location default -schema-location "${schema}" -
           done
 
-          # Every entrypoint at the top of clusters/management, globbed rather
-          # than listed: releases.yaml arrived after the list was written, and
-          # a list only validates what somebody remembered to add to it. The
-          # kustomization.yaml there is kustomize's own and has no schema to
+          # Every entrypoint at the top of every directory a site's Flux can
+          # be pointed at - the core, and each site's own - found by the
+          # kustomization.yaml that makes it one rather than listed: a list
+          # only validates what somebody remembered to add to it, and the next
+          # site's directory is not one anybody will remember. The
+          # kustomization.yaml itself is kustomize's own and has no schema to
           # hold it to. Substituted like the directories above, because Flux
           # substitutes these too.
-          echo "==> clusters/management (Flux entrypoints)"
-          for file in clusters/management/*.yaml; do
-            [ "$(basename "$file")" = kustomization.yaml ] && continue
-            envsubst < "$file" | kubeconform -strict -summary -ignore-missing-schemas \
-              -schema-location default -schema-location "${schema}" -
+          for dir in clusters/*/; do
+            [ -f "${dir}kustomization.yaml" ] || continue
+            echo "==> ${dir} (Flux entrypoints)"
+            for file in "${dir}"*.yaml; do
+              [ "$(basename "$file")" = kustomization.yaml ] && continue
+              envsubst < "$file" | kubeconform -strict -summary -ignore-missing-schemas \
+                -schema-location default -schema-location "${schema}" -
+            done
+            # And the directory builds: a site's reaches the core through it.
+            kubectl kustomize "${dir}" > /dev/null
           done
 
           # The workload tier's overlays. Globbed rather than listed, so a
@@ -454,7 +476,7 @@ jobs:
   # -----------------------------------------------------------------
   # Validate above proves the code resolves. This proves it does the right
   # thing: the Go unit tests, the config-contract tests that hold
-  # scripts/contractor and management/cluster/registry.tf to the same rules,
+  # scripts/contractor and modules/infrastructure/cluster/registry.tf to the same rules,
   # the repository invariants, the OpenTofu invariant tests, and the
   # JavaScript/TypeScript tier.
   #
@@ -1142,7 +1164,7 @@ jobs:
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
-          # clusters/management/flux-system/ is Flux's own generated install
+          # clusters/core/flux-system/ is Flux's own generated install
           # manifest, committed verbatim (.checkov.yaml carries the full
           # reasoning, and excludes it for the same reason). Its ClusterRoles need broad permissions to reconcile
           # arbitrary resource types - that is how Flux has to work, not a
@@ -1158,7 +1180,7 @@ jobs:
           # away here. The cost is that a future chart version adding a new
           # mount would not be flagged; the compensating control is that the
           # manifest is committed, so it shows up in a pull request diff.
-          skip-dirs: "clusters/management/flux-system,clusters/bootstrap"
+          skip-dirs: "clusters/core/flux-system,clusters/bootstrap"
 
   # -----------------------------------------------------------------
   # LANE 8: Secrets - waits for nothing

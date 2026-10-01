@@ -7,7 +7,7 @@
 # accident of order.
 #
 # Production does not reconcile this from main. Each workload's overlay is
-# built into a release by the fabricator, and clusters/management/releases.yaml
+# built into a release by the fabricator, and clusters/site0/releases.yaml
 # pins which release runs.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
