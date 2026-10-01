@@ -142,9 +142,9 @@ func stepOrderProblems(converge []steps.Step) []string {
 func TestKubernetesOutsideThePlatformIsRefused(t *testing.T) {
 	platform := "management/" + config.PlatformRoot + "/"
 	good := map[string]string{
-		platform + "a.tf":             "resource \"kubernetes_namespace\" \"a\" {}\n",
-		platform + "versions.tf":      "provider \"kubernetes\" {}\n",
-		"management/cluster/talos.tf": "# resource \"kubernetes_namespace\" \"commented\" {}\n  kubernetes_version = local.kubernetes_version\n",
+		platform + "a.tf":                                "resource \"kubernetes_namespace\" \"a\" {}\n",
+		platform + "versions.tf":                         "provider \"kubernetes\" {}\n",
+		"management/" + config.ClusterRoot + "/talos.tf": "# resource \"kubernetes_namespace\" \"commented\" {}\n  kubernetes_version = local.kubernetes_version\n",
 	}
 	if got := kubernetesOutsideThePlatform(good); len(got) != 0 {
 		t.Errorf("a site with kubernetes only in the platform root was refused: %v", got)
@@ -155,7 +155,7 @@ func TestKubernetesOutsideThePlatformIsRefused(t *testing.T) {
 		"the provider in the cluster root":  "provider \"kubernetes\" {}\n",
 		"the provider required there":       "    kubernetes = { source = \"hashicorp/kubernetes\" }\n",
 	} {
-		bad := map[string]string{"management/cluster/extra.tf": add}
+		bad := map[string]string{"management/" + config.ClusterRoot + "/extra.tf": add}
 		for k, v := range good {
 			bad[k] = v
 		}
@@ -163,7 +163,7 @@ func TestKubernetesOutsideThePlatformIsRefused(t *testing.T) {
 			t.Errorf("%s: got %v", name, got)
 		}
 	}
-	if got := kubernetesOutsideThePlatform(map[string]string{"management/cluster/talos.tf": ""}); len(got) != 1 || !strings.Contains(got[0], "wrong place") {
+	if got := kubernetesOutsideThePlatform(map[string]string{"management/" + config.ClusterRoot + "/talos.tf": ""}); len(got) != 1 || !strings.Contains(got[0], "wrong place") {
 		t.Errorf("a platform root with nothing in it was accepted: %v", got)
 	}
 }

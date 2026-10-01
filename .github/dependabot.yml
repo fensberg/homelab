@@ -89,6 +89,22 @@ updates:
           - minor
           - patch
 
+  # The estate's root: its providers reach the account every site is in.
+  - package-ecosystem: terraform
+    directory: /management/estate
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+    groups:
+      estate-providers:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
   # The test-only Go module, tracked separately from /scripts/contractor because
   # it is a separate module with a completely different dependency profile:
   # build-site has none at all, and this one has Terratest's ~280. Keeping them

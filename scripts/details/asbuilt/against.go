@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -87,7 +88,92 @@ func PlanAgainst(in PlanInputs, tofu Tofu) ([]byte, Meta, error) {
 	if err != nil {
 		return nil, meta, err
 	}
+	keyed, err := KeyedByAVaultValue(plan, tpl, config)
+	if err != nil {
+		return nil, meta, err
+	}
+	if len(keyed) > 0 {
+		return nil, meta, &VaultKeyError{Keyed: keyed}
+	}
 	return plan, meta, nil
+}
+
+// VaultKeyError is the refusal of a change that keys a resource by a value
+// from the vault. It names the resource and the config field, both of which
+// are public: the type and name are code, and the field is in the template.
+type VaultKeyError struct{ Keyed []string }
+
+func (e *VaultKeyError) Error() string {
+	return "this change keys a resource by a value from the vault. A resource's key is part of its address, and every plan, apply and log that names the resource prints its address:\n\n    " +
+		strings.Join(e.Keyed, "\n    ") +
+		"\n\nKey it by a key the config declares (a site or node key, a number) and read the vault's value as an attribute."
+}
+
+// KeyedByAVaultValue is every resource in a plan with an instance key that
+// holds a value the template takes from the vault, as "<type>.<name> is keyed
+// by <config field>".
+//
+// Every vault value, whatever it is: the plan is made with a stand-in for
+// each one, so a key that holds a stand-in holds that field's value in the
+// estate. It sees what the change would build as well as what is built,
+// because a plan has both, and it sees a key however it was arrived at - a
+// for_each over a map, a set built in a local, a module - because it reads
+// the result rather than the code.
+func KeyedByAVaultValue(plan []byte, tpl, config any) ([]string, error) {
+	doc, err := decode(plan)
+	if err != nil {
+		return nil, fmt.Errorf("the plan is not JSON: %w", err)
+	}
+	standIns := map[string]string{}
+	vaultStandIns("", "", tpl, config, standIns)
+
+	found := map[string]bool{}
+	changes, _ := doc["resource_changes"].([]any)
+	for _, c := range changes {
+		change, _ := c.(map[string]any)
+		// The whole address, so a module instance keyed by a value is seen
+		// as well as a resource's own key.
+		address, _ := change["address"].(string)
+		index, _ := change["index"].(string)
+		for standIn, field := range standIns {
+			if strings.Contains(index, standIn) || strings.Contains(address, standIn) {
+				found[fmt.Sprintf("%v.%v is keyed by %s", change["type"], change["name"], field)] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(found))
+	for f := range found {
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// vaultStandIns collects the value the config holds for each template leaf
+// the vault fills in, against the field's path. Attestations are public
+// vocabulary and are not collected; a value too short to be told from
+// coincidence is not either.
+func vaultStandIns(path, field string, tpl, config any, out map[string]string) {
+	switch t := tpl.(type) {
+	case map[string]any:
+		c, _ := config.(map[string]any)
+		for k, v := range t {
+			vaultStandIns(strings.TrimPrefix(path+"."+k, "."), k, v, c[k], out)
+		}
+	case []any:
+		c, _ := config.([]any)
+		for i, v := range t {
+			if i < len(c) {
+				vaultStandIns(fmt.Sprintf("%s[%d]", path, i), field, v, c[i], out)
+			}
+		}
+	case string:
+		v, ok := config.(string)
+		if !ok || !vaultReference.MatchString(t) || attestations[field] || len(v) < minSubstring {
+			return
+		}
+		out[v] = path
+	}
 }
 
 // Reconcile fills a template from a record's config: a vault reference takes

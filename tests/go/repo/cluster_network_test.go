@@ -183,11 +183,11 @@ func TestTheDNSResolversAreDeclaredInOnePlace(t *testing.T) {
 
 	declared := 0
 	checked := 0
-	for _, path := range []string{
-		"management/cluster/variables.tf",
-		"management/cluster/compute.tf",
-		"management/cluster/talos.tf",
-	} {
+	// Every OpenTofu file, not a list of the three that held the copies: a
+	// restatement in a file nobody listed is the one this exists to find.
+	for _, path := range tracked(t, func(rel string) bool {
+		return strings.HasSuffix(rel, ".tf") && !strings.Contains(rel, "/tests/")
+	}) {
 		body := readRepoFile(t, path)
 		checked++
 		for _, line := range strings.Split(body, "\n") {
@@ -214,8 +214,8 @@ Read it from there.`, path, m[1], trimmed)
 			}
 		}
 	}
-	if checked != 3 {
-		t.Fatalf("only %d file(s) were read, so this proves nothing", checked)
+	if checked < 10 {
+		t.Fatalf("only %d file(s) were read, so the enumeration has stopped matching", checked)
 	}
 	if declared != 1 {
 		t.Errorf("local.dns_resolvers is declared %d time(s); it has to be exactly "+

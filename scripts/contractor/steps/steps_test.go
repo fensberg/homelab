@@ -47,11 +47,11 @@ func TestClusterAccessIsReadFromTheClusterRootsOutputs(t *testing.T) {
 		asked = dir + ": " + args[0]
 		return []byte(`{"cluster_access": {"value": {"host": "h"}}, "kubeconfig": {"value": "k"}}`), nil, nil
 	}
-	got, err := ClusterAccess("management/cluster", tofu)
+	got, err := ClusterAccess("the/cluster/root", tofu)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if asked != "management/cluster: output" {
+	if asked != "the/cluster/root: output" {
 		t.Errorf("asked %q", asked)
 	}
 	if got["kubeconfig"] != "k" || got["cluster_access"] != `{"host":"h"}` || len(got) != len(PlatformInputs) {

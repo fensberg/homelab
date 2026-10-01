@@ -56,6 +56,9 @@ func Plan(ctx *run.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := refuseVaultKeys(ctx, raw); err != nil {
+		return err
+	}
 
 	summary, err := summarisePlan(raw)
 	if err != nil {
@@ -521,6 +524,39 @@ func was(n int) string {
 		return "is"
 	}
 	return "are"
+}
+
+// refuseVaultKeys fails a plan in which a resource is keyed by a value from
+// the vault: the key would be printed, in the address, by every tool that
+// names the resource. The plan against the as-built record refuses the same
+// thing with stand-ins; this is that check against the estate's real config,
+// and what it says names the resource and the config field, never the value.
+func refuseVaultKeys(ctx *run.Context, plan []byte) error {
+	tplRaw, err := os.ReadFile(ctx.ConfigTpl)
+	if err != nil {
+		return err
+	}
+	rendered, err := os.ReadFile(ctx.ConfigRendered)
+	if err != nil {
+		return fmt.Errorf("the rendered config is missing, so Render did not run: %w", err)
+	}
+	defer run.Wipe(rendered)
+	var tpl any
+	if err := json.Unmarshal(tplRaw, &tpl); err != nil {
+		return fmt.Errorf("the config template is not JSON: %w", err)
+	}
+	config, err := asbuilt.Decode(rendered)
+	if err != nil {
+		return fmt.Errorf("the rendered config is not JSON: %w", err)
+	}
+	keyed, err := asbuilt.KeyedByAVaultValue(plan, tpl, config)
+	if err != nil {
+		return err
+	}
+	if len(keyed) > 0 {
+		return &asbuilt.VaultKeyError{Keyed: keyed}
+	}
+	return nil
 }
 
 // planSteps plans the converge's own steps, in order, against a copy of the

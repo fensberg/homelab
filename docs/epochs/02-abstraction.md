@@ -2780,6 +2780,43 @@ stand-ins the cluster's record holds for its access.
 a pull request's plan fails until the first converge after this merges
 publishes a new one.
 
+#### What the guards could not see once there were two roots
+
+Checked on 2026-10-01, after the split, by asking of every guard that reads
+OpenTofu whether it enumerates or names files. Four could not see
+`management/platform`, and none of them failed:
+
+- **The list of secrets OpenTofu creates** read one root's directory. After
+  the move it found none and went on passing, so a Flux source naming a secret
+  nothing creates would have been accepted.
+- **"A validation is exercised by a test"** matched a test anywhere that
+  named the same identifier. The platform root's `variable "site"` validation
+  counted as tested by the cluster root's test of its own. A test now has to
+  sit in the root it runs, and the platform root has one: it plans the whole
+  root against a mocked provider, from the cluster's access alone.
+- **The resolver restatement guard** read three named files.
+- **Dependabot** watched one root. The estate root's providers had never been
+  offered an update, which predates the split.
+
+Each was a list of one, written when there was one. So there is a guard for
+the next root rather than for this one:
+`TestEveryOpenTofuRootIsSeenByWhatMustSeeARoot` finds roots by what a root is
+(a directory with a provider block) and holds each to a list - a committed
+lock file, validated by the pull request checks and by `task validate`,
+watched by Dependabot, its switched-on backend file ignored, a test of its own
+if it refuses anything, and known to the contractor (`config.Roots`) unless it
+is the estate's. A root nobody has thought about fails every line at once.
+
+**The hostname guard was the wrong shape, and is gone.** The first guard
+written for #585 refused the hypervisor's hostname as a resource key, by name. The
+operator's review: that is one value, and not the one that matters. The check
+is now on the result rather than the code. Every plan - against the as-built
+record on a pull request, and against the real estate - is searched for a
+resource whose key or address holds any value the template takes from the
+vault, and refused if one does, naming the resource and the config field and
+never the value (`asbuilt.KeyedByAVaultValue`). It sees a key however it was
+built, in whichever root, on a resource that exists or one the change adds.
+
 #### Why this is not the module carving, and must still come first
 
 Worth being blunt, because two pieces of work that both produce directories

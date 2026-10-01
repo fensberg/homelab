@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 178
+floor: 180
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -146,14 +146,34 @@ mutations:
       arriving in manifests instead of code.
 
       "
-  - guard: TestAHostnameIsNeverAResourceKey
-    file: management/cluster/variables.tf
-    find: "  datastores = { for k, h in local.site.hypervisor.nodes : k => try(h.datastores, {}) }"
-    replace: "  datastores = { for k, h in local.site.hypervisor.nodes : h.hostname => try(h.datastores, {}) }"
-    mentions: reads a hypervisor's hostname
+  - guard: TestEveryOpenTofuRootIsSeenByWhatMustSeeARoot
+    file: .github/dependabot.yml
+    find: "    directory: /management/platform"
+    replace: "    directory: /management/platform-moved"
+    mentions: "has no entry in .github/dependabot.yml"
     why:
-      "A resource keyed by a hypervisor's hostname prints that vault value in every plan, apply and log
-      that names the resource, with no attribute printed at all (#585).
+      "A root split out of another was validated nowhere, watched by nothing and tested by a test
+      of a different root, because each of those was a list written when there was one root.
+
+      "
+  - guard: TestTheDNSResolversAreDeclaredInOnePlace
+    file: management/platform/variables.tf
+    find: "  object_storage = local.site.object_storage"
+    replace: "  object_storage = local.site.object_storage\n  dns_servers    = [\"9.9.9.9\"]"
+    mentions: "names the resolver"
+    why:
+      "The same restatement, in the root the guard could not see while it read three named files of
+      the other one.
+
+      "
+  - guard: TestEveryUnitIsExecutedByATestOrIsADeclaredDebt
+    file: management/platform/tests/platform.tftest.hcl
+    find: "  expect_failures = [var.site]"
+    replace: "  # nothing here is expected to fail"
+    mentions: "tofu:management/platform/variables.tf"
+    why:
+      "A validation in one root counted as exercised because another root's test named a variable
+      of the same name. A test runs the root it sits in and no other.
 
       "
   - guard: TestAGoFunctionWrittenTwiceIsDeclared
@@ -2583,11 +2603,13 @@ unprovable:
     reason: table
   - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
     reason: table
+  - test: TestRootSightingsNamesEachThingThatCannotSeeARoot
+    reason: table
+  - test: TestSiteRootProblemsHoldsTheRootsToTheContractors
+    reason: table
   - test: TestKubernetesOutsideThePlatformIsRefused
     reason: table
   - test: TestStepOrderProblemsRefusesThePlatformBeforeTheClusterIsReady
-    reason: table
-  - test: TestHostnameMisuseAllowsOnlyTheMapAndNodeName
     reason: table
   # The reader behind TestEveryConcurrencyGroupNamesWhatSupersedesIt, which
   # its own ledger entry proves. Its table holds each way to share a group.

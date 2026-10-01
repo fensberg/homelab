@@ -102,11 +102,14 @@ locals {
   # (node0), which is what a machine's placement names. They are facts about
   # the host, so they come from its config entry.
   #
-  # BY THE KEY, NEVER THE HOSTNAME. Whatever a resource is keyed by is part of
-  # its address, and every tool that touches a resource prints its address:
-  # plans, apply output, the contractor's progress lines, CI logs. The hostname
-  # is a vault value, so it is looked up here, where it is an attribute, and
-  # is never a for_each key (#585; tests/go/repo/resource_addresses_test.go).
+  # BY THE KEY, NEVER A VALUE FROM THE VAULT. Whatever a resource is keyed by
+  # is part of its address, and every tool that touches a resource prints its
+  # address: plans, apply output, the contractor's progress lines, CI logs. The
+  # hostname is a vault value, so it is looked up here, where it is an
+  # attribute, and is never a for_each key. Nothing checks this one field;
+  # every plan is checked for a key holding any vault value at all, and the
+  # as-built record refuses an estate that has one (#585,
+  # asbuilt.KeyedByAVaultValue).
   datastores = { for k, h in local.site.hypervisor.nodes : k => try(h.datastores, {}) }
   hostnames  = { for k, h in local.site.hypervisor.nodes : k => h.hostname }
 

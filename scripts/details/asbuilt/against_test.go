@@ -210,3 +210,88 @@ func TestPlanningAgainstARecordFailsLoudly(t *testing.T) {
 		}
 	}
 }
+
+// A change that keys a resource by a value from the vault is refused, with
+// the resource and the config field named - whichever vault value it is, and
+// whether the resource is already built or the change adds it.
+func TestAChangeThatKeysAResourceByAVaultValueIsRefused(t *testing.T) {
+	in, _ := takeFixture(t)
+	record := filepath.Join(t.TempDir(), "record")
+	if err := Write(record, publishable(), Meta{Site: "site0"}); err != nil {
+		t.Fatal(err)
+	}
+	keyed := `{"format_version": "1.2", "resource_changes": [
+	  {"address": "proxmox_vm.template[\"rstandin\"]", "mode": "managed", "type": "proxmox_vm", "name": "template",
+	   "index": "rstandin", "change": {"actions": ["create"]}}]}`
+	run := func(_ string, _ []string, args ...string) ([]byte, []byte, error) {
+		if args[0] == "show" {
+			return []byte(keyed), nil, nil
+		}
+		return nil, nil, nil
+	}
+	_, _, err := PlanAgainst(PlanInputs{
+		Root: in.Root, Work: in.Work, Record: record, Site: "site0",
+		Template: []byte(`{"sites": {"site0": {"name": "{{ op://site0-shared/identity/name }}"}}}`),
+		Sequence: []PlanStep{{Label: "everything"}},
+	}, run)
+	var refused *VaultKeyError
+	if !errors.As(err, &refused) {
+		t.Fatalf("got %v", err)
+	}
+	if len(refused.Keyed) != 1 || refused.Keyed[0] != "proxmox_vm.template is keyed by sites.site0.name" {
+		t.Errorf("refused %v", refused.Keyed)
+	}
+	if !strings.Contains(err.Error(), "proxmox_vm.template") || !strings.Contains(err.Error(), "sites.site0.name") {
+		t.Errorf("the refusal does not say what and which field: %v", err)
+	}
+}
+
+func TestKeyedByAVaultValueSeesEveryVaultFieldAndOnlyThose(t *testing.T) {
+	tpl := mustDecode(t, `{
+	  "organization": {"name": "{{ op://estate/organization/name }}", "label": "public"},
+	  "tunnel": {"vault_provider": "{{ op://estate/tunnel/provider }}", "token": "{{ op://estate/tunnel/token }}"},
+	  "sites": {"site0": {"octet": 10, "short": "{{ op://site0/short }}",
+	    "nodes": [{"hostname": "{{ op://site0/node0/hostname }}", "ip": "{{ op://site0/node0/ip }}"}]}}}`)
+	config := mustDecode(t, `{
+	  "organization": {"name": "rorgname0001", "label": "public"},
+	  "tunnel": {"vault_provider": "cloudflare", "token": "rtoken000001"},
+	  "sites": {"site0": {"octet": 10, "short": "ab",
+	    "nodes": [{"hostname": "rhostname001", "ip": "198.18.4.5"}]}}}`)
+	change := func(typ, name, index string) string {
+		addr := typ + "." + name
+		if index != "" {
+			addr += `[\"` + index + `\"]`
+		}
+		return `{"address": "` + addr + `", "type": "` + typ + `", "name": "` + name + `", "index": "` + index + `"}`
+	}
+	plan := `{"resource_changes": [` + strings.Join([]string{
+		change("a", "by_hostname", "rhostname001"),
+		change("a", "by_part_of_a_name", "pve-rorgname0001-x"),
+		change("a", "by_address", "198.18.4.5"),
+		change("a", "by_token", "rtoken000001"),
+		`{"address": "module.site[\"rorgname0001\"].a.in_a_keyed_module", "type": "a", "name": "in_a_keyed_module"}`,
+		change("a", "by_node_key", "node0"),
+		change("a", "by_public_literal", "public"),
+		change("a", "by_attestation", "cloudflare"),
+		change("a", "by_short_value", "ab"),
+		`{"address": "a.by_number[100]", "type": "a", "name": "by_number", "index": 100}`,
+		change("a", "unkeyed", ""),
+	}, ",") + `]}`
+	got, err := KeyedByAVaultValue([]byte(plan), tpl, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"a.by_address is keyed by sites.site0.nodes[0].ip",
+		"a.by_hostname is keyed by sites.site0.nodes[0].hostname",
+		"a.by_part_of_a_name is keyed by organization.name",
+		"a.by_token is keyed by tunnel.token",
+		"a.in_a_keyed_module is keyed by organization.name",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("got:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+	}
+	if _, err := KeyedByAVaultValue([]byte("not json"), tpl, config); err == nil {
+		t.Error("a plan that is not JSON was called clean")
+	}
+}

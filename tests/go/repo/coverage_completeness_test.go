@@ -198,6 +198,14 @@ func covered(t *testing.T, u unit, sources map[string]string, floors map[string]
 			if !strings.HasSuffix(name, ".tftest.hcl") {
 				continue
 			}
+			// Its own root's tests, and no other's. A test runs the root
+			// it sits in, so one in another root that happens to name the
+			// same identifier never reached this file's assertion - which
+			// is how a second root's `variable "site"` validation counted
+			// as exercised by the first root's test of its own.
+			if !testsTheRootOf(name, u.path) {
+				continue
+			}
 			for _, d := range decls {
 				if strings.Contains(src, "expect_failures") && strings.Contains(src, d[1]) {
 					return true
@@ -208,6 +216,17 @@ func covered(t *testing.T, u unit, sources map[string]string, floors map[string]
 	}
 	t.Fatalf("unit %s has a tier nothing knows how to check", u)
 	return false
+}
+
+// testsTheRootOf reports whether a .tftest.hcl file runs the root or module an
+// OpenTofu file belongs to: the test sits in that directory, or in the tests/
+// directory directly beneath it.
+func testsTheRootOf(test, file string) bool {
+	dir := filepath.Dir(test)
+	if filepath.Base(dir) == "tests" {
+		dir = filepath.Dir(dir)
+	}
+	return filepath.ToSlash(dir) == filepath.ToSlash(filepath.Dir(file))
 }
 
 // blocklistEntries is the declared debt, shared by every guard that can defer
