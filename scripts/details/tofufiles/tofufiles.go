@@ -1,7 +1,7 @@
 // Package tofufiles reads the repository's OpenTofu by what a file declares,
 // never by where the file is.
 //
-// A check that opens management/cluster/talos.tf checks that path. When the
+// A check that opens modules/infrastructure/cluster/talos.tf checks that path. When the
 // site's root was split in two, every check written that way went on reading
 // the root it named: the one that listed the secrets OpenTofu creates found
 // none in its directory and kept passing. Nothing had been removed; the thing

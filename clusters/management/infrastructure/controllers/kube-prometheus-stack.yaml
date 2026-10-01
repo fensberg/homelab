@@ -16,7 +16,7 @@
 # WHERE ALERTS GO. Slack, through the receiver Alertmanager ships - no bespoke
 # relay, no credential inside the cluster beyond the webhook URL itself. The
 # monitoring namespace and that secret are created by
-# management/platform/monitoring.tf, because a secret cannot come from git.
+# modules/infrastructure/platform/monitoring.tf, because a secret cannot come from git.
 #
 # The chart's own rules stay enabled, so the first week is still a survey of
 # what this estate actually trips. What changed is that a firing alert is now
@@ -216,7 +216,7 @@ spec:
       # a secret of its own; a URL written here would be in git on the way
       # there, and readable by anything that can read that secret once it
       # arrives. The name matches kubernetes_secret.alerting_webhook in
-      # management/platform/monitoring.tf, and the path below is where the
+      # modules/infrastructure/platform/monitoring.tf, and the path below is where the
       # operator mounts it.
       config:
         route:
@@ -428,7 +428,7 @@ spec:
     # Until this landed, Prometheus watched every workload in the cluster and
     # nothing that schedules them: no leader election, no work-queue depth, no
     # etcd health. The machine-configuration change that makes them reachable
-    # is in management/cluster/talos.tf, and the two halves have to travel
+    # is in modules/infrastructure/cluster/talos.tf, and the two halves have to travel
     # together - enabling them here without it leaves three targets red, and
     # the converge without this leaves three open ports nothing reads.
     # tests/go/repo refuses either half on its own.
@@ -452,7 +452,7 @@ spec:
     # etcd is a machine service rather than a pod, so there is nothing to
     # select and the addresses have to be given. They are node addresses, kept
     # out of git: OpenTofu writes them into the monitoring-vars secret and
-    # Flux substitutes them here (management/platform/monitoring.tf).
+    # Flux substitutes them here (modules/infrastructure/platform/monitoring.tf).
     #
     # Plain HTTP on 2381, which is the chart's default and Talos's: the
     # metrics listener is a separate, unauthenticated listener serving

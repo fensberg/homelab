@@ -1,5 +1,7 @@
 package config
 
+import "path/filepath"
+
 // A site is two OpenTofu roots, each a directory under management/ with its
 // own state (docs/epochs/02-abstraction.md, "Inside a site, the split is two
 // roots sharing one config").
@@ -18,3 +20,15 @@ const (
 
 // Roots is both, in the order they are applied.
 var Roots = []string{ClusterRoot, PlatformRoot}
+
+// ContractCorpus is where the config-contract corpus is, from the top of the
+// repository: the fixtures both implementations of the config's rules are
+// held to, and the OpenTofu test that runs them. It sits with the module that
+// declares those rules, and everything that reads a fixture finds it here, so
+// moving the module is this line.
+const ContractCorpus = "modules/infrastructure/cluster/tests"
+
+// CorpusFixture is the path of one fixture in that corpus.
+func CorpusFixture(repoRoot, name string) string {
+	return filepath.Join(repoRoot, filepath.FromSlash(ContractCorpus), "fixtures", name)
+}

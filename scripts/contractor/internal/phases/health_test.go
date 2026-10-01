@@ -149,7 +149,7 @@ func TestExpectedNodeCountCountsEveryMachineClass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture := filepath.Join(root, "management", "cluster", "tests", "fixtures", "valid.json")
+	fixture := config.CorpusFixture(root, "valid.json")
 
 	cfg, err := config.LoadRendered(fixture)
 	if err != nil {

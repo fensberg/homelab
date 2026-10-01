@@ -55,7 +55,7 @@ debt:
   - "hypervisor-prep.yml"
   - "management.rendered.json"
   - "management.tpl.json"
-  - "management/cluster/talos.tf"
+  - "modules/infrastructure/cluster/talos.tf"
   - "scripts/approved-suppliers.yml"
   - "scripts/clerk/llm.go"
   - "scripts/deliveries.lock"

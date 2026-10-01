@@ -638,3 +638,27 @@ func TestAPlanKeyedByAVaultValueIsRefusedWithoutPrintingIt(t *testing.T) {
 		t.Error("with no rendered config there is nothing to compare against, and that was called clean")
 	}
 }
+
+// A plan shows a resource by its type, name and key, not by the module the
+// root keeps it in.
+func TestAPlanShowsAResourceWithoutTheModuleItIsIn(t *testing.T) {
+	for address, want := range map[string]string{
+		`module.cluster.proxmox_virtual_environment_vm.talos_cp["100"]`: `proxmox_virtual_environment_vm.talos_cp["100"]`,
+		`module.platform.kubernetes_namespace.database`:                 `kubernetes_namespace.database`,
+		`module.a.module.b.terraform_data.x`:                            `terraform_data.x`,
+		`module.cluster.data.talos_cluster_health.this[0]`:              `data.talos_cluster_health.this[0]`,
+		`terraform_data.in_a_root`:                                      `terraform_data.in_a_root`,
+	} {
+		if got := shownAddress(address); got != want {
+			t.Errorf("%s is shown as %s, want %s", address, got, want)
+		}
+	}
+	summary, err := summarisePlan([]byte(`{"format_version": "1.2", "resource_changes": [
+	  {"address": "module.cluster.proxmox_vm.worker[\"201\"]", "mode": "managed", "type": "proxmox_vm", "name": "worker", "change": {"actions": ["create"]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(summary, "module.") || !strings.Contains(summary, `proxmox_vm.worker["201"]`) {
+		t.Errorf("the summary shows the module:\n%s", summary)
+	}
+}

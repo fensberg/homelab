@@ -1,16 +1,17 @@
 # =============================================================================
-# The platform root: what is put on a cluster that already stands.
+# The platform: what is put on a cluster that already stands.
 #
-# A site is two roots. management/cluster/ builds the machines and ends at
-# "the nodes are Ready"; this one starts there, and creates the namespaces and
-# secrets Flux cannot, then starts Flux. They are separate so that no provider
-# here is configured from a resource in its own root: the kubernetes provider
-# reads the cluster's access as an input, a value already applied and
-# therefore known at plan time (docs/epochs/02-abstraction.md, "Inside a site,
-# the split is two roots sharing one config").
+# A site is two roots. The cluster's builds the machines and ends at "the
+# nodes are Ready"; the platform's starts there, and creates the namespaces
+# and secrets Flux cannot, then starts Flux. They are separate so that no
+# provider is configured from a resource in its own root: the kubernetes
+# provider is configured by the root that calls this module, from the
+# cluster's access handed to it as a value already applied
+# (docs/epochs/02-abstraction.md, "Inside a site, the split is two roots
+# sharing one config").
 #
-# Both roots read the same rendered config, so nothing is plumbed between them
-# but the cluster's access.
+# Both modules read the same rendered config, so nothing is plumbed between
+# them but that access.
 # =============================================================================
 
 variable "site" {
@@ -48,22 +49,6 @@ variable "config_path" {
   EOT
 }
 
-variable "cluster_access" {
-  type = object({
-    host               = string
-    ca_certificate     = string
-    client_certificate = string
-    client_key         = string
-  })
-  sensitive   = true
-  description = <<-EOT
-    How to reach the cluster's API: the cluster root's output of the same
-    name, handed over by the contractor. Structured rather than a kubeconfig
-    to parse, so each certificate is a value of its own - which is what lets
-    a plan against the as-built record run with stand-ins.
-  EOT
-}
-
 variable "kubeconfig" {
   type        = string
   sensitive   = true
@@ -86,7 +71,7 @@ locals {
 
   # The Services an enrolled device routes to: the address plan's input, read
   # from the repository's top as every file outside this root is.
-  tunnel_routes = jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes
+  tunnel_routes = jsondecode(file("${path.module}/../../../management/tunnel-routes.json")).routes
 
   object_storage = local.site.object_storage
 

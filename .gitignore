@@ -137,3 +137,4 @@ scripts/survey/survey
 # throwaway CA. Removed by the phase and by Sterilize.
 /.as-built/
 /.as-built-unbuilt/
+modules/**/.terraform.lock.hcl

@@ -60,7 +60,7 @@ func WorldBackupKeyRef(site string) string { return "op://" + site + "/valheim/b
 // ensureWorldBackupKey generates the key the game server's backups are
 // encrypted with.
 //
-// By this file's rule: management/platform/workloads.tf writes it into a
+// By this file's rule: modules/infrastructure/platform/workloads.tf writes it into a
 // Secret, so it reaches state, so it is ours to generate. Nobody types it -
 // the backup sidecar encrypts with it and the restore init container
 // decrypts with it, both from that Secret, so a rebuilt estate restores the

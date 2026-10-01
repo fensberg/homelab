@@ -96,7 +96,7 @@ locals {
   # Reached from the repository's top, as every file outside this root is: a
   # plan against the as-built record runs a copy of this root at the same
   # depth, and only a "../../" path still leads to the same file from there.
-  tunnel_routes = jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes
+  tunnel_routes = jsondecode(file("${path.module}/../../../management/tunnel-routes.json")).routes
 
   # Each hypervisor's datastores and hostname, by its key in the config
   # (node0), which is what a machine's placement names. They are facts about

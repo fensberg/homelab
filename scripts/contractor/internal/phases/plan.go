@@ -252,7 +252,7 @@ func summarisePlan(raw []byte) (string, error) {
 		case "replace":
 			d = detail("forced by ", replacedBecause(c.Change.ReplacePaths))
 		}
-		rows = append(rows, row{redactKeys(c.Address), verb, d})
+		rows = append(rows, row{redactKeys(shownAddress(c.Address)), verb, d})
 		counts[verb]++
 	}
 
@@ -499,6 +499,23 @@ var numericKey = regexp.MustCompile(`^[0-9]+$`)
 // proper noun, and are the difference between "a control-plane VM is being
 // replaced" and knowing which one - which is exactly what a reviewer needs
 // when the plan says something is being destroyed.
+// shownAddress is a resource's address as a reader is shown it: without the
+// modules it sits in. Which module a root keeps a resource in is how the code
+// is arranged, and the same for every line of every plan; the type, the name
+// and the key are what say which thing is changing.
+func shownAddress(address string) string {
+	for strings.HasPrefix(address, "module.") {
+		_, rest, found := strings.Cut(strings.TrimPrefix(address, "module."), ".")
+		if !found {
+			break
+		}
+		// A module called with for_each or count carries a key of its own,
+		// which the cut above leaves in front: module.site["a"].x.y.
+		address = rest
+	}
+	return address
+}
+
 func redactKeys(address string) string {
 	return forEachKey.ReplaceAllStringFunc(address, func(m string) string {
 		key := forEachKey.FindStringSubmatch(m)[1]

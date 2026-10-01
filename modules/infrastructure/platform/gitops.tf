@@ -50,8 +50,8 @@ resource "terraform_data" "flux_bootstrap_apply" {
   # create - a Flux version bump or a new controller lands the same way any
   # other reviewed change to this path does.
   triggers_replace = [
-    filesha256("${path.module}/../../${local.gitops_target_path}/flux-system/gotk-components.yaml"),
-    filesha256("${path.module}/../../${local.gitops_target_path}/flux-system/gotk-sync.yaml"),
+    filesha256("${path.module}/../../../${local.gitops_target_path}/flux-system/gotk-components.yaml"),
+    filesha256("${path.module}/../../../${local.gitops_target_path}/flux-system/gotk-sync.yaml"),
   ]
 
   provisioner "local-exec" {
@@ -69,7 +69,7 @@ resource "terraform_data" "flux_bootstrap_apply" {
       trap 'rm -f "$tmp"' EXIT
       printf '%s' "$KUBECONFIG_CONTENT" >"$tmp"
       export KUBECONFIG="$tmp"
-      flux_system="${path.module}/../../${local.gitops_target_path}/flux-system"
+      flux_system="${path.module}/../../../${local.gitops_target_path}/flux-system"
 
       # Two applies, not one kubectl apply -k: a single invocation builds its
       # REST-mapping cache once at the start, before the CRDs it is about to

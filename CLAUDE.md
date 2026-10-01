@@ -457,15 +457,15 @@ config entry.
 
 ## What lives where
 
-| Path                         | Holds                                                                |
-| ---------------------------- | -------------------------------------------------------------------- |
-| `management/hypervisor/`     | Ansible: bare-metal Proxmox preparation                              |
-| `management/cluster/`        | OpenTofu: VMs, Talos, overlay network, Cilium; ends at "nodes Ready" |
-| `management/platform/`       | OpenTofu: the namespaces and secrets Flux cannot create, then Flux   |
-| `modules/infrastructure/`    | Pure OpenTofu modules: the estate's address plan                     |
-| `clusters/management/`       | Flux-reconciled manifests for this cluster                           |
-| `config/management.tpl.json` | The one config: sites, topology and every secret reference           |
-| `tests/`                     | Everything above the unit tier — see `tests/README.md`               |
+| Path                         | Holds                                                                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `management/hypervisor/`     | Ansible: bare-metal Proxmox preparation                                                                                |
+| `management/cluster/`        | A site's cluster root: providers, credentials and state. Calls the cluster module                                      |
+| `management/platform/`       | A site's platform root: the kubernetes provider and state. Calls the platform module                                   |
+| `modules/infrastructure/`    | OpenTofu modules: `cluster` (machines, Talos, Cilium), `platform` (what Flux cannot create, then Flux), `address-plan` |
+| `clusters/management/`       | Flux-reconciled manifests for this cluster                                                                             |
+| `config/management.tpl.json` | The one config: sites, topology and every secret reference                                                             |
+| `tests/`                     | Everything above the unit tier — see `tests/README.md`                                                                 |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator
 and the database itself are declared in `clusters/management/` and reconciled
@@ -604,7 +604,7 @@ and never run on a pull request.
 **The config contract is checked, not assumed.** `registry.tf` and
 `scripts/contractor/config/config.go` implement the same invariants twice, so a bad
 config is refused whether it arrives through the start button or a bare
-`tofu plan`. `management/cluster/tests/fixtures/manifest.json` is the single
+`tofu plan`. `modules/infrastructure/cluster/tests/fixtures/manifest.json` is the single
 corpus both sides are run against, and the contract tests fail if a case
 exists on one side and not the other. Adding an invariant means adding it in
 both places and adding a case to that manifest.

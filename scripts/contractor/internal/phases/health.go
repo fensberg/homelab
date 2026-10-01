@@ -987,6 +987,6 @@ func namesNodes(raw string) error {
 		"the rendered talosconfig names no nodes, so every node-targeted command " +
 			"will refuse until one is passed with -n.\n\n" +
 			"The estate knows its own node addresses. Set `nodes` on " +
-			"data.talos_client_configuration in management/cluster/talos.tf, " +
+			"data.talos_client_configuration in modules/infrastructure/cluster/talos.tf, " +
 			"beside `endpoints`.")
 }

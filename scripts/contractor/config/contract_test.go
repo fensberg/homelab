@@ -15,7 +15,7 @@ import (
 
 // The config contract is implemented twice on purpose: once here in Go, so
 // the start button refuses a bad config in milliseconds, and once in
-// management/cluster/registry.tf, so `tofu plan` refuses it too even when the
+// modules/infrastructure/cluster/registry.tf, so `tofu plan` refuses it too even when the
 // button is bypassed. Defence in depth is only defence while both halves say
 // the same thing, and nothing about the language forces that - so these tests
 // do.
@@ -39,7 +39,7 @@ import (
 // implementations are held to, and the HCL test that runs them.
 func corpusPath(t *testing.T, parts ...string) string {
 	t.Helper()
-	return filepath.Join(append([]string{repopath.RootOrFail(t), "management", "cluster", "tests"}, parts...)...)
+	return filepath.Join(append([]string{repopath.RootOrFail(t), filepath.FromSlash(ContractCorpus)}, parts...)...)
 }
 
 // readTF is the code of the one OpenTofu file that declares something, and
@@ -123,7 +123,7 @@ type corpusCase struct {
 
 func loadCorpus(t *testing.T) []corpusCase {
 	t.Helper()
-	path := corpusPath(t, "fixtures", "manifest.json")
+	path := CorpusFixture(repopath.RootOrFail(t), "manifest.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading the corpus manifest: %v", err)
@@ -145,7 +145,7 @@ func loadCorpus(t *testing.T) []corpusCase {
 func TestContract_CorpusVerdictsMatchTheManifest(t *testing.T) {
 	for _, tc := range loadCorpus(t) {
 		t.Run(tc.Name, func(t *testing.T) {
-			path := corpusPath(t, "fixtures", tc.Fixture)
+			path := CorpusFixture(repopath.RootOrFail(t), tc.Fixture)
 			cfg, err := LoadRendered(path)
 			if err != nil {
 				t.Fatalf("loading fixture %s: %v", tc.Fixture, err)

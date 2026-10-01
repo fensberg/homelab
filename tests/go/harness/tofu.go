@@ -99,7 +99,7 @@ func RootDir(t *testing.T, root string) string {
 func PlanOnlyOptions(t *testing.T, fixture string, vars map[string]any) *terraform.Options {
 	t.Helper()
 	opts := TofuOptions(t, config.ClusterRoot, vars)
-	opts.Vars["config_path"] = filepath.Join("./tests/fixtures", fixture)
+	opts.Vars["config_path"] = config.CorpusFixture(repopath.RootOrFail(t), fixture)
 	return opts
 }
 

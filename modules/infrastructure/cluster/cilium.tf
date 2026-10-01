@@ -34,7 +34,7 @@ resource "terraform_data" "cilium" {
   # changes: `task render-cni` regenerates it from the pinned chart version.
   # A version bump therefore lands like any other reviewed change to this path.
   triggers_replace = [
-    filesha256("${path.module}/../../clusters/bootstrap/cilium.yaml"),
+    filesha256("${path.module}/../../../clusters/bootstrap/cilium.yaml"),
   ]
 
   provisioner "local-exec" {
@@ -83,7 +83,7 @@ resource "terraform_data" "cilium" {
       existed=false
       kubectl -n kube-system get daemonset/cilium >/dev/null 2>&1 && existed=true
 
-      kubectl apply -f "${path.module}/../../clusters/bootstrap/cilium.yaml"
+      kubectl apply -f "${path.module}/../../../clusters/bootstrap/cilium.yaml"
 
       # AN AGENT READS ITS CONFIGURATION ONCE, AT START.
       #

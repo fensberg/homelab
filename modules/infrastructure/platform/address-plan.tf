@@ -6,7 +6,7 @@
 # The domain and the aliases name what the plan addresses; the tunnel routes
 # are the Services that need an address known before they exist.
 module "address_plan" {
-  source          = "../../modules/infrastructure/address-plan"
+  source          = "../address-plan"
   sites           = local.config.sites
   domain          = local.config.organization.domain
   aliases         = local.config.organization.aliases

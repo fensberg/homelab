@@ -11,7 +11,7 @@ import (
 )
 
 // The runner manifests name their namespaces as literals, while OpenTofu
-// declares the same values in management/platform/variables.tf and creates
+// declares the same values in modules/infrastructure/platform/variables.tf and creates
 // those namespaces from them.
 //
 // The credential secret's name is deliberately absent from this check: it is

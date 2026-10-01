@@ -12,8 +12,9 @@
 // alone.
 //
 // Every resource address is a constant here, and tests/go/repo refuses one
-// written anywhere else in the contractor. When a root becomes a module, every
-// address gains a prefix, and this file is the whole of that edit.
+// written anywhere else in the contractor. Each root's resources are in the
+// module it calls, so every address carries that module's prefix, and this
+// file was the whole of that edit.
 //
 // A site is two roots, and a step says which it applies in. The cluster root
 // ends with the nodes Ready; the platform root starts there, configured from
@@ -33,17 +34,22 @@ import (
 	"homelab/details/asbuilt"
 )
 
+// inCluster is where the cluster root keeps everything it builds: the module
+// it calls. The roots themselves hold no resource, so every address starts
+// with one of these, and a module renamed is this line.
+const inCluster = "module.cluster."
+
 // Resource addresses in the cluster root.
 const (
-	DiskImage          = "proxmox_download_file.talos_disk_image"
-	Template           = "proxmox_virtual_environment_vm.talos_template"
-	ControlPlanes      = "proxmox_virtual_environment_vm.talos_cp"
-	Workers            = "proxmox_virtual_environment_vm.talos_worker"
-	ControlPlaneConfig = "talos_machine_configuration_apply.control_plane"
-	WorkerConfig       = "talos_machine_configuration_apply.worker"
-	Bootstrap          = "talos_machine_bootstrap.this"
-	OverlayKey         = "tailscale_tailnet_key.hypervisor[0]"
-	ClusterHealth      = "data.talos_cluster_health.this[0]"
+	DiskImage          = inCluster + "proxmox_download_file.talos_disk_image"
+	Template           = inCluster + "proxmox_virtual_environment_vm.talos_template"
+	ControlPlanes      = inCluster + "proxmox_virtual_environment_vm.talos_cp"
+	Workers            = inCluster + "proxmox_virtual_environment_vm.talos_worker"
+	ControlPlaneConfig = inCluster + "talos_machine_configuration_apply.control_plane"
+	WorkerConfig       = inCluster + "talos_machine_configuration_apply.worker"
+	Bootstrap          = inCluster + "talos_machine_bootstrap.this"
+	OverlayKey         = inCluster + "tailscale_tailnet_key.hypervisor[0]"
+	ClusterHealth      = inCluster + "data.talos_cluster_health.this[0]"
 )
 
 // Step is one apply of the converge.

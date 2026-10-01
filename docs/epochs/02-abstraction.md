@@ -1965,6 +1965,41 @@ and nothing else, which is also what a build is (the core, and only the core).
 assignment. So `gitops_target_path` is the site's directory when one exists
 and the shared core when none does.
 
+### The roots are modules (built 2026-10-01)
+
+Each of a site's two roots is now a thin caller. `management/cluster/` and
+`management/platform/` hold what makes a root a root - the provider
+constraints and their lock file, the provider blocks and the credentials they
+read, and the state backend - and one `module` call each. Everything a site
+builds is in `modules/infrastructure/cluster` and
+`modules/infrastructure/platform`, with their tests and the config-contract
+corpus beside them.
+
+- **Versions are pinned in one place.** A module declares which providers it
+  uses and the root declares which versions, so a constraint is not written
+  twice and Dependabot watches the directory that holds the lock file.
+- **The contractor's addresses moved in one line.** Every address it writes is
+  a constant in `steps`, so the module prefix was one edit - which is what the
+  "a step is declared once" criterion said it would be. A plan still shows a
+  resource by its type, name and key: which module a root keeps it in is the
+  same on every line and says nothing about what is changing.
+- **A file climbs to the top of the repository by its own depth.** The guard
+  that held a root to `../../` now holds every file to however deep it is, so
+  a module three levels down is checked without being named.
+- **The custom-block guard has its OpenTofu leg.** A resource declared in a
+  root, rather than in a module, is refused unless `tests/custom-blocks.yml`
+  says why. Three are declared: the estate's enrollment policy, application
+  and device profile, each of which Cloudflare keeps one of per organisation.
+- **What the meta-guard was for.** Forty guards had named files in
+  `management/cluster/`. Having been converted to find OpenTofu by what it
+  declares, they followed the files into the modules without an edit; the
+  ones that broke were the three that still named a place - a fixture
+  directory, a path literal in a message, and a scope prefix.
+
+What this does not yet do is pin: a root calls its module by path, so every
+site runs the module as it stands on the commit being converged. That is the
+next criterion.
+
 ### A site pins the module version it runs
 
 Added 2026-09-27, for the module move itself. When the cluster root becomes a

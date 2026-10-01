@@ -69,7 +69,7 @@ commands start behaving differently from their documentation - which is a bad
 thing to discover while running `+"`talosctl rotate-ca`"+` during an incident.
 
   scripts/install-dependencies.sh   TALOSCTL_VERSION
-  management/cluster/variables.tf   talos_version`,
+  modules/infrastructure/cluster/variables.tf   talos_version`,
 			cliMajor, cliMinor, cli[3], clMajor, clMinor, cluster[3])
 	}
 }
@@ -116,7 +116,7 @@ re-pointing: something still has to keep the client in step with the cluster.`)
 	}
 	cluster := kubernetesVersion.FindSubmatch(vars)
 	if cluster == nil {
-		t.Fatal(`could not find kubernetes_version = "X.Y.Z" in management/cluster/variables.tf.
+		t.Fatal(`could not find kubernetes_version = "X.Y.Z" in modules/infrastructure/cluster/variables.tf.
 
 It was inline in talos.tf once, which is how it went five minors stale without
 anything noticing. It belongs in the locals beside talos_version, because Talos

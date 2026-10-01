@@ -86,7 +86,7 @@ func newVerbFixture(t *testing.T) *verbFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture, err := os.ReadFile(filepath.Join(repo, "management", "cluster", "tests", "fixtures", "valid.json"))
+	fixture, err := os.ReadFile(config.CorpusFixture(repo, "valid.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,6 @@
 ---
 # The tunnel connector. Dials OUT to Cloudflare and carries traffic from
-# enrolled WARP devices to the routes declared in management/platform/tunnel.tf.
+# enrolled WARP devices to the routes declared in modules/infrastructure/platform/tunnel.tf.
 #
 # Its namespace and its token are created by OpenTofu (management/cluster/
 # tunnel.tf), for the same reason the monitoring stack's are: a secret needs

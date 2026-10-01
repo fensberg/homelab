@@ -1,6 +1,7 @@
 package phases
 
 import (
+	"homelab/contractor/steps"
 	"os"
 	"strings"
 	"testing"
@@ -72,14 +73,18 @@ func TestConfirmDestroy_EmptySiteIsRefusedEvenWhenConfirmMatches(t *testing.T) {
 // reports zero machines, which reads exactly like an estate that is already
 // gone.
 func TestMachinesInStateReadsTheControlPlaneInstances(t *testing.T) {
-	const out = `data.talos_cluster_health.this
-proxmox_virtual_environment_download_file.talos_image["node0"]
-proxmox_virtual_environment_vm.talos_template["node0"]
-proxmox_virtual_environment_vm.talos_cp["node2"]
-proxmox_virtual_environment_vm.talos_cp["node0"]
-proxmox_virtual_environment_vm.talos_cp["node1"]
-talos_machine_secrets.this
-tailscale_tailnet_key.hypervisor`
+	// As `tofu state list` prints them: everything the cluster root builds is
+	// in the module it calls.
+	out := strings.Join([]string{
+		steps.ClusterHealth,
+		steps.DiskImage + `["node0"]`,
+		steps.Template + `["node0"]`,
+		steps.ControlPlanes + `["node2"]`,
+		steps.ControlPlanes + `["node0"]`,
+		steps.ControlPlanes + `["node1"]`,
+		steps.Bootstrap,
+		steps.OverlayKey,
+	}, "\n")
 
 	got := machinesInState(out)
 	want := []string{"node0", "node1", "node2"}
@@ -97,13 +102,17 @@ tailscale_tailnet_key.hypervisor`
 // estate. Overstating is the safer direction but it is still wrong, and a
 // banner nobody trusts is a banner nobody reads.
 func TestMachinesInStateIgnoresTheTemplateAndEverythingElse(t *testing.T) {
-	const out = `proxmox_virtual_environment_vm.talos_template["node0"]
-proxmox_virtual_environment_file.cloud_init["node0"]
-module.something.proxmox_virtual_environment_vm.talos_cp["node9"]`
+	out := strings.Join([]string{
+		steps.Template + `["node0"]`,
+		steps.Workers + `["201"]`,
+		// The same resource outside the cluster's module, and in another.
+		`proxmox_virtual_environment_vm.talos_cp["node8"]`,
+		`module.something.proxmox_virtual_environment_vm.talos_cp["node9"]`,
+	}, "\n")
 
 	if got := machinesInState(out); len(got) != 0 {
-		t.Errorf("got %v, want none - the template, an unrelated resource and a "+
-			"module-nested address are all not this cluster's control plane", got)
+		t.Errorf("got %v, want none - the template, a worker, and the same resource outside "+
+			"the cluster's module are all not this cluster's control plane", got)
 	}
 }
 

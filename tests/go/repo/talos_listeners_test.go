@@ -10,7 +10,7 @@ import (
 // Every listener the machine configuration opens is dialled by the integration
 // tier, and every listener the tier dials is one the configuration opens.
 //
-// WHAT THIS GUARDS. management/cluster/talos.tf declared
+// WHAT THIS GUARDS. modules/infrastructure/cluster/talos.tf declared
 // `listen-metrics-urls = "http://0.0.0.0:2381"` on etcd and the estate did not
 // have it. The declaration sat in the repository, correct and inert, while
 // Prometheus had no etcd target and Alertmanager paged every four hours

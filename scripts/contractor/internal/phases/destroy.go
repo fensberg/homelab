@@ -11,6 +11,7 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/contractor/steps"
 )
 
 // Destroy is the supported way to take an estate down.
@@ -308,7 +309,7 @@ const (
 // provider did not mark sensitive - the same output that leaked the cluster's
 // certificate authorities once already. `state list` prints addresses and
 // nothing else, which is why it is on the quiet allowlist.
-var vmInstance = regexp.MustCompile(`^proxmox_virtual_environment_vm\.talos_cp\["([^"]+)"\]$`)
+var vmInstance = regexp.MustCompile(`^` + regexp.QuoteMeta(steps.ControlPlanes) + `\["([^"]+)"\]$`)
 
 // machinesInState returns the for_each keys of the control-plane machines
 // Terraform is tracking.

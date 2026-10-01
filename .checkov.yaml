@@ -101,7 +101,7 @@ skip-path:
   # CKV_SECRET_2/CKV_SECRET_6. Hand-tuning each value to dodge the entropy
   # heuristic is fragile and would just recur on the next fixture; excluding
   # the directory is the same call already made for flux-system above.
-  - management/cluster/tests
+  - modules/infrastructure/cluster/tests
   # The test trees. tests/go holds Go source with deliberately fake
   # credentials in its fixtures and assertions, and node_modules under
   # tests/ would be third-party code this repository does not own. Same

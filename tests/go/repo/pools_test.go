@@ -60,7 +60,7 @@ func TestEveryMachineClassIsAssignedAPool(t *testing.T) {
 
 	machines := forEachCollections(t, compute, "proxmox_virtual_environment_vm")
 	if len(machines) == 0 {
-		t.Fatal("found no proxmox_virtual_environment_vm resources with a for_each in management/cluster/compute.tf, so this test asserts nothing")
+		t.Fatal("found no proxmox_virtual_environment_vm resources with a for_each in modules/infrastructure/cluster/compute.tf, so this test asserts nothing")
 	}
 
 	placed := map[string]bool{}
@@ -68,7 +68,7 @@ func TestEveryMachineClassIsAssignedAPool(t *testing.T) {
 		placed[collection] = true
 	}
 	if len(placed) == 0 {
-		t.Fatal(`management/cluster/pools.tf declares no proxmox_pool_membership with a for_each, so no machine is placed.
+		t.Fatal(`modules/infrastructure/cluster/pools.tf declares no proxmox_pool_membership with a for_each, so no machine is placed.
 
 If pools were removed deliberately, remove this test in the same change - a
 guard left standing over a reversed decision is noise.`)
@@ -87,7 +87,7 @@ guard left standing over a reversed decision is noise.`)
 
   %s
 
-Add a proxmox_pool_membership in management/cluster/pools.tf iterating the same
+Add a proxmox_pool_membership in modules/infrastructure/cluster/pools.tf iterating the same
 collection, in the pool for the function it serves. The hypervisor groups
 machines by what they are for so an operator can tell a control plane from a
 worker at a glance, and a class that is missing does not break that visibly -
@@ -107,7 +107,7 @@ func TestPoolIdsAreScopedToTheSite(t *testing.T) {
 
 	ids := regexp.MustCompile(`(?m)^\s*pool_id\s*=\s*"([^"]*)"`).FindAllStringSubmatch(pools, -1)
 	if len(ids) == 0 {
-		t.Fatal("no literal pool_id assignment found in management/cluster/pools.tf, so its scoping has not been checked")
+		t.Fatal("no literal pool_id assignment found in modules/infrastructure/cluster/pools.tf, so its scoping has not been checked")
 	}
 	for _, id := range ids {
 		if !strings.Contains(id[1], "local.site_name") {

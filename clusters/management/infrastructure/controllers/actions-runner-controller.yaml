@@ -3,7 +3,7 @@
 #
 # It holds the GitHub App credential and talks to the GitHub API; it never runs
 # a workflow itself. The runners it creates live in their own namespace with
-# their own copy of the credential - see management/platform/runner.tf for why
+# their own copy of the credential - see modules/infrastructure/platform/runner.tf for why
 # that separation is the point rather than an accident.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository

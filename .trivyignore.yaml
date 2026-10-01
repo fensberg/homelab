@@ -18,7 +18,7 @@ misconfigurations:
 
       The real secrets for this workload are not in any ConfigMap: the server
       name, world name and password come from the vault through a Kubernetes
-      Secret written by OpenTofu. See management/platform/workloads.tf.
+      Secret written by OpenTofu. See modules/infrastructure/platform/workloads.tf.
 
       Removed if the check learns to look at values, or if the game renames the
       flag.

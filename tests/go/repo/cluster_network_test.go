@@ -12,7 +12,7 @@ import (
 
 // The pod and service networks are declared, and cannot collide with a site.
 //
-// WHAT WAS WRONG. `management/cluster/talos.tf` set no clusterNetwork fields,
+// WHAT WAS WRONG. `modules/infrastructure/cluster/talos.tf` set no clusterNetwork fields,
 // so the cluster's two largest address ranges were whatever Talos defaulted to
 // (#240). The values in force were correct and nobody had chosen them: they
 // appear in none of the addressing decision in docs/epochs/02-abstraction.md,

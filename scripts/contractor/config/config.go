@@ -15,7 +15,7 @@ import (
 )
 
 // The bounds and the vendor map below are this program's half of a contract
-// it shares with management/cluster/registry.tf, which implements the same
+// it shares with modules/infrastructure/cluster/registry.tf, which implements the same
 // rules in HCL so that `tofu plan` fails on a bad config even when the start
 // button is bypassed. Two implementations of one rule can drift, so they are
 // named here rather than written inline, and
@@ -72,7 +72,7 @@ type Organization struct {
 // SourceControl carries no credential. Flux clones this public repository
 // anonymously over https, so the token that used to sit here authenticated a
 // request that succeeds without it - while being written to OpenTofu state
-// for the privilege. See management/platform/gitops.tf.
+// for the privilege. See modules/infrastructure/platform/gitops.tf.
 type SourceControl struct {
 	RepoURL    string     `json:"repo_url"`
 	ForemanBot ForemanBot `json:"foreman_bot"`

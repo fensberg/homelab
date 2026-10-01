@@ -3,7 +3,7 @@
 #
 # No namespace here. It is created by OpenTofu alongside the Secret that has to
 # live in it - a secret needs its namespace to exist, and OpenTofu runs before
-# Flux has reconciled anything. See management/platform/workloads.tf.
+# Flux has reconciled anything. See modules/infrastructure/platform/workloads.tf.
 #
 # The Deployment is pinned to an image digest rather than a tag. The build
 # workflow prints the digest into its job summary for exactly this line.
