@@ -106,7 +106,11 @@ skip-path:
   # install the day it was added. Only the kustomization.yaml that assembles
   # a directory is skipped; every manifest it lists is still scanned as the
   # file it is.
-  - clusters/[^/]+/kustomization\.yaml
+  #
+  # \w+ and not a bracketed class: Checkov rewrites a skip path before
+  # compiling it, and one with square brackets fails to compile, which kills
+  # the scan with "nothing to repeat" and leaves the job to time out.
+  - clusters/\w+/kustomization\.yaml
   # tofu test fixtures - deliberately fake values, some deliberately shaped
   # like a real credential (aws-shaped-key.json exists specifically to
   # trigger the AKIA/ASIA check). Checkov's secrets scanner can't tell fake
