@@ -534,17 +534,43 @@ func was(n int) string {
 //
 // The copy's state is pushed through stdin, never a plaintext file, and the
 // process's TF_ENCRYPTION encrypts it as it lands, as the real one is.
+//
+// Each root is planned in turn and the two are reported as one plan: what a
+// reader wants is what the change does to the site.
 func planSteps(ctx *run.Context, tofu asbuilt.Tofu, push func(dir string, state []byte) error) ([]byte, error) {
+	var plans [][]byte
+	for _, root := range ctx.Roots() {
+		in, err := rootFor(ctx, root.Name, tofu)
+		if err != nil {
+			return nil, err
+		}
+		run.Info("planning the " + root.Name + " root")
+		plan, err := planRoot(in, tofu, push)
+		// The copy is of one root, in a directory the next root's copy takes.
+		if rmErr := run.RemoveTreeIfExists(ctx.AsBuiltDir); rmErr != nil && err == nil {
+			err = rmErr
+		}
+		if err != nil {
+			return nil, fmt.Errorf("the %s root: %w", root.Name, err)
+		}
+		plans = append(plans, plan)
+	}
+	return asbuilt.MergePlans(plans...)
+}
+
+// planRoot plans the steps of the root ctx runs in, against a copy of its
+// state.
+func planRoot(ctx *run.Context, tofu asbuilt.Tofu, push func(dir string, state []byte) error) ([]byte, error) {
 	dir := filepath.Join(ctx.AsBuiltDir, "plan")
-	if err := asbuilt.CopyRoot(ctx.ClusterDir, dir); err != nil {
+	if err := asbuilt.CopyRoot(ctx.Dir, dir); err != nil {
 		return nil, err
 	}
 	run.Info("copying the estate's state, so planning its steps changes nothing")
 	if _, stderr, err := tofu(dir, nil, "init", "-input=false", "-no-color",
-		asbuilt.PluginDir(ctx.ClusterDir)); err != nil {
+		asbuilt.PluginDir(ctx.Dir)); err != nil {
 		return nil, fmt.Errorf("initialising the copy:\n%s", asbuilt.ErrorSummary(stderr))
 	}
-	state, _, err := tofu(ctx.ClusterDir, nil, "state", "pull")
+	state, _, err := tofu(ctx.Dir, nil, "state", "pull")
 	if err != nil {
 		return nil, fmt.Errorf("pulling the state: %w", err)
 	}
@@ -554,7 +580,7 @@ func planSteps(ctx *run.Context, tofu asbuilt.Tofu, push func(dir string, state 
 		return nil, fmt.Errorf("copying the state: %w", err)
 	}
 	return asbuilt.PlanSteps(asbuilt.StepsInputs{
-		Dir: dir, Sequence: steps.Plan(), Refresh: true, Say: run.Info,
+		Dir: dir, Sequence: steps.Plan(ctx.Name), Refresh: true, Say: run.Info,
 	}, tofu)
 }
 

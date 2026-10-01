@@ -14,8 +14,6 @@
 # =============================================================================
 
 resource "kubernetes_namespace" "database" {
-  depends_on = [data.talos_cluster_health.this]
-
   metadata {
     name = local.state_db_namespace
   }

@@ -60,7 +60,7 @@ func TestKubeconfigCleanupKeepsOnlyTheKubeconfig(t *testing.T) {
 	}
 
 	// Everything else the verb can create must be swept.
-	for _, want := range []string{ctx.BackendPgOn, ctx.TofuBackendRecord, ctx.ConfigRendered} {
+	for _, want := range []string{ctx.BackendPgOn, ctx.BackendRecord, ctx.ConfigRendered} {
 		var found bool
 		for _, target := range sterilizeTargets(ctx) {
 			if target == want {

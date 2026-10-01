@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"homelab/contractor/config"
 	"homelab/contractor/internal/tfsource"
 )
 
@@ -26,11 +27,17 @@ import (
 
 func clusterFile(t *testing.T, name string) string {
 	t.Helper()
+	return rootFile(t, config.ClusterRoot, name)
+}
+
+// rootFile is one file of one of a site's roots.
+func rootFile(t *testing.T, tofuRoot, name string) string {
+	t.Helper()
 	root, err := repopath.Root()
 	if err != nil {
 		t.Fatal(err)
 	}
-	src, err := tfsource.Read(filepath.Join(root, "management", "cluster", name))
+	src, err := tfsource.Read(filepath.Join(root, "management", tofuRoot, name))
 	if err != nil {
 		t.Fatalf("reading the OpenTofu source: %v", err)
 	}
@@ -38,7 +45,9 @@ func clusterFile(t *testing.T, name string) string {
 }
 
 func TestContract_StateDatabaseLocalsMatchTheOpenTofuSource(t *testing.T) {
-	src := clusterFile(t, "variables.tf")
+	// The platform root declares the database, so its variables.tf is where
+	// these are.
+	src := rootFile(t, config.PlatformRoot, "variables.tf")
 
 	for _, tc := range []struct{ local, go_ string }{
 		{"state_db_name", stateDBName},

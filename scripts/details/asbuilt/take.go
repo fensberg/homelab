@@ -22,8 +22,18 @@ type Tofu func(dir string, env []string, args ...string) (stdout, stderr []byte,
 
 // Inputs is what taking a record needs.
 type Inputs struct {
-	// Root is the cluster root, initialised and attached to its state.
+	// Root is the root to record, initialised and attached to its state. A
+	// site has two, and each is recorded on its own.
 	Root string
+	// MachineSecrets says this root's state holds the Talos machine secrets,
+	// which are swapped for a throwaway set. The cluster root's does, and a
+	// state said to hold them that does not is refused: it is not the state
+	// of a site.
+	MachineSecrets bool
+	// Vars are inputs the offline plan needs beyond the site and the config,
+	// by variable name: for a root configured from another root's outputs,
+	// the stand-ins the record of that root holds for them (OutputVars).
+	Vars map[string]string
 	// Work is where the record is made: an offline copy of Root and a
 	// throwaway CA. It must be two levels below the repository, the same
 	// depth as Root, so "${path.module}/../../" still reaches the repository.
@@ -152,13 +162,15 @@ func Take(in Inputs, tofu Tofu) (*Result, error) {
 	}
 	r := NewReplacements()
 
-	say("generating a throwaway CA")
-	throwaway, err := throwawayMachineSecrets(in, tofu, talosVersion(state))
-	if err != nil {
-		return nil, err
-	}
-	if _, err := SwapMachineSecrets(state, throwaway, r); err != nil {
-		return nil, err
+	if in.MachineSecrets {
+		say("generating a throwaway CA")
+		throwaway, err := throwawayMachineSecrets(in, tofu, talosVersion(state))
+		if err != nil {
+			return nil, err
+		}
+		if _, err := SwapMachineSecrets(state, throwaway, r); err != nil {
+			return nil, err
+		}
 	}
 	config, err := fingerprintConfig(f, r, in.Template, in.Rendered)
 	if err != nil {
@@ -183,7 +195,7 @@ func Take(in Inputs, tofu Tofu) (*Result, error) {
 	if err := writeJSON(filepath.Join(scratch, "config.json"), config); err != nil {
 		return nil, err
 	}
-	env := OfflineEnv(os.Environ(), in.Site, filepath.Join(scratch, "config.json"))
+	env := append(OfflineEnv(os.Environ(), in.Site, filepath.Join(scratch, "config.json")), varEnv(in.Vars)...)
 	if _, stderr, err := tofu(scratch, env, "init", "-input=false", "-no-color", pluginDir(in.Root)); err != nil {
 		return nil, fmt.Errorf("initialising the offline copy (%v):\n%s", err, ErrorSummary(stderr))
 	}
@@ -392,6 +404,88 @@ func copyRoot(from, to string) error {
 		}
 	}
 	return nil
+}
+
+// varEnv is variables as tofu reads them from the environment, in a stable
+// order.
+func varEnv(vars map[string]string) []string {
+	names := make([]string, 0, len(vars))
+	for name := range vars {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		out = append(out, "TF_VAR_"+name+"="+vars[name])
+	}
+	return out
+}
+
+// OutputVars reads outputs out of a record's state, as the variables of the
+// same names another root takes them as: a string as itself, anything else
+// as JSON. Every name must be there. A record without one cannot stand in for
+// the root it is of, and planning with the variable unset would fail on
+// something that names neither.
+func OutputVars(state map[string]any, names ...string) (map[string]string, error) {
+	outputs, _ := state["outputs"].(map[string]any)
+	vars := map[string]string{}
+	for _, name := range names {
+		out, _ := outputs[name].(map[string]any)
+		value, ok := out["value"]
+		if !ok || value == nil {
+			return nil, fmt.Errorf("the record holds no %q output, so the root that reads it cannot be planned against this record", name)
+		}
+		if s, ok := value.(string); ok {
+			vars[name] = s
+			continue
+		}
+		b, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		vars[name] = string(b)
+	}
+	return vars, nil
+}
+
+// MergePlans is several roots' plans as one: every resource change and every
+// output change, in the order given. A site is planned root by root and
+// reported once, because what a reader wants is what the change does to the
+// site.
+func MergePlans(plans ...[]byte) ([]byte, error) {
+	var merged map[string]any
+	for _, raw := range plans {
+		doc, err := decode(raw)
+		if err != nil {
+			return nil, fmt.Errorf("a plan is not JSON: %w", err)
+		}
+		if merged == nil {
+			merged = doc
+			continue
+		}
+		for _, list := range []string{"resource_changes", "resource_drift"} {
+			more, _ := doc[list].([]any)
+			if len(more) == 0 {
+				continue
+			}
+			have, _ := merged[list].([]any)
+			merged[list] = append(have, more...)
+		}
+		if more, _ := doc["output_changes"].(map[string]any); len(more) > 0 {
+			have, _ := merged["output_changes"].(map[string]any)
+			if have == nil {
+				have = map[string]any{}
+			}
+			for name, change := range more {
+				have[name] = change
+			}
+			merged["output_changes"] = have
+		}
+	}
+	if merged == nil {
+		return nil, errors.New("no plan was given, so there is nothing to report")
+	}
+	return json.Marshal(merged)
 }
 
 // OfflineEnv is the environment for a tofu that must reach nothing real.

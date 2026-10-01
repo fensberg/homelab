@@ -117,33 +117,7 @@ locals {
   overlay_network = local.site.overlay_network
   object_storage  = local.site.object_storage
 
-  # The account's S3 API address, which every bucket in it shares. One
-  # expression for the database's backups and the world's. The account and the
-  # buckets are granted by the estate; the site creates neither.
-  object_storage_endpoint = "https://${local.object_storage.account_id}.r2.cloudflarestorage.com"
-  site_database           = local.site.database
-
-  # --- CI runners ----------------------------------------------------------
-  # Fleet plane, like the object storage account: one GitHub App serves the
-  # estate, and a runner is a site-level deployment of an estate-level
-  # identity. See runner.tf for why the App is scoped the way it is.
-  runner = local.config.source_control.foreman_bot
-
-  # Only what OpenTofu itself creates. The scale set's own name, its runner
-  # group and its ceiling are declared in the manifest that uses them, because
-  # nothing here reads them - a local kept alive purely so a test could compare
-  # against it is dead code with a test-shaped excuse, and tflint was right to
-  # say so.
-  runner_system_namespace = "arc-systems"
-  runners_namespace       = "arc-runners"
-  runner_secret_name      = "github-app-credentials"
-
-  # The scale set is registered against the organization, not the repository,
-  # because that is the scope the App was granted. Derived from the repository
-  # URL rather than declared again, so the two cannot disagree:
-  # https://host/org/repo -> https://host/org.
-  runner_github_config_url = join("/", slice(split("/", local.config.source_control.repo_url), 0, 4))
-  node_count               = local.site.control_plane_count
+  node_count = local.site.control_plane_count
 
   # --- addressing ----------------------------------------------------------
   # The octet is declared, not computed. Reading the config tells you the
@@ -395,45 +369,6 @@ locals {
   # rebuild.
   dmz_schematic_id = "70d243b7e2cbe699e4db5e73356a2add6b4bb8e34eadba9db22c823110e79099"
 
-  # --- tunnel --------------------------------------------------------------
-  # Required rather than defaulted, unlike alerting: its credential is held to
-  # the vendor attestation in registry.tf, and a default would be a way for
-  # that check to pass on a value nobody attested.
-  tunnel = local.config.tunnel
-
-  # --- alerting ------------------------------------------------------------
-  #
-  # Where the estate speaks when something it monitors goes wrong. Fleet-level
-  # for the same reason workloads are: one person reads it, and a second site
-  # would report into the same place rather than somewhere new.
-  #
-  # The webhook URL is the whole credential - an incoming webhook authenticates
-  # by being known - so it is written into a Secret the monitoring namespace
-  # reads and never into a manifest in git.
-  alerting = try(local.config.alerting, {
-    provider    = ""
-    webhook_url = ""
-  })
-
-  # --- workloads -----------------------------------------------------------
-  #
-  # Fleet-level rather than per-site: one repository drives every cluster, and
-  # a workload is deployed by Flux rather than placed on a machine.
-  valheim = try(local.config.workloads.valheim, {
-    name        = ""
-    server_name = ""
-    password    = ""
-    backup_key  = ""
-  })
-
-  gitops_target_path = "clusters/management"
-
-  # --- state database ------------------------------------------------------
-  state_db_namespace = "database"
-  state_db_cluster   = "tofu-state"
-  state_db_name      = "tofu_state"
-  state_db_owner     = "tofu"
-  state_db_nodeport  = local.net.state_database.port
 }
 
 output "site_network" {

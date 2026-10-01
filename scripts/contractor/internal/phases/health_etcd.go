@@ -210,7 +210,7 @@ func checkEtcd(ctx *run.Context, _ string) error {
 	// the same membership list - that is what makes it a cluster - so asking
 	// each one would be the same answer several times, and would fail the
 	// whole check if one node were merely unreachable.
-	out, err := run.CmdOutputEnv(ctx.ClusterDir, []string{"TALOSCONFIG=" + talosconfig},
+	out, err := run.CmdOutputEnv(ctx.Dir, []string{"TALOSCONFIG=" + talosconfig},
 		"talosctl", "--nodes", net.NodeIPs[0], "etcd", "members")
 	if err != nil {
 		return fmt.Errorf("could not read etcd membership from the cluster: %w", err)

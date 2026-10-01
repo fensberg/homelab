@@ -26,8 +26,6 @@
 # =============================================================================
 
 resource "kubernetes_namespace" "flux_system" {
-  depends_on = [data.talos_cluster_health.this]
-
   metadata {
     name = "flux-system"
   }
@@ -63,7 +61,7 @@ resource "terraform_data" "flux_bootstrap_apply" {
     # values, and this project's own invariant is that nothing survives on
     # the workstation past the run that needed it.
     environment = {
-      KUBECONFIG_CONTENT = talos_cluster_kubeconfig.this.kubeconfig_raw
+      KUBECONFIG_CONTENT = var.kubeconfig
     }
     command = <<-EOT
       set -euo pipefail

@@ -52,6 +52,7 @@ inventory.yml
 
 # Rendered at migration time, never committed
 management/cluster/backend_pg.tf
+management/platform/backend_pg.tf
 
 # Tailscale auth key handed to Ansible by the Overlay phase
 management/hypervisor/overlay-network.auto.yml

@@ -87,7 +87,7 @@ func SettleMoves(ctx *Context) error {
 	// targeted apply exactly as a `moved` block does. The plans do the same
 	// in their copies (details/asbuilt.ForgetReads), so they refuse what this
 	// would and pass what it would.
-	n, err := asbuilt.ForgetReads(ctx.ClusterDir, nil, asbuilt.Exec, true)
+	n, err := asbuilt.ForgetReads(ctx.Dir, nil, asbuilt.Exec, true)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func SettleMoves(ctx *Context) error {
 		Info(fmt.Sprintf("forgot %d cached data-source read(s); the plan below reads them again", n))
 	}
 
-	addrs, err := PendingMoves(ctx.ClusterDir)
+	addrs, err := PendingMoves(ctx.Dir)
 	if err != nil {
 		return fmt.Errorf("looking for renamed resources: %w", err)
 	}

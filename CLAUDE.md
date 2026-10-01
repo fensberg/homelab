@@ -457,14 +457,15 @@ config entry.
 
 ## What lives where
 
-| Path                         | Holds                                                      |
-| ---------------------------- | ---------------------------------------------------------- |
-| `management/hypervisor/`     | Ansible: bare-metal Proxmox preparation                    |
-| `management/cluster/`        | OpenTofu: VMs, Talos, overlay network, storage, Flux       |
-| `modules/infrastructure/`    | Pure OpenTofu modules: the estate's address plan           |
-| `clusters/management/`       | Flux-reconciled manifests for this cluster                 |
-| `config/management.tpl.json` | The one config: sites, topology and every secret reference |
-| `tests/`                     | Everything above the unit tier — see `tests/README.md`     |
+| Path                         | Holds                                                                |
+| ---------------------------- | -------------------------------------------------------------------- |
+| `management/hypervisor/`     | Ansible: bare-metal Proxmox preparation                              |
+| `management/cluster/`        | OpenTofu: VMs, Talos, overlay network, Cilium; ends at "nodes Ready" |
+| `management/platform/`       | OpenTofu: the namespaces and secrets Flux cannot create, then Flux   |
+| `modules/infrastructure/`    | Pure OpenTofu modules: the estate's address plan                     |
+| `clusters/management/`       | Flux-reconciled manifests for this cluster                           |
+| `config/management.tpl.json` | The one config: sites, topology and every secret reference           |
+| `tests/`                     | Everything above the unit tier — see `tests/README.md`               |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator
 and the database itself are declared in `clusters/management/` and reconciled

@@ -2,7 +2,7 @@
 # The database that holds OpenTofu state.
 #
 # ${VAR} placeholders are substituted by Flux at reconcile time from the
-# cluster-vars secret that OpenTofu writes (see management/cluster/database.tf).
+# cluster-vars secret that OpenTofu writes (see management/platform/database.tf).
 # Nothing account-specific is committed here.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster

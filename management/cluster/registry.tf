@@ -206,7 +206,7 @@ resource "terraform_data" "invariants" {
     # its token decides who may enroll a device and what that device reaches -
     # exactly the credential the three-way agreement exists for.
     precondition {
-      condition     = local.tunnel.provider == "cloudflare" && trimspace(local.tunnel.vault_provider) == "cloudflare"
+      condition     = local.config.tunnel.provider == "cloudflare" && trimspace(local.config.tunnel.vault_provider) == "cloudflare"
       error_message = "Tunnel vendor mismatch: tunnel.provider and the 1Password item's tunnel.vault_provider must both be 'cloudflare', which is what this root implements. Either the wrong item is referenced, or its credentials were replaced without updating its provider field."
     }
 

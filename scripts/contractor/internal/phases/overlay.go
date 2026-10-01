@@ -14,9 +14,14 @@ import (
 func Overlay(ctx *run.Context) error {
 	run.WritePhase("Overlay", "Mint a tagged auth key for the hypervisor to join the overlay network.")
 
-	run.Info("tofu init")
-	if err := run.TofuInit(ctx); err != nil {
-		return err
+	// Every root, here, because this is the first phase that runs tofu: the
+	// platform root is not applied until the Cluster phase, and a missing
+	// provider is better found now than after the machines are built.
+	for _, root := range ctx.Roots() {
+		run.Info("tofu init (" + root.Name + ")")
+		if err := run.TofuInit(ctx.In(root)); err != nil {
+			return err
+		}
 	}
 
 	// Applied ahead of the playbook so the hypervisor can log in with a
@@ -28,7 +33,7 @@ func Overlay(ctx *run.Context) error {
 	// is still a current resource in state, so a plain apply reports no changes
 	// and hands the playbook a credential Tailscale has already retired.
 	run.Info("minting a tagged auth key")
-	list, _ := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list")
+	list, _ := run.CmdOutputQuiet(ctx.Dir, "tofu", "state", "list")
 	args := overlayApplyArgs(stateListContains(list, overlayKeyAddress))
 	if err := run.TofuApplyArgs(ctx, "tofu apply (overlay network)", args...); err != nil {
 		return err

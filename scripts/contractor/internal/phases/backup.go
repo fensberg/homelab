@@ -21,12 +21,6 @@ func Backup(ctx *run.Context) error {
 		return err
 	}
 
-	// Resolved before any work, so a missing credential stops the run rather
-	// than the upload. The same call Restore makes - see StateBackupLocation.
-	backups, err := config.StateBackupLocation(cfg, ctx.Site)
-	if err != nil {
-		return err
-	}
 	recipient := strings.TrimSpace(cfg.StateBackup.Recipient)
 	if recipient == "" {
 		return fmt.Errorf(`no 'state_backup.recipient' in the rendered config.
@@ -48,37 +42,19 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 		}
 	}
 
+	// Resolved for every root before any work, so a missing credential stops
+	// the run rather than the upload. The same call Restore makes - see
+	// StateBackupLocation.
+	locations := map[string]config.StateBackups{}
+	for _, root := range ctx.Roots() {
+		loc, err := config.StateBackupLocation(cfg, ctx.Site, root.Name)
+		if err != nil {
+			return err
+		}
+		locations[root.Name] = loc
+	}
+
 	stamp := time.Now().Format("20060102-150405")
-	// Only the ciphertext ever becomes a file. The plaintext is held in
-	// memory and piped straight into age.
-	//
-	// Created here rather than named here, and the difference is the point.
-	// A path built from the timestamp is predictable, and it lands in a
-	// directory shared with every other account on the machine - including
-	// the unprivileged one this estate deliberately confines an agent to.
-	// Worse, age creates its --output file honouring the caller's umask, so
-	// under either common default (0022 or 0002) the encrypted state of the
-	// entire estate arrived world-readable. Ciphertext is not an excuse: handing any
-	// account an offline copy of the estate's state is precisely what the
-	// privilege boundary exists to prevent, and it only has to hold until
-	// the recipient half leaks once. os.CreateTemp gives an unpredictable
-	// name at 0600, which is what the two other temp files in this program
-	// (the kubeconfig in health.go, the identity in restore.go) already do.
-	tmp, err := os.CreateTemp("", fmt.Sprintf("tofu-state-%s-*.json.age", stamp))
-	if err != nil {
-		return fmt.Errorf("creating the temporary ciphertext file: %w", err)
-	}
-	tmpCipher := tmp.Name()
-	defer os.Remove(tmpCipher)
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return fmt.Errorf("securing the temporary ciphertext file: %w", err)
-	}
-	// Closed, not written through: age opens the path itself. Truncating an
-	// existing file leaves its mode alone, so the 0600 set here survives.
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing the temporary ciphertext file: %w", err)
-	}
 
 	// Pull from whichever backend is currently authoritative. After the
 	// Migrate phase that is Postgres, which is exactly what we want to back
@@ -103,8 +79,71 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 		return err
 	}
 
-	run.Info("pulling the current state")
-	state, err := run.CmdOutputBytes(ctx.ClusterDir, "tofu", "state", "pull")
+	// Both roots, each to its own folder. A backup that covered one of a
+	// site's two states would be worse than the single state it replaced:
+	// it would look complete.
+	for _, root := range ctx.Roots() {
+		if err := backupRoot(ctx.In(root), locations[root.Name], recipient, stamp); err != nil {
+			return fmt.Errorf("the %s root: %w", root.Name, err)
+		}
+	}
+
+	run.Ok("encrypted state backed up to Cloudflare R2")
+
+	// The private identity is deliberately absent from the config contract and
+	// from OpenTofu: this program writes backups on every run and reads one
+	// only when a human asks it to, from `-restore` and nowhere else.
+	fmt.Printf(`
+  To bring this back after a total loss, on a machine with vault access
+  (an 'op signin' session, or OP_SERVICE_ACCOUNT_TOKEN exported):
+
+    ./toolshed/contractor restore -site %s
+
+  It fetches the identity from %s, decrypts, checks that what
+  came back is state describing something, and pushes it through the encrypted
+  backend. It refuses if local state already exists.
+
+`, ctx.Site, BackupIdentityRef)
+
+	return nil
+}
+
+// backupRoot encrypts the state of the root ctx runs in and uploads it to
+// that root's folder.
+func backupRoot(ctx *run.Context, backups config.StateBackups, recipient, stamp string) error {
+	// Only the ciphertext ever becomes a file. The plaintext is held in
+	// memory and piped straight into age.
+	//
+	// Created here rather than named here, and the difference is the point.
+	// A path built from the timestamp is predictable, and it lands in a
+	// directory shared with every other account on the machine - including
+	// the unprivileged one this estate deliberately confines an agent to.
+	// Worse, age creates its --output file honouring the caller's umask, so
+	// under either common default (0022 or 0002) the encrypted state of the
+	// entire estate arrived world-readable. Ciphertext is not an excuse: handing any
+	// account an offline copy of the estate's state is precisely what the
+	// privilege boundary exists to prevent, and it only has to hold until
+	// the recipient half leaks once. os.CreateTemp gives an unpredictable
+	// name at 0600, which is what the two other temp files in this program
+	// (the kubeconfig in health.go, the identity in restore.go) already do.
+	tmp, err := os.CreateTemp("", fmt.Sprintf("tofu-state-%s-%s-*.json.age", ctx.Name, stamp))
+	if err != nil {
+		return fmt.Errorf("creating the temporary ciphertext file: %w", err)
+	}
+	tmpCipher := tmp.Name()
+	defer os.Remove(tmpCipher)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return fmt.Errorf("securing the temporary ciphertext file: %w", err)
+	}
+	// Closed, not written through: age opens the path itself. Truncating an
+	// existing file leaves its mode alone, so the 0600 set here survives.
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing the temporary ciphertext file: %w", err)
+	}
+
+	run.Info("pulling the " + ctx.Name + " root's state")
+	state, err := run.CmdOutputBytes(ctx.Dir, "tofu", "state", "pull")
 	defer run.Wipe(state)
 	if err != nil {
 		return fmt.Errorf("tofu state pull: %w", err)
@@ -118,7 +157,7 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 		recipientPreview = recipientPreview[:20]
 	}
 	run.Info("encrypting to " + recipientPreview + "...")
-	if err := run.CmdStdin(ctx.ClusterDir, state, "age",
+	if err := run.CmdStdin(ctx.Dir, state, "age",
 		"--recipient", recipient, "--output", tmpCipher); err != nil {
 		return fmt.Errorf("age encrypt: %w", err)
 	}
@@ -143,37 +182,15 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 	// flattening now would only have to be undone. See 02-abstraction.md.
 	dest := backups.Folder
 	run.Info(fmt.Sprintf("uploading to %s/%s.tfstate.age", dest, stamp))
-	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, fmt.Sprintf("%s/%s.tfstate.age", dest, stamp)); err != nil {
+	if err := run.CmdEnv(ctx.Dir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, fmt.Sprintf("%s/%s.tfstate.age", dest, stamp)); err != nil {
 		return fmt.Errorf("rclone upload (timestamped): %w", err)
 	}
 	run.Info("updating " + backups.Latest)
-	if err := run.CmdEnv(ctx.ClusterDir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, backups.Latest); err != nil {
+	if err := run.CmdEnv(ctx.Dir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, backups.Latest); err != nil {
 		return fmt.Errorf("rclone upload (latest): %w", err)
 	}
 
-	run.Ok("encrypted state backed up to Cloudflare R2")
-
-	// Bounded storage, but never at the cost of the only copy. The prune
-	// re-lists the bucket and refuses to delete anything unless the upload
-	// just made is actually in that listing - "rclone exited zero" is a claim
-	// about a request, not about what is in the bucket.
 	pruneOldBackups(ctx, rcloneEnv, dest, stamp)
-
-	// The private identity is deliberately absent from the config contract and
-	// from OpenTofu: this program writes backups on every run and reads one
-	// only when a human asks it to, from `-restore` and nowhere else.
-	fmt.Printf(`
-  To bring this back after a total loss, on a machine with vault access
-  (an 'op signin' session, or OP_SERVICE_ACCOUNT_TOKEN exported):
-
-    ./toolshed/contractor restore -site %s
-
-  It fetches the identity from %s, decrypts, checks that what
-  came back is state describing something, and pushes it through the encrypted
-  backend. It refuses if local state already exists.
-
-`, ctx.Site, BackupIdentityRef)
-
 	return nil
 }
 
@@ -191,7 +208,7 @@ read them back.`, BackupRecipientRef, BackupIdentityRef)
 // workspace? A full run reached here through Migrate and has; a standalone
 // backup on a sterilized workspace has not.
 func attachIfDetached(ctx *run.Context) error {
-	if !needsAttach(ctx.ClusterDir) {
+	if !needsAttach(ctx.Dir) {
 		return nil
 	}
 	run.Info("workspace is not initialised - attaching to the state database first")

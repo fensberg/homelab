@@ -9,10 +9,17 @@ import (
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 
+	"homelab/contractor/config"
+	"homelab/contractor/steps"
+	"homelab/details/asbuilt"
 	"homelab/details/repopath"
 )
 
-// TofuOptions builds Terratest options aimed at the management cluster root.
+// TofuOptions builds Terratest options aimed at one of the site's two roots,
+// named as config.Roots names them. The platform root is configured from the
+// cluster root's outputs, so asking for it reads those first and hands them
+// over in the environment, exactly as the contractor does - never as -var
+// flags, which would put the cluster's credentials on a command line.
 //
 // Two things are set here rather than at every call site. TerraformBinary is
 // "tofu": Terratest shells out to "terraform" by default, and this project
@@ -22,14 +29,29 @@ import (
 // that genuinely is worth retrying: Proxmox returns a timeout when several
 // clones are created at once, which the provider's own documentation calls
 // out and handles internally for its resources.
-func TofuOptions(t *testing.T, vars map[string]any) *terraform.Options {
+func TofuOptions(t *testing.T, root string, vars map[string]any) *terraform.Options {
 	t.Helper()
 	if err := StateIsReadable(); err != nil {
 		t.Fatal(err)
 	}
+	env := map[string]string{}
+	switch root {
+	case config.ClusterRoot:
+	case config.PlatformRoot:
+		access, err := steps.ClusterAccess(RootDir(t, config.ClusterRoot), asbuilt.Exec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, value := range access {
+			env["TF_VAR_"+name] = value
+		}
+	default:
+		t.Fatalf("no root %q: a site's roots are %v", root, config.Roots)
+	}
 	return terraform.WithDefaultRetryableErrors(t, &terraform.Options{
 		TerraformBinary: "tofu",
-		TerraformDir:    filepath.Join(repopath.RootOrFail(t), "management", "cluster"),
+		TerraformDir:    RootDir(t, root),
+		EnvVars:         env,
 		Vars:            mergeVars(map[string]any{"site": Site()}, vars),
 		NoColor:         true,
 
@@ -65,12 +87,18 @@ func TofuOptions(t *testing.T, vars map[string]any) *terraform.Options {
 	})
 }
 
+// RootDir is where one of the site's roots is.
+func RootDir(t *testing.T, root string) string {
+	t.Helper()
+	return filepath.Join(repopath.RootOrFail(t), "management", root)
+}
+
 // PlanOnlyOptions is TofuOptions with a fixture config instead of the real
 // rendered one, for assertions that only need the plan graph and must never
 // touch an estate. Nothing it can be pointed at holds a real credential.
 func PlanOnlyOptions(t *testing.T, fixture string, vars map[string]any) *terraform.Options {
 	t.Helper()
-	opts := TofuOptions(t, vars)
+	opts := TofuOptions(t, config.ClusterRoot, vars)
 	opts.Vars["config_path"] = filepath.Join("./tests/fixtures", fixture)
 	return opts
 }

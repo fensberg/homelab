@@ -6,7 +6,7 @@
 # organization URL is a ${VAR}, because it is the one value derived from a
 # vault secret and so the only one that must not be committed. Flux substitutes
 # it at reconcile time from the runner-vars secret OpenTofu writes (see
-# management/cluster/runner.tf).
+# management/platform/runner.tf).
 #
 # The literals are not free: they restate what management/cluster/variables.tf
 # declares. tests/go/repo/runner_test.go asserts the two agree, which is the

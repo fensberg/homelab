@@ -11,7 +11,7 @@ import (
 )
 
 // The runner manifests name their namespaces as literals, while OpenTofu
-// declares the same values in management/cluster/variables.tf and creates
+// declares the same values in management/platform/variables.tf and creates
 // those namespaces from them.
 //
 // The credential secret's name is deliberately absent from this check: it is
@@ -30,7 +30,7 @@ import (
 // so it cannot edit that file. Literals plus this test reach the same place
 // without needing a permission the boundary is built to withhold.
 func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
-	tf := readRepoFile(t, "management/cluster/variables.tf")
+	tf := readRepoFile(t, "management/platform/variables.tf")
 
 	for _, tc := range []struct {
 		local    string
@@ -44,7 +44,7 @@ func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
 		manifest := readRepoFile(t, tc.manifest)
 		if !strings.Contains(manifest, want) {
 			t.Errorf("%s declares local.%s = %q, but %s never mentions it. The manifest and the OpenTofu have drifted; one of them is now describing a resource the other does not create.",
-				"management/cluster/variables.tf", tc.local, want, tc.manifest)
+				"management/platform/variables.tf", tc.local, want, tc.manifest)
 		}
 	}
 }
@@ -91,7 +91,7 @@ func hclStringLocal(t *testing.T, body, name string) string {
 	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*=\s*"([^"]+)"`)
 	m := re.FindStringSubmatch(body)
 	if m == nil {
-		t.Fatalf("no string local named %q in management/cluster/variables.tf", name)
+		t.Fatalf("no string local named %q in management/platform/variables.tf", name)
 	}
 	return m[1]
 }

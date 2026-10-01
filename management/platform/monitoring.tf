@@ -12,7 +12,6 @@
 # secret, which is this one - the same arrangement the state database has.
 # =============================================================================
 resource "kubernetes_namespace" "monitoring" {
-  depends_on = [data.talos_cluster_health.this]
   metadata {
     name = "monitoring"
 

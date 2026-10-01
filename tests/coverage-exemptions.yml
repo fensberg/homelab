@@ -77,7 +77,7 @@ files:
     uncovered: 6
     covered_by: e2e
   - path: contractor/internal/phases/teardown.go
-    uncovered: 2
+    uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/verify.go
     uncovered: 1
@@ -123,9 +123,6 @@ files:
   - path: contractor/internal/phases/health_etcd.go
     uncovered: 2
     covered_by: integration
-  - path: contractor/internal/phases/prune.go
-    uncovered: 3
-    covered_by: integration
   - path: contractor/internal/survey/run.go
     uncovered: 3
     covered_by: integration
@@ -160,7 +157,7 @@ files:
     uncovered: 1
     covered_by: nothing
   - path: contractor/internal/phases/restore.go
-    uncovered: 3
+    uncovered: 1
     covered_by: nothing
   - path: contractor/internal/phases/secrets.go
     uncovered: 5

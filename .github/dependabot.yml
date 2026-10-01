@@ -56,8 +56,9 @@ updates:
 
   # versions.tf pins every provider version with a ~> constraint. Dependabot
   # bumps within that constraint the same way it would a package's semver
-  # range - this is the one directory in the repo with a required_providers
-  # block; modules/ and environments/ get their own entry once they exist.
+  # range. A site is two roots, so this and management/platform below each
+  # carry a required_providers block; modules/ and environments/ get their
+  # own entry once they exist.
   - package-ecosystem: terraform
     directory: /management/cluster
     schedule:
@@ -66,6 +67,21 @@ updates:
       default-days: 7
     groups:
       providers:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: terraform
+    directory: /management/platform
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+    groups:
+      platform-providers:
         applies-to: version-updates
         patterns:
           - "*"

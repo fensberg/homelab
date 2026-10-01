@@ -44,7 +44,7 @@ func AdoptIfOrphaned(ctx *Context, address string, findID func() (id string, err
 	// stdout is printed as well, because a failed import mid-converge with half
 	// its context missing is worse than the leak - the trade is narrow, since
 	// success is every run that matters and success now says nothing.
-	out, err := CmdOutput(ctx.ClusterDir, "tofu", "import", "-input=false", address, importID)
+	out, err := CmdOutput(ctx.Dir, "tofu", "import", "-input=false", address, importID)
 	if err != nil {
 		fmt.Println(out)
 		return fmt.Errorf("tofu import %s: %w", address, err)
@@ -59,7 +59,7 @@ func AdoptIfOrphaned(ctx *Context, address string, findID func() (id string, err
 // and not being tracked is the ordinary, expected answer here - so printing it
 // made every healthy run look as though it had just failed.
 func InState(ctx *Context, address string) bool {
-	out, err := CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list", address)
+	out, err := CmdOutputQuiet(ctx.Dir, "tofu", "state", "list", address)
 	return err == nil && strings.TrimSpace(out) != ""
 }
 
@@ -73,7 +73,7 @@ func InState(ctx *Context, address string) bool {
 // Returns "" when the address is not tracked or the attribute is absent, which
 // callers must treat as "cannot tell" rather than as "no name".
 func TrackedResourceName(ctx *Context, address string) string {
-	out, err := CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "show", "-no-color", address)
+	out, err := CmdOutputQuiet(ctx.Dir, "tofu", "state", "show", "-no-color", address)
 	if err != nil {
 		return ""
 	}
@@ -130,7 +130,7 @@ func ReleaseIfRenamed(ctx *Context, address, want string) error {
 	Warn("Releasing the old one rather than destroying it: it keeps whatever it holds, and nothing here will touch it again.")
 	Warn("It is now tracked by nothing. Retire it deliberately once you have checked what is in it.")
 
-	if _, err := CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "rm", address); err != nil {
+	if _, err := CmdOutputQuiet(ctx.Dir, "tofu", "state", "rm", address); err != nil {
 		return fmt.Errorf("releasing %s, which cannot be renamed in place: %w", address, err)
 	}
 	Ok(fmt.Sprintf("released %s; the adopt will pick up the one the config names", address))

@@ -102,8 +102,8 @@ mutations:
 
   - guard: TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode
     file: management/cluster/compute.tf
-    find: "  datastore_id = local.datastores[each.value].images\n  node_name    = each.value\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
-    replace: "  datastore_id = \"local-iso\"\n  node_name    = each.value\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+    find: "  datastore_id = local.datastores[each.value].images\n  node_name    = local.hostnames[each.value]\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+    replace: "  datastore_id = \"local-iso\"\n  node_name    = local.hostnames[each.value]\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
     mentions: "a hypervisor fact the config declares"
     why: >
       A storage name written into the code is a host nobody can describe without
@@ -319,7 +319,7 @@ mutations:
       is what #532 was. A typo in a matcher is the plausible way to lose it.
 
   - guard: TestEstateObjectsAreDeclaredOnlyInTheEstateRoot
-    file: management/cluster/tunnel.tf
+    file: management/platform/tunnel.tf
     find: 'resource "kubernetes_namespace" "tunnel" {'
     replace: 'resource "cloudflare_zero_trust_tunnel_cloudflared" "tunnel" {'
     mentions: "which is the estate's"
@@ -394,18 +394,18 @@ mutations:
       stops half-done, leaving state and secrets in place on purpose. It failed
       exactly this way twice in one session.
 
-  - guard: TestEveryKubernetesResourceWaitsForTheCluster
-    file: management/cluster/workloads.tf
-    find: "  depends_on = [data.talos_cluster_health.this]"
-    replace: "  # depends_on removed"
-    mentions: "does not depend on"
+  - guard: TestKubernetesIsOnlyInThePlatformRootAndThatRootComesLast
+    file: management/cluster/outputs.tf
+    find: 'output "talosconfig" {'
+    replace: "resource \"kubernetes_namespace\" \"early\" {}\n\noutput \"talosconfig\" {"
+    mentions: "Everything that talks to the cluster's API belongs in"
     why: >
-      OpenTofu starts everything it can in the first wave. A kubernetes_*
-      resource with no edge into the cluster's readiness is created while the
-      API server is still starting its static pods, so the provider gets
-      connection refused and the apply dies - which on an ignition tears the
-      whole estate back down. Two resources were unordered this way at once, and
-      neither had anything else wrong with it.
+      A kubernetes resource in the root that builds the machines is planned
+      before the API server is serving, so the apply dies with connection
+      refused and an ignition tears the estate back down; and on a teardown the
+      destroy waits on a dying cluster to delete it, and destroys nothing. Both
+      happened. The split into two roots is what stops them, and only for
+      resources that are in the right one.
 
   - guard: TestTheHookShimRunsTheGuardBeforePreCommit
     file: githooks/pre-commit
@@ -578,7 +578,7 @@ mutations:
       gone wrong.
 
   - guard: TestEveryProviderIsADeclaredSupplier
-    file: management/cluster/versions.tf
+    file: management/platform/versions.tf
     find: 'kubernetes = { source = "hashicorp/kubernetes"'
     replace: 'kubernetes = { source = "evilcorp/kubernetes"'
     mentions: "is not an approved supplier"
@@ -2450,8 +2450,8 @@ mutations:
   - guard: TestBackupAndRestoreReachTheStateBackupsThroughOneResolver
     file: scripts/contractor/internal/phases/restore.go
     reads_source: true
-    find: "	backups, err := config.StateBackupLocation(cfg, ctx.Site)"
-    replace: "	backups, err := resolveStateBackupsHere(cfg, ctx.Site)"
+    find: "		backups, err := config.StateBackupLocation(cfg, ctx.Site, root.Name)"
+    replace: "		backups, err := resolveStateBackupsHere(cfg, ctx.Site, root.Name)"
     mentions: "does not call config.StateBackupLocation"
     why: >
       reads_source, because the guard parses restore.go for its calls rather
@@ -2478,16 +2478,16 @@ mutations:
     file: tests/go/harness/scrape.go
     reads_source: true
     find: "	sort.Strings(failures)"
-    replace: "	_ = \"management-cluster\"\n\tsort.Strings(failures)"
+    replace: "	_ = \"latest.tfstate.age\"\n\tsort.Strings(failures)"
     mentions: "new instance(s) of a string restated"
     why: >
       reads_source, for the same reason as the two entries above.
 
-      The state-backup folder name, restated in the test module after it was
-      given one home in homelab/contractor/config. That is precisely the
-      regression this guard exists for: the integration tier spelled this
-      folder out for itself, and when the backups moved it went on looking in
-      the old place.
+      The state backup's pointer object, restated in the test module when it
+      has one home in homelab/contractor/config. That is precisely the
+      regression this guard exists for: the integration tier spelled the
+      backup's location out for itself, and when the backups moved it went on
+      looking in the old place.
 
 owed_ceiling: 53
 
@@ -2582,6 +2582,10 @@ unprovable:
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
   - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
+    reason: table
+  - test: TestKubernetesOutsideThePlatformIsRefused
+    reason: table
+  - test: TestStepOrderProblemsRefusesThePlatformBeforeTheClusterIsReady
     reason: table
   - test: TestHostnameMisuseAllowsOnlyTheMapAndNodeName
     reason: table

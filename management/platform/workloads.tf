@@ -24,8 +24,6 @@ resource "kubernetes_namespace" "valheim" {
   # tears the estate back down. The secret below inherits the ordering by
   # reading its namespace from here. tests/go/repo/kubernetes_gate_test.go
   # refuses a kubernetes_* resource with no such edge.
-  depends_on = [data.talos_cluster_health.this]
-
   metadata {
     name = "valheim"
 

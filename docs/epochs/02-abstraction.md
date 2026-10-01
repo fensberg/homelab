@@ -1956,6 +1956,15 @@ directory per site (`clusters/<site>/`) holding what is that site's alone - with
 each site's `gitops_target_path` derived from its key. The runner scale set is
 named for its site. A guard refuses a site-specific value in a shared base.
 
+**Refined 2026-10-01: bringing a site online needs no commit; giving it work
+does.** The older test for this epoch is "adding a site requires no commit",
+and a directory per site looked like a commit per site. The operator's line
+resolves it: a site with no directory of its own reconciles the shared core
+and nothing else, which is also what a build is (the core, and only the core).
+`clusters/<site>/` appears when the site is given work, and that commit is the
+assignment. So `gitops_target_path` is the site's directory when one exists
+and the shared core when none does.
+
 ### A site pins the module version it runs
 
 Added 2026-09-27, for the module move itself. When the cluster root becomes a
@@ -1967,6 +1976,16 @@ first.
 **The bar:** each site names the module version it runs, a change reaches one
 site by moving that site's pin, and a guard refuses a site that consumes the
 module unpinned.
+
+**Refined 2026-10-01, by the same line.** The estate has one default pin,
+which a site with no pin of its own runs, so a new site is pinned without a
+commit. A per-site pin is the commit that moves one site ahead of the others,
+or holds it behind them.
+
+**Still missing for "no commit": a site is declared in the template.** Adding
+one today is an edit to `config/management.tpl.json`. The record's answer is a
+config discovered from the vault rather than declared, and it is not built;
+neither refinement above delivers it.
 
 ### Removing an application touches only its own directories
 
@@ -2708,6 +2727,58 @@ nothing unresolvable to trip over, which is the concrete form of the payoff.
   exist.** This split is the prerequisite the record names, not the module
   carving itself. It does not on its own advance the epoch's acceptance test,
   which remains "adding a site requires no commit".
+
+#### Built, 2026-10-01: two roots, and what the rebuild made unnecessary
+
+`management/cluster/` keeps the machines, Talos, the overlay key, Cilium and
+the health read, and keeps its schema name. `management/platform/` holds every
+`kubernetes_*` resource and the Flux bootstrap, in `management_platform_state`.
+The cluster root has no `kubernetes` provider at all.
+
+**The seam is one fact, in two forms.** The tunnel token left this list when
+the tunnel became the estate's, so what crosses is the cluster's access:
+`cluster_access` (the provider's structured client configuration) and
+`kubeconfig` (the same, for the bootstrap's `kubectl`). They are outputs of the
+cluster root and variables of the platform root, under the same names
+(`steps.PlatformInputs`). The contractor reads them once and puts them in the
+environment as `TF_VAR_*` before any tofu run in the platform root - not a
+variable file, which would be one more credential on disk, and not
+`terraform_remote_state`, which would have to know whether state is still
+local or already in Postgres. Structured rather than a kubeconfig to parse,
+because each certificate then gets a stand-in of the right shape when the
+platform root is planned against the as-built record.
+
+**A step names its root.** `steps.Converge` gained `Root`; the "materialise
+the kubeconfig" step is gone, since its only job was to let a provider
+configure, and the last two steps are the cluster root's untargeted apply and
+the platform root's. No `depends_on` on the cluster's health survives in the
+platform root: there is no edge to forget, because the order of the steps is
+the edge. `TestKubernetesIsOnlyInThePlatformRootAndThatRootComesLast` checks
+the two things that can still go wrong - a resource in the wrong root, and the
+order - by enumerating every `.tf` file.
+
+**The teardown destroys one root.** What the platform root created is inside
+the machines and goes with their disks, and its state is in the database being
+deleted. So the step that forgot every `kubernetes_*` address out of state
+before a destroy is deleted rather than moved: the cluster root holds none.
+
+**`split-state` was not built.** It was the expensive half of this design and
+it existed to move eighteen resources between two states of a running site.
+Site0 is rebuilt from the branch instead (the machines are disposable and the
+first site gets no exception), so there is no state to move.
+
+**Everything that read "the state" reads both.** Take-over attaches both and
+refuses if either is empty; the state serial that answers "did this run change
+anything" is the two added; Migrate moves both; Backup writes each root to its
+own folder (`management-cluster`, where every earlier backup already is, and
+`management-platform`); Restore fetches, decrypts and checks both before it
+pushes either; the as-built record is a directory per root, and a plan against
+it is each root's plan merged into one, with the platform root given the
+stand-ins the cluster's record holds for its access.
+
+**Found on the way.** The record from before the split has the old shape, so
+a pull request's plan fails until the first converge after this merges
+publishes a new one.
 
 #### Why this is not the module carving, and must still come first
 

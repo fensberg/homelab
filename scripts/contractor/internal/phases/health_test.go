@@ -191,7 +191,7 @@ func TestTheConvergeAsksFluxToReconcileSourcesFirst(t *testing.T) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	when := time.Date(2026, 9, 24, 23, 0, 0, 0, time.UTC)
-	requestFluxReconcile(&run.Context{ClusterDir: dir}, filepath.Join(dir, "kubeconfig"), when)
+	requestFluxReconcile(&run.Context{Root: run.Root{Dir: dir}}, filepath.Join(dir, "kubeconfig"), when)
 
 	body, err := os.ReadFile(log)
 	if err != nil {
@@ -228,7 +228,7 @@ func TestAReconcileRequestThatCannotBeMadeDoesNotStopTheConverge(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	requestFluxReconcile(&run.Context{ClusterDir: dir}, filepath.Join(dir, "kubeconfig"), time.Now())
+	requestFluxReconcile(&run.Context{Root: run.Root{Dir: dir}}, filepath.Join(dir, "kubeconfig"), time.Now())
 }
 
 // fakeKubectlGet puts a kubectl on PATH that answers every `get` with body.
@@ -255,7 +255,7 @@ func TestFluxNamesTheSourceThatCannotFetchAheadOfWhatWaitsOnIt(t *testing.T) {
 	  {"kind":"GitRepository","metadata":{"name":"flux-system","namespace":"flux-system"},
 	   "status":{"conditions":[{"type":"Ready","status":"False","message":"failed to checkout: dial tcp: lookup github.com: i/o timeout"}]}}
 	]}`)
-	err := checkFlux(&run.Context{ClusterDir: dir}, filepath.Join(dir, "kubeconfig"))
+	err := checkFlux(&run.Context{Root: run.Root{Dir: dir}}, filepath.Join(dir, "kubeconfig"))
 	if err == nil {
 		t.Fatal("a source that cannot fetch was reported as reconciled")
 	}
@@ -275,7 +275,7 @@ func TestFluxWithOnlySourcesIsNotReconciled(t *testing.T) {
 	  {"kind":"GitRepository","metadata":{"name":"flux-system","namespace":"flux-system"},
 	   "status":{"conditions":[{"type":"Ready","status":"True"}]}}
 	]}`)
-	err := checkFlux(&run.Context{ClusterDir: dir}, filepath.Join(dir, "kubeconfig"))
+	err := checkFlux(&run.Context{Root: run.Root{Dir: dir}}, filepath.Join(dir, "kubeconfig"))
 	if err == nil || !strings.Contains(err.Error(), "no Kustomizations or HelmReleases") {
 		t.Fatalf("a cluster with a source and nothing reading it passed: %v", err)
 	}

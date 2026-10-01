@@ -29,6 +29,9 @@ type PlanInputs struct {
 	// that already holds the providers does not fetch them again. A hosted
 	// runner leaves it empty and fetches them from the registry.
 	PluginDir string
+	// Vars are inputs the plan needs beyond the site and the config, by
+	// variable name (see Inputs.Vars).
+	Vars map[string]string
 }
 
 // PlanAgainst plans a change against a record, offline, the way a converge
@@ -72,7 +75,7 @@ func PlanAgainst(in PlanInputs, tofu Tofu) ([]byte, Meta, error) {
 	if err := writeJSON(filepath.Join(dir, stateFile), state); err != nil {
 		return nil, meta, err
 	}
-	env := OfflineEnv(os.Environ(), in.Site, filepath.Join(dir, configFile))
+	env := append(OfflineEnv(os.Environ(), in.Site, filepath.Join(dir, configFile)), varEnv(in.Vars)...)
 	init := []string{"init", "-input=false", "-no-color"}
 	if in.PluginDir != "" {
 		init = append(init, "-plugin-dir="+in.PluginDir)

@@ -45,7 +45,7 @@ func TestThePhasesRunTofuAndCleanUpAfterIt(t *testing.T) {
 	scriptTofu(t, "echo 'Error: the estate is unreachable' >&2\nexit 1\n")
 
 	ctx := recordContext(t)
-	for _, d := range []string{ctx.AsBuiltDir, ctx.ClusterDir} {
+	for _, d := range []string{ctx.AsBuiltDir, ctx.Dir} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -62,7 +62,7 @@ func TestThePhasesRunTofuAndCleanUpAfterIt(t *testing.T) {
 	}
 
 	ctx = recordContext(t)
-	if err := os.MkdirAll(ctx.ClusterDir, 0o700); err != nil {
+	if err := os.MkdirAll(ctx.Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := Plan(ctx); err == nil || !strings.Contains(err.Error(), "unreachable") {

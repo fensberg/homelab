@@ -28,16 +28,12 @@
 # the low likelihood in the epoch record's threat model actually low rather
 # than merely asserted.
 resource "kubernetes_namespace" "runner_system" {
-  depends_on = [data.talos_cluster_health.this]
-
   metadata {
     name = local.runner_system_namespace
   }
 }
 
 resource "kubernetes_namespace" "runners" {
-  depends_on = [data.talos_cluster_health.this]
-
   metadata {
     name = local.runners_namespace
   }

@@ -8,7 +8,7 @@
 #
 # What is NOT here: the server name, the world name and the password. Those
 # come from the vault through a Secret written by OpenTofu - see
-# management/cluster/workloads.tf.
+# management/platform/workloads.tf.
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -40,7 +40,6 @@
 
 # The connector's namespace and credential, for the Deployment Flux applies.
 resource "kubernetes_namespace" "tunnel" {
-  depends_on = [data.talos_cluster_health.this]
   metadata {
     name = "tunnel"
   }

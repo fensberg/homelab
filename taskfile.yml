@@ -513,8 +513,11 @@ tasks:
       # output, so this task cannot disturb an ignition run happening in
       # another terminal - which it used to, by deleting that output.
       - bash .github/scripts/placeholder-config.sh
+      # Both of a site's roots: the cluster, and what is put on it.
       - tofu -chdir=management/cluster init -backend=false -input=false
       - TF_VAR_config_path=../../config/management.placeholder.json tofu -chdir=management/cluster validate
+      - tofu -chdir=management/platform init -backend=false -input=false
+      - TF_VAR_config_path=../../config/management.placeholder.json tofu -chdir=management/platform validate
       # The estate's root, validated against its test fixture: it reads none
       # of a site's config, so the placeholder above means nothing to it.
       - tofu -chdir=management/estate init -backend=false -input=false

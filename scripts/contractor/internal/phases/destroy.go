@@ -331,7 +331,7 @@ func machinesInState(out string) []string {
 // that is mid-teardown for a reason that is informational. Being wrong about
 // the count is the thing to report; it is not a thing to stop for.
 func reportMachinesInState(ctx *run.Context, fromConfig int) {
-	out, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list")
+	out, err := run.CmdOutputQuiet(ctx.Dir, "tofu", "state", "list")
 	if err != nil {
 		run.Warn("  could not read the machine list from state, so the list above is " +
 			"the config's and may under-report. The teardown works from state regardless.")
@@ -411,7 +411,7 @@ func confirmDestroyScope(ctx *run.Context) error {
 	fmt.Println()
 	run.Warn("This teardown will remove:")
 
-	if out, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list"); err == nil {
+	if out, err := run.CmdOutputQuiet(ctx.Dir, "tofu", "state", "list"); err == nil {
 		resources := 0
 		for _, line := range strings.Split(out, "\n") {
 			if addr := strings.TrimSpace(line); addr != "" {
@@ -495,7 +495,7 @@ func reportObjectStorageAtRisk(ctx *run.Context) {
 		}
 
 		remote := config.BucketRemote(name)
-		size, err := run.CmdOutputEnv(ctx.ClusterDir, config.RcloneEnv(site.ObjectStorage.AccountID, cred), "rclone", "--log-level", "ERROR", "size", remote)
+		size, err := run.CmdOutputEnv(ctx.Dir, config.RcloneEnv(site.ObjectStorage.AccountID, cred), "rclone", "--log-level", "ERROR", "size", remote)
 		if err != nil {
 			// Not alarming on its own: a bucket that was never created because
 			// an earlier run failed reads exactly like this.

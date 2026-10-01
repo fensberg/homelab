@@ -41,14 +41,16 @@ func Restore(ctx *run.Context) error {
 	// the description of a running estate with an older one, and the estate
 	// does not change to match - every resource created since that backup
 	// becomes something nothing is tracking.
-	if _, err := os.Stat(ctx.LocalState); err == nil {
-		return fmt.Errorf(`there is already local state at %s, so this refuses to run.
+	for _, root := range ctx.Roots() {
+		if _, err := os.Stat(root.LocalState); err == nil {
+			return fmt.Errorf(`there is already local state at %s, so this refuses to run.
 
 Restoring over it would replace the description of whatever is running now with
 an older one, and nothing in Proxmox would change to match. If the local state
 is genuinely stale, move it aside first and decide deliberately:
 
-    mv %s %s.superseded`, ctx.LocalState, ctx.LocalState, ctx.LocalState)
+    mv %s %s.superseded`, root.LocalState, root.LocalState, root.LocalState)
+		}
 	}
 
 	// The identity first, before anything is rendered or fetched: a restore
@@ -75,65 +77,54 @@ is genuinely stale, move it aside first and decide deliberately:
 	// both files to check they still agreed. A restore pointed at the wrong
 	// bucket finds nothing and reports that there is no backup, at the moment
 	// somebody is trying to recover an estate.
-	backups, err := config.StateBackupLocation(cfg, ctx.Site)
-	if err != nil {
-		return err
-	}
-
 	for _, tool := range []string{"age", "rclone"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			return fmt.Errorf("'%s' not found on PATH", tool)
 		}
 	}
 
-	rcloneEnv := backups.Env
-	key := backups.Latest
-
-	// Show what else is there before restoring. The timestamped objects are
-	// the only record of which runs produced which state, and an operator
-	// deciding whether "latest" is the one they want needs to see them.
-	listBackups(ctx, rcloneEnv, backups.Folder)
-
-	run.Info("fetching " + key)
-	cipher, err := run.CmdBytes(ctx.ClusterDir, rcloneEnv, nil, "rclone", "--log-level", "ERROR", "cat", key)
-	if err != nil {
-		return fmt.Errorf(`could not fetch %s: %w
-
-If the bucket is empty, no run ever completed its Backup phase against it - or
-the estate was torn down, which deletes the bucket and everything in it`, key, err)
+	// Every root's state is fetched, decrypted and checked before any is put
+	// back: a restore that stopped between the two would leave one root
+	// describing the estate and the other describing nothing.
+	restored := map[string][]byte{}
+	defer func() {
+		for _, plain := range restored {
+			run.Wipe(plain)
+		}
+	}()
+	resources := 0
+	for _, root := range ctx.Roots() {
+		backups, err := config.StateBackupLocation(cfg, ctx.Site, root.Name)
+		if err != nil {
+			return err
+		}
+		plain, summary, err := fetchBackup(ctx, backups, identity)
+		if err != nil {
+			return fmt.Errorf("the %s root: %w", root.Name, err)
+		}
+		restored[root.Name] = plain
+		resources += summary.Resources
+		run.Ok(fmt.Sprintf("decrypted the %s root's state: serial %d, %d resources, lineage %s",
+			root.Name, summary.Serial, summary.Resources, summary.Lineage))
 	}
-	if len(cipher) == 0 {
-		return fmt.Errorf("%s is empty", key)
-	}
-
-	plain, err := decryptWithBreakGlassIdentity(ctx, identity, cipher)
-	defer run.Wipe(plain)
-	if err != nil {
-		return err
-	}
-
-	summary, err := validateRestoredState(plain)
-	if err != nil {
-		return err
-	}
-	run.Ok(fmt.Sprintf("decrypted state: serial %d, %d resources, lineage %s",
-		summary.Serial, summary.Resources, summary.Lineage))
 
 	// Pushed rather than written. State at rest is encrypted (see
 	// encryption.go), and what comes out of the age file is the plaintext
 	// `tofu state pull` produced - so writing it straight to terraform.tfstate
 	// would produce a file tofu then refuses to read. `state push` puts it
 	// through the configured backend, which is what encrypts it.
-	run.Info("initialising the local backend")
-	if err := run.TofuInit(ctx); err != nil {
-		return err
+	for _, root := range ctx.Roots() {
+		in := ctx.In(root)
+		run.Info("initialising the " + root.Name + " root's local backend")
+		if err := run.TofuInit(in); err != nil {
+			return err
+		}
+		run.Info("pushing the restored state through the encrypted backend")
+		if err := run.CmdStdin(in.Dir, restored[root.Name], "tofu", "state", "push", "-"); err != nil {
+			return fmt.Errorf("tofu state push (%s): %w", root.Name, err)
+		}
+		run.Ok("state restored to " + root.LocalState)
 	}
-	run.Info("pushing the restored state through the encrypted backend")
-	if err := run.CmdStdin(ctx.ClusterDir, plain, "tofu", "state", "push", "-"); err != nil {
-		return fmt.Errorf("tofu state push: %w", err)
-	}
-
-	run.Ok("state restored to " + ctx.LocalState)
 	fmt.Printf(`
   It is encrypted at rest and describes %d resources. Nothing has been changed
   in Proxmox, Cloudflare or the tailnet - this only put the state back.
@@ -143,12 +134,46 @@ the estate was torn down, which deletes the bucket and everything in it`, key, e
     tofu -chdir=management/cluster plan   # see how far reality has drifted
     ./toolshed/contractor demolish-site -site %s -confirm %s
 
-`, summary.Resources, ctx.Site, ctx.Site)
+`, resources, ctx.Site, ctx.Site)
 	return nil
 }
 
+// fetchBackup brings one root's latest backup back as plaintext state, and
+// says what it describes.
+func fetchBackup(ctx *run.Context, backups config.StateBackups, identity []byte) ([]byte, stateSummary, error) {
+	// Show what else is there before restoring. The timestamped objects are
+	// the only record of which runs produced which state, and an operator
+	// deciding whether "latest" is the one they want needs to see them.
+	listBackups(ctx, backups.Env, backups.Folder)
+
+	key := backups.Latest
+	run.Info("fetching " + key)
+	cipher, err := run.CmdBytes(ctx.Dir, backups.Env, nil, "rclone", "--log-level", "ERROR", "cat", key)
+	if err != nil {
+		return nil, stateSummary{}, fmt.Errorf(`could not fetch %s: %w
+
+If the bucket is empty, no run ever completed its Backup phase against it - or
+the estate was torn down, which deletes the bucket and everything in it`, key, err)
+	}
+	if len(cipher) == 0 {
+		return nil, stateSummary{}, fmt.Errorf("%s is empty", key)
+	}
+
+	plain, err := decryptWithBreakGlassIdentity(ctx, identity, cipher)
+	if err != nil {
+		run.Wipe(plain)
+		return nil, stateSummary{}, err
+	}
+	summary, err := validateRestoredState(plain)
+	if err != nil {
+		run.Wipe(plain)
+		return nil, stateSummary{}, err
+	}
+	return plain, summary, nil
+}
+
 func listBackups(ctx *run.Context, env []string, folder string) {
-	out, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "lsl", folder)
+	out, err := run.CmdOutputEnv(ctx.Dir, env, "rclone", "--log-level", "ERROR", "lsl", folder)
 	if err != nil || strings.TrimSpace(out) == "" {
 		return
 	}
@@ -233,7 +258,7 @@ func decryptWithBreakGlassIdentity(ctx *run.Context, identity, cipher []byte) ([
 	}
 
 	run.Info("decrypting with the break-glass identity")
-	plain, err := run.CmdBytes(ctx.ClusterDir, nil, cipher, "age", "-d", "-i", path)
+	plain, err := run.CmdBytes(ctx.Dir, nil, cipher, "age", "-d", "-i", path)
 	if err != nil {
 		return nil, fmt.Errorf(`age could not decrypt the backup: %w
 

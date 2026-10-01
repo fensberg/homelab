@@ -676,7 +676,7 @@ func writeKubeconfig(ctx *run.Context) (path string, cleanup func(), err error) 
 }
 
 func kubectl(ctx *run.Context, kubeconfig string, args ...string) ([]byte, error) {
-	out, err := run.CmdOutputEnv(ctx.ClusterDir, []string{"KUBECONFIG=" + kubeconfig}, "kubectl", args...)
+	out, err := run.CmdOutputEnv(ctx.Dir, []string{"KUBECONFIG=" + kubeconfig}, "kubectl", args...)
 	if err != nil {
 		return nil, fmt.Errorf("kubectl %s: %w", strings.Join(args, " "), err)
 	}

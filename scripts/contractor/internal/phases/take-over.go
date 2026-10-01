@@ -40,22 +40,22 @@ import (
 func TakeOver(ctx *run.Context) error {
 	run.WritePhase("Take-over", "Reconnect to the state of an estate that already exists.")
 
-	// Local state means an ignition run that never reached Migrate, or one
-	// that was interrupted. Either way the workspace already holds the
-	// authoritative copy, and attaching to Postgres on top of it would leave
-	// two states describing one estate with nothing to say which is right.
-	if _, err := os.Stat(ctx.LocalState); err == nil {
-		return fmt.Errorf(`local state already exists at %s, so this workspace is mid-ignition rather than detached.
+	for _, root := range ctx.Roots() {
+		if _, err := os.Stat(root.LocalState); err == nil {
+			return fmt.Errorf(`local state already exists at %s, so this workspace is mid-ignition rather than detached.
 
 Converge is for an estate whose state already lives in the cluster. If an
 earlier run stopped before Migrate, finish it with -from migrate instead; if it
 left state behind after a failure, that state is the authoritative copy and
-deleting it would strand whatever it describes`, ctx.LocalState)
+deleting it would strand whatever it describes`, root.LocalState)
+		}
 	}
 
-	if _, err := os.Stat(ctx.BackendPgOn); err != nil {
-		if err := copyFile(ctx.BackendPgOff, ctx.BackendPgOn); err != nil {
-			return fmt.Errorf("enabling the Postgres backend: %w", err)
+	for _, root := range ctx.Roots() {
+		if _, err := os.Stat(root.BackendPgOn); err != nil {
+			if err := copyFile(root.BackendPgOff, root.BackendPgOn); err != nil {
+				return fmt.Errorf("enabling the Postgres backend for the %s root: %w", root.Name, err)
+			}
 		}
 	}
 
@@ -73,31 +73,27 @@ has to be up. If the cluster is gone, this is a restore rather than a converge:
 see 'contractor restore'`, host, port)
 	}
 
-	// -reconfigure, never -migrate-state. Migration is the verb that copies
-	// one state over another, and this workspace has nothing worth copying:
-	// pointing it at the backend is the whole intent.
-	if err := run.Tofu(ctx, "tofu init (pg backend)",
-		"init", "-input=false", "-reconfigure",
-		"-backend-config=conn_str="+connStr,
-	); err != nil {
-		return fmt.Errorf("could not take over the state database: %w", err)
-	}
+	// Both roots, and both must hold something. A site whose cluster root
+	// has state and whose platform root has none is not an estate to
+	// converge: a plan would create every namespace and secret a second
+	// time, beside the ones already running.
+	total := 0
+	for _, root := range ctx.Roots() {
+		in := ctx.In(root)
+		if err := run.Tofu(in, "tofu init (pg backend)",
+			"init", "-input=false", "-reconfigure",
+			"-backend-config=conn_str="+connStr,
+		); err != nil {
+			return fmt.Errorf("could not take over the %s root's state: %w", root.Name, err)
+		}
 
-	// The check this phase exists for.
-	//
-	// An init against an empty backend succeeds exactly as loudly as one
-	// against a populated backend. Applying after that would create a second
-	// estate beside the first - same names, same VM ids, same addresses - and
-	// the first sign of it would be Proxmox refusing a duplicate, or worse,
-	// not refusing. So prove the state describes something before letting any
-	// later phase act on it.
-	out, err := run.CmdOutput(ctx.ClusterDir, "tofu", "state", "list")
-	if err != nil {
-		return fmt.Errorf("attached to the backend but could not list its state: %w", err)
-	}
-	n := len(strings.Fields(out))
-	if n == 0 {
-		return fmt.Errorf(`attached to the state database, and it is empty.
+		out, err := run.CmdOutput(in.Dir, "tofu", "state", "list")
+		if err != nil {
+			return fmt.Errorf("attached to the backend but could not list the %s root's state: %w", root.Name, err)
+		}
+		n := len(strings.Fields(out))
+		if n == 0 {
+			return fmt.Errorf(`attached to the state database, and the %s root's state is empty.
 
 That is not an estate to converge - it is an empty backend that a plan would
 fill by building a second copy of everything beside whatever is already
@@ -105,7 +101,9 @@ running. Nothing here can tell which of those two situations you are in, so it
 stops.
 
 If this really is a new estate, run ignition rather than converge. If it is not,
-the state has been lost and belongs in 'contractor restore'`)
+the state has been lost and belongs in 'contractor restore'`, root.Name)
+		}
+		total += n
 	}
 
 	// Record what the state looked like before this run could change it.
@@ -116,12 +114,12 @@ the state has been lost and belongs in 'contractor restore'`)
 	// wrong in the other direction. Recorded here rather than in each applying
 	// phase because this is the last point at which nothing can have changed
 	// yet.
-	if serial, ok := run.StateSerial(ctx); ok {
+	if serial, ok := estateSerial(ctx); ok {
 		ctx.StateSerialAtTakeover = serial
 		ctx.TakenOverOK = true
 	}
 
-	run.Ok(fmt.Sprintf("took over existing state: %d resource(s)", n))
+	run.Ok(fmt.Sprintf("took over existing state: %d resource(s)", total))
 	return nil
 }
 
@@ -143,9 +141,23 @@ func EstateChanged(ctx *run.Context) (changed, certain bool) {
 	if !ctx.TakenOverOK {
 		return false, true
 	}
-	serial, ok := run.StateSerial(ctx)
+	serial, ok := estateSerial(ctx)
 	if !ok {
 		return false, false
 	}
 	return serial != ctx.StateSerialAtTakeover, true
+}
+
+// estateSerial is the serials of both roots' state, added. Each only ever
+// rises, so the sum moves exactly when either root was written, which is the
+// question. Not ok unless both could be read.
+func estateSerial(ctx *run.Context) (serial int64, ok bool) {
+	for _, root := range ctx.Roots() {
+		n, ok := run.StateSerial(ctx.In(root))
+		if !ok {
+			return 0, false
+		}
+		serial += n
+	}
+	return serial, true
 }
