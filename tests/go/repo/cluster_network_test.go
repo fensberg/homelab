@@ -39,7 +39,7 @@ const (
 )
 
 func TestThePodAndServiceNetworksAreDeclared(t *testing.T) {
-	talos := readRepoFile(t, "management/cluster/talos.tf")
+	_, talos := tofuDeclaring(t, declMachineConfig)
 
 	for _, decl := range []struct {
 		name string
@@ -65,10 +65,10 @@ It is fixed at cluster creation, so the cost of getting it wrong is a rebuild.`,
 func TestThePodAndServiceNetworksCannotCollideWithASite(t *testing.T) {
 	// The cluster root takes both from the plan, or the plan's answer below
 	// describes nothing the cluster runs.
-	variables := readRepoFile(t, "management/cluster/variables.tf")
+	variables := tofuAll(t)
 	for _, name := range []string{"pod_cidr", "service_cidr"} {
 		if !regexp.MustCompile(name + `\s*=\s*local\.net\.` + name + `\b`).MatchString(variables) {
-			t.Errorf("variables.tf does not take %s from the address plan (local.net.%s), so the range the "+
+			t.Errorf("nothing takes %s from the address plan (local.net.%s), so the range the "+
 				"cluster runs is not the one the plan allocated and checked", name, name)
 		}
 	}
@@ -245,7 +245,7 @@ Read it from there.`, path, m[1], trimmed)
 // that are already running is node lifecycle, which epoch 05 owns and this does
 // not claim.
 func TestATalosImagePathCarriesItsSchematic(t *testing.T) {
-	compute := readRepoFile(t, "management/cluster/compute.tf")
+	_, compute := tofuDeclaring(t, declMachines)
 
 	names := regexp.MustCompile(`(?m)^\s*file_name\s*=\s*"([^"]+)"`).FindAllStringSubmatch(compute, -1)
 	const bothImages = 2
@@ -291,7 +291,9 @@ on different Talos releases are different bytes at the same path.`, name)
 // Asserted of every talos_machine_configuration in talos.tf, discovered rather
 // than listed, so a machine class added later is held to it too.
 func TestEveryMachineIsToldTheClustersNetwork(t *testing.T) {
-	talos := readRepoFile(t, "management/cluster/talos.tf")
+	// Every machine configuration, in whichever file: a class declared
+	// somewhere else is a class this must still hold to it.
+	talos := tofuAll(t)
 	blocks := regexp.MustCompile(`(?s)data "talos_machine_configuration" "([^"]+)" \{(.*?)\n\}`).FindAllStringSubmatch(talos, -1)
 	if len(blocks) < 3 {
 		t.Fatalf("found %d machine configurations in talos.tf; there are at least three classes, so the reader has stopped matching", len(blocks))

@@ -2,6 +2,7 @@ package run
 
 import (
 	"homelab/details/repopath"
+	"homelab/details/tofufiles"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,40 +71,37 @@ func TestPendingMovesFindsNothingWhenNothingMoved(t *testing.T) {
 // Counted against a plain search for the keyword, so a `moved` block written in
 // a shape this does not parse fails here rather than being skipped.
 func TestPendingMovesFindsEveryMovedBlockInTheEstate(t *testing.T) {
-	dir, err := repopath.Join("management", "cluster")
+	root, err := repopath.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := tofufiles.Read(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v - if the estate's source moved, this test has to move with it", dir, err)
+	// Every directory that holds OpenTofu, not one root: a moved block is
+	// parsed wherever it is written, and the root it is written in is not
+	// this test's to know.
+	blocksIn := map[string]int{}
+	for rel, body := range files {
+		blocksIn[filepath.Dir(rel)] += strings.Count("\n"+body, "\nmoved {")
 	}
-	blocks := 0
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".tf") {
-			continue
+	for dir, blocks := range blocksIn {
+		got, err := PendingMoves(filepath.Join(root, dir))
+		if err != nil {
+			t.Fatalf("PendingMoves(%s): %v", dir, err)
 		}
-		body, readErr := os.ReadFile(filepath.Join(dir, e.Name()))
-		if readErr != nil {
-			t.Fatalf("reading %s: %v", e.Name(), readErr)
-		}
-		blocks += strings.Count(string(body), "\nmoved {")
-	}
-
-	got, err := PendingMoves(dir)
-	if err != nil {
-		t.Fatalf("PendingMoves: %v", err)
-	}
-	if want := blocks * 2; len(got) != want {
-		t.Errorf(`the estate declares %d moved block(s) and PendingMoves returned %d address(es), want %d.
+		if want := blocks * 2; len(got) != want {
+			t.Errorf(`%s declares %d moved block(s) and PendingMoves returned %d address(es), want %d.
 
 Every block names two endpoints and both have to be targeted, because OpenTofu
 names both when it refuses a targeted plan. A block written in a shape this
 parser does not read is a block that stops every converge at its first targeted
 apply, silently, with this suite still green.
 
-Addresses found: %v`, blocks, len(got), want, got)
+Addresses found: %v`, dir, blocks, len(got), want, got)
+		}
 	}
 }
 

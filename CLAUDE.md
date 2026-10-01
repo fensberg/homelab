@@ -609,6 +609,14 @@ corpus both sides are run against, and the contract tests fail if a case
 exists on one side and not the other. Adding an invariant means adding it in
 both places and adding a case to that manifest.
 
+**A test finds OpenTofu by what it declares, never by where it is.** A test
+that opens `management/<root>/talos.tf` checks that path, and goes on checking
+it after the thing it guards has moved to another root or into a module. So a
+test asks for "the file that declares this" (`tofuDeclaring` in
+`tests/go/repo`, `tofufiles.Declaring` in a program's test) or reads every
+file (`tofuSources`). `TestNoTestNamesTheRootItReads` refuses a test that
+names a root's files instead.
+
 Coverage is a ratchet, not a threshold: `tests/coverage-baseline.json` is a
 floor a pull request may not drop below and is free to leave alone.
 

@@ -2,6 +2,7 @@ package phases
 
 import (
 	"homelab/details/repopath"
+	"homelab/details/tofufiles"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -9,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"homelab/contractor/config"
 	"homelab/contractor/internal/tfsource"
 )
 
@@ -25,29 +25,28 @@ import (
 // state back out of a cluster it is about to tear down. That failure is
 // invisible until it happens; this makes it visible on the pull request.
 
-func clusterFile(t *testing.T, name string) string {
-	t.Helper()
-	return rootFile(t, config.ClusterRoot, name)
-}
-
-// rootFile is one file of one of a site's roots.
-func rootFile(t *testing.T, tofuRoot, name string) string {
+// tofuDeclaring is the code of the one OpenTofu file that declares something,
+// wherever it is: the roots these values live in have moved once and will
+// move again, and a contract that named a file would follow neither.
+func tofuDeclaring(t *testing.T, declaration string) (path, src string) {
 	t.Helper()
 	root, err := repopath.Root()
 	if err != nil {
 		t.Fatal(err)
 	}
-	src, err := tfsource.Read(filepath.Join(root, "management", tofuRoot, name))
+	files, err := tofufiles.Read(root)
 	if err != nil {
-		t.Fatalf("reading the OpenTofu source: %v", err)
+		t.Fatal(err)
 	}
-	return src
+	path, body, err := tofufiles.Declaring(files, declaration)
+	if err != nil {
+		t.Fatalf("finding the OpenTofu source: %v", err)
+	}
+	return path, tofufiles.Code(body)
 }
 
 func TestContract_StateDatabaseLocalsMatchTheOpenTofuSource(t *testing.T) {
-	// The platform root declares the database, so its variables.tf is where
-	// these are.
-	src := rootFile(t, config.PlatformRoot, "variables.tf")
+	path, src := tofuDeclaring(t, "state_db_name =")
 
 	for _, tc := range []struct{ local, go_ string }{
 		{"state_db_name", stateDBName},
@@ -55,11 +54,11 @@ func TestContract_StateDatabaseLocalsMatchTheOpenTofuSource(t *testing.T) {
 	} {
 		got, err := tfsource.String(src, tc.local)
 		if err != nil {
-			t.Errorf("variables.tf: %v", err)
+			t.Errorf("%s: %v", path, err)
 			continue
 		}
 		if got != tc.go_ {
-			t.Errorf("%s: variables.tf says %q, sterilize.go says %q", tc.local, got, tc.go_)
+			t.Errorf("%s: %s says %q, sterilize.go says %q", tc.local, path, got, tc.go_)
 		}
 	}
 }
@@ -127,11 +126,11 @@ var switchCase = regexp.MustCompile(`(?m)^\s*case\s+"([a-z-]+)":`)
 // nothing else would notice - a key that quietly outlives its use is not an
 // error anywhere, it is just a credential nobody revoked.
 func TestContract_TailnetKeyExpiryStaysShort(t *testing.T) {
-	src := clusterFile(t, "overlay-network.tf")
+	path, src := tofuDeclaring(t, "overlay_key_expiry_seconds =")
 
 	got, err := tfsource.Int(src, "overlay_key_expiry_seconds")
 	if err != nil {
-		t.Fatalf("overlay-network.tf: %v", err)
+		t.Fatalf("%s: %v", path, err)
 	}
 
 	const maxSeconds = 3600
@@ -149,7 +148,7 @@ thing that makes a short one safe; read that first.`, got, maxSeconds)
 	}
 
 	if !strings.Contains(src, "local.overlay_key_expiry_seconds") {
-		t.Error("overlay-network.tf declares overlay_key_expiry_seconds but the key resource does not use it")
+		t.Errorf("%s declares overlay_key_expiry_seconds but the key resource does not use it", path)
 	}
 }
 

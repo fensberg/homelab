@@ -20,7 +20,6 @@ import (
 // bootstrap and the health gate".
 
 const (
-	talosFile  = "management/cluster/talos.tf"
 	cniApply   = "terraform_data.cilium"
 	cniMani    = "clusters/bootstrap/cilium.yaml"
 	cniValues  = "clusters/bootstrap/cilium-values.yaml"
@@ -64,7 +63,8 @@ func hclBlock(t *testing.T, body, prefix string) string {
 // CNI, nodes go Ready, gate passes. It is one line, and deleting it is the kind
 // of tidy-up that looks harmless in a diff.
 func TestTheHealthGateWaitsForTheCNI(t *testing.T) {
-	block := hclBlock(t, readRepoFile(t, talosFile), `data "talos_cluster_health"`)
+	talosFile, talos := tofuDeclaring(t, declClusterHealth)
+	block := hclBlock(t, talos, declClusterHealth)
 
 	if !strings.Contains(block, cniApply) {
 		t.Errorf("%s: the health gate does not depend on %s.\n\n"+
@@ -83,7 +83,7 @@ func TestTheHealthGateWaitsForTheCNI(t *testing.T) {
 // fighting over pod networking, or kube-proxy and Cilium both programming
 // service routing - and the second is the quieter of the two failures.
 func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {
-	body := readRepoFile(t, talosFile)
+	talosFile, body := tofuDeclaring(t, declMachineConfig)
 
 	// yamlencode renders these as nested YAML keys, so assert on the HCL that
 	// produces them rather than on rendered output nobody can see from here.
@@ -116,7 +116,7 @@ func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {
 // the pod network fails and nothing in this repository ever said it was
 // required.
 func TestKubePrismIsDeclaredRatherThanAssumed(t *testing.T) {
-	body := readRepoFile(t, talosFile)
+	talosFile, body := tofuDeclaring(t, declMachineConfig)
 
 	// Every collection of machine patches, so a machine class added later
 	// cannot quietly skip it. This used to assert that the file mentioned

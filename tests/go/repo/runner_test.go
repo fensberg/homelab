@@ -30,7 +30,7 @@ import (
 // so it cannot edit that file. Literals plus this test reach the same place
 // without needing a permission the boundary is built to withhold.
 func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
-	tf := readRepoFile(t, "management/platform/variables.tf")
+	tfPath, tf := tofuDeclaring(t, "runner_system_namespace =")
 
 	for _, tc := range []struct {
 		local    string
@@ -44,7 +44,7 @@ func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
 		manifest := readRepoFile(t, tc.manifest)
 		if !strings.Contains(manifest, want) {
 			t.Errorf("%s declares local.%s = %q, but %s never mentions it. The manifest and the OpenTofu have drifted; one of them is now describing a resource the other does not create.",
-				"management/platform/variables.tf", tc.local, want, tc.manifest)
+				tfPath, tc.local, want, tc.manifest)
 		}
 	}
 }
@@ -91,7 +91,7 @@ func hclStringLocal(t *testing.T, body, name string) string {
 	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*=\s*"([^"]+)"`)
 	m := re.FindStringSubmatch(body)
 	if m == nil {
-		t.Fatalf("no string local named %q in management/platform/variables.tf", name)
+		t.Fatalf("no string local named %q beside the runner's other names", name)
 	}
 	return m[1]
 }

@@ -60,7 +60,7 @@ var purposesRe = regexp.MustCompile(`(?s)purposes\s*=\s*toset\(\[(.*?)\]\)`)
 
 func bucketPurposesInHCL(t *testing.T) []string {
 	t.Helper()
-	body := readRepoFile(t, "management/estate/site/object-storage.tf")
+	_, body := tofuDeclaring(t, "purposes = toset(")
 	m := purposesRe.FindStringSubmatch(body)
 	if m == nil {
 		t.Fatal("management/estate/site/object-storage.tf has no `purposes = toset([...])`, so this " +

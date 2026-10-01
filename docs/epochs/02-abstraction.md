@@ -2807,6 +2807,27 @@ watched by Dependabot, its switched-on backend file ignored, a test of its own
 if it refuses anything, and known to the contractor (`config.Roots`) unless it
 is the estate's. A root nobody has thought about fails every line at once.
 
+**And a guard for the tests themselves.** The list above was found by
+reading. The operator's question was what stops the next test being written
+the same way, and the answer is `TestNoTestNamesTheRootItReads`: it parses
+every Go test in the repository and refuses a path into a root, the name of
+one of the repository's own OpenTofu files, and a root's directory built from
+its parts. Its first run refused forty places in seventeen files. Each now
+finds what it reads by declaration - "the file that declares
+`data "talos_cluster_health"`" - through one shared reader
+(`homelab/details/tofufiles`), or reads every file. Every existing mutation in
+the ledger is still caught by its converted guard, which is the evidence the
+conversions changed where the guards look and not what they check.
+
+What it permits, on purpose: a root named whole is a scope (the estate-scope
+and kubernetes guards compare every file against one), a root's `tests/`
+directory is fixtures, and a program's own test that builds a pretend
+repository in a temporary directory is not reading this one.
+
+The timing is the point. The module move relocates every file those forty
+places named. Written the old way, each would either have broken or, worse,
+gone on reading a thin root that no longer held what it was checking.
+
 **The hostname guard was the wrong shape, and is gone.** The first guard
 written for #585 refused the hypervisor's hostname as a resource key, by name. The
 operator's review: that is one value, and not the one that matters. The check

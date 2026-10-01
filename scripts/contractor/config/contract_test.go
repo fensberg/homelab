@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"homelab/details/repopath"
+	"homelab/details/tofufiles"
 	"os"
 	"path/filepath"
 	"slices"
@@ -34,24 +35,32 @@ import (
 // All of this is ordinary `go test`: no tofu binary, no network, no
 // credentials. The HCL side runs separately as `tofu test`.
 
-func clusterPath(t *testing.T, parts ...string) string {
+// corpusPath is a path in the config-contract corpus: the fixtures both
+// implementations are held to, and the HCL test that runs them.
+func corpusPath(t *testing.T, parts ...string) string {
 	t.Helper()
-	return filepath.Join(append([]string{repopath.RootOrFail(t), "management", "cluster"}, parts...)...)
+	return filepath.Join(append([]string{repopath.RootOrFail(t), "management", "cluster", "tests"}, parts...)...)
 }
 
-func readTF(t *testing.T, name string) string {
+// readTF is the code of the one OpenTofu file that declares something, and
+// where it was found.
+func readTF(t *testing.T, declaration string) (path, src string) {
 	t.Helper()
-	src, err := tfsource.Read(clusterPath(t, name))
+	files, err := tofufiles.Read(repopath.RootOrFail(t))
 	if err != nil {
-		t.Fatalf("reading the OpenTofu source: %v", err)
+		t.Fatal(err)
 	}
-	return src
+	path, body, err := tofufiles.Declaring(files, declaration)
+	if err != nil {
+		t.Fatalf("finding the OpenTofu source: %v\n\nIf it was renamed or restructured, this contract needs re-examining, not re-pointing.", err)
+	}
+	return path, tofufiles.Code(body)
 }
 
 // --- 1. the numbers match ---------------------------------------------------
 
 func TestContract_OctetBoundsMatchTheOpenTofuSource(t *testing.T) {
-	src := readTF(t, "registry.tf")
+	path, src := readTF(t, "octet_min =")
 
 	for _, tc := range []struct {
 		local string
@@ -62,7 +71,7 @@ func TestContract_OctetBoundsMatchTheOpenTofuSource(t *testing.T) {
 	} {
 		hcl, err := tfsource.Int(src, tc.local)
 		if err != nil {
-			t.Fatalf("registry.tf: %v\n\nIf that local was renamed or restructured, this contract needs re-examining, not re-pointing.", err)
+			t.Fatalf("%s: %v\n\nIf that local was renamed or restructured, this contract needs re-examining, not re-pointing.", path, err)
 		}
 		if hcl != tc.go_ {
 			t.Errorf("octet bound %s: registry.tf says %d, config.go says %d.\n\nBoth gate a real deployment. Widening one and not the other means the start button and `tofu plan` disagree about which networks are legal.", tc.local, hcl, tc.go_)
@@ -71,11 +80,11 @@ func TestContract_OctetBoundsMatchTheOpenTofuSource(t *testing.T) {
 }
 
 func TestContract_RequiredProvidersMatchTheOpenTofuSource(t *testing.T) {
-	src := readTF(t, "registry.tf")
+	path, src := readTF(t, "required_providers_by_concern =")
 
 	hcl, err := tfsource.Map(src, "required_providers_by_concern")
 	if err != nil {
-		t.Fatalf("registry.tf: %v", err)
+		t.Fatalf("%s: %v", path, err)
 	}
 
 	for _, concern := range slices.Sorted(slices.Values(append(keysOf(hcl), keysOf(RequiredProvidersByConcern)...))) {
@@ -114,7 +123,7 @@ type corpusCase struct {
 
 func loadCorpus(t *testing.T) []corpusCase {
 	t.Helper()
-	path := clusterPath(t, "tests", "fixtures", "manifest.json")
+	path := corpusPath(t, "fixtures", "manifest.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading the corpus manifest: %v", err)
@@ -136,7 +145,7 @@ func loadCorpus(t *testing.T) []corpusCase {
 func TestContract_CorpusVerdictsMatchTheManifest(t *testing.T) {
 	for _, tc := range loadCorpus(t) {
 		t.Run(tc.Name, func(t *testing.T) {
-			path := clusterPath(t, "tests", "fixtures", tc.Fixture)
+			path := corpusPath(t, "fixtures", tc.Fixture)
 			cfg, err := LoadRendered(path)
 			if err != nil {
 				t.Fatalf("loading fixture %s: %v", tc.Fixture, err)
@@ -160,7 +169,7 @@ func TestContract_CorpusVerdictsMatchTheManifest(t *testing.T) {
 
 func runBlockNames(t *testing.T) []string {
 	t.Helper()
-	data, err := os.ReadFile(clusterPath(t, "tests", "registry.tftest.hcl"))
+	data, err := os.ReadFile(corpusPath(t, "registry.tftest.hcl"))
 	if err != nil {
 		t.Fatalf("reading registry.tftest.hcl: %v", err)
 	}
@@ -202,7 +211,7 @@ func TestContract_EveryCaseExistsOnBothSides(t *testing.T) {
 }
 
 func TestContract_EveryFixtureFileIsClaimedByACase(t *testing.T) {
-	dir := clusterPath(t, "tests", "fixtures")
+	dir := corpusPath(t, "fixtures")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("reading the fixtures directory: %v", err)

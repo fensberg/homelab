@@ -38,7 +38,8 @@ import (
 func TestEveryDeclaredControlPlaneListenerIsDialled(t *testing.T) {
 	root := repoRoot(t)
 
-	declared := declaredListeners(t, readFile(t, filepath.Join(root, "management", "cluster", "talos.tf")))
+	_, talos := tofuDeclaring(t, declMachineConfig)
+	declared := declaredListeners(t, talos)
 	if len(declared) == 0 {
 		t.Fatal(`talos.tf declares no control-plane listener.
 

@@ -179,8 +179,8 @@ func TestRootSightingsNamesEachThingThatCannotSeeARoot(t *testing.T) {
 	whole := rootSightings{
 		tracked: []string{r + "/.terraform.lock.hcl", r + "/tests/new.tftest.hcl"},
 		sources: map[string]string{
-			r + "/versions.tf":            "provider \"x\" {}\n",
-			r + "/variables.tf":           "variable \"a\" {\n  validation {\n  }\n}\n",
+			r + "/access.tf":              "provider \"x\" {}\n",
+			r + "/inputs.tf":              "variable \"a\" {\n  validation {\n  }\n}\n",
 			r + "/backend_pg.tf.disabled": "terraform {}\n",
 		},
 		workflow:   "        working-directory: " + r + "\n",

@@ -147,7 +147,7 @@ func TestTheTrackedEnumerationSeesTheWholeRepository(t *testing.T) {
 		"tests/go/repo/",
 		"scripts/",
 		".github/workflows/",
-		"management/cluster/",
+		"management/",
 		"clusters/",
 	} {
 		found := false

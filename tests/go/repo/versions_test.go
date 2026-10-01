@@ -36,10 +36,8 @@ func TestTalosctlPinTracksTheClusterVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading versions.env: %v", err)
 	}
-	vars, err := os.ReadFile(filepath.Join(root, "management", "cluster", "variables.tf"))
-	if err != nil {
-		t.Fatalf("reading variables.tf: %v", err)
-	}
+	_, declared := tofuDeclaring(t, `talos_version = "`)
+	vars := []byte(declared)
 
 	cli := talosctlPin.FindSubmatch(script)
 	if cli == nil {
@@ -106,10 +104,8 @@ func TestKubectlPinTracksTheClusterVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading versions.env: %v", err)
 	}
-	vars, err := os.ReadFile(filepath.Join(root, "management", "cluster", "variables.tf"))
-	if err != nil {
-		t.Fatalf("reading variables.tf: %v", err)
-	}
+	_, declared := tofuDeclaring(t, `kubernetes_version = "`)
+	vars := []byte(declared)
 
 	cli := kubectlPin.FindSubmatch(env)
 	if cli == nil {

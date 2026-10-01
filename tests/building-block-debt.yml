@@ -63,7 +63,6 @@ debt:
   - "scripts/versions.env"
   - "site.auto.yml"
   - "tests/mutations.yml"
-  - "variables.tf"
 
   # --- Everything else: tool flags, vendor identifiers, status wording (52)
   - "demolish-site"

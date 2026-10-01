@@ -59,10 +59,12 @@ func TestKubernetesIsOnlyInThePlatformRootAndThatRootComesLast(t *testing.T) {
 	}
 
 	// The gate itself: the cluster root's last step applies everything in
-	// it, and this is what makes "applied" mean "every node is Ready".
-	talos := sources["management/"+config.ClusterRoot+"/talos.tf"]
-	if !strings.Contains(talos, `data "talos_cluster_health" "this"`) {
-		t.Errorf("management/%s/talos.tf no longer reads the cluster's health, so the %s root's last step returns before the nodes are Ready and the %s root is applied to a cluster that cannot schedule anything", config.ClusterRoot, config.ClusterRoot, config.PlatformRoot)
+	// it, and the health read is what makes "applied" mean "every node is
+	// Ready". Found by what it declares; all that matters about where is that
+	// it is not in the root that waits on it.
+	health, _ := tofuDeclaring(t, declClusterHealth)
+	if strings.HasPrefix(health, "management/"+config.PlatformRoot+"/") {
+		t.Errorf("%s reads the cluster's health from the %s root, which is applied after the %s root has returned: nothing then waits for the nodes before the platform is put on them", health, config.PlatformRoot, config.ClusterRoot)
 	}
 }
 
@@ -140,11 +142,11 @@ func stepOrderProblems(converge []steps.Step) []string {
 }
 
 func TestKubernetesOutsideThePlatformIsRefused(t *testing.T) {
-	platform := "management/" + config.PlatformRoot + "/"
+	platform, cluster := "management/"+config.PlatformRoot+"/", "management/"+config.ClusterRoot+"/"
 	good := map[string]string{
-		platform + "a.tf":                                "resource \"kubernetes_namespace\" \"a\" {}\n",
-		platform + "versions.tf":                         "provider \"kubernetes\" {}\n",
-		"management/" + config.ClusterRoot + "/talos.tf": "# resource \"kubernetes_namespace\" \"commented\" {}\n  kubernetes_version = local.kubernetes_version\n",
+		platform + "a.tf":      "resource \"kubernetes_namespace\" \"a\" {}\n",
+		platform + "access.tf": "provider \"kubernetes\" {}\n",
+		cluster + "nodes.tf":   "# resource \"kubernetes_namespace\" \"commented\" {}\n  kubernetes_version = local.kubernetes_version\n",
 	}
 	if got := kubernetesOutsideThePlatform(good); len(got) != 0 {
 		t.Errorf("a site with kubernetes only in the platform root was refused: %v", got)
@@ -155,7 +157,7 @@ func TestKubernetesOutsideThePlatformIsRefused(t *testing.T) {
 		"the provider in the cluster root":  "provider \"kubernetes\" {}\n",
 		"the provider required there":       "    kubernetes = { source = \"hashicorp/kubernetes\" }\n",
 	} {
-		bad := map[string]string{"management/" + config.ClusterRoot + "/extra.tf": add}
+		bad := map[string]string{cluster + "extra.tf": add}
 		for k, v := range good {
 			bad[k] = v
 		}
@@ -163,7 +165,7 @@ func TestKubernetesOutsideThePlatformIsRefused(t *testing.T) {
 			t.Errorf("%s: got %v", name, got)
 		}
 	}
-	if got := kubernetesOutsideThePlatform(map[string]string{"management/" + config.ClusterRoot + "/talos.tf": ""}); len(got) != 1 || !strings.Contains(got[0], "wrong place") {
+	if got := kubernetesOutsideThePlatform(map[string]string{cluster + "nodes.tf": ""}); len(got) != 1 || !strings.Contains(got[0], "wrong place") {
 		t.Errorf("a platform root with nothing in it was accepted: %v", got)
 	}
 }
