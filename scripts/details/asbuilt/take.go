@@ -510,7 +510,9 @@ func OfflineEnv(base []string, site, configPath string) []string {
 			out = append(out, kv)
 		}
 	}
-	out = append(out, "TF_IN_AUTOMATION=1", "TF_VAR_offline=true", "TF_VAR_site="+site)
+	// The site, and the tree of modules that is the site's: a record is of an
+	// estate, and an estate runs its pin.
+	out = append(out, "TF_IN_AUTOMATION=1", "TF_VAR_offline=true", "TF_VAR_site="+site, "TF_VAR_tree="+site)
 	if configPath != "" {
 		out = append(out, "TF_VAR_config_path="+configPath)
 	}

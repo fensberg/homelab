@@ -463,6 +463,7 @@ config entry.
 | `management/cluster/`        | A site's cluster root: providers, credentials and state. Calls the cluster module                                      |
 | `management/platform/`       | A site's platform root: the kubernetes provider and state. Calls the platform module                                   |
 | `modules/infrastructure/`    | OpenTofu modules: `cluster` (machines, Talos, Cilium), `platform` (what Flux cannot create, then Flux), `address-plan` |
+| `management/pins.json`       | Which commit of the modules each site runs: an estate default and per-site lines                                       |
 | `clusters/management/`       | Flux-reconciled manifests for this cluster                                                                             |
 | `config/management.tpl.json` | The one config: sites, topology and every secret reference                                                             |
 | `tests/`                     | Everything above the unit tier — see `tests/README.md`                                                                 |

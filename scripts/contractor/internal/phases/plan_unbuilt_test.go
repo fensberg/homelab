@@ -9,6 +9,7 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/contractor/pin"
 	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
 	"homelab/details/repopath"
@@ -49,6 +50,11 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 	}
 	// Beside the Record phase's own workspace, never in it: a run on this
 	// machine may be using that.
+	// The working tree's modules, not a site's pin: this is the check that
+	// sees a change to a module before it merges.
+	if err := pin.PlaceWorkingTree(repo); err != nil {
+		t.Fatal(err)
+	}
 	work := filepath.Join(repo, ".as-built-unbuilt")
 	t.Cleanup(func() { _ = os.RemoveAll(work) })
 
@@ -66,9 +72,11 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 		if cache := filepath.Join(root.Dir, ".terraform", "providers"); isDir(cache) {
 			in.PluginDir = cache
 		}
+		in.Vars = map[string]string{}
 		if root.Name == config.PlatformRoot {
 			in.Vars = asbuilt.UnbuiltAccess(steps.PlatformInputs[0], steps.PlatformInputs[1])
 		}
+		in.Vars[strings.TrimPrefix(pin.TreeVariable, "TF_VAR_")] = pin.WorkingTree
 		plan, _, err := asbuilt.PlanAgainst(in, asbuilt.Exec)
 		_ = os.RemoveAll(work)
 

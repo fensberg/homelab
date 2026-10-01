@@ -514,10 +514,13 @@ tasks:
       # another terminal - which it used to, by deleting that output.
       - bash .github/scripts/placeholder-config.sh
       # Both of a site's roots: the cluster, and what is put on it.
-      - tofu -chdir=management/cluster init -backend=false -input=false
-      - TF_VAR_config_path=../../config/management.placeholder.json tofu -chdir=management/cluster validate
-      - tofu -chdir=management/platform init -backend=false -input=false
-      - TF_VAR_config_path=../../config/management.placeholder.json tofu -chdir=management/platform validate
+      # TF_VAR_tree=worktree: a root reads its modules from a pinned tree, and
+      # validating a change means validating the modules as they are in the
+      # working tree. The script above makes that tree; it is never a site's.
+      - TF_VAR_tree=worktree tofu -chdir=management/cluster init -backend=false -input=false
+      - TF_VAR_tree=worktree TF_VAR_config_path=../../config/management.placeholder.json tofu -chdir=management/cluster validate
+      - TF_VAR_tree=worktree tofu -chdir=management/platform init -backend=false -input=false
+      - TF_VAR_tree=worktree TF_VAR_config_path=../../config/management.placeholder.json tofu -chdir=management/platform validate
       # The estate's root, validated against its test fixture: it reads none
       # of a site's config, so the placeholder above means nothing to it.
       - tofu -chdir=management/estate init -backend=false -input=false

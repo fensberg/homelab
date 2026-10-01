@@ -25,6 +25,12 @@ import (
 func PlanAsBuilt(ctx *run.Context, recordDir string) error {
 	run.WritePhase("Plan", "Show what this change would do, planned against the as-built record.")
 	defer func() { _ = run.RemoveTreeIfExists(ctx.AsBuiltDir) }()
+	// Planned with the modules the change would leave the site pinned to:
+	// that is what merging it does to the site. A change to a module alone
+	// moves no site, and plans as no change until a pin does.
+	if err := placeModules(ctx); err != nil {
+		return err
+	}
 	return planAsBuilt(ctx, recordDir, asbuilt.Exec)
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"homelab/details/gitenv"
 	"homelab/details/workorders"
 )
 
@@ -271,13 +272,11 @@ func releaseRevision(pkg, digest string) (string, error) {
 	}
 	rev := m.Annotations["org.opencontainers.image.revision"]
 	_, sha, ok := strings.Cut(rev, "@sha1:")
-	if !ok || !fullSHA.MatchString(sha) {
+	if !ok || !gitenv.IsCommit(sha) {
 		return "", fmt.Errorf("%s@%s records no source commit (revision %q)", pkg, digest, rev)
 	}
 	return sha, nil
 }
-
-var fullSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 func sortedNames(m map[string]pin) []string {
 	names := make([]string, 0, len(m))

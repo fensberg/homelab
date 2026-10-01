@@ -1996,9 +1996,7 @@ corpus beside them.
   ones that broke were the three that still named a place - a fixture
   directory, a path literal in a message, and a scope prefix.
 
-What this does not yet do is pin: a root calls its module by path, so every
-site runs the module as it stands on the commit being converged. That is the
-next criterion.
+Pinning is the next section.
 
 ### A site pins the module version it runs
 
@@ -2016,6 +2014,44 @@ module unpinned.
 which a site with no pin of its own runs, so a new site is pinned without a
 commit. A per-site pin is the commit that moves one site ahead of the others,
 or holds it behind them.
+
+**Built, 2026-10-01.** `management/pins.json` holds a commit for the estate
+(`default`) and one for any site held ahead of it or behind it (`per_site`).
+Moving a site is one line of that file. It sits under `management/` because
+that is what a converge applies: a pull request that changes it is planned,
+the merge converges, and a converge that fails returns it with the rest of
+`management/` - so a pin that did not land is not left asserting that it did.
+
+- **The contractor hands a site its modules; the root fetches nothing.**
+  Before any tofu command against an estate, Render puts the repository as it
+  was at the site's pinned commit into `.pinned/<site>/`, and each root's
+  module source is `../../.pinned/${var.tree}/modules/infrastructure/...`.
+  The whole tree, because a module reads the tunnel routes, the address plan
+  and the manifests it bootstraps Flux from, and those have to be the ones it
+  was written against. A commit the checkout lacks is fetched by its hash.
+- **Why not OpenTofu's git source**, which is the usual way. It sees only
+  branches and tags, so a pin naming a commit a squash merge has orphaned
+  cannot be fetched - and the first pin in this repository is exactly that.
+  It writes the repository's address into the code, and that address is a
+  vault value. And it needs the network at every init. The usual way is built
+  for a module in another repository, consumed with nothing wrapping tofu and
+  versioned by tags; none of that is so here.
+- **There is no default tree.** `var.tree` has none, so a root that was not
+  told which version to run runs nothing. The contractor names the site; the
+  checks that must see a change before it merges - validating a root,
+  planning it from nothing - name `worktree`, a link to the repository itself
+  that is never a site's.
+- **A change to a module moves no site.** It is validated, tested and planned
+  from nothing on its own pull request, and reaches a site when a pin does.
+  A pull request's plan is made with the pin as the change would leave it, so
+  a pin's pull request shows what moving it does, and a module's shows no
+  change to any site, which is true.
+- **The guard:** `TestEverySiteRootRunsItsModulesAtItsPin` refuses a root
+  that reaches a module any other way, a root with a default tree, and a pin
+  that is not a full commit hash.
+
+Not built: the pull request that moves the default pin after a module change
+merges is still opened by hand (#602).
 
 **Still missing for "no commit": a site is declared in the template.** Adding
 one today is an edit to `config/management.tpl.json`. The record's answer is a

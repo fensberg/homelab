@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 183
+floor: 184
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -212,6 +212,17 @@ mutations:
     why:
       "A resource written into a root is built for one site and copied for the next. The roots were
       carved into modules so that a second site is the same module called again.
+
+      "
+  - guard: TestEverySiteRootRunsItsModulesAtItsPin
+    file: management/cluster/root.tf
+    find: '  source = "../../.pinned/${var.tree}/modules/infrastructure/cluster"'
+    replace: '  source = "../../modules/infrastructure/cluster"'
+    mentions: "calls a module from"
+    why:
+      "A root that calls its modules by path runs whatever is on the commit being converged, on
+      every site at once. The pin is what lets a change reach one site first, and it only holds
+      if no root can reach its modules around it.
 
       "
   - guard: TestAGoFunctionWrittenTwiceIsDeclared
@@ -2640,6 +2651,8 @@ unprovable:
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
   - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
+    reason: table
+  - test: TestUnpinnedModulesRefusesEveryWayAroundThePin
     reason: table
   - test: TestResourcesInRootsFindsOnlyWhatARootItselfDeclares
     reason: table

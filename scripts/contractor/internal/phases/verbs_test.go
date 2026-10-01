@@ -11,6 +11,7 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/contractor/pin"
 	"homelab/contractor/steps"
 	"homelab/details/repopath"
 )
@@ -391,5 +392,41 @@ func TestATeardownDestroysTheClusterRootAndNeverTouchesThePlatform(t *testing.T)
 	}
 	if _, err := os.Stat(f.ctx.Platform.BackendPgOn); err == nil {
 		t.Error("the platform root's backend file survived the teardown, so the next build would dial a database that is gone")
+	}
+}
+
+// A run against an estate is handed its modules at the site's pin before any
+// tofu command, and a site with no pins to place it by is refused there.
+func TestAVerbPlacesTheSitesPinnedModules(t *testing.T) {
+	root := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := pin.Exec(root, args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q")
+	git("config", "user.email", "test@example.invalid")
+	git("config", "user.name", "test")
+	mustWriteFile(t, filepath.Join(root, "parts", "thing.tf"), "# pinned\n")
+	git("add", "-A")
+	git("commit", "-q", "-m", "first")
+	sha := git("rev-parse", "HEAD")
+
+	ctx := run.NewContext(root, "site0")
+	if err := placeModules(ctx); err == nil {
+		t.Error("a site with no pins was run anyway, so it ran whatever was to hand")
+	}
+	mustWriteFile(t, filepath.Join(root, filepath.FromSlash(pin.File)), `{"default": "`+sha+`", "per_site": {}}`)
+	// Edited after the pin: a run must not see it.
+	mustWriteFile(t, filepath.Join(root, "parts", "thing.tf"), "# the working tree\n")
+	if err := placeModules(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(pin.Dir(root, "site0"), "parts", "thing.tf"))
+	if err != nil || string(got) != "# pinned\n" {
+		t.Errorf("the site was handed %q (%v), not its modules as pinned", got, err)
 	}
 }

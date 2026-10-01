@@ -15,3 +15,19 @@ func Isolate() {
 	_ = os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	_ = os.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
 }
+
+// IsCommit reports whether s is a full commit hash: forty lower-case
+// hexadecimal digits. A short hash, a branch and a tag are each a name for
+// whatever they point at today, and the things that pin to a commit - a
+// site's modules, an action's version - must not accept one.
+func IsCommit(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}

@@ -7,6 +7,18 @@
 # where its state is kept (backend_pg.tf.disabled).
 # =============================================================================
 
+variable "tree" {
+  type        = string
+  description = <<-EOT
+    Which pinned tree this root reads its modules from: a directory under
+    .pinned/, placed there by the contractor before any run. For an estate it
+    is the site's key, and holds the repository as it was at the commit
+    management/pins.json pins that site to. A check that has to see a change
+    before it merges names the working tree instead. There is no default: a
+    root that was not told which version of its modules to run runs none.
+  EOT
+}
+
 variable "site" {
   type        = string
   default     = "site0"
@@ -46,7 +58,7 @@ variable "kubeconfig" {
 }
 
 module "platform" {
-  source = "../../modules/infrastructure/platform"
+  source = "../../.pinned/${var.tree}/modules/infrastructure/platform"
 
   site        = var.site
   config_path = var.config_path

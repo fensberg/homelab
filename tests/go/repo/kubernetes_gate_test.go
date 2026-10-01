@@ -89,6 +89,12 @@ func platformPlaces(sources map[string]string) (root string, places []string) {
 			continue
 		}
 		for _, m := range moduleSource.FindAllStringSubmatch(stripHCLComments(body), -1) {
+			// A site's root reads its modules from its pinned tree; the
+			// module itself is at the same path from the repository's top.
+			if pinned := pinnedSource.FindStringSubmatch(m[1]); pinned != nil {
+				places = append(places, filepath.ToSlash(filepath.Clean(pinned[1])))
+				continue
+			}
 			places = append(places, filepath.ToSlash(filepath.Join(root, m[1])))
 		}
 	}

@@ -137,4 +137,8 @@ scripts/survey/survey
 # throwaway CA. Removed by the phase and by Sterilize.
 /.as-built/
 /.as-built-unbuilt/
+
+# Each site's modules as they were at its pinned commit, placed by the
+# contractor, and the working-tree link the checks use.
+/.pinned/
 modules/**/.terraform.lock.hcl
