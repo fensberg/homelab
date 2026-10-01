@@ -609,13 +609,22 @@ corpus both sides are run against, and the contract tests fail if a case
 exists on one side and not the other. Adding an invariant means adding it in
 both places and adding a case to that manifest.
 
-**A test finds OpenTofu by what it declares, never by where it is.** A test
-that opens `management/<root>/talos.tf` checks that path, and goes on checking
-it after the thing it guards has moved to another root or into a module. So a
-test asks for "the file that declares this" (`tofuDeclaring` in
-`tests/go/repo`, `tofufiles.Declaring` in a program's test) or reads every
-file (`tofuSources`). `TestNoTestNamesTheRootItReads` refuses a test that
-names a root's files instead.
+**A test finds what it reads by what it declares, never by where it is.** A
+test that opens `management/<root>/talos.tf` or
+`clusters/<somewhere>/thing.yaml` checks that path, and goes on checking it
+after the thing it guards has moved to another root, a module or a site's own
+directory. So a test asks for "the file that declares this" - `tofuDeclaring`
+and `fluxObject` in `tests/go/repo`, `tofufiles.Declaring` in a program's
+test - or reads every file (`tofuSources`). `TestNoTestNamesTheRootItReads`
+refuses a test that names a root's files or a path into the Flux tree.
+
+**A verb is tested whole.** `scripts/contractor/internal/phases/verbs_test.go`
+runs a build, a converge and a teardown through the real phases with `tofu`,
+`op`, `age` and `rclone` replaced on PATH by programs that log what they were
+asked. It asserts what reaches tofu and in which root, not what a phase
+prints. A phase added to a verb has to be run there or declared not to be.
+`plan_unbuilt_test.go` plans both roots from nothing with the real providers
+and a stand-in for every vault value.
 
 Coverage is a ratchet, not a threshold: `tests/coverage-baseline.json` is a
 floor a pull request may not drop below and is free to leave alone.

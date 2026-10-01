@@ -100,10 +100,25 @@ func trackedMatching(t *testing.T, keep func(rel string) bool) []string {
 // about where to look, so naming paths in it is correct. A new entry is a
 // decision somebody makes once; a missing entry produces noise, not silence,
 // which is the direction this should fail in.
-var notAuthoredHere = []string{
+var notAuthoredHere = unauthored()
+
+// unauthored is the list, with the one entry that is a place rather than a
+// file name found by what is in it: Flux's own install is wherever the
+// manifest declaring its controllers is, and that directory moves when the
+// Flux tree does. If it cannot be found the entry is the empty prefix's
+// opposite - a path nothing has - and TestEveryUnauthoredPathStillExists
+// says so.
+func unauthored() []string {
+	fluxInstall := "the Flux install, which no manifest declares/"
+	if path, err := fluxObjectPath(fluxInstallKind, fluxInstallName); err == nil {
+		fluxInstall = filepath.ToSlash(filepath.Dir(path)) + "/"
+	}
+	return append([]string{fluxInstall}, unauthoredNames...)
+}
+
+var unauthoredNames = []string{
 	// Flux's own install manifest, committed verbatim - the same exclusion
-	// .checkov.yaml already makes.
-	"clusters/management/flux-system/",
+	// .checkov.yaml already makes - is the directory found above.
 	// Generated integrity databases and machine-written state.
 	"pnpm-lock.yaml",
 	"go.sum",

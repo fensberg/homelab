@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -13,6 +14,9 @@ import (
 	"sync"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
+	"homelab/details/repopath"
 	"homelab/details/tofufiles"
 )
 
@@ -31,6 +35,8 @@ import (
 // repository and refuses the three ways of saying it:
 //
 //   - a path into a root: "management/<root>/anything";
+//   - a path into the Flux tree: "clusters/<anything>", which is about to
+//     become a shared core and a directory per site;
 //   - the name of one of the repository's own OpenTofu files: "talos.tf";
 //   - a root's directory built from its parts: Join(..., "management", "<root>").
 //
@@ -99,7 +105,7 @@ func rootsNamed(rel string, src []byte, roots []string, tofuNames map[string]boo
 	}
 	found := map[string]bool{}
 	say := func(n ast.Node, what string) {
-		found[fmt.Sprintf("%s:%d %s Find it by what it declares (tofuDeclaring, or tofufiles.Declaring in a program's test) or read every file (tofuSources): the next root, or the module this moves into, is then read without anybody editing this test.", rel, fset.Position(n.Pos()).Line, what)] = true
+		found[fmt.Sprintf("%s:%d %s Find it by what it declares (tofuDeclaring or fluxObject; tofufiles.Declaring in a program's test) or read every file (tofuSources): the next root, the module this moves into, or the site's own directory is then read without anybody editing this test.", rel, fset.Position(n.Pos()).Line, what)] = true
 	}
 	literal := func(e ast.Expr) (string, bool) {
 		lit, ok := e.(*ast.BasicLit)
@@ -123,6 +129,10 @@ func rootsNamed(rel string, src []byte, roots []string, tofuNames map[string]boo
 					say(x, fmt.Sprintf("names %q, a path into the root %s.", v, r))
 					return true
 				}
+			}
+			if rest, in := strings.CutPrefix(v, fluxTree+"/"); in && rest != "" {
+				say(x, fmt.Sprintf("names %q, a path into the Flux tree.", v))
+				return true
 			}
 			if base := v[strings.LastIndex(v, "/")+1:]; strings.HasSuffix(base, ".tf") && tofuNames[base] {
 				say(x, fmt.Sprintf("names the OpenTofu file %q.", v))
@@ -186,6 +196,108 @@ func tofuAll(t *testing.T) string {
 	return b.String()
 }
 
+// The Flux tree: what each cluster reconciles. Named whole it is a scope; a
+// path into it names where a manifest is today.
+const fluxTree = "clusters"
+
+// What the guards find a manifest by: an object it declares.
+const (
+	kindHelmRelease = "HelmRelease"
+	// The Flux controllers' own install, vendored as `flux bootstrap` wrote it.
+	fluxInstallKind, fluxInstallName = "Deployment", "source-controller"
+	// The CNI, rendered from its chart for Talos to apply.
+	cniKind, cniName = "DaemonSet", "cilium"
+)
+
+var (
+	fluxOnce    sync.Once
+	fluxObjects map[string][]string
+	fluxErr     error
+)
+
+// fluxObjectPath is the one tracked manifest in the Flux tree that declares
+// an object of this kind and name, wherever in the tree it is.
+func fluxObjectPath(kind, name string) (string, error) {
+	fluxOnce.Do(func() { fluxObjects, fluxErr = readFluxObjects() })
+	if fluxErr != nil {
+		return "", fluxErr
+	}
+	switch found := fluxObjects[kind+"/"+name]; len(found) {
+	case 1:
+		return found[0], nil
+	case 0:
+		return "", fmt.Errorf("no manifest under %s declares a %s named %q. If it was renamed or removed, the check that reads it has nothing to read", fluxTree, kind, name)
+	default:
+		return "", fmt.Errorf("%s %q is declared in %d manifests (%s), so there is no one file to read", kind, name, len(found), strings.Join(found, ", "))
+	}
+}
+
+// readFluxObjects is every object each tracked manifest in the Flux tree
+// declares, as "<kind>/<name>" against the manifests declaring it.
+func readFluxObjects() (map[string][]string, error) {
+	root, err := repopath.Root()
+	if err != nil {
+		return nil, err
+	}
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	out, err := exec.Command("git", "-C", root, "ls-files", "-z", "--", fluxTree+"/*.yaml", fluxTree+"/*.yml").Output()
+	if err != nil {
+		return nil, fmt.Errorf("listing the manifests tracked under %s: %w", fluxTree, err)
+	}
+	objects := map[string][]string{}
+	for _, rel := range strings.Split(string(out), "\x00") {
+		if rel == "" {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			return nil, err
+		}
+		dec := yaml.NewDecoder(strings.NewReader(string(body)))
+		seen := map[string]bool{}
+		for {
+			var doc struct {
+				Kind     string `yaml:"kind"`
+				Metadata struct {
+					Name string `yaml:"name"`
+				} `yaml:"metadata"`
+			}
+			// The end of the file, or a document that is not YAML: either
+			// way there is nothing more this file can be found by.
+			if dec.Decode(&doc) != nil {
+				break
+			}
+			id := doc.Kind + "/" + doc.Metadata.Name
+			if doc.Kind != "" && !seen[id] {
+				seen[id] = true
+				objects[id] = append(objects[id], rel)
+			}
+		}
+	}
+	if len(objects) == 0 {
+		return nil, fmt.Errorf("no manifest under %s declares anything, so nothing there can be found", fluxTree)
+	}
+	return objects, nil
+}
+
+// fluxObject is that manifest's path and body. The test fails if no manifest
+// declares the object or several do.
+func fluxObject(t *testing.T, kind, name string) (path, body string) {
+	t.Helper()
+	path, err := fluxObjectPath(kind, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path, readRepoFile(t, path)
+}
+
+// beside is a file in the same directory as a manifest found by what it
+// declares: the kustomization that patches it, the values it was rendered
+// from.
+func beside(manifest, name string) string {
+	return filepath.ToSlash(filepath.Join(filepath.Dir(manifest), name))
+}
+
 var (
 	tofuOnce  sync.Once
 	tofuFiles map[string]string
@@ -235,6 +347,8 @@ func TestRootsNamedRefusesEachWayOfNamingARoot(t *testing.T) {
 		"prose that mentions a path":     {`fail("ground/alpha/widgets.tf no longer says so")`, ""},
 		"a file nobody has by that name": {`write(dir, "scratch.tf")`, ""},
 		"another directory":              {`read("elsewhere/alpha/thing.json")`, ""},
+		"a path into the Flux tree":      {`read("` + fluxTree + `/somewhere/thing.yaml")`, "a path into the Flux tree"},
+		"the Flux tree as a scope":       {`under(rel, "` + fluxTree + `/")`, ""},
 	} {
 		body := tc.body
 		if strings.HasPrefix(body, "const") {

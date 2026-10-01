@@ -29,22 +29,27 @@ import (
 // agent that writes these files deliberately holds no `workflows` permission,
 // so it cannot edit that file. Literals plus this test reach the same place
 // without needing a permission the boundary is built to withhold.
+// The runners' two Helm releases, which is what their manifests are found by.
+const (
+	runnerController = "gha-runner-scale-set-controller"
+	runnerScaleSet   = "self-hosted"
+)
+
 func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
 	tfPath, tf := tofuDeclaring(t, "runner_system_namespace =")
 
 	for _, tc := range []struct {
-		local    string
-		manifest string
-		mustHave []string
+		local   string
+		release string
 	}{
-		{"runner_system_namespace", "clusters/management/infrastructure/controllers/actions-runner-controller.yaml", nil},
-		{"runners_namespace", "clusters/management/infrastructure/configs/runner-scale-set.yaml", nil},
+		{"runner_system_namespace", runnerController},
+		{"runners_namespace", runnerScaleSet},
 	} {
 		want := hclStringLocal(t, tf, tc.local)
-		manifest := readRepoFile(t, tc.manifest)
+		path, manifest := fluxObject(t, kindHelmRelease, tc.release)
 		if !strings.Contains(manifest, want) {
 			t.Errorf("%s declares local.%s = %q, but %s never mentions it. The manifest and the OpenTofu have drifted; one of them is now describing a resource the other does not create.",
-				tfPath, tc.local, want, tc.manifest)
+				tfPath, tc.local, want, path)
 		}
 	}
 }
@@ -59,7 +64,7 @@ func TestRunnerScaleSetNameMatchesRunsOn(t *testing.T) {
 	// kept alive only so this test could compare against it, which tflint
 	// correctly called dead code. The manifest is the only declaration now,
 	// so it is the one this test reads.
-	manifest := readRepoFile(t, "clusters/management/infrastructure/configs/runner-scale-set.yaml")
+	_, manifest := fluxObject(t, kindHelmRelease, runnerScaleSet)
 	name := yamlScalar(t, manifest, "runnerScaleSetName")
 
 	for _, wf := range []string{
@@ -183,7 +188,7 @@ func TestRunnerPodsCannotScheduleOntoAControlPlane(t *testing.T) {
 			} `yaml:"values"`
 		} `yaml:"spec"`
 	}
-	body := readRepoFile(t, "clusters/management/infrastructure/configs/runner-scale-set.yaml")
+	_, body := fluxObject(t, kindHelmRelease, runnerScaleSet)
 	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
 		t.Fatalf("parsing the runner scale set: %v", err)
 	}
@@ -234,7 +239,7 @@ func TestRunnerPodsAreNotBestEffort(t *testing.T) {
 			} `yaml:"values"`
 		} `yaml:"spec"`
 	}
-	body := readRepoFile(t, "clusters/management/infrastructure/configs/runner-scale-set.yaml")
+	_, body := fluxObject(t, kindHelmRelease, runnerScaleSet)
 	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
 		t.Fatalf("parsing the runner scale set: %v", err)
 	}

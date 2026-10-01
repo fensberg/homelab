@@ -2828,6 +2828,41 @@ The timing is the point. The module move relocates every file those forty
 places named. Written the old way, each would either have broken or, worse,
 gone on reading a thin root that no longer held what it was checking.
 
+**What a review of the tests found, and what was built for it (2026-10-01).**
+Asked what would bite later, the answer was measured rather than guessed, and
+four of the gaps were closed on the same branch:
+
+- **A verb had never been run by a test (#595).** About 150 of the
+  contractor's functions were covered by nothing or by a tier no workflow
+  runs. `verbs_test.go` now runs a build, a build resumed at Compute, a
+  converge and a teardown through the real phases, against programs on PATH
+  that record what they are asked. Writing it found two faults in the split
+  before any estate did: the orphaned-image check still asked the state for
+  the disk image by the hypervisor's hostname, so on every converge it would
+  have found none tracked and deleted the image the state does track; and the
+  platform root was initialised only in a phase a build can be started after.
+  Twenty functions came off the exemption ledger.
+- **Nothing planned a root's resources before a merge (#596).** Both roots are
+  now planned from nothing, with the real providers and a stand-in for every
+  vault value, step by step as the converge walks them. It needs no record,
+  so the check for a resource keyed by a vault value runs on the change that
+  could introduce one. A vault attestation with no record now takes the
+  provider written beside it, which is the only value the config's own check
+  accepts.
+- **Guards read Flux manifests by path (#597).** The rule for OpenTofu is the
+  rule for the Flux tree: a manifest is found by an object it declares
+  (`fluxObject`), and the meta-guard refuses a path into `clusters/`. Thirty
+  places were converted before the tree is laid out per site, not after.
+- **"A validation is exercised" passed on a word (#598).** It read the test
+  file for the word `expect_failures` and the declaration's name. It now reads
+  each test's expected failures and requires every declaration that refuses
+  something to be in one, in its own root's test.
+
+Left open, and filed: the tests know one site (#599), only `tests/go/repo`
+has proof its tests can fail (#600), workflows are read and never run (#601),
+and the coverage ledger still counts a function as covered when a line of it
+ran.
+
 **The hostname guard was the wrong shape, and is gone.** The first guard
 written for #585 refused the hypervisor's hostname as a resource key, by name. The
 operator's review: that is one value, and not the one that matters. The check

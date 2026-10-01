@@ -190,32 +190,105 @@ func covered(t *testing.T, u unit, sources map[string]string, floors map[string]
 		if err != nil {
 			t.Fatalf("reading %s: %v", u.path, err)
 		}
-		// output as well: an output can carry a precondition, and a test
-		// reaches it as expect_failures = [output.<name>].
-		decls := regexp.MustCompile(`(?m)^(?:variable|output|resource\s+"[^"]+"|terraform_data)\s+"([^"]+)"`).
-			FindAllStringSubmatch(string(body), -1)
+		// Every declaration in the file that refuses something, and each
+		// has to be one a test of this root expects to fail. Read from the
+		// tests' expect_failures lists, not from their text: a test that
+		// merely mentions a name, or lists nothing, has not seen it refuse.
+		expected := map[string]bool{}
 		for name, src := range sources {
-			if !strings.HasSuffix(name, ".tftest.hcl") {
-				continue
-			}
 			// Its own root's tests, and no other's. A test runs the root
 			// it sits in, so one in another root that happens to name the
 			// same identifier never reached this file's assertion - which
 			// is how a second root's `variable "site"` validation counted
 			// as exercised by the first root's test of its own.
-			if !testsTheRootOf(name, u.path) {
-				continue
-			}
-			for _, d := range decls {
-				if strings.Contains(src, "expect_failures") && strings.Contains(src, d[1]) {
-					return true
+			if strings.HasSuffix(name, ".tftest.hcl") && testsTheRootOf(name, u.path) {
+				for _, addr := range expectedFailures(src) {
+					expected[addr] = true
 				}
 			}
 		}
-		return false
+		asserting := assertingDeclarations(string(body))
+		for _, addr := range asserting {
+			if !expected[addr] {
+				return false
+			}
+		}
+		return len(asserting) > 0
 	}
 	t.Fatalf("unit %s has a tier nothing knows how to check", u)
 	return false
+}
+
+var (
+	tofuBlockHeader = regexp.MustCompile(`^(variable|output|check|resource|data)\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{`)
+	expectFailures  = regexp.MustCompile(`(?s)expect_failures\s*=\s*\[([^\]]*)\]`)
+)
+
+// assertingDeclarations is the address of every top-level block in an
+// OpenTofu file that refuses something - a validation, a precondition, a
+// postcondition, or a check - as a test names it in expect_failures.
+func assertingDeclarations(body string) []string {
+	var out []string
+	var header []string
+	var block strings.Builder
+	flush := func() {
+		if header == nil {
+			return
+		}
+		if header[1] == "check" || assertsSomething.MatchString(block.String()) {
+			switch header[1] {
+			case "variable":
+				out = append(out, "var."+header[2])
+			case "output", "check":
+				out = append(out, header[1]+"."+header[2])
+			case "resource":
+				out = append(out, header[2]+"."+header[3])
+			case "data":
+				out = append(out, "data."+header[2]+"."+header[3])
+			}
+		}
+		header = nil
+		block.Reset()
+	}
+	for _, line := range strings.Split(body, "\n") {
+		if m := tofuBlockHeader.FindStringSubmatch(line); m != nil {
+			flush()
+			header = m
+			continue
+		}
+		if strings.HasPrefix(line, "}") {
+			flush()
+			continue
+		}
+		if code := strings.TrimSpace(line); header != nil && !strings.HasPrefix(code, "#") && !strings.HasPrefix(code, "//") {
+			block.WriteString(line)
+			block.WriteByte('\n')
+		}
+	}
+	flush()
+	sort.Strings(out)
+	return out
+}
+
+// expectedFailures is every address a test file lists in an expect_failures,
+// comments aside.
+func expectedFailures(src string) []string {
+	var code strings.Builder
+	for _, line := range strings.Split(src, "\n") {
+		if t := strings.TrimSpace(line); !strings.HasPrefix(t, "#") && !strings.HasPrefix(t, "//") {
+			code.WriteString(line)
+			code.WriteByte('\n')
+		}
+	}
+	var out []string
+	for _, m := range expectFailures.FindAllStringSubmatch(code.String(), -1) {
+		for _, addr := range strings.Split(m[1], ",") {
+			if addr = strings.TrimSpace(addr); addr != "" {
+				out = append(out, addr)
+			}
+		}
+	}
+	return out
 }
 
 // testsTheRootOf reports whether a .tftest.hcl file runs the root or module an
@@ -313,5 +386,73 @@ Remove them and lower the ceiling by the same number. A block list that keeps
 entries it no longer needs is slack, and slack is how a coverage baseline here
 once sat ten points below the real figure without anybody noticing.`,
 			len(stale), strings.Join(stale, "\n  "))
+	}
+}
+
+func TestAssertingDeclarationsAndExpectedFailuresAreReadNotMatched(t *testing.T) {
+	body := `variable "site" {
+  type = string
+  validation {
+    condition = true
+  }
+}
+
+variable "plain" {
+  type = string
+}
+
+output "grants" {
+  value = 1
+  precondition {
+    condition = true
+  }
+}
+
+resource "terraform_data" "invariants" {
+  lifecycle {
+    precondition {
+      condition = true
+    }
+  }
+}
+
+resource "terraform_data" "quiet" {
+  # validation { would be here }
+}
+
+data "thing" "read" {
+  lifecycle {
+    postcondition {
+      condition = true
+    }
+  }
+}
+
+check "reachable" {
+}
+`
+	want := []string{"check.reachable", "data.thing.read", "output.grants", "terraform_data.invariants", "var.site"}
+	if got := assertingDeclarations(body); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("asserting declarations are %v, want %v", got, want)
+	}
+
+	test := `run "a" {
+  expect_failures = [var.site]
+}
+run "b" {
+  # expect_failures = [var.commented]
+  expect_failures = [
+    terraform_data.invariants,
+    output.grants,
+  ]
+}
+run "c" {
+  expect_failures = []
+}
+# a run that mentions var.plain and the word expect_failures expects nothing
+`
+	wantExpected := []string{"var.site", "terraform_data.invariants", "output.grants"}
+	if got := expectedFailures(test); strings.Join(got, " ") != strings.Join(wantExpected, " ") {
+		t.Errorf("expected failures are %v, want %v", got, wantExpected)
 	}
 }

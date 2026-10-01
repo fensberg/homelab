@@ -26,7 +26,7 @@ import (
 // The estate ran the first half of that for a while: the stack shipped with
 // these switched off and a comment promising the machine configuration later.
 func TestScrapingTheControlPlaneChangesBothHalvesTogether(t *testing.T) {
-	stack := readRepoFile(t, "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml")
+	_, stack := fluxObject(t, kindHelmRelease, "kube-prometheus-stack")
 	talosPath, talos := tofuDeclaring(t, declMachineConfig)
 
 	// What the chart is told to scrape, and what the machine configuration

@@ -14,14 +14,9 @@ import (
 func Overlay(ctx *run.Context) error {
 	run.WritePhase("Overlay", "Mint a tagged auth key for the hypervisor to join the overlay network.")
 
-	// Every root, here, because this is the first phase that runs tofu: the
-	// platform root is not applied until the Cluster phase, and a missing
-	// provider is better found now than after the machines are built.
-	for _, root := range ctx.Roots() {
-		run.Info("tofu init (" + root.Name + ")")
-		if err := run.TofuInit(ctx.In(root)); err != nil {
-			return err
-		}
+	run.Info("tofu init")
+	if err := run.TofuInit(ctx); err != nil {
+		return err
 	}
 
 	// Applied ahead of the playbook so the hypervisor can log in with a

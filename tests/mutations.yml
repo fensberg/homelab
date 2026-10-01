@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 181
+floor: 182
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -169,11 +169,12 @@ mutations:
   - guard: TestEveryUnitIsExecutedByATestOrIsADeclaredDebt
     file: management/platform/tests/platform.tftest.hcl
     find: "  expect_failures = [var.site]"
-    replace: "  # nothing here is expected to fail"
+    replace: "  expect_failures = []"
     mentions: "tofu:management/platform/variables.tf"
     why:
-      "A validation in one root counted as exercised because another root's test named a variable
-      of the same name. A test runs the root it sits in and no other.
+      "A validation counted as exercised when a test file held the word expect_failures and the
+      variable's name anywhere, in any root. Emptying the list still passed. The list is read now,
+      from the tests of the root the validation is in.
 
       "
   - guard: TestNoTestNamesTheRootItReads
@@ -188,6 +189,19 @@ mutations:
       A guard that opens a root's file by its path checks that path. When the root was split,
       guards written that way went on reading the root they named, and one found nothing left
       there and kept passing. The files move again when the roots become modules.
+
+      "
+  - guard: TestNoTestNamesTheRootItReads
+    file: tests/go/repo/control_plane_metrics_test.go
+    reads_source: true
+    find: '	_, stack := fluxObject(t, kindHelmRelease, "kube-prometheus-stack")'
+    replace: '	stack := readRepoFile(t, "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml")'
+    mentions: "a path into the Flux tree"
+    why: "reads_source, as the entry above.
+
+      The Flux tree is about to become a shared core and a directory per site. A guard that opens
+      a manifest by its path would break on that move, or read a directory that no longer holds
+      what it checks.
 
       "
   - guard: TestAGoFunctionWrittenTwiceIsDeclared
@@ -2616,6 +2630,8 @@ unprovable:
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
   - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
+    reason: table
+  - test: TestAssertingDeclarationsAndExpectedFailuresAreReadNotMatched
     reason: table
   - test: TestRootsNamedRefusesEachWayOfNamingARoot
     reason: table

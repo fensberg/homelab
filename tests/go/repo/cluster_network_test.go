@@ -132,7 +132,7 @@ be changed without rebuilding the cluster.`, a.site, a.kind, a.n, b.site, b.kind
 // address allocation from a range this repository declares to a default it does
 // not, and the manifest would still render, still install, and still come up.
 func TestCiliumTakesItsPodAddressesFromKubernetes(t *testing.T) {
-	manifest := readRepoFile(t, "clusters/bootstrap/cilium.yaml")
+	_, manifest := fluxObject(t, cniKind, cniName)
 
 	m := regexp.MustCompile(`(?m)^\s*ipam:\s*"?([a-z-]+)"?\s*$`).FindStringSubmatch(manifest)
 	if m == nil {

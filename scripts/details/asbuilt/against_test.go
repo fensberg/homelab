@@ -1,6 +1,8 @@
 package asbuilt
 
 import (
+	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -293,5 +295,66 @@ func TestKeyedByAVaultValueSeesEveryVaultFieldAndOnlyThose(t *testing.T) {
 	}
 	if _, err := KeyedByAVaultValue([]byte("not json"), tpl, config); err == nil {
 		t.Error("a plan that is not JSON was called clean")
+	}
+}
+
+// A root nothing has been built from has a record like any other: it reads
+// back, holds no resources, and a change planned against it gets a stand-in
+// for every vault value - with an attestation taking the provider written
+// beside it, since nothing else would pass the check it is compared in.
+func TestAnUnbuiltRootHasARecordToPlanAgainst(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "unbuilt")
+	if err := WriteUnbuilt(dir, "site7"); err != nil {
+		t.Fatal(err)
+	}
+	state, config, meta, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Site != "site7" || len(config) != 0 || len(state["resources"].([]any)) != 0 || state["lineage"] == "" {
+		t.Errorf("an unbuilt record read back as state %v, config %v, meta %+v", state, config, meta)
+	}
+
+	tpl := mustDecode(t, `{"storage": {"provider": "acme", "vault_provider": "{{ op://estate/storage/provider }}",
+	  "token": "{{ op://estate/storage/token }}"},
+	  "unattested": {"vault_provider": "{{ op://estate/other/provider }}"}}`)
+	got := Reconcile(mustFingerprinter(t, 1), "", tpl, config).(map[string]any)
+	storage := got["storage"].(map[string]any)
+	if storage["vault_provider"] != "acme" {
+		t.Errorf("an attestation with no record took %v, not the provider beside it", storage["vault_provider"])
+	}
+	if token, _ := storage["token"].(string); token == "" || strings.Contains(token, "op://") {
+		t.Errorf("a vault value with no record was not given a stand-in: %q", token)
+	}
+	// With no provider beside it there is nothing to take, and it is a
+	// stand-in like any other vault value.
+	if v, _ := got["unattested"].(map[string]any)["vault_provider"].(string); v == "" || strings.Contains(v, "op://") {
+		t.Errorf("got %q", v)
+	}
+	// A recorded attestation is kept: the record is what the estate holds.
+	recorded := mustDecode(t, `{"storage": {"vault_provider": "recorded"}}`)
+	if got := Reconcile(mustFingerprinter(t, 1), "", tpl, recorded).(map[string]any)["storage"].(map[string]any)["vault_provider"]; got != "recorded" {
+		t.Errorf("a recorded attestation was replaced by %v", got)
+	}
+}
+
+// The stand-in for a cluster's access has the shape the real one has: a
+// certificate and a key that parse and match, so a provider configures.
+func TestUnbuiltAccessIsShapedLikeAClustersAccess(t *testing.T) {
+	vars := UnbuiltAccess("structured", "plain")
+	var access map[string]string
+	if err := json.Unmarshal([]byte(vars["structured"]), &access); err != nil {
+		t.Fatal(err)
+	}
+	cert, errC := base64.StdEncoding.DecodeString(access["client_certificate"])
+	key, errK := base64.StdEncoding.DecodeString(access["client_key"])
+	if errC != nil || errK != nil {
+		t.Fatalf("the certificate or the key is not base64: %v, %v", errC, errK)
+	}
+	if _, err := tls.X509KeyPair(cert, key); err != nil {
+		t.Errorf("the stand-in certificate and key do not make a pair a provider would accept: %v", err)
+	}
+	if !strings.HasPrefix(access["host"], "https://") || access["ca_certificate"] == "" || vars["plain"] == "" {
+		t.Errorf("the access is %v, and the plain form %q", access, vars["plain"])
 	}
 }

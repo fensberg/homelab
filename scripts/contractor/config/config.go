@@ -219,6 +219,10 @@ type Hypervisor struct {
 }
 
 type Node struct {
+	// Key is the node's key in the config (node0): what OpenTofu keys the
+	// node's resources by, so what an address names. Set when a site's
+	// network is resolved, not read from the config's values.
+	Key        string     `json:"-"`
 	Hostname   string     `json:"hostname"`
 	IP         string     `json:"ip"`
 	Datastores Datastores `json:"datastores"`
@@ -605,7 +609,9 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	sort.Strings(nodeKeys)
 	nodes := make([]Node, 0, len(nodeKeys))
 	for _, k := range nodeKeys {
-		nodes = append(nodes, site.Hypervisor.Nodes[k])
+		node := site.Hypervisor.Nodes[k]
+		node.Key = k
+		nodes = append(nodes, node)
 	}
 	if len(nodes) == 0 {
 		return nil, fmt.Errorf("site '%s' has no hypervisor nodes", name)

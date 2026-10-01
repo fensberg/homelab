@@ -2,6 +2,8 @@ package asbuilt
 
 import (
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,6 +100,46 @@ func PlanAgainst(in PlanInputs, tofu Tofu) ([]byte, Meta, error) {
 	return plan, meta, nil
 }
 
+// WriteUnbuilt writes the record of a root nothing has been built from: no
+// resources, and no config. A change planned against it is planned as the
+// first build would apply it, with a stand-in for every vault value - which
+// is how a change is checked before any estate has a record of the right
+// shape to plan it against.
+func WriteUnbuilt(dir, site string) error {
+	lineage := make([]byte, 16)
+	if _, err := rand.Read(lineage); err != nil {
+		return err
+	}
+	return Write(dir, &Result{
+		Quiet: true,
+		State: map[string]any{
+			"version": json.Number("4"), "serial": json.Number("1"),
+			"lineage":   fmt.Sprintf("%x-%x-%x-%x-%x", lineage[0:4], lineage[4:6], lineage[6:8], lineage[8:10], lineage[10:16]),
+			"outputs":   map[string]any{},
+			"resources": []any{},
+		},
+		Config: map[string]any{},
+	}, Meta{Site: site})
+}
+
+// UnbuiltAccess is stand-ins for a root's inputs that are another root's
+// outputs, for planning it before that other root has a record: for each
+// name, a value of the shape the cluster's access has. The structured form
+// carries a certificate and a key that match each other and that nothing
+// trusts; the plain form is an opaque string, which is all a kubeconfig is to
+// a plan that runs no provisioner.
+func UnbuiltAccess(structured, plain string) map[string]string {
+	cert := base64.StdEncoding.EncodeToString([]byte(throwawayPEM("certificate")))
+	key := base64.StdEncoding.EncodeToString([]byte(throwawayPEM("key")))
+	access, _ := json.Marshal(map[string]string{
+		"host":               "https://198.18.0.1:6443",
+		"ca_certificate":     cert,
+		"client_certificate": cert,
+		"client_key":         key,
+	})
+	return map[string]string{structured: string(access), plain: "unbuilt"}
+}
+
 // VaultKeyError is the refusal of a change that keys a resource by a value
 // from the vault. It names the resource and the config field, both of which
 // are public: the type and name are code, and the field is in the template.
@@ -187,6 +229,18 @@ func Reconcile(f *Fingerprinter, field string, tpl, recorded any) any {
 		out := make(map[string]any, len(t))
 		for k, v := range t {
 			out[k] = Reconcile(f, k, v, rec[k])
+		}
+		// An attestation the record does not hold - a vendor the change
+		// adds, or a site not built yet - is not given a stand-in: it is
+		// compared against the provider written beside it, and only the
+		// same word passes. So it plans as the value the vault has to hold
+		// for the config to be accepted at all.
+		if ref, ok := t[vaultAttestation].(string); ok && vaultReference.MatchString(ref) {
+			if _, recorded := rec[vaultAttestation].(string); !recorded {
+				if provider, ok := t[attestedProvider].(string); ok && !vaultReference.MatchString(provider) {
+					out[vaultAttestation] = provider
+				}
+			}
 		}
 		return out
 	case []any:

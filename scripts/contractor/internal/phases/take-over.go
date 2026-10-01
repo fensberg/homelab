@@ -65,7 +65,7 @@ deleting it would strand whatever it describes`, root.LocalState)
 	}
 
 	run.Info(fmt.Sprintf("waiting for the state database at %s:%d ...", host, port))
-	if !tcp.Await(tcp.Addr(host, port), 5*time.Minute, 15*time.Second) {
+	if !awaitTCP(tcp.Addr(host, port), 5*time.Minute, 15*time.Second) {
 		return fmt.Errorf(`the state database at %s:%d never answered.
 
 Converge applies a change to a running estate, so the cluster holding its state

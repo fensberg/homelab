@@ -59,9 +59,8 @@ var (
 type workloadPod struct {
 	// What it is, in the words a failure message should use.
 	What string
-	// Repository-relative manifest.
-	File string
-	// metadata.name of the HelmRelease in that file.
+	// metadata.name of its HelmRelease, which is what its manifest is found
+	// by: a path would name where the manifest is today.
 	Release string
 	// The chart version whose values.yaml the paths below were read from. Not
 	// decoration: if the manifest has moved on from this, nobody has checked
@@ -101,10 +100,16 @@ type workloadPod struct {
 
 // Read from the pinned charts on 2026-09-06. Each entry names the file that
 // was read, because the next person to touch this should re-read the same one.
+// file is the manifest that declares the pod's HelmRelease, wherever it is.
+func (w workloadPod) file(t *testing.T) string {
+	t.Helper()
+	path, _ := fluxObject(t, kindHelmRelease, w.Release)
+	return path
+}
+
 var workloadPods = []workloadPod{
 	{
 		What:         "the Actions Runner Controller",
-		File:         "clusters/management/infrastructure/controllers/actions-runner-controller.yaml",
 		Release:      "gha-runner-scale-set-controller",
 		ChartVersion: "0.14.2",
 		// charts/gha-runner-scale-set-controller/values.yaml: `resources`,
@@ -119,7 +124,6 @@ var workloadPods = []workloadPod{
 	},
 	{
 		What:         "the runner listener",
-		File:         "clusters/management/infrastructure/configs/runner-scale-set.yaml",
 		Release:      "self-hosted",
 		ChartVersion: "0.14.2",
 		// listenerTemplate is a PodSpec copied verbatim into the
@@ -133,7 +137,6 @@ var workloadPods = []workloadPod{
 	},
 	{
 		What:                  "a CI runner",
-		File:                  "clusters/management/infrastructure/configs/runner-scale-set.yaml",
 		Release:               "self-hosted",
 		ChartVersion:          "0.14.2",
 		Values:                []string{"template", "spec"},
@@ -144,7 +147,6 @@ var workloadPods = []workloadPod{
 	},
 	{
 		What:         "the CloudNativePG operator",
-		File:         "clusters/management/infrastructure/controllers/cloudnative-pg.yaml",
 		Release:      "cloudnative-pg",
 		ChartVersion: "0.23.0",
 		// charts/cloudnative-pg/values.yaml, consumed by templates/deployment.yaml.
@@ -158,7 +160,6 @@ var workloadPods = []workloadPod{
 	},
 	{
 		What:         "the Prometheus operator",
-		File:         "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml",
 		Release:      "kube-prometheus-stack",
 		ChartVersion: "91.4.1",
 		// kube-prometheus-stack/values.yaml. This chart deploys six pods from
@@ -171,7 +172,6 @@ var workloadPods = []workloadPod{
 	},
 	{
 		What:         "Prometheus itself",
-		File:         "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml",
 		Release:      "kube-prometheus-stack",
 		ChartVersion: "91.4.1",
 		Values:       []string{"prometheus", "prometheusSpec"},
@@ -184,7 +184,6 @@ var workloadPods = []workloadPod{
 	},
 	{
 		What:           "Alertmanager",
-		File:           "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml",
 		Release:        "kube-prometheus-stack",
 		ChartVersion:   "91.4.1",
 		Values:         []string{"alertmanager", "alertmanagerSpec"},
@@ -193,7 +192,6 @@ var workloadPods = []workloadPod{
 	},
 	{
 		What:                 "Grafana",
-		File:                 "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml",
 		Release:              "kube-prometheus-stack",
 		ChartVersion:         "91.4.1",
 		Values:               []string{"grafana"},
@@ -203,7 +201,6 @@ var workloadPods = []workloadPod{
 	},
 	{
 		What:                 "kube-state-metrics",
-		File:                 "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml",
 		Release:              "kube-prometheus-stack",
 		ChartVersion:         "91.4.1",
 		Values:               []string{"kube-state-metrics"},
@@ -222,7 +219,6 @@ var workloadPods = []workloadPod{
 	// can express a workload which belongs on every machine.
 	{
 		What:         "the OpenEBS Local PV provisioner",
-		File:         "clusters/management/infrastructure/controllers/openebs.yaml",
 		Release:      "openebs",
 		ChartVersion: "4.6.0",
 		// A subchart, so the keys are nested twice rather than top-level -
@@ -321,10 +317,10 @@ func TestEveryWorkloadIsSizedPlacedAndGivenAPriority(t *testing.T) {
 
 	for _, w := range workloadPods {
 		t.Run(w.What, func(t *testing.T) {
-			releases := readHelmReleases(t, w.File)
+			releases := readHelmReleases(t, w.file(t))
 			hr, ok := releases[w.Release]
 			if !ok {
-				t.Fatalf("%s declares no HelmRelease named %q, so this entry is asserting nothing", w.File, w.Release)
+				t.Fatalf("%s declares no HelmRelease named %q, so this entry is asserting nothing", w.file(t), w.Release)
 			}
 
 			if got := hr.Spec.Chart.Spec.Version; got != w.ChartVersion {
@@ -336,13 +332,13 @@ configured and is not. So a version bump is exactly when they need re-checking.
 
 Read the new chart's values.yaml and the template that consumes each key,
 correct the paths if they moved, and set ChartVersion to %s.`,
-					w.File, got, w.What, w.ChartVersion, got)
+					w.file(t), got, w.What, w.ChartVersion, got)
 			}
 
 			podSpec, err := descend(hr.Spec.Values, w.Values)
 			if err != nil {
 				t.Fatalf("%s: %v.\n\nThe table says the pod spec for %s lives at spec.values%s in %s. Either it moved, or it was never written there - and if it was never written there, the cluster has been running without it and nothing said so.",
-					w.File, err, w.What, pathString(w.Values), w.File)
+					w.file(t), err, w.What, pathString(w.Values), w.file(t))
 			}
 
 			// Priority.
@@ -431,8 +427,9 @@ func requiredNodeSelectorTerms(t *testing.T, podSpec map[string]any) []any {
 func declaredPriorityClasses(t *testing.T) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
-	dec := yaml.NewDecoder(strings.NewReader(readRepoFile(t,
-		"clusters/management/infrastructure/controllers/priority-classes.yaml")))
+	// Found by a class it declares; every class in that file is read.
+	_, classes := fluxObject(t, "PriorityClass", "critical")
+	dec := yaml.NewDecoder(strings.NewReader(classes))
 	for {
 		var doc struct {
 			Kind     string `yaml:"kind"`
@@ -462,7 +459,7 @@ func declaredPriorityClasses(t *testing.T) map[string]bool {
 func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
 	described := map[string]bool{}
 	for _, w := range workloadPods {
-		described[w.File+"#"+w.Release] = true
+		described[w.file(t)+"#"+w.Release] = true
 	}
 
 	var undescribed []string
@@ -533,7 +530,8 @@ are the same silence from here.`, len(undescribed), strings.Join(undescribed, "\
 // upgrade renamed one or added a fifth.
 func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
 	declared := declaredPriorityClasses(t)
-	const overlay = "clusters/management/flux-system/kustomization.yaml"
+	install, components := fluxObject(t, fluxInstallKind, fluxInstallName)
+	overlay := beside(install, "kustomization.yaml")
 
 	// The generated install, as bootstrap wrote it.
 	type deployment struct {
@@ -548,8 +546,7 @@ func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
 		} `yaml:"spec"`
 	}
 	deployments := map[string]map[string]any{}
-	dec := yaml.NewDecoder(strings.NewReader(readRepoFile(t,
-		"clusters/management/flux-system/gotk-components.yaml")))
+	dec := yaml.NewDecoder(strings.NewReader(components))
 	for {
 		var doc deployment
 		if err := dec.Decode(&doc); err != nil {
@@ -682,10 +679,10 @@ empty is indistinguishable from nobody having looked.`, w.What)
 				t.Errorf("%s both asserts security properties and explains why it does not; one of the two is stale", w.What)
 			}
 
-			releases := readHelmReleases(t, w.File)
+			releases := readHelmReleases(t, w.file(t))
 			hr, ok := releases[w.Release]
 			if !ok {
-				t.Fatalf("%s declares no HelmRelease named %q", w.File, w.Release)
+				t.Fatalf("%s declares no HelmRelease named %q", w.file(t), w.Release)
 			}
 			at := w.SecurityValues
 			if at == nil {
@@ -693,7 +690,7 @@ empty is indistinguishable from nobody having looked.`, w.What)
 			}
 			root, err := descend(hr.Spec.Values, at)
 			if err != nil {
-				t.Fatalf("%s: %v", w.File, err)
+				t.Fatalf("%s: %v", w.file(t), err)
 			}
 
 			if w.PodSecurityKey != "" {
