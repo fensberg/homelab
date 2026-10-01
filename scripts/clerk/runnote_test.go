@@ -79,7 +79,7 @@ func TestAGenuinelyCleanRunStillSaysSo(t *testing.T) {
 func TestAReportSurvivesBeingReadBack(t *testing.T) {
 	want := []snag{
 		{ruleUnsound, "scripts/clerk/llm.go", 42, "nothing reaches this branch"},
-		{ruleHandover, "management/cluster/talos.tf", 31, "assumes a nameserver"},
+		{ruleHandover, "modules/infrastructure/cluster/talos.tf", 31, "assumes a nameserver"},
 	}
 	report, err := sarif(want, 0)
 	if err != nil {

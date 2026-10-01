@@ -96,24 +96,23 @@ func secretsThisRepositoryCreates(t *testing.T) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
 
+	// Every OpenTofu file the repository authored, wherever it is. This read
+	// one root's directory, and when the secrets moved to another root it
+	// found none and went on passing: a reference to a secret nothing
+	// creates is only refused while the list of what is created is whole.
 	tfName := regexp.MustCompile(`(?s)resource\s+"kubernetes_secret"\s+"[A-Za-z0-9_]+"\s*\{.*?name\s*=\s*"([^"]+)"`)
 	root := repoRoot(t)
-	tfDir := filepath.Join(root, "management", "cluster")
-	entries, err := os.ReadDir(tfDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".tf") {
-			continue
-		}
-		body, err := os.ReadFile(filepath.Join(tfDir, e.Name()))
+	for _, rel := range openTofuSources(t) {
+		body, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, m := range tfName.FindAllStringSubmatch(string(body), -1) {
 			out[m[1]] = true
 		}
+	}
+	if len(out) == 0 {
+		t.Fatal("no kubernetes_secret was found in any OpenTofu file, so every secret a Flux source names would look uncreated - or, with none named, this would pass having checked nothing")
 	}
 	return out
 }

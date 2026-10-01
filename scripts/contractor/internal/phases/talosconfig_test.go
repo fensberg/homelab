@@ -126,7 +126,7 @@ func TestNamesNodesSaysWhereToFixIt(t *testing.T) {
 	if err == nil {
 		t.Fatal("no refusal to inspect")
 	}
-	for _, want := range []string{"management/cluster/talos.tf", "nodes", "-n"} {
+	for _, want := range []string{"modules/infrastructure/cluster/talos.tf", "nodes", "-n"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal never mentions %q, so it does not say what to do:\n%s", want, err)
 		}

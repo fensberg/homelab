@@ -5,10 +5,10 @@ below this one build a cluster; this one is the reason there is a cluster.
 
 ## The promotion path is the directory you are in
 
-| Environment  | Reconciled from                                         | Deployed by                               |
-| ------------ | ------------------------------------------------------- | ----------------------------------------- |
-| `staging`    | `main`                                                  | merging                                   |
-| `production` | a release pinned in `clusters/management/releases.yaml` | merging a pull request that moves the pin |
+| Environment  | Reconciled from                                    | Deployed by                               |
+| ------------ | -------------------------------------------------- | ----------------------------------------- |
+| `staging`    | `main`                                             | merging                                   |
+| `production` | a release pinned in `clusters/site0/releases.yaml` | merging a pull request that moves the pin |
 
 Production does not read this directory from `main`. The fabricator builds
 each release from it - the workload's production overlay and module, with the

@@ -2,10 +2,9 @@ terraform {
   required_version = ">= 1.9.0"
 
   required_providers {
-    proxmox    = { source = "bpg/proxmox", version = "~> 0.111.0" }
-    talos      = { source = "siderolabs/talos", version = "~> 0.11.0" }
-    kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.35" }
-    tailscale  = { source = "tailscale/tailscale", version = "~> 0.17" }
+    proxmox   = { source = "bpg/proxmox", version = "~> 0.111.0" }
+    talos     = { source = "siderolabs/talos", version = "~> 0.11.0" }
+    tailscale = { source = "tailscale/tailscale", version = "~> 0.17" }
   }
 }
 
@@ -64,14 +63,8 @@ provider "tailscale" {
 # created in management/estate/ and granted to the site as narrowed
 # credentials, so this root holds no token that could create or delete either.
 
-# --- cluster access -----------------------------------------------------------
-# Both of these read the kubeconfig the Talos resources produce. Use the
-# provider's structured output rather than parsing raw YAML: yamldecode() of an
-# attribute that does not exist yet is unknown at plan time, and indexing into
-# an unknown value is fragile.
-provider "kubernetes" {
-  host                   = talos_cluster_kubeconfig.this.kubernetes_client_configuration.host
-  client_certificate     = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.client_certificate)
-  client_key             = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.client_key)
-  cluster_ca_certificate = base64decode(talos_cluster_kubeconfig.this.kubernetes_client_configuration.ca_certificate)
-}
+# No kubernetes provider. Everything that needs the cluster's API is in
+# management/platform/, which is handed this root's cluster_access output: a
+# provider configured from a resource in its own root cannot be resolved until
+# that resource exists, which made every import and every plan before the
+# cluster stood depend on -target (docs/epochs/02-abstraction.md).

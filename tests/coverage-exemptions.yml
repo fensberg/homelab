@@ -41,14 +41,8 @@ files:
   - path: contractor/internal/ansible/ansible.go
     uncovered: 1
     covered_by: e2e
-  - path: contractor/internal/phases/take-over.go
-    uncovered: 1
-    covered_by: e2e
-  - path: contractor/internal/phases/cluster.go
-    uncovered: 2
-    covered_by: e2e
   - path: contractor/internal/phases/compute.go
-    uncovered: 6
+    uncovered: 4
     covered_by: e2e
   # Two more than before, both of them the destroy plan added for #213 and #94:
   # confirmDestroyScope reads `tofu state list` against a real estate's state,
@@ -64,19 +58,10 @@ files:
   - path: contractor/internal/phases/hypervisor.go
     uncovered: 1
     covered_by: e2e
-  - path: contractor/internal/phases/migrate.go
-    uncovered: 1
-    covered_by: e2e
-  - path: contractor/internal/phases/overlay.go
-    uncovered: 1
-    covered_by: e2e
   - path: contractor/internal/phases/render.go
     uncovered: 2
     covered_by: e2e
   - path: contractor/internal/phases/sterilize.go
-    uncovered: 6
-    covered_by: e2e
-  - path: contractor/internal/phases/teardown.go
     uncovered: 2
     covered_by: e2e
   - path: contractor/internal/phases/verify.go
@@ -114,17 +99,11 @@ files:
   # the count odd, the Talos API answering, Flux reconciled, the newest
   # backup fresh and well formed, backup generations bounded, WAL archiving
   # healthy, and the deployed estate matching the code.
-  - path: contractor/internal/phases/backup.go
-    uncovered: 2
-    covered_by: integration
   - path: contractor/internal/phases/health.go
     uncovered: 8
     covered_by: integration
   - path: contractor/internal/phases/health_etcd.go
     uncovered: 2
-    covered_by: integration
-  - path: contractor/internal/phases/prune.go
-    uncovered: 3
     covered_by: integration
   - path: contractor/internal/survey/run.go
     uncovered: 3
@@ -160,7 +139,7 @@ files:
     uncovered: 1
     covered_by: nothing
   - path: contractor/internal/phases/restore.go
-    uncovered: 3
+    uncovered: 1
     covered_by: nothing
   - path: contractor/internal/phases/secrets.go
     uncovered: 5
@@ -188,9 +167,6 @@ files:
   # failures_are_reported_test.go, which requires a failure to name its
   # cause and not only its remedy. main.go's one real decision,
   # selectPhases, is covered.
-  - path: contractor/internal/phases/registry.go
-    uncovered: 2
-    covered_by: not-worth-testing
   - path: contractor/internal/run/log.go
     uncovered: 5
     covered_by: not-worth-testing

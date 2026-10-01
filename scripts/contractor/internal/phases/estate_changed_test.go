@@ -32,8 +32,9 @@ func TestEstateChanged_NeverAttachedIsCertainlyUntouched(t *testing.T) {
 // "unchanged" is the original bug with extra steps, and reporting it as
 // "changed" would send somebody chasing a rollback that may not be needed.
 func TestEstateChanged_UnreadableStateIsNotAnAnswer(t *testing.T) {
-	// ClusterDir points at nothing, so `tofu state pull` cannot succeed.
-	ctx := &run.Context{TakenOverOK: true, ClusterDir: t.TempDir()}
+	// The roots point at nothing, so `tofu state pull` cannot succeed.
+	ctx := run.NewContext(t.TempDir(), "site0")
+	ctx.TakenOverOK = true
 	changed, certain := EstateChanged(ctx)
 	if certain {
 		t.Fatalf("got certain=true (changed=%v) for a state that could not be read; "+

@@ -23,7 +23,7 @@ ARG RUNNER_VERSION
 # versions.env where it is one line to see and to change, and that is still
 # true - the tag stays, and it is what a person reads. But a tag is a pointer
 # somebody upstream can move, so a tag alone is the one pin that silently is
-# not one. That is the same argument clusters/management/infrastructure/configs
+# not one. That is the same argument clusters/core/infrastructure/configs
 # /runner-scale-set.yaml makes at length about the image this Dockerfile
 # produces; it was not being applied to the image it consumes. Scorecard
 # flagged it as `containerImage not pinned by hash`.
@@ -31,7 +31,7 @@ ARG RUNNER_VERSION
 # Written literally rather than taken as a build argument because the argument
 # would have to be passed by .github/workflows/runner-image.yml, which the
 # agent cannot write. The same choice, for the same reason, as the Flux
-# component digests in clusters/management/flux-system/kustomization.yaml.
+# component digests in clusters/core/flux-system/kustomization.yaml.
 #
 # UPGRADING: this moves with RUNNER_VERSION, in the same commit. Re-resolve it
 # for the new tag rather than copying from anywhere:
@@ -159,7 +159,7 @@ RUN for b in op tofu age rclone kubectl talosctl jq; do \
     done
 
 # The uid is part of the contract between this image and
-# clusters/management/infrastructure/configs/runner-scale-set.yaml, and nothing
+# clusters/core/infrastructure/configs/runner-scale-set.yaml, and nothing
 # at runtime would report the two disagreeing: the pod would come up as an
 # unknown uid with no write access to its own home, and the runner would fail
 # for reasons that look nothing like a renumbered account.

@@ -199,40 +199,29 @@ func TestZoneNamesUseAPlaceholder(t *testing.T) {
 	inJSON := regexp.MustCompile(`"dmz_zones"\s*:\s*\{\s*"([a-z][a-z0-9-]*)"`)
 	inGo := regexp.MustCompile(`DMZZone\{\s*"([a-z][a-z0-9-]*)"`)
 
+	// Every tracked fixture and Go file, wherever it is. This walked the two
+	// directories that held them when it was written; a fixture that moves, or
+	// a new place to keep one, is then one nothing reads.
 	var checked int
-	for _, dir := range []string{
-		filepath.Join(root, "management", "cluster", "tests"),
-		filepath.Join(root, "scripts"),
-	} {
-		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
-				return err
-			}
-			if !strings.HasSuffix(path, ".json") && !strings.HasSuffix(path, ".go") {
-				return nil
-			}
-			body, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			rel, _ := filepath.Rel(root, path)
-			for _, pattern := range []*regexp.Regexp{inJSON, inGo} {
-				for _, m := range pattern.FindAllStringSubmatch(string(body), -1) {
-					checked++
-					if !isPlaceholderSite(m[1]) {
-						t.Errorf("%s names an untrusted zone %q.\n\n"+
-							"A zone is named after the workload it hosts, and naming a real one here "+
-							"makes the plumbing read as that workload's rather than as a general "+
-							"capability - which is how the next tenant inherits somebody else's "+
-							"assumptions. Use one of the documented placeholders; the epoch record is "+
-							"where the actual workload belongs.", rel, m[1])
-					}
+	for _, rel := range tracked(t, func(rel string) bool {
+		return strings.HasSuffix(rel, ".json") || strings.HasSuffix(rel, ".go")
+	}) {
+		body, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, pattern := range []*regexp.Regexp{inJSON, inGo} {
+			for _, m := range pattern.FindAllStringSubmatch(string(body), -1) {
+				checked++
+				if !isPlaceholderSite(m[1]) {
+					t.Errorf("%s names an untrusted zone %q.\n\n"+
+						"A zone is named after the workload it hosts, and naming a real one here "+
+						"makes the plumbing read as that workload's rather than as a general "+
+						"capability - which is how the next tenant inherits somebody else's "+
+						"assumptions. Use one of the documented placeholders; the epoch record is "+
+						"where the actual workload belongs.", rel, m[1])
 				}
 			}
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("walking %s: %v", dir, err)
 		}
 	}
 

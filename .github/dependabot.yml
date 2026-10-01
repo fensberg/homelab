@@ -56,8 +56,9 @@ updates:
 
   # versions.tf pins every provider version with a ~> constraint. Dependabot
   # bumps within that constraint the same way it would a package's semver
-  # range - this is the one directory in the repo with a required_providers
-  # block; modules/ and environments/ get their own entry once they exist.
+  # range. A site is two roots, so this and management/platform below each
+  # carry a required_providers block; modules/ and environments/ get their
+  # own entry once they exist.
   - package-ecosystem: terraform
     directory: /management/cluster
     schedule:
@@ -66,6 +67,37 @@ updates:
       default-days: 7
     groups:
       providers:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: terraform
+    directory: /management/platform
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+    groups:
+      platform-providers:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # The estate's root: its providers reach the account every site is in.
+  - package-ecosystem: terraform
+    directory: /management/estate
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+    groups:
+      estate-providers:
         applies-to: version-updates
         patterns:
           - "*"
@@ -118,7 +150,7 @@ updates:
 
 # What Dependabot has no ecosystem for at all, so it isn't a config gap here:
 # - Ansible Galaxy collections (management/hypervisor/requirements.yml)
-# - A Flux HelmRelease's chart version (clusters/management/.../longhorn.yaml)
+# - A Flux HelmRelease's chart version (clusters/core/.../longhorn.yaml)
 # - A container image pinned inside a workflow's container: block
 #   (pr-validation.yml's Semgrep job)
 # All three are Renovate's job, once there's a cluster for it to run in -

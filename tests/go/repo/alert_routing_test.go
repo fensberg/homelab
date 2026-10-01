@@ -75,8 +75,8 @@ func matches(matchers []string, labels map[string]string) bool {
 
 func alertRoute(t *testing.T) amRoute {
 	t.Helper()
-	const file = "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml"
-	dec := yaml.NewDecoder(strings.NewReader(readRepoFile(t, file)))
+	file, stack := fluxObject(t, kindHelmRelease, "kube-prometheus-stack")
+	dec := yaml.NewDecoder(strings.NewReader(stack))
 	for {
 		var doc struct {
 			Kind string `yaml:"kind"`

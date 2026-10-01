@@ -21,12 +21,15 @@ type fakeTofu struct {
 	failOffline string
 	realPlan    string
 	state       string
+	// offlineEnv is the environment the offline copy last ran in.
+	offlineEnv []string
 }
 
 func (f *fakeTofu) run(dir string, env []string, args ...string) ([]byte, []byte, error) {
 	switch {
 	case dir == filepath.Join(f.work, "cluster"):
 		f.calls = append(f.calls, "offline: "+strings.Join(args, " "))
+		f.offlineEnv = env
 		if env == nil || !slices.Contains(env, "TF_VAR_offline=true") {
 			f.t.Errorf("the offline copy ran without the offline environment: %v", args)
 		}
@@ -73,7 +76,7 @@ const realState = `{"serial": 5, "lineage": "l", "resources": [
   {"mode": "managed", "type": "talos_machine_secrets", "name": "this",
    "instances": [{"attributes": {"talos_version": "v1.9.0", "certs": {"cert": "REAL-CLUSTER-CA"}}}]},
   {"mode": "managed", "type": "proxmox_vm", "name": "cp", "instances": [
-    {"index_key": "pve-harbour-road", "attributes": {"name": "harbour-road-cp", "ca": "REAL-CLUSTER-CA", "db": "generated-db-password"}}]}
+    {"index_key": "node0", "attributes": {"name": "harbour-road-cp", "ca": "REAL-CLUSTER-CA", "db": "generated-db-password"}}]}
 ], "outputs": {}}`
 
 const noisyOfflinePlan = `{"format_version": "1.2", "resource_changes": [
@@ -99,7 +102,7 @@ func takeFixture(t *testing.T) (Inputs, *fakeTofu) {
 		}
 	}
 	in := Inputs{
-		Root: cluster, Work: filepath.Join(root, ".as-built"), Site: "site0",
+		Root: cluster, Work: filepath.Join(root, ".as-built"), Site: "site0", MachineSecrets: true,
 		Template: []byte(`{"sites": {"site0": {"name": "{{ op://site0-shared/identity/name }}"}}}`),
 		Rendered: []byte(`{"sites": {"site0": {"name": "harbour-road"}}}`),
 	}
@@ -136,9 +139,28 @@ func TestARecordIsNotTakenOfAnEstateWithPendingChanges(t *testing.T) {
 	}
 }
 
+// An estate that keys a resource by a real value is not recorded as fit to
+// publish, even though the record itself replaces the key: the address is
+// what the estate's own plans and logs print, and nothing replaces it there.
+func TestAnEstateKeyedByARealValueIsNotPublishable(t *testing.T) {
+	in, f := takeFixture(t)
+	f.state = strings.Replace(realState, `"index_key": "node0"`, `"index_key": "harbour-road"`, 1)
+	f.offlinePlans = []string{quietOfflinePlan}
+	res, err := Take(in, f.run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.KeyedByAValue) != 1 || res.KeyedByAValue[0] != "proxmox_vm.cp" {
+		t.Errorf("reported %v", res.KeyedByAValue)
+	}
+	if !res.Quiet || res.Publishable() {
+		t.Errorf("quiet %v, publishable %v: a resource address holding a real value must refuse the record", res.Quiet, res.Publishable())
+	}
+}
+
 // The whole sequence: the real CA swapped, the vault value and the generated
-// password replaced everywhere including the instance key, the offline copy
-// planned until quiet, and nothing real in what was planned against.
+// password replaced everywhere, the offline copy planned until quiet, and
+// nothing real in what was planned against.
 func TestARecordIsFoldedUntilQuietAndHoldsNothingReal(t *testing.T) {
 	in, f := takeFixture(t)
 	f.offlinePlans = []string{noisyOfflinePlan, quietOfflinePlan}
@@ -320,5 +342,80 @@ func TestTheRootIsCopiedOnlyToItsOwnDepth(t *testing.T) {
 	}
 	if err := copyRoot(from, filepath.Join(root, ".as-built", "plan")); err != nil {
 		t.Errorf("a copy at the right depth was refused: %v", err)
+	}
+}
+
+// A root with no Talos machine secrets is recorded without a throwaway CA, and
+// its offline plan is given the variables it was handed: that is the platform
+// root, configured from the cluster root's outputs.
+func TestARootWithoutMachineSecretsIsRecordedWithItsVariables(t *testing.T) {
+	in, f := takeFixture(t)
+	in.MachineSecrets = false
+	in.Vars = map[string]string{"door": "a stand-in", "way_in": `{"address":"a"}`}
+	f.state = `{"serial": 1, "lineage": "l", "resources": [
+	  {"mode": "managed", "type": "kubernetes_namespace", "name": "database", "instances": [{"attributes": {"id": "database"}}]}
+	], "outputs": {}}`
+	f.offlinePlans = []string{quietOfflinePlan}
+	res, err := Take(in, f.run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Publishable() {
+		t.Errorf("quiet %v, before %v", res.Quiet, res.Before)
+	}
+	if count(f.calls, "pki:") != 0 {
+		t.Errorf("a throwaway CA was generated for a root that holds no machine secrets: %v", f.calls)
+	}
+	for _, want := range []string{"TF_VAR_way_in={\"address\":\"a\"}", "TF_VAR_door=a stand-in"} {
+		if !slices.Contains(f.offlineEnv, want) {
+			t.Errorf("the offline plan was not given %q", want)
+		}
+	}
+
+	// And a root said to hold them that does not is refused, not recorded.
+	in.MachineSecrets = true
+	if _, err := Take(in, f.run); err == nil || !strings.Contains(err.Error(), "not the state of a site") {
+		t.Errorf("a cluster root with no CA was recorded: %v", err)
+	}
+}
+
+func TestOutputVarsReadsStringsAsThemselvesAndTheRestAsJSON(t *testing.T) {
+	state := mustDecode(t, `{"outputs": {
+	  "door": {"value": "raw: yaml"},
+	  "way_in": {"value": {"address": "a", "key": "k"}},
+	  "empty": {"value": null}}}`)
+	got, err := OutputVars(state, "door", "way_in")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["door"] != "raw: yaml" || got["way_in"] != `{"address":"a","key":"k"}` {
+		t.Errorf("got %v", got)
+	}
+	for _, missing := range []string{"absent", "empty"} {
+		if _, err := OutputVars(state, missing); err == nil || !strings.Contains(err.Error(), missing) {
+			t.Errorf("%s: a record without the output was accepted: %v", missing, err)
+		}
+	}
+}
+
+func TestMergePlansReportsEveryRootsChangesAsOnePlan(t *testing.T) {
+	a := `{"format_version": "1.2", "resource_changes": [{"address": "a.one"}], "output_changes": {"x": {"actions": ["update"]}}}`
+	b := `{"format_version": "1.2", "resource_changes": [{"address": "b.two"}], "resource_drift": [{"address": "b.drift"}], "output_changes": {"y": {"actions": ["create"]}}}`
+	raw, err := MergePlans([]byte(a), []byte(b), []byte(`{"format_version": "1.2"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := mustDecode(t, string(raw))
+	changes, _ := got["resource_changes"].([]any)
+	outputs, _ := got["output_changes"].(map[string]any)
+	drift, _ := got["resource_drift"].([]any)
+	if len(changes) != 2 || len(outputs) != 2 || len(drift) != 1 || got["format_version"] != "1.2" {
+		t.Errorf("merged to %s", raw)
+	}
+	if _, err := MergePlans(); err == nil {
+		t.Error("no plans at all were reported as a plan")
+	}
+	if _, err := MergePlans([]byte(a), []byte("not json")); err == nil {
+		t.Error("a plan that is not JSON was merged")
 	}
 }

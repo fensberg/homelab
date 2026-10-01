@@ -12,7 +12,7 @@ locals {
       { for k, m in local.control_planes[key] : "cp-${k}.${key}.${var.domain}" => m.ip },
       { for k, m in local.workers[key] : "wk-${k}.${key}.${var.domain}" => m.ip },
       { for k, m in local.dmz[key] : "${k}.${key}.${var.domain}" => m.ip },
-      length(local.hypervisors[key]) > 0 ? { "proxmox.${key}.${var.domain}" = local.hypervisors[key][0].ip } : {},
+      length(local.hypervisors[key]) > 0 ? { "proxmox.${key}.${var.domain}" = var.sites[key].hypervisor.nodes[local.hypervisors[key][0]].ip } : {},
     )
   ]...)
 

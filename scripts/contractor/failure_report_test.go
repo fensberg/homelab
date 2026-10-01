@@ -23,7 +23,8 @@ func TestPreexistingFailure_UntouchedGetsItsOwnExitCode(t *testing.T) {
 // as "it changed", because both mean a revert is a guess - the safe direction
 // for anything automating on this.
 func TestPreexistingFailure_CannotTellIsTreatedAsChanged(t *testing.T) {
-	ctx := &run.Context{Site: "site0", TakenOverOK: true, ClusterDir: t.TempDir()}
+	ctx := run.NewContext(t.TempDir(), "site0")
+	ctx.TakenOverOK = true
 	if got := reportPreexistingFailure(ctx, "converge-site"); got != exitMayHaveChanged {
 		t.Fatalf("got exit %d, want %d when the estate's state could not be read", got, exitMayHaveChanged)
 	}

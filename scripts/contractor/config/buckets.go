@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"homelab/details/cloudflare"
@@ -84,10 +85,11 @@ func BucketByKey(key string) (Bucket, error) {
 // against it, so the two are one fact rather than two strings that must match.
 const rcloneRemote = "R2"
 
-// StateBackupFolder holds the age-encrypted state dumps inside the state
-// bucket. A folder rather than the bucket root because the provider split will
-// give this site two states, each wanting its own.
-const StateBackupFolder = "management-cluster"
+// StateBackupFolder holds one root's age-encrypted state dumps inside the
+// state bucket. A folder per root, because a site has two states and each has
+// its own history: the cluster root's is where every backup taken before the
+// split already is.
+func StateBackupFolder(root string) string { return "management-" + root }
 
 // LatestStateBackup is the pointer object, overwritten on every backup and
 // never pruned; the timestamped objects beside it are the history.
@@ -96,14 +98,14 @@ const LatestStateBackup = "latest.tfstate.age"
 // BucketRemote is a bucket as rclone addresses it through RcloneEnv.
 func BucketRemote(bucket string) string { return rcloneRemote + ":" + bucket }
 
-// StateBackupPath is the folder holding a bucket's state backups.
-func StateBackupPath(bucket string) string {
-	return BucketRemote(bucket) + "/" + StateBackupFolder
+// StateBackupPath is the folder holding one root's state backups in a bucket.
+func StateBackupPath(bucket, root string) string {
+	return BucketRemote(bucket) + "/" + StateBackupFolder(root)
 }
 
-// LatestStateBackupPath is the object a restore reads first.
-func LatestStateBackupPath(bucket string) string {
-	return StateBackupPath(bucket) + "/" + LatestStateBackup
+// LatestStateBackupPath is the object a restore of that root reads first.
+func LatestStateBackupPath(bucket, root string) string {
+	return StateBackupPath(bucket, root) + "/" + LatestStateBackup
 }
 
 // RcloneEnv configures rclone entirely through environment variables scoped
@@ -125,7 +127,7 @@ func RcloneEnv(accountID string, cred ObjectStorageCredential) []string {
 	}
 }
 
-// StateBackups is where a site's age-encrypted state dumps live, and the
+// StateBackups is where one root's age-encrypted state dumps live, and the
 // rclone environment that reaches them.
 type StateBackups struct {
 	Folder string   // the folder holding every dump, as rclone addresses it
@@ -142,7 +144,10 @@ type StateBackups struct {
 // are the two ends of one pipe, and a guard read both files to check they still
 // agreed. They had already drifted: Backup refused an empty key id or secret,
 // Restore only the key id. One function leaves nothing to agree.
-func StateBackupLocation(cfg *Config, site string) (StateBackups, error) {
+func StateBackupLocation(cfg *Config, site, root string) (StateBackups, error) {
+	if !slices.Contains(Roots, root) {
+		return StateBackups{}, fmt.Errorf("no root %q: a site's roots are %v", root, Roots)
+	}
 	bucket, err := BucketByKey("state")
 	if err != nil {
 		return StateBackups{}, err
@@ -168,8 +173,8 @@ func StateBackupLocation(cfg *Config, site string) (StateBackups, error) {
 		return StateBackups{}, fmt.Errorf("sites.%s.object_storage.account_id is missing from the rendered config", site)
 	}
 	return StateBackups{
-		Folder: StateBackupPath(cred.Bucket),
-		Latest: LatestStateBackupPath(cred.Bucket),
+		Folder: StateBackupPath(cred.Bucket, root),
+		Latest: LatestStateBackupPath(cred.Bucket, root),
 		Env:    RcloneEnv(s.ObjectStorage.AccountID, cred),
 	}, nil
 }

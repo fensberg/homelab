@@ -114,7 +114,7 @@ jobs:
       fail-fast: false
       matrix:
         site: ${{ fromJSON(needs.sites.outputs.sites) }}
-    runs-on: homelab-management
+    runs-on: homelab-${{ matrix.site }}
     # Gated on a GitHub environment so the 1Password service-account token
     # lives behind whatever protection rules that environment carries, rather
     # than being a repository secret any workflow could reach.

@@ -54,8 +54,8 @@ pull request at all.
 
 ```text
 scripts/contractor/**/*_test.go            unit + contract (Go)      — no dependencies
-management/cluster/tests/*.tftest.hcl  unit (OpenTofu)           — native tofu test
-management/cluster/tests/fixtures/     the shared config corpus
+modules/infrastructure/cluster/tests/*.tftest.hcl  unit (OpenTofu)           — native tofu test
+modules/infrastructure/cluster/tests/fixtures/     the shared config corpus
 tests/go/repo/                         contract: the repo's own files (hermetic)
 tests/go/{integration,api,e2e}/        needs a real estate — build-tagged
 tests/js/                              unit, integration, api, e2e (JS/TS)
@@ -91,13 +91,13 @@ restate it.** The guard that holds this line is in `tests/go/repo`.
 
 ## The config contract
 
-`management/cluster/registry.tf` and `scripts/contractor/config/config.go`
+`modules/infrastructure/cluster/registry.tf` and `scripts/contractor/config/config.go`
 implement the same rules twice - octet bounds, vendor attestation, node
 counts - so that a bad config is refused whether it arrives through the start
 button or through a bare `tofu plan`. Defence in depth is only defence while
 both halves say the same thing, and nothing about the languages forces that.
 
-`management/cluster/tests/fixtures/manifest.json` is the index that makes them
+`modules/infrastructure/cluster/tests/fixtures/manifest.json` is the index that makes them
 agree. Every case in it is run twice: through `registry.tftest.hcl` on the HCL
 side and through `contract_test.go` on the Go side. The tests also check the
 corpus itself - a fixture added to one side and forgotten on the other fails
@@ -196,11 +196,11 @@ the "test the detector" rule above.
 
 Three places, and the distinction is what each one can see:
 
-| Rule about                      | Lives in                                         |
-| ------------------------------- | ------------------------------------------------ |
-| The repository's own files      | `tests/go/repo/`                                 |
-| Two implementations of one rule | `scripts/contractor/config/contract_test.go`     |
-| A config that must be refused   | `management/cluster/registry.tf` (preconditions) |
+| Rule about                      | Lives in                                                     |
+| ------------------------------- | ------------------------------------------------------------ |
+| The repository's own files      | `tests/go/repo/`                                             |
+| Two implementations of one rule | `scripts/contractor/config/contract_test.go`                 |
+| A config that must be refused   | `modules/infrastructure/cluster/registry.tf` (preconditions) |
 
 `tests/go/repo` is the one to reach for when the rule is "the source must never
 do X" — it reads the source as text, so it can assert things no compiler or

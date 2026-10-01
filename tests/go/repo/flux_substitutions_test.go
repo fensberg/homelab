@@ -56,6 +56,13 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 
 	// clusters/ and environments/: the workloads' Kustomizations substitute
 	// too, and CI substitutes the stand-ins into both before validating.
+	// The CNI's bootstrap, found by the agent it declares: rendered chart
+	// output Talos applies, which Flux never substitutes into.
+	cni, err := fluxObjectPath(cniKind, cniName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrap := fluxTree + "/" + topOf(cni) + "/"
 	used := map[string][]string{}
 	for _, dir := range []string{"clusters", "environments"} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
@@ -63,7 +70,7 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 				return err
 			}
 			rel, _ := filepath.Rel(root, path)
-			if strings.HasPrefix(rel, filepath.Join("clusters", "bootstrap")) {
+			if strings.HasPrefix(filepath.ToSlash(rel), bootstrap) {
 				return nil
 			}
 			body, err := os.ReadFile(path)

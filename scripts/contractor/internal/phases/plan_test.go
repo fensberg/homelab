@@ -608,3 +608,57 @@ func TestSummarisePlan_BoundsTheAttributeList(t *testing.T) {
 		t.Errorf("a long attribute list is not bounded, or does not say it was cut; got:\n%s", got)
 	}
 }
+
+// A plan of the real estate that keys a resource by a vault value is refused,
+// naming the resource and the config field and never the value.
+func TestAPlanKeyedByAVaultValueIsRefusedWithoutPrintingIt(t *testing.T) {
+	ctx := recordContext(t)
+	for path, body := range map[string]string{
+		ctx.ConfigTpl:      `{"sites": {"site0": {"label": "{{ op://site0-shared/identity/label }}"}}}`,
+		ctx.ConfigRendered: `{"sites": {"site0": {"label": "mill-lane"}}}`,
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clean := []byte(`{"resource_changes": [{"address": "proxmox_vm.cp[\"100\"]", "type": "proxmox_vm", "name": "cp", "index": "100"}]}`)
+	if err := refuseVaultKeys(ctx, clean); err != nil {
+		t.Errorf("a plan keyed by a number was refused: %v", err)
+	}
+	keyed := []byte(`{"resource_changes": [{"address": "proxmox_vm.cp[\"mill-lane\"]", "type": "proxmox_vm", "name": "cp", "index": "mill-lane"}]}`)
+	err := refuseVaultKeys(ctx, keyed)
+	if err == nil || !strings.Contains(err.Error(), "proxmox_vm.cp is keyed by sites.site0.label") {
+		t.Fatalf("got %v", err)
+	}
+	if strings.Contains(err.Error(), "mill-lane") {
+		t.Error("the refusal printed the vault value it was refusing to print")
+	}
+	_ = os.Remove(ctx.ConfigRendered)
+	if err := refuseVaultKeys(ctx, clean); err == nil {
+		t.Error("with no rendered config there is nothing to compare against, and that was called clean")
+	}
+}
+
+// A plan shows a resource by its type, name and key, not by the module the
+// root keeps it in.
+func TestAPlanShowsAResourceWithoutTheModuleItIsIn(t *testing.T) {
+	for address, want := range map[string]string{
+		`module.cluster.proxmox_virtual_environment_vm.talos_cp["100"]`: `proxmox_virtual_environment_vm.talos_cp["100"]`,
+		`module.platform.kubernetes_namespace.database`:                 `kubernetes_namespace.database`,
+		`module.a.module.b.terraform_data.x`:                            `terraform_data.x`,
+		`module.cluster.data.talos_cluster_health.this[0]`:              `data.talos_cluster_health.this[0]`,
+		`terraform_data.in_a_root`:                                      `terraform_data.in_a_root`,
+	} {
+		if got := shownAddress(address); got != want {
+			t.Errorf("%s is shown as %s, want %s", address, got, want)
+		}
+	}
+	summary, err := summarisePlan([]byte(`{"format_version": "1.2", "resource_changes": [
+	  {"address": "module.cluster.proxmox_vm.worker[\"201\"]", "mode": "managed", "type": "proxmox_vm", "name": "worker", "change": {"actions": ["create"]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(summary, "module.") || !strings.Contains(summary, `proxmox_vm.worker["201"]`) {
+		t.Errorf("the summary shows the module:\n%s", summary)
+	}
+}

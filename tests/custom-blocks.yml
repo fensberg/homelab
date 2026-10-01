@@ -20,6 +20,26 @@
 # overlay of its module, adding only what configures or reaches it; that is a
 # shape the guard checks without a list, so nothing here names an application.
 
+# OpenTofu resources declared directly in a root rather than in a module. A
+# root is what makes a module a site's: providers, credentials and state. What
+# it builds belongs in a module, so a second site is the same module again.
+# One entry per resource: "<type>.<name>".
+opentofu:
+  - resource: cloudflare_zero_trust_access_policy.members
+    reason: >-
+      Who may enroll a device is decided once for the organisation, and the
+      organisation is the estate. There is one of it, so there is no second
+      caller a module would serve.
+  - resource: cloudflare_zero_trust_access_application.enrollment
+    reason: >-
+      Cloudflare keeps one device-enrollment application per organisation. It
+      cannot be instantiated twice, so a module would have exactly one caller
+      and could have no other.
+  - resource: cloudflare_zero_trust_device_default_profile.estate
+    reason: >-
+      The default device profile is the account's single one. The estate owns
+      it, and a site has no profile of its own to build from a shared block.
+
 # Go functions whose bodies are identical in more than one package. One entry
 # per group: every function in it, as "<package directory>.<name>".
 go: []

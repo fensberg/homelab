@@ -15,7 +15,7 @@ import (
 )
 
 // The bounds and the vendor map below are this program's half of a contract
-// it shares with management/cluster/registry.tf, which implements the same
+// it shares with modules/infrastructure/cluster/registry.tf, which implements the same
 // rules in HCL so that `tofu plan` fails on a bad config even when the start
 // button is bypassed. Two implementations of one rule can drift, so they are
 // named here rather than written inline, and
@@ -72,7 +72,7 @@ type Organization struct {
 // SourceControl carries no credential. Flux clones this public repository
 // anonymously over https, so the token that used to sit here authenticated a
 // request that succeeds without it - while being written to OpenTofu state
-// for the privilege. See management/cluster/gitops.tf.
+// for the privilege. See modules/infrastructure/platform/gitops.tf.
 type SourceControl struct {
 	RepoURL    string     `json:"repo_url"`
 	ForemanBot ForemanBot `json:"foreman_bot"`
@@ -219,6 +219,10 @@ type Hypervisor struct {
 }
 
 type Node struct {
+	// Key is the node's key in the config (node0): what OpenTofu keys the
+	// node's resources by, so what an address names. Set when a site's
+	// network is resolved, not read from the config's values.
+	Key        string     `json:"-"`
 	Hostname   string     `json:"hostname"`
 	IP         string     `json:"ip"`
 	Datastores Datastores `json:"datastores"`
@@ -605,7 +609,9 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	sort.Strings(nodeKeys)
 	nodes := make([]Node, 0, len(nodeKeys))
 	for _, k := range nodeKeys {
-		nodes = append(nodes, site.Hypervisor.Nodes[k])
+		node := site.Hypervisor.Nodes[k]
+		node.Key = k
+		nodes = append(nodes, node)
 	}
 	if len(nodes) == 0 {
 		return nil, fmt.Errorf("site '%s' has no hypervisor nodes", name)

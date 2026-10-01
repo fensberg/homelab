@@ -5,7 +5,7 @@
 # below are unchanged and the reasoning that lived in that file now lives here,
 # because a config deferring to a deleted file explains nothing.
 #
-# clusters/management/flux-system/ is Flux's own generated install and sync
+# clusters/core/flux-system/ is Flux's own generated install and sync
 # manifest, committed verbatim. It is not ours to edit, and the broad
 # ClusterRole permissions Checkov flags in it are inherent to how a GitOps
 # controller has to work rather than a misconfiguration in code we control.
@@ -71,7 +71,13 @@ skip-check:
   - CKV_K8S_35
 
 skip-path:
-  - clusters/management/flux-system
+  # Each site's modules as they were at its pinned commit, placed by the
+  # contractor, and the checks' link to the working tree. Both are copies of
+  # this repository: scanning them reports every finding twice, and the link
+  # points back at the top, so a scan that follows it does not finish. Ignored
+  # by git, so absent from CI and present on any machine that has run a verb.
+  - \.pinned
+  - clusters/core/flux-system
   # clusters/bootstrap/ is Cilium's own chart output, committed verbatim for
   # the same reason flux-system is: a version bump should be a reviewable diff
   # of what actually changes in the cluster, not a one-line version bump nobody
@@ -89,11 +95,22 @@ skip-path:
   # the manifest is committed, so that change appears in a pull request diff -
   # which is the whole reason it is committed rather than fetched at apply time.
   - clusters/bootstrap
-  # The root kustomization.yaml lists flux-system as a resource, so
-  # Checkov's kustomize build starting from this file pulls in the same
-  # vendored Deployment/ClusterRole objects and attributes findings about
-  # them here instead - same reasoning as the exclusion above.
-  - clusters/management/kustomization.yaml
+  # The core's kustomization.yaml lists flux-system as a resource, and each
+  # site's builds on the core, so Checkov's kustomize build starting from any
+  # of them pulls in the same vendored Deployment/ClusterRole objects and
+  # attributes findings about them to that file instead - same reasoning as
+  # the exclusion above.
+  #
+  # A pattern, not the two paths there are today: a site that is given work
+  # gets a directory, and the next one would fail this scan on Flux's own
+  # install the day it was added. Only the kustomization.yaml that assembles
+  # a directory is skipped; every manifest it lists is still scanned as the
+  # file it is.
+  #
+  # \w+ and not a bracketed class: Checkov rewrites a skip path before
+  # compiling it, and one with square brackets fails to compile, which kills
+  # the scan with "nothing to repeat" and leaves the job to time out.
+  - clusters/\w+/kustomization\.yaml
   # tofu test fixtures - deliberately fake values, some deliberately shaped
   # like a real credential (aws-shaped-key.json exists specifically to
   # trigger the AKIA/ASIA check). Checkov's secrets scanner can't tell fake
@@ -101,7 +118,7 @@ skip-path:
   # CKV_SECRET_2/CKV_SECRET_6. Hand-tuning each value to dodge the entropy
   # heuristic is fragile and would just recur on the next fixture; excluding
   # the directory is the same call already made for flux-system above.
-  - management/cluster/tests
+  - modules/infrastructure/cluster/tests
   # The test trees. tests/go holds Go source with deliberately fake
   # credentials in its fixtures and assertions, and node_modules under
   # tests/ would be third-party code this repository does not own. Same

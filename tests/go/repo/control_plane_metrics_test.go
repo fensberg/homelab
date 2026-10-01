@@ -26,8 +26,8 @@ import (
 // The estate ran the first half of that for a while: the stack shipped with
 // these switched off and a comment promising the machine configuration later.
 func TestScrapingTheControlPlaneChangesBothHalvesTogether(t *testing.T) {
-	stack := readRepoFile(t, "clusters/management/infrastructure/controllers/kube-prometheus-stack.yaml")
-	talos := readRepoFile(t, "management/cluster/talos.tf")
+	_, stack := fluxObject(t, kindHelmRelease, "kube-prometheus-stack")
+	talosPath, talos := tofuDeclaring(t, declMachineConfig)
 
 	// What the chart is told to scrape, and what the machine configuration
 	// has to contain for that scrape to reach anything.
@@ -48,15 +48,15 @@ func TestScrapingTheControlPlaneChangesBothHalvesTogether(t *testing.T) {
 
 		switch {
 		case enabled && !exposed:
-			t.Errorf("the chart scrapes %s, and management/cluster/talos.tf does not contain %q.\n\n"+
+			t.Errorf("the chart scrapes %s, and %s does not contain %q.\n\n"+
 				"%s, so the target would sit red from the moment this deploys - and a red target "+
 				"nobody can fix is how people learn to ignore red targets.",
-				c.component, c.exposedBy, c.what)
+				c.component, talosPath, c.exposedBy, c.what)
 		case !enabled && exposed:
-			t.Errorf("management/cluster/talos.tf contains %q and the chart does not scrape %s.\n\n"+
+			t.Errorf("%s contains %q and the chart does not scrape %s.\n\n"+
 				"That leaves a port open on every control-plane node with nothing reading it. If the "+
 				"scrape is being removed deliberately, remove the machine configuration with it.",
-				c.exposedBy, c.component)
+				talosPath, c.exposedBy, c.component)
 		}
 	}
 }

@@ -405,7 +405,7 @@ jobs:
 
   # Procurement brings the finished work to the gate. For every work order that
   # makes a release, the newest one the registry holds is compared with the pin
-  # in clusters/management/releases.yaml, and when they differ a pull request
+  # in clusters/site0/releases.yaml, and when they differ a pull request
   # moves the pin. Merging it is letting the delivery in, and that is a
   # person's: superintendent enforce-standing-order passes a delivery so it can
   # be merged, and refuses it whenever anything would merge it without review.
@@ -477,7 +477,6 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
           ORDERS: ${{ needs.orders.outputs.orders }}
-          RELEASES: clusters/management/releases.yaml
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           case "$(GH_TOKEN="$READ_TOKEN" gh api "users/${OWNER}" --jq .type)" in
@@ -487,6 +486,19 @@ jobs:
           esac
           main="$(gh api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)"
           base_tree="$(gh api "repos/${REPO}/git/commits/${main}" --jq .tree.sha)"
+
+          # The releases file is in the directory of the site that was given
+          # this work, and is found there rather than named: which site that
+          # is is the Flux tree's to say. More than one is a decision nobody
+          # has made yet - which site a release goes to first - and delivering
+          # to a guess would make it for them.
+          mapfile -t found < <(gh api "repos/${REPO}/git/trees/${base_tree}?recursive=1" \
+            --jq '.tree[].path | select(test("^clusters/[^/]+/releases\\.yaml$"))')
+          if [ "${#found[@]}" -ne 1 ]; then
+            echo "::error::found ${#found[@]} releases files under clusters/, and a delivery moves a pin in exactly one"
+            exit 1
+          fi
+          RELEASES="${found[0]}"
 
           while IFS= read -r name; do
             package="${REPO_NAME}-${name}-release"

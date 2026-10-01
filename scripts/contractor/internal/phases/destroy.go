@@ -12,6 +12,7 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/contractor/steps"
 )
 
 // Destroy is the supported way to take an estate down.
@@ -326,7 +327,7 @@ const (
 // provider did not mark sensitive - the same output that leaked the cluster's
 // certificate authorities once already. `state list` prints addresses and
 // nothing else, which is why it is on the quiet allowlist.
-var vmInstance = regexp.MustCompile(`^proxmox_virtual_environment_vm\.talos_cp\["([^"]+)"\]$`)
+var vmInstance = regexp.MustCompile(`^` + regexp.QuoteMeta(steps.ControlPlanes) + `\["([^"]+)"\]$`)
 
 // machinesInState returns the for_each keys of the control-plane machines
 // Terraform is tracking.
@@ -349,7 +350,7 @@ func machinesInState(out string) []string {
 // that is mid-teardown for a reason that is informational. Being wrong about
 // the count is the thing to report; it is not a thing to stop for.
 func reportMachinesInState(ctx *run.Context, fromConfig int) {
-	out, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list")
+	out, err := run.CmdOutputQuiet(ctx.Dir, "tofu", "state", "list")
 	if err != nil {
 		run.Warn("  could not read the machine list from state, so the list above is " +
 			"the config's and may under-report. The teardown works from state regardless.")
@@ -429,7 +430,7 @@ func confirmDestroyScope(ctx *run.Context) error {
 	fmt.Println()
 	run.Warn("This teardown will remove:")
 
-	if out, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list"); err == nil {
+	if out, err := run.CmdOutputQuiet(ctx.Dir, "tofu", "state", "list"); err == nil {
 		resources := 0
 		for _, line := range strings.Split(out, "\n") {
 			if addr := strings.TrimSpace(line); addr != "" {
@@ -513,7 +514,7 @@ func reportObjectStorageAtRisk(ctx *run.Context) {
 		}
 
 		remote := config.BucketRemote(name)
-		size, err := run.CmdOutputEnv(ctx.ClusterDir, config.RcloneEnv(site.ObjectStorage.AccountID, cred), "rclone", "--log-level", "ERROR", "size", remote)
+		size, err := run.CmdOutputEnv(ctx.Dir, config.RcloneEnv(site.ObjectStorage.AccountID, cred), "rclone", "--log-level", "ERROR", "size", remote)
 		if err != nil {
 			// Not alarming on its own: a bucket that was never created because
 			// an earlier run failed reads exactly like this.

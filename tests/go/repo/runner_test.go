@@ -11,7 +11,7 @@ import (
 )
 
 // The runner manifests name their namespaces as literals, while OpenTofu
-// declares the same values in management/cluster/variables.tf and creates
+// declares the same values in modules/infrastructure/platform/variables.tf and creates
 // those namespaces from them.
 //
 // The credential secret's name is deliberately absent from this check: it is
@@ -29,22 +29,27 @@ import (
 // agent that writes these files deliberately holds no `workflows` permission,
 // so it cannot edit that file. Literals plus this test reach the same place
 // without needing a permission the boundary is built to withhold.
+// The runners' two Helm releases, which is what their manifests are found by.
+const (
+	runnerController = "gha-runner-scale-set-controller"
+	runnerScaleSet   = "self-hosted"
+)
+
 func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
-	tf := readRepoFile(t, "management/cluster/variables.tf")
+	tfPath, tf := tofuDeclaring(t, "runner_system_namespace =")
 
 	for _, tc := range []struct {
-		local    string
-		manifest string
-		mustHave []string
+		local   string
+		release string
 	}{
-		{"runner_system_namespace", "clusters/management/infrastructure/controllers/actions-runner-controller.yaml", nil},
-		{"runners_namespace", "clusters/management/infrastructure/configs/runner-scale-set.yaml", nil},
+		{"runner_system_namespace", runnerController},
+		{"runners_namespace", runnerScaleSet},
 	} {
 		want := hclStringLocal(t, tf, tc.local)
-		manifest := readRepoFile(t, tc.manifest)
+		path, manifest := fluxObject(t, kindHelmRelease, tc.release)
 		if !strings.Contains(manifest, want) {
 			t.Errorf("%s declares local.%s = %q, but %s never mentions it. The manifest and the OpenTofu have drifted; one of them is now describing a resource the other does not create.",
-				"management/cluster/variables.tf", tc.local, want, tc.manifest)
+				tfPath, tc.local, want, path)
 		}
 	}
 }
@@ -53,23 +58,48 @@ func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
 // runner scale sets it matches the installation name exactly rather than being
 // one label among several. A rename on either side silently orphans every
 // workflow targeting it - the job queues forever rather than failing.
-func TestRunnerScaleSetNameMatchesRunsOn(t *testing.T) {
+func TestEveryJobOnTheEstatesRunnersNamesItsSite(t *testing.T) {
 	// Read from the manifest, which is where the name is declared. It used to
 	// be read from an OpenTofu local that nothing in OpenTofu used - a value
 	// kept alive only so this test could compare against it, which tflint
 	// correctly called dead code. The manifest is the only declaration now,
 	// so it is the one this test reads.
-	manifest := readRepoFile(t, "clusters/management/infrastructure/configs/runner-scale-set.yaml")
+	_, manifest := fluxObject(t, kindHelmRelease, runnerScaleSet)
 	name := yamlScalar(t, manifest, "runnerScaleSetName")
 
-	for _, wf := range []string{
-		".github/workflows/deploy-infrastructure.yml",
-		".github/workflows/integration-tests.yml",
-	} {
-		body := readRepoFile(t, wf)
-		if !strings.Contains(body, "runs-on: "+name) {
-			t.Errorf("%s does not declare `runs-on: %s`. The scale set is registered under that name, so a job asking for anything else waits for a runner that will never appear.", wf, name)
+	// One manifest serves every site, so the name has to carry the site: a
+	// fixed name would register two sites' runners as one pool, and a job
+	// for one site would be handed to the other.
+	prefix, perSite := strings.CutSuffix(name, "${SITE}")
+	if !perSite || prefix == "" {
+		t.Fatalf("the runner scale set is named %q. Every site reconciles this manifest, so the name must end in ${SITE} - under one fixed name, two sites offer their runners for each other's work.", name)
+	}
+
+	// Every workflow, not the two that used the runners when this was
+	// written: a job anywhere that asks for one of the estate's runners has
+	// to ask for a site's, by the matrix it runs for or by a site the config
+	// declares. Anything else waits for a runner that will never appear.
+	runsOn := regexp.MustCompile(`(?m)^\s*runs-on:\s*(\S.*?)\s*$`)
+	asked := 0
+	for _, wf := range tracked(t, func(rel string) bool {
+		return strings.HasPrefix(rel, ".github/workflows/") && strings.HasSuffix(rel, ".yml") && strings.Count(rel, "/") == 2
+	}) {
+		for _, m := range runsOn.FindAllStringSubmatch(readRepoFile(t, wf), -1) {
+			site, estate := strings.CutPrefix(m[1], prefix)
+			if !estate {
+				continue
+			}
+			asked++
+			// An expression, never a site written out: which sites there are
+			// is the config's to say, and a name here is one the next site
+			// is not.
+			if !strings.HasPrefix(site, "${{") || !strings.HasSuffix(site, "}}") || !strings.Contains(site, "site") {
+				t.Errorf("%s declares `runs-on: %s`. The estate's runners are registered per site, as %s<site>, so a job names the site it runs for with an expression: %s${{ matrix.site }} for a job that runs once per site.", wf, m[1], prefix, prefix)
+			}
 		}
+	}
+	if asked == 0 {
+		t.Fatalf("no workflow asks for a runner named %s<site>, so either nothing runs on the estate or this has stopped reading the workflows", prefix)
 	}
 }
 
@@ -91,7 +121,7 @@ func hclStringLocal(t *testing.T, body, name string) string {
 	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*=\s*"([^"]+)"`)
 	m := re.FindStringSubmatch(body)
 	if m == nil {
-		t.Fatalf("no string local named %q in management/cluster/variables.tf", name)
+		t.Fatalf("no string local named %q beside the runner's other names", name)
 	}
 	return m[1]
 }
@@ -183,7 +213,7 @@ func TestRunnerPodsCannotScheduleOntoAControlPlane(t *testing.T) {
 			} `yaml:"values"`
 		} `yaml:"spec"`
 	}
-	body := readRepoFile(t, "clusters/management/infrastructure/configs/runner-scale-set.yaml")
+	_, body := fluxObject(t, kindHelmRelease, runnerScaleSet)
 	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
 		t.Fatalf("parsing the runner scale set: %v", err)
 	}
@@ -234,7 +264,7 @@ func TestRunnerPodsAreNotBestEffort(t *testing.T) {
 			} `yaml:"values"`
 		} `yaml:"spec"`
 	}
-	body := readRepoFile(t, "clusters/management/infrastructure/configs/runner-scale-set.yaml")
+	_, body := fluxObject(t, kindHelmRelease, runnerScaleSet)
 	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
 		t.Fatalf("parsing the runner scale set: %v", err)
 	}

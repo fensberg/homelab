@@ -30,7 +30,7 @@ import (
 // hypervisor forever, and would read as correct in review - it is the line the
 // resource beside it uses.
 func TestEveryZoneResourceIsKeyedOffItsMachines(t *testing.T) {
-	body := readRepoFile(t, "management/cluster/compute.tf")
+	_, body := tofuDeclaring(t, `resource "proxmox_virtual_environment_vm" "dmz"`)
 
 	// Top-level blocks, so a resource is judged with its own for_each rather
 	// than with a neighbour's.

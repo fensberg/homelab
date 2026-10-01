@@ -289,7 +289,10 @@ func TestTheRealCAIsReplacedEverywhereItIsCopied(t *testing.T) {
 	if n, err := SwapMachineSecrets(state, throw, r); err != nil || n != 1 {
 		t.Fatalf("swapped %d, %v", n, err)
 	}
-	Scrub(state, r)
+	keyed := Scrub(state, r)
+	if len(keyed) != 1 || !strings.HasSuffix(keyed[0], "."+state["resources"].([]any)[1].(map[string]any)["name"].(string)) {
+		t.Errorf("the resource keyed by a vault value was reported as %v", keyed)
+	}
 
 	b, _ := json.Marshal(state)
 	for _, real := range []string{"REAL-OS-CA-CERT", "REAL-OS-CA-KEY", "REAL-TOKEN-1", "harbour-road"} {

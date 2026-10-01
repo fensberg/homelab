@@ -157,8 +157,8 @@ func Machines(t *testing.T) int {
 	return len(SiteNetwork(t).AllMachineIPs())
 }
 
-// StateBackups is where the Backup phase writes the age-encrypted state dumps,
-// and the rclone environment that reaches them - both resolved exactly as the
+// StateBackups is where the Backup phase writes one root's age-encrypted state
+// dumps, and the rclone environment that reaches them - both resolved exactly as the
 // program resolves them: the state bucket from config.Buckets, its own
 // credential rather than any other, and the folder and remote from the same
 // declarations the Backup and Restore phases use.
@@ -166,9 +166,9 @@ func Machines(t *testing.T) int {
 // Every one of those used to be restated in the integration tier. When the
 // state dumps moved to a bucket of their own, the restatement was left behind,
 // and the check that exists to prove backups are healthy reported them broken.
-func StateBackups(t *testing.T) config.StateBackups {
+func StateBackups(t *testing.T, root string) config.StateBackups {
 	t.Helper()
-	loc, err := config.StateBackupLocation(LoadConfig(t), Site())
+	loc, err := config.StateBackupLocation(LoadConfig(t), Site(), root)
 	if err != nil {
 		t.Fatal(err)
 	}

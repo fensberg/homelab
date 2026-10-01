@@ -676,7 +676,7 @@ func writeKubeconfig(ctx *run.Context) (path string, cleanup func(), err error) 
 }
 
 func kubectl(ctx *run.Context, kubeconfig string, args ...string) ([]byte, error) {
-	out, err := run.CmdOutputEnv(ctx.ClusterDir, []string{"KUBECONFIG=" + kubeconfig}, "kubectl", args...)
+	out, err := run.CmdOutputEnv(ctx.Dir, []string{"KUBECONFIG=" + kubeconfig}, "kubectl", args...)
 	if err != nil {
 		return nil, fmt.Errorf("kubectl %s: %w", strings.Join(args, " "), err)
 	}
@@ -987,6 +987,6 @@ func namesNodes(raw string) error {
 		"the rendered talosconfig names no nodes, so every node-targeted command " +
 			"will refuse until one is passed with -n.\n\n" +
 			"The estate knows its own node addresses. Set `nodes` on " +
-			"data.talos_client_configuration in management/cluster/talos.tf, " +
+			"data.talos_client_configuration in modules/infrastructure/cluster/talos.tf, " +
 			"beside `endpoints`.")
 }

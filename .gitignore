@@ -52,6 +52,7 @@ inventory.yml
 
 # Rendered at migration time, never committed
 management/cluster/backend_pg.tf
+management/platform/backend_pg.tf
 
 # Tailscale auth key handed to Ansible by the Overlay phase
 management/hypervisor/overlay-network.auto.yml
@@ -135,3 +136,9 @@ scripts/survey/survey
 # The Record phase's workspace: an offline copy of the cluster root and a
 # throwaway CA. Removed by the phase and by Sterilize.
 /.as-built/
+/.as-built-unbuilt/
+
+# Each site's modules as they were at its pinned commit, placed by the
+# contractor, and the working-tree link the checks use.
+/.pinned/
+modules/**/.terraform.lock.hcl

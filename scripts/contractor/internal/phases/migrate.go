@@ -22,7 +22,9 @@ func Migrate(ctx *run.Context) error {
 	// a secret of its own - see the state_conn_str output in database.tf.
 	// Storing it would invent a chicken-and-egg problem: you cannot record
 	// a connection string for a database that does not exist yet.
-	connStr, err := run.TofuOutputRaw(ctx, "state_conn_str")
+	// The platform root declares the database, so the connection string is
+	// its output.
+	connStr, err := run.TofuOutputRaw(ctx.In(ctx.Platform), "state_conn_str")
 	if err != nil {
 		return fmt.Errorf("could not read the state_conn_str output. Has the Cluster phase run? (%w)", err)
 	}
@@ -35,24 +37,29 @@ func Migrate(ctx *run.Context) error {
 	pgPort, _ := strconv.Atoi(m[2])
 
 	run.Info(fmt.Sprintf("waiting for Postgres at %s:%d ...", pgHost, pgPort))
-	if !tcp.Await(tcp.Addr(pgHost, pgPort), 10*time.Minute, 15*time.Second) {
+	if !awaitTCP(tcp.Addr(pgHost, pgPort), 10*time.Minute, 15*time.Second) {
 		return fmt.Errorf("postgres at %s:%d never became reachable. Has Flux finished reconciling it?", pgHost, pgPort)
 	}
 	run.Ok("Postgres reachable")
 
 	// Turn the backend on by copying the file in. It stays '.disabled' in
 	// git so a fresh clone always starts on local state.
-	run.Info("enabling the Postgres backend")
-	if err := copyFile(ctx.BackendPgOff, ctx.BackendPgOn); err != nil {
-		return err
-	}
+	// Each root into its own schema. The cluster root first: it is the one
+	// a teardown needs, so if this stops between the two, the state that
+	// matters is already where a later run looks for it.
+	for _, root := range ctx.Roots() {
+		run.Info("enabling the Postgres backend for the " + root.Name + " root")
+		if err := copyFile(root.BackendPgOff, root.BackendPgOn); err != nil {
+			return err
+		}
 
-	run.Info("migrating state (local -> Postgres)")
-	if err := run.Tofu(ctx, "tofu init -migrate-state",
-		"init", "-input=false", "-migrate-state", "-force-copy",
-		"-backend-config=conn_str="+connStr,
-	); err != nil {
-		return err
+		run.Info("migrating the " + root.Name + " root's state (local -> Postgres)")
+		if err := run.Tofu(ctx.In(root), "tofu init -migrate-state",
+			"init", "-input=false", "-migrate-state", "-force-copy",
+			"-backend-config=conn_str="+connStr,
+		); err != nil {
+			return err
+		}
 	}
 
 	run.Ok("state now lives in Postgres")

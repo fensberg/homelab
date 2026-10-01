@@ -28,7 +28,7 @@ func Overlay(ctx *run.Context) error {
 	// is still a current resource in state, so a plain apply reports no changes
 	// and hands the playbook a credential Tailscale has already retired.
 	run.Info("minting a tagged auth key")
-	list, _ := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list")
+	list, _ := run.CmdOutputQuiet(ctx.Dir, "tofu", "state", "list")
 	args := overlayApplyArgs(stateListContains(list, overlayKeyAddress))
 	if err := run.TofuApplyArgs(ctx, "tofu apply (overlay network)", args...); err != nil {
 		return err

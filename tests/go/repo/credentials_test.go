@@ -25,11 +25,11 @@ import (
 // opinion on. A test that pinned the expression would be a change detector,
 // passing forever while the behaviour rotted and failing on every rename.
 func TestTheRenderedTalosconfigNamesNodesAndEveryEndpoint(t *testing.T) {
-	body := readRepoFile(t, "management/cluster/talos.tf")
+	body := tofuAll(t)
 
 	block := regexp.MustCompile(`(?s)data\s+"talos_client_configuration"\s+"this"\s*\{(.*?)\n\}`).FindStringSubmatch(body)
 	if block == nil {
-		t.Fatal(`management/cluster/talos.tf declares no data "talos_client_configuration" "this".
+		t.Fatal(`modules/infrastructure/cluster/talos.tf declares no data "talos_client_configuration" "this".
 
 That data source is the whole talosconfig. If it has been renamed, this test is
 asserting nothing and needs to follow it.`)

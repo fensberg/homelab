@@ -2,6 +2,7 @@ package repo
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -104,7 +105,7 @@ func TestEveryJobSaysWhetherItKeepsRoot(t *testing.T) {
 			inert := ""
 			if job.Container != nil {
 				inert = "runs in a job container"
-			} else if label := runsOnLabel(job.RunsOn); selfHosted[label] {
+			} else if label := runsOnLabel(job.RunsOn); matchesAny(selfHosted, label) {
 				inert = "runs on the self-hosted runner " + label
 			}
 
@@ -204,4 +205,17 @@ func selfHostedLabels(t *testing.T, root string) map[string]bool {
 func runsOnLabel(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+// matchesAny reports whether a runs-on label is one of the declared
+// self-hosted labels, each of which may be a pattern: the estate's runners are
+// named for their site, so a job names one with an expression and the
+// declaration covers every site at once.
+func matchesAny(patterns map[string]bool, label string) bool {
+	for p := range patterns {
+		if ok, err := path.Match(p, label); err == nil && ok {
+			return true
+		}
+	}
+	return false
 }

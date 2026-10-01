@@ -1,4 +1,5 @@
-# Every machine a site runs: its address, VM id, name and hypervisor.
+# Every machine a site runs: its address, VM id, name and hypervisor (by its
+# key in the config).
 #
 # Reproduced exactly from what the cluster root computed before this module
 # existed, because a machine whose address or VM id moves is a machine the
@@ -14,10 +15,12 @@ locals {
     )
   }
 
+  # A site's hypervisors by their key in the config (node0, node1), in key
+  # order. The key, never the hostname: a machine's hypervisor becomes part of
+  # resource addresses in the site root, an address is printed by every tool
+  # that touches it, and the hostname is a vault value (#585).
   hypervisors = {
-    for key, s in var.sites : key => [
-      for n in sort(keys(try(s.hypervisor.nodes, {}))) : s.hypervisor.nodes[n]
-    ]
+    for key, s in var.sites : key => sort(keys(try(s.hypervisor.nodes, {})))
   }
 
   control_planes = {
@@ -27,7 +30,7 @@ locals {
         ip         = cidrhost(local.ranges[key].node_cidr, local.control_plane_band + i)
         name       = format("%s-cp-%d", local.slugs[key], local.control_plane_band + i)
         vm_id      = s.octet * 1000 + local.control_plane_band + i
-        hypervisor = length(local.hypervisors[key]) > 0 ? local.hypervisors[key][i % length(local.hypervisors[key])].hostname : ""
+        hypervisor = length(local.hypervisors[key]) > 0 ? local.hypervisors[key][i % length(local.hypervisors[key])] : ""
       }
     }
   }
@@ -39,7 +42,7 @@ locals {
         ip         = cidrhost(local.ranges[key].node_cidr, local.worker_band + i)
         name       = format("%s-wk-%d", local.slugs[key], local.worker_band + i)
         vm_id      = s.octet * 1000 + local.worker_band + i
-        hypervisor = length(local.hypervisors[key]) > 0 ? local.hypervisors[key][i % length(local.hypervisors[key])].hostname : ""
+        hypervisor = length(local.hypervisors[key]) > 0 ? local.hypervisors[key][i % length(local.hypervisors[key])] : ""
       }
     }
   }
@@ -67,7 +70,7 @@ locals {
           ip         = cidrhost(z.cidr, local.dmz_band + j)
           name       = "${local.slugs[key]}-${zone}-${local.dmz_band + j}"
           vm_id      = s.octet * 1000 + 300 + z.index * 10 + j
-          hypervisor = length(local.hypervisors[key]) > 0 ? local.hypervisors[key][(z.index + j) % length(local.hypervisors[key])].hostname : ""
+          hypervisor = length(local.hypervisors[key]) > 0 ? local.hypervisors[key][(z.index + j) % length(local.hypervisors[key])] : ""
         }
       }
     ]...)

@@ -11,7 +11,7 @@ once it's actually being worked on.
   since a laptop can vanish for days at a time. If it works, the GPU opens up
   local AI / Hugging Face experimentation on the cluster itself.
 - **A lower-tier environment, at least for E2E validation of manifests.** CI
-  can only check that `clusters/management/` is structurally valid
+  can only check that `clusters/core/` is structurally valid
   (`kustomize build` + `kubeconform`) - it cannot prove a change (a Flux
   version bump, a new controller, a config edit) actually behaves correctly
   once reconciled, since there is only ever the one real cluster. A second,

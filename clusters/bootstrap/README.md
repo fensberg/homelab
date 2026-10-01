@@ -4,7 +4,7 @@ Applied by OpenTofu while the cluster is coming up, **before Flux exists and
 before any node is Ready**. Flux does not reconcile anything here.
 
 That last part is the reason this directory is a sibling of `management/`
-rather than a directory inside it. `clusters/management/` is the path Flux
+rather than a directory inside it. `clusters/core/` is the path Flux
 syncs, with `prune: true` — anything placed there acquires a second owner, and
 a component with two owners is one this repository has no way to reason about.
 

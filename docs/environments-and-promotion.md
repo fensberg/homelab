@@ -3,7 +3,7 @@
 What is allowed to change, where, and on what trigger. Written as a design
 note before any of it existed. The workload half is now built: the fabricator
 builds each image once and records its digest, and production moves when a
-pull request changes that digest in `clusters/management/releases.yaml`
+pull request changes that digest in `clusters/site0/releases.yaml`
 (#510). The platform half is as described.
 
 ## Three different things get promoted, and they are not alike

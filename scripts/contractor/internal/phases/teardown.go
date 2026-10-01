@@ -1,83 +1,15 @@
 package phases
 
 import (
-	"fmt"
 	"strings"
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 )
 
-// The two things `tofu destroy` cannot do for itself, discovered the only way
-// this kind of thing ever is - by running a real teardown against a real
-// estate and watching it destroy exactly nothing. See teardown_test.go for
-// both failures in full.
-
-// clusterInternalAddresses picks the state entries whose remote objects live
-// inside the cluster's own VMs, so the teardown can forget them rather than
-// politely delete them.
-//
-// That is not a shortcut around a slow API call. Deleting the flux-system
-// namespace blocks on Flux's finalizers, and the controllers that would clear
-// those finalizers are themselves being torn down - so the delete waits until
-// the provider's context expires and the destroy aborts having destroyed
-// nothing, including the VMs. Asking a dying cluster to tidy up before you
-// delete its disks is the whole mistake.
-//
-// Selection is by provider prefix rather than by a hardcoded list of the six
-// resources that exist today, so adding a namespace or a secret to
-// database.tf or gitops.tf does not quietly reintroduce the deadlock.
-// Everything with a remote object that outlives the VMs - the R2 bucket, the
-// tailnet key, the VMs themselves - is deliberately not matched: forgetting
-// one of those leaves a real thing running that nothing tracks, which is far
-// worse than the hang this avoids.
-func clusterInternalAddresses(stateList string) []string {
-	var out []string
-	for _, line := range strings.Split(stateList, "\n") {
-		addr := strings.TrimSpace(line)
-		if addr == "" || strings.HasPrefix(addr, "data.") {
-			continue
-		}
-		if strings.HasPrefix(addr, "kubernetes_") {
-			out = append(out, addr)
-		}
-	}
-	return out
-}
-
-// forgetClusterInternalResources removes those addresses from state.
-//
-// Best-effort on purpose. A failure here is a reason to warn and carry on to
-// the part of the destroy that removes real infrastructure, not a reason to
-// stop: the worst case is that tofu tries the graceful delete and hangs, which
-// is exactly where this started.
-func forgetClusterInternalResources(ctx *run.Context) {
-	list, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "list")
-	if err != nil {
-		run.Warn("could not list state to find cluster-internal resources: " + err.Error())
-		return
-	}
-	addrs := clusterInternalAddresses(list)
-	if len(addrs) == 0 {
-		return
-	}
-
-	run.Info(fmt.Sprintf("forgetting %d resource(s) that live inside the VMs about to be deleted", len(addrs)))
-
-	// Captured rather than streamed. `tofu state rm` echoes "Removed <address>"
-	// for each one, and an address is not the safe half of anything here: a
-	// `for_each` key comes from the config, so a resource keyed by the
-	// hypervisor's name prints a vault value without any attribute being
-	// printed at all. The count above is what a reader needs; the addresses
-	// are in the error if this fails.
-	args := append([]string{"state", "rm"}, addrs...)
-	if _, err := run.CmdOutputQuiet(ctx.ClusterDir, "tofu", args...); err != nil {
-		run.Warn("could not forget them: " + err.Error())
-		run.Warn("The destroy will try to delete them through the Kubernetes API instead, which is what deadlocks on Flux's finalizers. If it hangs, that is why.")
-		return
-	}
-	run.Ok("cluster-internal resources forgotten; they go with the disks")
-}
+// The thing `tofu destroy` cannot do for itself, discovered the only way this
+// kind of thing ever is - by running a real teardown against a real estate
+// and watching it destroy exactly nothing.
 
 // workloadBucketAddress is the one resource the teardown deliberately loses
 // track of.
@@ -147,7 +79,7 @@ func emptyObjectStorage(ctx *run.Context) {
 	// Report before deleting. A bucket that is already empty, or was never
 	// created because the run failed early, is not an error - there is simply
 	// nothing to do, and the destroy carries on to the VMs either way.
-	size, err := run.CmdOutputEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "size", remote)
+	size, err := run.CmdOutputEnv(ctx.Dir, env, "rclone", "--log-level", "ERROR", "size", remote)
 	if err != nil {
 		// The bucket is not there to be emptied. That is the normal case when a
 		// run failed before object storage was created, and it is not a problem:
@@ -171,7 +103,7 @@ func emptyObjectStorage(ctx *run.Context) {
 	}
 	run.Warn("emptying " + remote + " - " + summary)
 
-	if err := run.CmdEnv(ctx.ClusterDir, env, "rclone", "--log-level", "ERROR", "delete", remote); err != nil {
+	if err := run.CmdEnv(ctx.Dir, env, "rclone", "--log-level", "ERROR", "delete", remote); err != nil {
 		run.Warn("could not empty " + remote + ": " + err.Error())
 		run.Warn("Cloudflare refuses to delete a bucket with objects in it, so the destroy will stop there. Empty it by hand and re-run.")
 		return

@@ -1,8 +1,7 @@
 package repo
 
 import (
-	"os"
-	"path/filepath"
+	"homelab/details/tofufiles"
 	"regexp"
 	"strings"
 	"testing"
@@ -23,7 +22,7 @@ import (
 // both failures, and neither is visible until somebody changes the node count
 // or tears an estate down - which is to say, at the two worst moments.
 func TestTheHealthGateDependsOnTheMachines(t *testing.T) {
-	body := readClusterHCL(t, "talos.tf")
+	_, body := tofuDeclaring(t, declClusterHealth)
 
 	block := dataBlock(t, body, "talos_cluster_health")
 
@@ -40,41 +39,19 @@ func TestTheHealthGateDependsOnTheMachines(t *testing.T) {
 // depends_on edges pointing at it; an attribute reference would make it load
 // bearing at plan time again and undo the fix above.
 func TestNothingReadsAValueFromTheHealthGate(t *testing.T) {
-	root := filepath.Join(repoRoot(t), "management", "cluster")
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatalf("reading the cluster directory: %v", err)
-	}
-
 	// An attribute read looks like data.talos_cluster_health.this.<something>.
 	attr := regexp.MustCompile(`data\.talos_cluster_health\.this\.\w`)
 
-	var checked int
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".tf") {
-			continue
-		}
-		checked++
-		body := readClusterHCL(t, e.Name())
-		if loc := attr.FindString(body); loc != "" {
+	// Every OpenTofu file, not the files of one root: wherever the gate is
+	// declared, nothing anywhere may read a value out of it.
+	for rel, body := range tofuSources(t) {
+		if loc := attr.FindString(tofufiles.Code(body)); loc != "" {
 			t.Errorf("%s reads %s from the health gate.\n"+
 				"That makes it load bearing at plan time again, which is the "+
 				"condition that made a plan time out. Use depends_on instead.",
-				e.Name(), loc)
+				rel, loc)
 		}
 	}
-	if checked == 0 {
-		t.Fatal("no .tf files were examined, so this proves nothing")
-	}
-}
-
-func readClusterHCL(t *testing.T, name string) string {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join(repoRoot(t), "management", "cluster", name))
-	if err != nil {
-		t.Fatalf("reading %s: %v", name, err)
-	}
-	return string(b)
 }
 
 // dataBlock returns the body of the named data block, so an assertion about it

@@ -18,7 +18,7 @@ import (
 	"homelab/tests/harness"
 )
 
-// The machine configuration in management/cluster/talos.tf opens three
+// The machine configuration in modules/infrastructure/cluster/talos.tf opens three
 // listeners on every control plane. This is whether the machines have them.
 //
 // WHY THIS EXISTS. The repository declared
@@ -90,7 +90,7 @@ func TestEveryControlPlaneOpensTheListenersItWasConfiguredFor(t *testing.T) {
 				if !tcp.Listening(net.JoinHostPort(ip, listener.Port), 10*time.Second) {
 					assert.Fail(t, "a declared listener is not open", `%s is not listening on %s:%s.
 
-management/cluster/talos.tf configures cluster.%s to open it, so the machine is
+modules/infrastructure/cluster/talos.tf configures cluster.%s to open it, so the machine is
 not running the configuration this repository declares. Either the config was
 never applied to this node, or it was applied and the service did not restart to
 act on it - Talos will not restart a service on a whim, and etcd least of all,

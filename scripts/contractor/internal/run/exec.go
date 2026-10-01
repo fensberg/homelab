@@ -73,9 +73,9 @@ func CmdOutput(dir, name string, args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), err
 }
 
-// Tofu runs `tofu <args>` in the cluster directory.
+// Tofu runs `tofu <args>` in the context's root.
 func Tofu(ctx *Context, what string, args ...string) error {
-	if err := Cmd(ctx.ClusterDir, "tofu", args...); err != nil {
+	if err := Cmd(ctx.Dir, "tofu", args...); err != nil {
 		return fmt.Errorf("%s: %w", what, err)
 	}
 	return nil
@@ -226,7 +226,7 @@ func destroyArgs() []string {
 // a locked state after an interrupted apply, most likely - which is a third
 // answer and must not be collapsed into either of the other two.
 func StateSerial(ctx *Context) (serial int64, ok bool) {
-	out, err := CmdOutputQuiet(ctx.ClusterDir, "tofu", "state", "pull")
+	out, err := CmdOutputQuiet(ctx.Dir, "tofu", "state", "pull")
 	if err != nil {
 		return 0, false
 	}
@@ -446,7 +446,7 @@ func summariseStream(r io.Reader, emit func(string), tick <-chan time.Time) (lin
 func tofuJSON(ctx *Context, what string, args []string) error {
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command("tofu", args...)
-	c.Dir = ctx.ClusterDir
+	c.Dir = ctx.Dir
 	stdout, err := c.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("%s: %w", what, err)
@@ -487,7 +487,7 @@ func TofuInit(ctx *Context) error {
 	if ctx.Upgrade {
 		args = append(args, "-upgrade")
 	}
-	err := Cmd(ctx.ClusterDir, "tofu", args...)
+	err := Cmd(ctx.Dir, "tofu", args...)
 	if err == nil {
 		return nil
 	}
@@ -495,11 +495,11 @@ func TofuInit(ctx *Context) error {
 		return fmt.Errorf(`tofu init failed: %w
 
 If it complained that a locked provider does not match its version
-constraint, the committed lock file is behind management/cluster/versions.tf.
+constraint, the committed lock file is behind management/%[2]s/versions.tf.
 Re-resolve and commit the result:
 
     ./contractor build-site -phase overlay -upgrade
-    git add management/cluster/.terraform.lock.hcl && git commit`, err)
+    git add management/%[2]s/.terraform.lock.hcl && git commit`, err, ctx.Name)
 	}
 	return fmt.Errorf("tofu init -upgrade failed: %w", err)
 }
@@ -515,7 +515,7 @@ func TofuOutputRaw(ctx *Context, name string) (string, error) {
 	// has to know what it asked for - but it stops escape sequences reaching
 	// a file, which is what turns a clear failure into "control characters
 	// are not allowed" somewhere else entirely.
-	out, err := CmdOutput(ctx.ClusterDir, "tofu", "output", "-no-color", "-raw", name)
+	out, err := CmdOutput(ctx.Dir, "tofu", "output", "-no-color", "-raw", name)
 	if err != nil || strings.TrimSpace(out) == "" {
 		return "", fmt.Errorf("could not read the %s output", name)
 	}

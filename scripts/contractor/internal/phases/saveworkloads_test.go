@@ -26,7 +26,7 @@ func newSaveFixture(t *testing.T, declarations map[string]string, pods, readyz, 
 	t.Helper()
 	root := t.TempDir()
 	f := &saveFixture{ctx: run.NewContext(root, "site0"), dir: t.TempDir()}
-	if err := os.MkdirAll(f.ctx.ClusterDir, 0o700); err != nil {
+	if err := os.MkdirAll(f.ctx.Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	for workload, body := range declarations {

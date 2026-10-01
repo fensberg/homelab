@@ -1,0 +1,316 @@
+---
+# Layer 2: the scale set itself, which needs the controller's CRDs to exist.
+#
+# Everything constant here is written literally rather than substituted -
+# namespaces, the secret name, the scale set name, the runner group. Only the
+# organization URL is a ${VAR}, because it is the one value derived from a
+# vault secret and so the only one that must not be committed. Flux substitutes
+# it at reconcile time from the runner-vars secret OpenTofu writes (see
+# modules/infrastructure/platform/runner.tf).
+#
+# The literals are not free: they restate what modules/infrastructure/cluster/variables.tf
+# declares. tests/go/repo/runner_test.go asserts the two agree, which is the
+# same shape as registry.tf and config.go implementing one contract twice.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: self-hosted
+  namespace: arc-runners
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: gha-runner-scale-set
+      # renovate: datasource=docker depName=ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+      version: "0.14.2"
+      sourceRef:
+        kind: HelmRepository
+        name: actions-runner-controller
+        namespace: flux-system
+      interval: 12h
+    # RETRIES RATHER THAN STALLING FOR A HUMAN, AND WITHOUT TEARING ITSELF DOWN.
+    #
+    # The default strategy, RemediateOnFailure, gives up after `retries`
+    # attempts, sets Stalled, and waits for somebody to force a reconcile.
+    # That is a person at a keyboard for a blocker which usually clears on its
+    # own: the monitoring stack could not be admitted until the namespace's
+    # Pod Security label arrived from OpenTofu, its attempts were spent long
+    # before that, and every Flux layer behind it stopped (#459).
+    #
+    # Unlimited retries were the obvious answer and are the wrong one. Install
+    # remediation is an UNINSTALL between every attempt, so `retries: -1` on a
+    # release that is permanently broken uninstalls and reinstalls it forever,
+    # with nothing in the API documenting a backoff.
+    #
+    # RetryOnFailure retries the action on a fixed interval and applies no
+    # remediation at all. An ordering problem heals itself within minutes; a
+    # release that is really broken retries quietly every 5m and shows as a
+    # sustained Ready=False, which is a thing monitoring can see.
+  install:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  values:
+    # The organization, not the repository. That is the scope the App was
+    # granted, and a runner group restricted to this repository is what stops
+    # the App's reach widening when a second repository joins the estate.
+    githubConfigUrl: ${RUNNER_GITHUB_CONFIG_URL}
+    # Substituted rather than written literally, unlike everything else here.
+    # Two reasons, and the second is the one that decided it: checkov's
+    # CKV_SECRET_6 reads `githubConfigSecret: <hyphenated-identifier>` as a
+    # base64 high-entropy string and cannot be talked out of it inline; and
+    # substituting from the same local that names the secret OpenTofu creates
+    # means the two cannot disagree, which is strictly better than a test
+    # asserting they agree.
+    #
+    # Safe to leave undefined in CI: this is a free-form Helm value, so
+    # envsubst rendering it empty produces valid YAML that kubeconform accepts.
+    # A ${VAR} in metadata.name would not be, which is why the rest are
+    # literals.
+    githubConfigSecret: ${RUNNER_SECRET_NAME}
+    runnerGroup: homelab
+
+    # What `runs-on:` has to say. It must NOT be "self-hosted".
+    #
+    # That was the original choice, and it does not work. Runners created by a
+    # scale set carry only the scale set's name as a label - not the default
+    # self-hosted / linux / x64 that a classic runner registers with - while
+    # `runs-on: self-hosted` is routed by GitHub's reserved-label matching,
+    # which no scale set participates in. The result is a scale set that
+    # registers perfectly, a listener that runs for hours, and a job that sits
+    # on "Waiting for a runner to pick up this job..." forever, with nothing
+    # anywhere reporting an error.
+    #
+    # Set explicitly rather than inherited from the release name, so renaming
+    # the release cannot silently orphan every workflow that targets it.
+    # tests/go/repo/runner_test.go asserts this and runs-on still agree, and
+    # selfhosted_test.go reads this value rather than hard-coding it, so the
+    # pull-request guard cannot come apart from the name it guards.
+    #
+    # Named for the site, because the name is what a job asks for and every
+    # site reconciles this one file: under one name, two sites would offer
+    # their runners for each other's converge.
+    runnerScaleSetName: homelab-${SITE}
+
+    # Scale to nothing when idle. A runner pod that exists between jobs is a
+    # runner pod that can be reached between jobs, and there is no warm-start
+    # benefit worth that: the jobs this runs today are minutes long and start
+    # with a checkout regardless.
+    minRunners: 0
+    # Left at 2 on purpose, now that there is somewhere for runners to go.
+    #
+    # This is an interlock rather than a cap to raise as capacity grows: the
+    # right value is how many heavy jobs should run at once, not how many
+    # would fit. Two heavy integration runs have no claim over one another, so
+    # the third should queue rather than preempt - see the lane model in
+    # docs/epochs/02-abstraction.md. Raising it is a capacity decision worth
+    # making with the measurements epoch 04 adds, not with arithmetic.
+    maxRunners: 2
+
+    # The listener: critical, and off the machines holding quorum.
+    #
+    # This is the dispatcher. It long-polls GitHub for queued jobs and tells
+    # the controller to create a runner; it is tiny, it is always on, and if
+    # it dies no CI runs at all. It was BestEffort (#237), which put the
+    # dispatcher first in the ditch.
+    #
+    # HOW THIS VALUE IS APPLIED, because the mechanism is unusual and its
+    # failure mode is silent. The chart copies `listenerTemplate` verbatim
+    # into the AutoscalingRunnerSet custom resource; the controller then merges
+    # it into the listener pod it builds
+    # (mergeListenerPodWithTemplate in controllers/actions.github.com/
+    # resourcebuilder.go). Read at the pinned tag rather than assumed, and it
+    # is not a normal Kubernetes strategic merge:
+    #
+    #   - A container is matched BY NAME. `listener` is merged into the real
+    #     container; any other name is appended as a side-car. So the name
+    #     below is load-bearing - a typo produces a second container rather
+    #     than an error.
+    #   - Most pod-level fields are ASSIGNED, not merged, whether or not this
+    #     template sets them. That is why terminationGracePeriodSeconds is
+    #     restated: the controller's own default is 60, and the assignment is
+    #     unconditional, so omitting it here would silently drop the listener
+    #     to Kubernetes' 30 without anything reporting a change.
+    #   - nodeSelector is the one field guarded by a nil check, and it
+    #     replaces rather than merges - setting one here would discard the
+    #     controller's own `kubernetes.io/os: linux`. Placement is expressed
+    #     as affinity below for that reason as much as for the required/
+    #     preferred one.
+    listenerTemplate:
+      spec:
+        terminationGracePeriodSeconds: 60
+        # Asserted rather than inherited.
+        #
+        # The listener runs the controller's own image, which is
+        # gcr.io/distroless/static:nonroot with `USER 65532:65532` - so it
+        # already runs as a non-root user and this changes no behaviour. It is
+        # set because inheriting a property is not the same as requiring it: an
+        # upstream base-image change that reverted to root would otherwise be
+        # invisible, and here it fails to start instead.
+        #
+        # Note what is deliberately NOT set, because the runner container three
+        # blocks down does the opposite and the difference matters. There is no
+        # explicit runAsUser here. The runner needs one because its image's USER
+        # is the NAME "runner", and the kubelet cannot verify that a name is not
+        # root, so it refuses the pod outright. This image's USER is already
+        # numeric, so runAsNonRoot alone is verifiable - and pinning the uid
+        # would tie this manifest to a number upstream is free to renumber, for
+        # no gain over the check the kubelet is already able to make.
+        #
+        # readOnlyRootFilesystem is also absent, and that is a limit rather than
+        # a decision: nothing here has established what the listener writes at
+        # runtime, and asserting it on a guess would turn a hardening into an
+        # outage. #237 sized these controllers by judgement too; epoch 04 is
+        # where guesses get replaced with observations.
+        securityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        priorityClassName: critical
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        containers:
+          - name: listener
+            # A statically linked Go binary that long-polls an HTTPS endpoint.
+            # It needs no capability and no route to acquire one.
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+
+    # The image the runner runs in.
+    #
+    # The stock actions-runner image is deliberately minimal - no op, no tofu,
+    # no age, no rclone - so `contractor plan` failed at Render with
+    # "1Password CLI not found on PATH". .github/runner-image/ layers exactly
+    # the binaries the program shells out to, and nothing else.
+    #
+    # Pinned by digest, not by tag. A tag is a pointer someone can move; the
+    # digest is the image. `:latest` exists for humans reading the registry and
+    # must never be what a cluster resolves - "pin everything" means the thing
+    # that actually runs, and a mutable tag is the one pin that silently is not
+    # one. Renovate updates the digest here the same way it updates the chart
+    # version above.
+    #
+    # renovate: datasource=docker depName=ghcr.io/fensberg/homelab-runner
+    template:
+      spec:
+        # CI never runs on a machine holding quorum.
+        #
+        # This is `required`, not `preferred`, and the difference is the whole
+        # point: a preference would put CI back on the control plane the moment
+        # the workers were busy, which is exactly when a build is heaviest and
+        # exactly when etcd can least afford to share four cores with it. A
+        # build that cannot be placed should queue, not spill onto the site
+        # office.
+        #
+        # Expressed as "no control-plane role" rather than "has a worker label",
+        # because the control-plane label is set by Kubernetes itself and needs
+        # nothing added. A label we invented would be one more thing that can be
+        # missing, and a nodeSelector on a missing label fails closed in the
+        # wrong direction - silently unschedulable rather than obviously wrong.
+        # Batch.
+        #
+        # Everything this scale set runs today has to complete and does not
+        # have to complete now - integration runs, converges, image builds,
+        # the state backup. The fast pull request checks are `interactive` and
+        # are not here yet, because separating them needs a second scale set
+        # with its own maxRunners interlock; until that exists, one class
+        # honestly applied beats two applied to the same pod.
+        #
+        # The consequence to be clear-eyed about: `critical` preempts, so an
+        # operator that cannot otherwise be placed will evict a build mid-run.
+        # That is deliberate - the alternative is the estate's own reconciler
+        # waiting behind a thirteen-minute job.
+        priorityClassName: batch
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        # runAsUser is set explicitly, and for now it still has to be. The
+        # image PINNED ABOVE has a non-numeric USER - the name "runner" - and
+        # the kubelet refuses a pod with runAsNonRoot: true and a non-numeric
+        # image user, because it cannot verify a name is not root. 1001 is that
+        # account's uid, read out of the published image's /etc/passwd rather
+        # than assumed; the image build asserts it still holds, so an upstream
+        # renumbering fails there instead of here.
+        #
+        # The Dockerfile now declares USER 1001 instead, which is what the
+        # listener above relies on to need no pin at all. This one cannot drop
+        # yet: the digest above predates that change, so removing the pin
+        # before the digest is bumped would stop the runner starting. #389 carries
+        # that follow-up and the order it has to happen in.
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          # The work directory is an emptyDir the runner must own.
+          fsGroup: 1001
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+          - name: runner
+            # Bumped because the converge that failed on 2026-09-03 ran on an
+            # image built on 31 August, three days before talosctl was added to
+            # the Dockerfile the Health phase had started depending on (#195).
+            # The digest pin was doing its job; nothing connected it to the
+            # Dockerfile changing underneath it. tests/go/repo asserts that
+            # link now, so a stale pin fails the build instead of a converge.
+            image: ghcr.io/fensberg/homelab-runner@sha256:15ade7051773012d42e85727198d0a3cc08495a0137dfe97b9bfe6ca30c1cdd2
+            # Required whenever the template is overridden: the chart supplies
+            # this only for its own default runner container.
+            command: ["/home/runner/run.sh"]
+            # This container builds nothing and installs nothing - the image
+            # carries the whole toolchain, pinned. So it needs no capability
+            # and no route to acquire one. The root filesystem stays writable
+            # because a job is a checkout followed by work in the workspace.
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+            # Requests, and deliberately no limits.
+            #
+            # Requests are what stop this being BestEffort, which is what made
+            # it the OOM controller's first choice and killed a thirteen-minute
+            # integration run (#234, #236). They are also what the scheduler
+            # reserves, so a build is placed on a node that can actually hold
+            # it rather than discovering that at minute twelve.
+            #
+            # No limit, because a memory limit turns an infrastructure shortfall
+            # into a red test: the build needs what it needs, and capping it
+            # does not make the estate more capable, it makes the failure
+            # quieter and moves it onto the thing being tested. On a worker
+            # with no quorum to protect, letting a build burst into free memory
+            # is the correct behaviour.
+            #
+            # 2Gi is sized from the failure: the Terratest dependency compile
+            # wanted more than the ~1.9Gi ceiling that existed before workers.
+            #
+            # Neither value carries a limit, and the reasons differ. Memory is
+            # unlimited because capping it would kill the build outright, which
+            # is the paragraph above. CPU is unlimited because a CPU limit
+            # throttles rather than kills, so it would silently make every
+            # build slower to solve a problem this estate does not have - the
+            # hypervisor sits near idle. The earlier wording here said "CPU is
+            # a request only", which was true and read as though memory were
+            # not, and the clerk caught exactly that on #245.
+            resources:
+              requests:
+                cpu: 500m
+                memory: 2Gi
