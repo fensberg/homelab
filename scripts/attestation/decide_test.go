@@ -307,3 +307,38 @@ func TestAFailedWithdrawalIsReportedWithoutTheBody(t *testing.T) {
 		t.Errorf("the response body reached the error, and this lands in a public log: %v", err)
 	}
 }
+
+// Two questions on one pull request are two conversations. A conversation on
+// another topic is not this one's superseded question, so it is neither
+// withdrawn nor mistaken for the acknowledgement.
+func TestAnotherTopicsConversationIsLeftAlone(t *testing.T) {
+	keys := Marker("keys", "abc123abc123")
+	threads := []Thread{
+		{FirstCommentBody: marker + "\nread the change", FirstCommentID: 1},
+		{FirstCommentBody: Marker("keys", "000000000000") + "\nan older question about keys", FirstCommentID: 2},
+		{FirstCommentBody: Marker("keys", "111111111111") + "\nanswered", FirstCommentID: 3, Resolved: true, ResolvedBy: "someone", ResolvedByType: "User"},
+	}
+	v := Decide(threads, keys, "the-author")
+	if !v.OpenThread {
+		t.Error("the sensitive-path conversation was taken as the answer about keys")
+	}
+	if len(v.DeleteComments) != 1 || v.DeleteComments[0] != 2 {
+		t.Errorf("withdrew %v; only the unanswered older question on the same topic goes", v.DeleteComments)
+	}
+	if v := Decide(threads, marker, "the-author"); v.OpenThread || len(v.DeleteComments) != 0 {
+		t.Errorf("the sensitive-path question read the keys conversations as its own: %+v", v)
+	}
+}
+
+// The marker the first topic has always carried is unchanged, so the
+// conversations already open on pull requests are still found.
+func TestTheSensitiveMarkerIsWhatItAlwaysWas(t *testing.T) {
+	if got := Marker(SensitiveTopic, "abc123"); got != marker {
+		t.Errorf("got %q, want %q", got, marker)
+	}
+	for topic, want := range map[string]bool{"keys": true, "sensitive": true, "": false, "two words": false, "a-b": false, "x -->": false, "Keys": false} {
+		if isTopic(topic) != want {
+			t.Errorf("isTopic(%q) is %v", topic, !want)
+		}
+	}
+}

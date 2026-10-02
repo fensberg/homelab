@@ -4,12 +4,19 @@
 // Security is a role rather than a place, and a role can hold more than one
 // responsibility: everything arriving is checked against who is allowed to
 // deliver it, everything leaving is checked against where it is allowed to go,
-// and the estate is patrolled from outside. Three verbs across those three:
+// the estate is patrolled from outside, and whoever is handed a key they did
+// not hold is asked about it. Four verbs across those:
 //
 //	guard-deliveries  what comes in - a commit hook from an unapproved supplier,
 //	                  or a tool that scripts/deliveries.lock does not pin by hash
 //	guard-egress      where anything may go out to - the declared endpoints
+//	challenge-keys    who holds which key - a job or a step handed a token, a
+//	                  secret or a permission it did not hold before
 //	patrol            the estate itself, watched from outside
+//
+// A guard refuses and a challenge asks. A delivery nobody approved has no
+// business arriving; a key handed out is often meant, so the answer is a
+// person's and the verb only makes sure the question is put.
 //
 // THREE OTHER VERBS USED TO LIVE HERE and now belong to the superintendent:
 // enforce-push, enforce-merge and enforce-standing-order. None of them is about
@@ -58,6 +65,7 @@ func verbs() []verb {
 	return []verb{
 		{"guard-deliveries", "refuse a delivery from an unapproved supplier, or one the lock does not pin by hash", guardDeliveries},
 		{"guard-egress", "refuse a job whose outbound reach is not what the suppliers list declares", guardEgress},
+		{"challenge-keys", "ask about a job or a step that holds a key it did not hold before", challengeKeys},
 		{"patrol", "check from outside that the estate is still answering", patrol},
 	}
 }

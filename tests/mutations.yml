@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 187
+floor: 189
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -627,8 +627,8 @@ mutations:
 
   - guard: TestNoGoCommandResolvesAgainstTheRootlessRepository
     file: .github/workflows/sensitive-paths.yml
-    find: "go run -C scripts/attestation ."
-    replace: "go run ./scripts/attestation"
+    find: "go run -C scripts/security . challenge-keys"
+    replace: "go run ./scripts/security challenge-keys"
     mentions: "resolves that path from the repository root"
     why: >
       There is no module at the repository root, so this form fails with
@@ -1064,6 +1064,30 @@ mutations:
       by the next run to find it. Handed the version only by the run that
       numbered it, that next run has none, and the release a site's pull
       request shows is never written.
+
+  - guard: TestAWidenedKeyIsAskedAboutInItsOwnConversation
+    file: .github/workflows/sensitive-paths.yml
+    find: "            -topic keys \\"
+    replace: "            -topic sensitive \\"
+    mentions: "under the same topic"
+    why: >
+      A pull request can be asked two questions at once: that it touches a
+      sensitive path, and that it hands out a key. Under one topic each
+      conversation reads the other as its own question about content that is
+      gone and withdraws it, so whichever step runs last leaves the only
+      conversation, and the other question is never answered.
+
+  - guard: TestTheJobThatRunsABranchsCodeCannotWrite
+    file: .github/workflows/plan-infrastructure.yml
+    find: '          checkout: "false"'
+    replace: '          checkout: "true"'
+    mentions: "checks the branch out"
+    why: >
+      The job that reports a plan holds the only token in that workflow that
+      can write to the pull request. With the branch checked out beside it,
+      the next step somebody adds there that runs a file from the workspace
+      is a branch's own code holding that token, which is what the split
+      from the plan job took away.
 
   - guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
     file: .github/workflows/fabricator.yml

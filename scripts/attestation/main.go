@@ -28,8 +28,13 @@ func main() {
 		anchor = flag.String("anchor", "", "file the conversation hangs off")
 		head   = flag.String("head", "", "head commit the conversation is anchored to")
 		report = flag.String("report", "", "path to the body to post")
+		topic  = flag.String("topic", SensitiveTopic, "what the conversation asks about, so two questions on one pull request stay two conversations")
 	)
 	flag.Parse()
+	if !isTopic(*topic) {
+		fmt.Fprintln(os.Stderr, "attestation: -topic is lower-case letters and nothing else")
+		os.Exit(2)
+	}
 
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" || *repo == "" || *pr == 0 || *digest == "" {
@@ -47,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	marker := fmt.Sprintf("<!-- sensitive-attestation:%s -->", *digest)
+	marker := Marker(*topic, *digest)
 	v := Decide(threads, marker, author)
 
 	if v.OpenThread {

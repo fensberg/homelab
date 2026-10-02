@@ -77,8 +77,8 @@ jobs:
   #
   # Against the as-built record, not the estate (#554). The record is the
   # state as last converged with every real value replaced, published by the
-  # converge and the nightly from main. So this job holds no credential,
-  # needs no environment, and runs on GitHub's runner: nothing a pull request
+  # converge and the nightly from main. So this job holds no credential of
+  # the estate's, needs no environment, and runs on GitHub's runner: nothing a pull request
   # can run here reaches the estate, which is what lets the environments go
   # without a reviewer. It cannot see drift since the record was taken; the
   # nightly's real plan reports that.
@@ -95,7 +95,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
       # To find and download the record another run published.
       actions: read
       # To fetch the release of the platform the site runs. The package is
@@ -182,7 +181,77 @@ jobs:
           go build -C scripts/contractor -o ../../toolshed/contractor .
           ./toolshed/contractor plan-as-built -site "$SITE" -record as-built-record -comment-out plan-comment.md
 
+      # Handed to the job that reports it. This job runs the pull request's
+      # own code - the contractor is built from the branch - and the token
+      # that code can read is this job's, so this job may write nothing.
+      - name: Hand the plan to the report
+        uses: $/.github/workflows/upload-artifact
+        with:
+          name: plan-comment-${{ matrix.site }}
+          path: plan-comment.md
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------
+  # REPORT EACH SITE'S PLAN - the only job here that may write to the pull
+  # request, and it runs nothing but the two scripts beside the github-script
+  # action.
+  #
+  # It was two steps of the plan job, which held pull-requests: write for
+  # them. Then the plan step was handed the job's token, to fetch the release
+  # a site runs (#612), and with it the contractor and the roots - built and
+  # read from the branch - held a token that can write to the branch's own
+  # pull request. Split so that what plans can only read. What writes checks
+  # nothing out and runs only what sits under .github/workflows, which is
+  # behind the `workflows` permission the agent does not hold.
+  # ---------------------------------------------------------------------
+  report:
+    name: Report the plan for ${{ matrix.site }}
+    needs: [sites, plan]
+    # Whatever the plan did - that is the point of saying so - but not for a
+    # pull request with no sites to plan, or a fork's, which planned nothing.
+    if: >-
+      always() && needs.sites.result == 'success'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        site: ${{ fromJSON(needs.sites.outputs.sites) }}
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+          # The repository is not this job's to read: the plan arrives as an
+          # artifact and the scripts through the action.
+          checkout: "false"
+
+      # A plan that failed handed nothing over, and that is not this job's
+      # failure: the step after next says so on the pull request.
+      - name: Take the plan from the job that made it
+        id: taken
+        continue-on-error: true
+        uses: $/.github/workflows/download-artifact
+        with:
+          name: plan-comment-${{ matrix.site }}
+          path: .
+
       - name: Comment the plan on the pull request
+        if: steps.taken.outcome == 'success'
         uses: $/.github/workflows/github-script
         with:
           name: estate-plan-comment
@@ -194,15 +263,13 @@ jobs:
       # comment anyway, saying so - the same comment, so the latest of the two
       # always replaces the other (#576).
       #
-      # A step of this job rather than a job of its own. It was a separate job
-      # when plans waited on a self-hosted runner that might never start, and
-      # it showed as a skipped check on every pull request whose plan
-      # succeeded. Plans run on GitHub's runner now; this job starts.
+      # This job always runs, so it is never the skipped check a job that ran
+      # only on failure was.
       - name: Say that no plan was produced
-        if: failure() || cancelled()
+        if: steps.taken.outcome != 'success'
         uses: $/.github/workflows/github-script
         env:
           SITE: ${{ matrix.site }}
-          RESULT: ${{ job.status }}
+          RESULT: ${{ needs.plan.result }}
         with:
           name: plan-absence-comment

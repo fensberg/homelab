@@ -10,10 +10,38 @@ package main
 
 import "fmt"
 
-// attestationMarkerPrefix identifies a conversation this program opened,
-// whatever digest it carries. The full marker is this plus the digest and
-// " -->".
-const attestationMarkerPrefix = "<!-- sensitive-attestation:"
+// A marker identifies a conversation this program opened: what it asks
+// about - its topic - and the digest of the content it asks about.
+//
+// The topic is in the marker because one pull request can be asked two
+// questions at once: that it touches a sensitive path, and that it hands out
+// a key. Each is its own conversation with its own digest, and without the
+// topic each would read the other as its own question about content that is
+// gone, and withdraw it.
+const (
+	markerOpen  = "<!-- "
+	markerTopic = "-attestation:"
+	markerClose = " -->"
+	// SensitiveTopic is the question this program was written to ask, and
+	// the one asked when no other is named.
+	SensitiveTopic = "sensitive"
+)
+
+// Marker is the marker for one topic and one digest.
+func Marker(topic, digest string) string {
+	return markerOpen + topic + markerTopic + digest + markerClose
+}
+
+// topicPrefix is what every marker of the same topic starts with, whatever
+// its digest: the given marker up to its digest.
+func topicPrefix(marker string) string {
+	for i := 0; i+len(markerTopic) <= len(marker); i++ {
+		if marker[i:i+len(markerTopic)] == markerTopic {
+			return marker[:i+len(markerTopic)]
+		}
+	}
+	return markerOpen + SensitiveTopic + markerTopic
+}
 
 // Thread is one review conversation, reduced to what the decision needs.
 type Thread struct {
@@ -115,8 +143,10 @@ func Decide(threads []Thread, marker, prAuthor string) Verdict {
 			if found == nil {
 				found = &threads[i]
 			}
-		case contains(threads[i].FirstCommentBody, attestationMarkerPrefix):
-			// One of ours, for a digest this pull request no longer carries.
+		case contains(threads[i].FirstCommentBody, topicPrefix(marker)):
+			// One of ours, on this topic, for a digest this pull request no
+			// longer carries. Another topic's conversation is not this
+			// one's to withdraw.
 			if !threads[i].Resolved && threads[i].FirstCommentID != 0 {
 				superseded = append(superseded, threads[i].FirstCommentID)
 			}
@@ -130,9 +160,9 @@ func Decide(threads []Thread, marker, prAuthor string) Verdict {
 		return Verdict{
 			OpenThread:     true,
 			DeleteComments: superseded,
-			Reason: "This change touches a sensitive path. A review conversation has been " +
-				"opened on the file: read the change, then resolve it. The merge is " +
-				"blocked until somebody does.",
+			Reason: "This change needs a person to have read it. A review conversation " +
+				"has been opened on the file: read the change, then resolve it. The " +
+				"merge is blocked until somebody does.",
 		}
 	}
 
@@ -188,4 +218,19 @@ func contains(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+// isTopic reports whether a topic is one a marker can carry: lower-case
+// letters and nothing else, so it cannot close the marker or look like
+// another topic's.
+func isTopic(topic string) bool {
+	if topic == "" {
+		return false
+	}
+	for _, r := range topic {
+		if r < 'a' || r > 'z' {
+			return false
+		}
+	}
+	return true
 }
