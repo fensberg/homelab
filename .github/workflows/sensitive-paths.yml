@@ -180,3 +180,52 @@ jobs:
             -anchor "$ANCHOR" \
             -head "$HEAD" \
             -report /tmp/sensitive-report.md
+
+      # A KEY HANDED TO SOMETHING THAT DID NOT HOLD IT IS ASKED ABOUT BY NAME.
+      #
+      # Every workflow is a sensitive path, so a change to one already opens
+      # the conversation above - with one reason for the whole directory. A
+      # step gaining a token reads there exactly as a reworded comment does,
+      # and that is how the plan step came to hold the job's token while
+      # running a pull request's own code (#612).
+      #
+      # So security compares what every job and step holds at the base with
+      # what it holds at the head - the permissions on the job's token, the
+      # secrets and tokens that reach each step, the environment a job runs
+      # in - and lists what was not held before. Narrowing lists nothing.
+      #
+      # It asks; it does not refuse. Handing out a key is often right, and the
+      # answer is a person's: the list goes in a conversation of its own, and
+      # the conversation is what holds the merge. Keyed to exactly what was
+      # handed out, so a push that hands out nothing further leaves an answer
+      # standing and one that hands out more asks again. The one thing that
+      # fails here is a workflow security could not read.
+      - name: Which keys were handed out
+        id: keys
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: go run -C scripts/security . challenge-keys -base "$BASE" -head "$HEAD" >>"$GITHUB_OUTPUT"
+
+      # The same acknowledgement as a sensitive path's, by the same program,
+      # under its own topic so the two conversations stay two.
+      - name: Ask whether each key is meant
+        if: steps.keys.outputs.asked == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT: ${{ steps.keys.outputs.report }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          DIGEST: ${{ steps.keys.outputs.digest }}
+          ANCHOR: ${{ steps.keys.outputs.anchor }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          printf '%s' "$REPORT" >/tmp/keys-report.md
+          go run -C scripts/attestation . \
+            -topic keys \
+            -repo "$REPO" \
+            -pr "$PR" \
+            -digest "$DIGEST" \
+            -anchor "$ANCHOR" \
+            -head "$HEAD" \
+            -report /tmp/keys-report.md

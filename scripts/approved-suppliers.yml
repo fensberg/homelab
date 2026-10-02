@@ -634,6 +634,19 @@ egress:
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
 
+  - job: plan-infrastructure.yml/report
+    policy: block
+    reason: >-
+      Writes each site's plan, or that there was none, on the pull request.
+      GitHub's API for the comment, and nothing else: it checks nothing out,
+      runs only the scripts beside the github-script action, and holds the
+      only token here that can write.
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+
   - job: fabricator.yml/orders
     policy: block
     hosts:
