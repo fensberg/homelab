@@ -1388,10 +1388,19 @@ one of them must stay: _"'up-to-date branches' is disabled on branch main"_.
 Requiring branches to be up to date deadlocks against the epoch topology, where
 the epoch branch is normally both ahead of and behind `main` - see
 the epoch-branch topology recorded in [`02-abstraction.md`](02-abstraction.md). Turning it on would make the
-"Update branch" button mandatory and resolve nothing. The other three -
-enforcing protection on administrators, last-push approval, and a second
-required reviewer - are open questions rather than refusals, and the second
-reviewer is not available to a one-person estate at all.
+"Update branch" button mandatory and resolve nothing. The other three were
+open until 2026-10-02 (#278), and none changes a setting:
+
+- **A second required reviewer** is not available to a one-person estate.
+- **Protection applying to administrators** stays off. The administrator
+  bypass is the last way to repair a mistake that `non_fast_forward` on
+  every branch otherwise makes permanent, and this repository has needed
+  it.
+- **Last-push approval** stays off. A workflow change arrives as a patch the
+  operator applies and pushes, so on that pull request the operator is the
+  last pusher and the only approver: the setting would deadlock every
+  patch. What it is for is already covered, because a push after an
+  approval dismisses the approval.
 
 **`TokenPermissionsID` on `pr-validation.yml`.** The `analyze` job holds
 `statuses: write`, and that is load-bearing: Super-Linter's `MULTI_STATUS`
