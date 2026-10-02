@@ -2384,10 +2384,10 @@ index 12aa359..cf4dbc8 100644
    EOT
 diff --git a/modules/infrastructure/applications/declarations.tf b/modules/infrastructure/applications/declarations.tf
 new file mode 100644
-index 0000000..522f4cb
+index 0000000..f817af3
 --- /dev/null
 +++ b/modules/infrastructure/applications/declarations.tf
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,65 @@
 +variable "directory" {
 +  type        = string
 +  default     = null
@@ -2419,11 +2419,13 @@ index 0000000..522f4cb
 +    ]) : claim.name => claim...
 +  }
 +
-+  # Each declared Secret, by "<application>/<name>": which application's
-+  # namespace it goes in, and each key's source.
++  # Each declared Secret, by "<application>.<name>": which application's
++  # namespace it goes in, and each key's source. A dot, which neither name
++  # can hold, so the key reads back as the two and is one a `moved` block can
++  # be written to.
 +  secrets = merge([
 +    for app, d in local.declared : {
-+      for name, keys in try(d.secrets, {}) : "${app}/${name}" => {
++      for name, keys in try(d.secrets, {}) : "${app}.${name}" => {
 +        application = app
 +        name        = name
 +        keys        = keys
@@ -2448,12 +2450,12 @@ index 0000000..522f4cb
 +}
 +
 +output "secrets" {
-+  description = "Every declared Secret, by \"<application>/<name>\": its application, its name, and each key's source."
++  description = "Every declared Secret, by \"<application>.<name>\": its application, its name, and each key's source."
 +  value       = local.secrets
 +}
 diff --git a/modules/infrastructure/applications/tests/declarations.tftest.hcl b/modules/infrastructure/applications/tests/declarations.tftest.hcl
 new file mode 100644
-index 0000000..b5547af
+index 0000000..ce6e685
 --- /dev/null
 +++ b/modules/infrastructure/applications/tests/declarations.tftest.hcl
 @@ -0,0 +1,45 @@
@@ -2477,7 +2479,7 @@ index 0000000..b5547af
 +    error_message = "the routes are not every application's, each at the host number it declared"
 +  }
 +  assert {
-+    condition     = keys(output.secrets) == ["alpha/alpha-backup", "alpha/alpha-keys"] && output.secrets["alpha/alpha-keys"].application == "alpha" && output.secrets["alpha/alpha-keys"].name == "alpha-keys" && output.secrets["alpha/alpha-keys"].keys.user.vault == "user"
++    condition     = keys(output.secrets) == ["alpha.alpha-backup", "alpha.alpha-keys"] && output.secrets["alpha.alpha-keys"].application == "alpha" && output.secrets["alpha.alpha-keys"].name == "alpha-keys" && output.secrets["alpha.alpha-keys"].keys.user.vault == "user"
 +    error_message = "a declared Secret is not listed under its application with its keys' sources"
 +  }
 +}
@@ -2877,7 +2879,7 @@ index 73706f6..59a571e 100644
      # because the registry is.
      RELEASE_REPOSITORY = lower(join("/", [
 diff --git a/modules/infrastructure/platform/tests/platform.tftest.hcl b/modules/infrastructure/platform/tests/platform.tftest.hcl
-index 48ef494..ef35340 100644
+index 48ef494..75bed71 100644
 --- a/modules/infrastructure/platform/tests/platform.tftest.hcl
 +++ b/modules/infrastructure/platform/tests/platform.tftest.hcl
 @@ -16,6 +16,11 @@ variables {
@@ -2919,11 +2921,11 @@ index 48ef494..ef35340 100644
 +    error_message = "an application's namespace is not named for it, is not marked as one, or is not held to the restricted pod security standard"
 +  }
 +  assert {
-+    condition     = keys(kubernetes_secret.application) == ["alpha/alpha-backup", "alpha/alpha-keys"]
++    condition     = keys(kubernetes_secret.application) == ["alpha.alpha-backup", "alpha.alpha-keys"]
 +    error_message = "the Secrets created are not exactly those the site's applications declared"
 +  }
 +  assert {
-+    condition     = alltrue([for key, s in kubernetes_secret.application : "${s.metadata[0].namespace}/${s.metadata[0].name}" == key])
++    condition     = alltrue([for key, s in kubernetes_secret.application : "${s.metadata[0].namespace}.${s.metadata[0].name}" == key])
 +    error_message = "a declared Secret is not created under its own name in its application's namespace"
 +  }
 +  assert {
