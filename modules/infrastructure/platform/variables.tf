@@ -59,6 +59,16 @@ variable "kubeconfig" {
   EOT
 }
 
+variable "applications_path" {
+  type        = string
+  default     = null
+  description = <<-EOT
+    Where the applications are, each declaring the Secrets and routes it
+    needs. Unset outside this module's tests: a site reads those beside the
+    module, which are those of the commit the site is pinned to.
+  EOT
+}
+
 variable "site_directory" {
   type        = bool
   description = <<-EOT
@@ -80,14 +90,10 @@ locals {
   cp_keys  = sort(keys(local.net.control_planes))
   node_ips = [for k in local.cp_keys : local.net.control_planes[k].ip]
 
-  # The Services an enrolled device routes to: the address plan's input, read
-  # from the repository's top as every file outside this root is.
-  tunnel_routes = jsondecode(file("${path.module}/../../../management/tunnel-routes.json")).routes
-
   object_storage = local.site.object_storage
 
   # The account's S3 API address, which every bucket in it shares. One
-  # expression for the database's backups and the world's. The account and the
+  # expression for the database's backups and every application's. The account and the
   # buckets are granted by the estate; the site creates neither.
   object_storage_endpoint = "https://${local.object_storage.account_id}.r2.cloudflarestorage.com"
   site_database           = local.site.database
@@ -132,17 +138,6 @@ locals {
   alerting = try(local.config.alerting, {
     provider    = ""
     webhook_url = ""
-  })
-
-  # --- workloads -----------------------------------------------------------
-  #
-  # Fleet-level rather than per-site: one repository drives every cluster, and
-  # a workload is deployed by Flux rather than placed on a machine.
-  valheim = try(local.config.workloads.valheim, {
-    name        = ""
-    server_name = ""
-    password    = ""
-    backup_key  = ""
   })
 
   # --- what the site's Flux reconciles --------------------------------------

@@ -142,7 +142,7 @@ files:
     uncovered: 1
     covered_by: nothing
   - path: contractor/internal/phases/secrets.go
-    uncovered: 5
+    uncovered: 4
     covered_by: nothing
   # The lawyer's run itself: signing in, rendering from the estate vault,
   # and driving tofu against the estate's bucket. Each needs the estate's

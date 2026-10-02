@@ -51,13 +51,12 @@ var RequiredProvidersByConcern = map[string]string{
 }
 
 type Config struct {
-	Organization  Organization        `json:"organization"`
-	SourceControl SourceControl       `json:"source_control"`
-	StateBackup   StateBackup         `json:"state_backup"`
-	Alerting      Alerting            `json:"alerting"`
-	Tunnel        Tunnel              `json:"tunnel"`
-	Workloads     map[string]Workload `json:"workloads"`
-	Sites         map[string]Site     `json:"sites"`
+	Organization  Organization    `json:"organization"`
+	SourceControl SourceControl   `json:"source_control"`
+	StateBackup   StateBackup     `json:"state_backup"`
+	Alerting      Alerting        `json:"alerting"`
+	Tunnel        Tunnel          `json:"tunnel"`
+	Sites         map[string]Site `json:"sites"`
 }
 
 type Organization struct {
@@ -80,7 +79,7 @@ type SourceControl struct {
 
 // Alerting is where the estate speaks when something it monitors goes wrong.
 //
-// Fleet-level rather than per-site, like Workloads below: one person reads the
+// Fleet-level rather than per-site: one person reads the
 // alerts, and a second site would report into the same place rather than
 // somewhere new.
 //
@@ -131,49 +130,6 @@ type Tunnel struct {
 // TunnelProvider is the one tunnel vendor this code implements.
 const TunnelProvider = "cloudflare"
 
-// Workload is one self-hosted application's vault-backed values.
-//
-// Fleet-level rather than per-site, because one repository drives every cluster
-// and a workload is deployed by Flux rather than placed on a machine. If a
-// second site ever runs its own copy, this is where that becomes a decision
-// rather than an assumption.
-type Workload struct {
-	// One value, used as both the name players see in the server list and the
-	// name of the save file on disk.
-	//
-	// They were two fields and are now one, because two names for one thing is
-	// a way to end up with two different things. The server list said one
-	// name while the world on disk was called another, which reads as a
-	// misconfiguration every time somebody looks at it.
-	//
-	// Not a secret in any real sense - it is broadcast to anyone who joins -
-	// but it lives in the vault so a fork picks its own without editing a
-	// manifest, for the same reason site names do.
-	//
-	// CHANGING IT STARTS A NEW WORLD. The save file is looked up by this name,
-	// so a different value is not a rename: the old world stays on the volume,
-	// untouched and unloaded, and an empty one is generated beside it.
-	Name string `json:"name"`
-	// What the server is called in the listing, when that has to differ from
-	// the world.
-	//
-	// Empty means "the same as Name", which is the ordinary case and the one
-	// this collapsed into when the two were briefly a single field. They are
-	// separated again because they turned out not to be one thing: the world
-	// name is welded to a file on disk and cannot move, while the listing name
-	// is a lever - and with the two fused there was no way to change the
-	// listing without abandoning the world.
-	//
-	// So the default keeps them equal without anybody maintaining that, and the
-	// lever exists when it is needed.
-	ServerName string `json:"server_name"`
-	// Genuinely secret.
-	Password string `json:"password"`
-	// The key the world's backups are encrypted with. Generated into the
-	// vault by the Render phase (ensureWorldBackupKey), never typed.
-	BackupKey string `json:"backup_key"`
-}
-
 type Site struct {
 	Name              string `json:"name"`
 	Octet             int    `json:"octet"`
@@ -200,6 +156,21 @@ type Site struct {
 	OverlayNetwork OverlayNetwork     `json:"overlay_network"`
 	ObjectStorage  ObjectStorage      `json:"object_storage"`
 	Database       Database           `json:"database"`
+	// The applications the site was given, each with the values its secrets
+	// are made from. Not written in the template: composed from the site's
+	// directory in the Flux tree and what each application declares
+	// (ComposeTemplate), so the config names no application.
+	Applications map[string]SiteApplication `json:"applications"`
+}
+
+// SiteApplication is one application as one site runs it.
+type SiteApplication struct {
+	// Which environment's settings the site runs it with, which is also
+	// which of the site's buckets holds its data.
+	Environment string `json:"environment"`
+	// The fields of the application's item in the site's vault that its
+	// declared secrets read.
+	Vault map[string]string `json:"vault"`
 }
 
 // DMZZone is one untrusted workload's own network and machines.

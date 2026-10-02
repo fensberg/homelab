@@ -47,6 +47,8 @@ terraform.rc
 *.rendered.yml
 *.rendered.json
 config/management.placeholder.json
+# The template composed for one site from what its applications declare.
+config/management.composed.tpl.json
 inventory.yml
 /tmp/kubeconfig
 

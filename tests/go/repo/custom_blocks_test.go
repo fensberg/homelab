@@ -17,6 +17,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/applications"
 )
 
 // A custom block is refused unless somebody says why.
@@ -31,12 +33,13 @@ import (
 //
 // Per layer, because the check differs:
 //
-//   - Kubernetes: needs no registry. An environment is a list of
-//     applications, each an overlay of the module of the same name, and the
-//     only objects it may add are ones that configure or reach what the
-//     module runs - never the thing that runs. That is a shape, so it is
-//     checked as one and names no application: removing one is removing its
-//     directories, with nothing here to edit.
+//   - Kubernetes: needs no registry. An application is one directory: a base,
+//     which is the thing that runs, and beside it one directory of settings
+//     for each environment, which builds on that base and may add only
+//     objects that configure or reach what the base runs - never the thing
+//     that runs. Neither reaches outside the application's directory. That
+//     is a shape, so it is checked as one and names no application: removing
+//     one is removing its directory, with nothing here to edit.
 //   - Go: a function whose signature and body are identical in two packages.
 //     It catches copy-paste - four copies of one TCP dial, six such groups
 //     when this was written - and NOT the same idea written differently. The
@@ -67,81 +70,74 @@ func readCustomBlocks(t *testing.T) customBlocks {
 	return c
 }
 
-func TestAnEnvironmentHoldsOnlyOverlaysOfModules(t *testing.T) {
+func TestAnApplicationsSettingsBuildOnItsBaseAndStayInItsDirectory(t *testing.T) {
 	root := repoRoot(t)
-	files := tracked(t, func(rel string) bool { return strings.HasPrefix(rel, "environments/") })
-	lists := 0
-	for _, rel := range files {
-		for _, p := range environmentProblems(rel, func(name string) ([]byte, error) {
+	// No floor on how many there are: an estate with no application has
+	// none, and what this refuses is proved against applications written
+	// here, in TestApplicationShapeProblemsRefusesWhatIsNotTheShape.
+	for _, rel := range tracked(t, func(rel string) bool { return strings.HasPrefix(rel, applications.Dir+"/") }) {
+		for _, p := range applicationShapeProblems(rel, func(name string) ([]byte, error) {
 			return os.ReadFile(filepath.Join(root, name))
 		}) {
 			t.Error(p)
 		}
-		if isApplicationList(rel) {
-			lists++
-		}
-	}
-	if lists == 0 {
-		t.Fatal("no environments/<env>/applications/kustomization.yaml was found, so this checked nothing")
 	}
 }
 
-// environmentProblems is what is wrong with one tracked file under
-// environments/. An environment is a list of applications and, per
-// application, an overlay: the module's base plus what differs here. What
-// differs - its settings, how it is reached - belongs to the environment and
-// needs no declaration; the thing that runs comes from the module. So nothing
-// here names an application, and removing one is removing its directories.
-func environmentProblems(rel string, read func(string) ([]byte, error)) []string {
-	parts := strings.Split(rel, "/")
-	switch {
-	case rel == "environments/README.md":
+// What an application keeps beside its base and its environments' settings,
+// none of which Flux reconciles.
+var notSettings = map[string]bool{applications.Base: true, "image": true, applicationTestsDir: true}
+
+// applicationShapeProblems is what is wrong with one tracked file under the
+// applications directory. An application is a base - the thing that runs -
+// and, per environment, its settings: the base plus what differs there. What
+// differs - its settings, how it is reached - is the environment's and needs
+// no declaration; the thing that runs is the base's. And nothing an
+// application builds from is outside its own directory, so removing one is
+// removing that directory.
+func applicationShapeProblems(rel string, read func(string) ([]byte, error)) []string {
+	parts := strings.Split(strings.TrimPrefix(rel, applications.Dir+"/"), "/")
+	// A file of the application's own beside its directories: its
+	// declaration, its pins, its notes. And anything in a directory Flux
+	// does not reconcile.
+	if len(parts) < 3 || (notSettings[parts[1]] && parts[1] != applications.Base) {
 		return nil
-	case isApplicationList(rel):
+	}
+	app, dir := parts[0], parts[1]
+	if len(parts) == 3 && parts[2] == applications.Kustomization {
 		k, err := readKustomization(read, rel)
 		if err != nil {
 			return []string{err.Error()}
 		}
 		var out []string
+		onBase := false
 		for _, r := range k.Resources {
-			if strings.Contains(r, "/") || filepath.Ext(r) != "" {
-				out = append(out, fmt.Sprintf("%s lists %q. An environment lists application directories beside it, each an overlay of a module; a manifest here would be an application with no module.", rel, r))
+			switch {
+			case dir != applications.Base && r == "../"+applications.Base:
+				onBase = true
+			case strings.Contains(r, ".."), strings.HasPrefix(r, "/"), strings.Contains(r, "://"):
+				out = append(out, fmt.Sprintf("%s builds on %q. An application is made of its own directory and nothing else: %s/%s/. A release holds only that directory, so anything outside it is not there to build on.", rel, r, applications.Dir, app))
 			}
 		}
-		return out
-	case len(parts) == 5 && parts[2] == "applications":
-		app := parts[3]
-		if parts[4] == "kustomization.yaml" {
-			k, err := readKustomization(read, rel)
-			if err != nil {
-				return []string{err.Error()}
-			}
-			base := "../../../../modules/applications/" + app + "/base"
-			for _, r := range k.Resources {
-				if r == base {
-					return nil
-				}
-			}
-			return []string{fmt.Sprintf("%s does not build on %s. An environment's application is an overlay of the module of the same name, so what runs is written once and every environment reuses it.", rel, base)}
-		}
-		body, err := read(rel)
-		if err != nil {
-			return []string{err.Error()}
-		}
-		var out []string
-		for _, o := range environmentObjects(body) {
-			if workloadKinds[o.kind] {
-				out = append(out, fmt.Sprintf("%s declares %s %s. What runs comes from the module's base; the environment says only how it is configured and reached. Move it into modules/applications/%s/base and patch it here.", rel, o.kind, o.name, app))
-			}
+		if dir != applications.Base && !onBase {
+			out = append(out, fmt.Sprintf("%s does not build on ../%s. An environment's settings are the application's base plus what differs there, so what runs is written once and every environment reuses it.", rel, applications.Base))
 		}
 		return out
 	}
-	return []string{fmt.Sprintf("%s is not part of an environment's application overlay. environments/<env>/applications/<app>/ is the only shape here.", rel)}
-}
-
-func isApplicationList(rel string) bool {
-	parts := strings.Split(rel, "/")
-	return len(parts) == 4 && parts[2] == "applications" && parts[3] == "kustomization.yaml"
+	if dir == applications.Base || !(strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml")) {
+		return nil
+	}
+	body, err := read(rel)
+	if err != nil {
+		return []string{err.Error()}
+	}
+	var out []string
+	for _, o := range environmentObjects(body) {
+		if workloadKinds[o.kind] {
+			out = append(out, fmt.Sprintf("%s declares %s %s. What runs comes from the application's base; an environment says only how it is configured and reached. Move it into %s/%s/%s and patch it here.", rel, o.kind, o.name, applications.Dir, app, applications.Base))
+		}
+	}
+	return out
 }
 
 var workloadKinds = map[string]bool{
@@ -361,28 +357,36 @@ func TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly(t *testing.T) {
 	}
 }
 
-func TestEnvironmentProblemsRefusesWhatIsNotAnOverlay(t *testing.T) {
+func TestApplicationShapeProblemsRefusesWhatIsNotTheShape(t *testing.T) {
+	at := func(rel string) string { return applications.Dir + "/" + rel }
 	files := map[string]string{
-		"environments/p/applications/kustomization.yaml":       "resources: [app, stray.yaml]\n",
-		"environments/p/applications/app/kustomization.yaml":   "resources: [../../../../modules/applications/app/base, settings.yaml]\n",
-		"environments/p/applications/app/settings.yaml":        "kind: ConfigMap\nmetadata: {name: c}\n---\nkind: Service\nmetadata: {name: s}\n",
-		"environments/p/applications/app/runs.yaml":            "kind: ConfigMap\nmetadata: {name: c}\n---\nkind: Deployment\nmetadata: {name: d, namespace: n}\n",
-		"environments/p/applications/other/kustomization.yaml": "resources: [../../../../modules/applications/app/base]\n",
-		"environments/p/loose.yaml":                            "kind: ConfigMap\n",
-		"environments/README.md":                               "",
+		at("app/" + applications.Declaration):  "{}",
+		at("app/README.md"):                    "",
+		at("app/base/kustomization.yaml"):      "resources: [deployment.yaml]\n",
+		at("app/base/deployment.yaml"):         "kind: Deployment\nmetadata: {name: d, namespace: n}\n",
+		at("app/image/Dockerfile"):             "FROM scratch\n",
+		at("app/tests/fixture.yaml"):           "kind: Deployment\nmetadata: {name: d}\n",
+		at("app/p/kustomization.yaml"):         "resources: [../base, settings.yaml]\n",
+		at("app/p/settings.yaml"):              "kind: ConfigMap\nmetadata: {name: c}\n---\nkind: Service\nmetadata: {name: s}\n",
+		at("app/p/runs.yaml"):                  "kind: ConfigMap\nmetadata: {name: c}\n---\nkind: Deployment\nmetadata: {name: d, namespace: n}\n",
+		at("app/p/notes.txt"):                  "kind: Deployment\n",
+		at("alone/s/kustomization.yaml"):       "resources: [settings.yaml]\n",
+		at("reaching/base/kustomization.yaml"): "resources: [deployment.yaml, ../../app/base]\n",
+		at("reaching/s/kustomization.yaml"):    "resources: [../base, ../../../../clusters/core]\n",
+		at("remote/s/kustomization.yaml"):      "resources: [../base, https://example.invalid/thing]\n",
+		at("unreadable/s/kustomization.yaml"):  "resources: {\n",
 	}
 	read := func(rel string) ([]byte, error) { return []byte(files[rel]), nil }
 	want := map[string]string{
-		"environments/p/applications/kustomization.yaml":       `lists "stray.yaml"`,
-		"environments/p/applications/app/kustomization.yaml":   "",
-		"environments/p/applications/app/settings.yaml":        "",
-		"environments/p/applications/app/runs.yaml":            "declares Deployment n/d",
-		"environments/p/applications/other/kustomization.yaml": "does not build on ../../../../modules/applications/other/base",
-		"environments/p/loose.yaml":                            "is not part of",
-		"environments/README.md":                               "",
+		at("app/p/runs.yaml"):                  "declares Deployment n/d",
+		at("alone/s/kustomization.yaml"):       "does not build on ../base",
+		at("reaching/base/kustomization.yaml"): `builds on "../../app/base"`,
+		at("reaching/s/kustomization.yaml"):    `builds on "../../../../clusters/core"`,
+		at("remote/s/kustomization.yaml"):      `builds on "https://example.invalid/thing"`,
+		at("unreadable/s/kustomization.yaml"):  "unreadable/s/kustomization.yaml",
 	}
-	for rel, w := range want {
-		got := strings.Join(environmentProblems(rel, read), "|")
+	for rel := range files {
+		got, w := strings.Join(applicationShapeProblems(rel, read), "|"), want[rel]
 		if (w == "") != (got == "") || !strings.Contains(got, w) {
 			t.Errorf("%s: got %q, want %q", rel, got, w)
 		}

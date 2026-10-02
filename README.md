@@ -45,20 +45,14 @@ homelab/
 │ │ └── foo-inf/
 │ │ ├── main.tf
 │ │ └── variables.tf
-│ └── applications/
-│ └── fo0-app/
-│ ├── deployment.yaml # Kubernetes: App pods
-│ └── kustomization.yaml # Base Kustomize configuration
+│ └── applications/ # THE WORKLOAD TIER (one directory per application)
+│ └── foo-app/
+│ ├── application.json # What it declares it needs: secrets, routes, release
+│ ├── image/ # Its Dockerfile, built and published by the estate
+│ ├── base/ # Kubernetes: the thing that runs
+│ ├── staging/ # Its settings for one environment, built on the base
+│ ├── production/
+│ └── tests/ # Its own tests, and the proofs they catch anything
 │
-└── environments/ # THE WORKLOAD TIER (Pointer Configs)
-├── staging/
-│ ├── infrastructure/
-│ │ └── foo.tf
-│ └── applications/
-│ └── kustomization.yaml # Flux/Kustomize overlay for Staging
-└── production/
-├── infrastructure/
-│ └── foo.tf
-└── applications/
-└── kustomization.yaml # Flux/Kustomize overlay for Production bump
+└── clusters/<site>/applications.yaml # One block per application a site runs
 x

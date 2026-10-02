@@ -116,13 +116,6 @@ debt:
   - "tag:homelab-router"
   - "terraform.tfstate"
 
-  # --- The standing order's pin file (1)
-  #
-  # superintendent's standing order names the game server's Deployment as the
-  # one file expedite may change without review, and the pod-shape guard in
-  # tests/go/repo/world_backup_test.go reads that file. Goes when the standing
-  # order moves off it to releases.yaml (#510, R2b).
-
   # --- Field names two separate documents happen to share (13)
   - "talos_version"
   #

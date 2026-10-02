@@ -3,8 +3,8 @@
 What is allowed to change, where, and on what trigger. Written as a design
 note before any of it existed. The workload half is now built: the fabricator
 builds each image once and records its digest, and production moves when a
-pull request changes that digest in `clusters/site0/releases.yaml`
-(#510). The platform half is as described.
+pull request changes that digest in the site's block for the application,
+`clusters/<site>/applications.yaml` (#510, #590). The platform half is as described.
 
 ## Three different things get promoted, and they are not alike
 
@@ -113,15 +113,15 @@ progressive rollout the day a second site exists.
 
 ## When each thing is allowed to change
 
-| Trigger                                   | Changes              | Gate                                    |
-| ----------------------------------------- | -------------------- | --------------------------------------- |
-| Merge to `main` touching `environments/`  | Staging workloads    | Pull request review                     |
-| A pull request bumping the production pin | Production workloads | Review, and staging having been healthy |
-| Merge to `main` touching `management/`    | The platform         | Reviewed plan, then the Health gate     |
+| Trigger                                   | Changes                    | Gate                                    |
+| ----------------------------------------- | -------------------------- | --------------------------------------- |
+| Merge to `main` touching an application   | A site that follows `main` | Pull request review                     |
+| A pull request bumping the production pin | Production workloads       | Review, and staging having been healthy |
+| Merge to `main` touching `management/`    | The platform               | Reviewed plan, then the Health gate     |
 
 Tags play no part. A tag is a label on a commit, and a commit is not an
 artefact: deploying "the tag" invites the rebuild problem above. What moves
-production is the digest in `releases.yaml`, which is what runs. The `v*` tags
+production is the digest in the site's block, which is what runs. The `v*` tags
 that exist predate that and deploy nothing (#561).
 
 ## What an outside reviewer would criticise

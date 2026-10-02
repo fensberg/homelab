@@ -7,16 +7,19 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 
+	"homelab/details/applications"
 	"homelab/details/workorders"
 )
 
 // enforce-standing-order holds procurement's standing order to the one thing it
-// covers: a new build of the game server from Valve, and nothing else.
+// covers: a new build from the supplier an application declares, and nothing
+// else.
 //
-// So that a Steam patch does not wait for a person - players' clients update
-// the day Valve ships and refuse an older server - the procurement App may
+// So that a supplier's patch does not wait for a person - players' clients
+// update the day it ships and refuse an older server - the procurement App may
 // merge without review: it is a bypass actor on the ruleset that requires one.
 // That permission is a standing order in the construction sense: approval
 // given once, for one specified recurring item, and not for anything the holder
@@ -24,15 +27,20 @@ import (
 //
 // Two kinds of pull request ride it, and each is held to exactly that item:
 //
-//   - The expediter's: it records Valve's new build as the VALHEIM_STEAM_BUILD_VERSION
-//     line in scripts/versions.env and changes nothing else. The fabricator
-//     builds the image from that pin.
-//   - A delivery: procurement moving production's release pin in
-//     clusters/site0/releases.yaml. Under the bypass it passes only when
-//     the release it brings differs from production's by the Steam build
-//     alone - read from the source commits the two releases were built from,
-//     which the registry records - so a release carrying anything somebody
-//     wrote waits for a review however it arrived.
+//   - The expediter's: it records the supplier's new build on one line of one
+//     application's own pins file - the line that application declares as
+//     its upstream's pin - and changes nothing else. The fabricator builds
+//     the image from that pin.
+//   - A delivery: procurement moving an application's release pin in the
+//     sites that run it. Under the bypass it passes only when the release it
+//     brings differs from the one each site runs by that build alone - read
+//     from the source commits the two releases were built from, which the
+//     registry records - so a release carrying anything somebody wrote waits
+//     for a review however it arrived.
+//
+// Which line that is, is the application's to declare and never this
+// program's to know: it reads every application's declaration as it stood at
+// the pull request's base, where the pull request could not have written it.
 //
 // It runs twice: in the Sensitive Paths check, so the verdict is visible on the
 // pull request, and in expedite.yml immediately before the merge, against the
@@ -51,10 +59,10 @@ func enforceStandingOrder(args []string) int {
 	holder := fs.String("holder", os.Getenv("PROCUREMENT_BOT_LOGIN"), "the login the standing order was given to")
 	base := fs.String("base", "", "the pull request's base commit")
 	head := fs.String("head", "", "the pull request's head commit")
-	pin := fs.String("pin", "scripts/versions.env", "the one file the expediter's pull request may change")
-	orders := fs.String("orders", workorders.Path, "the work orders that say what each release is built from")
+	pins := fs.String("pins", "scripts/versions.env", "the estate's own pins, which a release merged without review may not differ in")
+	orders := fs.String("orders", workorders.Path, "the estate's own work orders, which such a release may not differ in either")
 	repository := fs.String("repository", os.Getenv("GITHUB_REPOSITORY"), "owner/name, which names each release's package in the registry")
-	releases := fs.String("releases", "clusters/*/releases.yaml", "which files are a site's releases file: a delivery moves a pin in exactly one")
+	releases := fs.String("releases", applications.SitesDir+"/*/"+applications.SiteFile, "which files say what a site runs: a delivery moves pins in those and nothing else")
 	bypass := fs.Bool("bypass", false, "judge for a merge without review: only what the order covers passes, and a delivery does not")
 	_ = fs.Parse(args)
 
@@ -83,75 +91,106 @@ func enforceStandingOrder(args []string) int {
 
 	changedFiles, lines := nonEmptyLines(string(files)), changedLines(string(diff))
 
+	j := judge{repository: *repository, orders: *orders, pins: *pins, git: gitRunner}
+
 	// A delivery: procurement bringing a release the fabricator published to
-	// the gate, as a pull request that moves one pin in the releases file.
-	// Without the bypass it passes, so a person can merge it. Under the bypass
-	// it passes only when the release changes nothing but the Steam build.
+	// the gate, as a pull request that moves an application's pin in the
+	// sites that run it. Without the bypass it passes, so a person can merge
+	// it. Under the bypass it passes only when the release changes nothing
+	// but the build the application's supplier published.
 	if isDelivery(changedFiles, lines, *releases) {
 		if !*bypass {
-			fmt.Printf("%s delivered a release. The 4am window merges it if the Steam build is all that changed; otherwise it waits for a review\n", *author)
+			fmt.Printf("%s delivered a release. The 4am window merges it if the supplier's build is all that changed; otherwise it waits for a review\n", *author)
 			return 0
 		}
-		// The one file the delivery changed, which isDelivery has just held
-		// to the pattern: whichever site's it is.
-		j := judge{repository: *repository, releases: changedFiles[0], orders: *orders, pin: *pin, git: gitRunner}
-		problems, err := j.steamOnly(*base, *head)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "superintendent enforce-standing-order: could not tell what this release changes, so it is not merged without review:", err)
-			return 2
+		// Every file the delivery changed, each of which isDelivery has just
+		// held to the pattern: whichever sites' they are.
+		var problems []string
+		for _, site := range changedFiles {
+			found, err := j.upstreamOnly(site, *base, *head)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "superintendent enforce-standing-order: could not tell what this release changes, so it is not merged without review:", err)
+				return 2
+			}
+			problems = append(problems, found...)
 		}
 		if len(problems) > 0 {
-			fmt.Printf("REFUSED: %s delivered a release that changes more than the Steam build.\n\n", *author)
+			fmt.Printf("REFUSED: %s delivered a release that changes more than the supplier's build.\n\n", *author)
 			for _, p := range problems {
 				fmt.Println("  " + p)
 			}
 			fmt.Println("\nIt waits for a review.")
 			return 1
 		}
-		fmt.Printf("%s delivered a release whose only change is the Steam build\n", *author)
+		fmt.Printf("%s delivered a release whose only change is the supplier's build\n", *author)
 		return 0
 	}
 
-	problems := withinStandingOrder(changedFiles, lines, *pin)
+	// Each application's declaration as the base has it: the pull request
+	// cannot have written what it is judged by.
+	declared, err := j.declaredAt(*base)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "superintendent enforce-standing-order: could not read what the applications declare, so nothing is merged without review:", err)
+		return 2
+	}
+	problems := withinStandingOrder(changedFiles, lines, declared)
 	if len(problems) > 0 {
 		fmt.Printf("REFUSED: %s changed more than its standing order covers.\n\n", *author)
 		for _, p := range problems {
 			fmt.Println("  " + p)
 		}
-		fmt.Printf("\nThe order covers the VALHEIM_STEAM_BUILD_VERSION line in %s, and nothing else.\n"+
-			"Anything more needs a review, and the expedite duty should never have been able to write it.\n", *pin)
+		fmt.Println("\nThe order covers the one line an application declares as its upstream's pin, in that application's own pins file, and nothing else.\n" +
+			"Anything more needs a review, and the expedite duty should never have been able to write it.")
 		return 1
 	}
 	fmt.Printf("%s changed only the pin it holds a standing order for\n", *author)
 	return 0
 }
 
-// steamBuildLine is the one line the expediter's pull request may change.
-var steamBuildLine = regexp.MustCompile(`^[+-]VALHEIM_STEAM_BUILD_VERSION=[0-9]+$`)
+// pinLine is the one line of an application's pins file the order covers:
+// the pin its declaration names, set to a number.
+func pinLine(pin string) *regexp.Regexp {
+	return regexp.MustCompile(`^[+-]` + regexp.QuoteMeta(pin) + `=[0-9]+$`)
+}
 
 // withinStandingOrder lists everything about the expediter's change that the
-// order does not cover: exactly one Steam build replaced by another, in the
-// pin file. An empty list is the only permitted answer.
-func withinStandingOrder(files, changed []string, pin string) []string {
+// order does not cover: exactly one build replaced by another, on the line
+// one application declares as its upstream's pin, in that application's own
+// pins file. An empty list is the only permitted answer.
+func withinStandingOrder(files, changed []string, declared map[string]applications.Application) []string {
 	if len(files) == 0 {
 		return []string{"the pull request changes nothing, which is not a delivery"}
 	}
+	// The application whose pins file this is, if it is one's and that
+	// application declares an upstream.
+	var covered *applications.Application
+	for _, f := range files {
+		for _, name := range sortedApplications(declared) {
+			if a := declared[name]; a.Upstream != nil && a.PinsFile() == f && covered == nil {
+				covered = &a
+			}
+		}
+	}
 	var problems []string
 	for _, f := range files {
-		if f != pin {
+		if covered == nil || f != covered.PinsFile() {
 			problems = append(problems, "changes "+f)
 		}
 	}
-	return append(problems, onlyTheSteamBuild(changed)...)
+	if covered == nil {
+		return append(problems, "changes no pins file of an application that declares an upstream")
+	}
+	return append(problems, onlyThePin(changed, covered.Upstream.Pin)...)
 }
 
-// onlyTheSteamBuild lists every changed line that is not the Steam build
-// moving from one number to another.
-func onlyTheSteamBuild(changed []string) []string {
+// onlyThePin lists every changed line that is not the named pin moving from
+// one number to another.
+func onlyThePin(changed []string, pin string) []string {
+	covered := pinLine(pin)
 	var problems []string
 	removed, added := 0, 0
 	for _, line := range changed {
-		if !steamBuildLine.MatchString(line) {
+		if !covered.MatchString(line) {
 			problems = append(problems, "changes a line the order does not cover: "+strings.TrimSpace(line))
 			continue
 		}
@@ -162,7 +201,7 @@ func onlyTheSteamBuild(changed []string) []string {
 		}
 	}
 	if len(problems) == 0 && (removed != 1 || added != 1) {
-		problems = append(problems, "does not replace exactly one Steam build with another")
+		problems = append(problems, "does not replace exactly one build with another")
 	}
 	return problems
 }
@@ -197,17 +236,20 @@ var (
 	deliveredDigest = regexp.MustCompile(`^[+-]\s+digest:\s+"sha256:[0-9a-f]{64}"\s*$`)
 )
 
-// isDelivery reports whether a change moves release pins in a site's releases
-// file and does nothing else: one file, a releases file by the pattern that
-// says which those are, and every changed line a release tag or a digest. A
-// pattern rather than a path, because which site was given the work is the
-// Flux tree's to say and not this program's to name.
+// isDelivery reports whether a change moves release pins in sites' files and
+// does nothing else: every file one that says what a site runs, by the
+// pattern that says which those are, and every changed line a release tag or
+// a digest. A pattern rather than a path, because which sites were given the
+// work is the Flux tree's to say and not this program's to name; and more
+// than one file, because one release goes to every site that follows it.
 func isDelivery(files, changed []string, releases string) bool {
-	if len(files) != 1 || len(changed) == 0 {
+	if len(files) == 0 || len(changed) == 0 {
 		return false
 	}
-	if isReleases, err := path.Match(releases, files[0]); err != nil || !isReleases {
-		return false
+	for _, f := range files {
+		if isReleases, err := path.Match(releases, f); err != nil || !isReleases {
+			return false
+		}
 	}
 	for _, line := range changed {
 		if !deliveredTag.MatchString(line) && !deliveredDigest.MatchString(line) {
@@ -215,4 +257,13 @@ func isDelivery(files, changed []string, releases string) bool {
 		}
 	}
 	return true
+}
+
+func sortedApplications(m map[string]applications.Application) []string {
+	names := make([]string, 0, len(m))
+	for n := range m {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }

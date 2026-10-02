@@ -1,18 +1,26 @@
 name: "Expedite"
 
-# Expediting: keeping the game server on the build Valve publishes.
+# Expediting: keeping each application on the build its supplier publishes.
 #
 # Expediting is one duty of procurement (scripts/procurement), and the only one
 # that holds elevated permission. On a construction site, expediting chases an
 # order with a supplier and gets material to site when it is needed, without
-# building or installing anything. This does the same for one item from one
-# approved supplier: when Valve
-# publishes a new build of the Valheim dedicated server, it records the build
-# in scripts/versions.env and submits that one line. The fabricator builds the
-# image and the release from it.
+# building or installing anything. This does the same for one item per
+# application, from the supplier that application declares: when the supplier
+# publishes a new build, it records the build in the application's own pins
+# file and submits that one line. The fabricator builds the image and the
+# release from it.
 #
-# WHY IT EXISTS. Valheim clients update themselves through Steam and refuse a
-# server on an older build, so every game patch strands every player until the
+# IT KNOWS NO APPLICATION. An application that wants to be kept on its
+# supplier's build says so in its own directory - `upstream` in its
+# application.json: which supplier, what to ask it about, where the supplier
+# announces a build, and which line of the application's pins.env records
+# the answer. `procurement expedite-upstreams` lists them and every job here
+# works through that list. Steam is the one supplier this can ask; a
+# declaration naming another kind is refused where it is read.
+#
+# WHY IT EXISTS. A game's clients update themselves through Steam and refuse a
+# server on an older build, so every patch strands every player until the
 # server is rebuilt. Before this, that meant a person dispatching a build,
 # copying a digest out of a log, editing a manifest, opening, merging and
 # tagging - six steps, none of them a decision, and each one a way to get it
@@ -22,7 +30,7 @@ name: "Expedite"
 #
 #   check    one HTTPS call to Steam's news API. Has Valve posted anything?
 #   deliver  only when check says to look: SteamCMD for the real build id,
-#            and a pull request changing VALHEIM_STEAM_BUILD_VERSION
+#            and a pull request changing the application's declared pin
 #   release  at 4am local: merge that pull request, wait for the fabricator
 #            to deliver the release built from it, and merge the delivery if
 #            the Steam build is all that changed
@@ -41,8 +49,8 @@ name: "Expedite"
 # estate believes it is current: the daily pass below takes the authoritative
 # route whatever the doorbell said.
 #
-# WHAT A MERGE DOES NOW. Production runs the release pinned in
-# clusters/site0/releases.yaml (#510). Merging the expediter's pull
+# WHAT A MERGE DOES NOW. A site runs the release pinned in its own
+# applications file (#510). Merging the expediter's pull
 # request changes what the fabricator builds; the fabricator publishes a
 # release and procurement delivers it as a pull request moving that pin. The
 # 4am window takes both - the second only when its release differs from
@@ -135,10 +143,6 @@ defaults:
     shell: bash
 
 env:
-  # The one line the expediter moves. The fabricator builds the image and the
-  # release from it; the expediter builds nothing.
-  PIN: scripts/versions.env
-  APP_ID: "896660"
   REPO: ${{ github.repository }}
 
 jobs:
@@ -154,6 +158,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       look: ${{ steps.ask.outputs.look }}
+      upstreams: ${{ steps.upstreams.outputs.upstreams }}
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
@@ -184,24 +189,49 @@ jobs:
       - name: Setup Go
         uses: $/.github/workflows/setup-go
 
-      - name: Ask whether Valve has published anything
+      # Every application that declares an upstream: where to ask, and the one
+      # line of its own pins file the answer moves. Listed once here and
+      # handed to the jobs below, so none of them reads a declaration itself.
+      - name: List what is expedited
+        id: upstreams
+        run: |
+          set -euo pipefail
+          upstreams="$(go run -C scripts/procurement . expedite-upstreams)"
+          echo "upstreams=${upstreams}" >> "$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.name): \(.pin) in \(.pins)"' <<<"$upstreams" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Ask whether a supplier has published anything
         id: ask
         env:
           # The daily pass and a hand dispatch skip the doorbell entirely and go
-          # straight to the authority, so a post nobody saw cannot strand the
+          # straight to the authority, so a post nobody saw cannot strand a
           # server for longer than a day.
           AUTHORITATIVE: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 8 * * *' }}
+          UPSTREAMS: ${{ steps.upstreams.outputs.upstreams }}
         run: |
           set -euo pipefail
+          if [ "$(jq 'length' <<<"$UPSTREAMS")" -eq 0 ]; then
+            echo "no application declares an upstream, so there is nothing to expedite" >> "$GITHUB_STEP_SUMMARY"
+            echo "look=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$AUTHORITATIVE" = "true" ]; then
             echo "taking the authoritative route: SteamCMD decides, not the news feed"
             echo "look=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # A window longer than the gap between checks, so a post made just
+          # One doorbell per application, and any of them ringing is a reason
+          # to look at them all: SteamCMD is installed once either way. A
+          # window longer than the gap between checks, so a post made just
           # after one run is still fresh at the next.
-          verdict="$(go run -C scripts/procurement . expedite-check -within 90m)"
-          echo "look=$([ "$verdict" = look ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          look=false
+          while IFS= read -r news; do
+            verdict="$(go run -C scripts/procurement . expedite-check -appid "$news" -within 90m)"
+            if [ "$verdict" = look ]; then
+              look=true
+            fi
+          done < <(jq -r '.[].news' <<<"$UPSTREAMS")
+          echo "look=${look}" >> "$GITHUB_OUTPUT"
 
   deliver:
     name: "Take delivery"
@@ -209,7 +239,8 @@ jobs:
     if: needs.check.outputs.look == 'true'
     runs-on: ubuntu-latest
     # Bounded so a stuck run cannot bill forever. It asks SteamCMD one
-    # question and commits one line; the image is the fabricator's to build.
+    # question per application and commits one line for each answer that
+    # changed; the image is the fabricator's to build.
     timeout-minutes: 20
     permissions:
       contents: read
@@ -229,8 +260,10 @@ jobs:
           egress-policy: audit
           disable-sudo-and-containers: "false"
 
-      - name: Ask SteamCMD what the build actually is
+      - name: Ask SteamCMD what each build actually is
         id: build
+        env:
+          UPSTREAMS: ${{ needs.check.outputs.upstreams }}
         run: |
           set -euo pipefail
 
@@ -265,37 +298,45 @@ jobs:
           # build". It arrived with #400 on 16 September. Printing the output
           # on failure is what found it, on its first run; the guess made
           # before that evidence existed was wrong, and is not carried here.
-          info=""
-          if scripts/retry.sh 3 15 "$steam/steamcmd.sh" +login anonymous \
-            +app_info_update 1 +app_info_print "$APP_ID" +quit >"$RUNNER_TEMP/steam.out" 2>&1; then
-            info="$(cat "$RUNNER_TEMP/steam.out")"
-          fi
-          build="$(awk '/"branches"/ {b=1} b && /"public"/ {p=1} p && /"buildid"/ {gsub(/[^0-9]/, ""); print; exit}' <<<"$info")"
-          if [ -z "$build" ]; then
-            # Keep the evidence (#440). This step used to fail with one line
-            # and the output that would have explained it discarded, and that
-            # is how a week of failures produced nothing anybody could read.
-            # SteamCMD logs in anonymously, so there is no credential in it.
-            echo "::group::What SteamCMD printed (last 80 lines)"
-            tail -n 80 "$RUNNER_TEMP/steam.out" 2>/dev/null || echo "(no output was captured)"
-            echo "::endgroup::"
-            echo "::error::Steam reported no public build for app ${APP_ID}, so there is nothing to compare. SteamCMD's own output is in the group above."
-            exit 1
-          fi
+          deliveries="[]"
+          while IFS= read -r upstream; do
+            name="$(jq -r '.name' <<<"$upstream")"
+            app="$(jq -r '.app' <<<"$upstream")"
+            pin="$(jq -r '.pin' <<<"$upstream")"
+            pins="$(jq -r '.pins' <<<"$upstream")"
 
-          recorded="$(sed -n 's/^VALHEIM_STEAM_BUILD_VERSION=\([0-9]*\)$/\1/p' "$PIN" | head -n 1)"
-          echo "Steam's public build: ${build}; pinned in ${PIN}: ${recorded:-nothing}"
+            info=""
+            if scripts/retry.sh 3 15 "$steam/steamcmd.sh" +login anonymous \
+              +app_info_update 1 +app_info_print "$app" +quit >"$RUNNER_TEMP/steam.out" 2>&1; then
+              info="$(cat "$RUNNER_TEMP/steam.out")"
+            fi
+            build="$(awk '/"branches"/ {b=1} b && /"public"/ {p=1} p && /"buildid"/ {gsub(/[^0-9]/, ""); print; exit}' <<<"$info")"
+            if [ -z "$build" ]; then
+              # Keep the evidence (#440). This step used to fail with one line
+              # and the output that would have explained it discarded, and that
+              # is how a week of failures produced nothing anybody could read.
+              # SteamCMD logs in anonymously, so there is no credential in it.
+              echo "::group::What SteamCMD printed (last 80 lines)"
+              tail -n 80 "$RUNNER_TEMP/steam.out" 2>/dev/null || echo "(no output was captured)"
+              echo "::endgroup::"
+              echo "::error::Steam reported no public build for app ${app} (${name}), so there is nothing to compare. SteamCMD's own output is in the group above."
+              exit 1
+            fi
 
-          if [ "$build" = "$recorded" ]; then
-            echo "no delivery: the server already runs build ${build}" >> "$GITHUB_STEP_SUMMARY"
-            echo "deliver=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "delivery: Steam build ${build}, replacing ${recorded:-nothing}" >> "$GITHUB_STEP_SUMMARY"
+            recorded="$(sed -n "s/^${pin}=\([0-9]*\)\$/\1/p" "$pins" | head -n 1)"
+            echo "${name}: Steam's public build is ${build}; pinned in ${pins}: ${recorded:-nothing}"
+
+            if [ "$build" = "$recorded" ]; then
+              echo "${name}: no delivery, it is already built from ${build}" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            echo "${name}: delivery of Steam build ${build}, replacing ${recorded:-nothing}" >> "$GITHUB_STEP_SUMMARY"
+            deliveries="$(jq -c --arg build "$build" --arg recorded "$recorded" '. + [$upstream + {build: $build, recorded: $recorded}]' --argjson upstream "$upstream" <<<"$deliveries")"
+          done < <(jq -c '.[]' <<<"$UPSTREAMS")
+
           {
-            echo "deliver=true"
-            echo "build=${build}"
-            echo "recorded=${recorded}"
+            echo "deliver=$([ "$(jq 'length' <<<"$deliveries")" -gt 0 ] && echo true || echo false)"
+            echo "deliveries=${deliveries}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Mint the expedite token
@@ -324,67 +365,74 @@ jobs:
         if: steps.build.outputs.deliver == 'true'
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          BUILD: ${{ steps.build.outputs.build }}
-          RECORDED: ${{ steps.build.outputs.recorded }}
+          DELIVERIES: ${{ steps.build.outputs.deliveries }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          branch="expedite/valheim-steam-${BUILD}"
+          while IFS= read -r delivery; do
+            name="$(jq -r '.name' <<<"$delivery")"
+            pin="$(jq -r '.pin' <<<"$delivery")"
+            pins="$(jq -r '.pins' <<<"$delivery")"
+            build="$(jq -r '.build' <<<"$delivery")"
+            recorded="$(jq -r '.recorded' <<<"$delivery")"
+            branch="expedite/${name}-${build}"
 
-          # A delivery already submitted is picked up again, not submitted
-          # twice - the release window may not have come round yet.
-          pr="$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq '.[0].number // empty')"
-          if [ -n "$pr" ]; then
-            echo "pull request #${pr} already carries this delivery"
-            exit 0
-          fi
+            # A delivery already submitted is picked up again, not submitted
+            # twice - the release window may not have come round yet.
+            pr="$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq '.[0].number // empty')"
+            if [ -n "$pr" ]; then
+              echo "${name}: pull request #${pr} already carries this delivery"
+              continue
+            fi
 
-          # Edit main as it is now, not the checkout: main can have moved since
-          # this run started, and the commit's parent is main.
-          base="$(gh api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)"
-          base_tree="$(gh api "repos/${REPO}/git/commits/${base}" --jq .tree.sha)"
-          gh api "repos/${REPO}/contents/${PIN}?ref=${base}" --jq .content | base64 -d > "$RUNNER_TEMP/pin.yaml"
+            # Edit main as it is now, not the checkout: main can have moved
+            # since this run started, and the commit's parent is main.
+            base="$(gh api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)"
+            base_tree="$(gh api "repos/${REPO}/git/commits/${base}" --jq .tree.sha)"
+            gh api "repos/${REPO}/contents/${pins}?ref=${base}" --jq .content | base64 -d > "$RUNNER_TEMP/pin.env"
 
-          sed -i -E "s#^VALHEIM_STEAM_BUILD_VERSION=[0-9]*\$#VALHEIM_STEAM_BUILD_VERSION=${BUILD}#" "$RUNNER_TEMP/pin.yaml"
-          if ! grep -qx "VALHEIM_STEAM_BUILD_VERSION=${BUILD}" "$RUNNER_TEMP/pin.yaml"; then
-            echo "::error::could not find the VALHEIM_STEAM_BUILD_VERSION line in ${PIN}; its shape has changed and this needs updating"
-            exit 1
-          fi
+            sed -i -E "s#^${pin}=[0-9]*\$#${pin}=${build}#" "$RUNNER_TEMP/pin.env"
+            if ! grep -qx "${pin}=${build}" "$RUNNER_TEMP/pin.env"; then
+              echo "::error::could not find the ${pin} line in ${pins}; its shape has changed and this needs updating"
+              exit 1
+            fi
 
-          blob="$(gh api "repos/${REPO}/git/blobs" -f content="$(base64 -w0 "$RUNNER_TEMP/pin.yaml")" -f encoding=base64 --jq .sha)"
-          tree="$(gh api "repos/${REPO}/git/trees" \
-            -f base_tree="$base_tree" \
-            -f "tree[][path]=${PIN}" \
-            -f "tree[][mode]=100644" \
-            -f "tree[][type]=blob" \
-            -f "tree[][sha]=${blob}" \
-            --jq .sha)"
-          message="$(printf '%s\n' \
-            "feat: take delivery of Valheim server build ${BUILD}" \
-            "" \
-            "Valve published a new build of the dedicated server, and clients refuse" \
-            "a server on an older one. Pins it; the fabricator builds the image and" \
-            "the release from the pin." \
-            "" \
-            "Taken by expediting: ${RUN_URL}")"
-          # No author, committer or signature field: GitHub signs on the App's
-          # behalf and attributes the commit to it.
-          commit="$(gh api "repos/${REPO}/git/commits" -f message="$message" -f tree="$tree" -f "parents[]=${base}" --jq .sha)"
-          gh api "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="$commit" >/dev/null
-
-          url="$(gh pr create --repo "$REPO" --base main --head "$branch" \
-            --title "feat: take delivery of Valheim server build ${BUILD}" \
-            --body "$(printf '%s\n' \
-              "## What this is" \
+            blob="$(gh api "repos/${REPO}/git/blobs" -f content="$(base64 -w0 "$RUNNER_TEMP/pin.env")" -f encoding=base64 --jq .sha)"
+            tree="$(gh api "repos/${REPO}/git/trees" \
+              -f base_tree="$base_tree" \
+              -f "tree[][path]=${pins}" \
+              -f "tree[][mode]=100644" \
+              -f "tree[][type]=blob" \
+              -f "tree[][sha]=${blob}" \
+              --jq .sha)"
+            title="feat(${name}): take delivery of build ${build}"
+            message="$(printf '%s\n' \
+              "$title" \
               "" \
-              "Valve published build **${BUILD}** of the Valheim dedicated server. Players' clients update themselves and refuse a server on an older build, so this pins it in \`${PIN}\`: Steam build \`${RECORDED:-unknown}\` → \`${BUILD}\`." \
+              "Its supplier published a new build, and clients refuse a server on an" \
+              "older one. Pins it; the fabricator builds the image and the release" \
+              "from the pin." \
               "" \
-              "## What happens next" \
-              "" \
-              "Nothing needs you. At 4am America/Chicago the expediter merges this under its standing order, which covers this one line and refuses anything more. The fabricator then builds the image and the release, procurement delivers it, and the same window merges that delivery if the Steam build is all that changed. A release carrying anything else waits for a review." \
-              "" \
-              "Taken by expediting: ${RUN_URL}")")"
-          echo "opened ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
+              "Taken by expediting: ${RUN_URL}")"
+            # No author, committer or signature field: GitHub signs on the App's
+            # behalf and attributes the commit to it.
+            commit="$(gh api "repos/${REPO}/git/commits" -f message="$message" -f tree="$tree" -f "parents[]=${base}" --jq .sha)"
+            gh api "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="$commit" >/dev/null
+
+            url="$(gh pr create --repo "$REPO" --base main --head "$branch" \
+              --title "$title" \
+              --body "$(printf '%s\n' \
+                "## What this is" \
+                "" \
+                "The supplier of ${name} published build **${build}**. Clients update themselves and refuse a server on an older build, so this pins it in \`${pins}\`: \`${recorded:-unknown}\` → \`${build}\`." \
+                "" \
+                "## What happens next" \
+                "" \
+                "Nothing needs you. At 4am America/Chicago the expediter merges this under its standing order, which covers this one line and refuses anything more. The fabricator then builds the image and the release, procurement delivers it, and the same window merges that delivery if the supplier's build is all that changed. A release carrying anything else waits for a review." \
+                "" \
+                "Taken by expediting: ${RUN_URL}")")"
+            echo "${name}: opened ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
+          done < <(jq -c '.[]' <<<"$DELIVERIES")
 
   release:
     name: "Release what is waiting"
@@ -488,7 +536,7 @@ jobs:
           # The oldest open delivery, so two waiting are taken in the order they
           # were submitted rather than newest first.
           pr="$(gh api "repos/${REPO}/pulls?state=open&per_page=100" \
-            --jq '[.[] | select(.user.login == env.HOLDER and .head.repo.full_name == env.REPO and (.head.ref | startswith("expedite/valheim-steam-")))] | sort_by(.number) | .[0].number // empty')"
+            --jq '[.[] | select(.user.login == env.HOLDER and .head.repo.full_name == env.REPO and (.head.ref | startswith("expedite/")))] | sort_by(.number) | .[0].number // empty')"
           if [ -z "$pr" ]; then
             echo "nothing ${HOLDER} opened is waiting to be released" >> "$GITHUB_STEP_SUMMARY"
             echo "pr=" >> "$GITHUB_OUTPUT"
@@ -543,10 +591,10 @@ jobs:
           # -bypass: this merge skips review, so only what the order covers
           # passes - a delivery of a release never does.
           if ! go run -C scripts/superintendent . enforce-standing-order -bypass -author "$author" -base "$base" -head "$head"; then
-            gh pr comment "$PR" --repo "$REPO" --body "Refused under the standing order at merge time: this changes more than the Steam build. It waits for a review."
+            gh pr comment "$PR" --repo "$REPO" --body "Refused under the standing order at merge time: this changes more than the build its supplier published. It waits for a review."
             exit 1
           fi
-          build="$(gh pr view "$PR" --repo "$REPO" --json headRefName --jq '.headRefName | sub("^expedite/valheim-steam-"; "")')"
+          title="$(gh pr view "$PR" --repo "$REPO" --json title --jq .title)"
           # --admin is how a ruleset bypass actor merges: without it gh refuses
           # on its own side ("the base branch policy prohibits the merge") and
           # never asks. --match-head-commit makes GitHub refuse if anything was
@@ -556,12 +604,12 @@ jobs:
           # than whatever the repository's squash default assembles from the
           # pull request body - which carries a table and long lines.
           if ! gh pr merge "$PR" --repo "$REPO" --squash --admin --match-head-commit "$head" \
-            --subject "feat: take delivery of Valheim server build ${build} (#${PR})" \
+            --subject "${title} (#${PR})" \
             --body "Merged by expediting under its standing order, in the 4am release window, after every required check passed."; then
             gh pr comment "$PR" --repo "$REPO" --body "Every required check passed and the change is within the standing order, but GitHub refused the merge. The procurement App is probably not a bypass actor on the \"protected branches\" ruleset; until it is, this waits for a review."
             exit 1
           fi
-          echo "merged #${PR}: Steam build ${build}" >> "$GITHUB_STEP_SUMMARY"
+          echo "merged #${PR}: ${title}" >> "$GITHUB_STEP_SUMMARY"
           echo "sha=$(gh pr view "$PR" --repo "$REPO" --json mergeCommit --jq .mergeCommit.oid)" >> "$GITHUB_OUTPUT"
 
       # The pull request just merged only changes what the fabricator builds.
@@ -595,7 +643,7 @@ jobs:
       # nothing but the Steam build - judged against the commits its releases
       # were built from, which the registry records. Anything else waits for a
       # review, however it arrived.
-      - name: Release the deliveries whose only change is the Steam build
+      - name: Release the deliveries whose only change is the supplier's build
         if: steps.window.outputs.due == 'true' && !failure()
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
@@ -627,14 +675,14 @@ jobs:
             base="$(gh api "repos/${REPO}/compare/${target}...${head}" --jq .merge_base_commit.sha)"
             git fetch --no-tags --depth=1 origin "$base" "$head"
             if ! go run -C scripts/superintendent . enforce-standing-order -bypass -author "$author" -base "$base" -head "$head"; then
-              echo "#${pr}: the release changes more than the Steam build, so it waits for a review" >> "$GITHUB_STEP_SUMMARY"
+              echo "#${pr}: the release changes more than the supplier's build, so it waits for a review" >> "$GITHUB_STEP_SUMMARY"
               continue
             fi
             title="$(gh pr view "$pr" --repo "$REPO" --json title --jq .title)"
             if ! gh pr merge "$pr" --repo "$REPO" --squash --admin --match-head-commit "$head" \
               --subject "${title} (#${pr})" \
-              --body "Merged under the standing order in the 4am window: the release changes nothing but the Steam build."; then
-              gh pr comment "$pr" --repo "$REPO" --body "The release changes nothing but the Steam build and every required check passed, but GitHub refused the merge. It waits for a review."
+              --body "Merged under the standing order in the 4am window: the release changes nothing but the supplier's build."; then
+              gh pr comment "$pr" --repo "$REPO" --body "The release changes nothing but the supplier's build and every required check passed, but GitHub refused the merge. It waits for a review."
               continue
             fi
             echo "merged #${pr}: ${title}" >> "$GITHUB_STEP_SUMMARY"

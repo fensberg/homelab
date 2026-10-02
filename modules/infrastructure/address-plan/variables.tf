@@ -43,7 +43,7 @@ variable "fixed_addresses" {
   description = <<-EOT
     Services that need an address known before they exist, because something
     outside the cluster routes to it: name => host number in each site's
-    service range. management/tunnel-routes.json declares them. Every site gets
+    service range. Each application declares its own. Every site gets
     the same host number in its own range, so a route is one line however
     many sites there are, and no two sites ever share the address.
   EOT

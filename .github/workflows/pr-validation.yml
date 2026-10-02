@@ -388,6 +388,17 @@ jobs:
           . tests/flux-substitutions.env
           set +a
 
+          # And the ones the file does not list: what the platform hands a
+          # site's applications - where releases are published, and the
+          # address of each route an application declares - derived so that
+          # the list of stand-ins names no application and holds nothing
+          # only an application uses.
+          .github/scripts/application-standins.sh > "$RUNNER_TEMP/application-standins.env"
+          set -a
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/application-standins.env"
+          set +a
+
           schema='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           for dir in clusters/core/infrastructure/*/ clusters/core/flux-system/; do
             echo "==> ${dir}"
@@ -416,10 +427,16 @@ jobs:
             kubectl kustomize "${dir}" > /dev/null
           done
 
-          # The workload tier's overlays. Globbed rather than listed, so a
-          # third environment is validated by existing rather than by somebody
-          # remembering this line.
-          for dir in environments/*/applications/; do
+          # Every application's settings for every environment it has them
+          # for: each directory of an application's own, but its base, that
+          # holds a kustomization. Globbed rather than listed, so the next
+          # application and the next environment are validated by existing
+          # rather than by somebody remembering this line.
+          for dir in modules/applications/*/*/; do
+            [ -f "${dir}kustomization.yaml" ] || continue
+            if [ "$(basename "$dir")" = base ]; then
+              continue
+            fi
             echo "==> ${dir}"
             kubectl kustomize "${dir}" | envsubst | kubeconform \
               -strict -summary -ignore-missing-schemas \

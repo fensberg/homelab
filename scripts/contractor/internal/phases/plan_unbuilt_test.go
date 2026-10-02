@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -44,7 +45,19 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := run.NewContext(repo, "site0")
-	tpl, err := os.ReadFile(ctx.ConfigTpl)
+	committed, err := os.ReadFile(ctx.ConfigTpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The template a run reads: the committed one with the site's
+	// applications added, so that what each of them declares - its
+	// namespace, its secrets, its identity - is planned by the real provider
+	// too, whichever applications the site was given.
+	tpl, err := config.Compose(committed, repo, ctx.Site)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, given, err := config.SiteApplications(repo, ctx.Site)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +109,17 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 		}
 		if len(pending) < 5 {
 			t.Errorf("the %s root's plan from nothing would create %d thing(s) (%s), so it is not a plan of that root", root.Name, len(pending), strings.Join(pending, ", "))
+		}
+		// A site that was given applications has their namespaces, secrets
+		// and identities in the platform's plan, and one given none has
+		// none of them. The plan names kinds and never keys, so this asks
+		// whether they are there, not how many.
+		if root.Name == config.PlatformRoot {
+			for _, kind := range []string{"kubernetes_namespace.application", "kubernetes_service_account.application_reconciler", "kubernetes_role_binding.application_reconciler"} {
+				if planned := slices.Contains(pending, kind); planned != (len(given) > 0) {
+					t.Errorf("the site was given %d application(s), and %s being in the platform's plan from nothing is %v (%s)", len(given), kind, planned, strings.Join(pending, ", "))
+				}
+			}
 		}
 	}
 }

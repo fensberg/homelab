@@ -88,10 +88,10 @@ resource "kubernetes_secret" "cluster_vars" {
     STATE_DB_OWNER          = local.state_db_owner
     STATE_DB_NODEPORT       = tostring(local.state_db_nodeport)
 
-    # Where production's releases are published: the fabricator pushes each
-    # one to ghcr.io/<owner>/<repository>-<workload>-release, and
-    # clusters/site0/releases.yaml pins them. Derived from the configured
-    # repository rather than written into that file, so a fork reads its own
+    # Where releases are published: the fabricator pushes each one to
+    # ghcr.io/<owner>/<repository>-<application>-release, and a site's block
+    # for the application pins it. Derived from the configured repository
+    # rather than written into that block, so a fork reads its own
     # releases by changing its config, not by editing a manifest. Lower case,
     # because the registry is.
     RELEASE_REPOSITORY = lower(join("/", [

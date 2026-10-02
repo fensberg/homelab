@@ -32,15 +32,6 @@
     "webhook_url": "{{ op://estate-shared/alerting/webhook_url }}"
   },
 
-  "workloads": {
-    "valheim": {
-      "name": "{{ op://site0/valheim/name }}",
-      "server_name": "{{ op://site0/valheim/server_name }}",
-      "password": "{{ op://site0/valheim/password }}",
-      "backup_key": "{{ op://site0/valheim/backup_key }}"
-    }
-  },
-
   "sites": {
     "site0": {
       "name": "{{ op://site0-shared/identity/name }}",

@@ -9,9 +9,10 @@
 //
 //	order                  write scripts/deliveries.lock from the declared
 //	                       versions: every delivery pinned by version and hash
-//	expedite-check         has Valve published anything? one HTTPS call, no key
+//	expedite-upstreams     which applications declare an upstream to be kept on
+//	expedite-check         has a supplier published anything? one HTTPS call, no key
 //	expedite-release-due   is it the hour when taking delivery disturbs nobody?
-//	deliver                move a workload's production pin to a new release
+//	deliver                move an application's pin in a site's file to a new release
 //
 // THE BYPASS BELONGS TO THE DUTY, NOT THE ROLE. Expediting is the one duty here
 // that holds elevated permission: its GitHub App may merge its own delivery
@@ -23,7 +24,10 @@
 // `order`, and any expedite workflow that runs a verb outside its duty. More
 // duties widen the role's scope, never its power (#416).
 //
-// EXPEDITING THE GAME SERVER. The heavy half - downloading two gigabytes of
+// EXPEDITING WHAT AN APPLICATION IS BUILT FROM. This program knows no
+// application: each one that wants to be kept on its supplier's build
+// declares its upstream in its own directory, and expedite-upstreams lists
+// them. The heavy half - downloading two gigabytes of
 // game files, building the image and pushing it - stays in the workflow,
 // because it is docker's job rather than this program's. What matters is that
 // it only runs when expedite-check says there is something to collect, instead
@@ -31,7 +35,7 @@
 //
 // WHY EXPEDITE-CHECK IS NOT AUTHORITATIVE. Steam has no cheap first-party way
 // to ask for a dedicated server's build id: ISteamApps/UpToDateCheck refuses
-// every dedicated-server appid (896660 here, and 740 for CS2), and the server
+// every dedicated-server appid, and the server
 // appid's news feed carries press articles rather than Valve's own posts. What
 // does work is the CLIENT appid's announcement feed, which is where Valve posts
 // "Hotfix 1.0.10 & 1.0.12" - the patches that strand players.
@@ -60,9 +64,10 @@ type verb struct {
 func verbs() []verb {
 	return []verb{
 		{"order", "write scripts/deliveries.lock: every delivery pinned by version and hash", order},
-		{"expedite-check", "ask whether the game server's supplier has published anything worth collecting", expediteCheck},
+		{"expedite-upstreams", "list every application that declares an upstream to be kept on", expediteUpstreams},
+		{"expedite-check", "ask whether a supplier has published anything worth collecting", expediteCheck},
 		{"expedite-release-due", "say whether now is the hour an expedited delivery may disturb the site", expediteReleaseDue},
-		{"deliver", "move a workload's production pin to the release just published", deliver},
+		{"deliver", "move an application's pin in one site's file to the release just published", deliver},
 	}
 }
 
@@ -82,7 +87,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, "procurement orders what the estate takes delivery of, and expedites the game server.\n\nusage: procurement <verb> [flags]\n\nverbs:\n")
+	fmt.Fprint(os.Stderr, "procurement orders what the estate takes delivery of, and expedites what its applications are built from.\n\nusage: procurement <verb> [flags]\n\nverbs:\n")
 	for _, v := range verbs() {
 		fmt.Fprintf(os.Stderr, "  %-21s %s\n", v.name, v.what)
 	}

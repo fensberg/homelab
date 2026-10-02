@@ -1,0 +1,77 @@
+---
+# The applications site0 runs: one block per application, and nothing else.
+#
+# A block is the release the site runs - a source pinned to a release the
+# fabricator published, holding the application's own directory with the image
+# built for it pinned by digest - and the Kustomization that reconciles one
+# environment's settings from it. Giving the site an application is adding its
+# block; taking one away is deleting its block. Nothing else in this directory
+# names an application.
+#
+# A release is a pull request that changes a pin here, and nothing else moves
+# what the site runs: merging to main changes what the next release will
+# contain, not what is running. The tag is the version the application
+# reported when it was built plus a counter for rebuilds of that version, so a
+# diff here reads as 1.0.15-1 -> 1.0.15-2. The digest is what Flux trusts; the
+# tag is for people. Two sites pin their own, so two sites can run two
+# versions: procurement delivers a new release to every site whose source
+# does not say homelab.fensberg.com/delivery: hold.
+#
+# An application that requires another (requires, in its application.json)
+# depends on that one's Kustomization as well, so it starts second; a site
+# given the first must be given the second. tests/go/repo holds every block
+# here to its application's declaration.
+#
+# Every Kustomization depends on infra-configs: an application that needs a
+# volume needs the storage class, and one that needs a database needs the
+# operator that serves it. wait:false, though - unlike the layers below, an
+# application that will not become ready is not a reason to hold the whole
+# reconciliation open. It is a reason to go and look at that application.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: valheim
+  namespace: flux-system
+spec:
+  interval: 1m
+  # No secretRef. The release packages are public, like the images they pin,
+  # and a secretRef naming a secret nothing creates fails the source closed
+  # rather than falling back to anonymous access (flux_source_secret_test.go).
+  url: oci://${RELEASE_REPOSITORY}-valheim-release
+  ref:
+    tag: "1.0.16-5"
+    digest: "sha256:b4442c5761817c212dd5dba12b10ff04a93830b5e2050869c9f778fa65c3d849"
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  # Not the application's name, and it has to stay: this Kustomization's
+  # inventory holds the application's objects, and Flux prunes whatever leaves
+  # an inventory. A renamed Kustomization would have this one delete them -
+  # the volume with them.
+  name: workloads-production
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infra-configs
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  sourceRef:
+    kind: OCIRepository
+    name: valheim
+  path: ./modules/applications/valheim/production
+  # Reconciled as the application's own identity, into its own namespace:
+  # the platform gives that identity the run of that namespace and nothing
+  # else, so a release that reaches for anything outside it is refused by
+  # the API server.
+  serviceAccountName: application-valheim
+  targetNamespace: valheim
+  prune: true
+  # The site's own values, such as the address a route reaches
+  # (ADDRESS_<NAME>), which a Service sets as its clusterIP.
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: cluster-vars
+  wait: false

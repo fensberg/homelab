@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"homelab/details/applications"
 	"slices"
 	"strings"
 
@@ -161,9 +162,9 @@ func StateBackupLocation(cfg *Config, site, root string) (StateBackups, error) {
 		return StateBackups{}, err
 	}
 	for field, val := range map[string]string{
-		"bucket":            cred.Bucket,
-		"access_key_id":     cred.AccessKeyID,
-		"secret_access_key": cred.SecretAccessKey,
+		applications.StorageBucket:          cred.Bucket,
+		applications.StorageAccessKeyID:     cred.AccessKeyID,
+		applications.StorageSecretAccessKey: cred.SecretAccessKey,
 	} {
 		if strings.TrimSpace(val) == "" {
 			return StateBackups{}, fmt.Errorf("sites.%s.object_storage.%s.%s is missing from the rendered config", site, bucket.Key, field)

@@ -15,6 +15,7 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/details/flux"
 )
 
 // Health waits for the cluster to actually converge, and fails the run if it
@@ -440,7 +441,7 @@ func checkFlux(ctx *run.Context, kubeconfig string) error {
 	}
 	consumers := 0
 	for _, it := range list.Items {
-		if it.Kind == "Kustomization" || it.Kind == "HelmRelease" {
+		if it.Kind == flux.Kustomization || it.Kind == flux.HelmRelease {
 			consumers++
 		}
 	}

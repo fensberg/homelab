@@ -10,5 +10,11 @@ module "address_plan" {
   sites           = local.config.sites
   domain          = local.config.organization.domain
   aliases         = local.config.organization.aliases
-  fixed_addresses = local.tunnel_routes
+  fixed_addresses = module.applications.routes
+}
+
+# What each application declares about itself, read from the applications
+# beside this module: those of the commit the site is pinned to.
+module "applications" {
+  source = "../applications"
 }

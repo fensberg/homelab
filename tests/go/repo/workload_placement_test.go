@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/applications"
 )
 
 // Every pod this estate deploys is sized, placed and given a priority.
@@ -464,7 +466,7 @@ func TestEveryHelmReleaseSaysWhereItsPodSpecLives(t *testing.T) {
 
 	var undescribed []string
 	seen := 0
-	// Still scoped to clusters/ - the workload tier under environments/ is a
+	// Still scoped to clusters/ - the applications under modules/ are a
 	// separate subject with its own describing table, and widening this to it
 	// is #405 rather than a side effect of changing how files are listed.
 	// authoredHere drops flux-system, which holds Flux's own generated install:
@@ -531,7 +533,7 @@ are the same silence from here.`, len(undescribed), strings.Join(undescribed, "\
 func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
 	declared := declaredPriorityClasses(t)
 	install, components := fluxObject(t, fluxInstallKind, fluxInstallName)
-	overlay := beside(install, "kustomization.yaml")
+	overlay := beside(install, applications.Kustomization)
 
 	// The generated install, as bootstrap wrote it.
 	type deployment struct {

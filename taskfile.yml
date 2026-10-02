@@ -534,11 +534,10 @@ tasks:
       # Every directory a site's Flux can be pointed at: the core, and each
       # site's own, which reaches the core through it.
       - for dir in clusters/*/; do [ -f "${dir}kustomization.yaml" ] || continue; kubectl kustomize "${dir}" > /dev/null; done
-      # The workload tier. Empty overlays still have to build: an environment
-      # with nothing in it is a valid state, and a kustomization that does not
-      # parse is not.
-      - kubectl kustomize environments/staging/applications > /dev/null
-      - kubectl kustomize environments/production/applications > /dev/null
+      # Every application's settings for every environment it has them for:
+      # each directory of an application's own, but its base, that holds a
+      # kustomization.
+      - for dir in modules/applications/*/*/; do [ -f "${dir}kustomization.yaml" ] || continue; [ "$(basename "$dir")" = base ] && continue; kubectl kustomize "${dir}" > /dev/null; done
       - rm -f config/management.placeholder.json
       # Every Go module under scripts/, discovered rather than listed.
       #

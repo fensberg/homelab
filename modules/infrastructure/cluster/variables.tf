@@ -91,13 +91,6 @@ locals {
 
   hypervisors = [for k in sort(keys(local.site.hypervisor.nodes)) : local.site.hypervisor.nodes[k]]
 
-  # The Services an enrolled device routes to, by host number in the site's
-  # service range. Written once for the site and the estate roots alike.
-  # Reached from the repository's top, as every file outside this root is: a
-  # plan against the as-built record runs a copy of this root at the same
-  # depth, and only a "../../" path still leads to the same file from there.
-  tunnel_routes = jsondecode(file("${path.module}/../../../management/tunnel-routes.json")).routes
-
   # Each hypervisor's datastores and hostname, by its key in the config
   # (node0), which is what a machine's placement names. They are facts about
   # the host, so they come from its config entry.
@@ -187,7 +180,7 @@ locals {
   #
   # WHAT IT CAPS. A /16 handing out a /24 per node is 256 nodes, and a /22 is
   # 1024 Services, of which Kubernetes keeps the bottom 64 for addresses chosen
-  # by hand (management/tunnel-routes.json).
+  # by hand, which is where an application's declared routes go.
   pod_cidr     = local.net.pod_cidr
   service_cidr = local.net.service_cidr
 

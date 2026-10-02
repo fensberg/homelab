@@ -164,12 +164,12 @@ spec:
 
       containers:
         - name: valheim
-          # A digest, not a tag - but production does not run this one. A release pins the image the
-          # fabricator built into its own overlay, by digest, and production
-          # runs the release clusters/site0/releases.yaml names - so this
-          # line only names the image the release replaces. The Steam build is
-          # pinned in scripts/versions.env, which is what the expediter moves
-          # when Valve publishes one.
+          # A digest, not a tag - but no site runs this one. A release pins
+          # the image the fabricator built, by digest, in this base, and a
+          # site runs the release its own block names - so this line only
+          # names the image the release replaces. The Steam build is pinned
+          # in ../pins.env, which is what the expediter moves when Valve
+          # publishes one.
           #
           # This carries no Renovate annotation, deliberately. The build that
           # makes this digest already knows it; asking a bot to watch this

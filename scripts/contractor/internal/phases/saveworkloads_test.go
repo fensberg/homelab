@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/details/applications"
 )
 
 // saveFixture is a repository with one workload's declaration, a tofu that
@@ -19,7 +19,7 @@ type saveFixture struct {
 	dir string
 }
 
-const aDeclaration = `{"before_teardown": {"what": "its data", "namespace": "apps", "selector": "app=thing",
+const aDeclaration = `{"before_teardown": {"what": "its data", "selector": "app=thing",
   "container": "saver", "command": ["/bin/save", "--now"]}}`
 
 func newSaveFixture(t *testing.T, declarations map[string]string, pods, readyz, execExit string) *saveFixture {
@@ -30,7 +30,7 @@ func newSaveFixture(t *testing.T, declarations map[string]string, pods, readyz, 
 		t.Fatal(err)
 	}
 	for workload, body := range declarations {
-		path := filepath.Join(root, filepath.FromSlash(config.ApplicationsDir), workload, config.ApplicationDeclaration)
+		path := filepath.Join(root, filepath.FromSlash(applications.Dir), workload, applications.Declaration)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -81,10 +81,10 @@ func TestARunningWorkloadIsAskedToBackUpAsItDeclared(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := f.calls()
-	if !strings.Contains(calls, "exec -n apps thing-abc -c saver -- /bin/save --now") {
+	if !strings.Contains(calls, "exec -n thing thing-abc -c saver -- /bin/save --now") {
 		t.Errorf("the backup was not run as declared:\n%s", calls)
 	}
-	if !strings.Contains(calls, "get pods -n apps -l app=thing") {
+	if !strings.Contains(calls, "get pods -n thing -l app=thing") {
 		t.Errorf("the workload's pods were not looked for by its own selector:\n%s", calls)
 	}
 	if strings.Contains(calls, "thing-old") {
@@ -100,7 +100,7 @@ func TestAFailedBackupRefusesTheTeardown(t *testing.T) {
 	if err == nil || errors.Is(err, errClusterUnreachable) {
 		t.Fatalf("a failed backup did not refuse the teardown: %v", err)
 	}
-	for _, want := range []string{"thing", "its data", "Nothing has been destroyed", "kubectl exec -n apps thing-abc -c saver"} {
+	for _, want := range []string{"thing", "its data", "Nothing has been destroyed", "kubectl exec -n thing thing-abc -c saver"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not say %q:\n%v", want, err)
 		}
@@ -146,12 +146,12 @@ func TestAClusterThatDoesNotAnswerIsNotAFailedBackup(t *testing.T) {
 // nothing to lose, and every workload that declares is asked.
 func TestADeclarationThatCannotBeReadIsARefusal(t *testing.T) {
 	// What makes a declaration unreadable is the reader's to test
-	// (config.Applications); what matters here is that nothing is run from
+	// (applications.Read); what matters here is that nothing is run from
 	// one.
 	for name, body := range map[string]string{
 		"not JSON":             `before_teardown: its data`,
-		"no command":           `{"before_teardown": {"what": "x", "namespace": "n", "selector": "a=b", "container": "c", "command": []}}`,
-		"a field nobody reads": `{"before_teardown": {"what": "x", "namespace": "n", "selector": "a=b", "container": "c", "command": ["s"]}, "extra": ["unread"]}`,
+		"no command":           `{"before_teardown": {"what": "x", "selector": "a=b", "container": "c", "command": []}}`,
+		"a field nobody reads": `{"before_teardown": {"what": "x", "selector": "a=b", "container": "c", "command": ["s"]}, "extra": ["unread"]}`,
 	} {
 		f := newSaveFixture(t, map[string]string{"thing": body}, onePodRunning, "0", "0")
 		err := SaveWorkloads(f.ctx)
@@ -163,12 +163,12 @@ func TestADeclarationThatCannotBeReadIsARefusal(t *testing.T) {
 		}
 	}
 
-	other := strings.ReplaceAll(strings.ReplaceAll(aDeclaration, "apps", "elsewhere"), "saver", "keeper")
+	other := strings.ReplaceAll(aDeclaration, "saver", "keeper")
 	f := newSaveFixture(t, map[string]string{"thing": aDeclaration, "another": other}, onePodRunning, "0", "0")
 	if err := SaveWorkloads(f.ctx); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"-n apps thing-abc -c saver", "-n elsewhere thing-abc -c keeper"} {
+	for _, want := range []string{"-n thing thing-abc -c saver", "-n another thing-abc -c keeper"} {
 		if !strings.Contains(f.calls(), want) {
 			t.Errorf("a declared workload was not asked (%s):\n%s", want, f.calls())
 		}

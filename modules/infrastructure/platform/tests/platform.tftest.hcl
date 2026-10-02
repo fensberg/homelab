@@ -16,6 +16,11 @@ variables {
   config_path    = "../cluster/tests/fixtures/valid.json"
   kubeconfig     = "not a kubeconfig"
   site_directory = false
+
+  # Applications written for the test, so what is asserted of the mechanism
+  # holds whichever applications the estate has. The fixture gives the site
+  # one of them, alpha, in staging.
+  applications_path = "../applications/tests/fixtures/declared"
 }
 
 run "the_platform_plans_from_the_clusters_access_alone" {
@@ -61,4 +66,82 @@ run "unknown_site_fails_its_precondition" {
   }
 
   expect_failures = [var.site]
+}
+
+# An application the site was given gets its namespace, every Secret it
+# declared - each key from the one source it named - and an identity for Flux
+# that may manage that namespace and nothing else. One the site was not given
+# gets nothing, though it is declared.
+#
+# Read through locals rather than by keyed address: a resource address with a
+# name in it is what a plan prints, and tests/go/repo refuses one written down.
+run "a_given_application_is_provided_what_it_declared" {
+  command = plan
+
+  assert {
+    condition     = output.applications == tolist(["alpha"]) && keys(kubernetes_namespace.application) == ["alpha"]
+    error_message = "the site's namespaces are not exactly those of the applications it was given"
+  }
+  assert {
+    condition = alltrue([
+      for name, ns in kubernetes_namespace.application :
+      ns.metadata[0].name == name && ns.metadata[0].labels["homelab.fensberg.com/workload"] == name && ns.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
+    ])
+    error_message = "an application's namespace is not named for it, is not marked as one, or is not held to the restricted pod security standard"
+  }
+  assert {
+    condition     = keys(kubernetes_secret.application) == ["alpha.alpha-backup", "alpha.alpha-keys"]
+    error_message = "the Secrets created are not exactly those the site's applications declared"
+  }
+  assert {
+    condition     = alltrue([for key, s in kubernetes_secret.application : "${s.metadata[0].namespace}.${s.metadata[0].name}" == key])
+    error_message = "a declared Secret is not created under its own name in its application's namespace"
+  }
+  assert {
+    condition = jsonencode({ for s in values(kubernetes_secret.application) : s.metadata[0].name => nonsensitive(s.data) }) == jsonencode({
+      alpha-backup = {
+        bucket   = "example-site0-staging"
+        endpoint = "https://fixture-account-id.r2.cloudflarestorage.com"
+        id       = "11112222333344445555666677778888"
+        key      = "fixture-backup-key"
+        secret   = "fixture-secret-access-key"
+      }
+      alpha-keys = {
+        kind = "s3"
+        user = "fixture-user"
+      }
+    })
+    error_message = "a key does not carry the value of the one source it named: a vault field, a generated one, a fact about the bucket of the environment the site runs the application in, or the value written in the declaration"
+  }
+  assert {
+    condition = alltrue([
+      for name, sa in kubernetes_service_account.application_reconciler :
+      sa.metadata[0].name == "application-${name}" && sa.metadata[0].namespace == "flux-system"
+    ]) && keys(kubernetes_service_account.application_reconciler) == ["alpha"]
+    error_message = "the identity Flux reconciles an application as is not where a Kustomization looks for it"
+  }
+  assert {
+    condition = alltrue([
+      for name, rb in kubernetes_role_binding.application_reconciler :
+      rb.metadata[0].namespace == name && rb.role_ref[0].kind == "ClusterRole" && rb.role_ref[0].name == "admin" &&
+      rb.subject[0].kind == "ServiceAccount" && rb.subject[0].name == "application-${name}" && rb.subject[0].namespace == "flux-system"
+    ]) && keys(kubernetes_role_binding.application_reconciler) == ["alpha"]
+    error_message = "an application's reconciler is not bound to its own namespace, and to that alone"
+  }
+  assert {
+    condition     = kubernetes_secret.cluster_vars.data.ADDRESS_FRONT_DOOR != "" && kubernetes_secret.cluster_vars.data.ADDRESS_SIDE_DOOR != ""
+    error_message = "a declared route's address is not handed to Flux"
+  }
+}
+
+# A site given an application the pinned commit does not have is refused,
+# rather than given a namespace with none of what the application needs.
+run "an_application_the_pinned_commit_lacks_is_refused" {
+  command = plan
+
+  variables {
+    applications_path = "../applications/tests/fixtures/other"
+  }
+
+  expect_failures = [kubernetes_namespace.application]
 }

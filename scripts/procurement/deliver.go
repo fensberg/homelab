@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -15,9 +14,11 @@ import (
 //
 // The fabricator builds and publishes; it never writes to the repository.
 // Procurement fetched the order, and it is procurement that brings the
-// finished work back: this moves one workload's pin in the production
-// releases file to the release just published, and the workflow around it
-// opens the pull request. Merging that pull request is letting the delivery
+// finished work back: this moves one application's pin, in one site's file,
+// to the release just published, and the workflow around it opens the pull
+// request. A site that does not run the application is left alone, and so is
+// one whose source says homelab.fensberg.com/delivery: hold - which is how a
+// site stays on the release it pins while another moves. Merging that pull request is letting the delivery
 // in, and that stays a person's decision - a delivery is never merged without
 // review (superintendent enforce-standing-order).
 //
@@ -27,8 +28,8 @@ import (
 // and nothing else.
 func deliver(args []string) int {
 	fs := flag.NewFlagSet("deliver", flag.ContinueOnError)
-	file := fs.String("releases", "", "the production releases file to move a pin in")
-	name := fs.String("name", "", "the workload whose pin moves: an OCIRepository's metadata.name")
+	file := fs.String("releases", "", "the site's applications file to move a pin in")
+	name := fs.String("name", "", "the application whose pin moves: an OCIRepository's metadata.name")
 	tag := fs.String("tag", "", "the release's tag, e.g. 1.0.15-6")
 	digest := fs.String("digest", "", "the release's digest, sha256:<64 hex>")
 	if err := fs.Parse(args); err != nil {
@@ -43,22 +44,40 @@ func deliver(args []string) int {
 		fmt.Fprintln(os.Stderr, "procurement deliver:", err)
 		return 1
 	}
-	moved, changed, err := movePin(string(body), *name, *tag, *digest)
+	moved, outcome, err := movePin(string(body), *name, *tag, *digest)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "procurement deliver:", err)
 		return 1
 	}
-	if !changed {
+	switch outcome {
+	case notRun:
+		fmt.Printf("%s is not run here\n", *name)
+	case held:
+		fmt.Printf("%s holds its pin here, so it is not moved\n", *name)
+	case alreadyThere:
 		fmt.Printf("%s is already at %s\n", *name, *tag)
-		return 0
+	case pinMoved:
+		if err := os.WriteFile(*file, []byte(moved), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "procurement deliver:", err)
+			return 1
+		}
+		fmt.Printf("moved %s to %s\n", *name, *tag)
 	}
-	if err := os.WriteFile(*file, []byte(moved), 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "procurement deliver:", err)
-		return 1
-	}
-	fmt.Printf("moved %s to %s\n", *name, *tag)
 	return 0
 }
+
+// What a delivery to one site's file came to.
+type delivery int
+
+const (
+	notRun       delivery = iota // the site has no source of that name
+	held                         // the source holds its pin
+	alreadyThere                 // the source already pins this release
+	pinMoved                     // the pin moved; the text changed
+)
+
+// holdsItsPin is the annotation by which a site keeps the release it pins.
+var holdsItsPin = regexp.MustCompile(`(?m)^\s+homelab\.fensberg\.com/delivery:\s*"?hold"?\s*$`)
 
 var (
 	pinTag    = regexp.MustCompile(`^(\s+tag:\s*)"[^"]*"(\s*)$`)
@@ -66,49 +85,58 @@ var (
 )
 
 // movePin rewrites the tag and digest of the OCIRepository called name, and
-// nothing else. changed is false when it already pins that release.
-func movePin(body, name, tag, digest string) (string, bool, error) {
+// nothing else. The text comes back unchanged unless the outcome is pinMoved.
+func movePin(body, name, tag, digest string) (string, delivery, error) {
 	if !release.Tag.MatchString(tag) {
-		return "", false, fmt.Errorf("%q is not a release tag (version-counter, e.g. 1.0.15-6)", tag)
+		return "", notRun, fmt.Errorf("%q is not a release tag (version-counter, e.g. 1.0.15-6)", tag)
 	}
 	if !release.Digest.MatchString(digest) {
-		return "", false, fmt.Errorf("%q is not a sha256 digest", digest)
+		return "", notRun, fmt.Errorf("%q is not a sha256 digest", digest)
 	}
 
 	docs := strings.Split(body, "\n---")
 	found := false
-	changed := false
+	outcome := notRun
 	for i, doc := range docs {
 		if !isSourceNamed(doc, name) {
 			continue
 		}
 		if found {
-			return "", false, fmt.Errorf("two OCIRepositories are called %s, so which pin to move is ambiguous", name)
+			return "", notRun, fmt.Errorf("two OCIRepositories are called %s, so which pin to move is ambiguous", name)
 		}
 		found = true
+		if holdsItsPin.MatchString(doc) {
+			outcome = held
+			continue
+		}
+		outcome = alreadyThere
 		lines := strings.Split(doc, "\n")
 		sawTag, sawDigest := false, false
 		for j, line := range lines {
 			if m := pinTag.FindStringSubmatch(line); m != nil {
 				next := m[1] + `"` + tag + `"` + m[2]
-				changed = changed || next != line
+				if next != line {
+					outcome = pinMoved
+				}
 				lines[j], sawTag = next, true
 			}
 			if m := pinDigest.FindStringSubmatch(line); m != nil {
 				next := m[1] + `"` + digest + `"` + m[2]
-				changed = changed || next != line
+				if next != line {
+					outcome = pinMoved
+				}
 				lines[j], sawDigest = next, true
 			}
 		}
 		if !sawTag || !sawDigest {
-			return "", false, fmt.Errorf("the source %s does not pin both a tag and a digest, so there is nothing to move", name)
+			return "", notRun, fmt.Errorf("the source %s does not pin both a tag and a digest, so there is nothing to move", name)
 		}
 		docs[i] = strings.Join(lines, "\n")
 	}
-	if !found {
-		return "", false, errors.New("no OCIRepository called " + name + " in the releases file")
+	if outcome != pinMoved {
+		return body, outcome, nil
 	}
-	return strings.Join(docs, "\n---"), changed, nil
+	return strings.Join(docs, "\n---"), pinMoved, nil
 }
 
 var (

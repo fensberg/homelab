@@ -10,21 +10,21 @@ import (
 	"strings"
 	"time"
 
+	"homelab/details/applications"
+	"homelab/details/flux"
 	"homelab/details/gitenv"
-	"homelab/details/workorders"
 )
 
-// judge decides whether a delivery brings production anything but a new Steam
-// build. It reads what the registry recorded about the two releases - the
-// commit each was built from - and compares those commits over the inputs
-// the work order says the release is made of. Nothing in the pull request
-// itself is trusted for this: a delivery's body or branch name could say
-// anything.
+// judge decides whether a delivery brings a site anything but a new build
+// from the application's supplier. It reads what the registry recorded about
+// the two releases - the commit each was built from - and compares those
+// commits over what the release is made of: the application's own directory,
+// and the estate's pins and orders. Nothing in the pull request itself is
+// trusted for this: a delivery's body or branch name could say anything.
 type judge struct {
 	repository string // owner/name
-	releases   string // clusters/site0/releases.yaml
-	orders     string // scripts/work-orders.json
-	pin        string // scripts/versions.env
+	orders     string // the estate's own work orders
+	pins       string // the estate's own pins
 	git        func(args ...string) (string, error)
 }
 
@@ -36,16 +36,14 @@ func gitRunner(args ...string) (string, error) {
 // registryBase is a variable so tests can serve the registry locally.
 var registryBase = "https://ghcr.io"
 
-func (j judge) steamOnly(base, head string) ([]string, error) {
-	before, err := j.pinsAt(base)
+// upstreamOnly lists everything a delivery to one site's file brings beyond
+// the supplier's build. site is that file.
+func (j judge) upstreamOnly(site, base, head string) ([]string, error) {
+	before, err := j.pinsAt(site, base)
 	if err != nil {
 		return nil, err
 	}
-	after, err := j.pinsAt(head)
-	if err != nil {
-		return nil, err
-	}
-	orders, err := j.ordersAt(head)
+	after, err := j.pinsAt(site, head)
 	if err != nil {
 		return nil, err
 	}
@@ -57,18 +55,13 @@ func (j judge) steamOnly(base, head string) ([]string, error) {
 			continue
 		}
 		if was.Digest == "" {
-			problems = append(problems, name+" has no release in production yet, so there is nothing to compare its first one with")
-			continue
-		}
-		order, ok := orders[name]
-		if !ok || order.Release == nil {
-			problems = append(problems, name+" has no work order that makes a release")
+			problems = append(problems, name+" has no release in "+site+" yet, so there is nothing to compare its first one with")
 			continue
 		}
 		pkg := strings.ToLower(j.repository) + "-" + name + "-release"
 		from, err := releaseRevision(pkg, was.Digest)
 		if err != nil {
-			return nil, fmt.Errorf("%s's release in production: %w", name, err)
+			return nil, fmt.Errorf("%s's release in %s: %w", name, site, err)
 		}
 		to, err := releaseRevision(pkg, now.Digest)
 		if err != nil {
@@ -77,7 +70,26 @@ func (j judge) steamOnly(base, head string) ([]string, error) {
 		if _, err := j.git("fetch", "--no-tags", "--depth=1", "origin", from, to); err != nil {
 			return nil, fmt.Errorf("fetching the commits %s's releases were built from: %w", name, err)
 		}
-		found, err := j.compare(from, to, order)
+		// What the application declared when the running release was built,
+		// which is the declaration nothing in the new release could have
+		// written.
+		declared, err := j.declaredAt(from)
+		if err != nil {
+			return nil, err
+		}
+		app, ok := declared[name]
+		switch {
+		case !ok:
+			problems = append(problems, name+" is not an application the release in "+site+" was built with")
+			continue
+		case app.Release == nil:
+			problems = append(problems, name+" does not declare how a release of it is made")
+			continue
+		case app.Upstream == nil:
+			problems = append(problems, name+" declares no upstream, so there is no supplier's build its release could differ by")
+			continue
+		}
+		found, err := j.compare(from, to, app)
 		if err != nil {
 			return nil, err
 		}
@@ -89,30 +101,31 @@ func (j judge) steamOnly(base, head string) ([]string, error) {
 }
 
 // compare is the rule itself, over two source commits. The image's inputs -
-// its build context and the pins file - may differ by the Steam build line
-// alone. The manifests it ships in - the overlay and the module - may differ
-// by comments alone, because a comment reaches no cluster. The work orders
+// its build context, the application's pins and the estate's - may differ by
+// the application's declared pin alone. Everything else in the application's
+// directory ships in the release, and may differ by comments alone, because a
+// comment reaches no cluster. Its declaration and the estate's work orders
 // may not differ at all.
-func (j judge) compare(from, to string, o workorders.Order) ([]string, error) {
+func (j judge) compare(from, to string, a applications.Application) ([]string, error) {
 	var problems []string
 
-	files, lines, err := j.diff(from, to, o.Context, j.pin)
+	files, lines, err := j.diff(from, to, a.Image(), a.PinsFile(), j.pins)
 	if err != nil {
 		return nil, err
 	}
 	for _, f := range files {
-		if f != j.pin {
-			problems = append(problems, "the image's build context changed: "+f)
+		if f != a.PinsFile() {
+			problems = append(problems, "the image's inputs changed: "+f)
 		}
 	}
-	if len(files) == 1 && files[0] == j.pin {
-		problems = append(problems, onlyTheSteamBuild(lines)...)
+	if len(files) == 1 && files[0] == a.PinsFile() {
+		problems = append(problems, onlyThePin(lines, a.Upstream.Pin)...)
 	}
 	if len(files) == 0 {
-		problems = append(problems, "the image's inputs did not change, so this is not a new Steam build")
+		problems = append(problems, "the image's inputs did not change, so this is not a new build from its supplier")
 	}
 
-	_, lines, err = j.diff(from, to, o.Release.Overlay, o.Release.Module)
+	_, lines, err = j.diff(from, to, a.Root, exclude+a.Image(), exclude+a.PinsFile(), exclude+a.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -122,15 +135,18 @@ func (j judge) compare(from, to string, o workorders.Order) ([]string, error) {
 		}
 	}
 
-	files, _, err = j.diff(from, to, j.orders)
+	files, _, err = j.diff(from, to, a.Path, j.orders)
 	if err != nil {
 		return nil, err
 	}
 	if len(files) > 0 {
-		problems = append(problems, "the work orders changed")
+		problems = append(problems, "what says how it is built and released changed: "+strings.Join(files, ", "))
 	}
 	return problems, nil
 }
+
+// exclude marks a path the diff leaves out.
+const exclude = "!"
 
 // commentOrBlank is a changed YAML line that reaches no cluster.
 var commentOrBlank = regexp.MustCompile(`^[+-]\s*(#.*)?$`)
@@ -140,7 +156,11 @@ func (j judge) diff(from, to string, paths ...string) ([]string, []string, error
 	// scripts/superintendent, where a bare pathspec would name nothing.
 	top := make([]string, len(paths))
 	for i, p := range paths {
-		top[i] = ":(top)" + p
+		if rest, excluded := strings.CutPrefix(p, exclude); excluded {
+			top[i] = ":(top,exclude)" + rest
+		} else {
+			top[i] = ":(top)" + p
+		}
 	}
 	paths = top
 	args := append([]string{"diff", "--name-only", from, to, "--"}, paths...)
@@ -158,16 +178,16 @@ func (j judge) diff(from, to string, paths ...string) ([]string, []string, error
 
 type pin struct{ Tag, Digest string }
 
-// pinsAt reads each release's pin from the releases file at a commit.
-func (j judge) pinsAt(commit string) (map[string]pin, error) {
-	body, err := j.git("show", commit+":"+j.releases)
+// pinsAt reads each release's pin from a site's file at a commit.
+func (j judge) pinsAt(site, commit string) (map[string]pin, error) {
+	body, err := j.git("show", commit+":"+site)
 	if err != nil {
-		return nil, fmt.Errorf("reading %s at %s: %w", j.releases, commit, err)
+		return nil, fmt.Errorf("reading %s at %s: %w", site, commit, err)
 	}
 	return releasePins(body)
 }
 
-// releasePins reads the OCIRepository documents of the releases file: each
+// releasePins reads the OCIRepository documents of a site's file: each
 // one's name, and the tag and digest it pins. Read line by line rather than
 // through a YAML library, because this module takes no dependencies; the
 // file's shape is this repository's own, and a document it cannot read
@@ -203,28 +223,41 @@ func releasePins(body string) (map[string]pin, error) {
 				p.Digest = value
 			}
 		}
-		if kind == "OCIRepository" && name != "" {
+		if kind == flux.OCIRepository && name != "" {
 			out[name] = p
 		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("the releases file pins no release")
+		return nil, fmt.Errorf("the site's file pins no release")
 	}
 	return out, nil
 }
 
-func (j judge) ordersAt(commit string) (map[string]workorders.Order, error) {
-	body, err := j.git("show", commit+":"+j.orders)
+// declaredAt reads every application's declaration as it stood at a commit,
+// by name. The same reading every other program makes of the working tree
+// (homelab/details/applications), made of a commit instead: a declaration
+// that does not parse there is an error, never an application with nothing
+// to say.
+func (j judge) declaredAt(commit string) (map[string]applications.Application, error) {
+	// ls-tree of a directory that is not there lists nothing and succeeds,
+	// which is a repository with no applications.
+	listed, err := j.git("ls-tree", "-d", "--name-only", "--full-tree", commit, applications.Dir+"/")
 	if err != nil {
-		return nil, fmt.Errorf("reading %s at %s: %w", j.orders, commit, err)
+		return nil, fmt.Errorf("listing the applications at %s: %w", commit, err)
 	}
-	orders, err := workorders.Parse([]byte(body))
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]workorders.Order{}
-	for _, o := range orders {
-		out[o.Name] = o
+	out := map[string]applications.Application{}
+	for _, dir := range nonEmptyLines(listed) {
+		name := dir[strings.LastIndex(dir, "/")+1:]
+		rel := applications.Dir + "/" + name + "/" + applications.Declaration
+		body, err := j.git("show", commit+":"+rel)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s at %s: %w", rel, commit, err)
+		}
+		a, err := applications.Parse(name, []byte(body))
+		if err != nil {
+			return nil, err
+		}
+		out[name] = a
 	}
 	return out, nil
 }

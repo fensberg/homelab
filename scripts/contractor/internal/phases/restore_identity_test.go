@@ -45,16 +45,3 @@ func TestRestoreReadsTheIdentityFromAPipe(t *testing.T) {
 		t.Fatalf("got %q, %v", got, err)
 	}
 }
-
-// What the contractor generates for a site is the site's, so it is written to
-// the site's own vault - never a -shared one, which the lawyer writes and
-// other readers trust, and never the estate's, which no site can see.
-func TestGeneratedSecretsLandInTheSitesOwnVault(t *testing.T) {
-	for name, ref := range map[string]string{
-		"world backup key": WorldBackupKeyRef("site0"),
-	} {
-		if !strings.HasPrefix(ref, "op://site0/") {
-			t.Errorf("the %s is written to %s, not the site's own vault", name, ref)
-		}
-	}
-}
