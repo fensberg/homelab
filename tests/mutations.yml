@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 191
+floor: 192
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1109,6 +1109,17 @@ mutations:
       repository lives, and looks for that name everywhere else. Given an
       owner whose name is all over the repository, it has to find it; a guard
       that found nothing then would find nothing for the real owner either.
+
+  - guard: TestTheWorkstationsConnectorIsHeldToItsOwnSSHPort
+    file: workstation/tunnel.sh
+    find: "\t\tip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/3 } reject"
+    replace: "\t\t# nothing refused here"
+    mentions: "never refuses the private ranges"
+    why: >
+      The connector forwards wherever the account's routes send it, and the
+      account is the vendor's computer. Without this line the connector, a
+      process inside the house, can open the router, the hypervisor and the
+      overlay on the vendor's edge ports, for anybody who can add a route.
 
   - guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
     file: .github/workflows/fabricator.yml
@@ -2840,6 +2851,8 @@ unprovable:
   - test: TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress
     reason: table
   - test: TestUnprovedKeysFindsAKeyThePatrolDoesNotProve
+    reason: table
+  - test: TestLockFaultsFindsEachWayALockDoesNotHold
     reason: table
   - test: TestUnversionedSitesWantsALineForEverySiteAndNoOther
     reason: table

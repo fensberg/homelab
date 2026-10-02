@@ -118,3 +118,56 @@ run "a_site_name_with_nothing_to_name_a_bucket_by_fails" {
 
   expect_failures = [output.grants]
 }
+
+# The workstation has a tunnel of its own with one route - itself - and an
+# enrolled device sends that address to Cloudflare beside every site's. Its
+# token is granted under a name that is no site's.
+run "the_workstation_has_a_tunnel_of_its_own_with_one_route" {
+  command = plan
+
+  assert {
+    condition     = [for m in module.workstation : m.route] == ["192.0.2.50/32"]
+    error_message = "the workstation's tunnel does not route the workstation's own address, and only that"
+  }
+
+  assert {
+    condition     = contains([for t in cloudflare_zero_trust_device_default_profile.estate.include : t.address], "192.0.2.50/32")
+    error_message = "an enrolled device does not send the workstation's address to Cloudflare, so the route leads nowhere from a device"
+  }
+
+  assert {
+    condition     = [for m in module.workstation : m.name] == ["example-workstation"]
+    error_message = "the workstation's tunnel is not named for the estate and the workstation"
+  }
+
+  assert {
+    condition     = output.grants["workstation"].tunnel.provider == "cloudflare" && !contains(keys(output.grants["workstation"]), "object_storage")
+    error_message = "the workstation is not granted its tunnel, or is granted more than its tunnel"
+  }
+}
+
+# An estate that gives the workstation no address has no such tunnel, and
+# grants nothing under its name.
+run "an_estate_with_no_workstation_has_no_tunnel_for_one" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/two-plots.json"
+  }
+
+  assert {
+    condition     = length(module.workstation) == 0 && !contains(keys(output.grants), "workstation")
+    error_message = "a tunnel was made, or a grant written, for a workstation the estate does not have"
+  }
+}
+
+# What the estate's config holds for the workstation has to be one address.
+run "a_workstation_address_that_is_not_one_is_refused" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/workstation-not-an-address.json"
+  }
+
+  expect_failures = [output.grants]
+}

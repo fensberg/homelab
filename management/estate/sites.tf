@@ -32,11 +32,31 @@ module "site" {
   r2_bucket_write = one(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_write.result).id
 }
 
-# Read by the lawyer after an apply, and written into each site's -shared
-# vault. Sensitive: it is every credential the estate grants.
+# Read by the lawyer after an apply, and written into each grantee's -shared
+# vault: each site's, and the workstation's. Sensitive: it is every credential
+# the estate grants.
 output "grants" {
   sensitive = true
-  value     = { for k, m in module.site : k => m.grants }
+  value = merge(
+    { for k, m in module.site : k => m.grants },
+    # The workstation's tunnel, granted as a site's is: the lawyer writes it
+    # to <name>-shared, which no site's token can read.
+    { for m in module.workstation : local.workstation_grant => m.grants },
+  )
+
+  # The workstation's grant is written under its own name, into a vault of
+  # that name. A plot keyed the same would have its site's grants replaced.
+  precondition {
+    condition     = !contains(keys(local.sites), local.workstation_grant)
+    error_message = "A plot is keyed \"${local.workstation_grant}\", which is the name the workstation's tunnel is granted under."
+  }
+
+  # One address, or none. A range would route a network into a tunnel whose
+  # connector may open one port of one machine.
+  precondition {
+    condition     = local.workstation_address == "" || (can(cidrhost("${local.workstation_address}/32", 0)) && !strcontains(local.workstation_address, "/") && !strcontains(local.workstation_address, ":"))
+    error_message = "The workstation's address in the estate's config is not one IPv4 address, so there is nothing to route to it."
+  }
 
   # A plot with no site in the sites' template has no addresses, so its tunnel
   # would route nothing while looking granted.

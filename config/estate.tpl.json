@@ -17,6 +17,10 @@
     "secret_access_key": "{{ op://estate/state/secret_access_key }}"
   },
 
+  "workstation": {
+    "address": "198.18.0.1"
+  },
+
   "plots": {
     "site0": {
       "name": "{{ op://estate/site0/name }}"
