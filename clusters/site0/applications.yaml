@@ -15,7 +15,7 @@
 # diff here reads as 1.0.15-1 -> 1.0.15-2. The digest is what Flux trusts; the
 # tag is for people. Two sites pin their own, so two sites can run two
 # versions: procurement delivers a new release to every site whose source
-# does not say homelab.fensberg.com/delivery: hold.
+# does not say homelab/delivery: hold.
 #
 # An application that requires another (requires, in its application.json)
 # depends on that one's Kustomization as well, so it starts second; a site

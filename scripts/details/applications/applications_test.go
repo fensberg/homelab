@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"homelab/details/flux"
+	"homelab/details/repopath"
 )
 
 func declare(t *testing.T, root, app, body string) {
@@ -288,5 +291,103 @@ func TestReadManifestReadsWhatTheGuardsWrote(t *testing.T) {
 	}
 	if err := ReadManifest("base/thing.yaml", &docs); err == nil {
 		t.Error("a manifest that is not JSON was read")
+	}
+}
+
+// A site's work is what its site file declares and whatever lands in an
+// application's own namespace. Everything else in the cluster is the core.
+func TestSiteWorkIsWhatTheSiteFileDeclares(t *testing.T) {
+	root := t.TempDir()
+	if w, err := SiteWork(root, "site7"); err != nil || len(w.Objects) != 0 || len(w.Namespaces) != 0 {
+		t.Fatalf("a site with no site file: %+v, %v", w, err)
+	}
+	const body = `# A site file.
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: alpha
+  namespace: flux-system
+spec:
+  url: oci://registry.invalid/alpha
+  ref:
+    name: not-its-name
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  # A comment between the keys.
+  name: alpha-runs
+  namespace: flux-system
+spec:
+  sourceRef:
+    kind: OCIRepository
+    name: alpha
+  path: ./` + Dir + `/alpha/production
+  targetNamespace: alpha
+`
+	path := filepath.Join(root, filepath.FromSlash(SiteFilePath("site7")))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w, err := SiteWork(root, "site7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		kind, namespace, object string
+		want                    bool
+	}{
+		"the release the file declares":        {flux.OCIRepository, "flux-system", "alpha", true},
+		"the Kustomization the file declares":  {flux.Kustomization, "flux-system", "alpha-runs", true},
+		"something in the application's place": {flux.HelmRelease, "alpha", "anything", true},
+		"the same name, another kind":          {flux.Kustomization, "flux-system", "alpha", false},
+		"the same name, another namespace":     {flux.OCIRepository, "elsewhere", "alpha", false},
+		"a name from inside a spec":            {flux.OCIRepository, "flux-system", "not-its-name", false},
+		"the core":                             {flux.Kustomization, "flux-system", "infra-controllers", false},
+		"a namespace that is no application's": {flux.HelmRelease, "cnpg-system", "cnpg", false},
+	} {
+		if got := w.Holds(tc.kind, tc.namespace, tc.object); got != tc.want {
+			t.Errorf("%s: held is %v", name, got)
+		}
+	}
+
+	if _, err := ParseDeclared("a/site.yaml", "kind: Kustomization\nmetadata:\n  namespace: flux-system\n"); err == nil || !strings.Contains(err.Error(), "with no name") {
+		t.Errorf("a declared object with no name: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(body+strings.Replace(body, "alpha-runs", "alpha-again", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if w, err := SiteWork(root, "site7"); err == nil {
+		t.Errorf("a site file giving an application twice was read as %+v", w)
+	}
+}
+
+// The repository's own site files read, and every site that was given
+// applications declares an object for each.
+func TestEverySitesWorkReads(t *testing.T) {
+	root, err := repopath.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sites, err := os.ReadDir(filepath.Join(root, SitesDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sites {
+		if !s.IsDir() {
+			continue
+		}
+		w, err := SiteWork(root, s.Name())
+		if err != nil {
+			t.Errorf("%s: %v", s.Name(), err)
+			continue
+		}
+		if len(w.Objects) < len(w.Namespaces) {
+			t.Errorf("%s runs %d application(s) and its site file declares %d object(s)", s.Name(), len(w.Namespaces), len(w.Objects))
+		}
 	}
 }

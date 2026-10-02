@@ -991,6 +991,21 @@ egress:
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
 
+  - job: security-patrol.yml/keys
+    policy: block
+    reason: >-
+      Mints a token with each App key the workflows hold and throws it away,
+      so a key that has stopped working is found within the hour (#527).
+      GitHub's API for the tokens, and the Go toolchain for the clerk's own
+      sign-in.
+    hosts:
+      - api.github.com:443
+      - github.com:443
+      - go.dev:443
+      - objects.githubusercontent.com:443
+      - release-assets.githubusercontent.com:443
+      - storage.googleapis.com:443
+
   - job: sensitive-paths.yml/tripwire
     policy: block
     hosts:

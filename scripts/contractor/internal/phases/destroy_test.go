@@ -1,6 +1,8 @@
 package phases
 
 import (
+	"bytes"
+	"errors"
 	"homelab/contractor/steps"
 	"os"
 	"strings"
@@ -243,3 +245,43 @@ func TestAPipeIsNotAHumanToAsk(t *testing.T) {
 			"never fire and a teardown would never ask anybody anything")
 	}
 }
+
+// A destroy is confirmed by the site's real name, read and never passed, and
+// neither the name nor a wrong answer is printed (#605).
+func TestADestroyIsConfirmedByTheSitesRealName(t *testing.T) {
+	const name = "Harbour Yard"
+	for label, tc := range map[string]struct {
+		vault, typed, want string
+	}{
+		"the name":                        {name, name + "\n", ""},
+		"the name, from a pipe":           {name, name, ""},
+		"the name, from another terminal": {name, name + "\r\n", ""},
+		"the key":                         {name, "site0\n", "not this site's name"},
+		"another case":                    {name, "harbour yard\n", "not this site's name"},
+		"a space after it":                {name, name + " \n", "not this site's name"},
+		"nothing":                         {name, "\n", "no name was given"},
+		"nobody there":                    {name, "", "no name was given"},
+		"a vault with no name":            {"", name + "\n", "holds no name"},
+		"a vault with a blank name":       {"  ", "  \n", "holds no name"},
+	} {
+		var prompt bytes.Buffer
+		err := ConfirmByName(tc.vault, strings.NewReader(tc.typed), &prompt)
+		if (tc.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tc.want)) {
+			t.Errorf("%s: got %v, want %q", label, err, tc.want)
+		}
+		said := prompt.String()
+		if err != nil {
+			said += err.Error()
+		}
+		if strings.Contains(said, name) || (tc.typed != "" && strings.TrimSpace(tc.typed) != "" && tc.want != "" && strings.Contains(said, strings.TrimSpace(tc.typed))) {
+			t.Errorf("%s: the name or the answer was printed: %q", label, said)
+		}
+	}
+	if err := ConfirmByName(name, failingReader{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		t.Errorf("an input that fails: %v", err)
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("the terminal went away") }

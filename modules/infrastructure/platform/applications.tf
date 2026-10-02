@@ -66,6 +66,13 @@ resource "kubernetes_namespace" "application" {
       # What marks a namespace as an application's. A policy that has to
       # reach whatever applications the site runs selects on this, rather
       # than on any one of their names.
+      "homelab/workload" = each.key
+      # The same, under the key it had: one that carried the name of the
+      # organisation this repository was first built for, which a fork would
+      # have inherited as its own (#540). Kept until every site runs a
+      # release that sets the key above, because the policy that selects on
+      # it is reconciled from main and a namespace is labelled by a release;
+      # then this line and the selector that reads it go together.
       "homelab.fensberg.com/workload" = each.key
 
       # Restricted: no privilege escalation, no host namespaces, a non-root

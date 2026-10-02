@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 189
+floor: 191
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1088,6 +1088,27 @@ mutations:
       the next step somebody adds there that runs a file from the workspace
       is a branch's own code holding that token, which is what the split
       from the plan job took away.
+
+  - guard: TestEveryAppKeyAWorkflowHoldsIsProvedByThePatrol
+    file: .github/workflows/security-patrol.yml
+    find: "          CLERK_BOT_PRIVATE_KEY: ${{ secrets.CLERK_BOT_PRIVATE_KEY }}"
+    replace: '          CLERK_BOT_PRIVATE_KEY: ""'
+    mentions: "does not prove it still mints a token"
+    why: >
+      A key is used only when there is something to do with it, so one that
+      has stopped working is found on the day it is needed. The patrol proves
+      each by using it; a key it is not handed is a key nobody is watching.
+
+  - guard: TestTheOwnersNameIsOnlyInTheRepositorysAddress
+    file: clusters/core/flux-system/gotk-sync.yaml
+    find: "  url: https://github.com/fensberg/homelab"
+    replace: "  url: https://github.com/homelab/estate"
+    mentions: "carries the owner's name outside the repository's own address"
+    why: >
+      The guard reads who the owner is from the one line that says where the
+      repository lives, and looks for that name everywhere else. Given an
+      owner whose name is all over the repository, it has to find it; a guard
+      that found nothing then would find nothing for the real owner either.
 
   - guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
     file: .github/workflows/fabricator.yml
@@ -2815,6 +2836,10 @@ unprovable:
   - test: TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn
     reason: table
   - test: TestUnreleasedModulesRefusesEveryWayAroundTheRelease
+    reason: table
+  - test: TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress
+    reason: table
+  - test: TestUnprovedKeysFindsAKeyThePatrolDoesNotProve
     reason: table
   - test: TestUnversionedSitesWantsALineForEverySiteAndNoOther
     reason: table

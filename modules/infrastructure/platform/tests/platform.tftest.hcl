@@ -85,7 +85,7 @@ run "a_given_application_is_provided_what_it_declared" {
   assert {
     condition = alltrue([
       for name, ns in kubernetes_namespace.application :
-      ns.metadata[0].name == name && ns.metadata[0].labels["homelab.fensberg.com/workload"] == name && ns.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
+      ns.metadata[0].name == name && ns.metadata[0].labels["homelab/workload"] == name && ns.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
     ])
     error_message = "an application's namespace is not named for it, is not marked as one, or is not held to the restricted pod security standard"
   }

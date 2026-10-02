@@ -257,7 +257,7 @@ func TestChartSourcesAreApproved(t *testing.T) {
 		for _, m := range urlLine.FindAllStringSubmatch(string(body), -1) {
 			u := m[1]
 			// The Flux sync source is this repository itself, not a supplier.
-			if strings.Contains(u, "fensberg/homelab") {
+			if strings.Contains(u, ownAddress(t)) {
 				continue
 			}
 			// And so are its releases: RELEASE_REPOSITORY is derived from this

@@ -1,9 +1,11 @@
 package repo
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -228,5 +230,133 @@ func TestZoneNamesUseAPlaceholder(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("no untrusted zone is named in any fixture or test, so this test proves nothing.\n\n" +
 			"Either the zones moved or the shapes they are written in changed.")
+	}
+}
+
+// The one place the repository says where it lives is the source its own
+// Flux reads it from, found by what it declares and not by where it is. A
+// fork changes that line and nothing else to become its own repository.
+var ownURL = regexp.MustCompile(`(?m)^\s+url:\s*https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?\s*$`)
+
+// ownAddress is the repository's own owner/name, read from that line.
+func ownAddress(t *testing.T) string {
+	t.Helper()
+	owner, name := ownOwnerAndName(t)
+	return owner + "/" + name
+}
+
+func ownOwnerAndName(t *testing.T) (owner, name string) {
+	t.Helper()
+	path, body := fluxObject(t, "GitRepository", "flux-system")
+	m := ownURL.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("%s names no repository on GitHub, so the owner whose name this looks for is unknown", path)
+	}
+	return m[1], m[2]
+}
+
+// The owner's name is in the repository only as part of the repository's own
+// address (#540).
+//
+// WHY THIS EXISTS. A fork changes where it lives - its address, its images,
+// its licence - and expects that to be all. The owner's name anywhere else is
+// a name a fork inherits as its own without knowing: it was in a label key on
+// every application's namespace, in an annotation a program read, and in the
+// name every code-scanning finding was filed under. The check that searched
+// for real names read them from the vault, so it ran only against a live
+// estate, and none of those was ever seen.
+//
+// This needs no name written down. The repository says where it lives in one
+// line, and the owner named there may appear elsewhere only as that address -
+// owner/name, as a URL or a registry path has it - or in a place that says
+// why it carries it. Anything else is refused, in every tracked file.
+func TestTheOwnersNameIsOnlyInTheRepositorysAddress(t *testing.T) {
+	owner, name := ownOwnerAndName(t)
+	for _, p := range ownerOutsideItsAddress(owner, name, readTracked(t), ownerBelongs, formerKeys(owner)) {
+		t.Error(p)
+	}
+}
+
+// ownerBelongs is where the owner's name is meant to be, each with the reason
+// a fork would expect to change it there. A prefix ending in a slash is a
+// directory.
+var ownerBelongs = map[string]string{
+	"LICENSE":                  "the copyright holder, which a fork replaces with its own",
+	"docs/epochs/":             "the record of what happened, which quotes the accounts and Apps it happened to",
+	"commitlint.config.js":     "the App's account, in the rule that reads who co-authored a commit",
+	"tests/js/unit/commitlint": "the same account, in that rule's tests",
+}
+
+// formerKeys is the one thing still in the cluster under the owner's name:
+// the label key applications' namespaces had. It is kept beside the neutral
+// one until every site runs a release that sets the neutral one - the
+// tunnel's policy is reconciled from main and a namespace is labelled by a
+// release, and between the two a tunnelled route would be refused. Built
+// from the owner, so the name is not written here either; wherever the key
+// is still set or selected on, it is this exact key and nothing looser.
+// This goes when the label does.
+func formerKeys(owner string) []string {
+	return []string{"homelab." + strings.ToLower(owner) + ".com/workload"}
+}
+
+func readTracked(t *testing.T) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, rel := range trackedFiles(t) {
+		out[rel] = readRepoFile(t, rel)
+	}
+	return out
+}
+
+// ownerOutsideItsAddress is every line that carries the owner's name other
+// than as owner/name, outside the places that say why they carry it.
+func ownerOutsideItsAddress(owner, name string, files map[string]string, belongs map[string]string, former []string) []string {
+	lower := strings.ToLower(owner)
+	address := lower + "/" + strings.ToLower(name)
+	var out []string
+	for rel, body := range files {
+		exempt := false
+		for place := range belongs {
+			if rel == place || strings.HasPrefix(rel, place) {
+				exempt = true
+			}
+		}
+		if exempt || !strings.Contains(strings.ToLower(body), lower) {
+			continue
+		}
+		for i, line := range strings.Split(body, "\n") {
+			l := strings.ReplaceAll(strings.ToLower(line), address, "")
+			for _, key := range former {
+				l = strings.ReplaceAll(l, key, "")
+			}
+			if strings.Contains(l, lower) {
+				out = append(out, fmt.Sprintf("%s:%d carries the owner's name outside the repository's own address. A fork would inherit it as its own: use a name that is nobody's, or read the owner from the run.", rel, i+1))
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress(t *testing.T) {
+	belongs := map[string]string{"NOTICE": "the holder", "history/": "what happened"}
+	for label, tc := range map[string]struct {
+		rel, body string
+		found     bool
+	}{
+		"the address":                  {"a.yaml", "url: https://github.com/Acme/Yard\n", false},
+		"a registry path":              {"a.yaml", "image: ghcr.io/acme/yard-thing@sha256:abc\n", false},
+		"a label key":                  {"a.tf", `"yard.acme.com/workload" = x`, true},
+		"a product name":               {"a.go", `"name": "Acme Clerk"`, true},
+		"the address and the name":     {"a.md", "acme/yard is run by Acme\n", true},
+		"another repository of theirs": {"a.yaml", "url: https://github.com/acme/other\n", true},
+		"a place that says why":        {"NOTICE", "Copyright Acme\n", false},
+		"under a place that says why":  {"history/2026.md", "the acme-bot account\n", false},
+		"nothing of theirs":            {"a.go", "package a\n", false},
+	} {
+		got := ownerOutsideItsAddress("Acme", "Yard", map[string]string{tc.rel: tc.body}, belongs, []string{"old.acme.example/thing"})
+		if (len(got) > 0) != tc.found {
+			t.Errorf("%s: %v", label, got)
+		}
 	}
 }

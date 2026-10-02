@@ -1002,7 +1002,7 @@ func deliverySource(name, tag string, digest byte, annotations string) string {
 // touched. That is how two sites run two versions.
 func TestADeliveryGoesToTheSitesThatFollowAndNoOther(t *testing.T) {
 	heavy(t, "runs the delivery step with the real procurement verb, once per site file")
-	const hold = "\n  annotations:\n    homelab.fensberg.com/delivery: hold"
+	const hold = "\n  annotations:\n    homelab/delivery: hold"
 	f := newReleaseDelivery(t, map[string]string{
 		"north": deliverySource("thing", "2.4.1-2", 'a', ""),
 		"west":  deliverySource("other", "1.0.0-1", 'c', "") + deliverySource("thing", "2.4.0-9", 'a', ""),

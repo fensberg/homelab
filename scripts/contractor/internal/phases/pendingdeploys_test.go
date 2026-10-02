@@ -31,7 +31,7 @@ func TestActiveRunsAreReadFromTheAPI(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	restore := pointAt(t, srv.URL, "fensberg/homelab")
+	restore := pointAt(t, srv.URL, "example/yard")
 	defer restore()
 
 	runs, err := fetchActiveRuns()
@@ -118,9 +118,9 @@ func TestARunWhoseJobsCannotBeReadIsStillPending(t *testing.T) {
 }
 
 func TestRepoSlugPrefersTheEnvironment(t *testing.T) {
-	t.Setenv("GITHUB_REPOSITORY", "fensberg/homelab")
+	t.Setenv("GITHUB_REPOSITORY", "example/yard")
 	got, err := repoSlug()
-	if err != nil || got != "fensberg/homelab" {
+	if err != nil || got != "example/yard" {
 		t.Errorf("got %q, %v", got, err)
 	}
 }
@@ -173,7 +173,7 @@ func TestARunTheListingCallsPendingButGitHubHasFinishedIsDropped(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	restore := pointAt(t, srv.URL, "fensberg/homelab")
+	restore := pointAt(t, srv.URL, "example/yard")
 	defer restore()
 
 	runs, err := fetchActiveRuns()
@@ -214,7 +214,7 @@ func TestARunWhoseStatusCannotBeConfirmedIsKeptAndFlagged(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	restore := pointAt(t, srv.URL, "fensberg/homelab")
+	restore := pointAt(t, srv.URL, "example/yard")
 	defer restore()
 
 	runs, err := fetchActiveRuns()

@@ -1,9 +1,10 @@
 # Epoch 02 — Abstraction
 
 - **Tier / path:** `modules/`
-- **Branch:** `epoch/02-abstraction`
-- **PR:** —
-- **Status:** In progress
+- **Branch:** none since epoch branches were retired; each piece was its own
+  pull request against `main`
+- **PR:** many; the last of them #606, #611, #612, #613 and the closeout
+- **Status:** Complete, 2026-10-02
 
 ## Goal
 
@@ -1664,7 +1665,7 @@ no state, that:
 It holds no access rules. Who may reach what is epoch 09's, and refers to the
 plan's names.
 
-**Built, 2026-09-27; two pieces still to land.** `modules/infrastructure/address-plan`
+**Built, 2026-09-27; the two pieces left then landed the day after.** `modules/infrastructure/address-plan`
 computes every site's ranges, machines (address, VM id, name, placement),
 template VM ids, the state database's endpoint, the SDN identities, the slug,
 and - once a domain is given - every private name and alias. It is the first
@@ -1898,8 +1899,9 @@ undeclared and any declaration that no longer matches.
   is now one function in `homelab/details` (`repopath.RootOrFail`,
   `asbuilt.Exec`, `envfile`, `ghapi`, `gitenv`, `files`), and `go: []` is the
   registry's honest state.
-- **OpenTofu** waits for the module move: until the cluster root is a module,
-  every resource is outside one, and the rule has nothing to distinguish.
+- **OpenTofu** waited for the module move, and came with it on 2026-10-01:
+  once the roots were modules, a resource written into a root is one written
+  for a single site, and `custom_blocks_test.go` refuses it.
 
 ### Considered, and deliberately not made criteria
 
@@ -2151,9 +2153,17 @@ since the last. And each site runs the release its line names.
   default for where modules come from, a site with no line and a line that
   is no site's.
 
-Still to build: the third stage has each application's version beside the
-platform's and Renovate opening the promotion; until then moving a site is a
-hand-written one-line pull request.
+**The criterion is met by the first two, and the epoch closes on them.**
+Each site names the version it runs, a change reaches one site by moving
+that site's line, and a guard refuses a root that takes its modules any
+other way. The third and fourth - Renovate opening the promotion with each
+application's version beside the platform's, and signing - make moving a
+line easier and its provenance checkable; they are carried by epoch 08,
+where the fabricator and the delivery job they replace already live. Until
+then moving a site is a hand-written one-line pull request, and nothing
+checks that the version on a line is the one the registry holds under that
+digest: the digest is what runs, so what is missing is proof of where it
+came from, which signing gives.
 
 - **What a release holds is `modules/infrastructure/release.json`**, and it
   cannot go stale: `homelab/details/platform` reads what the modules reach
@@ -2181,31 +2191,16 @@ exists, and that is the criterion now.
 
 ### Adding a node to a site needs no commit
 
-Added 2026-10-02, replacing "a site without a commit". Today a node is a
-block in `config/management.tpl.json`, so adding one is a commit; and
-machines are dealt round-robin over the node list, so adding one moves a
-running control-plane member with nothing removing it from etcd first.
-
-**The bar:** a node is adopted from the site's vault with no commit, and
-whatever the adoption moves is moved safely.
-
-Agreed so far (2026-10-02):
-
-- **The nodes a site has are checked, never declared and never guessed.**
-  The foreman remembers nothing: it asks the site which nodes are there and
-  assigns work accordingly. One node up is a site with one node; two up is a
-  site with two.
-- **Machines may move when a node is adopted**, so the work is in making a
-  move safe - cordon, drain, remove the etcd member, replace, wait for
-  health - and not in preventing one. That is the same work as taking a node
-  out, and it is built with it, in the epoch that handles drain, cordon and
-  remove.
-- **A new node gets a default share of workers.**
-- **Not the lawyer's.** The lawyer is the estate's; a node is raw capacity
-  inside one site and nothing else.
-
-Not designed yet: what a converge does when adoption would move a running
-machine before a safe move exists, and who joins a new server to its site.
+**Moved to epoch 05 on 2026-10-02, restated.** Added that day in place of "a
+site without a commit", and designed far enough to see what it is: no
+commit is the smaller half. What is wanted is no manual step at all after
+the vault entry - credentials go in the vault and the site takes up the
+capacity - and what that needs is a safe way to move running machines, a
+way to admit a server nobody has yet trusted, and somebody to watch the key
+that admits it. All of it is node lifecycle, none of it means anything
+before a second node exists, and epoch 05 is built before one does. The
+design agreed here is written into
+[`05-node-lifecycle.md`](05-node-lifecycle.md).
 
 ### Removing an application touches only its own directories
 
@@ -2314,15 +2309,19 @@ answers at push, and it catches the obvious. It is not the proof.
 
 ## Open questions to settle first
 
-- Which epoch-01 resources genuinely want to be modules, versus staying
-  single-use in `management/cluster`?
-- The fixture corpus above: generated merged documents, or a deep merge done
-  in HCL? The first needs a build step and a gitignore entry; the second needs
-  a merge function OpenTofu does not have.
-- Module versioning: relative path in-repo, or tagged and pinned?
-- Does the self-hosted runner have what these modules need at apply time?
-  `deploy-infrastructure.yml` path-filters on `modules/infrastructure/**`, so
-  a change here triggers a real apply.
+Each was open when the epoch began, and is answered by what was built.
+
+- **Which epoch-01 resources want to be modules?** All of them. Both of a
+  site's roots are modules, and a root holds only providers, credentials and
+  state.
+- **The fixture corpus: generated documents, or a deep merge in HCL?** Not
+  settled here. The corpus went to epoch 06 on 2026-09-28 with every other
+  repeated stand-in (#480).
+- **Module versioning: a relative path, or tagged and pinned?** Neither. A
+  published release in a registry, fetched by digest, one line per site.
+- **Does the self-hosted runner have what the modules need at apply time?**
+  Yes, plus one thing it did not need before: a token for the registry, which
+  the converge job is handed.
 
 ## Decisions
 
@@ -3387,7 +3386,89 @@ command deciding whether a bucket survives a teardown.
 
 ## Outcome
 
+Closed 2026-10-02. The goal was to write the reusable pieces once, and the
+pieces are:
+
+- **Scope is the first split: estate, site, node.** The estate has its own
+  root, its own program (the lawyer) and its own vault, and a site holds no
+  credential of the estate's.
+- **A site is two roots and both are modules.** A second site is the same
+  modules called again with another site selected; nothing a site builds is
+  written twice.
+- **One address plan**, computed once by a module and read by OpenTofu, the
+  contractor, Ansible and the tests.
+- **A converge's steps are declared once**, and every verb that shares them
+  reads that declaration.
+- **A site's modules follow a pinned version.** A merge publishes a release
+  of the platform; a site runs the one its line names, fetched by digest;
+  and merging a module moves no site. That is the OpenTofu half only. Every
+  site's Flux still reconciles `clusters/core` and its own directory from
+  `main`, and the contractor and the hypervisor playbook run from whatever
+  commit is converged, so a merge to any of those reaches production at
+  once.
+- **An application is one directory and one block per site.** It declares
+  what it needs, the platform gives it a namespace, an identity confined to
+  that namespace and its own secrets, and removing it is deleting the
+  directory and the blocks. A test does exactly that.
+- **Each site reconciles a shared core**, and a site's own directory is the
+  work it was given.
+- **Every pull request that touches a site is planned** against the
+  as-built record, on a runner that reaches nothing of the estate.
+- **The worker pool, requests and priority classes** that let the estate
+  run near its capacity on purpose.
+
+Closed with it, as its bug squash:
+
+- **The build gates on the core only (#581).** The Health phase waits for
+  what the site is made of and reports the work it was given without
+  waiting on it. Told apart by what the site's own file declares, so an
+  object nobody declared still holds the build.
+- **A teardown is confirmed by the site's real name (#605)**, read from
+  standard input and matched against the vault's, after the public key has
+  selected the site.
+- **The owner's name is out of the label key, the annotation and the
+  clerk's tool name (#540)**, and a guard that reads the owner from the
+  repository's own address refuses it anywhere but in that address. The old
+  label key stays beside the new one until every site runs a release that
+  sets the new one; see Deferred.
+- **Every App key is proved hourly (#527).** The patrol mints a token with
+  each and throws it away, each by its own consumer's code, and a guard
+  holds that to every App key any workflow is handed.
+- **A key handed to something that did not hold it is asked about (#613)**,
+  in a review conversation of its own. Built because this epoch's own
+  release work handed a token to three jobs and nothing asked.
+
+Two criteria left the epoch rather than being met in it, both by decision:
+a site without a commit (a site is declared in git, deliberately), and a
+node without a commit (epoch 05).
+
 ## Deferred
+
+### What the close leaves, and who has it
+
+- **Renovate and signing**, the third and fourth stages of the release
+  design: epoch 08.
+- **Adding a node with no manual step:** epoch 05, with the design agreed.
+- **The network between applications (#608):** epoch 03.
+- **The old label key on applications' namespaces (#540).** It goes, with
+  the selector that reads it and the two entries that excuse them in
+  `forkable_test.go`, in the first pull request after every site runs a
+  release that sets `homelab/workload`. Not before: the tunnel's policy is
+  reconciled from `main` and a namespace is labelled by a release, and
+  between the two a tunnelled route would be refused.
+- **Every run downloads every provider (#490).** A mirror is a real build
+  with no epoch that owns it yet. Left open.
+- **`converge-estate` may always plan one change (#549).** Needs one more
+  run to say whether it does.
+- **Strings restated across Go modules: 112**, in
+  `tests/building-block-debt.yml`. The guard refuses a new one and the list
+  only shrinks, but it is a list of debt and the estate's rule since is to
+  enforce by how a thing is built and keep no such list. Retiring it is
+  epoch 06's, with the fixture corpus (#480) and every other repeated
+  stand-in.
+- **Moved at the close, each with its reason on the issue:** #99, #535,
+  #539 and #544 to epoch 09; #274 and #599 to epoch 05; #479, #503 and #559
+  to epoch 08; #520 and #529 to epoch 03.
 
 ### Where the worker pool got to, and what is left
 
@@ -4228,3 +4309,47 @@ Making the plan path actually mirror the converge path is the larger fix and is
 filed rather than bundled. The two sequences would have to share their declared
 steps the way `TeardownSteps` already does, which is a change to the deploy
 path and deserves its own review.
+
+### A setting that outlives its file breaks everything that reads the tool's output
+
+Found building #612. The contractor points OpenTofu at a settings file that
+holds the registry credential, and removes the file when the run ends. With
+the file gone and the setting still in the environment, OpenTofu prints a
+warning on every command - into output the contractor parses, where the
+address plan's answer stopped being JSON. Whatever removes the file now
+clears the setting in the same call. A credential's file and the variable
+that names it are one thing with two halves.
+
+### The registry refuses an anonymous fetch of a public package
+
+OpenTofu asks the registry for an anonymous token with a scope the registry
+answers 403 to, public package or not. So every run that initialises a root
+holds a GitHub token: the job's own in a workflow, the operator's at a
+workstation. Any token will do and it grants nothing the package's being
+public did not, but it is one more thing a job is handed, and handing it to
+the plan job is what #613 was built to have asked about.
+
+### A pin that needs a pull request after every merge is friction, not a release
+
+Built as #609 and withdrawn the next day. The estate opened a pull request
+moving the pin after each merge that changed a module, which met what was
+agreed and was a nuisance in use. A pin earns its place by letting code
+merge without reaching production; the promotion is then a decision
+somebody makes when they want it, not a second pull request the first one
+causes.
+
+### Un-ignoring a directory shows everything a machine left in it
+
+Pull request #612 stopped ignoring `.pinned/`, because nothing places it any
+more. On a machine that had run a verb it still held a whole tree of the
+repository,
+and the branch opened there with 650 untracked files. A change that retires
+an ignored directory says so where the operator will read it, with the one
+command that removes it.
+
+### A policy scan reads a git source and nothing else
+
+Checkov's two module-source checks ask for a commit hash or a tag. A module
+fetched from a registry by digest is pinned harder than either and fails
+both. They are skipped on the two blocks that fetch that way, not for the
+repository, so a module added anywhere else is still checked.

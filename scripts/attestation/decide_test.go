@@ -67,7 +67,7 @@ func TestAnOpenThreadIsLeftToGitHub(t *testing.T) {
 func TestResolvedByABotIsRefused(t *testing.T) {
 	for _, closer := range []Thread{
 		{FirstCommentBody: marker, Resolved: true, ResolvedBy: "github-actions[bot]"},
-		{FirstCommentBody: marker, Resolved: true, ResolvedBy: "fensberg-claude[bot]"},
+		{FirstCommentBody: marker, Resolved: true, ResolvedBy: "an-app[bot]"},
 		{FirstCommentBody: marker, Resolved: true, ResolvedBy: "anything", ResolvedByType: "Bot"},
 	} {
 		v := Decide([]Thread{closer}, marker, "someone")

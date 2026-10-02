@@ -17,7 +17,7 @@ import (
 // finished work back: this moves one application's pin, in one site's file,
 // to the release just published, and the workflow around it opens the pull
 // request. A site that does not run the application is left alone, and so is
-// one whose source says homelab.fensberg.com/delivery: hold - which is how a
+// one whose source says homelab/delivery: hold - which is how a
 // site stays on the release it pins while another moves. Merging that pull request is letting the delivery
 // in, and that stays a person's decision - a delivery is never merged without
 // review (superintendent enforce-standing-order).
@@ -77,7 +77,7 @@ const (
 )
 
 // holdsItsPin is the annotation by which a site keeps the release it pins.
-var holdsItsPin = regexp.MustCompile(`(?m)^\s+homelab\.fensberg\.com/delivery:\s*"?hold"?\s*$`)
+var holdsItsPin = regexp.MustCompile(`(?m)^\s+homelab/delivery:\s*"?hold"?\s*$`)
 
 var (
 	pinTag    = regexp.MustCompile(`^(\s+tag:\s*)"[^"]*"(\s*)$`)

@@ -39,7 +39,7 @@ func TestIgnitionFailsClosedWhenItCannotAsk(t *testing.T) {
 	// "Cannot ask" used to mean gh was not on PATH. The question goes over
 	// HTTP now, so it means an endpoint that does not answer - TestMain points
 	// the API at a closed port on the loopback, which refuses immediately.
-	t.Setenv("GITHUB_REPOSITORY", "fensberg/homelab")
+	t.Setenv("GITHUB_REPOSITORY", "example/yard")
 	err := CheckBreakGroundPreconditions("site0")
 	if err == nil {
 		t.Fatal("ignition proceeded without being able to check for queued deploys")
