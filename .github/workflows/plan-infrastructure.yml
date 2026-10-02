@@ -98,6 +98,9 @@ jobs:
       pull-requests: write
       # To find and download the record another run published.
       actions: read
+      # To fetch the release of the platform the site runs. The package is
+      # public; the registry wants a token all the same.
+      packages: read
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -108,7 +111,8 @@ jobs:
         uses: $/.github/workflows/mobilize
         with:
           # The Go toolchain and OpenTofu with its providers, as the Validate
-          # lane fetches them, and GitHub's API for the record.
+          # lane fetches them, GitHub's API for the record, and its registry
+          # for the release of the platform the site runs.
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
           # which job may reach what; `security guard-egress` refuses any drift.
           # The copy lives here because harden-runner reads its policy in a
@@ -118,9 +122,11 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             get.opentofu.org:443
+            ghcr.io:443
             github.com:443
             go.dev:443
             objects.githubusercontent.com:443
+            pkg-containers.githubusercontent.com:443
             registry.opentofu.org:443
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
@@ -165,8 +171,12 @@ jobs:
           github-token: ${{ github.token }}
           path: as-built-record
 
+      # The token is for the registry and nothing else: the roots fetch the
+      # release the site's line names (management/versions.json), and the
+      # registry refuses an anonymous fetch even of a public package.
       - name: Plan
         env:
+          GH_TOKEN: ${{ github.token }}
           SITE: ${{ matrix.site }}
         run: |
           go build -C scripts/contractor -o ../../toolshed/contractor .

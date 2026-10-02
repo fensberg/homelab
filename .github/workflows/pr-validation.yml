@@ -331,11 +331,11 @@ jobs:
           # phase's, so nothing here can collide with a real run. `tofu
           # validate` takes no -var flag, hence the environment variable.
           TF_VAR_config_path: ../../config/management.placeholder.json
-          # A root reads its modules from a pinned tree. Validating a change
-          # means validating the modules as they are in the working tree, which
-          # the placeholder step above links under this name; it is never a
-          # site's, so nothing here can be mistaken for a pinned run.
-          TF_VAR_tree: worktree
+          # A root fetches its modules from a release of the platform.
+          # Validating a change means validating the modules as they are in
+          # this checkout, which only a check names; a run against a site
+          # clears it and fetches the release its line names.
+          TF_VAR_unreleased: ../..
         run: |
           tofu init -backend=false -input=false
           tofu validate
@@ -345,7 +345,7 @@ jobs:
         working-directory: management/platform
         env:
           TF_VAR_config_path: ../../config/management.placeholder.json
-          TF_VAR_tree: worktree
+          TF_VAR_unreleased: ../..
         run: |
           tofu init -backend=false -input=false
           tofu validate

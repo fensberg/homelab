@@ -1043,6 +1043,28 @@ mutations:
       from. Without a target it lands on whatever main is when the step runs,
       which after a second merge is a commit the package was not built from.
 
+  - guard: TestAVersionIsDescribedByARelease
+    file: .github/workflows/fabricator.yml
+    find: '          if gh release view "$VERSION" --repo "$REPO" > /dev/null 2>&1; then'
+    replace: "          if false; then"
+    mentions: "a version already described"
+    why: >
+      The step runs on every merge so that a version an earlier run could not
+      describe is described by the next. Without asking whether it is
+      described already, every merge that publishes nothing tries to create
+      the last version's release again, and the job is red from then on.
+
+  - guard: TestTheDescribingStepRunsWhetherOrNotThisRunPublished
+    file: .github/workflows/fabricator.yml
+    find: "          VERSION: ${{ steps.number.outputs.version || steps.reuse.outputs.version }}"
+    replace: "          VERSION: ${{ steps.number.outputs.version }}"
+    mentions: "is handed the version only by"
+    why: >
+      A version that was published and could not be described is described
+      by the next run to find it. Handed the version only by the run that
+      numbered it, that next run has none, and the release a site's pull
+      request shows is never written.
+
   - guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
     file: .github/workflows/fabricator.yml
     find: 'if [ "$(sha256sum < "${moved}/${i}.yaml")" != "$before" ]; then'

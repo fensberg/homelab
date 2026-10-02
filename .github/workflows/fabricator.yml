@@ -563,8 +563,10 @@ jobs:
             fi
           fi
           if [ -n "$listed" ]; then
+            existing="$(grep -v '^fp-' <<<"$listed" | head -n 1)"
             echo "needed=false" >> "$GITHUB_OUTPUT"
-            echo "no version: $(grep -v '^fp-' <<<"$listed" | head -n 1) already holds these exact files" >> "$GITHUB_STEP_SUMMARY"
+            echo "version=${existing}" >> "$GITHUB_OUTPUT"
+            echo "no version: ${existing} already holds these exact files" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
@@ -662,17 +664,42 @@ jobs:
       # site to it can read it: the pull requests merged since the last one,
       # and the digest to pin. The release's tag is the version's name on the
       # commit it was packed from.
+      #
+      # Every run, and not only the one that published: a version that was
+      # published and could not be described - the release refused, the run
+      # cancelled between the two - is described by the next run to find it,
+      # from what the registry says of it. One already described is left.
       - name: Describe the version
-        if: steps.reuse.outputs.needed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
           REPO: ${{ github.repository }}
           NAME: ${{ matrix.order.name }}
           ARTIFACT: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}-release
-          VERSION: ${{ steps.number.outputs.version }}
+          VERSION: ${{ steps.number.outputs.version || steps.reuse.outputs.version }}
           DIGEST: ${{ steps.publish.outputs.digest }}
-          SHA: ${{ github.sha }}
+          SHA: ${{ steps.publish.outputs.digest && github.sha || '' }}
         run: |
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::there is no version to describe: '${VERSION}' is not one"
+            exit 1
+          fi
+          if gh release view "$VERSION" --repo "$REPO" > /dev/null 2>&1; then
+            echo "${VERSION} is described already"
+            exit 0
+          fi
+          # Published by an earlier run: the registry says what it was
+          # published as and which commit it was packed from.
+          if [ -z "$DIGEST" ]; then
+            echo "$TOKEN" | oras login ghcr.io -u "$ACTOR" --password-stdin
+            DIGEST="$(oras resolve "${ARTIFACT}:${VERSION}")"
+            SHA="$(oras manifest fetch "${ARTIFACT}:${VERSION}" | jq -r '.annotations["org.opencontainers.image.revision"] // empty')"
+          fi
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || [[ ! "$SHA" =~ ^[0-9a-f]{7,64}$ ]]; then
+            echo "::error::the registry did not say what ${VERSION} was published as and from which commit, so it cannot be described"
+            exit 1
+          fi
           gh release create "$VERSION" --repo "$REPO" --target "$SHA" \
             --title "${NAME} ${VERSION}" --generate-notes \
             --notes "$(printf '%s\n' \

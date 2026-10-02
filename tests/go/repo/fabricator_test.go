@@ -1189,8 +1189,10 @@ func TestAPackageOfTheSameFilesIsNotPublishedAgain(t *testing.T) {
 	if beside, _, _ := reuse(none); beside["fingerprint"] != first["fingerprint"] {
 		t.Error("a change to files the package does not hold changed its fingerprint, so every merge would publish a version")
 	}
-	if published, _, _ := reuse("printf '%s\\n' v2026.10.1 " + first["fingerprint"]); published["needed"] != "false" {
-		t.Errorf("a package of these exact files exists and another was needed: %v", published)
+	// And it says which version that is, for the step that describes one an
+	// earlier run published and could not.
+	if published, _, _ := reuse("printf '%s\\n' v2026.10.1 " + first["fingerprint"]); published["needed"] != "false" || published["version"] != "v2026.10.1" {
+		t.Errorf("a package of these exact files exists as v2026.10.1, and the step says: %v", published)
 	}
 	for name, change := range map[string]map[string]string{
 		"a file in a held directory": {"mods/two/deep/more.tf": "changed\n"},
@@ -1358,20 +1360,122 @@ func TestThePackageHoldsExactlyItsFilesAndIsPublishedForOpenTofu(t *testing.T) {
 // A version is described where a person reads it: a release named for the
 // version, on the commit it was packed from, saying what it was published
 // as and carrying the notes of what merged since the last.
+//
+// And it is described by whichever run finds it undescribed. One an earlier
+// run published and could not describe is described from what the registry
+// says of it; one described already is left; and a registry that does not
+// say what a version is leaves it undescribed, loudly.
 func TestAVersionIsDescribedByARelease(t *testing.T) {
-	fake := t.TempDir()
-	path := fakeTools(t, map[string]string{"gh": `printf '%s\n' "$@" > "` + fake + `/args"`})
 	digest := "sha256:" + strings.Repeat("d", 64)
-	ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), []string{
-		"GH_TOKEN=x", "REPO=example/homelab", "NAME=bundle", "ARTIFACT=ghcr.io/example/homelab-bundle-release",
-		"VERSION=v2026.10.4", "DIGEST=" + digest, "SHA=0123456789abcdef"})
-	if !ok {
+	// gh that has, or has not, a release of the version already; oras that
+	// answers as the registry would for a version published earlier.
+	tools := func(described bool, resolved, revision string) (path, fake string) {
+		fake = t.TempDir()
+		view := "exit 1"
+		if described {
+			view = "exit 0"
+		}
+		return fakeTools(t, map[string]string{
+			"gh": `case "$2" in view) ` + view + ` ;; esac
+printf '%s\n' "$@" > "` + fake + `/args"`,
+			"oras": `case "$1" in
+  login) cat > "` + fake + `/password" ;;
+  resolve) echo "` + resolved + `" ;;
+  manifest) printf '{"annotations":{"org.opencontainers.image.revision":"%s"}}\n' "` + revision + `" ;;
+esac`,
+		}), fake
+	}
+	base := []string{"GH_TOKEN=x", "TOKEN=secret-token", "ACTOR=someone", "REPO=example/homelab", "NAME=bundle",
+		"ARTIFACT=ghcr.io/example/homelab-bundle-release", "VERSION=v2026.10.4"}
+	created := func(fake string) string {
+		args, _ := os.ReadFile(filepath.Join(fake, "args"))
+		return string(args)
+	}
+
+	// The run that published it.
+	path, fake := tools(false, "", "")
+	if ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), append(base[:len(base):len(base)], "DIGEST="+digest, "SHA=0123456789abcdef")); !ok {
 		t.Fatalf("the step failed:\n%s", logs)
 	}
-	args, _ := os.ReadFile(filepath.Join(fake, "args"))
 	for _, want := range []string{"release\ncreate\nv2026.10.4\n", "--target\n0123456789abcdef\n", "--generate-notes", "ghcr.io/example/homelab-bundle-release:v2026.10.4", digest} {
-		if !strings.Contains(string(args), want) {
-			t.Errorf("the release does not carry %q:\n%s", want, args)
+		if !strings.Contains(created(fake), want) {
+			t.Errorf("the release does not carry %q:\n%s", want, created(fake))
 		}
+	}
+
+	// A later run, finding the version published and not described.
+	path, fake = tools(false, digest, "0f1e2d3c4b5a6978")
+	if ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), append(base[:len(base):len(base)], "DIGEST=", "SHA=")); !ok {
+		t.Fatalf("a version an earlier run published was not described:\n%s", logs)
+	}
+	for _, want := range []string{"release\ncreate\nv2026.10.4\n", "--target\n0f1e2d3c4b5a6978\n", digest} {
+		if !strings.Contains(created(fake), want) {
+			t.Errorf("a version described later does not carry %q, so it is not described from what the registry holds:\n%s", want, created(fake))
+		}
+	}
+
+	// Described already: left as it is.
+	path, fake = tools(true, digest, "0f1e2d3c4b5a6978")
+	if ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), append(base[:len(base):len(base)], "DIGEST=", "SHA=")); !ok || created(fake) != "" {
+		t.Errorf("a version already described: ok=%v, and a release was created with %q\n%s", ok, created(fake), logs)
+	}
+
+	// A registry that does not say what the version is, or which commit it
+	// is of, and a run with no version at all.
+	for name, tc := range map[string]struct {
+		resolved, revision string
+		env                []string
+	}{
+		"no digest":  {"not a digest", "0f1e2d3c4b5a6978", append(base[:len(base):len(base)], "DIGEST=", "SHA=")},
+		"no commit":  {digest, "", append(base[:len(base):len(base)], "DIGEST=", "SHA=")},
+		"no version": {digest, "0f1e2d3c4b5a6978", append(base[:len(base)-1:len(base)-1], "VERSION=", "DIGEST=", "SHA=")},
+	} {
+		path, fake = tools(false, tc.resolved, tc.revision)
+		if ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), tc.env); ok || created(fake) != "" {
+			t.Errorf("%s: ok=%v, and a release was created with %q\n%s", name, ok, created(fake), logs)
+		}
+	}
+}
+
+// The describing step is reached by a run that published nothing: it has no
+// condition of its own, and the version it describes is the one this run
+// numbered or, failing that, the one the reuse step found already published.
+// The step's script is run as shipped above; this is how the job hands it
+// what it runs with, which no run of the script alone can see.
+func TestTheDescribingStepRunsWhetherOrNotThisRunPublished(t *testing.T) {
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string            `yaml:"name"`
+				ID   string            `yaml:"id"`
+				If   string            `yaml:"if"`
+				Env  map[string]string `yaml:"env"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowText(t, fabricatorWorkflow)), &wf); err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]string{}
+	for _, s := range wf.Jobs["package"].Steps {
+		ids[s.Name] = s.ID
+	}
+	found := false
+	for _, s := range wf.Jobs["package"].Steps {
+		if s.Name != "Describe the version" {
+			continue
+		}
+		found = true
+		if s.If != "" {
+			t.Errorf("the describing step runs only if %q, so a version an earlier run published and could not describe is never described", s.If)
+		}
+		for _, from := range []string{"Number the version", "Reuse a package of the same contents"} {
+			if ids[from] == "" || !strings.Contains(s.Env["VERSION"], "steps."+ids[from]+".outputs.version") {
+				t.Errorf("the describing step is handed the version only by %q, and not by the step %q", s.Env["VERSION"], from)
+			}
+		}
+	}
+	if !found {
+		t.Error("the package job has no step that describes a version")
 	}
 }

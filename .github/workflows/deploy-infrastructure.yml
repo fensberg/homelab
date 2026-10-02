@@ -279,6 +279,9 @@ jobs:
     environment: management
     permissions:
       contents: read
+      # To fetch the release of the platform the site runs. The package is
+      # public; the registry wants a token all the same.
+      packages: read
     timeout-minutes: 60
     strategy:
       # Each site has its own state database and its own lock, so two sites
@@ -317,6 +320,9 @@ jobs:
       - name: Converge
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          # For the registry: the roots fetch the release the site's line
+          # names (management/versions.json).
+          GH_TOKEN: ${{ github.token }}
           SITE: ${{ matrix.site }}
         run: |
           # toolshed/, like everything else that builds here.
