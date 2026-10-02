@@ -88,7 +88,7 @@ Each holds the credential for one thing, and none overlaps another:
 | ------------- | ------------------------------------------------ | ---------------------------- |
 | `management`  | the platform itself - `contractor converge-site` | merge touching `management/` |
 | `staging`     | workload deploys                                 | merge to `main`              |
-| `production`  | workload infrastructure (dormant, #561)          | tag `v*`                     |
+| `production`  | workload infrastructure (dormant, #561)          | nothing                      |
 | `integration` | the test tiers that need a real estate           | nightly, or dispatch         |
 
 `management` is a fourth environment rather than a reuse of `staging`
@@ -597,11 +597,12 @@ depends on it and uses them.
   because OpenTofu applies the CNI manifest rather than Flux, so a change to
   it is delivered by a converge and by nothing else.
 
-- `deliver-modules.yml` — after every merge to `main`, asks procurement
-  whether anything a pinned site reads changed (the modules, and whatever
-  they reach outside themselves), and if so opens the pull request that moves
-  the default pin in `management/pins.json` to the merged commit. A person
-  merges it, after reading its plan; it is never merged without review.
+- `fabricator.yml` — builds every image the repository defines, and
+  publishes the platform: the modules a site runs and the files they read, as
+  one package under a calendar version (`v2026.10.1`), described by a GitHub
+  Release. It runs on every merge and decides what to do by fingerprint, so
+  a merge that changed nothing builds and publishes nothing. Publishing
+  deploys nothing: a site runs the version its own config pins.
 
 ## Testing
 

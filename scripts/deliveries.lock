@@ -25,6 +25,10 @@ https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-
 https://get.opentofu.org/install-opentofu.sh --hash=sha256:e4e899ae7bd86241fd17ad99e9d32f5b2d20a11b1a40d088acabb6e06dba49c5
 # [end]
 
+# [fetch: oras ORAS_VERSION=1.3.4]
+https://github.com/oras-project/oras/releases/download/v1.3.4/oras_1.3.4_linux_amd64.tar.gz --hash=sha256:f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454
+# [end]
+
 # [fetch: shellcheck SHELLCHECK_VERSION=0.11.0]
 https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz --hash=sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
 # [end]

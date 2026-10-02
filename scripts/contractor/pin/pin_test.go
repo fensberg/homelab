@@ -1,10 +1,13 @@
 package pin
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"homelab/details/platform"
 )
 
 // repo is a repository with two commits, each holding a module file that
@@ -222,5 +225,72 @@ func TestPinsThatAreNotCommitsAreRefused(t *testing.T) {
 func TestExtractRefusesAnythingOutsideTheTree(t *testing.T) {
 	if err := extract([]byte("not a tar archive at all, and long enough to be read as a header block: "+strings.Repeat("x", 512)), filepath.Join(t.TempDir(), "x")); err == nil {
 		t.Error("something that is not an archive was extracted")
+	}
+}
+
+// The release tree holds what a release of the platform would - the tracked
+// files its manifest names, as they are in the checkout - and nothing else
+// of the repository, whatever was there before.
+func TestPlaceReleaseHoldsOnlyWhatTheManifestNames(t *testing.T) {
+	root := t.TempDir()
+	for rel, body := range map[string]string{
+		platform.Manifest:                      `{"holds": ["` + platform.ModulesDir + `", "ground/read.yaml"]}`,
+		platform.ModulesDir + "/thing/main.tf": "# as it is in the checkout\n",
+		"ground/read.yaml":                     "a: 1\n",
+		"ground/beside.yaml":                   "not held\n",
+		"leaflets/words.md":                    "not held\n",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tracked := platform.Manifest + "\x00" + platform.ModulesDir + "/thing/main.tf\x00ground/read.yaml\x00ground/beside.yaml\x00leaflets/words.md\x00"
+	git := func(string, ...string) ([]byte, error) { return []byte(tracked), nil }
+
+	// Left from an earlier placing, and not in the release now.
+	stale := filepath.Join(Dir(root, Release), "left", "behind.txt")
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := PlaceRelease(root, git); err != nil {
+		t.Fatal(err)
+	}
+	var placed []string
+	err := filepath.WalkDir(Dir(root, Release), func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(Dir(root, Release), p)
+		if err != nil {
+			return err
+		}
+		placed = append(placed, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ground/read.yaml", platform.Manifest, platform.ModulesDir + "/thing/main.tf"}
+	if strings.Join(placed, "\n") != strings.Join(want, "\n") {
+		t.Errorf("the release tree holds\n  %s\nwant exactly\n  %s", strings.Join(placed, "\n  "), strings.Join(want, "\n  "))
+	}
+	if got := read(t, filepath.Join(Dir(root, Release), filepath.FromSlash(platform.ModulesDir), "thing", "main.tf")); got != "# as it is in the checkout\n" {
+		t.Errorf("a held file was placed as %q", got)
+	}
+
+	// A git that cannot list, and a manifest that is not there, place nothing.
+	if err := PlaceRelease(root, func(string, ...string) ([]byte, error) { return nil, errors.New("not a repository") }); err == nil {
+		t.Error("a release was placed from a checkout git could not list")
+	}
+	if err := PlaceRelease(t.TempDir(), git); err == nil {
+		t.Error("a release was placed with no manifest to say what it holds")
 	}
 }

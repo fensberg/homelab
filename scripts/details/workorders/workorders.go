@@ -25,8 +25,13 @@ const Path = "scripts/work-orders.json"
 // Order is one thing the fabricator builds.
 type Order struct {
 	Name string `json:"name"`
-	// The build context, holding the Dockerfile.
-	Context string `json:"context"`
+	// The build context, holding the Dockerfile. Empty for an order that
+	// builds no image.
+	Context string `json:"context,omitempty"`
+	// The manifest of a package the order publishes: a set of the
+	// repository's own files, released whole under a version. Empty for an
+	// order that publishes none.
+	Package string `json:"package,omitempty"`
 	// The order's own pins file, beside the estate's. Empty for an order
 	// pinned by the estate's alone.
 	Pins    string   `json:"pins,omitempty"`
@@ -58,6 +63,13 @@ func Parse(body []byte) ([]Order, error) {
 	}
 	if len(f.Orders) == 0 {
 		return nil, fmt.Errorf("%s holds no orders", Path)
+	}
+	for _, o := range f.Orders {
+		// An order builds an image or publishes a package: one of them, so
+		// that what it is for is never a guess.
+		if o.Name == "" || (o.Context == "") == (o.Package == "") {
+			return nil, fmt.Errorf("%s: the order %q must have a name and exactly one of a context, to build an image from, and a package, to publish", Path, o.Name)
+		}
 	}
 	return f.Orders, nil
 }

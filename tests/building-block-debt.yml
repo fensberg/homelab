@@ -116,7 +116,7 @@ debt:
   - "tag:homelab-router"
   - "terraform.tfstate"
 
-  # --- Field names two separate documents happen to share (13)
+  # --- Field names two separate documents happen to share (12)
   - "talos_version"
   #
   # The estate's rendered config (config/estate.tpl.json, read by the lawyer)
@@ -125,16 +125,13 @@ debt:
   # on purpose: sharing one would put the lawyer's reading of its config in the
   # contractor's package, across the credential boundary the two programs
   # exist to hold. change is a plan's per-resource change and, separately, an
-  # apply summary's count of changed resources. context is a work order's
-  # build directory and, in GitHub's rulesets API, a required check's name.
-  # errors and result are
+  # apply summary's count of changed resources. errors and result are
   # Cloudflare's envelope, which also happens to be GitHub's and Prometheus's
   # vocabulary.
   - 'json:"access_key_id"'
   - 'json:"account_id"'
   - 'json:"bucket"'
   - 'json:"change"'
-  - 'json:"context"'
   - 'json:"errors"'
   - 'json:"organization"'
   - 'json:"provider"'

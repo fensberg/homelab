@@ -651,19 +651,17 @@ egress:
       Builds with Docker, which needs the Docker socket that
       disable-sudo-and-containers removes.
 
-  - job: fabricator.yml/deliver
+  - job: fabricator.yml/package
     policy: block
     hosts:
       - api.github.com:443
+      - ghcr.io:443
       - github.com:443
-      - go.dev:443
       - objects.githubusercontent.com:443
-      - proxy.golang.org:443
+      - pkg-containers.githubusercontent.com:443
       - release-assets.githubusercontent.com:443
-      - storage.googleapis.com:443
-      - sum.golang.org:443
 
-  - job: deliver-modules.yml/deliver
+  - job: fabricator.yml/deliver
     policy: block
     hosts:
       - api.github.com:443
@@ -1130,6 +1128,19 @@ tools:
       production release pins. Taken from Flux's own GitHub release and
       installed only if its SHA256 matches the lock. The workstation already
       installed it from the same release, by version only.
+  - source: oras-project/oras
+    version: ORAS_VERSION
+    binary: oras
+    fetch: https://github.com/oras-project/oras/releases/download/v{version}/oras_{version}_linux_amd64.tar.gz
+    reason: >-
+      The registry client the fabricator publishes a platform release with.
+      A site's roots take their modules from the registry, in the form
+      OpenTofu fetches one in: an OCI artifact of OpenTofu's own type, holding
+      one zip. The Flux CLI publishes only Flux's form and Docker only
+      images, so neither can make it. ORAS is the Cloud Native Computing
+      Foundation's client for exactly this and the one OpenTofu's own
+      documentation publishes with. Taken from the project's GitHub release
+      and installed only if its SHA256 matches the lock.
 
 # Declared exemptions.
 #

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 181
+floor: 185
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -885,12 +885,22 @@ mutations:
 
   - guard: TestTheReleaseCounterRefusesARegistryItCannotRead
     file: .github/workflows/fabricator.yml
-    find: 'elif ! grep -q "HTTP 404" <<<"$listed"; then'
-    replace: "elif false; then"
+    find: "elif ! grep -q \"HTTP 404\" <<<\"$listed\"; then\n            echo \"::error::could not list the release tags of"
+    replace: "elif false; then\n            echo \"::error::could not list the release tags of"
     mentions: "numbered a release from a registry it could not read"
     why: >
       Treating every registry error as "no releases yet" numbers from 1
       whenever the registry hiccups, and overwrites a real release.
+
+  - guard: TestAVersionIsTheMonthAndItsNumberInIt
+    file: .github/workflows/fabricator.yml
+    find: "elif ! grep -q \"HTTP 404\" <<<\"$listed\"; then\n            echo \"::error::could not list the versions of"
+    replace: "elif false; then\n            echo \"::error::could not list the versions of"
+    mentions: "numbered from a registry that could not be read"
+    why: >
+      The same failure for the platform's versions: a registry error taken
+      for "nothing published this month" numbers the next version 1, over one
+      a site may already pin.
 
   - guard: TestTheReleaseCarriesTheApplicationAloneWithTheNewDigest
     file: .github/workflows/fabricator.yml
@@ -979,27 +989,59 @@ mutations:
       order, so every delivery then waits for a person - and the first anyone
       hears of it is players unable to join.
 
-  - guard: TestNoMoveOfThePinOpensNothing
-    file: .github/workflows/deliver-modules.yml
-    find: 'if [ "$(sha256sum < "$RUNNER_TEMP/pins.json")" = "$before" ]; then'
-    replace: "if false; then"
-    mentions: "although there was nothing to deliver"
+  - guard: TestEachKindOfOrderGoesToItsOwnJob
+    file: .github/workflows/fabricator.yml
+    find: 'echo "images=$(jq -c ''[.[] | select(.context)]'' <<<"$orders")"'
+    replace: 'echo "images=$(jq -c ''.'' <<<"$orders")"'
+    mentions: "it builds the orders that have a context"
     why: >
-      The step runs after every merge, and most merges change nothing a site
-      reads. One that opens a pull request whatever the verb said opens an
-      empty one for every merge, and the move that matters is then one of
-      many nobody reads.
+      An order that publishes a package has no Dockerfile. Handed to the image
+      build, it fails that job on every merge, and the failure is in a matrix
+      leg named for the platform with nothing saying the platform has no
+      image to build.
 
-  - guard: TestAMoveOfThePinIsDeliveredAsOnePullRequest
-    file: .github/workflows/deliver-modules.yml
-    find: '-f "tree[][path]=${PINS}"'
-    replace: '-f "tree[][path]=scripts/versions.env"'
-    mentions: "the pins file changed and nothing else"
+  - guard: TestAPackageOfTheSameFilesIsNotPublishedAgain
+    file: .github/workflows/fabricator.yml
+    find: 'fingerprint="fp-$(git ls-tree -r HEAD -- "${files[@]}" | sha256sum | cut -c1-16)"'
+    replace: 'fingerprint="fp-$(git rev-parse HEAD | sha256sum | cut -c1-16)"'
+    mentions: "every merge would publish a version"
     why: >
-      The pull request is the pins file and nothing else, which is what lets
-      its plan be read as "what moving the pin does" and what the standing
-      order holds it to. A commit that writes the moved pins anywhere else
-      moves no site and overwrites whatever was there.
+      A version exists so that moving a site to it means something changed.
+      Fingerprinted by commit, every merge to main publishes one whatever it
+      touched, and the list a person chooses a release from is as long as the
+      commit log.
+
+  - guard: TestAVersionIsTheMonthAndItsNumberInIt
+    file: .github/workflows/fabricator.yml
+    find: 'echo "version=${month}.$((n + 1))" >> "$GITHUB_OUTPUT"'
+    replace: 'echo "version=${month}.1" >> "$GITHUB_OUTPUT"'
+    mentions: "want v2026.10.4"
+    why: >
+      A version that does not continue from the registry is published over
+      one that exists. The name a site pins then means two different packages
+      depending on when it was read, and only the digest beside it says which.
+
+  - guard: TestThePackageHoldsExactlyItsFilesAndIsPublishedForOpenTofu
+    file: .github/workflows/fabricator.yml
+    find: 'git archive --format=zip -o "${RUNNER_TEMP}/package.zip" HEAD -- "${files[@]}"'
+    replace: 'git archive --format=zip -o "${RUNNER_TEMP}/package.zip" HEAD'
+    mentions: "want exactly"
+    why: >
+      A release is the files its manifest holds and nothing else. Packed from
+      the whole repository, it carries every application's manifests and
+      every workflow to every site, changes whenever anything in the
+      repository does, and what "the platform" is stops being a question
+      with an answer.
+
+  - guard: TestAVersionIsDescribedByARelease
+    file: .github/workflows/fabricator.yml
+    find: 'gh release create "$VERSION" --repo "$REPO" --target "$SHA" \'
+    replace: 'gh release create "$VERSION" --repo "$REPO" \'
+    mentions: "does not carry"
+    why: >
+      The release's tag is the version's name on the commit it was packed
+      from. Without a target it lands on whatever main is when the step runs,
+      which after a second merge is a commit the package was not built from.
 
   - guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
     file: .github/workflows/fabricator.yml

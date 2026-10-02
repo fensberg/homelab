@@ -7,7 +7,6 @@ import (
 
 	"homelab/details/applications"
 	"homelab/details/files"
-	"homelab/details/pins"
 )
 
 // An application as the tests declare one: kept on its supplier's build,
@@ -257,69 +256,5 @@ func TestIsDeliveryAcceptsOnlyPinLines(t *testing.T) {
 				t.Errorf("isDelivery = %v, want %v", got, tc.want)
 			}
 		})
-	}
-}
-
-// A pin move is the default's line replaced by another commit, in the pins
-// file and nowhere else. Nothing rides along with it, and a site's own pin
-// is not the default.
-func TestIsPinMoveAcceptsOnlyTheDefaultsLine(t *testing.T) {
-	was := `-  "default": "` + strings.Repeat("a", 40) + `",`
-	now := `+  "default": "` + strings.Repeat("b", 40) + `",`
-	for name, tc := range map[string]struct {
-		files, lines []string
-		want         bool
-	}{
-		"the default moved":             {[]string{pins.File}, []string{was, now}, true},
-		"another file too":              {[]string{pins.File, "x.tf"}, []string{was, now}, false},
-		"a file of that name elsewhere": {[]string{"elsewhere/pins.json"}, []string{was, now}, false},
-		"a site's own pin":              {[]string{pins.File}, []string{`-    "site7": "` + strings.Repeat("a", 40) + `"`, `+    "site7": "` + strings.Repeat("b", 40) + `"`}, false},
-		"a site's pin beside it":        {[]string{pins.File}, []string{was, now, `+    "site7": "` + strings.Repeat("b", 40) + `"`}, false},
-		"a branch for a default":        {[]string{pins.File}, []string{was, `+  "default": "main",`}, false},
-		"seven characters of one":       {[]string{pins.File}, []string{was, `+  "default": "bbbbbbb",`}, false},
-		"the default removed":           {[]string{pins.File}, []string{was}, false},
-		"two defaults added":            {[]string{pins.File}, []string{now, now}, false},
-		"nothing at all":                {[]string{pins.File}, nil, false},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if got := isPinMove(tc.files, tc.lines); got != tc.want {
-				t.Errorf("isPinMove = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
-// A pin move passes on the pull request, so a person can merge it, and is
-// refused whenever it would be merged without a review - against a real
-// repository, so the verb's own reading of the change is exercised.
-func TestAPinMoveIsForAPersonAndNeverForTheBypass(t *testing.T) {
-	git := gitRepo(t)
-	write := func(sha, site string) {
-		writeFile(t, pins.File, "{\n  \"default\": \""+sha+"\",\n  \"per_site\": {"+site+"}\n}\n")
-	}
-	write(strings.Repeat("a", 40), "")
-	git("add", "-A")
-	git("commit", "-qm", "base")
-	base := git("rev-parse", "HEAD")
-
-	write(strings.Repeat("b", 40), "")
-	git("commit", "-qam", "move the default")
-	move := git("rev-parse", "HEAD")
-
-	write(strings.Repeat("b", 40), `"site7": "`+strings.Repeat("c", 40)+`"`)
-	git("commit", "-qam", "move the default, and hold a site somewhere else")
-	overreach := git("rev-parse", "HEAD")
-
-	args := func(head string, extra ...string) []string {
-		return append([]string{"-author", "procurement[bot]", "-holder", "procurement[bot]", "-base", base, "-head", head}, extra...)
-	}
-	if code := enforceStandingOrder(args(move)); code != 0 {
-		t.Errorf("a pin move was refused on the pull request (exit %d), so a person could never merge it", code)
-	}
-	if code := enforceStandingOrder(args(move, "-bypass")); code != 1 {
-		t.Errorf("a pin move passed for a merge without review (exit %d)", code)
-	}
-	if code := enforceStandingOrder(args(overreach)); code != 1 {
-		t.Errorf("a pin move that also pinned a site passed (exit %d); only the default's line may change", code)
 	}
 }

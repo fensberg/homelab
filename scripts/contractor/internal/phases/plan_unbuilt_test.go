@@ -63,11 +63,15 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 	}
 	// Beside the Record phase's own workspace, never in it: a run on this
 	// machine may be using that.
-	// The working tree's modules, not a site's pin: this is the check that
-	// sees a change to a module before it merges.
-	if err := pin.PlaceWorkingTree(repo); err != nil {
+	// What a release of the platform would hold from this checkout, and
+	// nothing else of the repository: this is the check that sees a change
+	// to a module before it merges, and it sees it as a site would run it.
+	// A file a module reads that the release does not hold is not there, and
+	// the plan fails on it here.
+	if err := pin.PlaceRelease(repo, pin.Exec); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = os.RemoveAll(pin.Dir(repo, pin.Release)) })
 	work := filepath.Join(repo, ".as-built-unbuilt")
 	t.Cleanup(func() { _ = os.RemoveAll(work) })
 
@@ -89,7 +93,7 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 		if root.Name == config.PlatformRoot {
 			in.Vars = asbuilt.UnbuiltAccess(steps.PlatformInputs[0], steps.PlatformInputs[1])
 		}
-		in.Vars[strings.TrimPrefix(pin.TreeVariable, "TF_VAR_")] = pin.WorkingTree
+		in.Vars[strings.TrimPrefix(pin.TreeVariable, "TF_VAR_")] = pin.Release
 		plan, _, err := asbuilt.PlanAgainst(in, asbuilt.Exec)
 		_ = os.RemoveAll(work)
 

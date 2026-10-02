@@ -12,12 +12,23 @@
     "",
     "Completeness is checked by a guard, not by the fabricator:",
     "tests/go/repo/fabricator_test.go walks the repository and fails on a",
-    "Dockerfile with no order, and on an order whose Dockerfile is gone."
+    "Dockerfile with no order, and on an order whose Dockerfile is gone.",
+    "",
+    "An order may instead publish a package: a set of the repository's own files,",
+    "named by a manifest, published whole under a version as",
+    "ghcr.io/<repository>-<name>-release. The platform is one - the modules a site",
+    "runs and what they read - and a site runs the version its own config pins,",
+    "so merging a change to it does nothing to production. The version is the",
+    "year and month it was published in and its number within that month."
   ],
   "orders": [
     {
       "name": "runner",
       "context": ".github/runner-image"
+    },
+    {
+      "name": "platform",
+      "package": "modules/infrastructure/release.json"
     }
   ]
 }

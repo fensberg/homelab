@@ -64,6 +64,19 @@ func TestReadRefusesWhatItCannotRead(t *testing.T) {
 	if _, err := Parse([]byte(`orders:`)); err == nil {
 		t.Error("orders that are not JSON were accepted")
 	}
+	// An order is for one thing: an image to build, or a package to publish.
+	for name, order := range map[string]string{
+		"neither": `{"name":"x"}`,
+		"both":    `{"name":"x","context":"a","package":"b"}`,
+		"no name": `{"context":"a"}`,
+	} {
+		if _, err := Parse([]byte(`{"orders":[` + order + `]}`)); err == nil {
+			t.Errorf("an order with %s was accepted", name)
+		}
+	}
+	if got, err := Parse([]byte(`{"orders":[{"name":"x","package":"b"}]}`)); err != nil || got[0].Package != "b" || got[0].Context != "" {
+		t.Errorf("an order that publishes a package was read as %+v, %v", got, err)
+	}
 	write(t, root, Path, `{"orders":[{"name":"gadget","context":"tools/gadget"}]}`)
 	write(t, root, applications.Dir+"/broken/"+applications.Declaration, `{"nobody_reads": true}`)
 	if _, err := Read(root); err == nil {
@@ -77,9 +90,7 @@ func TestTheRepositorysWorkOrdersRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, o := range orders {
-		if o.Name == "" || o.Context == "" {
-			t.Errorf("an order reads with no name or context: %+v", o)
-		}
+	if len(orders) == 0 {
+		t.Fatal("the repository reads as having no orders")
 	}
 }

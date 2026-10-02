@@ -8,6 +8,18 @@ name: Fabricator
 # writes to the repository and never chooses what is installed where. Pinning
 # a product is a release, and releases belong to somebody else.
 #
+# It also publishes the platform: the modules a site runs and the files they
+# read, as one package under a version (v2026.10.1 - the year and month, and
+# its number within the month). A site runs the version its own config pins,
+# so merging a change to the platform does nothing to production; releasing
+# it is moving that pin. See the `package` job.
+#
+# NO PATH FILTER. It runs on every merge to main, because whether there is
+# anything to do is decided by fingerprint, not by which paths a list here
+# happened to name: an image whose inputs are unchanged is reused, a release
+# or a package whose contents are unchanged is not published again. A merge
+# that changed nothing costs a short run that says so.
+#
 # It builds from work orders and nothing else. An order says what to build
 # and from which directory: scripts/work-orders.json holds the estate's own,
 # and every application that has an image is an order by being there - its
@@ -27,12 +39,6 @@ name: Fabricator
 on:
   push:
     branches: [main]
-    paths:
-      - ".github/runner-image/**"
-      - "modules/applications/**"
-      - "scripts/versions.env"
-      - "scripts/work-orders.json"
-      - ".github/workflows/fabricator.yml"
   workflow_dispatch:
 # Read at the top. packages:write is granted on the build job alone, which is
 # the only thing that publishes, so a job added here later does not inherit the
@@ -58,6 +64,8 @@ jobs:
       contents: read
     outputs:
       orders: ${{ steps.orders.outputs.orders }}
+      images: ${{ steps.orders.outputs.images }}
+      packages: ${{ steps.orders.outputs.packages }}
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
@@ -91,8 +99,14 @@ jobs:
                     + (if $declared[0].release then {release: ($declared[0].release + {module: $dir})} else {} end)]' \
               <<<"$orders")"
           done
-          echo "orders=${orders}" >> "$GITHUB_OUTPUT"
-          jq -r '.[] | "- \(.name): \(.context)"' <<<"$orders" >> "$GITHUB_STEP_SUMMARY"
+          # An order builds an image or publishes a package, and each kind
+          # has its own job.
+          {
+            echo "orders=${orders}"
+            echo "images=$(jq -c '[.[] | select(.context)]' <<<"$orders")"
+            echo "packages=$(jq -c '[.[] | select(.package)]' <<<"$orders")"
+          } >> "$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.name): \(.context // .package)"' <<<"$orders" >> "$GITHUB_STEP_SUMMARY"
 
   build:
     name: Build ${{ matrix.order.name }}
@@ -109,7 +123,7 @@ jobs:
       # One order failing should not hide another's result.
       fail-fast: false
       matrix:
-        order: ${{ fromJSON(needs.orders.outputs.orders) }}
+        order: ${{ fromJSON(needs.orders.outputs.images) }}
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
@@ -445,6 +459,226 @@ jobs:
             echo ""
             echo "Released as \`${ARTIFACT}:${TAG}\` (\`${pushed}\`), from \`${module}\`."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # A package is a set of the repository's own files, published whole under a
+  # version. The platform is the one there is: the modules a site's roots
+  # call, and every file a module reads from outside its own directory, at
+  # the paths they have in the repository - so a module finds them inside the
+  # package exactly as it finds them in a checkout. What it holds is the
+  # order's manifest, which scripts/details/platform holds to what the modules
+  # actually reach for.
+  #
+  # Published in the form OpenTofu takes a module from a registry in, so a
+  # site's roots name a version and a digest and OpenTofu fetches the rest.
+  # tests/go/repo/fabricator_test.go runs each of these steps as shipped.
+  package:
+    name: Package ${{ matrix.order.name }}
+    needs: orders
+    if: needs.orders.outputs.packages != '[]'
+    runs-on: ubuntu-latest
+    # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+    # is what GitHub's default timeout allows.
+    timeout-minutes: 15
+    permissions:
+      # The release that describes each version, which is what a pull request
+      # moving a site to it shows.
+      contents: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        order: ${{ fromJSON(needs.orders.outputs.packages) }}
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          # The copy lives here because harden-runner reads its policy in a
+          # pre-step, before any step of this job can run.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            ghcr.io:443
+            github.com:443
+            objects.githubusercontent.com:443
+            pkg-containers.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
+      # Versions come from scripts/versions.env, which is the only place one
+      # is written. See .github/actions/versions for why this is a step
+      # rather than a setup job.
+      - name: Read pinned versions
+        uses: ./.github/actions/versions
+
+      - name: Take delivery of the registry client
+        run: scripts/take-delivery.sh oras
+
+      # Whether this exact package already exists. Fingerprinted from the
+      # files it would hold as git has them at this commit: the same files
+      # are the same package, whatever else the merge changed. So a merge
+      # that touched nothing a site runs publishes no version.
+      - name: Reuse a package of the same contents
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: ${{ github.event.repository.name }}-${{ matrix.order.name }}-release
+          MANIFEST: ${{ matrix.order.package }}
+        run: |
+          # What the package holds, as tracked files. A held path is a file,
+          # a directory - everything beneath it - or a pattern whose * stands
+          # for one name; :(glob) is what keeps a * from crossing a slash.
+          specs=()
+          while IFS= read -r held; do
+            specs+=(":(glob)${held}")
+          done < <(jq -r '.holds[]' "$MANIFEST")
+          git ls-files -- "${specs[@]}" | LC_ALL=C sort > "${RUNNER_TEMP}/held"
+          if [ ! -s "${RUNNER_TEMP}/held" ]; then
+            echo "::error::${MANIFEST} holds no tracked file, so there is nothing to publish"
+            exit 1
+          fi
+          mapfile -t files < "${RUNNER_TEMP}/held"
+          fingerprint="fp-$(git ls-tree -r HEAD -- "${files[@]}" | sha256sum | cut -c1-16)"
+          echo "fingerprint=${fingerprint}" >> "$GITHUB_OUTPUT"
+
+          case "$(gh api "users/${OWNER}" --jq .type)" in
+            Organization) base="orgs/${OWNER}" ;;
+            User) base="users/${OWNER}" ;;
+            *)
+              echo "::error::could not tell whether ${OWNER} is an organization or a user"
+              exit 1
+              ;;
+          esac
+          # A package that does not exist yet is the first publish: 404, and
+          # nothing to reuse. Any other failure is not evidence of that.
+          if ! listed="$(gh api --paginate "${base}/packages/container/${PACKAGE}/versions" \
+            --jq ".[] | select(.metadata.container.tags | index(\"${fingerprint}\")) | .metadata.container.tags[]" 2>&1)"; then
+            if grep -q "HTTP 404" <<<"$listed"; then
+              listed=""
+            else
+              echo "::error::could not list the versions of ${PACKAGE}: ${listed}"
+              exit 1
+            fi
+          fi
+          if [ -n "$listed" ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "no version: $(grep -v '^fp-' <<<"$listed" | head -n 1) already holds these exact files" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The version is when it was published and which one of that month it
+      # is: v2026.10.1, then v2026.10.2, and v2026.11.1 the month after. No
+      # leading zero on the month, so the name is also a semantic version and
+      # every tool that orders versions orders these. The counter continues
+      # from the registry, so it never repeats.
+      - name: Number the version
+        id: number
+        if: steps.reuse.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: ${{ github.event.repository.name }}-${{ matrix.order.name }}-release
+        run: |
+          case "$(gh api "users/${OWNER}" --jq .type)" in
+            Organization) base="orgs/${OWNER}" ;;
+            User) base="users/${OWNER}" ;;
+            *)
+              echo "::error::could not tell whether ${OWNER} is an organization or a user"
+              exit 1
+              ;;
+          esac
+          tags=""
+          if listed="$(gh api --paginate "${base}/packages/container/${PACKAGE}/versions" --jq '.[].metadata.container.tags[]' 2>&1)"; then
+            tags="$listed"
+          elif ! grep -q "HTTP 404" <<<"$listed"; then
+            echo "::error::could not list the versions of ${PACKAGE}: ${listed}"
+            exit 1
+          fi
+          month="v$(date -u +%Y.%-m)"
+          n=0
+          while IFS= read -r tag; do
+            case "$tag" in
+              "${month}".*)
+                m="${tag#"${month}".}"
+                if [[ "$m" =~ ^[0-9]+$ ]] && [ "$m" -gt "$n" ]; then
+                  n="$m"
+                fi
+                ;;
+            esac
+          done <<<"$tags"
+          echo "version=${month}.$((n + 1))" >> "$GITHUB_OUTPUT"
+
+      # Packed from git, not from the checkout: exactly the tracked files the
+      # manifest holds, as they are at this commit, at the paths they have in
+      # the repository. Pushed as the artifact type OpenTofu fetches a module
+      # package as, and tagged with its fingerprint so the same files are not
+      # published twice.
+      - name: Pack and publish the package
+        id: publish
+        if: steps.reuse.outputs.needed == 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          ARTIFACT: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}-release
+          VERSION: ${{ steps.number.outputs.version }}
+          FINGERPRINT: ${{ steps.reuse.outputs.fingerprint }}
+          SHA: ${{ github.sha }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          mapfile -t files < "${RUNNER_TEMP}/held"
+          git archive --format=zip -o "${RUNNER_TEMP}/package.zip" HEAD -- "${files[@]}"
+
+          echo "$TOKEN" | oras login ghcr.io -u "$ACTOR" --password-stdin
+          # From the directory holding it, so the layer is named for the file
+          # and not for a path on this runner.
+          (
+            cd "$RUNNER_TEMP"
+            oras push "${ARTIFACT}:${VERSION}" \
+              --artifact-type application/vnd.opentofu.modulepkg \
+              --annotation "org.opencontainers.image.revision=${SHA}" \
+              --annotation "org.opencontainers.image.source=${SOURCE}" \
+              --annotation "org.opencontainers.image.version=${VERSION}" \
+              package.zip:archive/zip
+          )
+          oras tag "${ARTIFACT}:${VERSION}" "${FINGERPRINT}"
+          digest="$(oras resolve "${ARTIFACT}:${VERSION}")"
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::the registry did not say what ${VERSION} was published as, so there is no digest for a site to pin"
+            exit 1
+          fi
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### ${ARTIFACT##*/} ${VERSION}"
+            echo ""
+            echo "\`${ARTIFACT}:${VERSION}\`"
+            echo ""
+            echo "\`${digest}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # What the version brings, where a person and a pull request moving a
+      # site to it can read it: the pull requests merged since the last one,
+      # and the digest to pin. The release's tag is the version's name on the
+      # commit it was packed from.
+      - name: Describe the version
+        if: steps.reuse.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NAME: ${{ matrix.order.name }}
+          ARTIFACT: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}-release
+          VERSION: ${{ steps.number.outputs.version }}
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          SHA: ${{ github.sha }}
+        run: |
+          gh release create "$VERSION" --repo "$REPO" --target "$SHA" \
+            --title "${NAME} ${VERSION}" --generate-notes \
+            --notes "$(printf '%s\n' \
+              "Published as \`${ARTIFACT}:${VERSION}\`" "" \
+              "\`${DIGEST}\`" "" \
+              "A site runs this when its own config pins it. Publishing it changed nothing that is running.")"
 
   # Procurement brings the finished work to the gate. For every work order that
   # makes a release, the newest one the registry holds is compared with the pin

@@ -12,9 +12,10 @@ locals {
   # Every application's declaration, reached from the repository's top as
   # every file outside a module is. Written whole and in one string - the
   # directory, and which file of each application - because that string is
-  # what says a pinned tree is read for the declarations and for nothing
-  # else of an application's (homelab/details/pins): a change to one moves a
-  # site's pin, and a change to an application's manifests does not.
+  # what puts the declarations in a release of the platform, and nothing
+  # else of an application's (homelab/details/platform): a change to one is
+  # a new version of the platform, and a change to an application's manifests
+  # is not.
   declarations = "${path.module}/../../../modules/applications/*/application.json"
   directory    = coalesce(var.directory, dirname(dirname(local.declarations)))
 
