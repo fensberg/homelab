@@ -824,7 +824,7 @@ func flagsFor(verb string) *opts {
 	}
 
 	if verb == "demolish-site" {
-		o.confirm = fs.String("confirm", "", "Name the site again, to confirm the destroy.")
+		o.confirm = fs.String("confirm", "", "Name the site's key again. The destroy then asks for the site's real name, which is typed and never passed.")
 		o.whatIf = fs.Bool("whatif", false, "Say what would be destroyed, without destroying it.")
 	}
 	return o

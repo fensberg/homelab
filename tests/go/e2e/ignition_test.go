@@ -40,9 +40,11 @@
 package e2e_test
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,7 +107,39 @@ func runContractor(t *testing.T, verb, site string, args ...string) error {
 	cmd.Dir = root
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// A teardown is confirmed by the site's real name, read from standard
+	// input (#605). Nobody is at this terminal, so the name is read from the
+	// rendered config here and handed in by the same door a person types it
+	// at; it is in no flag, and so in no log of this run.
+	if verb == "demolish-site" {
+		name, err := siteName(t, site)
+		if err != nil {
+			return err
+		}
+		cmd.Stdin = strings.NewReader(name + "\n")
+	}
 	return cmd.Run()
+}
+
+// siteName is the site's real name, as the rendered config holds it: the
+// vault's value, read by the harness's reader. A site that has not
+// been rendered yet is rendered first, which is the same vault read a
+// teardown starts with.
+func siteName(t *testing.T, site string) (string, error) {
+	t.Helper()
+	path := harness.RenderedConfigPath(t)
+	if _, err := os.Stat(path); err != nil {
+		if err := runContractor(t, "build-site", site, "-phase", "render", "-keep-on-failure"); err != nil {
+			return "", fmt.Errorf("rendering the config to learn %s's name: %w", site, err)
+		}
+	}
+	// The harness reads the site under test, which is the one being torn
+	// down: the guard above required the two to be the same.
+	name := harness.SiteConfig(t).Name
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("the config gives %s no name, so its teardown cannot be confirmed", site)
+	}
+	return name, nil
 }
 
 func buildIgnite(t *testing.T) {
@@ -153,7 +187,8 @@ func TestIgnitionBuildsAndTearsDownAnEstate(t *testing.T) {
 // sterilizes, refusing to sterilize if the destroy itself failed.
 //
 // -confirm is required and must name the site, which is the point: even the
-// test has to say it twice.
+// test has to say it twice. And it has to know the site's real name, which
+// runContractor reads from the vault and hands in as a person would type it.
 func teardown(t *testing.T, site string) {
 	if err := runContractor(t, "demolish-site", site, "-confirm", site); err != nil {
 		t.Errorf(`contractor demolish-site failed: %v

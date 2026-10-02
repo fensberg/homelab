@@ -357,8 +357,11 @@ listed in Sterilize for the run that dies first.
 signal-handling reason `start` is. It renders the config first, which is the
 credential check rather than a formality - no 1Password session means no
 Proxmox token and no hypervisor endpoint, so the command is inert in the
-hands of anyone without vault access. `-confirm` must name the site a second
-time, which is the guard against a typo by somebody who does hold it.
+hands of anyone without vault access. `-confirm` must name the site's key a
+second time, and the command then asks for the site's real name, which is a
+vault value: it is typed at the prompt, never passed as a flag, and a wrong
+answer is refused. The key is in every log; knowing the name is knowing
+which site this is.
 Interrupting a destroy deliberately does _not_ sterilize: wiping state
 part-way through a teardown is how VMs get orphaned, so it waits for tofu to
 release its lock and leaves everything in place to be re-run.

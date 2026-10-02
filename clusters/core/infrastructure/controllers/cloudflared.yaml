@@ -186,5 +186,13 @@ spec:
     - to:
         - namespaceSelector:
             matchExpressions:
+              - key: homelab/workload
+                operator: Exists
+        # The key that label had before (#540), still the only one on a
+        # namespace until its site runs a release that sets the one above.
+        # Either marks an application's namespace; this entry goes with the
+        # old label.
+        - namespaceSelector:
+            matchExpressions:
               - key: homelab.fensberg.com/workload
                 operator: Exists

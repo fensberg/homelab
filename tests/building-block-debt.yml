@@ -44,13 +44,12 @@ debt:
   - "refs/signing/"
   - "user.email=a@example.com"
 
-  # --- Paths into this repository (19)
+  # --- Paths into this repository (18)
   - "backend_pg.tf"
   - ".pre-commit-config.yaml"
   - "age-encryption.org/v1"
   - "approved-suppliers.yml"
   - "epoch/03-workload"
-  - "fensberg/homelab"
   - "http://127.0.0.1:1"
   - "hypervisor-prep.yml"
   - "management.rendered.json"

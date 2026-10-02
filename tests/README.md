@@ -240,8 +240,10 @@ calls and what a human should call. It renders the config first - that is the
 credential check, not a formality: without a 1Password session there is no
 Proxmox token and no hypervisor endpoint, so somebody with a terminal and a
 copy of this repository can run it all day and destroy nothing. `-confirm`
-must name the site again, which guards against a typo by somebody who _does_
-hold the credentials.
+must name the site's key again, and the command then asks for the site's real
+name as its vault holds it, which guards against the wrong site in the hands
+of somebody who _does_ hold the credentials. A person types it; the e2e tier
+reads it from the vault and hands it in on standard input.
 
 ```sh
 task destroy SITE=site0     # prints the command; does not run it

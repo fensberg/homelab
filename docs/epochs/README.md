@@ -9,12 +9,13 @@ earlier epoch whose decisions you are about to touch.
 
 ## State of the world
 
-- **Open epochs:** 02 — Abstraction, 03 — Workload, 04 — Observability and
-  08 — Agent Roles, all in progress at once. Epoch 03 was brought forward
-  because the game server named as its success criterion needed enforced
-  NetworkPolicy before it could run at all; epoch 02 carries the estate/site
-  split and the as-built record; epoch 04 built the monitoring stack (#435).
-  Epoch 01 signed off 2026-09-03.
+- **Open epochs:** 03 — Workload, 04 — Observability and 08 — Agent Roles,
+  all in progress at once. Epoch 03 was brought forward because the game
+  server named as its success criterion needed enforced NetworkPolicy before
+  it could run at all; epoch 04 built the monitoring stack (#435). Epoch 01
+  signed off 2026-09-03. Epoch 02 closed 2026-10-02: it carried the
+  estate/site split, the as-built record and the release a site pins. Epoch
+  05 is next, and is built before any site has a second node.
 - **Built:** the site lifecycle program (`scripts/contractor`) and the
   estate's (`scripts/lawyer`), each holding only its own scope's credentials;
   an idempotent Proxmox playbook, Talos + Flux provisioning, codified
@@ -68,7 +69,7 @@ earlier epoch whose decisions you are about to touch.
 | #   | Name           | Tier / path                           | Status      | Record                                       |
 | --- | -------------- | ------------------------------------- | ----------- | -------------------------------------------- |
 | 01  | Ignition       | `management/`                         | Complete    | [01-ignition.md](01-ignition.md)             |
-| 02  | Abstraction    | `modules/`                            | In progress | [02-abstraction.md](02-abstraction.md)       |
+| 02  | Abstraction    | `modules/`                            | Complete    | [02-abstraction.md](02-abstraction.md)       |
 | 03  | Workload       | `environments/`                       | In progress | [03-workload.md](03-workload.md)             |
 | 04  | Observability  | `clusters/management/infrastructure/` | In progress | [04-observability.md](04-observability.md)   |
 | 05  | Node Lifecycle | `management/`, `scripts/contractor/`  | Not started | [05-node-lifecycle.md](05-node-lifecycle.md) |

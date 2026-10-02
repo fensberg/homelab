@@ -11,6 +11,8 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/details/applications"
+	"homelab/details/flux"
 )
 
 // The first full ignition reported success over a state database running two
@@ -310,5 +312,105 @@ func TestAnOCIHelmRepositoryIsNotWaitedOn(t *testing.T) {
 	}
 	if len(got) != 1 || !strings.Contains(got[0], "HelmRepository flux-system/classic") {
 		t.Fatalf("want only the classic repository waited on, got %v", got)
+	}
+}
+
+// A site given work, for the tests below: a release and the Kustomization
+// that runs it, in the application's own namespace.
+func siteWithWork(t *testing.T, dir string) *run.Context {
+	t.Helper()
+	ctx := &run.Context{Root: run.Root{Dir: dir}, RepoRoot: t.TempDir(), Site: "site7"}
+	mustWriteFile(t, filepath.Join(ctx.RepoRoot, filepath.FromSlash(applications.SiteFilePath(ctx.Site))), `---
+kind: OCIRepository
+metadata:
+  name: alpha
+  namespace: flux-system
+---
+kind: Kustomization
+metadata:
+  name: alpha-runs
+  namespace: flux-system
+spec:
+  path: ./`+applications.Dir+`/alpha/production
+`)
+	return ctx
+}
+
+func fluxObject(kind, namespace, name, ready, message string) string {
+	return `{"kind":"` + kind + `","metadata":{"name":"` + name + `","namespace":"` + namespace + `"},"status":{"conditions":[{"type":"Ready","status":"` + ready + `","message":"` + message + `"}]}}`
+}
+
+const coreReady = `{"kind":"Kustomization","metadata":{"name":"the-core","namespace":"flux-system"},"status":{"conditions":[{"type":"Ready","status":"True"}]}}`
+
+// The build gates on the core and never on the site's work (#581): an
+// application that cannot start is reported and does not hold the build, and
+// what the site file does not declare is the core and does.
+func TestHealthGatesOnTheCoreAndNotOnTheSitesWork(t *testing.T) {
+	for name, tc := range map[string]struct {
+		items   []string
+		gates   string
+		waiting int
+	}{
+		"the core ready, the work not": {[]string{coreReady,
+			fluxObject(flux.OCIRepository, "flux-system", "alpha", "False", "the release is not there"),
+			fluxObject(flux.Kustomization, "flux-system", "alpha-runs", "False", "waiting on its source"),
+			fluxObject(flux.HelmRelease, "alpha", "a-chart-the-release-brought", "False", "install failed")}, "", 3},
+		"the core ready, the work running": {[]string{coreReady,
+			fluxObject(flux.Kustomization, "flux-system", "alpha-runs", "True", "")}, "", 0},
+		"the core not ready": {[]string{
+			fluxObject(flux.Kustomization, "flux-system", "the-core", "False", "the core is not up"),
+			fluxObject(flux.Kustomization, "flux-system", "alpha-runs", "True", "")}, "the core is not up", 0},
+		"something nobody declared, in the core's namespace": {[]string{coreReady,
+			fluxObject(flux.Kustomization, "flux-system", "slipped-in", "False", "nobody declared this")}, "nobody declared this", 0},
+		"the work's name on another kind": {[]string{coreReady,
+			fluxObject(flux.HelmRelease, "flux-system", "alpha", "False", "the name is not the object")}, "the name is not the object", 0},
+		"only work, and no core at all": {[]string{
+			fluxObject(flux.Kustomization, "flux-system", "alpha-runs", "True", "")}, "no Kustomizations or HelmReleases", 0},
+	} {
+		dir := fakeKubectlGet(t, `{"items":[`+strings.Join(tc.items, ",")+`]}`)
+		ctx := siteWithWork(t, dir)
+		err := checkFlux(ctx, filepath.Join(dir, "kubeconfig"))
+		switch {
+		case tc.gates == "" && err != nil:
+			t.Errorf("%s: the build was held: %v", name, err)
+		case tc.gates != "" && (err == nil || !strings.Contains(err.Error(), tc.gates)):
+			t.Errorf("%s: the build was not held on %q: %v", name, tc.gates, err)
+		}
+		if err != nil && strings.Contains(err.Error(), "alpha-runs") {
+			t.Errorf("%s: the site's work is named among what holds the build: %v", name, err)
+		}
+		_, waiting, werr := workWaiting(ctx, filepath.Join(dir, "kubeconfig"))
+		if werr != nil || len(waiting) != tc.waiting {
+			t.Errorf("%s: %d piece(s) of work reported waiting (%v), want %d: %v", name, len(waiting), waiting, tc.waiting, werr)
+		}
+		// Whatever it finds, saying so is not a failure of anything.
+		reportWork(ctx, filepath.Join(dir, "kubeconfig"))
+	}
+}
+
+// A site file this cannot read holds the build: not knowing what is work is
+// not the same as there being none to wait past.
+func TestHealthRefusesASiteFileItCannotRead(t *testing.T) {
+	dir := fakeKubectlGet(t, `{"items":[`+coreReady+`]}`)
+	ctx := siteWithWork(t, dir)
+	mustWriteFile(t, filepath.Join(ctx.RepoRoot, filepath.FromSlash(applications.SiteFilePath(ctx.Site))), "kind: Kustomization\nmetadata:\n  namespace: flux-system\n")
+	if err := checkFlux(ctx, filepath.Join(dir, "kubeconfig")); err == nil || !strings.Contains(err.Error(), "what work site7 was given") {
+		t.Errorf("got %v", err)
+	}
+	if _, _, err := workWaiting(ctx, filepath.Join(dir, "kubeconfig")); err == nil {
+		t.Error("the work was reported from a site file that could not be read")
+	}
+	reportWork(ctx, filepath.Join(dir, "kubeconfig"))
+
+	// And a cluster that cannot be asked is reported, not fatal.
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := workWaiting(ctx, filepath.Join(dir, "kubeconfig")); err == nil {
+		t.Error("a cluster that could not be asked reported its work")
+	}
+	reportWork(ctx, filepath.Join(dir, "kubeconfig"))
+	if _, _, err := coreAndWork(ctx, []byte("not json")); err == nil {
+		t.Error("output that is not a list was split into core and work")
 	}
 }

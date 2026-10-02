@@ -116,8 +116,8 @@ func TestDeliverLeavesASiteThatDoesNotFollowAlone(t *testing.T) {
 	}{
 		"not run here":            {source("other", "1.0.0-1", otherDigest, ""), notRun},
 		"an empty file":           {"", notRun},
-		"holding its pin":         {source("thing", "1.0.0-1", otherDigest, "\n  annotations:\n    homelab.fensberg.com/delivery: hold"), held},
-		"holding its pin, quoted": {source("thing", "1.0.0-1", otherDigest, "\n  annotations:\n    homelab.fensberg.com/delivery: \"hold\""), held},
+		"holding its pin":         {source("thing", "1.0.0-1", otherDigest, "\n  annotations:\n    homelab/delivery: hold"), held},
+		"holding its pin, quoted": {source("thing", "1.0.0-1", otherDigest, "\n  annotations:\n    homelab/delivery: \"hold\""), held},
 	} {
 		after, outcome, err := movePin(c.body, "thing", "1.0.15-6", nextDigest)
 		if err != nil || outcome != c.want || after != c.body {
@@ -125,7 +125,7 @@ func TestDeliverLeavesASiteThatDoesNotFollowAlone(t *testing.T) {
 		}
 	}
 	// Saying it follows, or saying nothing, is following.
-	follows := source("thing", "1.0.0-1", otherDigest, "\n  annotations:\n    homelab.fensberg.com/delivery: follow")
+	follows := source("thing", "1.0.0-1", otherDigest, "\n  annotations:\n    homelab/delivery: follow")
 	if _, outcome, err := movePin(follows, "thing", "1.0.15-6", nextDigest); err != nil || outcome != pinMoved {
 		t.Errorf("a source that follows was not moved: %v, %v", outcome, err)
 	}

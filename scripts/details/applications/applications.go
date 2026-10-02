@@ -534,3 +534,104 @@ func ParseAssigned(rel, body string) ([]Assignment, error) {
 	sort.Slice(out, func(i, j int) bool { return out[i].Application < out[j].Application })
 	return out, nil
 }
+
+// FluxObject is one object a site file declares for Flux to reconcile: an
+// application's release, or the Kustomization that runs it.
+type FluxObject struct{ Kind, Namespace, Name string }
+
+// Work is a site's work as its cluster holds it: the objects its site file
+// declares, and the namespaces its applications run in. It is what tells the
+// work a site was given apart from the core the site is made of, by what the
+// site file says and never by what anything is called.
+type Work struct {
+	Objects    []FluxObject
+	Namespaces []string
+}
+
+// Holds reports whether an object in the cluster is the site's work: one the
+// site file declares, or anything in an application's own namespace, which
+// is where everything a release brings lands. Whatever this does not hold is
+// the core.
+func (w Work) Holds(kind, namespace, name string) bool {
+	for _, ns := range w.Namespaces {
+		if namespace == ns {
+			return true
+		}
+	}
+	for _, o := range w.Objects {
+		if o.Kind == kind && o.Namespace == namespace && o.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	declaredKind = regexp.MustCompile(`^kind:\s*(\S+)\s*$`)
+	declaredMeta = regexp.MustCompile(`^  (name|namespace):\s*(\S+)\s*$`)
+)
+
+// ParseDeclared reads the objects a site file declares: each document's kind
+// and, from its metadata, its name and namespace. A document with a kind and
+// no name is an error, because an object this cannot name is one it would
+// leave to be read as the core.
+func ParseDeclared(rel, body string) ([]FluxObject, error) {
+	var out []FluxObject
+	for _, doc := range strings.Split("\n"+body, "\n---") {
+		var o FluxObject
+		inMeta := false
+		for _, line := range strings.Split(doc, "\n") {
+			if m := declaredKind.FindStringSubmatch(line); m != nil {
+				o.Kind = m[1]
+			}
+			switch {
+			case line == "metadata:":
+				inMeta = true
+			case line != "" && !strings.HasPrefix(line, " "):
+				inMeta = false
+			case inMeta:
+				if m := declaredMeta.FindStringSubmatch(line); m != nil {
+					if m[1] == "name" {
+						o.Name = m[2]
+					} else {
+						o.Namespace = m[2]
+					}
+				}
+			}
+		}
+		if o.Kind == "" {
+			continue
+		}
+		if o.Name == "" {
+			return nil, fmt.Errorf("%s declares a %s with no name, so it cannot be told apart from the core", rel, o.Kind)
+		}
+		out = append(out, o)
+	}
+	return out, nil
+}
+
+// SiteWork is the work a site was given. A site with no site file was given
+// none, and everything it runs is the core.
+func SiteWork(repoRoot, site string) (Work, error) {
+	rel := SiteFilePath(site)
+	body, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
+	if os.IsNotExist(err) {
+		return Work{}, nil
+	}
+	if err != nil {
+		return Work{}, err
+	}
+	objects, err := ParseDeclared(rel, string(body))
+	if err != nil {
+		return Work{}, err
+	}
+	assigned, err := ParseAssigned(rel, string(body))
+	if err != nil {
+		return Work{}, err
+	}
+	w := Work{Objects: objects}
+	for _, a := range assigned {
+		w.Namespaces = append(w.Namespaces, a.Application)
+	}
+	return w, nil
+}

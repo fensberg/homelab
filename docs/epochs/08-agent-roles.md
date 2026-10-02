@@ -762,6 +762,33 @@ starts as a proposal, and a design question found mid-build stops the build.
 The rule held within the same session - two questions surfaced while the
 binaries were being scoped, and both went to the operator before any code.
 
+### The release design's last two stages are carried here
+
+From epoch 02, at its close on 2026-10-02. Production follows a pinned
+version: a merge publishes a release of the platform, and a site runs the
+one its line in `management/versions.json` names. The first two stages are
+built. The two left are about who moves a line and how its contents are
+vouched for, which is this epoch's subject - they replace the fabricator's
+delivery job and procurement's `deliver`.
+
+- **Renovate, self-hosted, with its dashboard.** The promotion pull request
+  is opened on request: the dashboard lists what each site could move to,
+  and ticking one opens the one-line change. Nothing is opened after a
+  merge. Each application's version sits beside the platform's, a site
+  carries production and staging work alike, and whether a piece of work
+  follows the newest release or holds a pin is said per piece. The 4am
+  standing order is re-pointed at what Renovate opens. Repository rules may
+  change to fit it.
+- **Releases are signed**, and Flux and the contractor verify before using
+  one. Until then nothing proves that the digest on a site's line was built
+  by the fabricator from `main`, or that the version written beside it is
+  the one the registry holds under that digest. The digest is what runs, so
+  what a site runs cannot change under it; what is missing is where it came
+  from.
+
+Not designed beyond this. It adds a tool and a workflow, so the design is
+agreed before either is built.
+
 ## Acceptance tests
 
 1. **The planner finds a trigger that has genuinely fired**, and the issue it

@@ -1,9 +1,11 @@
 package phases
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"homelab/details/tcp"
+	"io"
 	"os"
 	"regexp"
 	"sort"
@@ -58,6 +60,14 @@ func Destroy(ctx *run.Context, confirm string) error {
 	}
 	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
 	if err != nil {
+		return err
+	}
+
+	// And only now the confirmation that means something (#605): the site's
+	// name, as its vault holds it. Asked before anything below prints it, so
+	// it is typed from knowing which site this is and not copied off the
+	// screen.
+	if err := ConfirmByName(cfg.Sites[ctx.Site].Name, nameInput, os.Stdout); err != nil {
 		return err
 	}
 
@@ -245,6 +255,46 @@ happens by accident, and there is no flag that skips it`, site, site)
 
 Those disagreeing is the single most likely way the wrong estate gets torn
 down: the operator is looking at one site and thinking about another`, confirm, site)
+	}
+	return nil
+}
+
+// nameInput is where the site's name is read from: the terminal, for a
+// person, and a pipe for a run with nobody at one.
+var nameInput io.Reader = os.Stdin
+
+// ConfirmByName requires the site's real name, read from standard input, to
+// match the one its vault holds (#605).
+//
+// The key a site is selected by - site0 - is in the repository, in every log
+// and in every command anybody has pasted, so typing it a second time proves
+// only that the command was copied whole. The name is a vault value and is in
+// nothing public. Knowing it is knowing which site this is.
+//
+// Read, never passed as a flag, so it reaches neither shell history nor a
+// workflow's log; and for the same reason neither the name nor the answer is
+// printed, here or in the refusal. A run with nobody at the terminal - the
+// e2e tier tearing down what it built - reads the name from the vault itself
+// and hands it in on standard input, which is the same door.
+//
+// Exact, like the key: no case folding and no trimming beyond the line's own
+// ending. A vault with no name for the site confirms nothing and is refused.
+func ConfirmByName(name string, in io.Reader, prompt io.Writer) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("the site's vault holds no name for it, so there is nothing to confirm this destroy against. Give the site its name, then run this again")
+	}
+	fmt.Fprint(prompt, "  Type this site's name, as its vault holds it, to destroy it: ")
+	line, err := bufio.NewReader(in).ReadString('\n')
+	fmt.Fprintln(prompt)
+	answer := strings.TrimRight(line, "\r\n")
+	if answer == "" {
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("the site's name could not be read: %w", err)
+		}
+		return fmt.Errorf("no name was given, so this is refused. The site's name is typed here, or handed in on standard input by a run with nobody at the terminal")
+	}
+	if answer != name {
+		return fmt.Errorf("that is not this site's name, so this is refused. The key selects a site; the name is what says you know which one it is")
 	}
 	return nil
 }

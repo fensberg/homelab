@@ -196,7 +196,7 @@ files:
     uncovered: 2
     covered_by: nothing
   - path: clerk/main.go
-    uncovered: 8
+    uncovered: 7
     covered_by: nothing
   - path: clerk/runnote.go
     uncovered: 1

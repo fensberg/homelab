@@ -15,6 +15,7 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/details/applications"
 	"homelab/details/flux"
 )
 
@@ -63,7 +64,8 @@ func Health(ctx *run.Context) error {
 		}
 	}
 
-	run.Ok("cluster is healthy: nodes ready and schedulable, per-node workloads running on every node, Flux reconciled, database at full instance count, every etcd member voting")
+	run.Ok("cluster is healthy: nodes ready and schedulable, per-node workloads running on every node, the core reconciled, database at full instance count, every etcd member voting")
+	reportWork(ctx, kubeconfig)
 	return nil
 }
 
@@ -419,10 +421,11 @@ func checkFlux(ctx *run.Context, kubeconfig string) error {
 	if err != nil {
 		return err
 	}
-	unready, err := notReady(out)
+	core, _, err := coreAndWork(ctx, out)
 	if err != nil {
 		return err
 	}
+	unready := notReadyAmong(core)
 	if len(unready) > 0 {
 		return fmt.Errorf("%d Flux resource(s) not reconciled:\n  %s", len(unready), strings.Join(unready, "\n  "))
 	}
@@ -430,17 +433,10 @@ func checkFlux(ctx *run.Context, kubeconfig string) error {
 	// An empty list is not health. It means the CRDs are installed and Flux
 	// has not created anything yet, which reads identically to "everything is
 	// fine" if you only count failures.
-	// Counted by kind: a source on its own is not a reconciled cluster.
-	var list struct {
-		Items []struct {
-			Kind string `json:"kind"`
-		} `json:"items"`
-	}
-	if err := json.Unmarshal(out, &list); err != nil {
-		return err
-	}
+	// Counted by kind: a source on its own is not a reconciled cluster. And
+	// counted among the core: a site's work reconciling is not the site.
 	consumers := 0
-	for _, it := range list.Items {
+	for _, it := range core {
 		if it.Kind == flux.Kustomization || it.Kind == flux.HelmRelease {
 			consumers++
 		}
@@ -449,6 +445,69 @@ func checkFlux(ctx *run.Context, kubeconfig string) error {
 		return fmt.Errorf("no Kustomizations or HelmReleases exist yet")
 	}
 	return nil
+}
+
+// coreAndWork splits what Flux reconciles into the core the site is made of
+// and the work the site was given (#581).
+//
+// THE BUILD IS THE CORE. A site is its machines, its network, its GitOps
+// source and what the build hands its state to. The applications it runs are
+// work assigned to it once it stands, and they held the build up: site0's
+// rebuild waited on a game server's release. Work that is not ready is
+// reported and is never a gate, so an application that cannot start does not
+// halt a build or tear a site down.
+//
+// Told apart by what the site's own file declares (applications.SiteWork),
+// not by what anything is named. Whatever that does not hold is the core, so
+// an object nobody declared holds the build rather than slipping past it.
+func coreAndWork(ctx *run.Context, body []byte) (core, work []fluxItem, err error) {
+	var list struct {
+		Items []fluxItem `json:"items"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil, nil, fmt.Errorf("parsing kubectl output: %w", err)
+	}
+	given, err := applications.SiteWork(ctx.RepoRoot, ctx.Site)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading what work %s was given: %w", ctx.Site, err)
+	}
+	for _, it := range list.Items {
+		if given.Holds(it.Kind, it.Metadata.Namespace, it.Metadata.Name) {
+			work = append(work, it)
+			continue
+		}
+		core = append(core, it)
+	}
+	return core, work, nil
+}
+
+// reportWork says, once the core stands, which of the site's work is not
+// running yet. It reports and never refuses: nothing here can fail a build.
+func reportWork(ctx *run.Context, kubeconfig string) {
+	pieces, waiting, err := workWaiting(ctx, kubeconfig)
+	switch {
+	case err != nil:
+		run.Warn("could not ask how the site's work is doing. The core is healthy, and this does not hold the build")
+	case pieces == 0:
+	case len(waiting) == 0:
+		run.Ok("the site's work is running")
+	default:
+		run.Warn(fmt.Sprintf("%d piece(s) of the site's work are not running yet. The core is healthy, and this does not hold the build:\n      %s", len(waiting), strings.Join(waiting, "\n      ")))
+	}
+}
+
+// workWaiting is how many pieces of work the site's cluster holds, and which
+// of them are not ready.
+func workWaiting(ctx *run.Context, kubeconfig string) (pieces int, waiting []string, err error) {
+	out, err := kubectl(ctx, kubeconfig, "get", fluxKinds, "-A", "-o", "json")
+	if err != nil {
+		return 0, nil, err
+	}
+	_, work, err := coreAndWork(ctx, out)
+	if err != nil {
+		return 0, nil, err
+	}
+	return len(work), notReadyAmong(work), nil
 }
 
 func checkDatabase(ctx *run.Context, kubeconfig string) error {
@@ -481,31 +540,39 @@ node`, ready, want)
 // "fine" is how a gate passes before the thing it gates on has begun.
 func notReady(body []byte) ([]string, error) {
 	var list struct {
-		Items []struct {
-			Kind     string `json:"kind"`
-			Metadata struct {
-				Name      string `json:"name"`
-				Namespace string `json:"namespace"`
-			} `json:"metadata"`
-			Spec struct {
-				Type string `json:"type"`
-			} `json:"spec"`
-			Status struct {
-				Conditions []struct {
-					Type    string `json:"type"`
-					Status  string `json:"status"`
-					Message string `json:"message"`
-					Reason  string `json:"reason"`
-				} `json:"conditions"`
-			} `json:"status"`
-		} `json:"items"`
+		Items []fluxItem `json:"items"`
 	}
 	if err := json.Unmarshal(body, &list); err != nil {
 		return nil, fmt.Errorf("parsing kubectl output: %w", err)
 	}
+	return notReadyAmong(list.Items), nil
+}
 
+// fluxItem is one object Flux reconciles, as kubectl lists it: what it is,
+// and whether it says it is ready.
+type fluxItem struct {
+	Kind     string `json:"kind"`
+	Metadata struct {
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+	} `json:"metadata"`
+	Spec struct {
+		Type string `json:"type"`
+	} `json:"spec"`
+	Status struct {
+		Conditions []struct {
+			Type    string `json:"type"`
+			Status  string `json:"status"`
+			Message string `json:"message"`
+			Reason  string `json:"reason"`
+		} `json:"conditions"`
+	} `json:"status"`
+}
+
+// notReadyAmong names each of these whose Ready condition is not True.
+func notReadyAmong(items []fluxItem) []string {
 	var out []string
-	for _, item := range list.Items {
+	for _, item := range items {
 		// An OCI HelmRepository is never reconciled, by Flux's design: it is
 		// only an address the HelmRelease pulls from, so it never gets a Ready
 		// condition at all. Waiting for one held site0's build at Health until
@@ -543,7 +610,7 @@ func notReady(body []byte) ([]string, error) {
 			out = append(out, name+": no Ready condition yet")
 		}
 	}
-	return out, nil
+	return out
 }
 
 // unschedulable names every node carrying spec.unschedulable, which is what a

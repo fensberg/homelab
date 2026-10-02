@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 )
 
 // Findings as SARIF, so each one can be dismissed on its own.
@@ -21,7 +23,16 @@ import (
 // main, for the same reason - a rule this file cannot enforce, recorded in the
 // epoch and in the workflow that uploads this.
 
-const toolURI = "https://github.com/fensberg/homelab/tree/main/scripts/clerk"
+// toolURI is where the clerk's own code is, in whichever repository is
+// running it: read from the run, so a fork's findings point at the fork.
+// Outside a run there is no repository to point at and no address is given.
+func toolURI() string {
+	repo := strings.TrimSpace(os.Getenv("GITHUB_REPOSITORY"))
+	if repo == "" {
+		return ""
+	}
+	return "https://github.com/" + repo + "/tree/main/scripts/clerk"
+}
 
 func sarif(found []snag, discarded int) ([]byte, error) {
 	rules := []any{
@@ -50,30 +61,35 @@ func sarif(found []snag, discarded int) ([]byte, error) {
 		})
 	}
 
+	driver := map[string]any{
+		// The one piece of this surface that is ours.
+		//
+		// GitHub renders a code-scanning finding on a pull request as a
+		// review thread authored by github-advanced-security[bot], and
+		// that author is fixed - no SARIF field, no App permission and
+		// no marketplace action changes it, because the bot is GitHub's
+		// own renderer rather than the tool that found anything.
+		//
+		// What the thread's heading says is this name: it reads
+		// "<name> / <rule shortDescription>". So this is what
+		// distinguishes a prose-drift finding from CodeQL, Semgrep and
+		// Trivy sitting beside it, and it is worth being unmistakable
+		// rather than a lowercase word that reads like a GitHub
+		// feature. The upload categories in the workflow do the same
+		// job for the check names.
+		"name":  "Homelab Clerk",
+		"rules": rules,
+	}
+	// Where the clerk's code is, when there is a run to say: an empty
+	// address is not one, and the report is refused over it.
+	if uri := toolURI(); uri != "" {
+		driver["informationUri"] = uri
+	}
 	doc := map[string]any{
 		"$schema": "https://json.schemastore.org/sarif-2.1.0.json",
 		"version": "2.1.0",
 		"runs": []any{map[string]any{
-			"tool": map[string]any{"driver": map[string]any{
-				// The one piece of this surface that is ours.
-				//
-				// GitHub renders a code-scanning finding on a pull request as a
-				// review thread authored by github-advanced-security[bot], and
-				// that author is fixed - no SARIF field, no App permission and
-				// no marketplace action changes it, because the bot is GitHub's
-				// own renderer rather than the tool that found anything.
-				//
-				// What the thread's heading says is this name: it reads
-				// "<name> / <rule shortDescription>". So this is what
-				// distinguishes a prose-drift finding from CodeQL, Semgrep and
-				// Trivy sitting beside it, and it is worth being unmistakable
-				// rather than a lowercase word that reads like a GitHub
-				// feature. The upload categories in the workflow do the same
-				// job for the check names.
-				"name":           "Fensberg Clerk",
-				"informationUri": toolURI,
-				"rules":          rules,
-			}},
+			"tool":    map[string]any{"driver": driver},
 			"results": results,
 			// Carried here so the run-level note reads the discard count from
 			// the report rather than inventing a zero. "nothing found" and

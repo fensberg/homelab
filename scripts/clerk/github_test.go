@@ -174,7 +174,7 @@ func TestExchangeReturnsTheTokenAndItsRealPermissions(t *testing.T) {
 			t.Errorf("no bearer on %s", r.URL.Path)
 		}
 		switch {
-		case r.URL.Path == "/repos/fensberg/homelab/installation":
+		case r.URL.Path == "/repos/example/records/installation":
 			sawInstallationPath = true
 			_, _ = w.Write([]byte(`{"id":42}`))
 		case r.URL.Path == "/app/installations/42/access_tokens":
@@ -186,7 +186,7 @@ func TestExchangeReturnsTheTokenAndItsRealPermissions(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	g, perms, err := exchange(srv.URL, "fensberg/homelab", "1234567", key, srv.Client(), time.Now())
+	g, perms, err := exchange(srv.URL, "example/records", "1234567", key, srv.Client(), time.Now())
 	if err != nil {
 		t.Fatalf("exchange: %v", err)
 	}
@@ -305,5 +305,50 @@ func TestGitHubErrorsDoNotQuoteTheToken(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), tok) {
 		t.Errorf("the error quotes the installation token: %v", err)
+	}
+}
+
+// Signing in mints a token and keeps nothing, and says which of three things
+// went wrong when it cannot: nothing to sign in with, a key that is not one,
+// or a key GitHub will not take (#527).
+func TestSignInProvesTheKeyOrSaysWhyNot(t *testing.T) {
+	_, encoded := testKeyPair(t)
+	answer := http.StatusOK
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case answer != http.StatusOK:
+			w.WriteHeader(answer)
+		case strings.HasSuffix(r.URL.Path, "/installation"):
+			_, _ = w.Write([]byte(`{"id":7}`))
+		default:
+			_, _ = w.Write([]byte(`{"token":"ghs_discarded","permissions":{"pull_requests":"write"}}`))
+		}
+	}))
+	defer srv.Close()
+
+	for _, name := range []string{"CLERK_BOT_APP_ID", "CLERK_BOT_PRIVATE_KEY", "GITHUB_REPOSITORY"} {
+		t.Setenv(name, "")
+	}
+	if code := signIn(srv.URL, srv.Client()); code != 2 {
+		t.Errorf("with nothing to sign in with: exit %d", code)
+	}
+	t.Setenv("CLERK_BOT_APP_ID", "1234567")
+	t.Setenv("GITHUB_REPOSITORY", "example/records")
+	t.Setenv("CLERK_BOT_PRIVATE_KEY", "this is no key")
+	if code := signIn(srv.URL, srv.Client()); code != 1 {
+		t.Errorf("with a key that is not one: exit %d", code)
+	}
+	t.Setenv("CLERK_BOT_PRIVATE_KEY", encoded)
+	if code := signIn(srv.URL, srv.Client()); code != 0 {
+		t.Errorf("with a key that works: exit %d", code)
+	}
+	answer = http.StatusUnauthorized
+	if code := signIn(srv.URL, srv.Client()); code != 1 {
+		t.Errorf("with a key GitHub refuses: exit %d", code)
+	}
+	// The verb as the program runs it, with nothing to sign in with.
+	t.Setenv("CLERK_BOT_PRIVATE_KEY", "")
+	if code := signInVerb(nil); code != 2 {
+		t.Errorf("the verb with no key: exit %d", code)
 	}
 }

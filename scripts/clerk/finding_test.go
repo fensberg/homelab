@@ -163,7 +163,7 @@ func TestEverySarifResultIsAdvisory(t *testing.T) {
 	// does not let anybody change. It is therefore the only thing separating a
 	// prose-drift note from CodeQL and Trivy in the same list, and a lowercase
 	// word that reads like a GitHub feature does not do that.
-	if name := doc.Runs[0].Tool.Driver.Name; name != "Fensberg Clerk" {
+	if name := doc.Runs[0].Tool.Driver.Name; name != "Homelab Clerk" {
 		t.Errorf("tool is %q; alerts are grouped by it, and it is what tells a reader this is not GitHub's own finding", name)
 	}
 	for _, r := range doc.Runs[0].Results {
@@ -350,5 +350,23 @@ func TestShownReadsTheNewSideOfEachHunk(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The clerk points at its own code in whichever repository runs it, and
+// outside a run points nowhere rather than at an address that is not one.
+func TestTheClerksAddressIsTheRepositoryRunningIt(t *testing.T) {
+	t.Setenv("GITHUB_REPOSITORY", "example/records")
+	if got := toolURI(); got != "https://github.com/example/records/tree/main/scripts/clerk" {
+		t.Errorf("got %q", got)
+	}
+	in, err := sarif(nil, 0)
+	if err != nil || !strings.Contains(string(in), `"informationUri": "https://github.com/example/records/`) && !strings.Contains(string(in), `"informationUri":"https://github.com/example/records/`) {
+		t.Errorf("a report made in a run does not say where the clerk's code is: %v\n%s", err, in)
+	}
+	t.Setenv("GITHUB_REPOSITORY", "")
+	out, err := sarif(nil, 0)
+	if err != nil || strings.Contains(string(out), "informationUri") {
+		t.Errorf("a report made outside a run gives an address: %v\n%s", err, out)
 	}
 }

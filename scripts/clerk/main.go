@@ -56,6 +56,7 @@ func main() {
 		{"snag", "walk the work and list what is unsound or does not match what was written about it", snagVerb},
 		{"handover", "read it as a stranger who has just cloned it, and list what would stop them", handoverVerb},
 		{"note", "post the one note a run is entitled to, from every report it produced", noteVerb},
+		{"sign-in", "mint the clerk's token and discard it, to show its key still works", signInVerb},
 	}
 
 	if len(os.Args) < 2 {
@@ -468,5 +469,39 @@ func post(pr int, body string) int {
 		return 1
 	}
 	fmt.Fprintf(os.Stderr, "clerk: commented on #%d\n", pr)
+	return 0
+}
+
+// signInVerb mints the clerk's token and discards it (#527).
+//
+// An App key is used only when there is something to say, so a key that has
+// stopped working is found on the day it is needed: procurement's sat broken
+// for an unknown time and surfaced the morning a delivery mattered. Security's
+// patrol runs this, so a key the clerk cannot sign in with is a red run within
+// the hour and not a silent pull request.
+//
+// By the clerk's own code, because that is what has to be able to read the
+// key: the clerk takes it as GitHub generated it or as base64 of that, and a
+// check that parsed it any other way would prove something else.
+func signInVerb([]string) int {
+	return signIn(githubAPI, &http.Client{Timeout: 30 * time.Second})
+}
+
+func signIn(api string, client *http.Client) int {
+	env, err := need("CLERK_BOT_APP_ID", "CLERK_BOT_PRIVATE_KEY", "GITHUB_REPOSITORY")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "clerk:", err)
+		return 2
+	}
+	key, err := parseAppKey(env["CLERK_BOT_PRIVATE_KEY"])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "clerk: the key is not one this can read:", err)
+		return 1
+	}
+	if _, _, err := exchange(api, env["GITHUB_REPOSITORY"], env["CLERK_BOT_APP_ID"], key, client, time.Now()); err != nil {
+		fmt.Fprintln(os.Stderr, "clerk: the key did not mint a token:", err)
+		return 1
+	}
+	fmt.Fprintln(os.Stderr, "clerk: the key mints a token, which was not kept")
 	return 0
 }
