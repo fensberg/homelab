@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/applications"
 )
 
 // Every chart's images are either governed here or declared as not governed.
@@ -153,7 +155,7 @@ a number that makes the gap look larger than it is.`, chart)
 // every other check still green.
 func TestEveryFluxControllerIsPinnedHere(t *testing.T) {
 	install, components := fluxObject(t, fluxInstallKind, fluxInstallName)
-	overlay := readRepoFile(t, beside(install, "kustomization.yaml"))
+	overlay := readRepoFile(t, beside(install, applications.Kustomization))
 
 	shipped := map[string]bool{}
 	for _, m := range regexp.MustCompile(`ghcr\.io/fluxcd/([a-z-]+):v[0-9.]+`).

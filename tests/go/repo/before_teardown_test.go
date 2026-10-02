@@ -1,15 +1,15 @@
 package repo
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 
-	"homelab/contractor/config"
+	"homelab/details/applications"
 )
 
 // A workload's declared backup names a container the workload has.
@@ -21,22 +21,23 @@ import (
 // container that is not there - which fails at the worst moment, as a refusal
 // to tear down, or worse, picks no pod at all and reads as nothing to save.
 //
-// Held of every declaration under modules/applications/, found by walking, so
-// the next workload that declares one is held to it too.
+// Held of every application's declaration, found by reading them all, so the
+// next workload that declares one is held to it too.
 func TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas(t *testing.T) {
 	root := repoRoot(t)
 	// Read by the contractor's own reader, so what is held to the manifest is
 	// exactly what a teardown would run.
-	declarations, err := config.DeclaredBackups(root)
+	//
+	// No floor on how many there are: an application with no data declares
+	// none, and an estate with no application has none. What this refuses is
+	// proved against a declaration written here, in
+	// TestBackupProblemsNamesWhatADeclarationGetsWrong.
+	declarations, err := applications.Backups(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(declarations) == 0 {
-		t.Fatal("no workload declares a backup, so either none has data or this has stopped finding the declarations")
-	}
 	for _, d := range declarations {
-		rel := d.Path
-		workload := filepath.Dir(rel)
+		workload := filepath.Dir(d.Path)
 		containers, labels := map[string]bool{}, map[string]bool{}
 		for _, manifest := range tracked(t, func(m string) bool {
 			return strings.HasPrefix(m, workload+"/") && (strings.HasSuffix(m, ".yaml") || strings.HasSuffix(m, ".yml"))
@@ -47,16 +48,52 @@ func TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas(t *testing.T)
 			}
 			podTemplates(t, manifest, body, containers, labels)
 		}
-		if !containers[d.Container] {
-			t.Errorf("%s runs its backup in the container %q, and no pod the workload declares has one. A backup asked for in a container that is not there refuses every teardown.", rel, d.Container)
+		for _, problem := range backupProblems(d, containers, labels) {
+			t.Error(problem)
 		}
-		for _, pair := range strings.Split(d.Selector, ",") {
-			if !labels[strings.TrimSpace(pair)] {
-				t.Errorf("%s picks its pods by %q, and no pod the workload declares carries that label. A selector that picks nothing reads as a workload that is not running, and its data is destroyed unsaved.", rel, pair)
+	}
+}
+
+// backupProblems is what a declared backup names that the application's own
+// pods do not have.
+func backupProblems(d applications.BeforeTeardown, containers, labels map[string]bool) []string {
+	var problems []string
+	if !containers[d.Container] {
+		problems = append(problems, fmt.Sprintf("%s runs its backup in the container %q, and no pod the workload declares has one. A backup asked for in a container that is not there refuses every teardown.", d.Path, d.Container))
+	}
+	for _, pair := range strings.Split(d.Selector, ",") {
+		if !labels[strings.TrimSpace(pair)] {
+			problems = append(problems, fmt.Sprintf("%s picks its pods by %q, and no pod the workload declares carries that label. A selector that picks nothing reads as a workload that is not running, and its data is destroyed unsaved.", d.Path, pair))
+		}
+	}
+	return problems
+}
+
+// The check is held to what it claims, against a workload written here: a
+// backup in a sidecar the pod has, picked by labels it carries, is accepted,
+// and a container or a label the pod does not have is named.
+func TestBackupProblemsNamesWhatADeclarationGetsWrong(t *testing.T) {
+	containers, labels := map[string]bool{}, map[string]bool{}
+	podTemplates(t, "thing.yaml", []byte("kind: ConfigMap\n---\nkind: Deployment\nspec:\n  template:\n    metadata:\n      labels: {app: thing, tier: data}\n    spec:\n      initContainers:\n        - name: saver\n      containers:\n        - name: server\n"), containers, labels)
+	for name, c := range map[string]struct {
+		container, selector string
+		want                []string
+	}{
+		"a sidecar the pod has":        {"saver", "app=thing", nil},
+		"the pod's main container":     {"server", "app=thing, tier=data", nil},
+		"a container it does not have": {"savers", "app=thing", []string{`in the container "savers"`}},
+		"a label it does not carry":    {"saver", "app=thing,tier=cache", []string{`picks its pods by "tier=cache"`}},
+		"neither":                      {"x", "y=z", []string{`in the container "x"`, `picks its pods by "y=z"`}},
+	} {
+		got := backupProblems(applications.BeforeTeardown{Path: "thing/application.json", Container: c.container, Selector: c.selector}, containers, labels)
+		if len(got) != len(c.want) {
+			t.Errorf("%s: want %d problem(s), got %v", name, len(c.want), got)
+			continue
+		}
+		for _, w := range c.want {
+			if !strings.Contains(strings.Join(got, "\n"), w) {
+				t.Errorf("%s: no problem says %s: %v", name, w, got)
 			}
-		}
-		if !regexp.MustCompile(`^[a-z0-9-]+$`).MatchString(d.Namespace) {
-			t.Errorf("%s names the namespace %q, which is not one", rel, d.Namespace)
 		}
 	}
 }

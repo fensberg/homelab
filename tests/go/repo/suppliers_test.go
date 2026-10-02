@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/applications"
 )
 
 // The approved suppliers list is the estate's declaration of every outside
@@ -125,7 +127,7 @@ func kustomizeImages(t *testing.T, dir string) map[string]bool {
 	t.Helper()
 	pinned := map[string]bool{}
 
-	body, err := os.ReadFile(filepath.Join(dir, "kustomization.yaml"))
+	body, err := os.ReadFile(filepath.Join(dir, applications.Kustomization))
 	if err != nil {
 		return pinned // no overlay here; nothing to honour
 	}
@@ -137,7 +139,7 @@ func kustomizeImages(t *testing.T, dir string) map[string]bool {
 		} `yaml:"images"`
 	}
 	if err := yaml.Unmarshal(body, &k); err != nil {
-		t.Fatalf("parsing %s: %v", filepath.Join(dir, "kustomization.yaml"), err)
+		t.Fatalf("parsing %s: %v", filepath.Join(dir, applications.Kustomization), err)
 	}
 	for _, img := range k.Images {
 		if strings.HasPrefix(img.Digest, "sha256:") {

@@ -81,7 +81,7 @@ RUN curl -fsSL -o /rclone.deb \
 # is the right place for it to fail.
 ARG VALHEIM_APP_ID=896660
 
-# The Steam build this image contains: pinned in scripts/versions.env, where
+# The Steam build this image contains: pinned in ../pins.env, where
 # the expediter records each new one Valve publishes, and passed by the
 # fabricator like every other pin. No default: a build that does not name its
 # Steam build downloads whatever Valve serves that day, which is how the image

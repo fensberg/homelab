@@ -179,15 +179,12 @@ spec:
         - protocol: TCP
           port: 443
 
-    # The game server, on its game and query ports only (#446).
+    # Whatever applications this site runs (#446). Which of an application's
+    # pods a tunnelled device may reach, and on which ports, is the
+    # application's own ingress policy to say: the core names no application,
+    # so this reaches any namespace marked as one and no other.
     - to:
         - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: valheim
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: valheim
-      ports:
-        - protocol: UDP
-          port: 2456
-          endPort: 2457
+            matchExpressions:
+              - key: homelab.fensberg.com/workload
+                operator: Exists

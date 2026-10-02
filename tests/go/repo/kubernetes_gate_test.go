@@ -20,7 +20,7 @@ import (
 // alongside the machines starts in the first wave of the apply, while the API
 // server is still pulling its static pods; the provider gets `connection
 // refused` and an ignition tears the estate back down. That happened:
-// `kubernetes_namespace.valheim` and `kubernetes_secret.runner_vars` went that
+// an application's namespace and `kubernetes_secret.runner_vars` went that
 // way in one run, thirty seconds after bootstrap. And on the way down, deleting
 // the flux-system namespace hung on Flux's finalizers until the destroy gave up
 // having destroyed nothing, the machines included.

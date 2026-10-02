@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 	"homelab/details/onepassword"
 	"homelab/details/secrets"
@@ -47,41 +48,52 @@ func ensureGeneratedSecrets(ctx *run.Context) error {
 	if err := ensureStatePassword(ctx); err != nil {
 		return err
 	}
-	if err := ensureWorldBackupKey(ctx.Site); err != nil {
+	if err := ensureApplicationSecrets(ctx, onepassword.EnsureField); err != nil {
 		return err
 	}
 	return assertBackupKeypair(ctx)
 }
 
-// WorldBackupKeyRef encrypts the game world's backups. The site's, like the
-// world it protects.
-func WorldBackupKeyRef(site string) string { return "op://" + site + "/valheim/backup_key" }
-
-// ensureWorldBackupKey generates the key the game server's backups are
-// encrypted with.
+// ensureApplicationSecrets generates what the site's applications declared
+// as generated: a field of an application's vault item that nobody types.
 //
-// By this file's rule: modules/infrastructure/platform/workloads.tf writes it into a
-// Secret, so it reaches state, so it is ours to generate. Nobody types it -
-// the backup sidecar encrypts with it and the restore init container
-// decrypts with it, both from that Secret, so a rebuilt estate restores the
-// world with no human in the loop. A backup bucket that leaks without this
-// key yields ciphertext.
-func ensureWorldBackupKey(site string) error {
-	ref, err := onepassword.ParseRef(WorldBackupKeyRef(site))
+// By this file's rule: the platform writes each into a Secret, so it reaches
+// state, so it is ours to generate. An application says which of its fields
+// those are (generated, in its declaration); this knows no application by
+// name. A key that encrypts backups is the usual case: the application
+// encrypts and decrypts with it from that Secret, so a rebuilt site restores
+// with no human in the loop, and a bucket that leaks without it yields
+// ciphertext.
+//
+// Written to the site's own vault, like everything the contractor generates
+// for a site - never a -shared one, which the lawyer writes and other readers
+// trust, and never the estate's, which no site can see.
+func ensureApplicationSecrets(ctx *run.Context, ensure func(ref onepassword.Ref, generate func() (string, error)) (string, string, error)) error {
+	declared, assigned, err := config.SiteApplications(ctx.RepoRoot, ctx.Site)
 	if err != nil {
 		return err
 	}
-	_, status, err := onepassword.EnsureField(ref, func() (string, error) {
-		return secrets.Password(44)
-	})
-	if err != nil {
-		return fmt.Errorf("world backup key: %w", err)
-	}
-	if status == "generated" {
-		run.Ok("generated a world backup key and stored it in 1Password")
+	for _, as := range assigned {
+		for _, field := range declared[as.Application].GeneratedFields() {
+			ref, err := onepassword.ParseRef(config.ApplicationRef(ctx.Site, as.Application, field))
+			if err != nil {
+				return err
+			}
+			_, status, err := ensure(ref, func() (string, error) { return secrets.Password(generatedSecretLength) })
+			if err != nil {
+				return fmt.Errorf("%s's %s: %w", as.Application, field, err)
+			}
+			if status == "generated" {
+				run.Ok(fmt.Sprintf("generated %s's %s and stored it in 1Password", as.Application, field))
+			}
+		}
 	}
 	return nil
 }
+
+// generatedSecretLength is long enough to be a key and short enough for
+// anything that takes one as a passphrase.
+const generatedSecretLength = 44
 
 func ensureStatePassword(ctx *run.Context) error {
 	ref, err := onepassword.ParseRef(fmt.Sprintf("op://%s/database/password", ctx.Site))

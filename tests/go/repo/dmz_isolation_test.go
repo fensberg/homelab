@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/privatenet"
 )
 
 // An untrusted zone cannot reach the house LAN, or anything else private.
@@ -153,7 +155,7 @@ func TestAnUntrustedZoneIsClosedToThePrivateEstate(t *testing.T) {
 	}
 
 	// Every private range the estate or the house could be on.
-	for _, private := range []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"} {
+	for _, private := range []string{privatenet.Ten, privatenet.OneSevenTwo, privatenet.OneNineTwo} {
 		want := "FORWARD -s 198.51.100.0/24 -d " + private + " -j DROP"
 		if !containsRule(after, want) {
 			t.Errorf(`nothing drops traffic from the zone to %s:

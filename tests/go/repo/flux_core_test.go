@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"homelab/contractor/config"
+	"homelab/details/applications"
 )
 
 // The Flux tree is a core every site runs, and a directory for each site
@@ -102,7 +103,7 @@ type fluxLayout struct {
 	sites    []string
 }
 
-var workPath = regexp.MustCompile(`(?m)^\s*path:\s*\.?/?(environments|modules/applications)/`)
+var workPath = regexp.MustCompile(`(?m)^\s*path:\s*\.?/?` + applications.Dir + `/`)
 
 func (l fluxLayout) problems(files map[string]string) ([]string, error) {
 	var out []string
@@ -144,7 +145,7 @@ func (l fluxLayout) problems(files map[string]string) ([]string, error) {
 	}
 
 	for rel, body := range files {
-		if topOf(rel) != l.core || strings.HasPrefix(rel, l.vendored) && filepath.Base(rel) != "kustomization.yaml" && filepath.Base(rel) != "gotk-sync.yaml" {
+		if topOf(rel) != l.core || strings.HasPrefix(rel, l.vendored) && filepath.Base(rel) != applications.Kustomization && filepath.Base(rel) != "gotk-sync.yaml" {
 			continue
 		}
 		code := stripYAMLComments(body)
@@ -181,7 +182,7 @@ func TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn(t *testing.T) {
 		fluxTree + "/shared/engine/generated.yaml": "name: alpha-is-a-word-upstream-uses\n",
 		fluxTree + "/first/rendered.yaml":          "kind: DaemonSet\n",
 		fluxTree + "/alpha/kustomization.yaml":     "resources:\n  - ../shared\n  - work.yaml\n",
-		fluxTree + "/alpha/work.yaml":              "path: ./environments/x/applications\n",
+		fluxTree + "/alpha/work.yaml":              "path: ./" + applications.Dir + "/x/production\n",
 	}
 	if got, err := l.problems(good); err != nil || len(got) != 0 {
 		t.Fatalf("a core and one site's work were refused: %v, %v", got, err)
@@ -192,7 +193,7 @@ func TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn(t *testing.T) {
 		"a site that leaves the core out":  {fluxTree + "/beta/kustomization.yaml", "resources: [work.yaml]\n", "does not build on ../shared"},
 		"the core naming a site":           {fluxTree + "/shared/extra.yaml", "name: runners-alpha\n", "names alpha"},
 		"the core's sync naming a site":    {fluxTree + "/shared/engine/gotk-sync.yaml", "path: ./" + fluxTree + "/beta\n", "names beta"},
-		"the core assigning work":          {fluxTree + "/shared/extra.yaml", "  path: ./environments/x/applications\n", "points Flux at a workload"},
+		"the core assigning work":          {fluxTree + "/shared/extra.yaml", "  path: ./" + applications.Dir + "/x/production\n", "points Flux at a workload"},
 	} {
 		bad := map[string]string{tc.file: tc.body}
 		for k, v := range good {

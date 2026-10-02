@@ -191,6 +191,12 @@ Nothing has been touched. Re-run without -whatif to do it.
 	}
 
 	ctx := run.NewContext(repoRoot(), *site)
+	// The template every phase reads is the committed one with this site's
+	// applications added, from what each declares (config.ComposeTemplate).
+	if ctx.ConfigTpl, err = config.ComposeTemplate(ctx.RepoRoot, ctx.ConfigTpl, ctx.Site); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(2)
+	}
 	ctx.CommentOut = deref(commentOut)
 	ctx.RecordOut = deref(o.recordOut)
 	ctx.Upgrade = on(upgrade)

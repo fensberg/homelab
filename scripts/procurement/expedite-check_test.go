@@ -38,7 +38,7 @@ func TestRecentRingsOnlyForAFreshPostFromValve(t *testing.T) {
 		},
 		{
 			name:  "a press article, posted now",
-			items: []item{post("This Valheim mod lets you build big boats", "eurogamer", now)},
+			items: []item{post("This mod lets you build big boats", "eurogamer", now)},
 		},
 		{
 			name:  "Valve's own post, but from last year",
@@ -47,7 +47,7 @@ func TestRecentRingsOnlyForAFreshPostFromValve(t *testing.T) {
 		{
 			name: "a fresh press article beside a stale announcement",
 			items: []item{
-				post("Valheim 1.0 is finally here", "GamingOnLinux", now.Add(-time.Minute)),
+				post("Version 1.0 is finally here", "GamingOnLinux", now.Add(-time.Minute)),
 				post("Patch 0.217.46", valveFeed, now.AddDate(0, -2, 0)),
 			},
 		},
@@ -149,6 +149,15 @@ func TestCheckRefusesRatherThanReportingSilenceWhenSteamFails(t *testing.T) {
 	}
 }
 
+// Whose announcements to read is the application's to declare, so the check
+// has no appid of its own to fall back on: asked about nothing, it refuses
+// rather than asking about some application it happens to know.
+func TestCheckRefusesToAskAboutNoApplication(t *testing.T) {
+	if rc := expediteCheck([]string{"-within", "90m"}); rc != 2 {
+		t.Errorf("a check with no -appid exited %d, want 2", rc)
+	}
+}
+
 // Nonsense on the wire is an error, not an empty list.
 func TestFetchNewsRefusesAnAnswerItCannotRead(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -167,8 +176,8 @@ func TestFetchNewsRefusesAnAnswerItCannotRead(t *testing.T) {
 
 // The URL names the app and asks for the newest few.
 func TestNewsURLAsksForOneApp(t *testing.T) {
-	got := newsURL("892970", 10)
-	for _, want := range []string{"appid=892970", "count=10", "ISteamNews/GetNewsForApp"} {
+	got := newsURL("4242", 10)
+	for _, want := range []string{"appid=4242", "count=10", "ISteamNews/GetNewsForApp"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("%q is missing %q", got, want)
 		}

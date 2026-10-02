@@ -13,11 +13,11 @@ world and links to every prior epoch's decisions.
 
 The three tiers below are also the epoch boundaries:
 
-| Tier        | Path            | Executed by                      |
-| ----------- | --------------- | -------------------------------- |
-| Ignition    | `management/`   | Locally, by a human (the button) |
-| Abstraction | `modules/`      | Consumed by the tiers below      |
-| Workload    | `environments/` | GitHub Actions + Flux            |
+| Tier        | Path                                                            | Executed by                      |
+| ----------- | --------------------------------------------------------------- | -------------------------------- |
+| Ignition    | `management/`                                                   | Locally, by a human (the button) |
+| Abstraction | `modules/`                                                      | Consumed by the tiers below      |
+| Workload    | `modules/applications/`, and a block in each site that runs one | GitHub Actions + Flux            |
 
 ## Node, site, estate
 
@@ -58,17 +58,19 @@ The three tiers are directories and epoch boundaries. They are **not**
 deployment stages, and conflating the two is a mistake this repository has
 already made once in CI.
 
-| Tier        | Path            | What it is                        | Staged? |
-| ----------- | --------------- | --------------------------------- | ------- |
-| Ignition    | `management/`   | The cluster itself - the platform | **No**  |
-| Abstraction | `modules/`      | Reusable definitions              | n/a     |
-| Workload    | `environments/` | What runs on the platform         | **Yes** |
+| Tier        | Path                    | What it is                        | Staged? |
+| ----------- | ----------------------- | --------------------------------- | ------- |
+| Ignition    | `management/`           | The cluster itself - the platform | **No**  |
+| Abstraction | `modules/`              | Reusable definitions              | n/a     |
+| Workload    | `modules/applications/` | What runs on the platform         | **Yes** |
 
 **`site0` is one cluster, and it hosts both staging and production
 workloads.** It is a development platform being built so that real production
-workloads can be deployed onto it. So `environments/staging/` and
-`environments/production/` are two overlays landing on the same hardware,
-separated by namespace and configuration rather than by cluster.
+workloads can be deployed onto it. An application keeps its settings for each
+environment in its own directory (`modules/applications/<name>/staging/`,
+`.../production/`), and a site's block for it says which of them that site
+runs: two sets of settings landing on the same hardware, separated by
+configuration rather than by cluster.
 
 **The management tier therefore has no staging or production form.** There is
 one platform. A converge either changes it or does not; there is no staging
@@ -457,17 +459,19 @@ config entry.
 
 ## What lives where
 
-| Path                         | Holds                                                                                                                  |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `management/hypervisor/`     | Ansible: bare-metal Proxmox preparation                                                                                |
-| `management/cluster/`        | A site's cluster root: providers, credentials and state. Calls the cluster module                                      |
-| `management/platform/`       | A site's platform root: the kubernetes provider and state. Calls the platform module                                   |
-| `modules/infrastructure/`    | OpenTofu modules: `cluster` (machines, Talos, Cilium), `platform` (what Flux cannot create, then Flux), `address-plan` |
-| `management/pins.json`       | Which commit of the modules each site runs: an estate default and per-site lines                                       |
-| `clusters/core/`             | The Flux core every site reconciles: Flux itself, the controllers and their configuration                              |
-| `clusters/<site>/`           | What one site runs beyond the core. Present only for a site that has been given work                                   |
-| `config/management.tpl.json` | The one config: sites, topology and every secret reference                                                             |
-| `tests/`                     | Everything above the unit tier — see `tests/README.md`                                                                 |
+| Path                                | Holds                                                                                                                                                           |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `management/hypervisor/`            | Ansible: bare-metal Proxmox preparation                                                                                                                         |
+| `management/cluster/`               | A site's cluster root: providers, credentials and state. Calls the cluster module                                                                               |
+| `management/platform/`              | A site's platform root: the kubernetes provider and state. Calls the platform module                                                                            |
+| `modules/infrastructure/`           | OpenTofu modules: `cluster` (machines, Talos, Cilium), `platform` (what Flux cannot create, then Flux), `address-plan`                                          |
+| `management/pins.json`              | Which commit of the modules each site runs: an estate default and per-site lines                                                                                |
+| `clusters/core/`                    | The Flux core every site reconciles: Flux itself, the controllers and their configuration                                                                       |
+| `clusters/<site>/`                  | What one site runs beyond the core. Present only for a site that has been given work                                                                            |
+| `modules/applications/<name>/`      | One application, whole: `application.json` (what it declares it needs), its image, its base, its settings per environment, its pins, its tests and their proofs |
+| `clusters/<site>/applications.yaml` | One block per application the site runs: the release it pins and the Kustomization that runs it                                                                 |
+| `config/management.tpl.json`        | The one config: sites, topology and every secret reference                                                                                                      |
+| `tests/`                            | Everything above the unit tier — see `tests/README.md`                                                                                                          |
 
 OpenTofu creates only what Flux cannot — namespaces and secrets. The operator
 and the database itself are declared in `clusters/core/` and reconciled

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 187
+floor: 179
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -119,9 +119,9 @@ mutations:
       by ref lets its closing run cancel the converge the merge started (#573).
 
   - guard: TestAFileReachesOutsideItsDirectoryFromTheTop
-    file: modules/infrastructure/cluster/variables.tf
-    find: 'jsondecode(file("${path.module}/../../../management/tunnel-routes.json")).routes'
-    replace: 'jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes'
+    file: modules/infrastructure/applications/declarations.tf
+    find: '"${path.module}/../../../modules/applications"'
+    replace: '"${path.module}/../../modules/applications"'
     mentions: "reaches outside its directory"
     why: >
       The pull-request plan runs a copy of the root at the same depth, so a
@@ -136,16 +136,93 @@ mutations:
       A worker without the cluster's network points its pods at Talos's default
       DNS address, and nothing on it can resolve a name (#578).
 
-  - guard: TestAnEnvironmentHoldsOnlyOverlaysOfModules
-    file: environments/staging/applications/kustomization.yaml
-    find: "resources: []"
-    replace: "resources: [deployment.yaml]"
-    mentions: a manifest here would be an application with no module
-    why:
-      "A manifest written straight into an environment is the copy-paste the epoch exists to stop,
-      arriving in manifests instead of code.
+  - guard: TestAnApplicationsSettingsBuildOnItsBaseAndStayInItsDirectory
+    file: modules/applications/planted/staging/kustomization.yaml
+    create: |
+      ---
+      apiVersion: kustomize.config.k8s.io/v1beta1
+      kind: Kustomization
+      resources:
+        - deployment.yaml
+    mentions: "does not build on ../base"
+    why: >
+      An environment's settings that do not build on the application's base
+      are a second copy of the thing that runs, written for one environment -
+      the copy-paste the epoch exists to stop, arriving in manifests instead
+      of code.
 
-      "
+  - guard: TestEverySiteRunsItsApplicationsAsTheyAreDeclared
+    file: clusters/site9/applications.yaml
+    create: |
+      ---
+      apiVersion: kustomize.toolkit.fluxcd.io/v1
+      kind: Kustomization
+      metadata:
+        name: planted
+        namespace: flux-system
+      spec:
+        sourceRef:
+          kind: GitRepository
+          name: flux-system
+        path: ./modules/applications/planted/production
+        targetNamespace: planted
+    mentions: "no application of that name"
+    why: >
+      A site's block is the only thing that says the site runs an
+      application, so it is where running one has to be held to what the
+      application declares. A block for something nothing declares is a
+      Kustomization reconciled as Flux itself - which may create anything
+      anywhere - pointed at a directory no guard reads as an application.
+
+  - guard: TestEveryTunnelRouteIsAServiceAddressAndTheReverse
+    file: clusters/core/infrastructure/configs/planted-service.yaml
+    create: |
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: planted
+        namespace: planted
+      spec:
+        clusterIP: 10.196.40.46
+        ports:
+          - port: 80
+    mentions: "sets clusterIP: 10.196.40.46"
+    why: >
+      A hand-set address is one site's address written where every site reads
+      it, and the tunnel routes only what an application declares. It
+      converges cleanly at the one site whose range it is in, fails at every
+      other, and nothing an enrolled device is given leads to it.
+
+  - guard: TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority
+    file: clusters/core/infrastructure/configs/planted-deployment.yaml
+    create: |
+      ---
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: planted
+        namespace: planted
+      spec:
+        selector:
+          matchLabels:
+            app: planted
+        template:
+          metadata:
+            labels:
+              app: planted
+          spec:
+            containers:
+              - name: planted
+                image: example.invalid/planted@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    mentions: "has no priority class"
+    why: >
+      A plain Deployment is what the HelmRelease table could not express, so
+      one shipped once with nothing keeping an 8 GiB pod off a 4 GiB control
+      plane and no guard said so (#492). This plants one the way it would
+      arrive: a new file, with nothing wrong that kustomize or Flux would
+      object to.
+
   - guard: TestEveryOpenTofuRootIsSeenByWhatMustSeeARoot
     file: .github/dependabot.yml
     find: "    directory: /management/platform"
@@ -228,7 +305,7 @@ mutations:
   - guard: TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork
     file: clusters/core/kustomization.yaml
     find: "  - infra-configs.yaml\n"
-    replace: "  - infra-configs.yaml\n  - ../site0/workloads.yaml\n"
+    replace: "  - infra-configs.yaml\n  - ../site0/applications.yaml\n"
     mentions: "names site0"
     why:
       "The core is what every site runs. One site's work listed in it is every site's work the day
@@ -244,17 +321,6 @@ mutations:
       "The estate's runners are registered per site. A job that asks for a name no site registers
       waits for a runner that never appears, and one that names a site by hand is right for that
       site and wrong for the next.
-
-      "
-  - guard: TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas
-    file: modules/applications/valheim/before-teardown.json
-    find: '"container": "world-backup"'
-    replace: '"container": "world-backups"'
-    mentions: "no pod the workload declares has one"
-    why:
-      "Before a site is destroyed each workload is asked to back up, in a container its declaration
-      names. A name the manifest no longer has is a backup nothing can run, found at the moment a
-      teardown is about to start.
 
       "
   - guard: TestAGoFunctionWrittenTwiceIsDeclared
@@ -316,24 +382,24 @@ mutations:
       repository the estate's network and its runner, with no reviewer left to
       stop it (#554).
 
-  - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
-    file: modules/applications/valheim/base/second-policy.yaml
+  - guard: TestNoApplicationCanBeGivenAPathIntoTheEstate
+    file: modules/applications/second-policy.yaml
     create: |
       ---
       apiVersion: networking.k8s.io/v1
       kind: NetworkPolicy
       metadata:
-        name: valheim-extra
-        namespace: valheim
+        name: planted-extra
+        namespace: planted
       spec:
         podSelector:
           matchLabels:
-            app.kubernetes.io/name: valheim
+            app.kubernetes.io/name: planted
         policyTypes:
           - Egress
         egress:
           - {}
-    mentions: "permits the game server egress to everything"
+    mentions: "permits egress to everything"
     why: >
       NetworkPolicies are additive, so a second file selecting the same pods
       opens the estate without touching the one the guard used to read. The
@@ -385,29 +451,6 @@ mutations:
       invisible until something needs a full-sized packet: quic-go will not
       start below 1252 bytes, so the tunnel connector falls back to HTTP/2,
       which carries no UDP and so no game server (#455).
-
-  - guard: TestEveryTunnelRouteIsAServiceAddressAndTheReverse
-    file: management/tunnel-routes.json
-    find: '"game-server": 46'
-    replace: '"game-servers": 46'
-    mentions: "no Service in git sets clusterIP"
-    why: >
-      The tunnel route and the Service's fixed address live in files read by
-      different tools. Renaming one without the other converges cleanly and
-      hands an enrolled device a route to an address nothing answers on.
-
-  - guard: TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority
-    file: modules/applications/valheim/base/deployment.yaml
-    find: "operator: DoesNotExist"
-    replace: "operator: Exists"
-    mentions: "would schedule onto a control-plane node"
-    why: >
-      The game server is a plain Deployment, which the HelmRelease table could
-      not express, so it shipped once with nothing keeping an 8 GiB pod off a
-      4 GiB control plane and no guard said so (#492). Flipping the operator
-      is the plausible version of losing the rule: it reads as a harmless
-      edit, and it turns "off the control plane" into "only the control
-      plane".
 
   - guard: TestAlertsLandWhereTheEstateDecided
     file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
@@ -466,9 +509,22 @@ mutations:
       that converged the estate.
 
   - guard: TestFluxSourcesOnlyNameSecretsThisRepositoryCreates
-    file: clusters/site0/releases.yaml
-    find: "  url: oci://"
-    replace: "  secretRef:\n    name: flux-system\n  url: oci://"
+    file: clusters/core/infrastructure/configs/planted-source.yaml
+    create: |
+      ---
+      apiVersion: source.toolkit.fluxcd.io/v1
+      kind: OCIRepository
+      metadata:
+        name: planted
+        namespace: flux-system
+      spec:
+        interval: 1m
+        secretRef:
+          name: flux-system
+        url: oci://example.invalid/planted
+        ref:
+          tag: "1.0.0-1"
+          digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
     mentions: "nothing in this repository creates"
     why: >
       A secretRef naming a secret that does not exist does not degrade to
@@ -762,8 +818,8 @@ mutations:
 
   - guard: TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile
     file: scripts/work-orders.json
-    find: '"context": "modules/applications/valheim/image"'
-    replace: '"context": "modules/applications/valheim/img"'
+    find: '"context": ".github/runner-image"'
+    replace: '"context": ".github/runner-img"'
     mentions: "has no work order"
     why: >
       An order pointing at the wrong directory leaves the real Dockerfile
@@ -772,12 +828,12 @@ mutations:
 
   - guard: TestTheFabricatorReadsEveryWorkOrder
     file: .github/workflows/fabricator.yml
-    find: 'orders="$(jq -c ''.orders'' scripts/work-orders.json)"'
-    replace: 'orders="$(jq -c ''.orders[:1]'' scripts/work-orders.json)"'
-    mentions: "did not reach the build matrix"
+    find: '[ -f "${dir}/image/Dockerfile" ] || continue'
+    replace: "continue"
+    mentions: "the step's orders for the fixture are"
     why: >
-      A step that hands the matrix fewer orders than the file holds builds
-      some images and silently not others.
+      A step that hands the matrix fewer orders than there are builds some
+      images and silently not others. This one drops every application.
 
   - guard: TestTheFabricatorPassesEveryPinADockerfileAsksFor
     file: .github/workflows/fabricator.yml
@@ -798,15 +854,16 @@ mutations:
       An ARG nobody pinned has to stop the build. Filled with a placeholder,
       the image builds with a version string that pins nothing.
 
-  - guard: TestTheReleaseIsNamedForTheVersionTheServerReports
-    file: scripts/work-orders.json
-    find: "Valheim version: [a-z]*"
-    replace: "Valheim release: [a-z]*"
-    mentions: "the version step failed"
+  - guard: TestTheReleaseIsNamedForTheVersionTheSoftwareReports
+    file: .github/workflows/fabricator.yml
+    find: 'sed -n "s/.*${pattern}.*/\1/p"'
+    replace: 'sed -n "s/.*${pattern}.*/&/p"'
+    mentions: "want version="
     why: >
-      A pattern that stops matching the server's own line leaves every build
-      without a version. This entry breaks the pattern the way an edit would,
-      and the step run as shipped has to notice.
+      The step has to read the version the pattern captures, and nothing
+      around it. One that prints the whole line names a release for a line of
+      log, and the tag a site pins would be whatever the software happened to
+      print that day.
 
   - guard: TestAReleaseIsRefusedWhenTheVersionCannotBeRead
     file: .github/workflows/fabricator.yml
@@ -835,9 +892,9 @@ mutations:
       Treating every registry error as "no releases yet" numbers from 1
       whenever the registry hiccups, and overwrites a real release.
 
-  - guard: TestTheReleaseCarriesTheOverlayWithTheNewDigest
+  - guard: TestTheReleaseCarriesTheApplicationAloneWithTheNewDigest
     file: .github/workflows/fabricator.yml
-    find: '>> "${stage}/${overlay}/kustomization.yaml"'
+    find: '>> "${stage}/${module}/base/kustomization.yaml"'
     replace: "> /dev/null"
     mentions: "does not pin the image just built"
     why: >
@@ -845,11 +902,22 @@ mutations:
       git name, which is not the image this build made - the release and its
       contents would disagree.
 
+  - guard: TestTheReleaseCarriesTheApplicationAloneWithTheNewDigest
+    file: .github/workflows/fabricator.yml
+    find: 'cp -R "$module" "${stage}/${module}"'
+    replace: 'cp -R . "${stage}/"'
+    mentions: "files that are not the application's"
+    why: >
+      A release is the application's own directory and nothing else. One
+      staged from more than that ships whatever else was beside it to every
+      site that runs the application, and lets its manifests build on files
+      that are not its own.
+
   - guard: TestAnImageOfTheSameInputsIsReused
     file: .github/workflows/fabricator.yml
     find: 'printf ''%s\n'' "$PINS"; } | sha256sum'
     replace: "true; } | sha256sum"
-    mentions: "a new Steam build kept the old fingerprint"
+    mentions: "a new pin kept the old fingerprint"
     why: >
       A fingerprint that leaves out the pins reuses the old image when only a
       pin moved - which is exactly what a new Steam build is. The expediter's
@@ -858,97 +926,111 @@ mutations:
 
   - guard: TestAReleaseOfTheSameManifestsIsNotRepeated
     file: .github/workflows/fabricator.yml
-    find: 'fingerprint="fp-$(kubectl kustomize "${rendered}/${overlay}" | sha256sum | cut -c1-16)"'
-    replace: 'fingerprint="fp-$(cat "${rendered}/${overlay}/kustomization.yaml" | sha256sum | cut -c1-16)"'
-    mentions: "a comment in the overlay changed the release fingerprint"
+    find: 'kubectl kustomize "$environment" >> "${RUNNER_TEMP}/fingerprint.yaml"'
+    replace: 'cat "$kustomization" >> "${RUNNER_TEMP}/fingerprint.yaml"'
+    mentions: "a comment changed the release fingerprint"
     why: >
       Fingerprinting the files rather than what they render to counts a
       comment as a change, which is #514 again: a release of nothing, and a
       pull request for the operator asking to deploy it.
 
-  - guard: TestEveryReleaseOrderIsOneTheFabricatorCanFollow
-    file: environments/production/applications/valheim/kustomization.yaml
-    find: "  - service.yaml\n"
-    replace: "  - service.yaml\nimages:\n  - name: example\n"
-    mentions: "already has an images: key"
+  - guard: TestTheExpediterListsWhatDeclaresAnUpstream
+    file: .github/workflows/expedite.yml
+    find: 'upstreams="$(go run -C scripts/procurement . expedite-upstreams)"'
+    replace: 'upstreams=''[{"name":"planted"}]'''
+    mentions: "which declares no upstream"
     why: >
-      The fabricator appends an images: key to the staged overlay. One
-      already there makes a duplicate key, which is invalid and surfaces only
-      when Flux reconciles the release.
+      Every job of the expediter works through this list, and the last of them
+      merges without a review. A step that hands them anything but what the
+      applications declare has the expediter asking a supplier about, and
+      moving a pin for, something no application asked for.
+
+  - guard: TestTheDoorbellIsRungForEachApplication
+    file: .github/workflows/expedite.yml
+    find: 'expedite-check -appid "$news" -within 90m'
+    replace: "expedite-check -appid 112 -within 90m"
+    mentions: "the doorbell was not asked about"
+    why: >
+      The doorbell has to be rung for the appid each application declares. One
+      that asks about a single application reports every other as quiet for
+      as long as that one is, and their players stay locked out until the
+      daily pass.
+
+  - guard: TestADeliveryIsTakenForEachApplicationWhoseBuildMoved
+    file: .github/workflows/expedite.yml
+    find: '+app_info_update 1 +app_info_print "$app" +quit'
+    replace: "+app_info_update 1 +app_info_print 111 +quit"
+    mentions: "the delivery is"
+    why: >
+      SteamCMD has to be asked about each application's own appid. Asked about
+      one for all of them, it records that one's build as every other's, and
+      the expediter submits a pin for a build the application's supplier never
+      published - which the standing order then passes, because it is one
+      line, in the right file, set to a number.
+
+  - guard: TestTheExpediterSubmitsTheDeclaredPinAndNothingElse
+    file: .github/workflows/expedite.yml
+    find: '-f "tree[][path]=${pins}" \'
+    replace: '-f "tree[][path]=scripts/versions.env" \'
+    mentions: "the application's own pins file"
+    why: >
+      What the expediter commits is what is merged without a review. A commit
+      to any file but the application's own pins is refused by the standing
+      order, so every delivery then waits for a person - and the first anyone
+      hears of it is players unable to join.
+
+  - guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
+    file: .github/workflows/fabricator.yml
+    find: 'if [ "$(sha256sum < "${moved}/${i}.yaml")" != "$before" ]; then'
+    replace: "if true; then"
+    mentions: "is left alone"
+    why: >
+      A delivery that commits every site's file, changed or not, opens a pull
+      request for a site that holds its pin and one that does not run the
+      application - an empty change that reads as a release, to the site that
+      was deliberately kept where it is.
+
+  - guard: TestAReleaseThatReachesOutsideItsApplicationIsNotMade
+    file: .github/workflows/fabricator.yml
+    find: 'cp -R "$module" "${rendered}/${module}"'
+    replace: 'cp -R . "${rendered}/"'
+    mentions: "reach outside its directory"
+    why: >
+      What an application is made of is its own directory because the release
+      is rendered from a copy holding nothing else. Rendered from the whole
+      repository, a manifest that builds on another application's files, or
+      on the core's, renders and is released, and the two are coupled with
+      nothing anywhere saying so.
+
+  - guard: TestTheFabricatorReadsAnOrdersPinsAndRunsNothingInThem
+    file: .github/workflows/fabricator.yml
+    find: "            while IFS='=' read -r name value; do\n              if [[ \"$name\" =~ ^[A-Z][A-Z0-9_]*$ ]]; then\n                export \"${name}=${value}\"\n              fi\n            done < \"$ORDER_PINS\"\n"
+    replace: "            set -a; . \"$ORDER_PINS\"; set +a\n"
+    mentions: "was executed"
+    why: >
+      An application's pins file is written by the application and read in a
+      job that publishes images. Sourcing it is the short way to read it, and
+      it runs whatever the file says with that job's credentials.
 
   - guard: TestEveryReleaseIsPinnedByDigest
-    file: clusters/site0/releases.yaml
-    find: '    digest: "sha256:'
-    replace: '    # digest: "sha256:'
+    file: clusters/core/infrastructure/configs/planted-release.yaml
+    create: |
+      ---
+      apiVersion: source.toolkit.fluxcd.io/v1
+      kind: OCIRepository
+      metadata:
+        name: planted
+        namespace: flux-system
+      spec:
+        interval: 1m
+        url: oci://example.invalid/planted
+        ref:
+          tag: "1.0.0-1"
     mentions: "is not pinned by digest"
     why: >
       Without the digest the tag alone decides what production runs, and a
       tag can be moved in the registry with no pull request and nothing in
       git recording it.
-  - guard: TestTheWorldIsRestoredFromTheNewestBackup
-    file: modules/applications/valheim/image/world-restore.sh
-    find: "grep 'Z/$' | sort | tail -n 1"
-    replace: "grep 'Z/$' | sort | head -n 1"
-    mentions: "want the newest backup restored"
-    why: >
-      Restoring the oldest backup instead of the newest silently throws away every day since it.
-
-  - guard: TestAWorldAlreadyOnTheVolumeIsLeftAlone
-    file: modules/applications/valheim/image/world-restore.sh
-    find: "is present, so there is nothing to restore\"\n\texit 0"
-    replace: 'is present, so there is nothing to restore"'
-    mentions: "replaced a world"
-    why: >
-      The volume is the truth. A restore that overwrites a live world with a backup rolls the world back by up to an hour every time the pod restarts.
-
-  - guard: TestANewWorldStartsOnlyWhenThereIsNoBackup
-    file: modules/applications/valheim/image/world-restore.sh
-    find: "so the server will generate a new world\"\n\texit 0"
-    replace: "so the server will generate a new world\"\n\texit 1"
-    mentions: "the restore failed"
-    why: >
-      A brand new estate has no backup, and the server has to be allowed to create its first world.
-
-  - guard: TestTheServerDoesNotStartWhenTheBackupsCannotBeRead
-    file: modules/applications/valheim/image/world-restore.sh
-    find: 'if ! listing="$(rclone lsf --dirs-only world:)"; then'
-    replace: 'if ! listing="$(rclone lsf --dirs-only world: || true)"; then'
-    mentions: "let the server start although"
-    why: >
-      An unreadable bucket read as "no backups" starts a new world beside the real one, and the first backup after it begins rotating the real world out.
-
-  - guard: TestARestoreThatProducesNoWorldStopsThePod
-    file: modules/applications/valheim/image/world-restore.sh
-    find: "if ! has_world; then"
-    replace: "if false; then"
-    mentions: "copied nothing"
-    why: >
-      A restore that reports success without producing the world file lets the server generate a fresh world over the one it meant to bring back.
-
-  - guard: TestTheBackupKeepsTheNewestAndRemovesTheRest
-    file: modules/applications/valheim/image/world-backup.sh
-    find: "grep 'Z/$' | sort | head -n"
-    replace: "grep 'Z/$' | sort -r | head -n"
-    mentions: "want the newest two kept"
-    why: >
-      Pruning the newest backups instead of the oldest deletes the backup just taken.
-
-  - guard: TestAFailedBackupIsLoudRatherThanSilent
-    file: modules/applications/valheim/image/world-backup.sh
-    find: 'rclone copy "$world" "world:${stamp}"'
-    replace: 'rclone copy "$world" "world:${stamp}" || true'
-    mentions: "exited cleanly"
-    why: >
-      A backup that fails and carries on looks healthy forever; the first sign would be the restore that finds nothing recent.
-
-  - guard: TestTheGameServerIsRestoredBeforeItStartsAndBackedUpBesideIt
-    file: modules/applications/valheim/base/deployment.yaml
-    find: "          restartPolicy: Always\n"
-    replace: "          restartPolicy: OnFailure\n"
-    mentions: "no world-backup sidecar"
-    why: >
-      Without restartPolicy: Always the backup is an ordinary init container: it would block the server forever on its loop, and never back anything up beside it.
-
   - guard: TestRunnerPodsAreNotBestEffort
     file: clusters/core/infrastructure/configs/runner-scale-set.yaml
     find: "memory: 2Gi"
@@ -1315,11 +1397,10 @@ mutations:
   - guard: TestZoneNamesUseAPlaceholder
     file: modules/infrastructure/cluster/tests/fixtures/negative-zone-node-count.json
     find: '"example": {'
-    replace: '"valheim": {'
+    replace: '"minecraft": {'
     mentions: "names an untrusted zone"
     why: >
-      A real workload name in a fixture is what this catches, and the mutation
-      uses the one that was actually there before somebody noticed. It is not a
+      A real workload name in a fixture is what this catches. It is not a
       secret in the way a site or hypervisor name is - nobody is harmed by
       knowing which game runs here - so the reason it stays out is a design one:
       a zone is for untrusted work rather than for one workload, and plumbing
@@ -1360,81 +1441,6 @@ mutations:
       Emptying is the irreversible half of a demolish, and this version deletes
       every age-encrypted state dump the estate has - which is #94 restored
       exactly, by a one-word edit, in the file that was changed to fix it.
-
-  - guard: TestAnUnsetDialProducesNoArgument
-    file: modules/applications/valheim/image/entrypoint.sh
-    find: "\t\tset -- \"$@\" -modifier \"$dial\" \"$value\"\n\tfi"
-    replace: "\t\tset -- \"$@\" -modifier \"$dial\" \"$value\"\n\tfi\n\tset -- \"$@\" -modifier \"$dial\" \"$value\""
-    mentions: "reached the server as an argument"
-    why: >
-      Passing the dial unconditionally as well as conditionally, which is what
-      "just always pass them" looks like when somebody simplifies this loop.
-      Every value the server accepts for a modifier changes the game and there
-      is no token meaning "leave this alone", so an empty one is not a harmless
-      default - it is an argument the server either rejects or misreads.
-
-  - guard: TestASetDialIsPassedAsAKeyAndValue
-    file: modules/applications/valheim/image/entrypoint.sh
-    find: 'set -- "$@" -modifier "$dial" "$value"'
-    replace: 'set -- "$@" -modifier "$dial"'
-    mentions: "missing"
-    why: >
-      A key with no value. The server would take whatever followed as the
-      value, so the next flag becomes the setting - which is the shape of bug
-      that produces a world nobody asked for rather than an error.
-
-  - guard: TestAFlagIsOnlyPassedWhenItIsTrue
-    file: modules/applications/valheim/image/entrypoint.sh
-    find: "\tif [ \"$value\" = \"true\" ]; then"
-    replace: "\tif [ -n \"$value\" ]; then"
-    mentions: "was passed anyway"
-    why: >
-      Treating any value as enabling, which reads as a reasonable
-      simplification and inverts the meaning of "false". The server has no
-      argument that turns one of these off, so passing it turns it ON - and for
-      nomap that means the map disappears for every player, silently, from a
-      config that says false.
-
-  - guard: TestCrossplayIsPassedAsABareFlag
-    file: modules/applications/valheim/image/entrypoint.sh
-    find: "\tset -- \"$@\" -crossplay"
-    replace: "\tset -- \"$@\" -crossplay true"
-    mentions: "given a value"
-    why: >
-      Giving a flag-only argument a value, which is what somebody writes if
-      they assume it is a boolean like the variable that gates it. If the
-      server then rejects the argument and falls back to the Steam backend,
-      the estate needs an inbound port forward it has deliberately not built,
-      and the symptom is players unable to join rather than an error here.
-
-  - guard: TestAMissingValueRefusesToStartAndNamesTheField
-    file: modules/applications/valheim/image/entrypoint.sh
-    find: "\t\techo \"entrypoint: $required is empty - check the valheim-server Secret\" >&2"
-    replace: "\t\techo \"entrypoint: a required value is empty\" >&2"
-    mentions: "without naming the field"
-    why: >
-      The message loses the field's name, which is the only thing this check
-      contributes and the easiest thing to lose while tidying a string.
-
-      It is not the same job. `set -u` also refuses, so the mutation still
-      exits non-zero - what it takes away is the field's name, leaving
-      "parameter not set" from a script the operator has never read, at the
-      moment a server will not start. The guard therefore asserts the message
-      rather than the exit code, because the message is the whole contribution.
-
-  # Guards that cannot be proved by mutation, and why.
-  #
-  # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
-  # tests/go/repo must appear either as a `guard:` above or here. That is what
-  # was missing when six guards were added in one session and none of their
-  # proofs was committed - the ledger held only what somebody remembered to put
-  # in it, which is the failure mode of the rule it replaced.
-  #
-  # An entry may name a `test:` or a whole `path:`.
-  #
-  # The number of `owed: true` entries may not exceed this, and it may only go
-  # down. That is what makes the debt bounded rather than a shrug: a new guard
-  # cannot be added to the owed list without another one leaving it.
 
   - guard: TestEveryJobsEgressIsDeclaredInTheSuppliersList
     file: .github/workflows/sensitive-paths.yml
@@ -1910,33 +1916,6 @@ mutations:
       way: three get updated and the fourth machine class resolves through
       something nobody meant. It is also the only route a fork has to point
       the estate at internal resolvers.
-
-  - guard: TestTheGameServerCannotBeGivenAPathIntoTheEstate
-    file: modules/applications/valheim/base/network-policy.yaml
-    find: "            cidr: 172.16.0.0/12"
-    replace: "            cidr: 10.0.0.0/8"
-    mentions: "permits 10.0.0.0/8"
-    why: >
-      Opening another private range is the obvious response to the next
-      player who cannot connect, and 10.0.0.0/8 is the obvious range because
-      it is the one remaining and looks symmetrical with the two beside it.
-      It is also the space the whole estate is addressed out of, so it hands
-      a public-facing game server a UDP path to the API server, the state
-      database, the hypervisor and every other workload. The manifest stays
-      valid and the cluster does exactly what it was told.
-
-  - guard: TestTheGameServerCanStillReachPlayersOnOrdinaryNetworks
-    file: modules/applications/valheim/base/network-policy.yaml
-    find: "            cidr: 172.16.0.0/12"
-    replace: "            cidr: 198.51.100.0/24"
-    mentions: "no longer permits 172.16.0.0/12"
-    why: >
-      The converse of the guard above, and it needs saying: a check that
-      only ever refuses is satisfied by closing everything. A closed range
-      is a player who joins, spawns and is disconnected seconds later with
-      nothing anywhere naming this policy - which is what 172.16.0.0/12
-      being shut cost every remote player who tried, from a phone hotspot or
-      a hotel.
 
   - guard: TestEveryChartsImagesAreGovernedOrDeclared
     file: scripts/approved-suppliers.yml
@@ -2682,7 +2661,46 @@ unprovable:
   # entries prove. Their tables hold each case they must find and must leave.
   - test: TestDuplicateFunctionsFindsCopiesAcrossPackagesOnly
     reason: table
-  - test: TestEnvironmentProblemsRefusesWhatIsNotAnOverlay
+  - test: TestApplicationShapeProblemsRefusesWhatIsNotTheShape
+    reason: table
+  # The guards over applications, and why most are not proved here. An entry
+  # in this ledger breaks a file, and a file of an application's is not this
+  # ledger's to break: removing the application would then mean editing this
+  # file (#590). So each of these guards is a finder and a judge; the judge is
+  # held to a table of cases written in the test beside it, which is proof
+  # that does not depend on which applications the estate has; and each
+  # application's own ledger (modules/applications/<name>/tests/mutations.yml)
+  # proves the guard against that application's real files.
+  - test: TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas
+    reason: proved by TestBackupProblemsNamesWhatADeclarationGetsWrong and by each application's own ledger
+  - test: TestBackupProblemsNamesWhatADeclarationGetsWrong
+    reason: table
+  - test: TestEveryReleaseOrderIsOneTheFabricatorCanFollow
+    reason: proved by TestUnfollowableReleasesNamesEachWayAnOrderCanBeBroken and by each application's own ledger
+  - test: TestUnfollowableReleasesNamesEachWayAnOrderCanBeBroken
+    reason: table
+  - test: TestAnApplicationIsNamedOnlyWhereItLives
+    reason: proved by TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives; planting a name here would be naming an application in this file
+  - test: TestNamedOutsideAllowsAnApplicationsNameOnlyWhereItLives
+    reason: table
+  - test: TestEveryApplicationsOwnTestsPass
+    reason: proved by TestRunApplicationTestsReportsExactlyTheFailing and by each application's own ledger, every entry of which runs through it
+  - test: TestRunApplicationTestsReportsExactlyTheFailing
+    reason: table
+  - test: TestSiteBlockProblemsNamesEachWayABlockDepartsFromItsDeclaration
+    reason: table
+  - test: TestRouteProblemsNamesEachWayARouteAndItsServiceDisagree
+    reason: table
+  - test: TestPathsIntoTheEstateNamesEachWayOneIsOpened
+    reason: table
+  - test: TestUnpinnedReleasesNamesEachWayAReleaseIsNotPinned
+    reason: table
+  # Removes each application from a copy of the repository and runs every
+  # guard against it: a check on the checks, like the ledger's own runner.
+  # What it removes is proved by the table beside it.
+  - test: TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks
+    reason: meta
+  - test: TestWithoutApplicationTakesOutOneBlockAndLeavesTheRest
     reason: table
   - test: TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn
     reason: table

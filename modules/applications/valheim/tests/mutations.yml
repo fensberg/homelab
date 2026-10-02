@@ -1,0 +1,239 @@
+# This application's proofs: that each of its own tests, and each of the
+# estate's guards that it is held to, fails when what it guards is broken.
+#
+# The same ledger as tests/mutations.yml, read by the same runner
+# (tests/go/repo/mutation_ledger_test.go), and the header of that file says
+# what each field means and why an entry is never the thing to edit when a
+# check points here. It is kept here because these are proofs about this
+# application: removing the application removes them with it.
+#
+# Every entry breaks a file of this application's own. `guard` is the test in
+# tests/go/repo that must fail. For one of this application's own tests that
+# is the guard that runs them, and `test` names which of them must be the one
+# that failed.
+floor: 19
+
+mutations:
+  - guard: TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas
+    file: modules/applications/valheim/application.json
+    find: '"container": "world-backup"'
+    replace: '"container": "world-backups"'
+    mentions: "no pod the workload declares has one"
+    why:
+      "Before a site is destroyed each workload is asked to back up, in a container its declaration
+      names. A name the manifest no longer has is a backup nothing can run, found at the moment a
+      teardown is about to start.
+
+      "
+  - guard: TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority
+    file: modules/applications/valheim/base/deployment.yaml
+    find: "operator: DoesNotExist"
+    replace: "operator: Exists"
+    mentions: "would schedule onto a control-plane node"
+    why: >
+      The game server is a plain Deployment, which the HelmRelease table could
+      not express, so it shipped once with nothing keeping an 8 GiB pod off a
+      4 GiB control plane and no guard said so (#492). Flipping the operator
+      is the plausible version of losing the rule: it reads as a harmless
+      edit, and it turns "off the control plane" into "only the control
+      plane".
+
+  - guard: TestTheReleaseIsNamedForTheVersionTheSoftwareReports
+    file: modules/applications/valheim/application.json
+    find: "Valheim version: [a-z]*"
+    replace: "Valheim release: [a-z]*"
+    mentions: "the version step failed"
+    why: >
+      A pattern that stops matching the server's own line leaves every build
+      without a version. This entry breaks the pattern the way an edit would,
+      and the step run as shipped has to notice.
+
+  - guard: TestEveryReleaseOrderIsOneTheFabricatorCanFollow
+    file: modules/applications/valheim/base/kustomization.yaml
+    find: "kind: Kustomization\n"
+    replace: "kind: Kustomization\nimages:\n  - name: example\n"
+    mentions: "already has an images: key"
+    why: >
+      The fabricator appends an images: key to the staged base. One
+      already there makes a duplicate key, which is invalid and surfaces only
+      when Flux reconciles the release.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestTheWorldIsRestoredFromTheNewestBackup
+    file: modules/applications/valheim/image/world-restore.sh
+    find: "grep 'Z/$' | sort | tail -n 1"
+    replace: "grep 'Z/$' | sort | head -n 1"
+    mentions: "want the newest backup restored"
+    why: >
+      Restoring the oldest backup instead of the newest silently throws away every day since it.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestAWorldAlreadyOnTheVolumeIsLeftAlone
+    file: modules/applications/valheim/image/world-restore.sh
+    find: "is present, so there is nothing to restore\"\n\texit 0"
+    replace: 'is present, so there is nothing to restore"'
+    mentions: "replaced a world"
+    why: >
+      The volume is the truth. A restore that overwrites a live world with a backup rolls the world back by up to an hour every time the pod restarts.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestANewWorldStartsOnlyWhenThereIsNoBackup
+    file: modules/applications/valheim/image/world-restore.sh
+    find: "so the server will generate a new world\"\n\texit 0"
+    replace: "so the server will generate a new world\"\n\texit 1"
+    mentions: "the restore failed"
+    why: >
+      A brand new estate has no backup, and the server has to be allowed to create its first world.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestTheServerDoesNotStartWhenTheBackupsCannotBeRead
+    file: modules/applications/valheim/image/world-restore.sh
+    find: 'if ! listing="$(rclone lsf --dirs-only world:)"; then'
+    replace: 'if ! listing="$(rclone lsf --dirs-only world: || true)"; then'
+    mentions: "let the server start although"
+    why: >
+      An unreadable bucket read as "no backups" starts a new world beside the real one, and the first backup after it begins rotating the real world out.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestARestoreThatProducesNoWorldStopsThePod
+    file: modules/applications/valheim/image/world-restore.sh
+    find: "if ! has_world; then"
+    replace: "if false; then"
+    mentions: "copied nothing"
+    why: >
+      A restore that reports success without producing the world file lets the server generate a fresh world over the one it meant to bring back.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestTheBackupKeepsTheNewestAndRemovesTheRest
+    file: modules/applications/valheim/image/world-backup.sh
+    find: "grep 'Z/$' | sort | head -n"
+    replace: "grep 'Z/$' | sort -r | head -n"
+    mentions: "want the newest two kept"
+    why: >
+      Pruning the newest backups instead of the oldest deletes the backup just taken.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestAFailedBackupIsLoudRatherThanSilent
+    file: modules/applications/valheim/image/world-backup.sh
+    find: 'rclone copy "$world" "world:${stamp}"'
+    replace: 'rclone copy "$world" "world:${stamp}" || true'
+    mentions: "exited cleanly"
+    why: >
+      A backup that fails and carries on looks healthy forever; the first sign would be the restore that finds nothing recent.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestTheGameServerIsRestoredBeforeItStartsAndBackedUpBesideIt
+    file: modules/applications/valheim/base/deployment.yaml
+    find: "          restartPolicy: Always\n"
+    replace: "          restartPolicy: OnFailure\n"
+    mentions: "no world-backup sidecar"
+    why: >
+      Without restartPolicy: Always the backup is an ordinary init container: it would block the server forever on its loop, and never back anything up beside it.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestAnUnsetDialProducesNoArgument
+    file: modules/applications/valheim/image/entrypoint.sh
+    find: "\t\tset -- \"$@\" -modifier \"$dial\" \"$value\"\n\tfi"
+    replace: "\t\tset -- \"$@\" -modifier \"$dial\" \"$value\"\n\tfi\n\tset -- \"$@\" -modifier \"$dial\" \"$value\""
+    mentions: "reached the server as an argument"
+    why: >
+      Passing the dial unconditionally as well as conditionally, which is what
+      "just always pass them" looks like when somebody simplifies this loop.
+      Every value the server accepts for a modifier changes the game and there
+      is no token meaning "leave this alone", so an empty one is not a harmless
+      default - it is an argument the server either rejects or misreads.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestASetDialIsPassedAsAKeyAndValue
+    file: modules/applications/valheim/image/entrypoint.sh
+    find: 'set -- "$@" -modifier "$dial" "$value"'
+    replace: 'set -- "$@" -modifier "$dial"'
+    mentions: "missing"
+    why: >
+      A key with no value. The server would take whatever followed as the
+      value, so the next flag becomes the setting - which is the shape of bug
+      that produces a world nobody asked for rather than an error.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestAFlagIsOnlyPassedWhenItIsTrue
+    file: modules/applications/valheim/image/entrypoint.sh
+    find: "\tif [ \"$value\" = \"true\" ]; then"
+    replace: "\tif [ -n \"$value\" ]; then"
+    mentions: "was passed anyway"
+    why: >
+      Treating any value as enabling, which reads as a reasonable
+      simplification and inverts the meaning of "false". The server has no
+      argument that turns one of these off, so passing it turns it ON - and for
+      nomap that means the map disappears for every player, silently, from a
+      config that says false.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestCrossplayIsPassedAsABareFlag
+    file: modules/applications/valheim/image/entrypoint.sh
+    find: "\tset -- \"$@\" -crossplay"
+    replace: "\tset -- \"$@\" -crossplay true"
+    mentions: "given a value"
+    why: >
+      Giving a flag-only argument a value, which is what somebody writes if
+      they assume it is a boolean like the variable that gates it. If the
+      server then rejects the argument and falls back to the Steam backend,
+      the estate needs an inbound port forward it has deliberately not built,
+      and the symptom is players unable to join rather than an error here.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestAMissingValueRefusesToStartAndNamesTheField
+    file: modules/applications/valheim/image/entrypoint.sh
+    find: "\t\techo \"entrypoint: $required is empty - check the valheim-server Secret\" >&2"
+    replace: "\t\techo \"entrypoint: a required value is empty\" >&2"
+    mentions: "without naming the field"
+    why: >
+      The message loses the field's name, which is the only thing this check
+      contributes and the easiest thing to lose while tidying a string.
+
+      It is not the same job. `set -u` also refuses, so the mutation still
+      exits non-zero - what it takes away is the field's name, leaving
+      "parameter not set" from a script the operator has never read, at the
+      moment a server will not start. The guard therefore asserts the message
+      rather than the exit code, because the message is the whole contribution.
+
+  # Guards that cannot be proved by mutation, and why.
+  #
+  # Enforced by tests/go/repo/ledger_completeness_test.go: every test function in
+  # tests/go/repo must appear either as a `guard:` above or here. That is what
+  # was missing when six guards were added in one session and none of their
+  # proofs was committed - the ledger held only what somebody remembered to put
+  # in it, which is the failure mode of the rule it replaced.
+  #
+  # An entry may name a `test:` or a whole `path:`.
+  #
+  # The number of `owed: true` entries may not exceed this, and it may only go
+  # down. That is what makes the debt bounded rather than a shrug: a new guard
+  # cannot be added to the owed list without another one leaving it.
+
+  - guard: TestNoApplicationCanBeGivenAPathIntoTheEstate
+    file: modules/applications/valheim/base/network-policy.yaml
+    find: "            cidr: 172.16.0.0/12"
+    replace: "            cidr: 10.0.0.0/8"
+    mentions: "permits egress to 10.0.0.0/8"
+    why: >
+      Opening another private range is the obvious response to the next
+      player who cannot connect, and 10.0.0.0/8 is the obvious range because
+      it is the one remaining and looks symmetrical with the two beside it.
+      It is also the space the whole estate is addressed out of, so it hands
+      a public-facing game server a UDP path to the API server, the state
+      database, the hypervisor and every other workload. The manifest stays
+      valid and the cluster does exactly what it was told.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestTheServerCanStillReachPlayersOnOrdinaryNetworks
+    file: modules/applications/valheim/base/network-policy.yaml
+    find: "            cidr: 172.16.0.0/12"
+    replace: "            cidr: 198.51.100.0/24"
+    mentions: "no longer permits 172.16.0.0/12"
+    why: >
+      The converse of the guard above, and it needs saying: a check that
+      only ever refuses is satisfied by closing everything. A closed range
+      is a player who joins, spawns and is disconnected seconds later with
+      nothing anywhere naming this policy - which is what 172.16.0.0/12
+      being shut cost every remote player who tried, from a phone hotspot or
+      a hotel.

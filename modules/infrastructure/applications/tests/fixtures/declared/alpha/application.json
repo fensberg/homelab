@@ -1,0 +1,33 @@
+{
+  "requires": [],
+  "routes": {
+    "front-door": 7
+  },
+  "secrets": {
+    "alpha-keys": {
+      "user": {
+        "vault": "user"
+      },
+      "kind": {
+        "value": "s3"
+      }
+    },
+    "alpha-backup": {
+      "key": {
+        "generated": "backup_key"
+      },
+      "bucket": {
+        "storage": "bucket"
+      },
+      "id": {
+        "storage": "access_key_id"
+      },
+      "secret": {
+        "storage": "secret_access_key"
+      },
+      "endpoint": {
+        "storage": "endpoint"
+      }
+    }
+  }
+}

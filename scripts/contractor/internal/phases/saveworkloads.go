@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/details/applications"
 )
 
 // Before a site's machines are destroyed, every workload that has data takes a
@@ -58,7 +58,7 @@ var errClusterUnreachable = errors.New("the cluster's API does not answer")
 //     running to be asked, so refusing would make a dead cluster impossible to
 //     demolish. The caller says so plainly, before the operator confirms.
 func SaveWorkloads(ctx *run.Context) error {
-	declared, err := config.DeclaredBackups(ctx.RepoRoot)
+	declared, err := applications.Backups(ctx.RepoRoot)
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ can name what it is backing up; to read it, run the same command:
 }
 
 // runningPods is the names of the workload's pods that are running.
-func runningPods(ctx *run.Context, kubeconfig string, d config.BeforeTeardown) ([]string, error) {
+func runningPods(ctx *run.Context, kubeconfig string, d applications.BeforeTeardown) ([]string, error) {
 	out, err := kubectl(ctx, kubeconfig, "get", "pods", "-n", d.Namespace, "-l", d.Selector, "-o", "json", "--request-timeout=30s")
 	if err != nil {
 		return nil, err
@@ -134,7 +134,7 @@ func runningPods(ctx *run.Context, kubeconfig string, d config.BeforeTeardown) (
 // backUp runs the declared command in one pod and waits for it, up to
 // backupTimeout. Its output is discarded: a workload's own words can name
 // what it holds, and this runs in logs other people read.
-func backUp(kubeconfig string, d config.BeforeTeardown, pod string) error {
+func backUp(kubeconfig string, d applications.BeforeTeardown, pod string) error {
 	c, cancel := context.WithTimeout(context.Background(), backupTimeout)
 	defer cancel()
 	args := append([]string{"exec", "-n", d.Namespace, pod, "-c", d.Container, "--"}, d.Command...)

@@ -73,6 +73,15 @@
       },
       "database": {
         "password": "fixture-db-password"
+      },
+      "applications": {
+        "alpha": {
+          "environment": "staging",
+          "vault": {
+            "user": "fixture-user",
+            "backup_key": "fixture-backup-key"
+          }
+        }
       }
     }
   },

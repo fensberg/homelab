@@ -9,6 +9,15 @@ variable "sites_path" {
   EOT
 }
 
+variable "applications_path" {
+  type        = string
+  default     = null
+  description = <<-EOT
+    Where the applications are, each declaring the routes an enrolled device
+    is given to it. Unset outside tests: the estate reads the repository's own.
+  EOT
+}
+
 variable "config_path" {
   type        = string
   default     = "../../config/estate.rendered.json"
@@ -31,10 +40,6 @@ locals {
   organization = local.config.organization.name
   sites        = local.config.plots
 
-  # Written once, read by both roots: a host number in every site's service
-  # range, which the address plan turns into each site's own address.
-  tunnel_routes = jsondecode(file("${path.module}/../../management/tunnel-routes.json")).routes
-
   # Each site's routes as addresses, by the site key the estate grants a plot
   # to. A plot the sites' template does not declare has none, and the grants
   # output refuses it rather than leaving its tunnel routing nothing.
@@ -49,5 +54,13 @@ locals {
 module "address_plan" {
   source          = "../../modules/infrastructure/address-plan"
   sites           = jsondecode(file(var.sites_path)).sites
-  fixed_addresses = local.tunnel_routes
+  fixed_addresses = module.applications.routes
+}
+
+# What each application declares about itself. The routes are a host number
+# in every site's service range, which the address plan turns into each
+# site's own address.
+module "applications" {
+  source    = "../../modules/infrastructure/applications"
+  directory = var.applications_path
 }

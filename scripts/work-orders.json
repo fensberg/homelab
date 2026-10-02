@@ -1,46 +1,23 @@
 {
   "_comment": [
-    "What the fabricator builds. .github/workflows/fabricator.yml reads this and",
-    "builds every order in it, and nothing else: it does not look for work.",
+    "The estate's own work orders: what the fabricator builds that is not an",
+    "application. Each names the image it publishes (ghcr.io/<repository>-<name>)",
+    "and the directory holding its Dockerfile, which is also the build context.",
     "",
-    "Each order names the image it publishes (ghcr.io/<repository>-<name>) and",
-    "the directory holding its Dockerfile, which is also the build context.",
+    "An application is not written here. One that has an image is an order by",
+    "being there: named for its directory under modules/applications/, built",
+    "from image/ inside it, and released as its application.json says.",
+    ".github/workflows/fabricator.yml composes the two lists and builds every",
+    "order in the result, and nothing else: it does not look for work.",
     "",
     "Completeness is checked by a guard, not by the fabricator:",
     "tests/go/repo/fabricator_test.go walks the repository and fails on a",
-    "Dockerfile with no order here, and on an order whose Dockerfile is gone.",
-    "So adding an image is adding its order, on the same pull request.",
-    "",
-    "An order may also say how to make a release of what it builds, under",
-    "release: the production overlay and the module it builds on, which are",
-    "staged with the new image digest and published as",
-    "ghcr.io/<repository>-<name>-release:<version>; and how the version is read -",
-    "the names of the environment variables the image needs set in order to",
-    "start, each given a random throwaway value, and the sed pattern that",
-    "captures the version from what it prints. The version is what the built",
-    "thing says it is, plus a counter for rebuilds of the same version: 1.0.15-1,",
-    "then 1.0.15-2. Nothing here is the fabricator's knowledge; it follows the order."
+    "Dockerfile with no order, and on an order whose Dockerfile is gone."
   ],
   "orders": [
     {
       "name": "runner",
       "context": ".github/runner-image"
-    },
-    {
-      "name": "valheim",
-      "context": "modules/applications/valheim/image",
-      "release": {
-        "overlay": "environments/production/applications/valheim",
-        "module": "modules/applications/valheim",
-        "version": {
-          "env": [
-            "VALHEIM_PASSWORD",
-            "VALHEIM_SERVER_NAME",
-            "VALHEIM_WORLD_NAME"
-          ],
-          "pattern": "Valheim version: [a-z]*-\\{0,1\\}\\([0-9][0-9.]*\\)"
-        }
-      }
     }
   ]
 }

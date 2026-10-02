@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/applications"
 )
 
 // Every Deployment, StatefulSet, DaemonSet, Job and CronJob written out in the
@@ -15,7 +17,7 @@ import (
 // repository, not by a list somebody keeps (#492).
 //
 // The HelmRelease table above covers charts, and was the only guard. A plain
-// manifest could not be expressed in it and was simply absent: the Valheim
+// manifest could not be expressed in it and was simply absent: the game
 // server shipped with no priority class, so it was priority zero, and with
 // nothing keeping an 8 GiB pod off a 4 GiB control plane. Nothing said so,
 // because a workload the guard had not been told about looked exactly like
@@ -119,7 +121,7 @@ func plainWorkloads(t *testing.T) []plainWorkload {
 	elsewhere := plainWorkloadsOwnedElsewhere(t)
 
 	var out []plainWorkload
-	for _, dir := range []string{"clusters", "environments", "modules"} {
+	for _, dir := range []string{fluxTree, "modules"} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !(strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
 				return err
@@ -174,9 +176,9 @@ func plainWorkloads(t *testing.T) []plainWorkload {
 func kustomizePatchFiles(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
-	for _, dir := range []string{"clusters", "environments", "modules"} {
+	for _, dir := range []string{fluxTree, "modules"} {
 		_ = filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || filepath.Base(path) != "kustomization.yaml" {
+			if err != nil || d.IsDir() || filepath.Base(path) != applications.Kustomization {
 				return err
 			}
 			body, err := os.ReadFile(path)

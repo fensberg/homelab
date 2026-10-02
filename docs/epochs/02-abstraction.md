@@ -2093,23 +2093,107 @@ neither refinement above delivers it.
 ### Removing an application touches only its own directories
 
 Added 2026-10-01, from #590. An application is a module, and the test of that
-is what removing it costs: `modules/applications/<app>/`,
-`environments/<env>/applications/<app>/`, and one line in each environment's
-list. The game server fails that test by a wide margin. Its name, its
-Service's name or its supplier appears in 34 files outside those directories:
-a workflow, the superintendent and procurement programs, the site root's
-`workloads.tf`, the vault template, the tunnel routes, the pins and lists, and
-seven guards. Some of those are general mechanisms with one application as
-their only example, and some are application-specific checks kept in shared
-places.
+is what removing it costs. The game server failed it by a wide margin: its
+name was in thirty-five files outside its own directories - a workflow, the
+superintendent and procurement programs, the platform module, the vault
+template, the tunnel routes, the pins and lists, and seven guards. Some of
+those are general mechanisms with one application as their only example, and
+some are application-specific checks kept in shared places.
 
-**The bar:** a general mechanism reads what applications declare, from inside
-their own directories, rather than naming one; an application's own checks,
-pins and declarations live with it. A guard enumerates `modules/applications/*`
-and refuses any application's name outside that application's directories, so
-the second application is covered without anybody editing the guard. The
-proof is the removal itself, done on a scratch copy by a test: delete the
-directories and the list line, and every guard still passes.
+**The bar, as agreed 2026-10-02:** delete the application's directory and its
+block in each site that runs it, and every guard still passes.
+
+**The design.**
+
+- **One directory holds everything that is the application's**: its image,
+  its base, its settings for each environment, its tests, pins and proofs,
+  and `application.json`, in which it declares what the estate's general
+  mechanisms need to know about it. `environments/` goes away as a second
+  home for an application; an environment's settings are a directory inside
+  the application.
+- **A site's directory holds one block per application it runs**: which
+  application, which environment's settings, and which release - or that it
+  follows `main`. The environment lists said the same thing a second time,
+  and for production nothing deployed from them; they go.
+- **So two sites can run two versions.** What a site runs is pinned in its own
+  block. The pin that moves into the application's directory is the build
+  input (which upstream build the next image is made from), of which there
+  is one per application. A delivery goes to the sites whose block follows
+  new releases, and to no other.
+- **An application that needs another declares it**: `requires` in its
+  declaration. That is the one place an application may name another. A site
+  given the first must run the second, which starts and is healthy first; a
+  guard holds each site's blocks to the declarations. Removing an application
+  another requires is refused, naming the one that requires it. Something
+  only one application uses is not a second application: it lives in the
+  first one's directory.
+- **Everything else an application needs, it declares and the estate
+  provides**: its secrets and where in the vault they are, the Services that
+  need a fixed address, how to build and release it, how to tell that its
+  upstream has a new version, and how to back it up before a teardown.
+
+**Not covered, on purpose:** an application on one site requiring one on
+another; "this release needs that one or newer"; and a credential one
+application issues to another.
+
+**Built, 2026-10-02, in one piece.** The first cut kept a list of every file
+that still named the application, with a count that could only fall. The
+operator refused it: a debt list is the thing the criterion exists to end, and
+a guard that matches a name checks characters rather than dependencies. So
+everything moved at once, and the question "what depends on this
+application" is answered by removing it.
+
+- **The declaration** is `application.json`, read by
+  `scripts/details/applications` for every program and by
+  `modules/infrastructure/applications` for OpenTofu: `requires`, `routes`,
+  `secrets`, `release`, `upstream`, `before_teardown`. A field nothing reads
+  is refused.
+- **The directory** holds the image, the base, each environment's settings,
+  `pins.env`, and the application's own tests and their proofs.
+  `environments/` is gone, and so are `management/tunnel-routes.json`, the
+  application's entry in `scripts/work-orders.json`, its line in
+  `scripts/versions.env`, its section of the config template, and
+  `workloads.tf`.
+- **A site's block** is in `clusters/<site>/applications.yaml`: the release
+  it pins and the Kustomization that runs it. Procurement delivers a new
+  release to every site whose block does not hold its pin, which is how two
+  sites run two versions.
+- **The update flow** knows no application. The expediter lists what declares
+  an upstream; its standing order covers the one line each declares, read
+  from the declaration as it stood at the pull request's base.
+
+**The proof is the removal, and it is run.**
+`TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks` copies the
+repository, deletes each application's directory and its block in every
+site's file, and requires every guard to still pass - including the
+programs' own tests, and that the proof ledger still describes the tree. It
+found four couplings no search for the name would have: a stand-in only an
+application used, two guards that needed one to exist, a program's test that
+assumed every site pins a release. Guards about applications therefore have
+no "found none, so this checked nothing" floor - an estate with no
+application is legal - and each is instead held to a table of cases written
+beside it, which proves it can see without needing a real application to
+look at.
+
+**Dependencies are refused by how things are built, not by a rule.**
+
+| What an application could reach for          | What stops it                                                                                                                      |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| A file outside its directory                 | Its release is staged from a copy holding that directory alone, and rendered there. It does not build, so it is never released     |
+| Another namespace, or anything cluster-wide  | A site reconciles it as `application-<name>`, an identity the platform binds to its own namespace. The API server refuses the rest |
+| Another application's secrets, or the core's | A declaration names a field of its own vault item, a fact about its own bucket, or a literal. It cannot name an item or a bucket   |
+| The estate's address space                   | A guard over every policy that governs an application, wherever it is written                                                      |
+| Another application                          | `requires`, declared; the site's block must wait for it, and a site given one is given the other                                   |
+
+**Not built: the network between applications.** Nothing in the cluster stops
+one application's own NetworkPolicy from permitting traffic to another's
+namespace without declaring it. Refusing that needs a deny that an
+application cannot lift - a Cilium policy written by the platform from
+`requires` - and it has to be proved on a running cluster, which a pull
+request's checks cannot do.
+
+**The name check came back with nothing exempted.** It is the cheap half: it
+answers at push, and it catches the obvious. It is not the proof.
 
 ## Open questions to settle first
 

@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/applications"
 )
 
 // Proof, committed, that each guard fails when the thing it guards is broken.
@@ -35,8 +37,12 @@ import (
 // almost never to edit the ledger.
 
 type mutation struct {
-	Guard    string `yaml:"guard"`
-	File     string `yaml:"file"`
+	Guard string `yaml:"guard"`
+	File  string `yaml:"file"`
+	// Test is, in an application's own ledger, which of the application's
+	// tests must be the one that failed: the guard there is the one that
+	// runs them all.
+	Test     string `yaml:"test"`
 	Find     string `yaml:"find"`
 	Replace  string `yaml:"replace"`
 	Create   string `yaml:"create"`
@@ -64,6 +70,59 @@ type ledger struct {
 		Test   string `yaml:"test"`
 		Reason string `yaml:"reason"`
 	} `yaml:"comment_dependent"`
+}
+
+// applicationLedger is where an application keeps the proofs that are about
+// it, inside its own directory.
+const applicationLedger = applicationTestsDir + "/mutations.yml"
+
+// applicationMutations reads every application's own ledger.
+//
+// An application's proofs are kept with the application, so that removing it
+// removes them (#590): an entry in tests/mutations.yml that broke one of its
+// files would be a line elsewhere that has to go too. Each ledger has its own
+// floor, and every entry in it must break a file of that application's own -
+// a proof about the estate that happened to live in an application's
+// directory would vanish with the application and take the proof with it.
+func applicationMutations(t *testing.T) []mutation {
+	t.Helper()
+	root := repoRoot(t)
+	apps, err := applications.Read(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []mutation
+	for _, a := range apps {
+		rel := a.Root + "/" + applicationLedger
+		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		if os.IsNotExist(err) {
+			continue // an application with no proofs of its own
+		}
+		if err != nil {
+			t.Fatalf("reading %s: %v", rel, err)
+		}
+		var l ledger
+		if err := yaml.Unmarshal(body, &l); err != nil {
+			t.Fatalf("parsing %s: %v", rel, err)
+		}
+		if len(l.Mutations) < l.Floor {
+			t.Fatalf("%s holds %d entries and its floor is %d. An entry was removed; "+
+				"if a proof genuinely no longer applies, lower the floor in the same diff "+
+				"so somebody sees it happen.", rel, len(l.Mutations), l.Floor)
+		}
+		for _, m := range l.Mutations {
+			if !strings.HasPrefix(m.File, a.Root+"/") {
+				t.Fatalf("%s has an entry that breaks %s, which is not this application's. "+
+					"A proof about the estate belongs in tests/mutations.yml, where removing "+
+					"an application does not remove it.", rel, m.File)
+			}
+			if m.Test != "" && m.Guard != "TestEveryApplicationsOwnTestsPass" {
+				t.Fatalf("%s names the application's own test %s under the guard %s, which does not run it", rel, m.Test, m.Guard)
+			}
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func readLedger(t *testing.T) ledger {
@@ -240,8 +299,12 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 
 	bin := testBinary(t)
 
-	for _, m := range l.Mutations {
-		t.Run(m.Guard, func(t *testing.T) {
+	for _, m := range append(append([]mutation{}, l.Mutations...), applicationMutations(t)...) {
+		name := m.Guard
+		if m.Test != "" {
+			name += "/" + m.Test
+		}
+		t.Run(name, func(t *testing.T) {
 			required := []struct{ field, value string }{
 				{"guard", m.Guard}, {"file", m.File},
 				{"mentions", m.Mentions}, {"why", m.Why},
@@ -372,6 +435,11 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 					"Red for the wrong reason is not proof. A guard that dies on a nil "+
 					"map is just as red as one that caught the defect, and only one of "+
 					"them is doing its job.\n\n%s", m.Guard, m.Mentions, out)
+			}
+			// An application's own test, run by the guard that runs them
+			// all: the one named has to be the one that failed.
+			if m.Test != "" && !strings.Contains(out, "--- FAIL: "+m.Test) {
+				t.Errorf("%s failed with %s broken, but %s is not the test that failed.\n\n%s", m.Guard, m.File, m.Test, out)
 			}
 		})
 	}

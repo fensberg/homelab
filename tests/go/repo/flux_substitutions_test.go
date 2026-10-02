@@ -3,11 +3,14 @@ package repo
 import (
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
+
+	"homelab/details/applications"
 )
 
 // Every variable Flux substitutes has a stand-in, and every stand-in is used.
@@ -54,8 +57,30 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 		t.Fatal("tests/flux-substitutions.env declares no stand-ins, so this checked nothing")
 	}
 
-	// clusters/ and environments/: the workloads' Kustomizations substitute
-	// too, and CI substitutes the stand-ins into both before validating.
+	// And the stand-ins for what the platform hands a site's applications,
+	// derived by the script validation runs - run here as shipped, so what
+	// this holds the manifests to is what validation will substitute. They
+	// are not held to being used: an estate where no site runs an
+	// application substitutes them into nothing, and a route no Service
+	// answers on is the routes' own guard's to refuse.
+	derived := map[string]bool{}
+	// covers: shell:.github/scripts/application-standins.sh
+	cmd := exec.Command("bash", ".github/scripts/application-standins.sh")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("deriving the applications' stand-ins: %v", err)
+	}
+	for _, m := range substitutionKV.FindAllStringSubmatch(string(out), -1) {
+		if declared[m[1]] {
+			t.Errorf("tests/flux-substitutions.env lists %s, which is derived for applications. A line for it there is a stand-in that has to be taken out with the last application.", m[1])
+		}
+		derived[m[1]] = true
+	}
+
+	// The Flux tree and the applications: an application's Kustomization
+	// substitutes too, and CI substitutes the stand-ins into both before
+	// validating.
 	// The CNI's bootstrap, found by the agent it declares: rendered chart
 	// output Talos applies, which Flux never substitutes into.
 	cni, err := fluxObjectPath(cniKind, cniName)
@@ -64,7 +89,7 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 	}
 	bootstrap := fluxTree + "/" + topOf(cni) + "/"
 	used := map[string][]string{}
-	for _, dir := range []string{"clusters", "environments"} {
+	for _, dir := range []string{fluxTree, applications.Dir} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !(strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
 				return err
@@ -99,7 +124,7 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 	sort.Strings(names)
 
 	for _, name := range names {
-		if !declared[name] {
+		if !declared[name] && !derived[name] {
 			t.Errorf("%s uses ${%s}, and tests/flux-substitutions.env has no stand-in for it.\n\n"+
 				"It substitutes to the empty string, which usually still parses - so validation "+
 				"passes on a manifest that is not the one Flux applies, and the failure waits for "+
@@ -109,7 +134,7 @@ func TestEveryFluxSubstitutionHasAStandInAndTheReverse(t *testing.T) {
 	}
 	for name := range declared {
 		if _, ok := used[name]; !ok {
-			t.Errorf("tests/flux-substitutions.env declares %s, and no manifest under clusters/ or environments/ uses it.\n\n"+
+			t.Errorf("tests/flux-substitutions.env declares %s, and no manifest in the Flux tree or an application uses it.\n\n"+
 				"Either the variable was renamed or removed and this was left behind, or the manifest "+
 				"that needed it never landed. A stand-in for nothing reads as coverage that does not exist.",
 				name)

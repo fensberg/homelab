@@ -25,23 +25,24 @@ run "valid_estate_plans_cleanly" {
 
 # Every route a site sends through its tunnel must also be one an enrolled
 # device sends to Cloudflare, or the site's route leads nowhere from a device.
-# Both come from management/tunnel-routes.json through the address plan; this
-# proves the estate carries every route of every site, each at the site's own
-# address.
+# Both come from what the applications declare, through the address plan;
+# this proves the estate carries every route of every site, each at the
+# site's own address. Against applications written for the test, so that it
+# holds whichever the estate has: two of them, with three routes between them.
 run "the_split_tunnel_carries_every_route" {
   command = plan
 
   variables {
-    config_path = "./tests/fixtures/two-plots.json"
+    config_path       = "./tests/fixtures/two-plots.json"
+    applications_path = "../../modules/infrastructure/applications/tests/fixtures/declared"
   }
 
   assert {
-    condition = toset([for t in cloudflare_zero_trust_device_default_profile.estate.include : t.address]) == toset(flatten([
-      for range in ["10.196.40.0/22", "10.196.80.0/22"] : [
-        for n in values(jsondecode(file("../tunnel-routes.json")).routes) : "${cidrhost(range, n)}/32"
-      ]
-    ]))
-    error_message = "the split tunnel does not carry every route in management/tunnel-routes.json at each site's own address"
+    condition = toset([for t in cloudflare_zero_trust_device_default_profile.estate.include : t.address]) == toset([
+      "10.196.40.7/32", "10.196.40.8/32", "10.196.40.9/32",
+      "10.196.80.7/32", "10.196.80.8/32", "10.196.80.9/32",
+    ])
+    error_message = "the split tunnel does not carry every route the applications declare at each site's own address"
   }
 }
 

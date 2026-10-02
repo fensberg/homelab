@@ -1,0 +1,12 @@
+---
+# Production's settings for the game server: the base, plus what differs here.
+#
+# The password is deliberately absent. It is a secret, so it is not in git -
+# see the note in the pull request that introduced this, and #345 for where
+# workload secrets belong once OpenBao exists.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+  - server.yaml
+  - service.yaml

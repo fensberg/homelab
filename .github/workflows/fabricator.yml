@@ -8,12 +8,15 @@ name: Fabricator
 # writes to the repository and never chooses what is installed where. Pinning
 # a product is a release, and releases belong to somebody else.
 #
-# It builds from work orders and nothing else. scripts/work-orders.json says
-# what to build and from which directory, and the fabricator reads it and
-# builds each order - it does not go looking for work, and it does not judge
-# whether an order is complete. That judgement belongs to a guard:
-# tests/go/repo/fabricator_test.go refuses a Dockerfile with no work order,
-# and a work order with no Dockerfile, on the pull request that caused it.
+# It builds from work orders and nothing else. An order says what to build
+# and from which directory: scripts/work-orders.json holds the estate's own,
+# and every application that has an image is an order by being there - its
+# directory under modules/applications/ names it, and its application.json
+# says how a release of it is made. The fabricator names no application. It
+# does not judge whether the orders are complete either. That judgement
+# belongs to a guard: tests/go/repo/fabricator_test.go refuses a Dockerfile
+# with no work order, and a work order with no Dockerfile, on the pull request
+# that caused it.
 #
 # It replaces runner-image.yml and workload-images.yml, which were the same
 # job written twice with the version wiring done by hand in one and not at all
@@ -27,7 +30,6 @@ on:
     paths:
       - ".github/runner-image/**"
       - "modules/applications/**"
-      - "environments/production/applications/**"
       - "scripts/versions.env"
       - "scripts/work-orders.json"
       - ".github/workflows/fabricator.yml"
@@ -70,10 +72,25 @@ jobs:
             api.github.com:443
             github.com:443
 
+      # The estate's own orders, then one for each application that has an
+      # image: named for its directory, built from image/ inside it, pinned by
+      # the pins.env beside its declaration, and released as its
+      # declaration says. homelab/details/workorders composes the same list
+      # for the programs that read it, and tests/go/repo/fabricator_test.go
+      # holds the two to each other.
       - name: Read the work orders
         id: orders
         run: |
           orders="$(jq -c '.orders' scripts/work-orders.json)"
+          for declaration in modules/applications/*/application.json; do
+            [ -e "$declaration" ] || continue
+            dir="$(dirname "$declaration")"
+            [ -f "${dir}/image/Dockerfile" ] || continue
+            orders="$(jq -c --arg name "$(basename "$dir")" --arg dir "$dir" --slurpfile declared "$declaration" \
+              '. + [{name: $name, context: ($dir + "/image"), pins: ($dir + "/pins.env")}
+                    + (if $declared[0].release then {release: ($declared[0].release + {module: $dir})} else {} end)]' \
+              <<<"$orders")"
+          done
           echo "orders=${orders}" >> "$GITHUB_OUTPUT"
           jq -r '.[] | "- \(.name): \(.context)"' <<<"$orders" >> "$GITHUB_STEP_SUMMARY"
 
@@ -107,12 +124,12 @@ jobs:
         uses: ./.github/actions/versions
 
       # Every build argument a Dockerfile declares without a default is a
-      # pin, and it is filled from scripts/versions.env - automatically, so no
-      # workflow restates the list. The runner image's list was written out
+      # pin, and it is filled from scripts/versions.env or from the order's
+      # own pins file - automatically, so no workflow restates the list. The runner image's list was written out
       # by hand and a test checked four of its five entries; that shape is
       # what this replaces.
       #
-      # A bare ARG that versions.env does not pin fails here, naming it,
+      # A bare ARG that neither file pins fails here, naming it,
       # rather than building with an empty value - which for a version is
       # "whatever the installer's default is today".
       #
@@ -122,7 +139,17 @@ jobs:
         id: pins
         env:
           CONTEXT: ${{ matrix.order.context }}
+          ORDER_PINS: ${{ matrix.order.pins }}
         run: |
+          # The order's own pins, beside the estate's. Read as lines of
+          # NAME=value and nothing else: the file is never executed.
+          if [ -n "${ORDER_PINS:-}" ] && [ -f "$ORDER_PINS" ]; then
+            while IFS='=' read -r name value; do
+              if [[ "$name" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
+                export "${name}=${value}"
+              fi
+            done < "$ORDER_PINS"
+          fi
           args=""
           while IFS= read -r name; do
             # BuildKit fills these itself from the platform being built for.
@@ -131,7 +158,7 @@ jobs:
             esac
             value="$(printenv "$name" || true)"
             if [ -z "$value" ]; then
-              echo "::error file=${CONTEXT}/Dockerfile::ARG ${name} has no default and scripts/versions.env pins no ${name}. Pin it there; the fabricator will pass it."
+              echo "::error file=${CONTEXT}/Dockerfile::ARG ${name} has no default, and neither scripts/versions.env nor the order's own pins file pins ${name}. Pin it; the fabricator will pass it."
               exit 1
             fi
             args="${args} --build-arg ${name}=${value}"
@@ -226,19 +253,23 @@ jobs:
 
       # --- A release, for an order that asks for one -------------------------
       #
-      # What production runs is a release: the production overlay and the
-      # module it builds on, with the image just built pinned by digest,
+      # What a site runs is a release: the application's own directory and
+      # nothing else, with the image just built pinned by digest in its base,
       # published as one OCI artifact. Its tag is the version the built thing
       # reports, plus a counter for rebuilds of the same version.
       #
-      # Everything specific to the workload - which overlay, how to start the
-      # image, what the version line looks like - comes from the order.
+      # Only the application's directory is staged, so a manifest that reaches
+      # for a file outside it does not build here and is never released: what
+      # an application is made of is its own directory, by construction.
+      #
+      # Everything specific to the application - how to start the image, what
+      # the version line looks like - comes from the order.
       # tests/go/repo/fabricator_test.go runs each of these steps as shipped.
 
       # Whether this exact release already exists (#514). Fingerprinted from
-      # the manifests it would ship, rendered, with the image pinned: what
-      # reaches the cluster, and nothing else. A comment in the overlay renders
-      # to nothing, so it makes no release - which is what it did before,
+      # the manifests it would ship, rendered for every environment it has
+      # settings for, with the image pinned: what reaches a cluster, and
+      # nothing else. A comment renders to nothing, so it makes no release - which is what it did before,
       # delivering a "new" release identical to the one running.
       - name: Reuse a release of the same manifests
         id: release_fp
@@ -251,16 +282,30 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
           RELEASE: ${{ toJSON(matrix.order.release) }}
         run: |
-          overlay="$(jq -r '.overlay' <<<"$RELEASE")"
           module="$(jq -r '.module' <<<"$RELEASE")"
           rendered="${RUNNER_TEMP}/fingerprint"
           rm -rf "$rendered"
-          for dir in "$module" "$overlay"; do
-            mkdir -p "${rendered}/$(dirname "$dir")"
-            cp -R "$dir" "${rendered}/${dir}"
+          mkdir -p "${rendered}/$(dirname "$module")"
+          cp -R "$module" "${rendered}/${module}"
+          printf '%s\n' "images:" "  - name: ${IMAGE}" "    digest: ${DIGEST}" >> "${rendered}/${module}/base/kustomization.yaml"
+          # Every environment the application has settings for: each
+          # directory of its own, but the base, that holds a kustomization.
+          built=0
+          : > "${RUNNER_TEMP}/fingerprint.yaml"
+          for kustomization in "${rendered}/${module}"/*/kustomization.yaml; do
+            environment="$(dirname "$kustomization")"
+            if [ "$(basename "$environment")" = base ]; then
+              continue
+            fi
+            echo "--- $(basename "$environment")" >> "${RUNNER_TEMP}/fingerprint.yaml"
+            kubectl kustomize "$environment" >> "${RUNNER_TEMP}/fingerprint.yaml"
+            built=$((built + 1))
           done
-          printf '%s\n' "images:" "  - name: ${IMAGE}" "    digest: ${DIGEST}" >> "${rendered}/${overlay}/kustomization.yaml"
-          fingerprint="fp-$(kubectl kustomize "${rendered}/${overlay}" | sha256sum | cut -c1-16)"
+          if [ "$built" -eq 0 ]; then
+            echo "::error::${module} has settings for no environment, so there is nothing a site could run from a release of it"
+            exit 1
+          fi
+          fingerprint="fp-$(sha256sum < "${RUNNER_TEMP}/fingerprint.yaml" | cut -c1-16)"
           echo "fingerprint=${fingerprint}" >> "$GITHUB_OUTPUT"
           case "$(gh api "users/${OWNER}" --jq .type)" in
             Organization) base="orgs/${OWNER}" ;;
@@ -377,17 +422,15 @@ jobs:
           SOURCE: ${{ github.server_url }}/${{ github.repository }}
           FINGERPRINT: ${{ steps.release_fp.outputs.fingerprint }}
         run: |
-          overlay="$(jq -r '.overlay' <<<"$RELEASE")"
           module="$(jq -r '.module' <<<"$RELEASE")"
           stage="${RUNNER_TEMP}/release"
           rm -rf "$stage"
-          for dir in "$module" "$overlay"; do
-            mkdir -p "${stage}/$(dirname "$dir")"
-            cp -R "$dir" "${stage}/${dir}"
-          done
+          mkdir -p "${stage}/$(dirname "$module")"
+          cp -R "$module" "${stage}/${module}"
           # The image this release runs, pinned by digest over whatever the
-          # manifests in git name.
-          printf '%s\n' "images:" "  - name: ${IMAGE}" "    digest: ${DIGEST}" >> "${stage}/${overlay}/kustomization.yaml"
+          # manifests in git name. In the base, so that every environment's
+          # settings run the same image.
+          printf '%s\n' "images:" "  - name: ${IMAGE}" "    digest: ${DIGEST}" >> "${stage}/${module}/base/kustomization.yaml"
           flux push artifact "oci://${ARTIFACT}:${TAG}" \
             --path="$stage" \
             --source="$SOURCE" \
@@ -400,13 +443,13 @@ jobs:
           echo "digest=${pushed}" >> "$GITHUB_OUTPUT"
           {
             echo ""
-            echo "Released as \`${ARTIFACT}:${TAG}\` (\`${pushed}\`), from \`${overlay}\`."
+            echo "Released as \`${ARTIFACT}:${TAG}\` (\`${pushed}\`), from \`${module}\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Procurement brings the finished work to the gate. For every work order that
   # makes a release, the newest one the registry holds is compared with the pin
-  # in clusters/site0/releases.yaml, and when they differ a pull request
-  # moves the pin. Merging it is letting the delivery in, and that is a
+  # in each site that runs it and follows its releases, and when they differ a
+  # pull request moves those pins. Merging it is letting the delivery in, and that is a
   # person's: superintendent enforce-standing-order passes a delivery so it can
   # be merged, and refuses it whenever anything would merge it without review.
   #
@@ -487,18 +530,18 @@ jobs:
           main="$(gh api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)"
           base_tree="$(gh api "repos/${REPO}/git/commits/${main}" --jq .tree.sha)"
 
-          # The releases file is in the directory of the site that was given
-          # this work, and is found there rather than named: which site that
-          # is is the Flux tree's to say. More than one is a decision nobody
-          # has made yet - which site a release goes to first - and delivering
-          # to a guess would make it for them.
-          mapfile -t found < <(gh api "repos/${REPO}/git/trees/${base_tree}?recursive=1" \
-            --jq '.tree[].path | select(test("^clusters/[^/]+/releases\\.yaml$"))')
-          if [ "${#found[@]}" -ne 1 ]; then
-            echo "::error::found ${#found[@]} releases files under clusters/, and a delivery moves a pin in exactly one"
-            exit 1
+          # Each site that was given applications says which in a file of its
+          # own, found there rather than named: which sites those are is the
+          # Flux tree's to say. A release goes to every site whose block for
+          # the application follows new releases, in one pull request, and to
+          # no other - a site that holds its pin keeps what it runs, which is
+          # how two sites run two versions.
+          mapfile -t sites < <(gh api "repos/${REPO}/git/trees/${base_tree}?recursive=1" \
+            --jq '.tree[].path | select(test("^clusters/[^/]+/applications\\.yaml$"))')
+          if [ "${#sites[@]}" -eq 0 ]; then
+            echo "no site has been given an application, so there is nowhere to deliver a release" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
-          RELEASES="${found[0]}"
 
           while IFS= read -r name; do
             package="${REPO_NAME}-${name}-release"
@@ -513,11 +556,22 @@ jobs:
               exit 1
             fi
 
-            gh api "repos/${REPO}/contents/${RELEASES}?ref=${main}" --jq .content | base64 -d > "$RUNNER_TEMP/releases.yaml"
-            before="$(sha256sum < "$RUNNER_TEMP/releases.yaml")"
-            go run -C scripts/procurement . deliver -releases "$RUNNER_TEMP/releases.yaml" -name "$name" -tag "$tag" -digest "$digest"
-            if [ "$(sha256sum < "$RUNNER_TEMP/releases.yaml")" = "$before" ]; then
-              echo "${name}: production already runs ${tag}" >> "$GITHUB_STEP_SUMMARY"
+            # The verb moves the pin in a site's file, and leaves alone a site
+            # that does not run the application or holds its pin.
+            moved="$RUNNER_TEMP/moved"
+            rm -rf "$moved"
+            mkdir -p "$moved"
+            taken=()
+            for i in "${!sites[@]}"; do
+              gh api "repos/${REPO}/contents/${sites[$i]}?ref=${main}" --jq .content | base64 -d > "${moved}/${i}.yaml"
+              before="$(sha256sum < "${moved}/${i}.yaml")"
+              go run -C scripts/procurement . deliver -releases "${moved}/${i}.yaml" -name "$name" -tag "$tag" -digest "$digest"
+              if [ "$(sha256sum < "${moved}/${i}.yaml")" != "$before" ]; then
+                taken+=("$i")
+              fi
+            done
+            if [ "${#taken[@]}" -eq 0 ]; then
+              echo "${name}: every site that follows its releases already runs ${tag}" >> "$GITHUB_STEP_SUMMARY"
               continue
             fi
 
@@ -527,18 +581,23 @@ jobs:
               continue
             fi
 
-            blob="$(gh api "repos/${REPO}/git/blobs" -f content="$(base64 -w0 "$RUNNER_TEMP/releases.yaml")" -f encoding=base64 --jq .sha)"
-            tree="$(gh api "repos/${REPO}/git/trees" -f base_tree="$base_tree" \
-              -f "tree[][path]=${RELEASES}" -f "tree[][mode]=100644" -f "tree[][type]=blob" -f "tree[][sha]=${blob}" --jq .sha)"
+            entries=()
+            files=""
+            for i in "${taken[@]}"; do
+              blob="$(gh api "repos/${REPO}/git/blobs" -f content="$(base64 -w0 "${moved}/${i}.yaml")" -f encoding=base64 --jq .sha)"
+              entries+=(-f "tree[][path]=${sites[$i]}" -f "tree[][mode]=100644" -f "tree[][type]=blob" -f "tree[][sha]=${blob}")
+              files="${files}${files:+, }\`${sites[$i]}\`"
+            done
+            tree="$(gh api "repos/${REPO}/git/trees" -f base_tree="$base_tree" "${entries[@]}" --jq .sha)"
             commit="$(gh api "repos/${REPO}/git/commits" -f tree="$tree" -f "parents[]=${main}" \
               -f message="feat(${name}): release ${tag}" --jq .sha)"
             gh api "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="$commit" >/dev/null
             url="$(gh pr create --repo "$REPO" --base main --head "$branch" --title "feat(${name}): release ${tag}" \
               --body "$(printf '%s\n' \
                 "## Actions for you" "" \
-                "Merging this releases ${name} ${tag} to production, which restarts it. Merge when that disturbs nobody." "" \
+                "Merging this releases ${name} ${tag} to every site named below, which restarts it there. Merge when that disturbs nobody." "" \
                 "## What this is" "" \
-                "The fabricator published \`${tag}\` (\`${digest}\`). This moves the pin in \`${RELEASES}\` to it, and changes nothing else." "" \
+                "The fabricator published \`${tag}\` (\`${digest}\`). This moves the pin in ${files} to it, and changes nothing else." "" \
                 "Procurement opened this; it is never merged without review." "" \
                 "Delivered by: ${RUN_URL}")")"
             echo "${name}: ${tag} delivered as ${url##*/}" >> "$GITHUB_STEP_SUMMARY"

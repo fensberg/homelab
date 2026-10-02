@@ -109,10 +109,11 @@ func Recent(items []item, feed string, now time.Time, within time.Duration) (ite
 
 func expediteCheck(args []string) int {
 	fs := flag.NewFlagSet("expedite-check", flag.ContinueOnError)
-	// The CLIENT appid, not the server's. Valve posts patch notes against the
-	// game; the dedicated server appid's feed carries press articles and
-	// nothing from Valve at all.
-	appID := fs.String("appid", "892970", "the Steam appid whose announcements to read")
+	// The appid an application declares as its upstream's news: the CLIENT
+	// appid, not the server's. Valve posts patch notes against the game; a
+	// dedicated server appid's feed carries press articles and nothing from
+	// Valve at all.
+	appID := fs.String("appid", "", "the Steam appid whose announcements to read")
 	feed := fs.String("feed", valveFeed, "the feed Valve itself posts to")
 	within := fs.Duration("within", 90*time.Minute,
 		"how fresh a post must be to be worth looking properly; longer than the gap between checks")
@@ -123,6 +124,10 @@ func expediteCheck(args []string) int {
 	}
 
 	ask := *url
+	if ask == "" && *appID == "" {
+		fmt.Fprintln(os.Stderr, "procurement expedite-check: -appid is required: whose announcements to read is the application's to declare")
+		return 2
+	}
 	if ask == "" {
 		ask = newsURL(*appID, *count)
 	}
