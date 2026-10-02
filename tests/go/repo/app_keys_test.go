@@ -14,7 +14,7 @@ var appKeySecret = regexp.MustCompile(`secrets\.([A-Z][A-Z0-9_]*_PRIVATE_KEY)\b`
 //
 // WHY THIS EXISTS. An App's key is used only when there is something to do
 // with it, so a key that has stopped working is found on the day it is
-// needed: procurement's was unparseable for an unknown time, and it surfaced
+// needed: procurement's could not be parsed for an unknown time, and it surfaced
 // the morning a game update had locked players out. The patrol now mints a
 // token with each key and throws it away. That only holds for the keys it
 // knows of, so this finds every one any workflow is handed - by the shape of
