@@ -3,6 +3,7 @@ package phases
 import (
 	"encoding/json"
 	"fmt"
+	"homelab/details/ghapi"
 	"homelab/details/repopath"
 	"io"
 	"net/http"
@@ -61,7 +62,7 @@ func CheckBreakGroundPreconditions(site string) error {
 }
 
 // deployWorkflow is the file whose runs can collide with an ignition.
-const deployWorkflow = "deploy-infrastructure.yml"
+const deployWorkflow = ghapi.ConvergeWorkflow
 
 // activeRun is a workflow run that has not finished, and the jobs it holds.
 type activeRun struct {

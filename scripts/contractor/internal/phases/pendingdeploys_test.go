@@ -41,7 +41,7 @@ func TestActiveRunsAreReadFromTheAPI(t *testing.T) {
 	if len(runs) != 2 {
 		t.Fatalf("got %d runs, want the two unfinished ones: %+v", len(runs), runs)
 	}
-	if len(asked) == 0 || !strings.Contains(asked[0], "deploy-infrastructure.yml") {
+	if len(asked) == 0 || !strings.Contains(asked[0], deployWorkflow) {
 		t.Errorf("did not ask for the deploy workflow's runs: %v", asked)
 	}
 }

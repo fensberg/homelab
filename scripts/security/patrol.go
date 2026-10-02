@@ -71,6 +71,7 @@ func patrol(args []string) int {
 		queuedFor    = fs.Duration("max-queued", 30*time.Minute, "how long a run may sit queued before that is a fault")
 		nightlyEvery = fs.Duration("nightly-within", 30*time.Hour, "the scheduled tier must have finished within this")
 		nightly      = fs.String("nightly-workflow", "integration-tests.yml", "the workflow file whose scheduled runs are the drift check")
+		converge     = fs.String("converge-workflow", ghapi.ConvergeWorkflow, "the workflow file whose runs on main are the converge")
 	)
 	_ = fs.Parse(args)
 
@@ -86,7 +87,7 @@ func patrol(args []string) int {
 	results := []result{
 		c.noRunStuckInTheQueue(*queuedFor),
 		c.scheduledTierIsActuallyRunning(*nightly, *nightlyEvery),
-		c.lastConvergeDidNotFail(),
+		c.lastConvergeDidNotFail(*converge),
 	}
 
 	fmt.Println("estate canary")
@@ -333,15 +334,21 @@ func (c *client) scheduledTierIsActuallyRunning(workflow string, within time.Dur
 }
 
 // A converge that failed left the estate part-way to a state somebody merged.
-func (c *client) lastConvergeDidNotFail() result {
+func (c *client) lastConvergeDidNotFail(workflow string) result {
 	const name = "last converge did not fail"
-	runs, err := c.runs("", "branch=main&event=push")
+	// Asked of the workflow by its file, never found among every run by its
+	// name. A run is called whatever its workflow's run-name makes it, and
+	// the converge's says which change it is converging: matched by name,
+	// every converge since that was added went unseen, and this reported
+	// the last run that still had the old name - a failure a week gone -
+	// through five converges that succeeded.
+	runs, err := c.runs(workflow, "branch=main&event=push")
 	if err != nil {
 		return result{name, "unknown", "could not ask GitHub: " + err.Error()}
 	}
 	sort.Slice(runs, func(i, j int) bool { return runs[i].CreatedAt.After(runs[j].CreatedAt) })
 	for _, r := range runs {
-		if !strings.Contains(strings.ToLower(r.Name), "deploy infrastructure") || r.Status != "completed" {
+		if r.Status != "completed" {
 			continue
 		}
 		if r.Conclusion == "success" {

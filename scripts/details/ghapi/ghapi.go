@@ -18,3 +18,10 @@ func URL(base, format string, args ...any) string {
 	}
 	return base + fmt.Sprintf(format, args...)
 }
+
+// ConvergeWorkflow is the workflow file whose runs on main are the converge
+// of a merge. The contractor asks whether one is queued before it breaks
+// ground, and security's patrol asks whether the last one failed; both ask
+// about the workflow by this file, because a run's own name is whatever the
+// workflow chose to call it.
+const ConvergeWorkflow = "deploy-infrastructure.yml"

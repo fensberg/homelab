@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -147,5 +149,57 @@ func TestWaitingOnAPerson_KeepsRunsItCouldNotAskAbout(t *testing.T) {
 	}
 	if len(rest) != 1 {
 		t.Fatalf("rest = %v, want the run kept in the count", rest)
+	}
+}
+
+// The converge is asked about by its workflow's file, whatever its runs are
+// called. It was found by name among every run on main, and a run is called
+// whatever its workflow's run-name makes it: once the converge named its runs
+// for the change they converge, none matched, and the patrol reported the
+// last run that still had the old name - a failure a week old - through five
+// converges that succeeded.
+func TestTheConvergeIsFoundByItsWorkflowAndNotByWhatItsRunsAreCalled(t *testing.T) {
+	answer := func(t *testing.T, runs string) *client {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/repos/owner/repo/actions/workflows/the-converge.yml/runs" {
+				// Every run on main, as it was asked before: the stale
+				// failure is all a search by name would find.
+				_, _ = w.Write([]byte(`{"workflow_runs":[{"name":"Deploy Infrastructure","status":"completed","conclusion":"failure","created_at":"2026-09-27T14:15:27Z"}]}`))
+				return
+			}
+			if q := r.URL.Query(); q.Get("branch") != "main" || q.Get("event") != "push" {
+				t.Errorf("asked with %s, which is not the converge of a merge to main", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"workflow_runs":[` + runs + `]}`))
+		}))
+		t.Cleanup(srv.Close)
+		return &client{repo: "owner/repo", token: "t", api: srv.URL}
+	}
+	run := func(name, status, conclusion, created string) string {
+		return `{"name":"` + name + `","status":"` + status + `","conclusion":"` + conclusion + `","created_at":"` + created + `","updated_at":"` + created + `"}`
+	}
+	for label, tc := range map[string]struct{ runs, want string }{
+		"the newest succeeded, under a name of its own": {
+			run("Converge: a change", "completed", "success", "2026-10-02T16:40:15Z") + "," +
+				run("Converge: an older one", "completed", "failure", "2026-10-01T10:00:00Z"), "ok"},
+		"the newest failed": {
+			run("Converge: an older one", "completed", "success", "2026-10-01T10:00:00Z") + "," +
+				run("Converge: a change", "completed", "failure", "2026-10-02T16:40:15Z"), "fail"},
+		"the newest is still running": {
+			run("Converge: a change", "in_progress", "", "2026-10-02T16:40:15Z") + "," +
+				run("Converge: an older one", "completed", "success", "2026-10-01T10:00:00Z"), "ok"},
+		"none has finished": {run("Converge: a change", "queued", "", "2026-10-02T16:40:15Z"), "skip"},
+		"none at all":       {"", "skip"},
+	} {
+		if got := answer(t, tc.runs).lastConvergeDidNotFail("the-converge.yml"); got.status != tc.want {
+			t.Errorf("%s: %s (%s), want %s", label, got.status, got.detail, tc.want)
+		}
+	}
+	// And GitHub not answering is not knowing, which is not health.
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) }))
+	defer down.Close()
+	if got := (&client{repo: "owner/repo", token: "t", api: down.URL}).lastConvergeDidNotFail("the-converge.yml"); got.status != "unknown" {
+		t.Errorf("with GitHub not answering: %s", got.status)
 	}
 }
