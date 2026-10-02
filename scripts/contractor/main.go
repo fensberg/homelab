@@ -38,7 +38,6 @@ import (
 	"homelab/contractor/internal/phases"
 	"homelab/contractor/internal/run"
 	"homelab/contractor/internal/survey"
-	"homelab/contractor/pin"
 )
 
 // repoRoot is where the repository is on disk, found from the source tree
@@ -229,9 +228,11 @@ Nothing has been touched. Re-run without -whatif to do it.
 
 	// OpenTofu reads the same config; this tells it which site to use.
 	os.Setenv("TF_VAR_site", ctx.Site)
-	// And which version of its modules to run: the tree the Render phase
-	// places for this site, at the commit the site is pinned to.
-	os.Setenv(pin.TreeVariable, ctx.Site)
+	// And which release of the platform its roots run: the site's own line.
+	if err := phases.NameRelease(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(2)
+	}
 
 	// Ahead of every vault and state step, because it needs neither: it plans
 	// against a record that holds nothing real, on a runner that holds no

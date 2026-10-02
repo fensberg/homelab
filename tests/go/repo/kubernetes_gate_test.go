@@ -88,14 +88,16 @@ func platformPlaces(sources map[string]string) (root string, places []string) {
 		if filepath.ToSlash(filepath.Dir(rel)) != root {
 			continue
 		}
-		for _, m := range moduleSource.FindAllStringSubmatch(stripHCLComments(body), -1) {
-			// A site's root reads its modules from its pinned tree; the
-			// module itself is at the same path from the repository's top.
-			if pinned := pinnedSource.FindStringSubmatch(m[1]); pinned != nil {
-				places = append(places, filepath.ToSlash(filepath.Clean(pinned[1])))
+		for _, m := range moduleSourceLine.FindAllStringSubmatch(stripHCLComments(body), -1) {
+			// A site's root fetches its modules as released; the module
+			// itself is at the same path from the repository's top.
+			if released := releasedSource.FindStringSubmatch(m[1]); released != nil {
+				places = append(places, filepath.ToSlash(filepath.Clean(released[1])))
 				continue
 			}
-			places = append(places, filepath.ToSlash(filepath.Join(root, m[1])))
+			if local := moduleSource.FindStringSubmatch(m[0]); local != nil {
+				places = append(places, filepath.ToSlash(filepath.Join(root, local[1])))
+			}
 		}
 	}
 	sort.Strings(places)

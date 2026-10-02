@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"homelab/details/platform"
 )
 
 // scriptTofu puts a tofu first on PATH whose behaviour is the body given,
@@ -71,7 +73,18 @@ func TestThePhasesRunTofuAndCleanUpAfterIt(t *testing.T) {
 	if _, err := os.Stat(ctx.AsBuiltDir); err == nil {
 		t.Error("the plan left its copy behind")
 	}
-	if err := PlanAsBuilt(ctx, t.TempDir()); err == nil {
-		t.Error("an empty directory was planned against as a record")
+	t.Setenv(tokenVariables[0], "a-token")
+	mustWriteFile(t, filepath.Join(ctx.RepoRoot, filepath.FromSlash(platform.VersionsFile)), `{"`+ctx.Site+`": {"platform": "v2026.10.1@sha256:`+strings.Repeat("ab", 32)+`"}}`)
+	if err := os.MkdirAll(filepath.Dir(ctx.RegistryCredential), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := PlanAsBuilt(ctx, t.TempDir()); err == nil || !strings.Contains(err.Error(), "record") {
+		t.Errorf("an empty directory was planned against as a record: %v", err)
+	}
+	if _, err := os.Stat(ctx.RegistryCredential); err == nil {
+		t.Error("the plan left the registry credential behind")
+	}
+	if got, set := os.LookupEnv(platform.CLIConfigVariable); set {
+		t.Errorf("the plan left tofu pointed at %q", got)
 	}
 }

@@ -29,6 +29,11 @@ func Sterilize(ctx *run.Context, quiet bool) error {
 	if err := run.RemoveTreeIfExists(ctx.AsBuiltDir); err != nil {
 		return err
 	}
+	// The registry credential went with the rest; tofu is not left pointed
+	// at it.
+	if err := forgetCredential(ctx); err != nil {
+		return err
+	}
 	run.Ok("workspace sterilized")
 	return nil
 }
@@ -45,6 +50,7 @@ func sterilizeTargets(ctx *run.Context) []string {
 		ctx.OverlayVars,
 		ctx.SiteVars,
 		ctx.Kubeconfig,
+		ctx.RegistryCredential,
 	}
 	for _, root := range ctx.Roots() {
 		targets = append(targets, rootTargets(root)...)

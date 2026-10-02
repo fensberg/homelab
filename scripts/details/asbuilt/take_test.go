@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"homelab/details/platform"
 )
 
 // fakeTofu answers each tofu command from a script, and records what was
@@ -269,14 +271,20 @@ func TestTheOfflineEnvironmentCarriesNoInheritedCredential(t *testing.T) {
 	env := OfflineEnv([]string{
 		"PATH=/bin", "TF_ENCRYPTION=real", "TF_VAR_config_path=/real", "PROXMOX_VE_ENDPOINT=x",
 		"KUBECONFIG=/k", "KUBE_CONFIG_PATH=/k", "TALOSCONFIG=/t", "OP_EXAMPLE_TOKEN=x", "AWS_PROFILE=x",
+		platform.UnreleasedVariable + "=/a/checkout", platform.ReleaseVariable + "=registry.invalid/a-release",
+		platform.DigestVariable + "=sha256:abc", platform.CLIConfigVariable + "=/run/settings",
 	}, "site0", "/record/config.json")
 	for _, gone := range []string{"TF_ENCRYPTION=real", "TF_VAR_config_path=/real", "PROXMOX_VE_ENDPOINT=x", "KUBECONFIG=/k",
-		"KUBE_CONFIG_PATH=/k", "TALOSCONFIG=/t", "OP_EXAMPLE_TOKEN=x", "AWS_PROFILE=x"} {
+		"KUBE_CONFIG_PATH=/k", "TALOSCONFIG=/t", "OP_EXAMPLE_TOKEN=x", "AWS_PROFILE=x",
+		// A checkout's modules are never an estate's, whoever set them.
+		platform.UnreleasedVariable + "=/a/checkout"} {
 		if slices.Contains(env, gone) {
 			t.Errorf("%s was inherited", gone)
 		}
 	}
-	for _, want := range []string{"PATH=/bin", "TF_VAR_offline=true", "TF_VAR_site=site0", "TF_VAR_config_path=/record/config.json"} {
+	// The release the caller chose is the one thing inherited, by name.
+	for _, want := range []string{"PATH=/bin", "TF_VAR_offline=true", "TF_VAR_site=site0", "TF_VAR_config_path=/record/config.json",
+		platform.ReleaseVariable + "=registry.invalid/a-release", platform.DigestVariable + "=sha256:abc", platform.CLIConfigVariable + "=/run/settings"} {
 		if !slices.Contains(env, want) {
 			t.Errorf("%s is missing", want)
 		}

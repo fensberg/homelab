@@ -12,8 +12,8 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
-	"homelab/contractor/pin"
 	"homelab/contractor/steps"
+	"homelab/details/platform"
 	"homelab/details/repopath"
 )
 
@@ -401,38 +401,102 @@ func TestATeardownDestroysTheClusterRootAndNeverTouchesThePlatform(t *testing.T)
 	}
 }
 
-// A run against an estate is handed its modules at the site's pin before any
-// tofu command, and a site with no pins to place it by is refused there.
-func TestAVerbPlacesTheSitesPinnedModules(t *testing.T) {
+// A run against an estate is told which release of the platform to run before
+// any tofu command - the one its own line names, by digest, from this
+// repository's registry - and a site with no line is refused there.
+func TestAVerbNamesTheSitesRelease(t *testing.T) {
 	root := t.TempDir()
-	git := func(args ...string) string {
-		t.Helper()
-		out, err := pin.Exec(root, args...)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return strings.TrimSpace(string(out))
+	for _, name := range []string{platform.ReleaseVariable, platform.DigestVariable, platform.CLIConfigVariable} {
+		t.Setenv(name, "")
+		os.Unsetenv(name)
 	}
-	git("init", "-q")
-	git("config", "user.email", "test@example.invalid")
-	git("config", "user.name", "test")
-	mustWriteFile(t, filepath.Join(root, "parts", "thing.tf"), "# pinned\n")
-	git("add", "-A")
-	git("commit", "-q", "-m", "first")
-	sha := git("rev-parse", "HEAD")
-
+	// Set by whoever started the run, and never an estate's.
+	t.Setenv(platform.UnreleasedVariable, "/a/checkout")
+	t.Setenv("GITHUB_REPOSITORY", "Example/Estate")
 	ctx := run.NewContext(root, "site0")
-	if err := placeModules(ctx); err == nil {
-		t.Error("a site with no pins was run anyway, so it ran whatever was to hand")
+
+	if err := NameRelease(ctx); err == nil {
+		t.Error("a site with no version to run was run anyway, so it ran whatever was to hand")
 	}
-	mustWriteFile(t, filepath.Join(root, filepath.FromSlash(pin.File)), `{"default": "`+sha+`", "per_site": {}}`)
-	// Edited after the pin: a run must not see it.
-	mustWriteFile(t, filepath.Join(root, "parts", "thing.tf"), "# the working tree\n")
-	if err := placeModules(ctx); err != nil {
+	digest := "sha256:" + strings.Repeat("ab", 32)
+	mustWriteFile(t, filepath.Join(root, filepath.FromSlash(platform.VersionsFile)), `{"site0": {"platform": "v2026.10.1@`+digest+`"}}`)
+	if err := NameRelease(ctx); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join(pin.Dir(root, "site0"), "parts", "thing.tf"))
-	if err != nil || string(got) != "# pinned\n" {
-		t.Errorf("the site was handed %q (%v), not its modules as pinned", got, err)
+	for name, want := range map[string]string{
+		platform.ReleaseVariable: platform.Registry("Example/Estate"),
+		platform.DigestVariable:  digest,
+	} {
+		if got := os.Getenv(name); got != want {
+			t.Errorf("%s is %q, want %q", name, got, want)
+		}
+	}
+	if got, set := os.LookupEnv(platform.UnreleasedVariable); set {
+		t.Errorf("the run still names a checkout's modules (%q), which its roots would read instead of the release", got)
+	}
+	// No credential has been written, so tofu is not pointed at one that is
+	// not there; once an earlier phase has written it, a later one finds it.
+	if got, set := os.LookupEnv(platform.CLIConfigVariable); set {
+		t.Errorf("tofu was pointed at settings nothing wrote (%q)", got)
+	}
+	mustWriteFile(t, ctx.RegistryCredential, "")
+	if err := NameRelease(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv(platform.CLIConfigVariable); got != ctx.RegistryCredential {
+		t.Errorf("a later phase of the run was pointed at %q, not the credential the first wrote", got)
+	}
+}
+
+// The credential a root fetches the release with is written for this user
+// alone, holds the token as the registry's credential, goes with everything
+// else a run renders - and a run with no token stops rather than going on to
+// a fetch the registry refuses.
+func TestTheRegistryCredentialIsWrittenForTheRunAndRemovedWithIt(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(platform.CLIConfigVariable, "")
+	os.Unsetenv(platform.CLIConfigVariable)
+	ctx := run.NewContext(root, "site0")
+	mustWriteFile(t, filepath.Join(root, "config", "keep"), "")
+	mustWriteFile(t, filepath.Join(root, filepath.FromSlash(platform.VersionsFile)), `{"site0": {"platform": "v2026.10.1@sha256:`+strings.Repeat("ab", 32)+`"}}`)
+
+	for _, name := range tokenVariables {
+		t.Setenv(name, "")
+	}
+	if err := fetchCredential(ctx); err == nil || !strings.Contains(err.Error(), tokenVariables[0]) {
+		t.Errorf("a run with no token went on, or did not say what it wanted: %v", err)
+	}
+	if _, err := os.Stat(ctx.RegistryCredential); err == nil {
+		t.Error("a credential file was written for a run that had no credential")
+	}
+	// Either name a token arrives under will do.
+	t.Setenv(tokenVariables[len(tokenVariables)-1], " a-token\n")
+	if err := fetchCredential(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv(platform.CLIConfigVariable); got != ctx.RegistryCredential {
+		t.Errorf("tofu is pointed at %q, not the credential", got)
+	}
+	info, err := os.Stat(ctx.RegistryCredential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("the credential file is %v, readable by more than this user", info.Mode().Perm())
+	}
+	want, _ := platform.CLIConfig("a-token")
+	if got, _ := os.ReadFile(ctx.RegistryCredential); string(got) != string(want) {
+		t.Error("the credential file does not hold the token as the registry's credential")
+	}
+	if err := Sterilize(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(ctx.RegistryCredential); err == nil {
+		t.Error("the credential file survived Sterilize")
+	}
+	// And tofu is no longer told of it: told of settings that are not
+	// there, it says so on every command, into output a phase reads.
+	if got, set := os.LookupEnv(platform.CLIConfigVariable); set {
+		t.Errorf("after Sterilize tofu is still pointed at %q, which is gone", got)
 	}
 }

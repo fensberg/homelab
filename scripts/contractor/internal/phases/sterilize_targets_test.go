@@ -26,6 +26,7 @@ func TestSterilizeTargetsCoverEverythingARunLeavesBehind(t *testing.T) {
 		{"the rendered config", "management.rendered.json"},
 		{"the generated Ansible inventory", "inventory.yml"},
 		{"the site vars", "site.auto.yml"},
+		{"the registry credential", "registry.rendered.tofurc"},
 		{"the Postgres backend file", "backend_pg.tf"},
 		{"the local state", "terraform.tfstate"},
 		{"the state backup", "terraform.tfstate.backup"},

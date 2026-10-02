@@ -1,0 +1,421 @@
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index 8f87268..a52eeb5 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -279,6 +279,9 @@ jobs:
+     environment: management
+     permissions:
+       contents: read
++      # To fetch the release of the platform the site runs. The package is
++      # public; the registry wants a token all the same.
++      packages: read
+     timeout-minutes: 60
+     strategy:
+       # Each site has its own state database and its own lock, so two sites
+@@ -317,6 +320,9 @@ jobs:
+       - name: Converge
+         env:
+           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
++          # For the registry: the roots fetch the release the site's line
++          # names (management/versions.json).
++          GH_TOKEN: ${{ github.token }}
+           SITE: ${{ matrix.site }}
+         run: |
+           # toolshed/, like everything else that builds here.
+diff --git a/.github/workflows/fabricator.yml b/.github/workflows/fabricator.yml
+index eece6c4..d5d74ff 100644
+--- a/.github/workflows/fabricator.yml
++++ b/.github/workflows/fabricator.yml
+@@ -563,8 +563,10 @@ jobs:
+             fi
+           fi
+           if [ -n "$listed" ]; then
++            existing="$(grep -v '^fp-' <<<"$listed" | head -n 1)"
+             echo "needed=false" >> "$GITHUB_OUTPUT"
+-            echo "no version: $(grep -v '^fp-' <<<"$listed" | head -n 1) already holds these exact files" >> "$GITHUB_STEP_SUMMARY"
++            echo "version=${existing}" >> "$GITHUB_OUTPUT"
++            echo "no version: ${existing} already holds these exact files" >> "$GITHUB_STEP_SUMMARY"
+           else
+             echo "needed=true" >> "$GITHUB_OUTPUT"
+           fi
+@@ -662,17 +664,42 @@ jobs:
+       # site to it can read it: the pull requests merged since the last one,
+       # and the digest to pin. The release's tag is the version's name on the
+       # commit it was packed from.
++      #
++      # Every run, and not only the one that published: a version that was
++      # published and could not be described - the release refused, the run
++      # cancelled between the two - is described by the next run to find it,
++      # from what the registry says of it. One already described is left.
+       - name: Describe the version
+-        if: steps.reuse.outputs.needed == 'true'
+         env:
+           GH_TOKEN: ${{ github.token }}
++          TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          ACTOR: ${{ github.actor }}
+           REPO: ${{ github.repository }}
+           NAME: ${{ matrix.order.name }}
+           ARTIFACT: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}-release
+-          VERSION: ${{ steps.number.outputs.version }}
++          VERSION: ${{ steps.number.outputs.version || steps.reuse.outputs.version }}
+           DIGEST: ${{ steps.publish.outputs.digest }}
+-          SHA: ${{ github.sha }}
++          SHA: ${{ steps.publish.outputs.digest && github.sha || '' }}
+         run: |
++          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
++            echo "::error::there is no version to describe: '${VERSION}' is not one"
++            exit 1
++          fi
++          if gh release view "$VERSION" --repo "$REPO" > /dev/null 2>&1; then
++            echo "${VERSION} is described already"
++            exit 0
++          fi
++          # Published by an earlier run: the registry says what it was
++          # published as and which commit it was packed from.
++          if [ -z "$DIGEST" ]; then
++            echo "$TOKEN" | oras login ghcr.io -u "$ACTOR" --password-stdin
++            DIGEST="$(oras resolve "${ARTIFACT}:${VERSION}")"
++            SHA="$(oras manifest fetch "${ARTIFACT}:${VERSION}" | jq -r '.annotations["org.opencontainers.image.revision"] // empty')"
++          fi
++          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || [[ ! "$SHA" =~ ^[0-9a-f]{7,64}$ ]]; then
++            echo "::error::the registry did not say what ${VERSION} was published as and from which commit, so it cannot be described"
++            exit 1
++          fi
+           gh release create "$VERSION" --repo "$REPO" --target "$SHA" \
+             --title "${NAME} ${VERSION}" --generate-notes \
+             --notes "$(printf '%s\n' \
+diff --git a/.github/workflows/integration-tests.yml b/.github/workflows/integration-tests.yml
+index 61bef4c..167645a 100644
+--- a/.github/workflows/integration-tests.yml
++++ b/.github/workflows/integration-tests.yml
+@@ -119,6 +119,11 @@ jobs:
+     # lives behind whatever protection rules that environment carries, rather
+     # than being a repository secret any workflow could reach.
+     environment: integration
++    permissions:
++      contents: read
++      # To fetch the release of the platform the site runs. The package is
++      # public; the registry wants a token all the same.
++      packages: read
+     timeout-minutes: 45
+     steps:
+       - name: Mobilize
+@@ -156,9 +161,15 @@ jobs:
+       # -keep-on-failure is what stops build-site sterilizing the workspace the
+       # moment this single phase succeeds. Without it, Render wipes the file
+       # it just wrote and every step below reads nothing.
++      #
++      # The GitHub token is for the registry: Render also writes the
++      # credential the roots fetch the site's release of the platform with
++      # (management/versions.json), and every verb below that renders again
++      # carries it for the same reason.
+       - name: Render the config from 1Password
+         env:
+           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
++          GH_TOKEN: ${{ github.token }}
+           SITE: ${{ matrix.site }}
+         run: |
+           go build -C scripts/contractor -o ../../toolshed/contractor .
+@@ -227,6 +238,7 @@ jobs:
+         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
+         env:
+           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
++          GH_TOKEN: ${{ github.token }}
+           HOMELAB_TEST_SITE: ${{ matrix.site }}
+           SITE: ${{ matrix.site }}
+         run: >-
+@@ -243,6 +255,7 @@ jobs:
+         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
+         env:
+           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
++          GH_TOKEN: ${{ github.token }}
+           SITE: ${{ matrix.site }}
+         run: ./toolshed/contractor record-as-built -site "$SITE" -record-out "as-built/$SITE"
+ 
+diff --git a/.github/workflows/plan-infrastructure.yml b/.github/workflows/plan-infrastructure.yml
+index ac2df7c..263120b 100644
+--- a/.github/workflows/plan-infrastructure.yml
++++ b/.github/workflows/plan-infrastructure.yml
+@@ -98,6 +98,9 @@ jobs:
+       pull-requests: write
+       # To find and download the record another run published.
+       actions: read
++      # To fetch the release of the platform the site runs. The package is
++      # public; the registry wants a token all the same.
++      packages: read
+     timeout-minutes: 20
+     strategy:
+       fail-fast: false
+@@ -108,7 +111,8 @@ jobs:
+         uses: $/.github/workflows/mobilize
+         with:
+           # The Go toolchain and OpenTofu with its providers, as the Validate
+-          # lane fetches them, and GitHub's API for the record.
++          # lane fetches them, GitHub's API for the record, and its registry
++          # for the release of the platform the site runs.
+           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+           # which job may reach what; `security guard-egress` refuses any drift.
+           # The copy lives here because harden-runner reads its policy in a
+@@ -118,9 +122,11 @@ jobs:
+           allowed-endpoints: >
+             api.github.com:443
+             get.opentofu.org:443
++            ghcr.io:443
+             github.com:443
+             go.dev:443
+             objects.githubusercontent.com:443
++            pkg-containers.githubusercontent.com:443
+             registry.opentofu.org:443
+             release-assets.githubusercontent.com:443
+             storage.googleapis.com:443
+@@ -165,8 +171,12 @@ jobs:
+           github-token: ${{ github.token }}
+           path: as-built-record
+ 
++      # The token is for the registry and nothing else: the roots fetch the
++      # release the site's line names (management/versions.json), and the
++      # registry refuses an anonymous fetch even of a public package.
+       - name: Plan
+         env:
++          GH_TOKEN: ${{ github.token }}
+           SITE: ${{ matrix.site }}
+         run: |
+           go build -C scripts/contractor -o ../../toolshed/contractor .
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index bcdacec..0ffd044 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -331,11 +331,11 @@ jobs:
+           # phase's, so nothing here can collide with a real run. `tofu
+           # validate` takes no -var flag, hence the environment variable.
+           TF_VAR_config_path: ../../config/management.placeholder.json
+-          # A root reads its modules from a pinned tree. Validating a change
+-          # means validating the modules as they are in the working tree, which
+-          # the placeholder step above links under this name; it is never a
+-          # site's, so nothing here can be mistaken for a pinned run.
+-          TF_VAR_tree: worktree
++          # A root fetches its modules from a release of the platform.
++          # Validating a change means validating the modules as they are in
++          # this checkout, which only a check names; a run against a site
++          # clears it and fetches the release its line names.
++          TF_VAR_unreleased: ../..
+         run: |
+           tofu init -backend=false -input=false
+           tofu validate
+@@ -345,7 +345,7 @@ jobs:
+         working-directory: management/platform
+         env:
+           TF_VAR_config_path: ../../config/management.placeholder.json
+-          TF_VAR_tree: worktree
++          TF_VAR_unreleased: ../..
+         run: |
+           tofu init -backend=false -input=false
+           tofu validate
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 193c13f..92d2f7d 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -618,15 +618,18 @@ egress:
+     policy: block
+     reason: >-
+       Plans a pull request's change against the as-built record (#554), on
+-      GitHub's runner and with no credential. The Go toolchain and OpenTofu
+-      with its providers, fetched as the Validate lane fetches them, and
+-      GitHub's API to find and download the record.
++      GitHub's runner and with no credential of the estate's. The Go
++      toolchain and OpenTofu with its providers, fetched as the Validate lane
++      fetches them, GitHub's API to find and download the record, and its
++      registry for the release of the platform the site runs.
+     hosts:
+       - api.github.com:443
+       - get.opentofu.org:443
++      - ghcr.io:443
+       - github.com:443
+       - go.dev:443
+       - objects.githubusercontent.com:443
++      - pkg-containers.githubusercontent.com:443
+       - registry.opentofu.org:443
+       - release-assets.githubusercontent.com:443
+       - storage.googleapis.com:443
+diff --git a/tests/go/repo/fabricator_test.go b/tests/go/repo/fabricator_test.go
+index 64879ce..2bc7ffd 100644
+--- a/tests/go/repo/fabricator_test.go
++++ b/tests/go/repo/fabricator_test.go
+@@ -1189,8 +1189,10 @@ func TestAPackageOfTheSameFilesIsNotPublishedAgain(t *testing.T) {
+ 	if beside, _, _ := reuse(none); beside["fingerprint"] != first["fingerprint"] {
+ 		t.Error("a change to files the package does not hold changed its fingerprint, so every merge would publish a version")
+ 	}
+-	if published, _, _ := reuse("printf '%s\\n' v2026.10.1 " + first["fingerprint"]); published["needed"] != "false" {
+-		t.Errorf("a package of these exact files exists and another was needed: %v", published)
++	// And it says which version that is, for the step that describes one an
++	// earlier run published and could not.
++	if published, _, _ := reuse("printf '%s\\n' v2026.10.1 " + first["fingerprint"]); published["needed"] != "false" || published["version"] != "v2026.10.1" {
++		t.Errorf("a package of these exact files exists as v2026.10.1, and the step says: %v", published)
+ 	}
+ 	for name, change := range map[string]map[string]string{
+ 		"a file in a held directory": {"mods/two/deep/more.tf": "changed\n"},
+@@ -1358,20 +1360,122 @@ func TestThePackageHoldsExactlyItsFilesAndIsPublishedForOpenTofu(t *testing.T) {
+ // A version is described where a person reads it: a release named for the
+ // version, on the commit it was packed from, saying what it was published
+ // as and carrying the notes of what merged since the last.
++//
++// And it is described by whichever run finds it undescribed. One an earlier
++// run published and could not describe is described from what the registry
++// says of it; one described already is left; and a registry that does not
++// say what a version is leaves it undescribed, loudly.
+ func TestAVersionIsDescribedByARelease(t *testing.T) {
+-	fake := t.TempDir()
+-	path := fakeTools(t, map[string]string{"gh": `printf '%s\n' "$@" > "` + fake + `/args"`})
+ 	digest := "sha256:" + strings.Repeat("d", 64)
+-	ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), []string{
+-		"GH_TOKEN=x", "REPO=example/homelab", "NAME=bundle", "ARTIFACT=ghcr.io/example/homelab-bundle-release",
+-		"VERSION=v2026.10.4", "DIGEST=" + digest, "SHA=0123456789abcdef"})
+-	if !ok {
++	// gh that has, or has not, a release of the version already; oras that
++	// answers as the registry would for a version published earlier.
++	tools := func(described bool, resolved, revision string) (path, fake string) {
++		fake = t.TempDir()
++		view := "exit 1"
++		if described {
++			view = "exit 0"
++		}
++		return fakeTools(t, map[string]string{
++			"gh": `case "$2" in view) ` + view + ` ;; esac
++printf '%s\n' "$@" > "` + fake + `/args"`,
++			"oras": `case "$1" in
++  login) cat > "` + fake + `/password" ;;
++  resolve) echo "` + resolved + `" ;;
++  manifest) printf '{"annotations":{"org.opencontainers.image.revision":"%s"}}\n' "` + revision + `" ;;
++esac`,
++		}), fake
++	}
++	base := []string{"GH_TOKEN=x", "TOKEN=secret-token", "ACTOR=someone", "REPO=example/homelab", "NAME=bundle",
++		"ARTIFACT=ghcr.io/example/homelab-bundle-release", "VERSION=v2026.10.4"}
++	created := func(fake string) string {
++		args, _ := os.ReadFile(filepath.Join(fake, "args"))
++		return string(args)
++	}
++
++	// The run that published it.
++	path, fake := tools(false, "", "")
++	if ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), append(base[:len(base):len(base)], "DIGEST="+digest, "SHA=0123456789abcdef")); !ok {
+ 		t.Fatalf("the step failed:\n%s", logs)
+ 	}
+-	args, _ := os.ReadFile(filepath.Join(fake, "args"))
+ 	for _, want := range []string{"release\ncreate\nv2026.10.4\n", "--target\n0123456789abcdef\n", "--generate-notes", "ghcr.io/example/homelab-bundle-release:v2026.10.4", digest} {
+-		if !strings.Contains(string(args), want) {
+-			t.Errorf("the release does not carry %q:\n%s", want, args)
++		if !strings.Contains(created(fake), want) {
++			t.Errorf("the release does not carry %q:\n%s", want, created(fake))
+ 		}
+ 	}
++
++	// A later run, finding the version published and not described.
++	path, fake = tools(false, digest, "0f1e2d3c4b5a6978")
++	if ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), append(base[:len(base):len(base)], "DIGEST=", "SHA=")); !ok {
++		t.Fatalf("a version an earlier run published was not described:\n%s", logs)
++	}
++	for _, want := range []string{"release\ncreate\nv2026.10.4\n", "--target\n0f1e2d3c4b5a6978\n", digest} {
++		if !strings.Contains(created(fake), want) {
++			t.Errorf("a version described later does not carry %q, so it is not described from what the registry holds:\n%s", want, created(fake))
++		}
++	}
++
++	// Described already: left as it is.
++	path, fake = tools(true, digest, "0f1e2d3c4b5a6978")
++	if ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), append(base[:len(base):len(base)], "DIGEST=", "SHA=")); !ok || created(fake) != "" {
++		t.Errorf("a version already described: ok=%v, and a release was created with %q\n%s", ok, created(fake), logs)
++	}
++
++	// A registry that does not say what the version is, or which commit it
++	// is of, and a run with no version at all.
++	for name, tc := range map[string]struct {
++		resolved, revision string
++		env                []string
++	}{
++		"no digest":  {"not a digest", "0f1e2d3c4b5a6978", append(base[:len(base):len(base)], "DIGEST=", "SHA=")},
++		"no commit":  {digest, "", append(base[:len(base):len(base)], "DIGEST=", "SHA=")},
++		"no version": {digest, "0f1e2d3c4b5a6978", append(base[:len(base)-1:len(base)-1], "VERSION=", "DIGEST=", "SHA=")},
++	} {
++		path, fake = tools(false, tc.resolved, tc.revision)
++		if ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), tc.env); ok || created(fake) != "" {
++			t.Errorf("%s: ok=%v, and a release was created with %q\n%s", name, ok, created(fake), logs)
++		}
++	}
++}
++
++// The describing step is reached by a run that published nothing: it has no
++// condition of its own, and the version it describes is the one this run
++// numbered or, failing that, the one the reuse step found already published.
++// The step's script is run as shipped above; this is how the job hands it
++// what it runs with, which no run of the script alone can see.
++func TestTheDescribingStepRunsWhetherOrNotThisRunPublished(t *testing.T) {
++	var wf struct {
++		Jobs map[string]struct {
++			Steps []struct {
++				Name string            `yaml:"name"`
++				ID   string            `yaml:"id"`
++				If   string            `yaml:"if"`
++				Env  map[string]string `yaml:"env"`
++			} `yaml:"steps"`
++		} `yaml:"jobs"`
++	}
++	if err := yaml.Unmarshal([]byte(workflowText(t, fabricatorWorkflow)), &wf); err != nil {
++		t.Fatal(err)
++	}
++	ids := map[string]string{}
++	for _, s := range wf.Jobs["package"].Steps {
++		ids[s.Name] = s.ID
++	}
++	found := false
++	for _, s := range wf.Jobs["package"].Steps {
++		if s.Name != "Describe the version" {
++			continue
++		}
++		found = true
++		if s.If != "" {
++			t.Errorf("the describing step runs only if %q, so a version an earlier run published and could not describe is never described", s.If)
++		}
++		for _, from := range []string{"Number the version", "Reuse a package of the same contents"} {
++			if ids[from] == "" || !strings.Contains(s.Env["VERSION"], "steps."+ids[from]+".outputs.version") {
++				t.Errorf("the describing step is handed the version only by %q, and not by the step %q", s.Env["VERSION"], from)
++			}
++		}
++	}
++	if !found {
++		t.Error("the package job has no step that describes a version")
++	}
+ }
+diff --git a/tests/mutations.yml b/tests/mutations.yml
+index d040f31..ff43184 100644
+--- a/tests/mutations.yml
++++ b/tests/mutations.yml
+@@ -1043,6 +1043,28 @@ mutations:
+       from. Without a target it lands on whatever main is when the step runs,
+       which after a second merge is a commit the package was not built from.
+ 
++  - guard: TestAVersionIsDescribedByARelease
++    file: .github/workflows/fabricator.yml
++    find: '          if gh release view "$VERSION" --repo "$REPO" > /dev/null 2>&1; then'
++    replace: "          if false; then"
++    mentions: "a version already described"
++    why: >
++      The step runs on every merge so that a version an earlier run could not
++      describe is described by the next. Without asking whether it is
++      described already, every merge that publishes nothing tries to create
++      the last version's release again, and the job is red from then on.
++
++  - guard: TestTheDescribingStepRunsWhetherOrNotThisRunPublished
++    file: .github/workflows/fabricator.yml
++    find: "          VERSION: ${{ steps.number.outputs.version || steps.reuse.outputs.version }}"
++    replace: "          VERSION: ${{ steps.number.outputs.version }}"
++    mentions: "is handed the version only by"
++    why: >
++      A version that was published and could not be described is described
++      by the next run to find it. Handed the version only by the run that
++      numbered it, that next run has none, and the release a site's pull
++      request shows is never written.
++
+   - guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
+     file: .github/workflows/fabricator.yml
+     find: 'if [ "$(sha256sum < "${moved}/${i}.yaml")" != "$before" ]; then'

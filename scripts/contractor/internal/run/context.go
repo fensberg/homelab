@@ -87,6 +87,11 @@ type Context struct {
 	// a kubeconfig is a credential and this one persists on purpose.
 	Kubeconfig string
 
+	// RegistryCredential is the settings file tofu fetches the platform's
+	// release with: a GitHub token, written for the run and removed with
+	// everything else a run renders.
+	RegistryCredential string
+
 	Site          string
 	Upgrade       bool
 	SkipOverlay   bool
@@ -120,19 +125,20 @@ func NewContext(repoRoot, site string) *Context {
 	hypervisorDir := filepath.Join(repoRoot, "management", "hypervisor")
 	cluster := newRoot(repoRoot, config.ClusterRoot)
 	return &Context{
-		Root:           cluster,
-		Cluster:        cluster,
-		Platform:       newRoot(repoRoot, config.PlatformRoot),
-		RepoRoot:       repoRoot,
-		ConfigTpl:      filepath.Join(repoRoot, "config", "management.tpl.json"),
-		ConfigRendered: filepath.Join(repoRoot, "config", "management.rendered.json"),
-		HypervisorDir:  hypervisorDir,
-		InventoryOut:   filepath.Join(hypervisorDir, "inventory.yml"),
-		OverlayVars:    filepath.Join(hypervisorDir, "overlay-network.auto.yml"),
-		SiteVars:       filepath.Join(hypervisorDir, "site.auto.yml"),
-		AsBuiltDir:     filepath.Join(repoRoot, ".as-built"),
-		Kubeconfig:     filepath.Join(cluster.Dir, "kubeconfig"),
-		Site:           site,
+		Root:               cluster,
+		Cluster:            cluster,
+		Platform:           newRoot(repoRoot, config.PlatformRoot),
+		RepoRoot:           repoRoot,
+		ConfigTpl:          filepath.Join(repoRoot, "config", "management.tpl.json"),
+		ConfigRendered:     filepath.Join(repoRoot, "config", "management.rendered.json"),
+		HypervisorDir:      hypervisorDir,
+		InventoryOut:       filepath.Join(hypervisorDir, "inventory.yml"),
+		OverlayVars:        filepath.Join(hypervisorDir, "overlay-network.auto.yml"),
+		SiteVars:           filepath.Join(hypervisorDir, "site.auto.yml"),
+		AsBuiltDir:         filepath.Join(repoRoot, ".as-built"),
+		Kubeconfig:         filepath.Join(cluster.Dir, "kubeconfig"),
+		RegistryCredential: filepath.Join(repoRoot, "config", "registry.rendered.tofurc"),
+		Site:               site,
 	}
 }
 
