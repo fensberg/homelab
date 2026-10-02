@@ -70,6 +70,22 @@ skip-check:
   # Removed if the server ever learns to read a password from a file.
   - CKV_K8S_35
 
+  # CKV_TF_1 and CKV_TF_2: a module source names a commit hash, or a tag.
+  #
+  # Both checks read a git source. A site's roots take their modules from a
+  # registry by the digest of the package (management/versions.json), which
+  # is the stronger of the two things these ask for: a digest is the
+  # contents, where a tag is a name and a commit is one repository's word.
+  # The check sees a source that is neither a hash nor a tag and cannot tell.
+  #
+  # What they are for is held by a guard that can:
+  # TestEverySiteRootRunsItsModulesAsReleased refuses any module source in a
+  # site's root that is not fetched by digest, and any default for it.
+  #
+  # Removed when the check recognises a digest on an OCI module source.
+  - CKV_TF_1
+  - CKV_TF_2
+
 skip-path:
   # What a release of the platform would hold from this checkout, placed by
   # the check that plans a module before it is released. A copy of part of
