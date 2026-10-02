@@ -9,16 +9,6 @@ vars:
   # Keep this tag in step with the SHA pinned in pr-validation.yml. They are
   # the same release, and the point of running it locally is that it is.
 
-env:
-  # A GitHub token, for the registry: a site's roots fetch the release of the
-  # platform the site runs (management/versions.json), and the registry wants
-  # a token even for a public package. The one already in the environment,
-  # or the one this workstation's GitHub sign-in holds. The contractor reads
-  # it and never asks gh itself: it also runs where gh is not installed.
-  # Empty where there is neither, and the contractor then says what it wants.
-  GH_TOKEN:
-    sh: 'printf %s "${GH_TOKEN:-${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}}"'
-
 # The single entrypoint is scripts/contractor, a Go program. Every task below
 # builds it fresh (fast, and always current source - no stale binary to
 # remember to rebuild) and then execs the binary directly, rather than
@@ -64,6 +54,19 @@ tasks:
     # Safe to wrap: it changes nothing, and an interrupted plan leaves a
     # rendered config and a saved plan file at worst - both removed by
     # 'task clean-secrets'.
+    env: &registry-token
+      # A GitHub token, for the registry: a site's roots fetch the release of
+      # the platform the site runs (management/versions.json), and the
+      # registry wants a token even for a public package. The one already in
+      # the environment, or the one this workstation's GitHub sign-in holds.
+      # The contractor reads it and never asks gh itself: it also runs where
+      # gh is not installed. Empty where there is neither, and the contractor
+      # then says what it wants.
+      #
+      # On each task that runs the contractor, and on no other: a linter or a
+      # test run through task has no use for it and is not handed it.
+      GH_TOKEN:
+        sh: 'printf %s "${GH_TOKEN:-${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}}"'
     cmds:
       - task: build
       - ./toolshed/contractor plan -site "{{.SITE}}"
@@ -73,6 +76,7 @@ tasks:
     # Safe to wrap for the same reason as plan: it changes nothing in the
     # estate, and everything it writes is under .as-built/, which it removes
     # and 'task clean-secrets' removes too.
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor record-as-built -site "{{.SITE}}"
@@ -86,6 +90,7 @@ tasks:
     # exists, its state already lives in Postgres, and build-site never destroys
     # on failure or interrupt in this mode. An interrupted converge leaves a
     # running estate and a state file that still describes it.
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor converge-site -site "{{.SITE}}"
@@ -95,6 +100,7 @@ tasks:
     # Renamed from 'plan' when `contractor plan` arrived. Two different questions
     # were sharing one word: "which phases run" and "what changes in the
     # estate". The second is the one anybody means by "plan".
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor build-site -site "{{.SITE}}" -whatif
@@ -115,6 +121,7 @@ tasks:
     # What this is still good for is proving the vault resolves and every
     # template substitutes. `task check-inventory` answers the narrower
     # question - do the references resolve - without pulling a single value.
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor build-site -site "{{.SITE}}" -phase render
@@ -163,6 +170,7 @@ tasks:
     # Exits non-zero when a peer is registered and does not answer. That is
     # the condition the vendor's console, the daemon's own service status and
     # this estate's health gate were all unable to report.
+    env: *registry-token
     cmds:
       - go build -C scripts/contractor -o ../../toolshed/contractor .
       - ./toolshed/contractor survey {{.CLI_ARGS}}
@@ -259,18 +267,21 @@ tasks:
     # rendered config, no secrets on disk, nothing for `clean-secrets` to
     # remove - so an interrupted run leaves the workspace exactly as it found
     # it. Run it after editing the template or the vault.
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor check-inventory -site "{{.SITE}}"
 
   verify:
     desc: "Check the network path to the hypervisor and the SDN gateway"
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor build-site -site "{{.SITE}}" -phase verify
 
   configure-hypervisor:
     desc: "Ansible: Proxmox repos, Tailscale, RBAC, SDN. Safe to re-run."
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor build-site -site "{{.SITE}}" -phase hypervisor
@@ -290,12 +301,14 @@ tasks:
     # to gain confidence before touching a hypervisor. Going through the
     # contractor renders the inventory first, proves the host is reachable, and
     # refuses a play that matched nothing.
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor build-site -site "{{.SITE}}" -phase hypervisor -check
 
   backup-state:
     desc: "Encrypt the current state and push it to Cloudflare R2"
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor build-site -site "{{.SITE}}" -phase backup
@@ -819,6 +832,7 @@ tasks:
     # reads one tofu output and writes one file, and can no more reach the
     # Compute phase than `render` can. An interrupted run leaves a credential
     # on disk at worst, which `task clean-secrets` removes.
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor kubeconfig -site "{{.SITE}}"
@@ -838,6 +852,7 @@ tasks:
     # Repeating the single-command form is what makes the safe path tedious, and
     # a tedious safe path is pressure towards `task kubeconfig`, which is the
     # one that leaves a credential lying around.
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor kubeconfig -site "{{.SITE}}" -- {{.CLI_ARGS}}
@@ -858,12 +873,14 @@ tasks:
     #
     # Same per-invocation setup cost as `task kubectl` above, and the same
     # answer: put several questions in one call rather than paying for each.
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor talosconfig -site "{{.SITE}}" -- {{.CLI_ARGS}}
 
   clean-secrets:
     desc: "Wipe every rendered secret and the local state file"
+    env: *registry-token
     cmds:
       - task: build
       - ./toolshed/contractor build-site -site "{{.SITE}}" -phase sterilize
