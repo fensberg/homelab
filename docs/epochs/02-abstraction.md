@@ -3399,9 +3399,13 @@ pieces are:
   contractor, Ansible and the tests.
 - **A converge's steps are declared once**, and every verb that shares them
   reads that declaration.
-- **Production follows a pinned version.** A merge publishes a release of
-  the platform; a site runs the one its line names, fetched by digest; and
-  merging code moves no site.
+- **A site's modules follow a pinned version.** A merge publishes a release
+  of the platform; a site runs the one its line names, fetched by digest;
+  and merging a module moves no site. That is the OpenTofu half only. Every
+  site's Flux still reconciles `clusters/core` and its own directory from
+  `main`, and the contractor and the hypervisor playbook run from whatever
+  commit is converged, so a merge to any of those reaches production at
+  once.
 - **An application is one directory and one block per site.** It declares
   what it needs, the platform gives it a namespace, an identity confined to
   that namespace and its own secrets, and removing it is deleting the
