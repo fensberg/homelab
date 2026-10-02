@@ -3,6 +3,7 @@ package phases
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -10,9 +11,9 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
-	"homelab/contractor/pin"
 	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
+	"homelab/details/platform"
 	"homelab/details/repopath"
 )
 
@@ -68,10 +69,16 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 	// to a module before it merges, and it sees it as a site would run it.
 	// A file a module reads that the release does not hold is not there, and
 	// the plan fails on it here.
-	if err := pin.PlaceRelease(repo, pin.Exec); err != nil {
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	tracked, err := exec.Command("git", "-C", repo, "ls-files", "-z").Output()
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(pin.Dir(repo, pin.Release)) })
+	unreleased, err := platform.PlaceUnreleased(repo, strings.Split(strings.TrimRight(string(tracked), "\x00"), "\x00"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(unreleased) })
 	work := filepath.Join(repo, ".as-built-unbuilt")
 	t.Cleanup(func() { _ = os.RemoveAll(work) })
 
@@ -93,7 +100,9 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 		if root.Name == config.PlatformRoot {
 			in.Vars = asbuilt.UnbuiltAccess(steps.PlatformInputs[0], steps.PlatformInputs[1])
 		}
-		in.Vars[strings.TrimPrefix(pin.TreeVariable, "TF_VAR_")] = pin.Release
+		// From the copy of the root the plan is made in, which is two
+		// directories down from the top of the repository as the root is.
+		in.Vars[strings.TrimPrefix(platform.UnreleasedVariable, "TF_VAR_")] = "../../" + platform.Unreleased
 		plan, _, err := asbuilt.PlanAgainst(in, asbuilt.Exec)
 		_ = os.RemoveAll(work)
 

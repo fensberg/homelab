@@ -169,3 +169,149 @@ func Files(repoRoot string, tracked []string) ([]string, error) {
 	sort.Strings(out)
 	return out, nil
 }
+
+// Order is the name the platform is published under: the work order that
+// packs it, and so the package <repository>-<Order>-release.
+const Order = "platform"
+
+// VersionsFile is where each site says which version of the platform it
+// runs, from the top of the repository: one line per site.
+//
+// Under management/, beside the roots, because that is what a converge
+// applies: a pull request that changes a site's line is planned with the
+// version it would leave the site on, the merge converges the site, and
+// nothing else in the repository changes what a site runs.
+const VersionsFile = "management/versions.json"
+
+// Pin is the release a site runs: the version, which is for people, and the
+// digest of the package published under it, which is what is fetched. A
+// version is a name in a registry and a name can be made to point elsewhere;
+// a digest cannot.
+type Pin struct{ Version, Digest string }
+
+// pinned is how a site's line is written: v2026.10.1@sha256:<64 hex>. One
+// string, so that moving a site from one release to the next is one line.
+var pinned = regexp.MustCompile(`^(v[0-9][0-9.]*)@(sha256:[0-9a-f]{64})$`)
+
+// ParsePin reads one site's line.
+func ParsePin(line string) (Pin, error) {
+	m := pinned.FindStringSubmatch(line)
+	if m == nil || !Version.MatchString(m[1]) {
+		return Pin{}, fmt.Errorf("%q is not a release of the platform: a version and the digest it was published as, v2026.10.1@sha256:<64 hex>", line)
+	}
+	return Pin{Version: m[1], Digest: m[2]}, nil
+}
+
+// Pins reads every site's line.
+func Pins(repoRoot string) (map[string]Pin, error) {
+	raw, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(VersionsFile)))
+	if err != nil {
+		return nil, fmt.Errorf("reading which version of the platform each site runs: %w", err)
+	}
+	var sites map[string]struct {
+		Platform string `json:"platform"`
+	}
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&sites); err != nil {
+		return nil, fmt.Errorf("%s is not what this reads - each site, and the platform release it runs: %w", VersionsFile, err)
+	}
+	out := map[string]Pin{}
+	for site, s := range sites {
+		pin, err := ParsePin(s.Platform)
+		if err != nil {
+			return nil, fmt.Errorf("%s, %s: %w", VersionsFile, site, err)
+		}
+		out[site] = pin
+	}
+	return out, nil
+}
+
+// Pinned is the release one site runs. A site with no line runs nothing:
+// there is no default, because a site that was not told which version to
+// run would otherwise run whichever was newest on the day it was converged.
+func Pinned(repoRoot, site string) (Pin, error) {
+	pins, err := Pins(repoRoot)
+	if err != nil {
+		return Pin{}, err
+	}
+	pin, ok := pins[site]
+	if !ok {
+		return Pin{}, fmt.Errorf("%s says nothing of %s, so there is no version of the platform for it to run. Give it a line", VersionsFile, site)
+	}
+	return pin, nil
+}
+
+// Registry is where the platform's releases are published for a repository
+// (owner/name): the address a root fetches its modules from. Lower case,
+// because the registry is.
+func Registry(repository string) string {
+	return "ghcr.io/" + strings.ToLower(repository) + "-" + Order + "-release"
+}
+
+// The variables a site's root is told its modules by, as tofu reads them
+// from the environment, and the one that says where tofu's own settings are.
+const (
+	// ReleaseVariable carries the registry address, and DigestVariable the
+	// digest of the release to fetch from it.
+	ReleaseVariable = "TF_VAR_release"
+	DigestVariable  = "TF_VAR_digest"
+	// UnreleasedVariable carries, instead, the path of a tree holding the
+	// modules as they are in a checkout. For a check that has to see a
+	// change before it is released, and never for a run against a site.
+	UnreleasedVariable = "TF_VAR_unreleased"
+	// CLIConfigVariable names the file tofu reads its registry credential
+	// from.
+	CLIConfigVariable = "TF_CLI_CONFIG_FILE"
+)
+
+// RegistryHost is the registry the credential is for.
+const RegistryHost = "ghcr.io"
+
+// CLIConfig is the settings file that lets tofu fetch a release: a credential
+// for the registry. The registry refuses tofu's anonymous request even for a
+// public package, so every fetch presents a token; any token GitHub issued
+// will do, since the package is public, and it grants nothing the reader did
+// not already have.
+func CLIConfig(token string) ([]byte, error) {
+	token = strings.TrimSpace(token)
+	if token == "" || strings.ContainsAny(token, "\"\\\n\r") {
+		return nil, fmt.Errorf("the registry credential is empty or is not a token")
+	}
+	return []byte("oci_credentials \"" + RegistryHost + "\" {\n  username = \"x-access-token\"\n  password = \"" + token + "\"\n}\n"), nil
+}
+
+// Unreleased is where a checkout's own copy of what a release would hold is
+// put, from the top of the repository: ignored by git, and what a root's
+// unreleased variable names.
+const Unreleased = ".unreleased"
+
+// PlaceUnreleased makes that tree from the tracked files the release manifest
+// holds, as they are in this checkout, and nothing else of the repository. A
+// root planned against it is planned against what would be published, so a
+// module that reads a file the release does not hold fails in the check and
+// not at the first site to run it. What was there before is replaced whole.
+func PlaceUnreleased(repoRoot string, tracked []string) (string, error) {
+	files, err := Files(repoRoot, tracked)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(repoRoot, Unreleased)
+	if err := os.RemoveAll(target); err != nil {
+		return "", err
+	}
+	for _, rel := range files {
+		body, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
+		if err != nil {
+			return "", err
+		}
+		dst := filepath.Join(target, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(dst, body, 0o644); err != nil {
+			return "", err
+		}
+	}
+	return target, nil
+}

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 185
+floor: 187
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -291,15 +291,15 @@ mutations:
       carved into modules so that a second site is the same module called again.
 
       "
-  - guard: TestEverySiteRootRunsItsModulesAtItsPin
+  - guard: TestEverySiteRootRunsItsModulesAsReleased
     file: management/cluster/root.tf
-    find: '  source = "../../.pinned/${var.tree}/modules/infrastructure/cluster"'
+    find: '  source = var.unreleased != "" ? "${var.unreleased}/modules/infrastructure/cluster" : "oci://${var.release}//modules/infrastructure/cluster?digest=${var.digest}"'
     replace: '  source = "../../modules/infrastructure/cluster"'
     mentions: "calls a module from"
     why:
       "A root that calls its modules by path runs whatever is on the commit being converged, on
-      every site at once. The pin is what lets a change reach one site first, and it only holds
-      if no root can reach its modules around it.
+      every site at once. A release is what lets code merge without reaching a site, and it only
+      holds if no root can reach its modules around it.
 
       "
   - guard: TestTheFluxCoreIsSharedAndASiteDirectoryIsItsWork
@@ -1042,6 +1042,28 @@ mutations:
       The release's tag is the version's name on the commit it was packed
       from. Without a target it lands on whatever main is when the step runs,
       which after a second merge is a commit the package was not built from.
+
+  - guard: TestAVersionIsDescribedByARelease
+    file: .github/workflows/fabricator.yml
+    find: '          if gh release view "$VERSION" --repo "$REPO" > /dev/null 2>&1; then'
+    replace: "          if false; then"
+    mentions: "a version already described"
+    why: >
+      The step runs on every merge so that a version an earlier run could not
+      describe is described by the next. Without asking whether it is
+      described already, every merge that publishes nothing tries to create
+      the last version's release again, and the job is red from then on.
+
+  - guard: TestTheDescribingStepRunsWhetherOrNotThisRunPublished
+    file: .github/workflows/fabricator.yml
+    find: "          VERSION: ${{ steps.number.outputs.version || steps.reuse.outputs.version }}"
+    replace: "          VERSION: ${{ steps.number.outputs.version }}"
+    mentions: "is handed the version only by"
+    why: >
+      A version that was published and could not be described is described
+      by the next run to find it. Handed the version only by the run that
+      numbered it, that next run has none, and the release a site's pull
+      request shows is never written.
 
   - guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
     file: .github/workflows/fabricator.yml
@@ -2768,7 +2790,9 @@ unprovable:
     reason: table
   - test: TestFluxLayoutRefusesWhatIsNotCoreOrASitesOwn
     reason: table
-  - test: TestUnpinnedModulesRefusesEveryWayAroundThePin
+  - test: TestUnreleasedModulesRefusesEveryWayAroundTheRelease
+    reason: table
+  - test: TestUnversionedSitesWantsALineForEverySiteAndNoOther
     reason: table
   - test: TestResourcesInRootsFindsOnlyWhatARootItselfDeclares
     reason: table

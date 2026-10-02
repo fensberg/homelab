@@ -78,11 +78,4 @@ if ! jq empty "${rendered}" 2>/dev/null; then
 	exit 1
 fi
 
-# The tree a root's modules are validated from: the working tree itself,
-# under the one name that is never a site's (scripts/contractor/pin). A link,
-# replaced each time, so it cannot go stale and cannot be a site's pinned
-# tree by accident.
-mkdir -p .pinned
-ln -sfn .. .pinned/worktree
-
 echo "wrote ${rendered}"

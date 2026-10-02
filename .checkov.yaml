@@ -71,12 +71,11 @@ skip-check:
   - CKV_K8S_35
 
 skip-path:
-  # Each site's modules as they were at its pinned commit, placed by the
-  # contractor, and the checks' link to the working tree. Both are copies of
-  # this repository: scanning them reports every finding twice, and the link
-  # points back at the top, so a scan that follows it does not finish. Ignored
-  # by git, so absent from CI and present on any machine that has run a verb.
-  - \.pinned
+  # What a release of the platform would hold from this checkout, placed by
+  # the check that plans a module before it is released. A copy of part of
+  # this repository: scanning it reports every finding twice. Ignored by git,
+  # so absent from CI's scan and present on a machine that has run the check.
+  - \.unreleased
   - clusters/core/flux-system
   # clusters/bootstrap/ is Cilium's own chart output, committed verbatim for
   # the same reason flux-system is: a version bump should be a reviewable diff

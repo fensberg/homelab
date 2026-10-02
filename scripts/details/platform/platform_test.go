@@ -178,3 +178,164 @@ func TestFilesIsTheTrackedFilesTheManifestHolds(t *testing.T) {
 		t.Error("a repository with no manifest gave a release")
 	}
 }
+
+const aDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+// A site's line is a version and the digest it was published as, and nothing
+// else is one: a version alone can be moved, a digest alone says nothing to a
+// person, and a tag such as latest is neither.
+func TestParsePinTakesAVersionAndItsDigest(t *testing.T) {
+	pin, err := ParsePin("v2026.10.1@" + aDigest)
+	if err != nil || pin.Version != "v2026.10.1" || pin.Digest != aDigest {
+		t.Fatalf("read as %+v, %v", pin, err)
+	}
+	for _, bad := range []string{"v2026.10.1", aDigest, "latest@" + aDigest, "v2026.10.1@sha256:abc", "v2026.01.1@" + aDigest, "v2026.10.1@" + aDigest + "0", " v2026.10.1@" + aDigest, ""} {
+		if pin, err := ParsePin(bad); err == nil {
+			t.Errorf("%q was read as %+v", bad, pin)
+		}
+	}
+}
+
+// Each site runs the release its own line names, and a site with no line
+// runs nothing rather than something chosen for it.
+func TestPinnedIsTheSitesOwnLine(t *testing.T) {
+	root := t.TempDir()
+	write := func(body string) {
+		path := filepath.Join(root, filepath.FromSlash(VersionsFile))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Pinned(root, "site7"); err == nil {
+		t.Error("a repository with no versions file gave a site a release")
+	}
+	other := strings.Replace(aDigest, "0123", "ffff", 1)
+	write(`{"site7": {"platform": "v2026.10.1@` + aDigest + `"}, "site8": {"platform": "v2026.11.3@` + other + `"}}`)
+	if pin, err := Pinned(root, "site7"); err != nil || pin != (Pin{"v2026.10.1", aDigest}) {
+		t.Errorf("site7 runs %+v, %v", pin, err)
+	}
+	if pin, err := Pinned(root, "site8"); err != nil || pin != (Pin{"v2026.11.3", other}) {
+		t.Errorf("site8 runs %+v, %v", pin, err)
+	}
+	if pin, err := Pinned(root, "site9"); err == nil || !strings.Contains(err.Error(), "says nothing of site9") {
+		t.Errorf("a site with no line runs %+v, %v", pin, err)
+	}
+	for name, body := range map[string]string{
+		"a version with no digest": `{"site7": {"platform": "v2026.10.1"}}`,
+		"a field nothing reads":    `{"site7": {"platform": "v2026.10.1@` + aDigest + `", "also": 1}}`,
+		"not JSON":                 `site7: v2026.10.1`,
+	} {
+		write(body)
+		if pin, err := Pinned(root, "site7"); err == nil {
+			t.Errorf("%s: read as %+v", name, pin)
+		}
+	}
+}
+
+// The repository's own versions file reads, and names a release for every
+// site it mentions.
+func TestTheRepositorysVersionsRead(t *testing.T) {
+	root, err := repopath.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins, err := Pins(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pins) == 0 {
+		t.Errorf("%s names no site, so no site runs anything", VersionsFile)
+	}
+}
+
+// Releases are published beside the repository, under the platform's name,
+// in lower case whatever the repository's own spelling.
+func TestRegistryIsTheRepositorysPlatformRelease(t *testing.T) {
+	if got := Registry("Example/HomeLab"); got != RegistryHost+"/example/homelab-"+Order+"-release" {
+		t.Errorf("got %s", got)
+	}
+}
+
+// The settings tofu fetches a release with hold the token as the registry's
+// password and nothing else; and what is not a token is refused rather than
+// written into a file tofu would then parse.
+func TestCLIConfigHoldsTheRegistrysCredential(t *testing.T) {
+	got, err := CLIConfig(" a-token_123 \n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "oci_credentials \"" + RegistryHost + "\" {\n  username = \"x-access-token\"\n  password = \"a-token_123\"\n}\n"
+	if string(got) != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+	for name, bad := range map[string]string{"nothing": "", "only space": " \n", "a quote": `to"ken`, "a backslash": `to\ken`, "two lines": "to\nken"} {
+		if got, err := CLIConfig(bad); err == nil {
+			t.Errorf("%s was written as %q", name, got)
+		}
+	}
+}
+
+// The unreleased tree holds what a release of the platform would - the
+// tracked files its manifest names, as they are in the checkout - and nothing
+// else of the repository, whatever was there before.
+func TestPlaceUnreleasedHoldsOnlyWhatTheManifestNames(t *testing.T) {
+	root := t.TempDir()
+	for rel, body := range map[string]string{
+		Manifest:                      `{"holds": ["` + ModulesDir + `", "ground/read.yaml"]}`,
+		ModulesDir + "/thing/main.tf": "# as it is in the checkout\n",
+		"ground/read.yaml":            "a: 1\n",
+		"ground/beside.yaml":          "not held\n",
+		"leaflets/words.md":           "not held\n",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tracked := []string{Manifest, ModulesDir + "/thing/main.tf", "ground/read.yaml", "ground/beside.yaml", "leaflets/words.md"}
+
+	// Left from an earlier placing, and not in the release now.
+	stale := filepath.Join(root, Unreleased, "left", "behind.txt")
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := PlaceUnreleased(root, tracked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var placed []string
+	err = filepath.WalkDir(target, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(target, p)
+		if err != nil {
+			return err
+		}
+		placed = append(placed, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ground/read.yaml", Manifest, ModulesDir + "/thing/main.tf"}
+	if strings.Join(placed, "\n") != strings.Join(want, "\n") {
+		t.Errorf("the unreleased tree holds\n  %s\nwant exactly\n  %s", strings.Join(placed, "\n  "), strings.Join(want, "\n  "))
+	}
+	if got, err := os.ReadFile(filepath.Join(target, filepath.FromSlash(ModulesDir), "thing", "main.tf")); err != nil || string(got) != "# as it is in the checkout\n" {
+		t.Errorf("a held file was placed as %q, %v", got, err)
+	}
+	if _, err := PlaceUnreleased(t.TempDir(), tracked); err == nil {
+		t.Error("a tree was placed with no manifest to say what it holds")
+	}
+}

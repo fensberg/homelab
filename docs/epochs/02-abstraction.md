@@ -2115,11 +2115,45 @@ one line of that site's config moving from one version to the next.
 5. **Releases are signed**, and Flux and the contractor verify before using
    one.
 
-**Built so far: the first (2026-10-02).** The fabricator's `package` job
+**Built so far: the first two (2026-10-02).** The fabricator's `package` job
 publishes the platform as an order like any other
 (`scripts/work-orders.json`), numbers it from the registry, and describes
 each version in a GitHub Release whose notes are the pull requests merged
-since the last. Nothing consumes a release yet, so it changes no site.
+since the last. And each site runs the release its line names.
+
+- **`management/versions.json` is one line per site**: the version, which is
+  for people, and the digest it was published as, which is what is fetched -
+  `v2026.10.1@sha256:...`. A site with no line runs nothing; there is no
+  default, because a site that was not told which version to run would run
+  whichever was newest on the day it was converged. It sits under
+  `management/` for the reason the pins did: a pull request that moves a line
+  is planned with the release it would leave the site on, the merge converges
+  the site, and a converge that fails returns the line.
+- **The roots fetch the release themselves**, at init, from the registry by
+  digest. The contractor tells them where and which, and nothing is placed
+  on disk for them: `management/pins.json`, the extraction of a commit's
+  tree and `var.tree` are gone. The registry's address is read from the
+  repository's own name, so it is written nowhere.
+- **The registry wants a token even for a public package**, so every run
+  that initialises a root holds one: the workflow's own in a job, `gh`'s on a
+  workstation. It grants nothing the package's being public did not; it is
+  written to a file only tofu reads, for the run, and removed with everything
+  else a run renders.
+- **A check that has to see a change before it is released names a tree
+  instead** (`var.unreleased`): validating a root, and planning it from
+  nothing against exactly what a release would hold. A run against a site
+  clears it, whatever it was started with.
+- **Site0 moved from its pinned commit to `v2026.10.1` with a plan showing no
+  change**, against its as-built record, the release fetched from the
+  registry.
+- **The guard:** `TestEverySiteRootRunsItsModulesAsReleased` refuses a root
+  that reaches a module any other way than by the release's digest, a
+  default for where modules come from, a site with no line and a line that
+  is no site's.
+
+Still to build: the third stage has each application's version beside the
+platform's and Renovate opening the promotion; until then moving a site is a
+hand-written one-line pull request.
 
 - **What a release holds is `modules/infrastructure/release.json`**, and it
   cannot go stale: `homelab/details/platform` reads what the modules reach
@@ -2155,13 +2189,23 @@ running control-plane member with nothing removing it from etcd first.
 **The bar:** a node is adopted from the site's vault with no commit, and
 whatever the adoption moves is moved safely.
 
-Agreed so far: machines may move when a node is adopted - the foreman
-remembers nothing, looks at the nodes the site has and assigns work
-accordingly - so the work is in making a move safe (drain, remove the etcd
-member, replace, wait for health) and not in preventing one. A new node gets
-a default share of workers. Preparing a new node's hypervisor should be the
-lawyer's, automatically, if that can be done securely and with a bounded
-blast radius. Not designed yet.
+Agreed so far (2026-10-02):
+
+- **The nodes a site has are checked, never declared and never guessed.**
+  The foreman remembers nothing: it asks the site which nodes are there and
+  assigns work accordingly. One node up is a site with one node; two up is a
+  site with two.
+- **Machines may move when a node is adopted**, so the work is in making a
+  move safe - cordon, drain, remove the etcd member, replace, wait for
+  health - and not in preventing one. That is the same work as taking a node
+  out, and it is built with it, in the epoch that handles drain, cordon and
+  remove.
+- **A new node gets a default share of workers.**
+- **Not the lawyer's.** The lawyer is the estate's; a node is raw capacity
+  inside one site and nothing else.
+
+Not designed yet: what a converge does when adoption would move a running
+machine before a safe move exists, and who joins a new server to its site.
 
 ### Removing an application touches only its own directories
 

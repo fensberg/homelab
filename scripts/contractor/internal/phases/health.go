@@ -774,7 +774,7 @@ database is reachable`, output, output, len(raw))
 			return err
 		}
 	}
-	return nil
+	return forgetCredential(ctx)
 }
 
 // looksLikeKubeconfig is a shape check, not a parse. It exists to fail here,

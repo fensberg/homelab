@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"homelab/details/platform"
 )
 
 // Tofu runs tofu in dir and hands back both streams, so nothing it prints
@@ -497,7 +499,7 @@ func MergePlans(plans ...[]byte) ([]byte, error) {
 // the stand-in it was configured with.
 func OfflineEnv(base []string, site, configPath string) []string {
 	owned := []string{"TF_", "PROXMOX_", "TAILSCALE_", "KUBE", "TALOS", "CLOUDFLARE_", "AWS_", "OP_"}
-	out := make([]string, 0, len(base)+4)
+	out := make([]string, 0, len(base)+7)
 	for _, kv := range base {
 		drop := false
 		for _, p := range owned {
@@ -510,9 +512,18 @@ func OfflineEnv(base []string, site, configPath string) []string {
 			out = append(out, kv)
 		}
 	}
-	// The site, and the tree of modules that is the site's: a record is of an
-	// estate, and an estate runs its pin.
-	out = append(out, "TF_IN_AUTOMATION=1", "TF_VAR_offline=true", "TF_VAR_site="+site, "TF_VAR_tree="+site)
+	out = append(out, "TF_IN_AUTOMATION=1", "TF_VAR_offline=true", "TF_VAR_site="+site)
+	// And the release of the platform the site runs, which is the caller's
+	// to have chosen: where it is published, which one, and the settings
+	// that let tofu fetch it. The one thing here that is inherited, by name;
+	// a record is of an estate, and an estate runs its release.
+	for _, kv := range base {
+		for _, name := range []string{platform.ReleaseVariable, platform.DigestVariable, platform.CLIConfigVariable} {
+			if strings.HasPrefix(kv, name+"=") {
+				out = append(out, kv)
+			}
+		}
+	}
 	if configPath != "" {
 		out = append(out, "TF_VAR_config_path="+configPath)
 	}

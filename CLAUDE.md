@@ -277,8 +277,13 @@ One entrypoint, a Go program, run from the Linux workstation:
 ```sh
 ./scripts/install-dependencies.sh   # once
 task start SITE=site0               # builds the contractor and prints the command to run it
-./toolshed/contractor build-site -site site0 # the actual run - always run this directly, never through task
+GH_TOKEN=$(gh auth token) ./toolshed/contractor build-site -site site0 # the actual run - always run this directly, never through task
 ```
+
+The token is for the registry: a site's roots fetch the release of the
+platform its line in `management/versions.json` names, and the registry wants
+a token even for a public package. `task` hands every wrapped verb the one
+your GitHub sign-in holds; a direct run has only what the shell has.
 
 **`task start` deliberately does not run build-site itself.** `task` intercepts
 Ctrl-C for its own purposes but does not proxy the signal to the process it's
@@ -465,7 +470,7 @@ config entry.
 | `management/cluster/`               | A site's cluster root: providers, credentials and state. Calls the cluster module                                                                               |
 | `management/platform/`              | A site's platform root: the kubernetes provider and state. Calls the platform module                                                                            |
 | `modules/infrastructure/`           | OpenTofu modules: `cluster` (machines, Talos, Cilium), `platform` (what Flux cannot create, then Flux), `address-plan`                                          |
-| `management/pins.json`              | Which commit of the modules each site runs: an estate default and per-site lines                                                                                |
+| `management/versions.json`          | Which release of the platform each site runs: one line per site, a version and the digest it was published as                                                   |
 | `clusters/core/`                    | The Flux core every site reconciles: Flux itself, the controllers and their configuration                                                                       |
 | `clusters/<site>/`                  | What one site runs beyond the core. Present only for a site that has been given work                                                                            |
 | `modules/applications/<name>/`      | One application, whole: `application.json` (what it declares it needs), its image, its base, its settings per environment, its pins, its tests and their proofs |

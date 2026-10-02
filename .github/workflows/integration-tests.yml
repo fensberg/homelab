@@ -119,6 +119,11 @@ jobs:
     # lives behind whatever protection rules that environment carries, rather
     # than being a repository secret any workflow could reach.
     environment: integration
+    permissions:
+      contents: read
+      # To fetch the release of the platform the site runs. The package is
+      # public; the registry wants a token all the same.
+      packages: read
     timeout-minutes: 45
     steps:
       - name: Mobilize
@@ -156,9 +161,15 @@ jobs:
       # -keep-on-failure is what stops build-site sterilizing the workspace the
       # moment this single phase succeeds. Without it, Render wipes the file
       # it just wrote and every step below reads nothing.
+      #
+      # The GitHub token is for the registry: Render also writes the
+      # credential the roots fetch the site's release of the platform with
+      # (management/versions.json), and every verb below that renders again
+      # carries it for the same reason.
       - name: Render the config from 1Password
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           SITE: ${{ matrix.site }}
         run: |
           go build -C scripts/contractor -o ../../toolshed/contractor .
@@ -227,6 +238,7 @@ jobs:
         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           HOMELAB_TEST_SITE: ${{ matrix.site }}
           SITE: ${{ matrix.site }}
         run: >-
@@ -243,6 +255,7 @@ jobs:
         if: ${{ github.event_name == 'schedule' || inputs.tier == 'integration' || inputs.tier == 'both' }}
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           SITE: ${{ matrix.site }}
         run: ./toolshed/contractor record-as-built -site "$SITE" -record-out "as-built/$SITE"
 

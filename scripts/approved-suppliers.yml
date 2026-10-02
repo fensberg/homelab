@@ -618,15 +618,18 @@ egress:
     policy: block
     reason: >-
       Plans a pull request's change against the as-built record (#554), on
-      GitHub's runner and with no credential. The Go toolchain and OpenTofu
-      with its providers, fetched as the Validate lane fetches them, and
-      GitHub's API to find and download the record.
+      GitHub's runner and with no credential of the estate's. The Go
+      toolchain and OpenTofu with its providers, fetched as the Validate lane
+      fetches them, GitHub's API to find and download the record, and its
+      registry for the release of the platform the site runs.
     hosts:
       - api.github.com:443
       - get.opentofu.org:443
+      - ghcr.io:443
       - github.com:443
       - go.dev:443
       - objects.githubusercontent.com:443
+      - pkg-containers.githubusercontent.com:443
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443

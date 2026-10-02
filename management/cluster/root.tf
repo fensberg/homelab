@@ -9,15 +9,35 @@
 # with another site selected, so nothing a site builds is written twice.
 # =============================================================================
 
-variable "tree" {
+variable "release" {
   type        = string
+  default     = ""
   description = <<-EOT
-    Which pinned tree this root reads its modules from: a directory under
-    .pinned/, placed there by the contractor before any run. For an estate it
-    is the site's key, and holds the repository as it was at the commit
-    management/pins.json pins that site to. A check that has to see a change
-    before it merges names the working tree instead. There is no default: a
-    root that was not told which version of its modules to run runs none.
+    Where the platform's releases are published: the registry address of this
+    repository's platform package. Handed in by the contractor, which reads
+    the repository's name rather than having it written here.
+  EOT
+}
+
+variable "digest" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    Which release of the platform this root runs: the digest of the package,
+    from the site's line in management/versions.json. A digest and not the
+    version beside it, because a version is a name a registry can be made to
+    answer differently and a digest is the contents.
+  EOT
+}
+
+variable "unreleased" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    A tree holding the modules as they are in a checkout, read instead of a
+    release. For a check that has to see a change before it is released, and
+    never for a run against a site: the contractor clears it. With none of
+    the three given there is no source to read, and the root runs nothing.
   EOT
 }
 
@@ -55,7 +75,13 @@ locals {
 }
 
 module "cluster" {
-  source = "../../.pinned/${var.tree}/modules/infrastructure/cluster"
+  # Fetched by the digest of the package, which is the contents: stronger
+  # than the commit hash or tag these two checks ask a git source for, and
+  # not something they can read. TestEverySiteRootRunsItsModulesAsReleased
+  # holds what they are for.
+  # checkov:skip=CKV_TF_1:fetched from a registry by digest, not from git
+  # checkov:skip=CKV_TF_2:fetched from a registry by digest, not from git
+  source = var.unreleased != "" ? "${var.unreleased}/modules/infrastructure/cluster" : "oci://${var.release}//modules/infrastructure/cluster?digest=${var.digest}"
 
   site               = var.site
   config_path        = var.config_path

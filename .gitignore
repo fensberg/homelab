@@ -46,6 +46,7 @@ terraform.rc
 # Ignore dynamically rendered 1Password files
 *.rendered.yml
 *.rendered.json
+*.rendered.tofurc
 config/management.placeholder.json
 # The template composed for one site from what its applications declare.
 config/management.composed.tpl.json
@@ -140,7 +141,7 @@ scripts/survey/survey
 /.as-built/
 /.as-built-unbuilt/
 
-# Each site's modules as they were at its pinned commit, placed by the
-# contractor, and the working-tree link the checks use.
-/.pinned/
+# What a release of the platform would hold from this checkout, placed by the
+# check that plans a change to a module before it is released.
+/.unreleased/
 modules/**/.terraform.lock.hcl
