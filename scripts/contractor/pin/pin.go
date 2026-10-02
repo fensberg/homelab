@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	details "homelab/details/pins"
+	"homelab/details/platform"
 )
 
 // File is where the pins are, and Pins what they hold: read once for every
@@ -156,6 +157,44 @@ func PlaceWorkingTree(repoRoot string) error {
 	}
 	// Relative, so the link holds wherever the repository is checked out.
 	return os.Symlink("..", target)
+}
+
+// Release is the name of the tree that holds what a release of the platform
+// would: the files the release manifest names, as they are in this checkout,
+// and nothing else of the repository. A root planned against it is planned
+// against what would be published, so a module that reads a file the release
+// does not hold fails here and not at the first site to run it.
+const Release = "release"
+
+// PlaceRelease makes the tree named Release from the tracked files the
+// platform's release manifest holds (homelab/details/platform).
+func PlaceRelease(repoRoot string, git Git) error {
+	out, err := git(repoRoot, "ls-files", "-z")
+	if err != nil {
+		return err
+	}
+	files, err := platform.Files(repoRoot, strings.Split(strings.TrimRight(string(out), "\x00"), "\x00"))
+	if err != nil {
+		return err
+	}
+	target := Dir(repoRoot, Release)
+	if err := os.RemoveAll(target); err != nil {
+		return err
+	}
+	for _, rel := range files {
+		body, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(target, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(dst, body, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // largestFile bounds one extracted file. The largest this repository tracks

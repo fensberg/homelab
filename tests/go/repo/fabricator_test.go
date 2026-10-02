@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"archive/zip"
 	"bufio"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"homelab/details/applications"
+	"homelab/details/platform"
 	"homelab/details/workorders"
 )
 
@@ -173,14 +175,18 @@ func TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile(t *testing.T) {
 	ordered := map[string]string{}
 	names := map[string]bool{}
 	for _, o := range orders {
-		if o.Name == "" || o.Context == "" {
-			t.Errorf("a work order is missing its name or its context: %+v", o)
-			continue
-		}
 		if names[o.Name] {
-			t.Errorf("two work orders are named %q; both would publish to one image", o.Name)
+			t.Errorf("two work orders are named %q; both would publish under one name", o.Name)
 		}
 		names[o.Name] = true
+		// An order that publishes a package builds no image, and its
+		// manifest has to be there for the same reason a Dockerfile does.
+		if o.Package != "" {
+			if _, err := os.Stat(filepath.Join(repoRoot(t), filepath.FromSlash(o.Package))); err != nil {
+				t.Errorf("the work order %q publishes the package %s, which is not there: %v", o.Name, o.Package, err)
+			}
+			continue
+		}
 		ordered[o.Context] = o.Name
 	}
 
@@ -217,7 +223,12 @@ func stepOrders(t *testing.T, root string) []workorders.Order {
 	if !ok {
 		t.Fatalf("the step failed:\n\n%s", logs)
 	}
-	raw, found := strings.CutPrefix(strings.TrimSpace(output), "orders=")
+	raw, found := "", false
+	for _, line := range strings.Split(output, "\n") {
+		if raw, found = strings.CutPrefix(line, "orders="); found {
+			break
+		}
+	}
 	if !found {
 		t.Fatalf("the step wrote no orders output:\n%s", output)
 	}
@@ -311,6 +322,9 @@ func TestTheFabricatorPassesEveryPinADockerfileAsksFor(t *testing.T) {
 	checked := 0
 	for name, root := range map[string]string{"the fixture": fabricatorFixture(t), "the repository": repoRoot(t)} {
 		for _, o := range ordersOf(t, root) {
+			if o.Context == "" {
+				continue // an order that publishes a package builds no image
+			}
 			env := append(estatePinsEnv(t, root), "CONTEXT="+o.Context, "ORDER_PINS="+o.Pins)
 			ok, output, logs := runFabricatorScript(t, script, root, env)
 			if !ok {
@@ -1035,5 +1049,329 @@ func TestADeliveryGoesToTheSitesThatFollowAndNoOther(t *testing.T) {
 	f = newReleaseDelivery(t, map[string]string{})
 	if ok, summary, logs := f.deliver(t); !ok || f.read("opened") != "" || !strings.Contains(summary, "nowhere to deliver") {
 		t.Errorf("with no site running anything, the run failed or opened a delivery (%v):\n%s\n%s", ok, summary, logs)
+	}
+}
+
+// --- publishing a package ----------------------------------------------------
+
+// packageFixture is a git repository holding a package's manifest, the files
+// it holds - a directory, one file, and one file of each of several
+// directories - and files beside them that it does not.
+func packageFixture(t *testing.T) (root string, commit func(files map[string]string)) {
+	t.Helper()
+	root = t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.email=a@example.com", "-c", "user.name=t"}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	commit = func(files map[string]string) {
+		t.Helper()
+		for rel, body := range files {
+			path := filepath.Join(root, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		git("add", "-A")
+		git("commit", "-qm", "change")
+	}
+	commit(map[string]string{
+		"pkg/release.json":          `{"holds": ["mods", "data/thing.yaml", "apps/*/declared.json"]}`,
+		"mods/one/main.tf":          "one\n",
+		"mods/two/deep/more.tf":     "two\n",
+		"data/thing.yaml":           "a: 1\n",
+		"data/other.yaml":           "not held\n",
+		"apps/a/declared.json":      "{}\n",
+		"apps/a/manifests/x.yaml":   "not held\n",
+		"apps/a/deep/declared.json": "not held\n",
+		"pamphlets/text.md":         "not held\n",
+	})
+	return root, commit
+}
+
+// The files the fixture's package holds, in the order the step lists them.
+var packageHeld = []string{"apps/a/declared.json", "data/thing.yaml", "mods/one/main.tf", "mods/two/deep/more.tf"}
+
+func runPackageStep(t *testing.T, step, dir, path, scratch string, env []string) (ok bool, outputs map[string]string, logs string) {
+	t.Helper()
+	out := filepath.Join(scratch, "output-"+strings.ReplaceAll(step, " ", "-"))
+	cmd := exec.Command("bash", "-eo", "pipefail", "-c", fabricatorStep(t, "package", step))
+	cmd.Dir = dir
+	cmd.Env = append(env, "PATH="+path, "HOME="+scratch, "GITHUB_OUTPUT="+out,
+		"GITHUB_STEP_SUMMARY="+filepath.Join(scratch, "summary"), "RUNNER_TEMP="+scratch,
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	b, err := cmd.CombinedOutput()
+	outputs = map[string]string{}
+	written, _ := os.ReadFile(out)
+	for _, l := range strings.Split(string(written), "\n") {
+		if k, v, found := strings.Cut(l, "="); found {
+			outputs[k] = v
+		}
+	}
+	return err == nil, outputs, string(b)
+}
+
+// The orders step hands each kind of order to its own job: an order with a
+// build context to the image build, and one with a package to the packaging.
+func TestEachKindOfOrderGoesToItsOwnJob(t *testing.T) {
+	root := fabricatorFixture(t)
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(workorders.Path)), []byte(`{"orders":[{"name":"kit","context":"kits/kit"},{"name":"bundle","package":"pkg/release.json"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ok, output, logs := runFabricatorScript(t, fabricatorStep(t, "orders", "Read the work orders"), root, nil)
+	if !ok {
+		t.Fatalf("the step failed:\n%s", logs)
+	}
+	names := func(key string) string {
+		for _, line := range strings.Split(output, "\n") {
+			raw, found := strings.CutPrefix(line, key+"=")
+			if !found {
+				continue
+			}
+			var orders []workorders.Order
+			if err := json.Unmarshal([]byte(raw), &orders); err != nil {
+				t.Fatalf("%s is not a list of orders: %v", key, err)
+			}
+			var out []string
+			for _, o := range orders {
+				out = append(out, o.Name)
+			}
+			return strings.Join(out, ",")
+		}
+		t.Fatalf("the step wrote no %s:\n%s", key, output)
+		return ""
+	}
+	if got := names("images"); got != "kit,built,thing" {
+		t.Errorf("the image build is handed %q; it builds the orders that have a context", got)
+	}
+	if got := names("packages"); got != "bundle" {
+		t.Errorf("the packaging is handed %q; it publishes the orders that have a package", got)
+	}
+}
+
+// A package is fingerprinted from the files it holds as git has them: the
+// same files are the same package, a change to one of them is a new one, and
+// a change to a file beside them - whatever else a merge touched - is not.
+// One already published under that fingerprint is not published again.
+func TestAPackageOfTheSameFilesIsNotPublishedAgain(t *testing.T) {
+	root, commit := packageFixture(t)
+	none := `echo "gh: Not Found (HTTP 404)" >&2; exit 1`
+	reuse := func(listing string) (map[string]string, string, string) {
+		t.Helper()
+		scratch := t.TempDir()
+		ok, outputs, logs := runPackageStep(t, "Reuse a package of the same contents", root, fakeRegistryListing(t, listing), scratch,
+			[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release", "MANIFEST=pkg/release.json"})
+		if !ok {
+			t.Fatalf("the step failed:\n%s", logs)
+		}
+		held, _ := os.ReadFile(filepath.Join(scratch, "held"))
+		return outputs, strings.TrimSpace(string(held)), logs
+	}
+	first, held, _ := reuse(none)
+	if held != strings.Join(packageHeld, "\n") {
+		t.Fatalf("the package is read as holding\n%s\nwant\n%s", held, strings.Join(packageHeld, "\n"))
+	}
+	if first["needed"] != "true" || first["fingerprint"] == "" {
+		t.Fatalf("a package nobody has published was not needed: %v", first)
+	}
+	if again, _, _ := reuse(none); again["fingerprint"] != first["fingerprint"] {
+		t.Error("the same files fingerprinted differently")
+	}
+	commit(map[string]string{"data/other.yaml": "changed\n", "apps/a/manifests/x.yaml": "changed\n", "pamphlets/text.md": "changed\n"})
+	if beside, _, _ := reuse(none); beside["fingerprint"] != first["fingerprint"] {
+		t.Error("a change to files the package does not hold changed its fingerprint, so every merge would publish a version")
+	}
+	if published, _, _ := reuse("printf '%s\\n' v2026.10.1 " + first["fingerprint"]); published["needed"] != "false" {
+		t.Errorf("a package of these exact files exists and another was needed: %v", published)
+	}
+	for name, change := range map[string]map[string]string{
+		"a file in a held directory": {"mods/two/deep/more.tf": "changed\n"},
+		"a held file":                {"data/thing.yaml": "a: 2\n"},
+		"a new file a pattern holds": {"apps/b/declared.json": "{}\n"},
+	} {
+		before, _, _ := reuse(none)
+		commit(change)
+		if after, _, _ := reuse(none); after["fingerprint"] == before["fingerprint"] {
+			t.Errorf("%s changed and the fingerprint did not, so the change would never be published", name)
+		}
+	}
+
+	scratch := t.TempDir()
+	if ok, _, logs := runPackageStep(t, "Reuse a package of the same contents", root, fakeRegistryListing(t, `echo "gh: Server Error (HTTP 500)" >&2; exit 1`), scratch,
+		[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release", "MANIFEST=pkg/release.json"}); ok {
+		t.Errorf("a registry that could not be read was taken to hold no such package:\n%s", logs)
+	}
+	commit(map[string]string{"pkg/empty.json": `{"holds": ["absent"]}`})
+	if ok, _, logs := runPackageStep(t, "Reuse a package of the same contents", root, fakeRegistryListing(t, none), t.TempDir(),
+		[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release", "MANIFEST=pkg/empty.json"}); ok || !strings.Contains(logs, "holds no tracked file") {
+		t.Errorf("a manifest holding nothing was not refused by name:\n%s", logs)
+	}
+}
+
+// A version is the year and month it is published in and its number within
+// that month, continuing from the registry: the first of a month is 1, the
+// next is one more than the highest there, and a new month starts again.
+func TestAVersionIsTheMonthAndItsNumberInIt(t *testing.T) {
+	for name, tc := range map[string]struct{ month, versions, want string }{
+		"the first ever":              {"2026.10", `echo "gh: Not Found (HTTP 404)" >&2; exit 1`, "v2026.10.1"},
+		"continues after the highest": {"2026.10", `printf '%s\n' v2026.10.1 v2026.10.3 v2026.10.2 v2026.9.7 fp-0123 latest`, "v2026.10.4"},
+		"past nine":                   {"2026.10", `printf '%s\n' v2026.10.9 v2026.10.10`, "v2026.10.11"},
+		"a new month starts again":    {"2026.11", `printf '%s\n' v2026.10.3 v2026.10.4`, "v2026.11.1"},
+		"a month with one digit":      {"2027.1", `printf '%s\n' v2026.12.3 v2026.11.9`, "v2027.1.1"},
+		"not another month's ten":     {"2027.1", `printf '%s\n' v2027.10.5 v2027.11.2`, "v2027.1.1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := fakeTools(t, map[string]string{
+				"date": `echo "` + tc.month + `"`,
+				// gh api --paginate <path>: the path is the third argument.
+				"gh": `if [ "$2" = "--paginate" ]; then set -- "$1" "$3"; fi
+case "$2" in
+  users/*) echo Organization ;;
+  *) ` + tc.versions + ` ;;
+esac`})
+			ok, outputs, logs := runPackageStep(t, "Number the version", t.TempDir(), path, t.TempDir(),
+				[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release"})
+			if !ok {
+				t.Fatalf("the step failed:\n%s", logs)
+			}
+			if outputs["version"] != tc.want {
+				t.Errorf("want %s, got %q", tc.want, outputs["version"])
+			}
+			if !platform.Version.MatchString(outputs["version"]) {
+				t.Errorf("%q is not a version as the estate's programs read one", outputs["version"])
+			}
+		})
+	}
+
+	// A registry error that is not "no such package" stops the publish:
+	// numbering from an empty list would reuse a version that exists.
+	path := fakeTools(t, map[string]string{"date": `echo 2026.10`, "gh": `if [ "$2" = "--paginate" ]; then echo "gh: Server Error (HTTP 500)" >&2; exit 1; fi
+echo Organization`})
+	if ok, outputs, logs := runPackageStep(t, "Number the version", t.TempDir(), path, t.TempDir(),
+		[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release"}); ok || outputs["version"] != "" {
+		t.Errorf("a version was numbered from a registry that could not be read: %v\n%s", outputs, logs)
+	}
+}
+
+// publisher is a registry client that records what it was asked and keeps
+// what it was given to push.
+func publisher(t *testing.T, resolves string) (path, dir string) {
+	t.Helper()
+	dir = t.TempDir()
+	return fakeTools(t, map[string]string{"oras": `fake="` + dir + `"
+echo "$*" >> "$fake/calls"
+case "$1" in
+  login) cat > "$fake/password" ;;
+  push) cp package.zip "$fake/package.zip" ;;
+  tag) ;;
+  resolve) echo "` + resolves + `" ;;
+  *) echo "fake oras: unexpected $*" >&2; exit 64 ;;
+esac`}), dir
+}
+
+// What is published is exactly the files the package holds, as git has them,
+// at the paths they have in the repository - and nothing else that was in the
+// checkout - in the form OpenTofu fetches a module package in, under its
+// version and its fingerprint.
+func TestThePackageHoldsExactlyItsFilesAndIsPublishedForOpenTofu(t *testing.T) {
+	root, _ := packageFixture(t)
+	// In the checkout and not in git: not the repository's, so not the
+	// package's.
+	if err := os.WriteFile(filepath.Join(root, "mods", "untracked.tf"), []byte("stray\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	scratch := t.TempDir()
+	none := `echo "gh: Not Found (HTTP 404)" >&2; exit 1`
+	if ok, _, logs := runPackageStep(t, "Reuse a package of the same contents", root, fakeRegistryListing(t, none), scratch,
+		[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release", "MANIFEST=pkg/release.json"}); !ok {
+		t.Fatalf("listing what the package holds failed:\n%s", logs)
+	}
+	digest := "sha256:" + strings.Repeat("d", 64)
+	path, fake := publisher(t, digest)
+	env := []string{"TOKEN=secret-token", "ACTOR=someone", "ARTIFACT=ghcr.io/example/homelab-bundle-release", "VERSION=v2026.10.4",
+		"FINGERPRINT=fp-0123456789abcdef", "SHA=0123456789abcdef", "SOURCE=https://github.com/example/homelab"}
+	ok, outputs, logs := runPackageStep(t, "Pack and publish the package", root, path, scratch, env)
+	if !ok {
+		t.Fatalf("the step failed:\n%s", logs)
+	}
+	archive, err := zip.OpenReader(filepath.Join(fake, "package.zip"))
+	if err != nil {
+		t.Fatalf("what was pushed is not a zip: %v", err)
+	}
+	defer archive.Close()
+	var packed []string
+	for _, f := range archive.File {
+		if !f.FileInfo().IsDir() {
+			packed = append(packed, f.Name)
+		}
+	}
+	sort.Strings(packed)
+	if strings.Join(packed, "\n") != strings.Join(packageHeld, "\n") {
+		t.Errorf("the package holds\n  %s\nwant exactly\n  %s", strings.Join(packed, "\n  "), strings.Join(packageHeld, "\n  "))
+	}
+	calls, _ := os.ReadFile(filepath.Join(fake, "calls"))
+	for _, want := range []string{
+		"login ghcr.io -u someone --password-stdin",
+		"push ghcr.io/example/homelab-bundle-release:v2026.10.4 --artifact-type application/vnd.opentofu.modulepkg",
+		"org.opencontainers.image.revision=0123456789abcdef",
+		"package.zip:archive/zip",
+		"tag ghcr.io/example/homelab-bundle-release:v2026.10.4 fp-0123456789abcdef",
+	} {
+		if !strings.Contains(string(calls), want) {
+			t.Errorf("the registry client was not asked to %q:\n%s", want, calls)
+		}
+	}
+	if strings.Contains(string(calls), "secret-token") {
+		t.Errorf("the token was passed as an argument, where a process listing shows it:\n%s", calls)
+	}
+	if password, _ := os.ReadFile(filepath.Join(fake, "password")); strings.TrimSpace(string(password)) != "secret-token" {
+		t.Errorf("the registry client was not given the token on its input")
+	}
+	if outputs["digest"] != digest {
+		t.Errorf("the step reports the digest %q, and the registry said %s", outputs["digest"], digest)
+	}
+
+	// A registry that does not say what was published leaves nothing for a
+	// site to pin, and the step says so rather than reporting an empty one.
+	path, _ = publisher(t, "not a digest")
+	again := t.TempDir()
+	held, err := os.ReadFile(filepath.Join(scratch, "held"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(again, "held"), held, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ok, outputs, logs := runPackageStep(t, "Pack and publish the package", root, path, again, env); ok || outputs["digest"] != "" || !strings.Contains(logs, "no digest for a site to pin") {
+		t.Errorf("a publish with no digest: ok=%v, %v\n%s", ok, outputs, logs)
+	}
+}
+
+// A version is described where a person reads it: a release named for the
+// version, on the commit it was packed from, saying what it was published
+// as and carrying the notes of what merged since the last.
+func TestAVersionIsDescribedByARelease(t *testing.T) {
+	fake := t.TempDir()
+	path := fakeTools(t, map[string]string{"gh": `printf '%s\n' "$@" > "` + fake + `/args"`})
+	digest := "sha256:" + strings.Repeat("d", 64)
+	ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), []string{
+		"GH_TOKEN=x", "REPO=example/homelab", "NAME=bundle", "ARTIFACT=ghcr.io/example/homelab-bundle-release",
+		"VERSION=v2026.10.4", "DIGEST=" + digest, "SHA=0123456789abcdef"})
+	if !ok {
+		t.Fatalf("the step failed:\n%s", logs)
+	}
+	args, _ := os.ReadFile(filepath.Join(fake, "args"))
+	for _, want := range []string{"release\ncreate\nv2026.10.4\n", "--target\n0123456789abcdef\n", "--generate-notes", "ghcr.io/example/homelab-bundle-release:v2026.10.4", digest} {
+		if !strings.Contains(string(args), want) {
+			t.Errorf("the release does not carry %q:\n%s", want, args)
+		}
 	}
 }

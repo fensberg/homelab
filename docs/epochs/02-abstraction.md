@@ -2082,30 +2082,86 @@ the merge converges, and a converge that fails returns it with the rest of
   that reaches a module any other way, a root with a default tree, and a pin
   that is not a full commit hash.
 
-**The estate moves its own pin (built 2026-10-02, #602).** After every merge
-to `main`, `deliver-modules.yml` runs `procurement deliver-modules`, which
-opens the pull request moving `default` to the merged commit when anything a
-pinned tree is read for differs between the two. A person merges it, after
-reading its plan; the standing order passes it on the pull request and
-refuses it for any merge without a review. A site held at its own commit is
-not moved.
+**The estate moving its own pin was built and withdrawn within a day
+(2026-10-02, #602, #609).** A workflow opened the pull request that moved
+`default` to each merged commit that changed what a site reads. It met what
+was agreed and was wrong in use: every change to a module was followed by a
+second pull request asking to move the pin, which is friction and not a
+release process. The operator's ruling: a pin has to add value and not be a
+nuisance, and the estate does not need a home-grown half of a design the
+industry already settled.
 
-- **Which paths count is read off the modules, not listed.** A pinned tree is
-  read for the modules and for whatever they reach outside themselves
-  (`homelab/details/pins`): today the applications' declarations, the Flux
-  install in the core, and the CNI's manifest. So a change to an
-  application's manifests, or a release moving a site's block, moves no pin;
-  and a module that starts reading something new is covered the day it does.
-- **A reach has to be written whole.** A path built from a value cannot be
-  read off the code, and is refused rather than passed over, because a
-  change to whatever it named would reach no site and nothing would say so.
-  The platform module's path to the Flux install and the applications
-  module's path to the declarations were rewritten as whole paths for this.
+**Replaced by the standard design: production follows a pinned version.**
+Agreed 2026-10-02. Merging to `main` does nothing to production. What a site
+runs is a published release of the platform, and releasing to production is
+one line of that site's config moving from one version to the next.
 
-**Still missing for "no commit": a site is declared in the template.** Adding
-one today is an edit to `config/management.tpl.json`. The record's answer is a
-config discovered from the vault rather than declared, and it is not built;
-neither refinement above delivers it.
+1. **Every merge that changes the platform publishes an immutable release.**
+   One package in the registry, holding the modules and every file they read,
+   under a version: the year, the month and its number within the month -
+   `v2026.10.1`, then `v2026.10.2`. A calendar version says when a release was
+   made, which is what a person choosing one wants to know, and it is still a
+   semantic version to every tool that orders versions. A merge that changes
+   nothing the platform is made of publishes nothing.
+2. **A site's roots take their modules from the registry, by version and
+   digest**, which OpenTofu does natively. `management/pins.json` and the
+   contractor's extraction of a commit's tree go away.
+3. **Each site pins versions in its own config**: the platform's, and each
+   application's. A staging site follows the newest release without a pull
+   request; production is promoted.
+4. **The promotion pull request is generated on request**, by Renovate: its
+   dashboard lists what each site could move to, and ticking one opens the
+   one-line pull request. Nothing is opened after a merge.
+5. **Releases are signed**, and Flux and the contractor verify before using
+   one.
+
+**Built so far: the first (2026-10-02).** The fabricator's `package` job
+publishes the platform as an order like any other
+(`scripts/work-orders.json`), numbers it from the registry, and describes
+each version in a GitHub Release whose notes are the pull requests merged
+since the last. Nothing consumes a release yet, so it changes no site.
+
+- **What a release holds is `modules/infrastructure/release.json`**, and it
+  cannot go stale: `homelab/details/platform` reads what the modules reach
+  for off their own code and the manifest must name exactly that; and both
+  roots are planned from nothing, with the real providers, against a tree
+  holding only what the release would. A file a module reads and the release
+  lacks fails that plan on the pull request.
+- **The modules did not have to change to be packaged.** The files they read
+  go in the package at the paths they have in the repository, so a module
+  finds them inside it as it finds them in a checkout. A reach has to be
+  written as a whole path for that - one built from a value is refused.
+- **Proved before building:** OpenTofu 1.12 fetches a module package from an
+  OCI registry by digest, from a subdirectory, with the registry's address
+  given as a variable, and refuses a digest that is not the package's.
+- **No path filter on the fabricator.** Whether there is anything to build or
+  publish is decided by fingerprint, so no list of paths has to be kept in
+  step with what a release holds.
+
+**A site is declared in git, deliberately.** The criterion read "adding a
+site requires no commit". Settled 2026-10-02: a site is geographic and rare,
+and the one-block commit that adds it is the only review a new site's octet
+and shape ever get. What the record's own target describes - rack a server,
+enter its credentials, and it works - is adding a **node** to a site that
+exists, and that is the criterion now.
+
+### Adding a node to a site needs no commit
+
+Added 2026-10-02, replacing "a site without a commit". Today a node is a
+block in `config/management.tpl.json`, so adding one is a commit; and
+machines are dealt round-robin over the node list, so adding one moves a
+running control-plane member with nothing removing it from etcd first.
+
+**The bar:** a node is adopted from the site's vault with no commit, and
+whatever the adoption moves is moved safely.
+
+Agreed so far: machines may move when a node is adopted - the foreman
+remembers nothing, looks at the nodes the site has and assigns work
+accordingly - so the work is in making a move safe (drain, remove the etcd
+member, replace, wait for health) and not in preventing one. A new node gets
+a default share of workers. Preparing a new node's hypervisor should be the
+lawyer's, automatically, if that can be done securely and with a bounded
+blast radius. Not designed yet.
 
 ### Removing an application touches only its own directories
 

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"homelab/details/applications"
-	"homelab/details/pins"
 	"homelab/details/workorders"
 )
 
@@ -38,10 +37,6 @@ import (
 //     from the source commits the two releases were built from, which the
 //     registry records - so a release carrying anything somebody wrote waits
 //     for a review however it arrived.
-//   - A pin move: procurement moving the estate's default pin to a commit
-//     that changed what a site runs. It passes on the pull request, so a
-//     person can merge it, and never under the bypass: which version of the
-//     modules every site runs is nobody's to change without a review.
 //
 // Which line that is, is the application's to declare and never this
 // program's to know: it reads every application's declaration as it stood at
@@ -128,17 +123,6 @@ func enforceStandingOrder(args []string) int {
 			return 1
 		}
 		fmt.Printf("%s delivered a release whose only change is the supplier's build\n", *author)
-		return 0
-	}
-
-	// A pin move: procurement proposing that the sites run the modules as
-	// they now are. A person's to merge, always.
-	if isPinMove(changedFiles, lines) {
-		if *bypass {
-			fmt.Printf("REFUSED: %s moved the estate's default pin. Which modules every site runs is never changed without a review.\n", *author)
-			return 1
-		}
-		fmt.Printf("%s proposed moving the estate's default pin. It is merged by a person, after its plan has been read\n", *author)
 		return 0
 	}
 
@@ -282,29 +266,4 @@ func sortedApplications(m map[string]applications.Application) []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-// movedDefault is the one line of the pins file a pin move changes: the
-// default, set to a full commit hash.
-var movedDefault = regexp.MustCompile(`^[+-]\s*"default":\s*"[0-9a-f]{40}",?\s*$`)
-
-// isPinMove reports whether a change moves the estate's default pin and does
-// nothing else: one file, the pins, and one line of it replaced by another.
-// A site's own pin is not the default, and is not covered.
-func isPinMove(files, changed []string) bool {
-	if len(files) != 1 || files[0] != pins.File || len(changed) != 2 {
-		return false
-	}
-	removed, added := 0, 0
-	for _, line := range changed {
-		if !movedDefault.MatchString(line) {
-			return false
-		}
-		if strings.HasPrefix(line, "-") {
-			removed++
-		} else {
-			added++
-		}
-	}
-	return removed == 1 && added == 1
 }

@@ -20,7 +20,10 @@ run-name: "Converge: ${{ github.event.head_commit.message }}"
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    # No tags. A v* tag used to start this as "a production release" of
+    # workload infrastructure that has never existed (#561). A tag now names
+    # a version of the platform, which the fabricator publishes and a site
+    # pins; publishing one deploys nothing, so no tag starts anything here.
     paths:
       # The ignition tier. A merge here converges the estate that already
       # exists; it never ignites one. See CLAUDE.md, "Ignition is local-only;

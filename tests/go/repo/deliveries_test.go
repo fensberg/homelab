@@ -134,18 +134,16 @@ func TestOnlyTheExpediteDutyRunsUnderItsCredential(t *testing.T) {
 					"workstation installs. It is run by a person and committed through review; "+
 					"no workflow orders, and above all not one that could hold the expedite "+
 					"credential.", name)
-			case verb == "deliver", strings.HasPrefix(verb, "deliver-"):
+			case verb == "deliver":
 				// Delivering holds the credential too, to open the pull request
-				// that moves a pin - a site's pin of a release, or the estate's
-				// pin of its modules. What a delivering verb opens is for a
-				// person: enforce-standing-order passes a release only when it
-				// differs by its supplier's build, and never a move of the
-				// modules' pin, under -bypass. The delivering verbs are named
-				// for it, as the expediting ones are, and are the only others
-				// the credential runs.
+				// that moves a release pin - and nothing it opens is merged
+				// without review unless the release differs from the one
+				// running by its supplier's build alone: enforce-standing-order
+				// judges that under -bypass. It is the one other verb the
+				// credential runs.
 				if !holds {
-					t.Errorf("%s runs `procurement %s` and holds no procurement credential, "+
-						"so the pull request it would open has nothing to open it with", name, verb)
+					t.Errorf("%s runs `procurement deliver` and holds no procurement credential, "+
+						"so the pull request it would open has nothing to open it with", name)
 				}
 			case !strings.HasPrefix(verb, "expedite-"):
 				if holds {
