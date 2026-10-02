@@ -3466,6 +3466,33 @@ node without a commit (epoch 05).
   enforce by how a thing is built and keep no such list. Retiring it is
   epoch 06's, with the fixture corpus (#480) and every other repeated
   stand-in.
+- **What a review at the close found still not abstracted**, asked as "did
+  everything that could be a variable become one?" It had not, and three of
+  the answers are what "parameterised modules" means. Each went to the epoch
+  whose subject it is:
+  - A site says how many machines it has and not how big: the sizes are
+    written into the cluster module and the shared core. Epoch 05 (#615).
+  - Nothing defines the config's shape, or an application's declaration;
+    each reader knows it separately. Epoch 06 (#616).
+  - The modules take the config file and a site key, not inputs, so nothing
+    without that document can call them, and the cluster module is one
+    piece of 2,200 lines over four vendors. Epoch 03 (#617).
+  - A site pins its modules only. The Flux core, the contractor and the
+    hypervisor playbook follow `main`. Epoch 08 (#618).
+- **Known limits with no issue**, so that "complete" is not read as
+  "finished":
+  - Reuse is claimed and not shown: one site, one application, no staging.
+    A module is reusable when a second caller has used it (#599).
+  - No release soaks anywhere before production runs it.
+  - The `provider` fields in the config name a vendor and the code refuses
+    any other. They read as a switch and are a label.
+  - One version covers every module.
+  - The application model has met one application; its upstream kind is one
+    vendor's and a route is one number.
+  - The hypervisor playbook is one file of 1,700 lines with no roles.
+  - No infrastructure module says what its inputs and outputs are.
+  - No workflow is reusable, and each job's egress list is a copy a guard
+    checks.
 - **Moved at the close, each with its reason on the issue:** #99, #535,
   #539 and #544 to epoch 09; #274 and #599 to epoch 05; #479, #503 and #559
   to epoch 08; #520 and #529 to epoch 03.
@@ -4353,3 +4380,15 @@ Checkov's two module-source checks ask for a commit hash or a tag. A module
 fetched from a registry by digest is pinned harder than either and fails
 both. They are skipped on the two blocks that fetch that way, not for the
 repository, so a module added anywhere else is still checked.
+
+### A run is called what its workflow chose, so find it by its file
+
+Found the day the epoch closed. The patrol looked for the last converge
+among every run on `main` by the workflow's name. The converge workflow had
+since been given a `run-name` that says which change it is converging, and
+GitHub reports that as the run's name: none matched, and the patrol reported
+the last run still called by the old name - a failure a week old - through
+five converges that succeeded. It was red for days and nobody read it as
+news. Asked of the workflow by its file, the answer is the converge's. A
+check that reports the same failure every hour has stopped being read, and
+that is worth noticing sooner than its cause.
