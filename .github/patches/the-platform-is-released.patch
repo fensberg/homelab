@@ -1,0 +1,3081 @@
+diff --git a/.github/workflows/deliver-modules.yml b/.github/workflows/deliver-modules.yml
+deleted file mode 100644
+index 542e00a..0000000
+--- a/.github/workflows/deliver-modules.yml
++++ /dev/null
+@@ -1,153 +0,0 @@
+-name: Deliver Modules
+-# Brings a change to what a site runs to the estate's gate.
+-#
+-# A site runs the estate's modules as they were at a pinned commit
+-# (management/pins.json), so a change to a module reaches no site on the
+-# merge that made it. It reaches them when the default pin moves, and that
+-# was a line somebody edited by hand in a second pull request (#602). After
+-# every merge to main this asks procurement whether anything a pinned tree is
+-# read for differs between the pin and the commit that merged - the modules,
+-# and whatever they reach outside themselves - and when it does, opens the
+-# pull request that moves the default to it.
+-#
+-# NO PATH FILTER, on purpose. Which paths count is read off the modules by
+-# `procurement deliver-modules`, so a module that starts reading something
+-# new is seen without anybody adding it to a list here. A merge that changed
+-# nothing a site reads costs one short run that says so.
+-#
+-# IT MOVES NOTHING ITSELF. Merging the pull request is what moves the sites:
+-# its plan shows what the move does to each one, the merge converges them,
+-# and it is a person's to merge. `superintendent enforce-standing-order`
+-# passes it on the pull request and refuses it for any merge without a
+-# review. A site held at a commit of its own is not moved by it.
+-on:
+-  push:
+-    branches: [main]
+-# Read at the top. The one job mints procurement's own token for what it
+-# writes, so nothing here needs more of this workflow's.
+-permissions:
+-  contents: read
+-# One at a time. Two runs proposing the same move would open the same pull
+-# request twice.
+-concurrency:
+-  group: deliver-modules
+-  cancel-in-progress: false
+-# GitHub's default shell for `run:` is `bash -e {0}`, which has no pipefail.
+-# tests/go/repo/pipefail_test.go asserts this is present on every workflow.
+-defaults:
+-  run:
+-    shell: bash
+-jobs:
+-  deliver:
+-    name: Bring the modules to the gate
+-    runs-on: ubuntu-latest
+-    # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+-    # is what GitHub's default timeout allows.
+-    timeout-minutes: 10
+-    permissions:
+-      contents: read
+-    steps:
+-      - name: Mobilize
+-        uses: $/.github/workflows/mobilize
+-        with:
+-          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+-          # which job may reach what; `security guard-egress` refuses any drift.
+-          # The copy lives here because harden-runner reads its policy in a
+-          # pre-step, before any step of this job can run.
+-          egress-policy: block
+-          disable-sudo-and-containers: "true"
+-          allowed-endpoints: >
+-            api.github.com:443
+-            github.com:443
+-            go.dev:443
+-            objects.githubusercontent.com:443
+-            proxy.golang.org:443
+-            release-assets.githubusercontent.com:443
+-            storage.googleapis.com:443
+-            sum.golang.org:443
+-
+-      # Versions come from scripts/versions.env, which is the only place one
+-      # is written. See .github/actions/versions for why this is a step
+-      # rather than a setup job.
+-      - name: Read pinned versions
+-        uses: ./.github/actions/versions
+-
+-      - name: Setup Go
+-        uses: $/.github/workflows/setup-go
+-
+-      - name: Mint the procurement token
+-        id: token
+-        uses: $/.github/workflows/app-token
+-        with:
+-          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
+-          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
+-          # Contents to commit the moved pin; pull requests to open the
+-          # delivery and close the one it supersedes. Nothing else the App was
+-          # granted at installation.
+-          permission-contents: write
+-          permission-pull-requests: write
+-          owner: ${{ github.repository_owner }}
+-          repositories: ${{ github.event.repository.name }}
+-
+-      # Through the API rather than git push: a commit created there is signed
+-      # by GitHub on the App's behalf, which the ruleset requiring signatures
+-      # on every branch accepts. One pull request per commit the pin would
+-      # move to, on a branch named for it; an older one still open is closed,
+-      # because branches here cannot be force-updated and the newer commit
+-      # holds everything the older one did.
+-      - name: Deliver
+-        env:
+-          GH_TOKEN: ${{ steps.token.outputs.token }}
+-          REPO: ${{ github.repository }}
+-          PINS: management/pins.json
+-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+-        run: |
+-          # Main as it is now, not the commit this run started for: main can
+-          # have moved since, the pull request's parent is main, and the pin
+-          # should name the newest commit that holds the change.
+-          main="$(gh api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)"
+-          base_tree="$(gh api "repos/${REPO}/git/commits/${main}" --jq .tree.sha)"
+-          git fetch --quiet --no-tags --depth=1 origin "$main"
+-          git checkout --quiet --detach "$main"
+-
+-          # The verb moves the default in the copy when what a site reads
+-          # differs between the pin and main, and leaves the copy alone when
+-          # nothing does.
+-          cp "$PINS" "$RUNNER_TEMP/pins.json"
+-          before="$(sha256sum < "$RUNNER_TEMP/pins.json")"
+-          said="$(go run -C scripts/procurement . deliver-modules -pins "$RUNNER_TEMP/pins.json" -to "$main")"
+-          echo "$said" >> "$GITHUB_STEP_SUMMARY"
+-          if [ "$(sha256sum < "$RUNNER_TEMP/pins.json")" = "$before" ]; then
+-            exit 0
+-          fi
+-
+-          short="${main:0:7}"
+-          branch="pin/${main}"
+-          if [ -n "$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq '.[0].number // empty')" ]; then
+-            echo "the move to ${short} is already at the gate" >> "$GITHUB_STEP_SUMMARY"
+-            exit 0
+-          fi
+-
+-          blob="$(gh api "repos/${REPO}/git/blobs" -f content="$(base64 -w0 "$RUNNER_TEMP/pins.json")" -f encoding=base64 --jq .sha)"
+-          tree="$(gh api "repos/${REPO}/git/trees" -f base_tree="$base_tree" \
+-            -f "tree[][path]=${PINS}" -f "tree[][mode]=100644" -f "tree[][type]=blob" -f "tree[][sha]=${blob}" --jq .sha)"
+-          title="feat: the sites run the modules as of ${short}"
+-          commit="$(gh api "repos/${REPO}/git/commits" -f tree="$tree" -f "parents[]=${main}" -f message="$title" --jq .sha)"
+-          gh api "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="$commit" >/dev/null
+-          url="$(gh pr create --repo "$REPO" --base main --head "$branch" --title "$title" \
+-            --body "$(printf '%s\n' \
+-              "## Actions for you" "" \
+-              "Read the plan on this pull request: it shows what moving the pin does to each site. Merging converges every site that has no pin of its own." "" \
+-              "## What this is" "" \
+-              "A change to what a site runs merged as \`${main}\`, and no site runs it until the estate's default pin names it. This moves the default in \`${PINS}\` to that commit, and changes nothing else." "" \
+-              "${said}" "" \
+-              "Procurement opened this; it is never merged without review." "" \
+-              "Delivered by: ${RUN_URL}")")"
+-          echo "the move to ${short} is delivered as ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
+-
+-          # Older moves are superseded by this one.
+-          gh pr list --repo "$REPO" --state open --json number,headRefName \
+-            --jq ".[] | select(.headRefName | startswith(\"pin/\")) | select(.headRefName != \"${branch}\") | .number" \
+-            | while IFS= read -r old; do
+-                gh pr close "$old" --repo "$REPO" --delete-branch --comment "Superseded by ${url##*/}, which moves the pin to a newer commit." >/dev/null
+-              done
+diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
+index eb0a121..8f87268 100644
+--- a/.github/workflows/deploy-infrastructure.yml
++++ b/.github/workflows/deploy-infrastructure.yml
+@@ -20,7 +20,10 @@ run-name: "Converge: ${{ github.event.head_commit.message }}"
+ on:
+   push:
+     branches: [main]
+-    tags: ["v*"]
++    # No tags. A v* tag used to start this as "a production release" of
++    # workload infrastructure that has never existed (#561). A tag now names
++    # a version of the platform, which the fabricator publishes and a site
++    # pins; publishing one deploys nothing, so no tag starts anything here.
+     paths:
+       # The ignition tier. A merge here converges the estate that already
+       # exists; it never ignites one. See CLAUDE.md, "Ignition is local-only;
+diff --git a/.github/workflows/fabricator.yml b/.github/workflows/fabricator.yml
+index fe43806..eece6c4 100644
+--- a/.github/workflows/fabricator.yml
++++ b/.github/workflows/fabricator.yml
+@@ -8,6 +8,18 @@ name: Fabricator
+ # writes to the repository and never chooses what is installed where. Pinning
+ # a product is a release, and releases belong to somebody else.
+ #
++# It also publishes the platform: the modules a site runs and the files they
++# read, as one package under a version (v2026.10.1 - the year and month, and
++# its number within the month). A site runs the version its own config pins,
++# so merging a change to the platform does nothing to production; releasing
++# it is moving that pin. See the `package` job.
++#
++# NO PATH FILTER. It runs on every merge to main, because whether there is
++# anything to do is decided by fingerprint, not by which paths a list here
++# happened to name: an image whose inputs are unchanged is reused, a release
++# or a package whose contents are unchanged is not published again. A merge
++# that changed nothing costs a short run that says so.
++#
+ # It builds from work orders and nothing else. An order says what to build
+ # and from which directory: scripts/work-orders.json holds the estate's own,
+ # and every application that has an image is an order by being there - its
+@@ -27,12 +39,6 @@ name: Fabricator
+ on:
+   push:
+     branches: [main]
+-    paths:
+-      - ".github/runner-image/**"
+-      - "modules/applications/**"
+-      - "scripts/versions.env"
+-      - "scripts/work-orders.json"
+-      - ".github/workflows/fabricator.yml"
+   workflow_dispatch:
+ # Read at the top. packages:write is granted on the build job alone, which is
+ # the only thing that publishes, so a job added here later does not inherit the
+@@ -58,6 +64,8 @@ jobs:
+       contents: read
+     outputs:
+       orders: ${{ steps.orders.outputs.orders }}
++      images: ${{ steps.orders.outputs.images }}
++      packages: ${{ steps.orders.outputs.packages }}
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+@@ -91,8 +99,14 @@ jobs:
+                     + (if $declared[0].release then {release: ($declared[0].release + {module: $dir})} else {} end)]' \
+               <<<"$orders")"
+           done
+-          echo "orders=${orders}" >> "$GITHUB_OUTPUT"
+-          jq -r '.[] | "- \(.name): \(.context)"' <<<"$orders" >> "$GITHUB_STEP_SUMMARY"
++          # An order builds an image or publishes a package, and each kind
++          # has its own job.
++          {
++            echo "orders=${orders}"
++            echo "images=$(jq -c '[.[] | select(.context)]' <<<"$orders")"
++            echo "packages=$(jq -c '[.[] | select(.package)]' <<<"$orders")"
++          } >> "$GITHUB_OUTPUT"
++          jq -r '.[] | "- \(.name): \(.context // .package)"' <<<"$orders" >> "$GITHUB_STEP_SUMMARY"
+ 
+   build:
+     name: Build ${{ matrix.order.name }}
+@@ -109,7 +123,7 @@ jobs:
+       # One order failing should not hide another's result.
+       fail-fast: false
+       matrix:
+-        order: ${{ fromJSON(needs.orders.outputs.orders) }}
++        order: ${{ fromJSON(needs.orders.outputs.images) }}
+     steps:
+       - name: Mobilize
+         uses: $/.github/workflows/mobilize
+@@ -446,6 +460,226 @@ jobs:
+             echo "Released as \`${ARTIFACT}:${TAG}\` (\`${pushed}\`), from \`${module}\`."
+           } >> "$GITHUB_STEP_SUMMARY"
+ 
++  # A package is a set of the repository's own files, published whole under a
++  # version. The platform is the one there is: the modules a site's roots
++  # call, and every file a module reads from outside its own directory, at
++  # the paths they have in the repository - so a module finds them inside the
++  # package exactly as it finds them in a checkout. What it holds is the
++  # order's manifest, which scripts/details/platform holds to what the modules
++  # actually reach for.
++  #
++  # Published in the form OpenTofu takes a module from a registry in, so a
++  # site's roots name a version and a digest and OpenTofu fetches the rest.
++  # tests/go/repo/fabricator_test.go runs each of these steps as shipped.
++  package:
++    name: Package ${{ matrix.order.name }}
++    needs: orders
++    if: needs.orders.outputs.packages != '[]'
++    runs-on: ubuntu-latest
++    # Bounded so a stuck job cannot bill a metered vendor for six hours, which
++    # is what GitHub's default timeout allows.
++    timeout-minutes: 15
++    permissions:
++      # The release that describes each version, which is what a pull request
++      # moving a site to it shows.
++      contents: write
++      packages: write
++    strategy:
++      fail-fast: false
++      matrix:
++        order: ${{ fromJSON(needs.orders.outputs.packages) }}
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
++          # which job may reach what; `security guard-egress` refuses any drift.
++          # The copy lives here because harden-runner reads its policy in a
++          # pre-step, before any step of this job can run.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            ghcr.io:443
++            github.com:443
++            objects.githubusercontent.com:443
++            pkg-containers.githubusercontent.com:443
++            release-assets.githubusercontent.com:443
++
++      # Versions come from scripts/versions.env, which is the only place one
++      # is written. See .github/actions/versions for why this is a step
++      # rather than a setup job.
++      - name: Read pinned versions
++        uses: ./.github/actions/versions
++
++      - name: Take delivery of the registry client
++        run: scripts/take-delivery.sh oras
++
++      # Whether this exact package already exists. Fingerprinted from the
++      # files it would hold as git has them at this commit: the same files
++      # are the same package, whatever else the merge changed. So a merge
++      # that touched nothing a site runs publishes no version.
++      - name: Reuse a package of the same contents
++        id: reuse
++        env:
++          GH_TOKEN: ${{ github.token }}
++          OWNER: ${{ github.repository_owner }}
++          PACKAGE: ${{ github.event.repository.name }}-${{ matrix.order.name }}-release
++          MANIFEST: ${{ matrix.order.package }}
++        run: |
++          # What the package holds, as tracked files. A held path is a file,
++          # a directory - everything beneath it - or a pattern whose * stands
++          # for one name; :(glob) is what keeps a * from crossing a slash.
++          specs=()
++          while IFS= read -r held; do
++            specs+=(":(glob)${held}")
++          done < <(jq -r '.holds[]' "$MANIFEST")
++          git ls-files -- "${specs[@]}" | LC_ALL=C sort > "${RUNNER_TEMP}/held"
++          if [ ! -s "${RUNNER_TEMP}/held" ]; then
++            echo "::error::${MANIFEST} holds no tracked file, so there is nothing to publish"
++            exit 1
++          fi
++          mapfile -t files < "${RUNNER_TEMP}/held"
++          fingerprint="fp-$(git ls-tree -r HEAD -- "${files[@]}" | sha256sum | cut -c1-16)"
++          echo "fingerprint=${fingerprint}" >> "$GITHUB_OUTPUT"
++
++          case "$(gh api "users/${OWNER}" --jq .type)" in
++            Organization) base="orgs/${OWNER}" ;;
++            User) base="users/${OWNER}" ;;
++            *)
++              echo "::error::could not tell whether ${OWNER} is an organization or a user"
++              exit 1
++              ;;
++          esac
++          # A package that does not exist yet is the first publish: 404, and
++          # nothing to reuse. Any other failure is not evidence of that.
++          if ! listed="$(gh api --paginate "${base}/packages/container/${PACKAGE}/versions" \
++            --jq ".[] | select(.metadata.container.tags | index(\"${fingerprint}\")) | .metadata.container.tags[]" 2>&1)"; then
++            if grep -q "HTTP 404" <<<"$listed"; then
++              listed=""
++            else
++              echo "::error::could not list the versions of ${PACKAGE}: ${listed}"
++              exit 1
++            fi
++          fi
++          if [ -n "$listed" ]; then
++            echo "needed=false" >> "$GITHUB_OUTPUT"
++            echo "no version: $(grep -v '^fp-' <<<"$listed" | head -n 1) already holds these exact files" >> "$GITHUB_STEP_SUMMARY"
++          else
++            echo "needed=true" >> "$GITHUB_OUTPUT"
++          fi
++
++      # The version is when it was published and which one of that month it
++      # is: v2026.10.1, then v2026.10.2, and v2026.11.1 the month after. No
++      # leading zero on the month, so the name is also a semantic version and
++      # every tool that orders versions orders these. The counter continues
++      # from the registry, so it never repeats.
++      - name: Number the version
++        id: number
++        if: steps.reuse.outputs.needed == 'true'
++        env:
++          GH_TOKEN: ${{ github.token }}
++          OWNER: ${{ github.repository_owner }}
++          PACKAGE: ${{ github.event.repository.name }}-${{ matrix.order.name }}-release
++        run: |
++          case "$(gh api "users/${OWNER}" --jq .type)" in
++            Organization) base="orgs/${OWNER}" ;;
++            User) base="users/${OWNER}" ;;
++            *)
++              echo "::error::could not tell whether ${OWNER} is an organization or a user"
++              exit 1
++              ;;
++          esac
++          tags=""
++          if listed="$(gh api --paginate "${base}/packages/container/${PACKAGE}/versions" --jq '.[].metadata.container.tags[]' 2>&1)"; then
++            tags="$listed"
++          elif ! grep -q "HTTP 404" <<<"$listed"; then
++            echo "::error::could not list the versions of ${PACKAGE}: ${listed}"
++            exit 1
++          fi
++          month="v$(date -u +%Y.%-m)"
++          n=0
++          while IFS= read -r tag; do
++            case "$tag" in
++              "${month}".*)
++                m="${tag#"${month}".}"
++                if [[ "$m" =~ ^[0-9]+$ ]] && [ "$m" -gt "$n" ]; then
++                  n="$m"
++                fi
++                ;;
++            esac
++          done <<<"$tags"
++          echo "version=${month}.$((n + 1))" >> "$GITHUB_OUTPUT"
++
++      # Packed from git, not from the checkout: exactly the tracked files the
++      # manifest holds, as they are at this commit, at the paths they have in
++      # the repository. Pushed as the artifact type OpenTofu fetches a module
++      # package as, and tagged with its fingerprint so the same files are not
++      # published twice.
++      - name: Pack and publish the package
++        id: publish
++        if: steps.reuse.outputs.needed == 'true'
++        env:
++          TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          ACTOR: ${{ github.actor }}
++          ARTIFACT: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}-release
++          VERSION: ${{ steps.number.outputs.version }}
++          FINGERPRINT: ${{ steps.reuse.outputs.fingerprint }}
++          SHA: ${{ github.sha }}
++          SOURCE: ${{ github.server_url }}/${{ github.repository }}
++        run: |
++          mapfile -t files < "${RUNNER_TEMP}/held"
++          git archive --format=zip -o "${RUNNER_TEMP}/package.zip" HEAD -- "${files[@]}"
++
++          echo "$TOKEN" | oras login ghcr.io -u "$ACTOR" --password-stdin
++          # From the directory holding it, so the layer is named for the file
++          # and not for a path on this runner.
++          (
++            cd "$RUNNER_TEMP"
++            oras push "${ARTIFACT}:${VERSION}" \
++              --artifact-type application/vnd.opentofu.modulepkg \
++              --annotation "org.opencontainers.image.revision=${SHA}" \
++              --annotation "org.opencontainers.image.source=${SOURCE}" \
++              --annotation "org.opencontainers.image.version=${VERSION}" \
++              package.zip:archive/zip
++          )
++          oras tag "${ARTIFACT}:${VERSION}" "${FINGERPRINT}"
++          digest="$(oras resolve "${ARTIFACT}:${VERSION}")"
++          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
++            echo "::error::the registry did not say what ${VERSION} was published as, so there is no digest for a site to pin"
++            exit 1
++          fi
++          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
++          {
++            echo "### ${ARTIFACT##*/} ${VERSION}"
++            echo ""
++            echo "\`${ARTIFACT}:${VERSION}\`"
++            echo ""
++            echo "\`${digest}\`"
++          } >> "$GITHUB_STEP_SUMMARY"
++
++      # What the version brings, where a person and a pull request moving a
++      # site to it can read it: the pull requests merged since the last one,
++      # and the digest to pin. The release's tag is the version's name on the
++      # commit it was packed from.
++      - name: Describe the version
++        if: steps.reuse.outputs.needed == 'true'
++        env:
++          GH_TOKEN: ${{ github.token }}
++          REPO: ${{ github.repository }}
++          NAME: ${{ matrix.order.name }}
++          ARTIFACT: ghcr.io/${{ github.repository }}-${{ matrix.order.name }}-release
++          VERSION: ${{ steps.number.outputs.version }}
++          DIGEST: ${{ steps.publish.outputs.digest }}
++          SHA: ${{ github.sha }}
++        run: |
++          gh release create "$VERSION" --repo "$REPO" --target "$SHA" \
++            --title "${NAME} ${VERSION}" --generate-notes \
++            --notes "$(printf '%s\n' \
++              "Published as \`${ARTIFACT}:${VERSION}\`" "" \
++              "\`${DIGEST}\`" "" \
++              "A site runs this when its own config pins it. Publishing it changed nothing that is running.")"
++
+   # Procurement brings the finished work to the gate. For every work order that
+   # makes a release, the newest one the registry holds is compared with the pin
+   # in each site that runs it and follows its releases, and when they differ a
+diff --git a/.github/zizmor.yml b/.github/zizmor.yml
+index 678eef5..d4085f4 100644
+--- a/.github/zizmor.yml
++++ b/.github/zizmor.yml
+@@ -35,7 +35,6 @@ rules:
+   self-repository:
+     ignore:
+       - clerk.yml
+-      - deliver-modules.yml
+       - deploy-infrastructure.yml
+       - expedite.yml
+       - fabricator.yml
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 3557b71..8311c70 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -88,7 +88,7 @@ Each holds the credential for one thing, and none overlaps another:
+ | ------------- | ------------------------------------------------ | ---------------------------- |
+ | `management`  | the platform itself - `contractor converge-site` | merge touching `management/` |
+ | `staging`     | workload deploys                                 | merge to `main`              |
+-| `production`  | workload infrastructure (dormant, #561)          | tag `v*`                     |
++| `production`  | workload infrastructure (dormant, #561)          | nothing                      |
+ | `integration` | the test tiers that need a real estate           | nightly, or dispatch         |
+ 
+ `management` is a fourth environment rather than a reuse of `staging`
+@@ -597,11 +597,12 @@ depends on it and uses them.
+   because OpenTofu applies the CNI manifest rather than Flux, so a change to
+   it is delivered by a converge and by nothing else.
+ 
+-- `deliver-modules.yml` — after every merge to `main`, asks procurement
+-  whether anything a pinned site reads changed (the modules, and whatever
+-  they reach outside themselves), and if so opens the pull request that moves
+-  the default pin in `management/pins.json` to the merged commit. A person
+-  merges it, after reading its plan; it is never merged without review.
++- `fabricator.yml` — builds every image the repository defines, and
++  publishes the platform: the modules a site runs and the files they read, as
++  one package under a calendar version (`v2026.10.1`), described by a GitHub
++  Release. It runs on every merge and decides what to do by fingerprint, so
++  a merge that changed nothing builds and publishes nothing. Publishing
++  deploys nothing: a site runs the version its own config pins.
+ 
+ ## Testing
+ 
+diff --git a/docs/epochs/02-abstraction.md b/docs/epochs/02-abstraction.md
+index adc83b8..a842a01 100644
+--- a/docs/epochs/02-abstraction.md
++++ b/docs/epochs/02-abstraction.md
+@@ -2082,30 +2082,86 @@ the merge converges, and a converge that fails returns it with the rest of
+   that reaches a module any other way, a root with a default tree, and a pin
+   that is not a full commit hash.
+ 
+-**The estate moves its own pin (built 2026-10-02, #602).** After every merge
+-to `main`, `deliver-modules.yml` runs `procurement deliver-modules`, which
+-opens the pull request moving `default` to the merged commit when anything a
+-pinned tree is read for differs between the two. A person merges it, after
+-reading its plan; the standing order passes it on the pull request and
+-refuses it for any merge without a review. A site held at its own commit is
+-not moved.
+-
+-- **Which paths count is read off the modules, not listed.** A pinned tree is
+-  read for the modules and for whatever they reach outside themselves
+-  (`homelab/details/pins`): today the applications' declarations, the Flux
+-  install in the core, and the CNI's manifest. So a change to an
+-  application's manifests, or a release moving a site's block, moves no pin;
+-  and a module that starts reading something new is covered the day it does.
+-- **A reach has to be written whole.** A path built from a value cannot be
+-  read off the code, and is refused rather than passed over, because a
+-  change to whatever it named would reach no site and nothing would say so.
+-  The platform module's path to the Flux install and the applications
+-  module's path to the declarations were rewritten as whole paths for this.
+-
+-**Still missing for "no commit": a site is declared in the template.** Adding
+-one today is an edit to `config/management.tpl.json`. The record's answer is a
+-config discovered from the vault rather than declared, and it is not built;
+-neither refinement above delivers it.
++**The estate moving its own pin was built and withdrawn within a day
++(2026-10-02, #602, #609).** A workflow opened the pull request that moved
++`default` to each merged commit that changed what a site reads. It met what
++was agreed and was wrong in use: every change to a module was followed by a
++second pull request asking to move the pin, which is friction and not a
++release process. The operator's ruling: a pin has to add value and not be a
++nuisance, and the estate does not need a home-grown half of a design the
++industry already settled.
++
++**Replaced by the standard design: production follows a pinned version.**
++Agreed 2026-10-02. Merging to `main` does nothing to production. What a site
++runs is a published release of the platform, and releasing to production is
++one line of that site's config moving from one version to the next.
++
++1. **Every merge that changes the platform publishes an immutable release.**
++   One package in the registry, holding the modules and every file they read,
++   under a version: the year, the month and its number within the month -
++   `v2026.10.1`, then `v2026.10.2`. A calendar version says when a release was
++   made, which is what a person choosing one wants to know, and it is still a
++   semantic version to every tool that orders versions. A merge that changes
++   nothing the platform is made of publishes nothing.
++2. **A site's roots take their modules from the registry, by version and
++   digest**, which OpenTofu does natively. `management/pins.json` and the
++   contractor's extraction of a commit's tree go away.
++3. **Each site pins versions in its own config**: the platform's, and each
++   application's. A staging site follows the newest release without a pull
++   request; production is promoted.
++4. **The promotion pull request is generated on request**, by Renovate: its
++   dashboard lists what each site could move to, and ticking one opens the
++   one-line pull request. Nothing is opened after a merge.
++5. **Releases are signed**, and Flux and the contractor verify before using
++   one.
++
++**Built so far: the first (2026-10-02).** The fabricator's `package` job
++publishes the platform as an order like any other
++(`scripts/work-orders.json`), numbers it from the registry, and describes
++each version in a GitHub Release whose notes are the pull requests merged
++since the last. Nothing consumes a release yet, so it changes no site.
++
++- **What a release holds is `modules/infrastructure/release.json`**, and it
++  cannot go stale: `homelab/details/platform` reads what the modules reach
++  for off their own code and the manifest must name exactly that; and both
++  roots are planned from nothing, with the real providers, against a tree
++  holding only what the release would. A file a module reads and the release
++  lacks fails that plan on the pull request.
++- **The modules did not have to change to be packaged.** The files they read
++  go in the package at the paths they have in the repository, so a module
++  finds them inside it as it finds them in a checkout. A reach has to be
++  written as a whole path for that - one built from a value is refused.
++- **Proved before building:** OpenTofu 1.12 fetches a module package from an
++  OCI registry by digest, from a subdirectory, with the registry's address
++  given as a variable, and refuses a digest that is not the package's.
++- **No path filter on the fabricator.** Whether there is anything to build or
++  publish is decided by fingerprint, so no list of paths has to be kept in
++  step with what a release holds.
++
++**A site is declared in git, deliberately.** The criterion read "adding a
++site requires no commit". Settled 2026-10-02: a site is geographic and rare,
++and the one-block commit that adds it is the only review a new site's octet
++and shape ever get. What the record's own target describes - rack a server,
++enter its credentials, and it works - is adding a **node** to a site that
++exists, and that is the criterion now.
++
++### Adding a node to a site needs no commit
++
++Added 2026-10-02, replacing "a site without a commit". Today a node is a
++block in `config/management.tpl.json`, so adding one is a commit; and
++machines are dealt round-robin over the node list, so adding one moves a
++running control-plane member with nothing removing it from etcd first.
++
++**The bar:** a node is adopted from the site's vault with no commit, and
++whatever the adoption moves is moved safely.
++
++Agreed so far: machines may move when a node is adopted - the foreman
++remembers nothing, looks at the nodes the site has and assigns work
++accordingly - so the work is in making a move safe (drain, remove the etcd
++member, replace, wait for health) and not in preventing one. A new node gets
++a default share of workers. Preparing a new node's hypervisor should be the
++lawyer's, automatically, if that can be done securely and with a bounded
++blast radius. Not designed yet.
+ 
+ ### Removing an application touches only its own directories
+ 
+diff --git a/modules/infrastructure/applications/declarations.tf b/modules/infrastructure/applications/declarations.tf
+index 73d54ba..6e74575 100644
+--- a/modules/infrastructure/applications/declarations.tf
++++ b/modules/infrastructure/applications/declarations.tf
+@@ -12,9 +12,10 @@ locals {
+   # Every application's declaration, reached from the repository's top as
+   # every file outside a module is. Written whole and in one string - the
+   # directory, and which file of each application - because that string is
+-  # what says a pinned tree is read for the declarations and for nothing
+-  # else of an application's (homelab/details/pins): a change to one moves a
+-  # site's pin, and a change to an application's manifests does not.
++  # what puts the declarations in a release of the platform, and nothing
++  # else of an application's (homelab/details/platform): a change to one is
++  # a new version of the platform, and a change to an application's manifests
++  # is not.
+   declarations = "${path.module}/../../../modules/applications/*/application.json"
+   directory    = coalesce(var.directory, dirname(dirname(local.declarations)))
+ 
+diff --git a/modules/infrastructure/platform/variables.tf b/modules/infrastructure/platform/variables.tf
+index 49d4eae..7a062df 100644
+--- a/modules/infrastructure/platform/variables.tf
++++ b/modules/infrastructure/platform/variables.tf
+@@ -145,12 +145,11 @@ locals {
+   # that has been given work has a directory named for it beside the core.
+   #
+   # Flux's own install is in the core, and is what this module applies to
+-  # start Flux. The path is written whole, from the repository's top, because
+-  # it is what says a pinned tree is read for these manifests
+-  # (homelab/details/pins); the core's directory is read back off it rather
+-  # than written a second time.
++  # start Flux. Its path is written whole, from the repository's top, because
++  # that is what puts these manifests in a release of the platform
++  # (homelab/details/platform reads what a module reaches for off this code).
++  flux_core    = "clusters/core"
+   flux_install = "${path.module}/../../../clusters/core/flux-system"
+-  flux_core    = dirname(trimprefix(local.flux_install, "${path.module}/../../../"))
+   gitops_path  = var.site_directory ? "clusters/${var.site}" : local.flux_core
+ 
+   # --- state database ------------------------------------------------------
+diff --git a/modules/infrastructure/release.json b/modules/infrastructure/release.json
+new file mode 100644
+index 0000000..17c960d
+--- /dev/null
++++ b/modules/infrastructure/release.json
+@@ -0,0 +1,18 @@
++{
++  "_comment": [
++    "What a release of the platform holds: the modules, and every file a",
++    "module reads from outside its own directory, at the path it has in the",
++    "repository. The fabricator packs exactly these and publishes them as one",
++    "versioned package, which is what a site runs.",
++    "",
++    "Not a list to keep by hand. scripts/details/platform reads what the",
++    "modules reach for off their own code, and its tests fail when this file",
++    "names more or less than that."
++  ],
++  "holds": [
++    "clusters/bootstrap/cilium.yaml",
++    "clusters/core/flux-system",
++    "modules/applications/*/application.json",
++    "modules/infrastructure"
++  ]
++}
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index ec0fd1d..193c13f 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -651,19 +651,17 @@ egress:
+       Builds with Docker, which needs the Docker socket that
+       disable-sudo-and-containers removes.
+ 
+-  - job: fabricator.yml/deliver
++  - job: fabricator.yml/package
+     policy: block
+     hosts:
+       - api.github.com:443
++      - ghcr.io:443
+       - github.com:443
+-      - go.dev:443
+       - objects.githubusercontent.com:443
+-      - proxy.golang.org:443
++      - pkg-containers.githubusercontent.com:443
+       - release-assets.githubusercontent.com:443
+-      - storage.googleapis.com:443
+-      - sum.golang.org:443
+ 
+-  - job: deliver-modules.yml/deliver
++  - job: fabricator.yml/deliver
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -1130,6 +1128,19 @@ tools:
+       production release pins. Taken from Flux's own GitHub release and
+       installed only if its SHA256 matches the lock. The workstation already
+       installed it from the same release, by version only.
++  - source: oras-project/oras
++    version: ORAS_VERSION
++    binary: oras
++    fetch: https://github.com/oras-project/oras/releases/download/v{version}/oras_{version}_linux_amd64.tar.gz
++    reason: >-
++      The registry client the fabricator publishes a platform release with.
++      A site's roots take their modules from the registry, in the form
++      OpenTofu fetches one in: an OCI artifact of OpenTofu's own type, holding
++      one zip. The Flux CLI publishes only Flux's form and Docker only
++      images, so neither can make it. ORAS is the Cloud Native Computing
++      Foundation's client for exactly this and the one OpenTofu's own
++      documentation publishes with. Taken from the project's GitHub release
++      and installed only if its SHA256 matches the lock.
+ 
+ # Declared exemptions.
+ #
+diff --git a/scripts/contractor/internal/phases/plan_unbuilt_test.go b/scripts/contractor/internal/phases/plan_unbuilt_test.go
+index 90c82e5..907dc2e 100644
+--- a/scripts/contractor/internal/phases/plan_unbuilt_test.go
++++ b/scripts/contractor/internal/phases/plan_unbuilt_test.go
+@@ -63,11 +63,15 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
+ 	}
+ 	// Beside the Record phase's own workspace, never in it: a run on this
+ 	// machine may be using that.
+-	// The working tree's modules, not a site's pin: this is the check that
+-	// sees a change to a module before it merges.
+-	if err := pin.PlaceWorkingTree(repo); err != nil {
++	// What a release of the platform would hold from this checkout, and
++	// nothing else of the repository: this is the check that sees a change
++	// to a module before it merges, and it sees it as a site would run it.
++	// A file a module reads that the release does not hold is not there, and
++	// the plan fails on it here.
++	if err := pin.PlaceRelease(repo, pin.Exec); err != nil {
+ 		t.Fatal(err)
+ 	}
++	t.Cleanup(func() { _ = os.RemoveAll(pin.Dir(repo, pin.Release)) })
+ 	work := filepath.Join(repo, ".as-built-unbuilt")
+ 	t.Cleanup(func() { _ = os.RemoveAll(work) })
+ 
+@@ -89,7 +93,7 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
+ 		if root.Name == config.PlatformRoot {
+ 			in.Vars = asbuilt.UnbuiltAccess(steps.PlatformInputs[0], steps.PlatformInputs[1])
+ 		}
+-		in.Vars[strings.TrimPrefix(pin.TreeVariable, "TF_VAR_")] = pin.WorkingTree
++		in.Vars[strings.TrimPrefix(pin.TreeVariable, "TF_VAR_")] = pin.Release
+ 		plan, _, err := asbuilt.PlanAgainst(in, asbuilt.Exec)
+ 		_ = os.RemoveAll(work)
+ 
+diff --git a/scripts/contractor/pin/pin.go b/scripts/contractor/pin/pin.go
+index 3e93826..32932c3 100644
+--- a/scripts/contractor/pin/pin.go
++++ b/scripts/contractor/pin/pin.go
+@@ -35,6 +35,7 @@ import (
+ 	"strings"
+ 
+ 	details "homelab/details/pins"
++	"homelab/details/platform"
+ )
+ 
+ // File is where the pins are, and Pins what they hold: read once for every
+@@ -158,6 +159,44 @@ func PlaceWorkingTree(repoRoot string) error {
+ 	return os.Symlink("..", target)
+ }
+ 
++// Release is the name of the tree that holds what a release of the platform
++// would: the files the release manifest names, as they are in this checkout,
++// and nothing else of the repository. A root planned against it is planned
++// against what would be published, so a module that reads a file the release
++// does not hold fails here and not at the first site to run it.
++const Release = "release"
++
++// PlaceRelease makes the tree named Release from the tracked files the
++// platform's release manifest holds (homelab/details/platform).
++func PlaceRelease(repoRoot string, git Git) error {
++	out, err := git(repoRoot, "ls-files", "-z")
++	if err != nil {
++		return err
++	}
++	files, err := platform.Files(repoRoot, strings.Split(strings.TrimRight(string(out), "\x00"), "\x00"))
++	if err != nil {
++		return err
++	}
++	target := Dir(repoRoot, Release)
++	if err := os.RemoveAll(target); err != nil {
++		return err
++	}
++	for _, rel := range files {
++		body, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
++		if err != nil {
++			return err
++		}
++		dst := filepath.Join(target, filepath.FromSlash(rel))
++		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
++			return err
++		}
++		if err := os.WriteFile(dst, body, 0o644); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++
+ // largestFile bounds one extracted file. The largest this repository tracks
+ // is Flux's generated install at about a megabyte; this leaves room for it to
+ // grow many times over and still refuses an archive that is not a source tree.
+diff --git a/scripts/contractor/pin/pin_test.go b/scripts/contractor/pin/pin_test.go
+index 60130f0..dfb9346 100644
+--- a/scripts/contractor/pin/pin_test.go
++++ b/scripts/contractor/pin/pin_test.go
+@@ -1,10 +1,13 @@
+ package pin
+ 
+ import (
++	"errors"
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
+ 	"testing"
++
++	"homelab/details/platform"
+ )
+ 
+ // repo is a repository with two commits, each holding a module file that
+@@ -224,3 +227,70 @@ func TestExtractRefusesAnythingOutsideTheTree(t *testing.T) {
+ 		t.Error("something that is not an archive was extracted")
+ 	}
+ }
++
++// The release tree holds what a release of the platform would - the tracked
++// files its manifest names, as they are in the checkout - and nothing else
++// of the repository, whatever was there before.
++func TestPlaceReleaseHoldsOnlyWhatTheManifestNames(t *testing.T) {
++	root := t.TempDir()
++	for rel, body := range map[string]string{
++		platform.Manifest:                      `{"holds": ["` + platform.ModulesDir + `", "ground/read.yaml"]}`,
++		platform.ModulesDir + "/thing/main.tf": "# as it is in the checkout\n",
++		"ground/read.yaml":                     "a: 1\n",
++		"ground/beside.yaml":                   "not held\n",
++		"leaflets/words.md":                    "not held\n",
++	} {
++		path := filepath.Join(root, filepath.FromSlash(rel))
++		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
++			t.Fatal(err)
++		}
++	}
++	tracked := platform.Manifest + "\x00" + platform.ModulesDir + "/thing/main.tf\x00ground/read.yaml\x00ground/beside.yaml\x00leaflets/words.md\x00"
++	git := func(string, ...string) ([]byte, error) { return []byte(tracked), nil }
++
++	// Left from an earlier placing, and not in the release now.
++	stale := filepath.Join(Dir(root, Release), "left", "behind.txt")
++	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++
++	if err := PlaceRelease(root, git); err != nil {
++		t.Fatal(err)
++	}
++	var placed []string
++	err := filepath.WalkDir(Dir(root, Release), func(p string, d os.DirEntry, err error) error {
++		if err != nil || d.IsDir() {
++			return err
++		}
++		rel, err := filepath.Rel(Dir(root, Release), p)
++		if err != nil {
++			return err
++		}
++		placed = append(placed, filepath.ToSlash(rel))
++		return nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := []string{"ground/read.yaml", platform.Manifest, platform.ModulesDir + "/thing/main.tf"}
++	if strings.Join(placed, "\n") != strings.Join(want, "\n") {
++		t.Errorf("the release tree holds\n  %s\nwant exactly\n  %s", strings.Join(placed, "\n  "), strings.Join(want, "\n  "))
++	}
++	if got := read(t, filepath.Join(Dir(root, Release), filepath.FromSlash(platform.ModulesDir), "thing", "main.tf")); got != "# as it is in the checkout\n" {
++		t.Errorf("a held file was placed as %q", got)
++	}
++
++	// A git that cannot list, and a manifest that is not there, place nothing.
++	if err := PlaceRelease(root, func(string, ...string) ([]byte, error) { return nil, errors.New("not a repository") }); err == nil {
++		t.Error("a release was placed from a checkout git could not list")
++	}
++	if err := PlaceRelease(t.TempDir(), git); err == nil {
++		t.Error("a release was placed with no manifest to say what it holds")
++	}
++}
+diff --git a/scripts/deliveries.lock b/scripts/deliveries.lock
+index 9499a02..945bceb 100644
+--- a/scripts/deliveries.lock
++++ b/scripts/deliveries.lock
+@@ -25,6 +25,10 @@ https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-
+ https://get.opentofu.org/install-opentofu.sh --hash=sha256:e4e899ae7bd86241fd17ad99e9d32f5b2d20a11b1a40d088acabb6e06dba49c5
+ # [end]
+ 
++# [fetch: oras ORAS_VERSION=1.3.4]
++https://github.com/oras-project/oras/releases/download/v1.3.4/oras_1.3.4_linux_amd64.tar.gz --hash=sha256:f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454
++# [end]
++
+ # [fetch: shellcheck SHELLCHECK_VERSION=0.11.0]
+ https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz --hash=sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+ # [end]
+diff --git a/scripts/details/pins/pins.go b/scripts/details/pins/pins.go
+index 2efac52..9432ba3 100644
+--- a/scripts/details/pins/pins.go
++++ b/scripts/details/pins/pins.go
+@@ -8,12 +8,9 @@
+ // because a module reads more than itself: what applications declare, the
+ // manifests Flux is bootstrapped from, the CNI's.
+ //
+-// So "a change to the modules has merged, and the pin should move" is a
+-// question about more than one directory, and it is answered here by reading
+-// what the modules reach for rather than from a list somebody keeps: Reads
+-// is every path a module names outside itself, and Changed is whether any of
+-// them, or the modules, differ between two commits. Procurement asks it after
+-// every merge and brings the pin to the gate when the answer is yes.
++// Being replaced: a site is moving to a published release of the platform,
++// pinned by version (homelab/details/platform), and this file goes when the
++// roots consume one.
+ package pins
+ 
+ import (
+@@ -21,14 +18,9 @@ import (
+ 	"encoding/json"
+ 	"fmt"
+ 	"os"
+-	"path"
+ 	"path/filepath"
+-	"regexp"
+-	"sort"
+-	"strings"
+ 
+ 	"homelab/details/gitenv"
+-	"homelab/details/tofufiles"
+ )
+ 
+ // File is where the pins are, from the top of the repository.
+@@ -40,10 +32,6 @@ import (
+ // own machinery did not see.
+ const File = "management/pins.json"
+ 
+-// ModulesDir is where the modules a site's roots call are, from the top of
+-// the repository.
+-const ModulesDir = "modules/infrastructure"
+-
+ // Pins is the estate's default and each site's own.
+ type Pins struct {
+ 	// Default is the commit a site runs unless it names another. A site
+@@ -90,135 +78,3 @@ func (p Pins) For(site string) string {
+ 	}
+ 	return p.Default
+ }
+-
+-// reach is a string in a module's code that leaves the module's directory:
+-// "${path.module}/../../../<somewhere>". The climb, and what follows it.
+-var reach = regexp.MustCompile(`\$\{path\.module\}((?:/\.\.)+)/([^"\s]*)`)
+-
+-// Reads is what a pinned tree is read for: the modules, and every path a
+-// module names outside its own directory, from the top of the repository.
+-// A path is a file, a directory - everything beneath it - or a pattern in
+-// which * stands for one directory or file name.
+-//
+-// Read off the modules' own code, from the OpenTofu files given
+-// (tofufiles.Read), so a module that starts reading something new is seen
+-// without anybody adding it to a list. A reach this cannot follow - one
+-// built from a value, so that where it leads is not written down - is an
+-// error rather than a path passed over: a change to whatever it names would
+-// reach no site and nothing would say so.
+-func Reads(files map[string]string) ([]string, error) {
+-	seen := map[string]bool{ModulesDir: true}
+-	for rel, body := range files {
+-		if !within(ModulesDir, rel) || !strings.HasSuffix(rel, ".tf") {
+-			continue
+-		}
+-		for _, m := range reach.FindAllStringSubmatch(tofufiles.Code(body), -1) {
+-			if strings.Contains(m[2], "${") {
+-				return nil, fmt.Errorf("%s reaches outside its module through %q, and where that leads is not written in the path. Write the path whole, from the repository's top, so that a change to what it names is known to change what a site runs", rel, m[0])
+-			}
+-			to := path.Join(path.Dir(rel), strings.TrimPrefix(m[1], "/"), m[2])
+-			if strings.HasPrefix(to, "../") || to == ".." {
+-				return nil, fmt.Errorf("%s reaches %q, which is outside the repository", rel, m[0])
+-			}
+-			if !within(ModulesDir, to) {
+-				seen[to] = true
+-			}
+-		}
+-	}
+-	out := make([]string, 0, len(seen))
+-	for p := range seen {
+-		out = append(out, p)
+-	}
+-	sort.Strings(out)
+-	return out, nil
+-}
+-
+-// within reports whether p is the path dir names or beneath it.
+-func within(dir, p string) bool { return p == dir || strings.HasPrefix(p, dir+"/") }
+-
+-// matches reports whether a file is one a read names.
+-func matches(read, file string) bool {
+-	if strings.ContainsAny(read, "*?[") {
+-		ok, err := path.Match(read, file)
+-		return err == nil && ok
+-	}
+-	return within(read, file)
+-}
+-
+-// Git runs git in the repository and returns its output. A parameter so a
+-// test can say what the repository holds.
+-type Git func(args ...string) ([]byte, error)
+-
+-// Changed reports whether anything a pinned tree is read for differs between
+-// two commits, and names the first few files that do.
+-func Changed(git Git, from, to string, reads []string) ([]string, error) {
+-	before, err := readFiles(git, from, reads)
+-	if err != nil {
+-		return nil, err
+-	}
+-	after, err := readFiles(git, to, reads)
+-	if err != nil {
+-		return nil, err
+-	}
+-	var differ []string
+-	for file, hash := range after {
+-		if before[file] != hash {
+-			differ = append(differ, file)
+-		}
+-	}
+-	for file := range before {
+-		if _, still := after[file]; !still {
+-			differ = append(differ, file)
+-		}
+-	}
+-	sort.Strings(differ)
+-	return differ, nil
+-}
+-
+-// readFiles is every file at a commit that a pinned tree is read for, with
+-// the hash of its contents.
+-func readFiles(git Git, commit string, reads []string) (map[string]string, error) {
+-	out, err := git("ls-tree", "-r", "--full-tree", commit)
+-	if err != nil {
+-		return nil, fmt.Errorf("listing the files at %s: %w", commit, err)
+-	}
+-	files := map[string]string{}
+-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+-		// <mode> <type> <hash>\t<path>
+-		meta, file, ok := strings.Cut(line, "\t")
+-		fields := strings.Fields(meta)
+-		if !ok || len(fields) != 3 {
+-			continue
+-		}
+-		for _, read := range reads {
+-			if matches(read, file) {
+-				files[file] = fields[2]
+-				break
+-			}
+-		}
+-	}
+-	if len(files) == 0 {
+-		return nil, fmt.Errorf("%s holds nothing a site reads, which is not this repository at any commit", commit)
+-	}
+-	return files, nil
+-}
+-
+-// defaultLine is the one line of the pins file that names the default.
+-var defaultLine = regexp.MustCompile(`(?m)^(\s*"default":\s*")[0-9a-f]{40}(",?\s*)$`)
+-
+-// MoveDefault is the pins file's text with the default moved to a commit, and
+-// nothing else changed: one line, so the pull request a person reviews is
+-// the move and nothing beside it.
+-func MoveDefault(body []byte, sha string) ([]byte, error) {
+-	if !gitenv.IsCommit(sha) {
+-		return nil, fmt.Errorf("%q is not a full commit hash, and a pin is nothing else", sha)
+-	}
+-	if n := len(defaultLine.FindAll(body, -1)); n != 1 {
+-		return nil, fmt.Errorf("%s names its default on %d lines this can read, so there is no telling which to move", File, n)
+-	}
+-	moved := defaultLine.ReplaceAll(body, []byte("${1}"+sha+"${2}"))
+-	if _, err := Parse(moved); err != nil {
+-		return nil, err
+-	}
+-	return moved, nil
+-}
+diff --git a/scripts/details/pins/pins_test.go b/scripts/details/pins/pins_test.go
+index 3a17098..7c79646 100644
+--- a/scripts/details/pins/pins_test.go
++++ b/scripts/details/pins/pins_test.go
+@@ -1,15 +1,11 @@
+ package pins
+ 
+ import (
+-	"errors"
+ 	"fmt"
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
+ 	"testing"
+-
+-	"homelab/details/repopath"
+-	"homelab/details/tofufiles"
+ )
+ 
+ const (
+@@ -61,185 +57,3 @@ func TestParseReadsTheDefaultAndEachSitesOwn(t *testing.T) {
+ 		t.Errorf("read as %+v, %v", p, err)
+ 	}
+ }
+-
+-// What a pinned tree is read for is the modules and every path a module
+-// names outside its own directory - a file, a directory or a pattern - and
+-// nothing a root, a test or a comment names.
+-func TestReadsIsWhatTheModulesReachFor(t *testing.T) {
+-	files := map[string]string{
+-		ModulesDir + "/one/main.tf":      "x = file(\"${path.module}/../../../ground/thing.yaml\")\ny = \"${path.module}/../../../ground/apps/*/declared.json\"\n# z = \"${path.module}/../../../commented/out\"\n",
+-		ModulesDir + "/one/deep/more.tf": "d = \"${path.module}/../../../../other/dir\"\ninside = \"${path.module}/files/local.txt\"\n",
+-		ModulesDir + "/two/main.tf":      "sibling = \"${path.module}/../one\"\nagain = file(\"${path.module}/../../../ground/thing.yaml\")\n",
+-		ModulesDir + "/two/t.tftest.hcl": "t = \"${path.module}/../../../only/a/test\"\n",
+-		"ground/site/other.tf":           "r = \"${path.module}/../../not/a/module\"\n",
+-	}
+-	got, err := Reads(files)
+-	if err != nil {
+-		t.Fatal(err)
+-	}
+-	want := []string{"ground/apps/*/declared.json", "ground/thing.yaml", ModulesDir, "other/dir"}
+-	if strings.Join(got, "|") != strings.Join(want, "|") {
+-		t.Errorf("got  %v\nwant %v", got, want)
+-	}
+-
+-	for name, c := range map[string]struct{ body, want string }{
+-		"through a value":       {"x = \"${path.module}/../../../${local.where}/thing\"\n", "not written in the path"},
+-		"a value further along": {"x = \"${path.module}/../../../ground/${var.site}/thing\"\n", "not written in the path"},
+-		"out of the repository": {"x = \"${path.module}/../../../../../elsewhere\"\n", "outside the repository"},
+-	} {
+-		_, err := Reads(map[string]string{ModulesDir + "/one/main.tf": c.body})
+-		if err == nil || !strings.Contains(err.Error(), c.want) {
+-			t.Errorf("%s: %v", name, err)
+-		}
+-	}
+-}
+-
+-// The repository's own modules are readable this way: every reach is a whole
+-// path, and each names something that is there.
+-func TestTheRepositorysModulesSayWhatTheyReach(t *testing.T) {
+-	root, err := repopath.Root()
+-	if err != nil {
+-		t.Fatal(err)
+-	}
+-	files, err := tofufiles.Read(root)
+-	if err != nil {
+-		t.Fatal(err)
+-	}
+-	reads, err := Reads(files)
+-	if err != nil {
+-		t.Fatal(err)
+-	}
+-	if len(reads) < 2 {
+-		t.Fatalf("the modules are read as reaching nothing but themselves (%v), and they read the manifests Flux is started from", reads)
+-	}
+-	for _, read := range reads {
+-		found, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(read)))
+-		if err != nil || len(found) == 0 {
+-			// A pattern over applications matches nothing in an estate
+-			// that has none; a path with no pattern has to be there.
+-			if strings.ContainsAny(read, "*?[") {
+-				continue
+-			}
+-			t.Errorf("a module reaches %s, which is not in the repository (%v)", read, err)
+-		}
+-	}
+-}
+-
+-// tree is a git that answers ls-tree for the commits a test describes.
+-func tree(commits map[string]map[string]string) Git {
+-	return func(args ...string) ([]byte, error) {
+-		if len(args) != 4 || args[0] != "ls-tree" {
+-			return nil, fmt.Errorf("unexpected git %v", args)
+-		}
+-		files, ok := commits[args[3]]
+-		if !ok {
+-			return nil, errors.New("no such commit")
+-		}
+-		var out strings.Builder
+-		for file, hash := range files {
+-			fmt.Fprintf(&out, "100644 blob %s\t%s\n", hash, file)
+-		}
+-		return []byte(out.String()), nil
+-	}
+-}
+-
+-// Two commits differ, for a site, when a file its tree is read for was
+-// changed, added or removed - and in nothing else.
+-func TestChangedSeesOnlyWhatAPinnedTreeIsReadFor(t *testing.T) {
+-	reads := []string{"ground/apps/*/declared.json", "ground/thing.yaml", ModulesDir}
+-	base := map[string]string{
+-		ModulesDir + "/one/main.tf":      "h1",
+-		"ground/thing.yaml":              "h2",
+-		"ground/apps/a/declared.json":    "h3",
+-		"ground/apps/a/manifests/x.yaml": "h4",
+-		"notes/prose.md":                 "h5",
+-	}
+-	with := func(change func(map[string]string)) map[string]string {
+-		out := map[string]string{}
+-		for k, v := range base {
+-			out[k] = v
+-		}
+-		change(out)
+-		return out
+-	}
+-	for name, c := range map[string]struct {
+-		to   map[string]string
+-		want string
+-	}{
+-		"the same tree":                   {with(func(map[string]string) {}), ""},
+-		"a file nothing reads":            {with(func(m map[string]string) { m["notes/prose.md"] = "x" }), ""},
+-		"an application's manifests":      {with(func(m map[string]string) { m["ground/apps/a/manifests/x.yaml"] = "x" }), ""},
+-		"a file beside one that is read":  {with(func(m map[string]string) { m["ground/thing.yaml.bak"] = "x" }), ""},
+-		"a declaration two levels down":   {with(func(m map[string]string) { m["ground/apps/a/deep/declared.json"] = "x" }), ""},
+-		"a module":                        {with(func(m map[string]string) { m[ModulesDir+"/one/main.tf"] = "x" }), ModulesDir + "/one/main.tf"},
+-		"a new file in a module":          {with(func(m map[string]string) { m[ModulesDir+"/two/new.tf"] = "x" }), ModulesDir + "/two/new.tf"},
+-		"a file a module reads":           {with(func(m map[string]string) { m["ground/thing.yaml"] = "x" }), "ground/thing.yaml"},
+-		"an application's declaration":    {with(func(m map[string]string) { m["ground/apps/a/declared.json"] = "x" }), "ground/apps/a/declared.json"},
+-		"a new application's declaration": {with(func(m map[string]string) { m["ground/apps/b/declared.json"] = "x" }), "ground/apps/b/declared.json"},
+-		"a declaration taken away":        {with(func(m map[string]string) { delete(m, "ground/apps/a/declared.json") }), "ground/apps/a/declared.json"},
+-	} {
+-		got, err := Changed(tree(map[string]map[string]string{shaA: base, shaB: c.to}), shaA, shaB, reads)
+-		if err != nil {
+-			t.Errorf("%s: %v", name, err)
+-			continue
+-		}
+-		if strings.Join(got, ",") != c.want {
+-			t.Errorf("%s: differs in %v, want %q", name, got, c.want)
+-		}
+-	}
+-
+-	// A commit that cannot be listed, or holds nothing a site reads, is an
+-	// error and never "nothing changed".
+-	if _, err := Changed(tree(map[string]map[string]string{shaA: base}), shaA, shaB, reads); err == nil {
+-		t.Error("a commit that could not be listed was compared")
+-	}
+-	if _, err := Changed(tree(map[string]map[string]string{shaA: base}), shaB, shaA, reads); err == nil {
+-		t.Error("a pin that could not be listed was compared")
+-	}
+-	if _, err := Changed(tree(map[string]map[string]string{shaA: base, shaB: {"notes/prose.md": "h"}}), shaA, shaB, reads); err == nil {
+-		t.Error("a commit holding nothing a site reads was compared")
+-	}
+-}
+-
+-// Moving the default changes that one line and nothing else, in the
+-// repository's own file and in one with a site held at its own commit.
+-func TestMoveDefaultChangesOneLine(t *testing.T) {
+-	root, err := repopath.Root()
+-	if err != nil {
+-		t.Fatal(err)
+-	}
+-	real, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(File)))
+-	if err != nil {
+-		t.Fatal(err)
+-	}
+-	held := text(shaA, "\n    \"site7\": \""+shaA+"\"\n  ")
+-	for name, before := range map[string]string{"the repository's": string(real), "one with a site held": held} {
+-		after, err := MoveDefault([]byte(before), shaB)
+-		if err != nil {
+-			t.Fatalf("%s: %v", name, err)
+-		}
+-		b, a := strings.Split(before, "\n"), strings.Split(string(after), "\n")
+-		changed := 0
+-		for i := range b {
+-			if len(a) != len(b) || a[i] != b[i] {
+-				changed++
+-			}
+-		}
+-		p, err := Parse(after)
+-		if changed != 1 || err != nil || p.Default != shaB {
+-			t.Errorf("%s: %d line(s) changed, default %s, %v:\n%s", name, changed, p.Default, err, after)
+-		}
+-		if name == "one with a site held" && p.For("site7") != shaA {
+-			t.Errorf("moving the default moved a site held at its own commit:\n%s", after)
+-		}
+-	}
+-	for name, c := range map[string]struct{ body, sha string }{
+-		"a commit that is not one":            {held, "main"},
+-		"a file with no default":              {`{"per_site": {}}`, shaB},
+-		"a default on one line with the rest": {strings.ReplaceAll(text(shaA, ""), "\n", " "), shaB},
+-	} {
+-		if _, err := MoveDefault([]byte(c.body), c.sha); err == nil {
+-			t.Errorf("%s was moved", name)
+-		}
+-	}
+-}
+diff --git a/scripts/details/platform/platform.go b/scripts/details/platform/platform.go
+new file mode 100644
+index 0000000..f26929e
+--- /dev/null
++++ b/scripts/details/platform/platform.go
+@@ -0,0 +1,171 @@
++// Package platform is the estate's platform as it is released: what a
++// release holds, and what a version of it is called.
++//
++// A site runs the estate's modules (modules/infrastructure/) and nothing
++// built for it alone. So that merging a change does nothing to production,
++// the modules are not consumed from the repository: every merge that changes
++// them publishes a release - one immutable package in the registry, under a
++// version - and a site runs the version its own config pins. Releasing to
++// production is changing that line.
++//
++// A release is more than the modules' own directory, because a module reads
++// more than itself: what applications declare, the manifests Flux is started
++// from, the CNI's. Those go in the package at the paths they have in the
++// repository, so a module finds them inside the package exactly as it finds
++// them in a checkout.
++//
++// What a release holds is written in one file, the manifest, because the
++// fabricator's packing step is shell and has to be told. That list cannot go
++// stale: Reads is what the modules actually reach for, read off their code,
++// and the tests hold the manifest to it in both directions - and planning
++// both roots from a tree holding the package alone
++// (scripts/contractor/internal/phases) proves it is enough.
++package platform
++
++import (
++	"encoding/json"
++	"fmt"
++	"os"
++	"path"
++	"path/filepath"
++	"regexp"
++	"sort"
++	"strings"
++
++	"homelab/details/tofufiles"
++)
++
++// ModulesDir is where the modules a site's roots call are, from the top of
++// the repository.
++const ModulesDir = "modules/infrastructure"
++
++// Manifest is the file that says what a release of the platform holds, from
++// the top of the repository.
++const Manifest = ModulesDir + "/release.json"
++
++// Version is what a release is called: the year and month it was published
++// in, and its number within that month - v2026.10.1, then v2026.10.2. No
++// leading zero on the month, so that the name is also a semantic version and
++// every tool that orders versions orders these.
++var Version = regexp.MustCompile(`^v(20[0-9]{2})\.([1-9]|1[0-2])\.([1-9][0-9]*)$`)
++
++// Release is the manifest.
++type Release struct {
++	// Comment is for the reader of the file. Nothing reads it.
++	Comment []string `json:"_comment,omitempty"`
++	// Holds is every path the package carries, from the top of the
++	// repository: a file, a directory - everything beneath it - or a
++	// pattern in which * stands for one directory or file name.
++	Holds []string `json:"holds"`
++}
++
++// Read loads the manifest and refuses one that names nothing.
++func Read(repoRoot string) (Release, error) {
++	var r Release
++	raw, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(Manifest)))
++	if err != nil {
++		return r, fmt.Errorf("reading what a platform release holds: %w", err)
++	}
++	dec := json.NewDecoder(strings.NewReader(string(raw)))
++	dec.DisallowUnknownFields()
++	if err := dec.Decode(&r); err != nil {
++		return r, fmt.Errorf("%s is not a manifest this reads: %w", Manifest, err)
++	}
++	if len(r.Holds) == 0 {
++		return r, fmt.Errorf("%s holds nothing, so a release of it would be an empty package", Manifest)
++	}
++	return r, nil
++}
++
++// reach is a string in a module's code that leaves the module's directory:
++// "${path.module}/../../../<somewhere>". The climb, and what follows it.
++var reach = regexp.MustCompile(`\$\{path\.module\}((?:/\.\.)+)/?([^"\s]*)`)
++
++// Reads is what the modules are read with: the modules, and every path a
++// module names outside its own directory, from the top of the repository,
++// in the form a manifest's holds takes.
++//
++// Read off the modules' own code, from the OpenTofu files given
++// (tofufiles.Read), so a module that starts reading something new is seen
++// without anybody remembering to say so. A reach this cannot follow - one
++// built from a value, so that where it leads is not written down - is an
++// error rather than a path passed over: the release would be published
++// without whatever it names, and the first site to run it would find out.
++func Reads(files map[string]string) ([]string, error) {
++	seen := map[string]bool{ModulesDir: true}
++	for rel, body := range files {
++		if !within(ModulesDir, rel) || !strings.HasSuffix(rel, ".tf") {
++			continue
++		}
++		for _, m := range reach.FindAllStringSubmatch(tofufiles.Code(body), -1) {
++			if strings.Contains(m[2], "${") {
++				return nil, fmt.Errorf("%s reaches outside its module through %q, and where that leads is not written in the path. Write the path whole, from the repository's top, so that what it names can be put in the release", rel, m[0])
++			}
++			to := path.Join(path.Dir(rel), strings.TrimPrefix(m[1], "/"), m[2])
++			if strings.HasPrefix(to, "../") || to == ".." {
++				return nil, fmt.Errorf("%s reaches %q, which is outside the repository", rel, m[0])
++			}
++			if to == "." {
++				return nil, fmt.Errorf("%s reaches %q, which is the whole repository and names nothing a release could hold. Write the path to what is read", rel, m[0])
++			}
++			if !within(ModulesDir, to) {
++				seen[to] = true
++			}
++		}
++	}
++	// A file inside a directory that is also read is already held.
++	var out []string
++	for p := range seen {
++		covered := false
++		for other := range seen {
++			if other != p && !strings.ContainsAny(other, "*?[") && within(other, p) {
++				covered = true
++			}
++		}
++		if !covered {
++			out = append(out, p)
++		}
++	}
++	sort.Strings(out)
++	return out, nil
++}
++
++// within reports whether p is the path dir names or beneath it.
++func within(dir, p string) bool { return p == dir || strings.HasPrefix(p, dir+"/") }
++
++// Holds reports whether a release holding these paths carries a file.
++func Holds(holds []string, file string) bool {
++	for _, held := range holds {
++		if strings.ContainsAny(held, "*?[") {
++			if ok, err := path.Match(held, file); err == nil && ok {
++				return true
++			}
++			continue
++		}
++		if within(held, file) {
++			return true
++		}
++	}
++	return false
++}
++
++// Files is the tracked files a release of the platform holds, as the
++// manifest and git have them now: what the fabricator would pack from this
++// checkout.
++func Files(repoRoot string, tracked []string) ([]string, error) {
++	release, err := Read(repoRoot)
++	if err != nil {
++		return nil, err
++	}
++	var out []string
++	for _, file := range tracked {
++		if Holds(release.Holds, file) {
++			out = append(out, file)
++		}
++	}
++	if len(out) == 0 {
++		return nil, fmt.Errorf("%s holds no tracked file, so a release of it would be an empty package", Manifest)
++	}
++	sort.Strings(out)
++	return out, nil
++}
+diff --git a/scripts/details/platform/platform_test.go b/scripts/details/platform/platform_test.go
+new file mode 100644
+index 0000000..0cf3a5e
+--- /dev/null
++++ b/scripts/details/platform/platform_test.go
+@@ -0,0 +1,180 @@
++package platform
++
++import (
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"homelab/details/repopath"
++	"homelab/details/tofufiles"
++)
++
++// What the modules are read with is the modules and every path a module
++// names outside its own directory - a file, a directory or a pattern - and
++// nothing a root, a test or a comment names. A file inside a directory that
++// is itself read is not listed twice.
++func TestReadsIsWhatTheModulesReachFor(t *testing.T) {
++	files := map[string]string{
++		ModulesDir + "/one/main.tf":      "x = file(\"${path.module}/../../../ground/thing.yaml\")\ny = \"${path.module}/../../../ground/apps/*/declared.json\"\n# z = \"${path.module}/../../../commented/out\"\n",
++		ModulesDir + "/one/deep/more.tf": "d = \"${path.module}/../../../../other/dir\"\ne = file(\"${path.module}/../../../../other/dir/inside.txt\")\ninside = \"${path.module}/files/local.txt\"\n",
++		ModulesDir + "/two/main.tf":      "sibling = \"${path.module}/../one\"\nagain = file(\"${path.module}/../../../ground/thing.yaml\")\n",
++		ModulesDir + "/two/t.tftest.hcl": "t = \"${path.module}/../../../only/a/test\"\n",
++		"ground/site/other.tf":           "r = \"${path.module}/../../not/a/module\"\n",
++	}
++	got, err := Reads(files)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := []string{"ground/apps/*/declared.json", "ground/thing.yaml", ModulesDir, "other/dir"}
++	if strings.Join(got, "|") != strings.Join(want, "|") {
++		t.Errorf("got  %v\nwant %v", got, want)
++	}
++
++	for name, c := range map[string]struct{ body, want string }{
++		"through a value":       {"x = \"${path.module}/../../../${local.where}/thing\"\n", "not written in the path"},
++		"a value further along": {"x = \"${path.module}/../../../ground/${var.site}/thing\"\n", "not written in the path"},
++		"out of the repository": {"x = \"${path.module}/../../../../../elsewhere\"\n", "outside the repository"},
++		"the repository's top":  {"x = fileset(\"${path.module}/../../..\", \"**\")\n", "the whole repository"},
++		"the top, with a slash": {"x = trimprefix(y, \"${path.module}/../../../\")\n", "the whole repository"},
++	} {
++		_, err := Reads(map[string]string{ModulesDir + "/one/main.tf": c.body})
++		if err == nil || !strings.Contains(err.Error(), c.want) {
++			t.Errorf("%s: %v", name, err)
++		}
++	}
++}
++
++// A release holds a file when a path it names is that file, a directory
++// above it, or a pattern it matches - a pattern's * standing for one name,
++// never for a path.
++func TestHoldsIsAFileADirectoryOrAPattern(t *testing.T) {
++	holds := []string{"ground/thing.yaml", "ground/dir", "ground/apps/*/declared.json"}
++	for file, want := range map[string]bool{
++		"ground/thing.yaml":                true,
++		"ground/thing.yaml.bak":            false,
++		"ground/dir/a.txt":                 true,
++		"ground/dir/deep/b.txt":            true,
++		"ground/directory/c.txt":           false,
++		"ground/apps/a/declared.json":      true,
++		"ground/apps/a/manifests/x.yaml":   false,
++		"ground/apps/a/deep/declared.json": false,
++		"elsewhere/thing.yaml":             false,
++	} {
++		if got := Holds(holds, file); got != want {
++			t.Errorf("%s: held=%v, want %v", file, got, want)
++		}
++	}
++}
++
++// A version is the year, the month with no leading zero, and a number that
++// starts at one; and nothing else is one.
++func TestVersionIsYearMonthAndNumber(t *testing.T) {
++	for _, ok := range []string{"v2026.10.1", "v2026.1.1", "v2027.12.40"} {
++		if !Version.MatchString(ok) {
++			t.Errorf("%s was refused", ok)
++		}
++	}
++	for _, bad := range []string{"2026.10.1", "v2026.01.1", "v2026.13.1", "v2026.0.1", "v2026.10.0", "v2026.10", "v26.10.1", "v2026.10.1-2", "latest", "v2026.10.01"} {
++		if Version.MatchString(bad) {
++			t.Errorf("%s was accepted", bad)
++		}
++	}
++}
++
++// The manifest is read whole, and one that holds nothing or carries a field
++// nothing reads is refused.
++func TestReadRefusesAManifestThatSaysNothing(t *testing.T) {
++	for name, c := range map[string]struct {
++		body string
++		ok   bool
++	}{
++		"what it holds":         {`{"_comment": ["x"], "holds": ["a", "b/*"]}`, true},
++		"holding nothing":       {`{"holds": []}`, false},
++		"an empty manifest":     {`{}`, false},
++		"a field nothing reads": {`{"holds": ["a"], "also": 1}`, false},
++		"not JSON":              {`holds: a`, false},
++	} {
++		root := t.TempDir()
++		path := filepath.Join(root, filepath.FromSlash(Manifest))
++		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(path, []byte(c.body), 0o600); err != nil {
++			t.Fatal(err)
++		}
++		r, err := Read(root)
++		if (err == nil) != c.ok {
++			t.Errorf("%s: %+v, %v", name, r, err)
++		}
++		if c.ok && len(r.Holds) != 2 {
++			t.Errorf("%s: read as %+v", name, r)
++		}
++	}
++	if _, err := Read(t.TempDir()); err == nil {
++		t.Error("a repository with no manifest was read")
++	}
++}
++
++// The repository's manifest holds exactly what its modules reach for: a path
++// a module reads and the manifest lacks would be missing from every release,
++// and one the manifest names and nothing reads is carried for no reason.
++func TestTheManifestHoldsExactlyWhatTheModulesReachFor(t *testing.T) {
++	root, err := repopath.Root()
++	if err != nil {
++		t.Fatal(err)
++	}
++	files, err := tofufiles.Read(root)
++	if err != nil {
++		t.Fatal(err)
++	}
++	reads, err := Reads(files)
++	if err != nil {
++		t.Fatal(err)
++	}
++	release, err := Read(root)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if strings.Join(release.Holds, "\n") != strings.Join(reads, "\n") {
++		t.Errorf("%s holds\n  %s\nand the modules reach for\n  %s\n\nA release is packed from the manifest, so it must name exactly what the modules read, in order.",
++			Manifest, strings.Join(release.Holds, "\n  "), strings.Join(reads, "\n  "))
++	}
++	// And each names something that is there. A pattern over applications
++	// matches nothing in an estate that has none; a path with no pattern has
++	// to exist.
++	for _, held := range release.Holds {
++		found, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(held)))
++		if (err != nil || len(found) == 0) && !strings.ContainsAny(held, "*?[") {
++			t.Errorf("the manifest holds %s, which is not in the repository (%v)", held, err)
++		}
++	}
++}
++
++// The files a release holds are the tracked files its manifest names, in
++// order, and a manifest that holds none of them is refused.
++func TestFilesIsTheTrackedFilesTheManifestHolds(t *testing.T) {
++	root := t.TempDir()
++	write := func(body string) {
++		path := filepath.Join(root, filepath.FromSlash(Manifest))
++		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
++			t.Fatal(err)
++		}
++	}
++	tracked := []string{"ground/thing.yaml", "mods/b.tf", "notes/prose.md", "mods/a.tf", "ground/other.yaml"}
++	write(`{"holds": ["mods", "ground/thing.yaml"]}`)
++	got, err := Files(root, tracked)
++	if err != nil || strings.Join(got, ",") != "ground/thing.yaml,mods/a.tf,mods/b.tf" {
++		t.Errorf("got %v, %v", got, err)
++	}
++	write(`{"holds": ["nowhere"]}`)
++	if got, err := Files(root, tracked); err == nil {
++		t.Errorf("a manifest holding nothing that is tracked gave %v", got)
++	}
++	if _, err := Files(t.TempDir(), tracked); err == nil {
++		t.Error("a repository with no manifest gave a release")
++	}
++}
+diff --git a/scripts/details/workorders/workorders.go b/scripts/details/workorders/workorders.go
+index e6e49f8..8fa00a8 100644
+--- a/scripts/details/workorders/workorders.go
++++ b/scripts/details/workorders/workorders.go
+@@ -25,8 +25,13 @@ const Path = "scripts/work-orders.json"
+ // Order is one thing the fabricator builds.
+ type Order struct {
+ 	Name string `json:"name"`
+-	// The build context, holding the Dockerfile.
+-	Context string `json:"context"`
++	// The build context, holding the Dockerfile. Empty for an order that
++	// builds no image.
++	Context string `json:"context,omitempty"`
++	// The manifest of a package the order publishes: a set of the
++	// repository's own files, released whole under a version. Empty for an
++	// order that publishes none.
++	Package string `json:"package,omitempty"`
+ 	// The order's own pins file, beside the estate's. Empty for an order
+ 	// pinned by the estate's alone.
+ 	Pins    string   `json:"pins,omitempty"`
+@@ -59,6 +64,13 @@ func Parse(body []byte) ([]Order, error) {
+ 	if len(f.Orders) == 0 {
+ 		return nil, fmt.Errorf("%s holds no orders", Path)
+ 	}
++	for _, o := range f.Orders {
++		// An order builds an image or publishes a package: one of them, so
++		// that what it is for is never a guess.
++		if o.Name == "" || (o.Context == "") == (o.Package == "") {
++			return nil, fmt.Errorf("%s: the order %q must have a name and exactly one of a context, to build an image from, and a package, to publish", Path, o.Name)
++		}
++	}
+ 	return f.Orders, nil
+ }
+ 
+diff --git a/scripts/details/workorders/workorders_test.go b/scripts/details/workorders/workorders_test.go
+index 0496222..a7b3a77 100644
+--- a/scripts/details/workorders/workorders_test.go
++++ b/scripts/details/workorders/workorders_test.go
+@@ -64,6 +64,19 @@ func TestReadRefusesWhatItCannotRead(t *testing.T) {
+ 	if _, err := Parse([]byte(`orders:`)); err == nil {
+ 		t.Error("orders that are not JSON were accepted")
+ 	}
++	// An order is for one thing: an image to build, or a package to publish.
++	for name, order := range map[string]string{
++		"neither": `{"name":"x"}`,
++		"both":    `{"name":"x","context":"a","package":"b"}`,
++		"no name": `{"context":"a"}`,
++	} {
++		if _, err := Parse([]byte(`{"orders":[` + order + `]}`)); err == nil {
++			t.Errorf("an order with %s was accepted", name)
++		}
++	}
++	if got, err := Parse([]byte(`{"orders":[{"name":"x","package":"b"}]}`)); err != nil || got[0].Package != "b" || got[0].Context != "" {
++		t.Errorf("an order that publishes a package was read as %+v, %v", got, err)
++	}
+ 	write(t, root, Path, `{"orders":[{"name":"gadget","context":"tools/gadget"}]}`)
+ 	write(t, root, applications.Dir+"/broken/"+applications.Declaration, `{"nobody_reads": true}`)
+ 	if _, err := Read(root); err == nil {
+@@ -77,9 +90,7 @@ func TestTheRepositorysWorkOrdersRead(t *testing.T) {
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+-	for _, o := range orders {
+-		if o.Name == "" || o.Context == "" {
+-			t.Errorf("an order reads with no name or context: %+v", o)
+-		}
++	if len(orders) == 0 {
++		t.Fatal("the repository reads as having no orders")
+ 	}
+ }
+diff --git a/scripts/procurement/deliver-modules.go b/scripts/procurement/deliver-modules.go
+deleted file mode 100644
+index 2ed39c6..0000000
+--- a/scripts/procurement/deliver-modules.go
++++ /dev/null
+@@ -1,129 +0,0 @@
+-package main
+-
+-import (
+-	"bytes"
+-	"flag"
+-	"fmt"
+-	"os"
+-	"os/exec"
+-	"strings"
+-
+-	"homelab/details/gitenv"
+-	"homelab/details/pins"
+-	"homelab/details/repopath"
+-	"homelab/details/tofufiles"
+-)
+-
+-// deliver-modules brings a change to what a site runs to the estate's gate.
+-//
+-// A site runs the estate's modules as they were at a pinned commit, so a
+-// change to a module reaches no site when it merges. It reaches them when
+-// the estate's default pin moves, and moving it was a line somebody edited
+-// by hand in a second pull request (#602). This is that edit: after a merge
+-// it moves the default to the merged commit, in the text it is given, when
+-// anything a pinned tree is read for differs between the two - the modules,
+-// and whatever they reach outside themselves (homelab/details/pins) - and
+-// leaves the text alone when nothing does. The workflow around it opens the
+-// pull request, as it does for a release.
+-//
+-// Merging that pull request is what moves the sites, and it stays a person's
+-// decision: the pull request's plan shows what the move would do to each
+-// site, and superintendent enforce-standing-order never passes it for a
+-// merge without review. A site held at a commit of its own is not moved.
+-//
+-// Text in and text out, like deliver: it changes one line, so the diff a
+-// person reviews is the move and nothing beside it.
+-func deliverModules(args []string) int {
+-	fs := flag.NewFlagSet("deliver-modules", flag.ContinueOnError)
+-	file := fs.String("pins", "", "the pins file to move the default in")
+-	to := fs.String("to", "", "the commit that has just merged")
+-	root := fs.String("root", "", "the repository to read (default: this one)")
+-	if err := fs.Parse(args); err != nil {
+-		return 2
+-	}
+-	if *file == "" || *to == "" {
+-		fmt.Fprintln(os.Stderr, "procurement deliver-modules: -pins and -to are both required")
+-		return 2
+-	}
+-	if *root == "" {
+-		found, err := repopath.Root()
+-		if err != nil {
+-			fmt.Fprintln(os.Stderr, "procurement deliver-modules:", err)
+-			return 1
+-		}
+-		*root = found
+-	}
+-	git := func(args ...string) ([]byte, error) {
+-		// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+-		cmd := exec.Command("git", append([]string{"-C", *root}, args...)...)
+-		var stderr bytes.Buffer
+-		cmd.Stderr = &stderr
+-		out, err := cmd.Output()
+-		if err != nil {
+-			return nil, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+-		}
+-		return out, nil
+-	}
+-	outcome, err := moveDefaultPin(*root, *file, *to, git)
+-	if err != nil {
+-		fmt.Fprintln(os.Stderr, "procurement deliver-modules:", err)
+-		return 1
+-	}
+-	fmt.Println(outcome)
+-	return 0
+-}
+-
+-// moveDefaultPin moves the default in the pins file at path to a commit when
+-// what a site reads differs between the two, and says what it did.
+-func moveDefaultPin(root, path, to string, git pins.Git) (string, error) {
+-	if !gitenv.IsCommit(to) {
+-		return "", fmt.Errorf("%q is not a full commit hash, and a pin is nothing else", to)
+-	}
+-	body, err := os.ReadFile(path)
+-	if err != nil {
+-		return "", err
+-	}
+-	current, err := pins.Parse(body)
+-	if err != nil {
+-		return "", err
+-	}
+-	if current.Default == to {
+-		return "the default pin is already " + to[:7], nil
+-	}
+-	// A checkout made for one commit does not hold every other: a runner's
+-	// is shallow, and a commit a squash merge left behind is on no branch.
+-	for _, commit := range []string{current.Default, to} {
+-		if _, err := git("cat-file", "-e", commit+"^{commit}"); err != nil {
+-			if _, err := git("fetch", "--quiet", "--no-tags", "--depth", "1", "origin", commit); err != nil {
+-				return "", fmt.Errorf("this checkout does not hold %s and it could not be fetched, so there is no telling whether the pin should move: %w", commit, err)
+-			}
+-		}
+-	}
+-	files, err := tofufiles.Read(root)
+-	if err != nil {
+-		return "", err
+-	}
+-	reads, err := pins.Reads(files)
+-	if err != nil {
+-		return "", err
+-	}
+-	differ, err := pins.Changed(git, current.Default, to, reads)
+-	if err != nil {
+-		return "", err
+-	}
+-	if len(differ) == 0 {
+-		return fmt.Sprintf("nothing a site reads differs between %s and %s, so the pin stays", current.Default[:7], to[:7]), nil
+-	}
+-	moved, err := pins.MoveDefault(body, to)
+-	if err != nil {
+-		return "", err
+-	}
+-	if err := os.WriteFile(path, moved, 0o644); err != nil {
+-		return "", err
+-	}
+-	shown := differ
+-	if len(shown) > 5 {
+-		shown = append(append([]string{}, differ[:5]...), fmt.Sprintf("and %d more", len(differ)-5))
+-	}
+-	return fmt.Sprintf("moved the default pin from %s to %s: %s", current.Default[:7], to[:7], strings.Join(shown, ", ")), nil
+-}
+diff --git a/scripts/procurement/deliver-modules_test.go b/scripts/procurement/deliver-modules_test.go
+deleted file mode 100644
+index 60b3e60..0000000
+--- a/scripts/procurement/deliver-modules_test.go
++++ /dev/null
+@@ -1,187 +0,0 @@
+-package main
+-
+-import (
+-	"os"
+-	"os/exec"
+-	"path/filepath"
+-	"strings"
+-	"testing"
+-
+-	"homelab/details/pins"
+-)
+-
+-// moduleRepo is a repository with a module that reads one file outside
+-// itself, a pins file, and files no site reads.
+-func moduleRepo(t *testing.T) (root string, git func(args ...string) string, commit func(msg string, files map[string]string) string) {
+-	t.Helper()
+-	root = t.TempDir()
+-	git = func(args ...string) string {
+-		t.Helper()
+-		cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.email=a@example.com", "-c", "user.name=t"}, args...)...)
+-		out, err := cmd.CombinedOutput()
+-		if err != nil {
+-			t.Fatalf("git %v: %v\n%s", args, err, out)
+-		}
+-		return strings.TrimSpace(string(out))
+-	}
+-	git("init", "-q")
+-	commit = func(msg string, files map[string]string) string {
+-		t.Helper()
+-		for rel, body := range files {
+-			path := filepath.Join(root, filepath.FromSlash(rel))
+-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+-				t.Fatal(err)
+-			}
+-			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+-				t.Fatal(err)
+-			}
+-		}
+-		git("add", "-A")
+-		git("commit", "-qm", msg)
+-		return git("rev-parse", "HEAD")
+-	}
+-	return root, git, commit
+-}
+-
+-func runGit(root string) pins.Git {
+-	return func(args ...string) ([]byte, error) {
+-		return exec.Command("git", append([]string{"-C", root}, args...)...).Output()
+-	}
+-}
+-
+-// The default moves to the merged commit when the modules, or a file they
+-// read, changed since the pin - and stays where it is when what changed is
+-// something no site reads. Against a real repository, so the reading of the
+-// modules and of both commits is exercised and not only the rule.
+-func TestTheDefaultPinMovesWhenWhatASiteReadsChanged(t *testing.T) {
+-	root, _, commit := moduleRepo(t)
+-	module := pins.ModulesDir + "/thing/main.tf"
+-	pinned := commit("base", map[string]string{
+-		module:              "x = file(\"${path.module}/../../../ground/read.yaml\")\n",
+-		"ground/read.yaml":  "a: 1\n",
+-		"ground/other.yaml": "b: 1\n",
+-		"docs/readme.md":    "one\n",
+-	})
+-	file := filepath.Join(t.TempDir(), "pins.json")
+-	write := func() {
+-		if err := os.WriteFile(file, []byte("{\n  \"default\": \""+pinned+"\",\n  \"per_site\": {}\n}\n"), 0o644); err != nil {
+-			t.Fatal(err)
+-		}
+-	}
+-	defaultNow := func() string {
+-		body, err := os.ReadFile(file)
+-		if err != nil {
+-			t.Fatal(err)
+-		}
+-		p, err := pins.Parse(body)
+-		if err != nil {
+-			t.Fatal(err)
+-		}
+-		return p.Default
+-	}
+-	for _, c := range []struct {
+-		name     string
+-		files    map[string]string
+-		wantMove bool
+-		wantSay  string
+-	}{
+-		{"prose", map[string]string{"docs/readme.md": "two\n"}, false, "nothing a site reads differs"},
+-		{"a file beside the one a module reads", map[string]string{"ground/other.yaml": "b: 2\n"}, false, "nothing a site reads differs"},
+-		{"a module", map[string]string{module: "x = file(\"${path.module}/../../../ground/read.yaml\")\ny = 1\n"}, true, module},
+-		{"the file a module reads", map[string]string{"ground/read.yaml": "a: 2\n"}, true, "ground/read.yaml"},
+-	} {
+-		write()
+-		merged := commit(c.name, c.files)
+-		said, err := moveDefaultPin(root, file, merged, runGit(root))
+-		if err != nil {
+-			t.Fatalf("%s: %v", c.name, err)
+-		}
+-		if moved := defaultNow() == merged; moved != c.wantMove || !strings.Contains(said, c.wantSay) {
+-			t.Errorf("%s: moved=%v, want %v; said %q", c.name, moved, c.wantMove, said)
+-		}
+-		if !c.wantMove && defaultNow() != pinned {
+-			t.Errorf("%s: the file was changed although the pin stays", c.name)
+-		}
+-		// Each case starts from the pin again, with the change undone.
+-		commit("undo "+c.name, map[string]string{
+-			module: "x = file(\"${path.module}/../../../ground/read.yaml\")\n", "ground/read.yaml": "a: 1\n",
+-			"ground/other.yaml": "b: 1\n", "docs/readme.md": "one\n",
+-		})
+-	}
+-
+-	// Already there: nothing to do, and the file is not rewritten.
+-	write()
+-	if said, err := moveDefaultPin(root, file, pinned, runGit(root)); err != nil || !strings.Contains(said, "already") || defaultNow() != pinned {
+-		t.Errorf("asked to move the pin to where it is: %q, %v", said, err)
+-	}
+-}
+-
+-// What cannot be answered is an error, and the file is left as it was: a
+-// commit that is not one, a commit nobody holds, a pins file that does not
+-// read, and a module whose reach cannot be followed.
+-func TestThePinIsNotMovedOnAnAnswerItCouldNotGet(t *testing.T) {
+-	root, _, commit := moduleRepo(t)
+-	module := pins.ModulesDir + "/thing/main.tf"
+-	pinned := commit("base", map[string]string{module: "x = 1\n"})
+-	merged := commit("next", map[string]string{module: "x = 2\n"})
+-	file := filepath.Join(t.TempDir(), "pins.json")
+-	good := "{\n  \"default\": \"" + pinned + "\",\n  \"per_site\": {}\n}\n"
+-	absent := strings.Repeat("c", 40)
+-	for name, c := range map[string]struct{ body, to string }{
+-		"a branch name":            {good, "main"},
+-		"a commit nobody holds":    {good, absent},
+-		"a pin nobody holds":       {strings.Replace(good, pinned, absent, 1), merged},
+-		"a pins file not readable": {`{"default": "main"}`, merged},
+-	} {
+-		if err := os.WriteFile(file, []byte(c.body), 0o644); err != nil {
+-			t.Fatal(err)
+-		}
+-		if said, err := moveDefaultPin(root, file, c.to, runGit(root)); err == nil {
+-			t.Errorf("%s: %q", name, said)
+-		}
+-		if after, _ := os.ReadFile(file); string(after) != c.body {
+-			t.Errorf("%s: the file was changed", name)
+-		}
+-	}
+-	unfollowable := commit("a reach through a value", map[string]string{module: "x = \"${path.module}/../../../${local.where}/f\"\n"})
+-	if err := os.WriteFile(file, []byte(good), 0o644); err != nil {
+-		t.Fatal(err)
+-	}
+-	if said, err := moveDefaultPin(root, file, unfollowable, runGit(root)); err == nil || !strings.Contains(err.Error(), "reaches outside its module") {
+-		t.Errorf("a module whose reach cannot be followed: %q, %v", said, err)
+-	}
+-	if said, err := moveDefaultPin(root, filepath.Join(t.TempDir(), "absent.json"), merged, runGit(root)); err == nil {
+-		t.Errorf("a pins file that is not there: %q", said)
+-	}
+-}
+-
+-// The verb itself: it needs both flags, prints what it did, and exits
+-// non-zero when it could not tell.
+-func TestTheDeliverModulesVerb(t *testing.T) {
+-	root, _, commit := moduleRepo(t)
+-	module := pins.ModulesDir + "/thing/main.tf"
+-	pinned := commit("base", map[string]string{module: "x = 1\n"})
+-	merged := commit("next", map[string]string{module: "x = 2\n"})
+-	file := filepath.Join(t.TempDir(), "pins.json")
+-	if err := os.WriteFile(file, []byte("{\n  \"default\": \""+pinned+"\",\n  \"per_site\": {}\n}\n"), 0o644); err != nil {
+-		t.Fatal(err)
+-	}
+-	if code := deliverModules([]string{"-pins", file}); code != 2 {
+-		t.Errorf("with no commit to move to it exited %d, want 2", code)
+-	}
+-	if code := deliverModules([]string{"-no-such-flag"}); code != 2 {
+-		t.Errorf("a flag it does not have exited %d, want 2", code)
+-	}
+-	if code := deliverModules([]string{"-pins", file, "-to", "main", "-root", root}); code != 1 {
+-		t.Errorf("a commit that is not one exited %d, want 1", code)
+-	}
+-	out := captureStdout(t, func() {
+-		if code := deliverModules([]string{"-pins", file, "-to", merged, "-root", root}); code != 0 {
+-			t.Errorf("exited %d", code)
+-		}
+-	})
+-	body, _ := os.ReadFile(file)
+-	if !strings.Contains(out, "moved the default pin from "+pinned[:7]+" to "+merged[:7]) || !strings.Contains(string(body), merged) {
+-		t.Errorf("printed %q and left the file as:\n%s", out, body)
+-	}
+-}
+diff --git a/scripts/procurement/main.go b/scripts/procurement/main.go
+index 88844a1..5b5036f 100644
+--- a/scripts/procurement/main.go
++++ b/scripts/procurement/main.go
+@@ -13,7 +13,6 @@
+ //	expedite-check         has a supplier published anything? one HTTPS call, no key
+ //	expedite-release-due   is it the hour when taking delivery disturbs nobody?
+ //	deliver                move an application's pin in a site's file to a new release
+-//	deliver-modules        move the estate's default pin to the commit just merged
+ //
+ // THE BYPASS BELONGS TO THE DUTY, NOT THE ROLE. Expediting is the one duty here
+ // that holds elevated permission: its GitHub App may merge its own delivery
+@@ -69,7 +68,6 @@ func verbs() []verb {
+ 		{"expedite-check", "ask whether a supplier has published anything worth collecting", expediteCheck},
+ 		{"expedite-release-due", "say whether now is the hour an expedited delivery may disturb the site", expediteReleaseDue},
+ 		{"deliver", "move an application's pin in one site's file to the release just published", deliver},
+-		{"deliver-modules", "move the estate's default pin to the commit just merged, when what a site reads changed", deliverModules},
+ 	}
+ }
+ 
+diff --git a/scripts/procurement/main_test.go b/scripts/procurement/main_test.go
+deleted file mode 100644
+index 89631f7..0000000
+--- a/scripts/procurement/main_test.go
++++ /dev/null
+@@ -1,17 +0,0 @@
+-package main
+-
+-import (
+-	"os"
+-	"testing"
+-
+-	"homelab/details/gitenv"
+-)
+-
+-// TestMain cuts this package's tests off from the developer's git
+-// configuration: the tests of deliver-modules make real commits, and a
+-// fixture that inherited commit.gpgsign would report the machine rather than
+-// the code.
+-func TestMain(m *testing.M) {
+-	gitenv.Isolate()
+-	os.Exit(m.Run())
+-}
+diff --git a/scripts/superintendent/enforce-standing-order.go b/scripts/superintendent/enforce-standing-order.go
+index ca82844..e8bff45 100644
+--- a/scripts/superintendent/enforce-standing-order.go
++++ b/scripts/superintendent/enforce-standing-order.go
+@@ -11,7 +11,6 @@ import (
+ 	"strings"
+ 
+ 	"homelab/details/applications"
+-	"homelab/details/pins"
+ 	"homelab/details/workorders"
+ )
+ 
+@@ -38,10 +37,6 @@ import (
+ //     from the source commits the two releases were built from, which the
+ //     registry records - so a release carrying anything somebody wrote waits
+ //     for a review however it arrived.
+-//   - A pin move: procurement moving the estate's default pin to a commit
+-//     that changed what a site runs. It passes on the pull request, so a
+-//     person can merge it, and never under the bypass: which version of the
+-//     modules every site runs is nobody's to change without a review.
+ //
+ // Which line that is, is the application's to declare and never this
+ // program's to know: it reads every application's declaration as it stood at
+@@ -131,17 +126,6 @@ func enforceStandingOrder(args []string) int {
+ 		return 0
+ 	}
+ 
+-	// A pin move: procurement proposing that the sites run the modules as
+-	// they now are. A person's to merge, always.
+-	if isPinMove(changedFiles, lines) {
+-		if *bypass {
+-			fmt.Printf("REFUSED: %s moved the estate's default pin. Which modules every site runs is never changed without a review.\n", *author)
+-			return 1
+-		}
+-		fmt.Printf("%s proposed moving the estate's default pin. It is merged by a person, after its plan has been read\n", *author)
+-		return 0
+-	}
+-
+ 	// Each application's declaration as the base has it: the pull request
+ 	// cannot have written what it is judged by.
+ 	declared, err := j.declaredAt(*base)
+@@ -283,28 +267,3 @@ func sortedApplications(m map[string]applications.Application) []string {
+ 	sort.Strings(names)
+ 	return names
+ }
+-
+-// movedDefault is the one line of the pins file a pin move changes: the
+-// default, set to a full commit hash.
+-var movedDefault = regexp.MustCompile(`^[+-]\s*"default":\s*"[0-9a-f]{40}",?\s*$`)
+-
+-// isPinMove reports whether a change moves the estate's default pin and does
+-// nothing else: one file, the pins, and one line of it replaced by another.
+-// A site's own pin is not the default, and is not covered.
+-func isPinMove(files, changed []string) bool {
+-	if len(files) != 1 || files[0] != pins.File || len(changed) != 2 {
+-		return false
+-	}
+-	removed, added := 0, 0
+-	for _, line := range changed {
+-		if !movedDefault.MatchString(line) {
+-			return false
+-		}
+-		if strings.HasPrefix(line, "-") {
+-			removed++
+-		} else {
+-			added++
+-		}
+-	}
+-	return removed == 1 && added == 1
+-}
+diff --git a/scripts/superintendent/enforce-standing-order_test.go b/scripts/superintendent/enforce-standing-order_test.go
+index f909e4a..b811ef8 100644
+--- a/scripts/superintendent/enforce-standing-order_test.go
++++ b/scripts/superintendent/enforce-standing-order_test.go
+@@ -7,7 +7,6 @@ import (
+ 
+ 	"homelab/details/applications"
+ 	"homelab/details/files"
+-	"homelab/details/pins"
+ )
+ 
+ // An application as the tests declare one: kept on its supplier's build,
+@@ -259,67 +258,3 @@ func TestIsDeliveryAcceptsOnlyPinLines(t *testing.T) {
+ 		})
+ 	}
+ }
+-
+-// A pin move is the default's line replaced by another commit, in the pins
+-// file and nowhere else. Nothing rides along with it, and a site's own pin
+-// is not the default.
+-func TestIsPinMoveAcceptsOnlyTheDefaultsLine(t *testing.T) {
+-	was := `-  "default": "` + strings.Repeat("a", 40) + `",`
+-	now := `+  "default": "` + strings.Repeat("b", 40) + `",`
+-	for name, tc := range map[string]struct {
+-		files, lines []string
+-		want         bool
+-	}{
+-		"the default moved":             {[]string{pins.File}, []string{was, now}, true},
+-		"another file too":              {[]string{pins.File, "x.tf"}, []string{was, now}, false},
+-		"a file of that name elsewhere": {[]string{"elsewhere/pins.json"}, []string{was, now}, false},
+-		"a site's own pin":              {[]string{pins.File}, []string{`-    "site7": "` + strings.Repeat("a", 40) + `"`, `+    "site7": "` + strings.Repeat("b", 40) + `"`}, false},
+-		"a site's pin beside it":        {[]string{pins.File}, []string{was, now, `+    "site7": "` + strings.Repeat("b", 40) + `"`}, false},
+-		"a branch for a default":        {[]string{pins.File}, []string{was, `+  "default": "main",`}, false},
+-		"seven characters of one":       {[]string{pins.File}, []string{was, `+  "default": "bbbbbbb",`}, false},
+-		"the default removed":           {[]string{pins.File}, []string{was}, false},
+-		"two defaults added":            {[]string{pins.File}, []string{now, now}, false},
+-		"nothing at all":                {[]string{pins.File}, nil, false},
+-	} {
+-		t.Run(name, func(t *testing.T) {
+-			if got := isPinMove(tc.files, tc.lines); got != tc.want {
+-				t.Errorf("isPinMove = %v, want %v", got, tc.want)
+-			}
+-		})
+-	}
+-}
+-
+-// A pin move passes on the pull request, so a person can merge it, and is
+-// refused whenever it would be merged without a review - against a real
+-// repository, so the verb's own reading of the change is exercised.
+-func TestAPinMoveIsForAPersonAndNeverForTheBypass(t *testing.T) {
+-	git := gitRepo(t)
+-	write := func(sha, site string) {
+-		writeFile(t, pins.File, "{\n  \"default\": \""+sha+"\",\n  \"per_site\": {"+site+"}\n}\n")
+-	}
+-	write(strings.Repeat("a", 40), "")
+-	git("add", "-A")
+-	git("commit", "-qm", "base")
+-	base := git("rev-parse", "HEAD")
+-
+-	write(strings.Repeat("b", 40), "")
+-	git("commit", "-qam", "move the default")
+-	move := git("rev-parse", "HEAD")
+-
+-	write(strings.Repeat("b", 40), `"site7": "`+strings.Repeat("c", 40)+`"`)
+-	git("commit", "-qam", "move the default, and hold a site somewhere else")
+-	overreach := git("rev-parse", "HEAD")
+-
+-	args := func(head string, extra ...string) []string {
+-		return append([]string{"-author", "procurement[bot]", "-holder", "procurement[bot]", "-base", base, "-head", head}, extra...)
+-	}
+-	if code := enforceStandingOrder(args(move)); code != 0 {
+-		t.Errorf("a pin move was refused on the pull request (exit %d), so a person could never merge it", code)
+-	}
+-	if code := enforceStandingOrder(args(move, "-bypass")); code != 1 {
+-		t.Errorf("a pin move passed for a merge without review (exit %d)", code)
+-	}
+-	if code := enforceStandingOrder(args(overreach)); code != 1 {
+-		t.Errorf("a pin move that also pinned a site passed (exit %d); only the default's line may change", code)
+-	}
+-}
+diff --git a/scripts/versions.env b/scripts/versions.env
+index 160ac07..7fe27f8 100644
+--- a/scripts/versions.env
++++ b/scripts/versions.env
+@@ -63,6 +63,7 @@ INSPECTOR_MODEL_VERSION=gemini-3.5-flash-lite
+ KUBECONFORM_VERSION=0.7.0
+ KUBECTL_VERSION=v1.36.4
+ NODE_VERSION=24.19.0
++ORAS_VERSION=1.3.4
+ PRE_COMMIT_HOOKS_VERSION=4.6.0
+ PRE_COMMIT_VERSION=4.6.2
+ # Deliberately not RCLONE_VERSION, and the one key here whose name is not
+diff --git a/scripts/work-orders.json b/scripts/work-orders.json
+index 4981a43..3c3e111 100644
+--- a/scripts/work-orders.json
++++ b/scripts/work-orders.json
+@@ -12,12 +12,23 @@
+     "",
+     "Completeness is checked by a guard, not by the fabricator:",
+     "tests/go/repo/fabricator_test.go walks the repository and fails on a",
+-    "Dockerfile with no order, and on an order whose Dockerfile is gone."
++    "Dockerfile with no order, and on an order whose Dockerfile is gone.",
++    "",
++    "An order may instead publish a package: a set of the repository's own files,",
++    "named by a manifest, published whole under a version as",
++    "ghcr.io/<repository>-<name>-release. The platform is one - the modules a site",
++    "runs and what they read - and a site runs the version its own config pins,",
++    "so merging a change to it does nothing to production. The version is the",
++    "year and month it was published in and its number within that month."
+   ],
+   "orders": [
+     {
+       "name": "runner",
+       "context": ".github/runner-image"
++    },
++    {
++      "name": "platform",
++      "package": "modules/infrastructure/release.json"
+     }
+   ]
+ }
+diff --git a/tests/building-block-debt.yml b/tests/building-block-debt.yml
+index 16b659a..aaf5d4c 100644
+--- a/tests/building-block-debt.yml
++++ b/tests/building-block-debt.yml
+@@ -116,7 +116,7 @@ debt:
+   - "tag:homelab-router"
+   - "terraform.tfstate"
+ 
+-  # --- Field names two separate documents happen to share (13)
++  # --- Field names two separate documents happen to share (12)
+   - "talos_version"
+   #
+   # The estate's rendered config (config/estate.tpl.json, read by the lawyer)
+@@ -125,16 +125,13 @@ debt:
+   # on purpose: sharing one would put the lawyer's reading of its config in the
+   # contractor's package, across the credential boundary the two programs
+   # exist to hold. change is a plan's per-resource change and, separately, an
+-  # apply summary's count of changed resources. context is a work order's
+-  # build directory and, in GitHub's rulesets API, a required check's name.
+-  # errors and result are
++  # apply summary's count of changed resources. errors and result are
+   # Cloudflare's envelope, which also happens to be GitHub's and Prometheus's
+   # vocabulary.
+   - 'json:"access_key_id"'
+   - 'json:"account_id"'
+   - 'json:"bucket"'
+   - 'json:"change"'
+-  - 'json:"context"'
+   - 'json:"errors"'
+   - 'json:"organization"'
+   - 'json:"provider"'
+diff --git a/tests/go/repo/deliver_modules_test.go b/tests/go/repo/deliver_modules_test.go
+deleted file mode 100644
+index 79f29d0..0000000
+--- a/tests/go/repo/deliver_modules_test.go
++++ /dev/null
+@@ -1,179 +0,0 @@
+-package repo
+-
+-import (
+-	"encoding/base64"
+-	"os"
+-	"os/exec"
+-	"path/filepath"
+-	"strings"
+-	"testing"
+-
+-	"homelab/details/pins"
+-)
+-
+-// The workflow that brings the modules to the gate is shell around one
+-// procurement verb, and it is run here as shipped. The verb decides whether
+-// the pin moves and is proved in its own package; what is proved here is
+-// what the step does with the answer - that a move becomes one pull request
+-// changing the pins file and nothing else, and that no move becomes nothing.
+-const deliverModulesWorkflow = "deliver-modules.yml"
+-
+-const (
+-	pinnedCommit = "1111111111111111111111111111111111111111"
+-	mergedCommit = "2222222222222222222222222222222222222222"
+-)
+-
+-// modulesDelivery is a checkout holding a pins file, with stand-ins for git,
+-// GitHub and the verb that record what the step asked of them.
+-type modulesDelivery struct{ root, fake, path string }
+-
+-func newModulesDelivery(t *testing.T, verb string) modulesDelivery {
+-	t.Helper()
+-	root, fake := t.TempDir(), t.TempDir()
+-	file := filepath.Join(root, filepath.FromSlash(pins.File))
+-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+-		t.Fatal(err)
+-	}
+-	if err := os.WriteFile(file, []byte("{\n  \"default\": \""+pinnedCommit+"\",\n  \"per_site\": {}\n}\n"), 0o644); err != nil {
+-		t.Fatal(err)
+-	}
+-	path := fakeTools(t, map[string]string{
+-		"git": `echo "$*" >> "` + fake + `/git"`,
+-		// The verb, as the step runs it: -pins <file> -to <commit>.
+-		"go": `file=""; to=""
+-while [ $# -gt 0 ]; do case "$1" in -pins) file="$2"; shift ;; -to) to="$2"; shift ;; esac; shift; done
+-` + verb,
+-		"gh": `fake="` + fake + `"
+-echo "$*" >> "$fake/calls"
+-case "$1 $2" in
+-  "api repos/example/homelab/git/ref/heads/main") echo ` + mergedCommit + ` ;;
+-  "api repos/example/homelab/git/commits/` + mergedCommit + `") echo treesha ;;
+-  "api repos/example/homelab/git/blobs")
+-    for a in "$@"; do case "$a" in content=*) printf '%s\n' "${a#content=}" >> "$fake/blobs" ;; esac; done
+-    echo blobsha ;;
+-  "api repos/example/homelab/git/trees") echo "$*" >> "$fake/trees"; echo newtree ;;
+-  "api repos/example/homelab/git/commits") echo "$*" >> "$fake/commits"; echo commitsha ;;
+-  "api repos/example/homelab/git/refs") echo "$*" >> "$fake/refs" ;;
+-  "pr list")
+-    case "$*" in
+-      *"--head pin/"*) cat "$fake/at-the-gate" 2>/dev/null || true ;;
+-      *) cat "$fake/older" 2>/dev/null || true ;;
+-    esac ;;
+-  "pr create") echo "$*" >> "$fake/opened"; echo https://example.invalid/pull/50 ;;
+-  "pr close") echo "$*" >> "$fake/closed" ;;
+-  *) echo "fake gh: unexpected $*" >&2; exit 64 ;;
+-esac`,
+-	})
+-	return modulesDelivery{root, fake, path}
+-}
+-
+-// The verb moving the pin, and the verb leaving it: what each prints, and
+-// what each does to the file it was given.
+-const (
+-	verbMoves  = `sed -i "s/` + pinnedCommit + `/$to/" "$file"; echo "moved the default pin from 1111111 to 2222222: modules/infrastructure/thing/main.tf"`
+-	verbStays  = `echo "nothing a site reads differs between 1111111 and 2222222, so the pin stays"`
+-	verbCannot = `echo "procurement deliver-modules: could not tell" >&2; exit 1`
+-)
+-
+-func (d modulesDelivery) set(t *testing.T, name, body string) {
+-	t.Helper()
+-	if err := os.WriteFile(filepath.Join(d.fake, name), []byte(body), 0o644); err != nil {
+-		t.Fatal(err)
+-	}
+-}
+-
+-func (d modulesDelivery) read(name string) string {
+-	b, err := os.ReadFile(filepath.Join(d.fake, name))
+-	if err != nil {
+-		return ""
+-	}
+-	return string(b)
+-}
+-
+-func (d modulesDelivery) run(t *testing.T) (ok bool, summary, logs string) {
+-	t.Helper()
+-	scratch := t.TempDir()
+-	cmd := exec.Command("bash", "-eo", "pipefail", "-c", workflowStep(t, deliverModulesWorkflow, "deliver", "Deliver"))
+-	cmd.Dir = d.root
+-	cmd.Env = []string{"PATH=" + d.path, "GH_TOKEN=x", "REPO=example/homelab", "PINS=" + pins.File,
+-		"RUN_URL=https://example.invalid/run", "RUNNER_TEMP=" + scratch, "GITHUB_STEP_SUMMARY=" + filepath.Join(scratch, "summary")}
+-	out, err := cmd.CombinedOutput()
+-	said, _ := os.ReadFile(filepath.Join(scratch, "summary"))
+-	return err == nil, string(said), string(out)
+-}
+-
+-// A move becomes one pull request: the pins file with its default moved to
+-// main's commit and nothing else, on a branch named for that commit, with
+-// main as its parent - and an older move still open is closed, because this
+-// commit holds everything that one did.
+-func TestAMoveOfThePinIsDeliveredAsOnePullRequest(t *testing.T) {
+-	d := newModulesDelivery(t, verbMoves)
+-	d.set(t, "older", "41\n")
+-	ok, summary, logs := d.run(t)
+-	if !ok {
+-		t.Fatalf("the step failed:\n%s", logs)
+-	}
+-	if git := d.read("git"); !strings.Contains(git, "fetch") || !strings.Contains(git, "checkout --quiet --detach "+mergedCommit) {
+-		t.Errorf("the modules were not read as they are on main: %s", git)
+-	}
+-	blob, err := base64.StdEncoding.DecodeString(strings.TrimSpace(d.read("blobs")))
+-	if err != nil || string(blob) != "{\n  \"default\": \""+mergedCommit+"\",\n  \"per_site\": {}\n}\n" {
+-		t.Errorf("what was committed is not the pins file with its default moved (%v):\n%s", err, blob)
+-	}
+-	if trees := d.read("trees"); strings.Count(trees, "tree[][path]=") != 1 || !strings.Contains(trees, "tree[][path]="+pins.File+" ") || !strings.Contains(trees, "base_tree=treesha") {
+-		t.Errorf("the commit is not main's tree with the pins file changed and nothing else: %s", trees)
+-	}
+-	if commits := d.read("commits"); !strings.Contains(commits, "parents[]="+mergedCommit) {
+-		t.Errorf("the commit's parent is not main: %s", commits)
+-	}
+-	if refs := d.read("refs"); !strings.Contains(refs, "ref=refs/heads/pin/"+mergedCommit) {
+-		t.Errorf("the branch is not named for the commit the pin moves to: %s", refs)
+-	}
+-	opened := d.read("opened")
+-	for _, want := range []string{"--base main", "--head pin/" + mergedCommit, "the sites run the modules as of 2222222", "modules/infrastructure/thing/main.tf", "never merged without review"} {
+-		if !strings.Contains(opened, want) {
+-			t.Errorf("the pull request does not say %q: %s", want, opened)
+-		}
+-	}
+-	if closed := d.read("closed"); !strings.Contains(closed, "pr close 41 ") || !strings.Contains(closed, "Superseded by 50") {
+-		t.Errorf("the older move still open was not closed in favour of this one: %q", closed)
+-	}
+-	if !strings.Contains(summary, "moved the default pin") || !strings.Contains(summary, "delivered as 50") {
+-		t.Errorf("the run does not say what it did: %q", summary)
+-	}
+-}
+-
+-// No move is nothing: when the verb leaves the pin where it is, nothing is
+-// committed and nothing is opened, and the run says why. A move already at
+-// the gate is not opened twice. And a verb that could not tell fails the
+-// run rather than passing for "no change".
+-func TestNoMoveOfThePinOpensNothing(t *testing.T) {
+-	for name, c := range map[string]struct {
+-		verb, atTheGate string
+-		wantOK          bool
+-		wantSay         string
+-	}{
+-		"nothing a site reads changed": {verbStays, "", true, "so the pin stays"},
+-		"the move is already there":    {verbMoves, "50\n", true, "already at the gate"},
+-		"the verb could not tell":      {verbCannot, "", false, ""},
+-	} {
+-		t.Run(name, func(t *testing.T) {
+-			d := newModulesDelivery(t, c.verb)
+-			if c.atTheGate != "" {
+-				d.set(t, "at-the-gate", c.atTheGate)
+-			}
+-			ok, summary, logs := d.run(t)
+-			if ok != c.wantOK {
+-				t.Fatalf("the step's success is %v, want %v:\n%s", ok, c.wantOK, logs)
+-			}
+-			for _, wrote := range []string{"blobs", "trees", "commits", "refs", "opened", "closed"} {
+-				if got := d.read(wrote); got != "" {
+-					t.Errorf("the step wrote %s although there was nothing to deliver: %s", wrote, got)
+-				}
+-			}
+-			if !strings.Contains(summary, c.wantSay) {
+-				t.Errorf("the run does not say %q: %q", c.wantSay, summary)
+-			}
+-		})
+-	}
+-}
+diff --git a/tests/go/repo/deliveries_test.go b/tests/go/repo/deliveries_test.go
+index 1deb3db..a18fdb1 100644
+--- a/tests/go/repo/deliveries_test.go
++++ b/tests/go/repo/deliveries_test.go
+@@ -134,18 +134,16 @@ func TestOnlyTheExpediteDutyRunsUnderItsCredential(t *testing.T) {
+ 					"workstation installs. It is run by a person and committed through review; "+
+ 					"no workflow orders, and above all not one that could hold the expedite "+
+ 					"credential.", name)
+-			case verb == "deliver", strings.HasPrefix(verb, "deliver-"):
++			case verb == "deliver":
+ 				// Delivering holds the credential too, to open the pull request
+-				// that moves a pin - a site's pin of a release, or the estate's
+-				// pin of its modules. What a delivering verb opens is for a
+-				// person: enforce-standing-order passes a release only when it
+-				// differs by its supplier's build, and never a move of the
+-				// modules' pin, under -bypass. The delivering verbs are named
+-				// for it, as the expediting ones are, and are the only others
+-				// the credential runs.
++				// that moves a release pin - and nothing it opens is merged
++				// without review unless the release differs from the one
++				// running by its supplier's build alone: enforce-standing-order
++				// judges that under -bypass. It is the one other verb the
++				// credential runs.
+ 				if !holds {
+-					t.Errorf("%s runs `procurement %s` and holds no procurement credential, "+
+-						"so the pull request it would open has nothing to open it with", name, verb)
++					t.Errorf("%s runs `procurement deliver` and holds no procurement credential, "+
++						"so the pull request it would open has nothing to open it with", name)
+ 				}
+ 			case !strings.HasPrefix(verb, "expedite-"):
+ 				if holds {
+diff --git a/tests/go/repo/fabricator_test.go b/tests/go/repo/fabricator_test.go
+index bf22c42..64879ce 100644
+--- a/tests/go/repo/fabricator_test.go
++++ b/tests/go/repo/fabricator_test.go
+@@ -1,6 +1,7 @@
+ package repo
+ 
+ import (
++	"archive/zip"
+ 	"bufio"
+ 	"encoding/json"
+ 	"fmt"
+@@ -14,6 +15,7 @@ import (
+ 	"gopkg.in/yaml.v3"
+ 
+ 	"homelab/details/applications"
++	"homelab/details/platform"
+ 	"homelab/details/workorders"
+ )
+ 
+@@ -173,14 +175,18 @@ func TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile(t *testing.T) {
+ 	ordered := map[string]string{}
+ 	names := map[string]bool{}
+ 	for _, o := range orders {
+-		if o.Name == "" || o.Context == "" {
+-			t.Errorf("a work order is missing its name or its context: %+v", o)
+-			continue
+-		}
+ 		if names[o.Name] {
+-			t.Errorf("two work orders are named %q; both would publish to one image", o.Name)
++			t.Errorf("two work orders are named %q; both would publish under one name", o.Name)
+ 		}
+ 		names[o.Name] = true
++		// An order that publishes a package builds no image, and its
++		// manifest has to be there for the same reason a Dockerfile does.
++		if o.Package != "" {
++			if _, err := os.Stat(filepath.Join(repoRoot(t), filepath.FromSlash(o.Package))); err != nil {
++				t.Errorf("the work order %q publishes the package %s, which is not there: %v", o.Name, o.Package, err)
++			}
++			continue
++		}
+ 		ordered[o.Context] = o.Name
+ 	}
+ 
+@@ -217,7 +223,12 @@ func stepOrders(t *testing.T, root string) []workorders.Order {
+ 	if !ok {
+ 		t.Fatalf("the step failed:\n\n%s", logs)
+ 	}
+-	raw, found := strings.CutPrefix(strings.TrimSpace(output), "orders=")
++	raw, found := "", false
++	for _, line := range strings.Split(output, "\n") {
++		if raw, found = strings.CutPrefix(line, "orders="); found {
++			break
++		}
++	}
+ 	if !found {
+ 		t.Fatalf("the step wrote no orders output:\n%s", output)
+ 	}
+@@ -311,6 +322,9 @@ func TestTheFabricatorPassesEveryPinADockerfileAsksFor(t *testing.T) {
+ 	checked := 0
+ 	for name, root := range map[string]string{"the fixture": fabricatorFixture(t), "the repository": repoRoot(t)} {
+ 		for _, o := range ordersOf(t, root) {
++			if o.Context == "" {
++				continue // an order that publishes a package builds no image
++			}
+ 			env := append(estatePinsEnv(t, root), "CONTEXT="+o.Context, "ORDER_PINS="+o.Pins)
+ 			ok, output, logs := runFabricatorScript(t, script, root, env)
+ 			if !ok {
+@@ -1037,3 +1051,327 @@ func TestADeliveryGoesToTheSitesThatFollowAndNoOther(t *testing.T) {
+ 		t.Errorf("with no site running anything, the run failed or opened a delivery (%v):\n%s\n%s", ok, summary, logs)
+ 	}
+ }
++
++// --- publishing a package ----------------------------------------------------
++
++// packageFixture is a git repository holding a package's manifest, the files
++// it holds - a directory, one file, and one file of each of several
++// directories - and files beside them that it does not.
++func packageFixture(t *testing.T) (root string, commit func(files map[string]string)) {
++	t.Helper()
++	root = t.TempDir()
++	git := func(args ...string) {
++		t.Helper()
++		cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.email=a@example.com", "-c", "user.name=t"}, args...)...)
++		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
++		if out, err := cmd.CombinedOutput(); err != nil {
++			t.Fatalf("git %v: %v\n%s", args, err, out)
++		}
++	}
++	git("init", "-q")
++	commit = func(files map[string]string) {
++		t.Helper()
++		for rel, body := range files {
++			path := filepath.Join(root, filepath.FromSlash(rel))
++			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
++				t.Fatal(err)
++			}
++			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
++				t.Fatal(err)
++			}
++		}
++		git("add", "-A")
++		git("commit", "-qm", "change")
++	}
++	commit(map[string]string{
++		"pkg/release.json":          `{"holds": ["mods", "data/thing.yaml", "apps/*/declared.json"]}`,
++		"mods/one/main.tf":          "one\n",
++		"mods/two/deep/more.tf":     "two\n",
++		"data/thing.yaml":           "a: 1\n",
++		"data/other.yaml":           "not held\n",
++		"apps/a/declared.json":      "{}\n",
++		"apps/a/manifests/x.yaml":   "not held\n",
++		"apps/a/deep/declared.json": "not held\n",
++		"pamphlets/text.md":         "not held\n",
++	})
++	return root, commit
++}
++
++// The files the fixture's package holds, in the order the step lists them.
++var packageHeld = []string{"apps/a/declared.json", "data/thing.yaml", "mods/one/main.tf", "mods/two/deep/more.tf"}
++
++func runPackageStep(t *testing.T, step, dir, path, scratch string, env []string) (ok bool, outputs map[string]string, logs string) {
++	t.Helper()
++	out := filepath.Join(scratch, "output-"+strings.ReplaceAll(step, " ", "-"))
++	cmd := exec.Command("bash", "-eo", "pipefail", "-c", fabricatorStep(t, "package", step))
++	cmd.Dir = dir
++	cmd.Env = append(env, "PATH="+path, "HOME="+scratch, "GITHUB_OUTPUT="+out,
++		"GITHUB_STEP_SUMMARY="+filepath.Join(scratch, "summary"), "RUNNER_TEMP="+scratch,
++		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
++	b, err := cmd.CombinedOutput()
++	outputs = map[string]string{}
++	written, _ := os.ReadFile(out)
++	for _, l := range strings.Split(string(written), "\n") {
++		if k, v, found := strings.Cut(l, "="); found {
++			outputs[k] = v
++		}
++	}
++	return err == nil, outputs, string(b)
++}
++
++// The orders step hands each kind of order to its own job: an order with a
++// build context to the image build, and one with a package to the packaging.
++func TestEachKindOfOrderGoesToItsOwnJob(t *testing.T) {
++	root := fabricatorFixture(t)
++	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(workorders.Path)), []byte(`{"orders":[{"name":"kit","context":"kits/kit"},{"name":"bundle","package":"pkg/release.json"}]}`), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	ok, output, logs := runFabricatorScript(t, fabricatorStep(t, "orders", "Read the work orders"), root, nil)
++	if !ok {
++		t.Fatalf("the step failed:\n%s", logs)
++	}
++	names := func(key string) string {
++		for _, line := range strings.Split(output, "\n") {
++			raw, found := strings.CutPrefix(line, key+"=")
++			if !found {
++				continue
++			}
++			var orders []workorders.Order
++			if err := json.Unmarshal([]byte(raw), &orders); err != nil {
++				t.Fatalf("%s is not a list of orders: %v", key, err)
++			}
++			var out []string
++			for _, o := range orders {
++				out = append(out, o.Name)
++			}
++			return strings.Join(out, ",")
++		}
++		t.Fatalf("the step wrote no %s:\n%s", key, output)
++		return ""
++	}
++	if got := names("images"); got != "kit,built,thing" {
++		t.Errorf("the image build is handed %q; it builds the orders that have a context", got)
++	}
++	if got := names("packages"); got != "bundle" {
++		t.Errorf("the packaging is handed %q; it publishes the orders that have a package", got)
++	}
++}
++
++// A package is fingerprinted from the files it holds as git has them: the
++// same files are the same package, a change to one of them is a new one, and
++// a change to a file beside them - whatever else a merge touched - is not.
++// One already published under that fingerprint is not published again.
++func TestAPackageOfTheSameFilesIsNotPublishedAgain(t *testing.T) {
++	root, commit := packageFixture(t)
++	none := `echo "gh: Not Found (HTTP 404)" >&2; exit 1`
++	reuse := func(listing string) (map[string]string, string, string) {
++		t.Helper()
++		scratch := t.TempDir()
++		ok, outputs, logs := runPackageStep(t, "Reuse a package of the same contents", root, fakeRegistryListing(t, listing), scratch,
++			[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release", "MANIFEST=pkg/release.json"})
++		if !ok {
++			t.Fatalf("the step failed:\n%s", logs)
++		}
++		held, _ := os.ReadFile(filepath.Join(scratch, "held"))
++		return outputs, strings.TrimSpace(string(held)), logs
++	}
++	first, held, _ := reuse(none)
++	if held != strings.Join(packageHeld, "\n") {
++		t.Fatalf("the package is read as holding\n%s\nwant\n%s", held, strings.Join(packageHeld, "\n"))
++	}
++	if first["needed"] != "true" || first["fingerprint"] == "" {
++		t.Fatalf("a package nobody has published was not needed: %v", first)
++	}
++	if again, _, _ := reuse(none); again["fingerprint"] != first["fingerprint"] {
++		t.Error("the same files fingerprinted differently")
++	}
++	commit(map[string]string{"data/other.yaml": "changed\n", "apps/a/manifests/x.yaml": "changed\n", "pamphlets/text.md": "changed\n"})
++	if beside, _, _ := reuse(none); beside["fingerprint"] != first["fingerprint"] {
++		t.Error("a change to files the package does not hold changed its fingerprint, so every merge would publish a version")
++	}
++	if published, _, _ := reuse("printf '%s\\n' v2026.10.1 " + first["fingerprint"]); published["needed"] != "false" {
++		t.Errorf("a package of these exact files exists and another was needed: %v", published)
++	}
++	for name, change := range map[string]map[string]string{
++		"a file in a held directory": {"mods/two/deep/more.tf": "changed\n"},
++		"a held file":                {"data/thing.yaml": "a: 2\n"},
++		"a new file a pattern holds": {"apps/b/declared.json": "{}\n"},
++	} {
++		before, _, _ := reuse(none)
++		commit(change)
++		if after, _, _ := reuse(none); after["fingerprint"] == before["fingerprint"] {
++			t.Errorf("%s changed and the fingerprint did not, so the change would never be published", name)
++		}
++	}
++
++	scratch := t.TempDir()
++	if ok, _, logs := runPackageStep(t, "Reuse a package of the same contents", root, fakeRegistryListing(t, `echo "gh: Server Error (HTTP 500)" >&2; exit 1`), scratch,
++		[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release", "MANIFEST=pkg/release.json"}); ok {
++		t.Errorf("a registry that could not be read was taken to hold no such package:\n%s", logs)
++	}
++	commit(map[string]string{"pkg/empty.json": `{"holds": ["absent"]}`})
++	if ok, _, logs := runPackageStep(t, "Reuse a package of the same contents", root, fakeRegistryListing(t, none), t.TempDir(),
++		[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release", "MANIFEST=pkg/empty.json"}); ok || !strings.Contains(logs, "holds no tracked file") {
++		t.Errorf("a manifest holding nothing was not refused by name:\n%s", logs)
++	}
++}
++
++// A version is the year and month it is published in and its number within
++// that month, continuing from the registry: the first of a month is 1, the
++// next is one more than the highest there, and a new month starts again.
++func TestAVersionIsTheMonthAndItsNumberInIt(t *testing.T) {
++	for name, tc := range map[string]struct{ month, versions, want string }{
++		"the first ever":              {"2026.10", `echo "gh: Not Found (HTTP 404)" >&2; exit 1`, "v2026.10.1"},
++		"continues after the highest": {"2026.10", `printf '%s\n' v2026.10.1 v2026.10.3 v2026.10.2 v2026.9.7 fp-0123 latest`, "v2026.10.4"},
++		"past nine":                   {"2026.10", `printf '%s\n' v2026.10.9 v2026.10.10`, "v2026.10.11"},
++		"a new month starts again":    {"2026.11", `printf '%s\n' v2026.10.3 v2026.10.4`, "v2026.11.1"},
++		"a month with one digit":      {"2027.1", `printf '%s\n' v2026.12.3 v2026.11.9`, "v2027.1.1"},
++		"not another month's ten":     {"2027.1", `printf '%s\n' v2027.10.5 v2027.11.2`, "v2027.1.1"},
++	} {
++		t.Run(name, func(t *testing.T) {
++			path := fakeTools(t, map[string]string{
++				"date": `echo "` + tc.month + `"`,
++				// gh api --paginate <path>: the path is the third argument.
++				"gh": `if [ "$2" = "--paginate" ]; then set -- "$1" "$3"; fi
++case "$2" in
++  users/*) echo Organization ;;
++  *) ` + tc.versions + ` ;;
++esac`})
++			ok, outputs, logs := runPackageStep(t, "Number the version", t.TempDir(), path, t.TempDir(),
++				[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release"})
++			if !ok {
++				t.Fatalf("the step failed:\n%s", logs)
++			}
++			if outputs["version"] != tc.want {
++				t.Errorf("want %s, got %q", tc.want, outputs["version"])
++			}
++			if !platform.Version.MatchString(outputs["version"]) {
++				t.Errorf("%q is not a version as the estate's programs read one", outputs["version"])
++			}
++		})
++	}
++
++	// A registry error that is not "no such package" stops the publish:
++	// numbering from an empty list would reuse a version that exists.
++	path := fakeTools(t, map[string]string{"date": `echo 2026.10`, "gh": `if [ "$2" = "--paginate" ]; then echo "gh: Server Error (HTTP 500)" >&2; exit 1; fi
++echo Organization`})
++	if ok, outputs, logs := runPackageStep(t, "Number the version", t.TempDir(), path, t.TempDir(),
++		[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release"}); ok || outputs["version"] != "" {
++		t.Errorf("a version was numbered from a registry that could not be read: %v\n%s", outputs, logs)
++	}
++}
++
++// publisher is a registry client that records what it was asked and keeps
++// what it was given to push.
++func publisher(t *testing.T, resolves string) (path, dir string) {
++	t.Helper()
++	dir = t.TempDir()
++	return fakeTools(t, map[string]string{"oras": `fake="` + dir + `"
++echo "$*" >> "$fake/calls"
++case "$1" in
++  login) cat > "$fake/password" ;;
++  push) cp package.zip "$fake/package.zip" ;;
++  tag) ;;
++  resolve) echo "` + resolves + `" ;;
++  *) echo "fake oras: unexpected $*" >&2; exit 64 ;;
++esac`}), dir
++}
++
++// What is published is exactly the files the package holds, as git has them,
++// at the paths they have in the repository - and nothing else that was in the
++// checkout - in the form OpenTofu fetches a module package in, under its
++// version and its fingerprint.
++func TestThePackageHoldsExactlyItsFilesAndIsPublishedForOpenTofu(t *testing.T) {
++	root, _ := packageFixture(t)
++	// In the checkout and not in git: not the repository's, so not the
++	// package's.
++	if err := os.WriteFile(filepath.Join(root, "mods", "untracked.tf"), []byte("stray\n"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	scratch := t.TempDir()
++	none := `echo "gh: Not Found (HTTP 404)" >&2; exit 1`
++	if ok, _, logs := runPackageStep(t, "Reuse a package of the same contents", root, fakeRegistryListing(t, none), scratch,
++		[]string{"GH_TOKEN=x", "OWNER=example", "PACKAGE=homelab-bundle-release", "MANIFEST=pkg/release.json"}); !ok {
++		t.Fatalf("listing what the package holds failed:\n%s", logs)
++	}
++	digest := "sha256:" + strings.Repeat("d", 64)
++	path, fake := publisher(t, digest)
++	env := []string{"TOKEN=secret-token", "ACTOR=someone", "ARTIFACT=ghcr.io/example/homelab-bundle-release", "VERSION=v2026.10.4",
++		"FINGERPRINT=fp-0123456789abcdef", "SHA=0123456789abcdef", "SOURCE=https://github.com/example/homelab"}
++	ok, outputs, logs := runPackageStep(t, "Pack and publish the package", root, path, scratch, env)
++	if !ok {
++		t.Fatalf("the step failed:\n%s", logs)
++	}
++	archive, err := zip.OpenReader(filepath.Join(fake, "package.zip"))
++	if err != nil {
++		t.Fatalf("what was pushed is not a zip: %v", err)
++	}
++	defer archive.Close()
++	var packed []string
++	for _, f := range archive.File {
++		if !f.FileInfo().IsDir() {
++			packed = append(packed, f.Name)
++		}
++	}
++	sort.Strings(packed)
++	if strings.Join(packed, "\n") != strings.Join(packageHeld, "\n") {
++		t.Errorf("the package holds\n  %s\nwant exactly\n  %s", strings.Join(packed, "\n  "), strings.Join(packageHeld, "\n  "))
++	}
++	calls, _ := os.ReadFile(filepath.Join(fake, "calls"))
++	for _, want := range []string{
++		"login ghcr.io -u someone --password-stdin",
++		"push ghcr.io/example/homelab-bundle-release:v2026.10.4 --artifact-type application/vnd.opentofu.modulepkg",
++		"org.opencontainers.image.revision=0123456789abcdef",
++		"package.zip:archive/zip",
++		"tag ghcr.io/example/homelab-bundle-release:v2026.10.4 fp-0123456789abcdef",
++	} {
++		if !strings.Contains(string(calls), want) {
++			t.Errorf("the registry client was not asked to %q:\n%s", want, calls)
++		}
++	}
++	if strings.Contains(string(calls), "secret-token") {
++		t.Errorf("the token was passed as an argument, where a process listing shows it:\n%s", calls)
++	}
++	if password, _ := os.ReadFile(filepath.Join(fake, "password")); strings.TrimSpace(string(password)) != "secret-token" {
++		t.Errorf("the registry client was not given the token on its input")
++	}
++	if outputs["digest"] != digest {
++		t.Errorf("the step reports the digest %q, and the registry said %s", outputs["digest"], digest)
++	}
++
++	// A registry that does not say what was published leaves nothing for a
++	// site to pin, and the step says so rather than reporting an empty one.
++	path, _ = publisher(t, "not a digest")
++	again := t.TempDir()
++	held, err := os.ReadFile(filepath.Join(scratch, "held"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(filepath.Join(again, "held"), held, 0o644); err != nil {
++		t.Fatal(err)
++	}
++	if ok, outputs, logs := runPackageStep(t, "Pack and publish the package", root, path, again, env); ok || outputs["digest"] != "" || !strings.Contains(logs, "no digest for a site to pin") {
++		t.Errorf("a publish with no digest: ok=%v, %v\n%s", ok, outputs, logs)
++	}
++}
++
++// A version is described where a person reads it: a release named for the
++// version, on the commit it was packed from, saying what it was published
++// as and carrying the notes of what merged since the last.
++func TestAVersionIsDescribedByARelease(t *testing.T) {
++	fake := t.TempDir()
++	path := fakeTools(t, map[string]string{"gh": `printf '%s\n' "$@" > "` + fake + `/args"`})
++	digest := "sha256:" + strings.Repeat("d", 64)
++	ok, _, logs := runPackageStep(t, "Describe the version", t.TempDir(), path, t.TempDir(), []string{
++		"GH_TOKEN=x", "REPO=example/homelab", "NAME=bundle", "ARTIFACT=ghcr.io/example/homelab-bundle-release",
++		"VERSION=v2026.10.4", "DIGEST=" + digest, "SHA=0123456789abcdef"})
++	if !ok {
++		t.Fatalf("the step failed:\n%s", logs)
++	}
++	args, _ := os.ReadFile(filepath.Join(fake, "args"))
++	for _, want := range []string{"release\ncreate\nv2026.10.4\n", "--target\n0123456789abcdef\n", "--generate-notes", "ghcr.io/example/homelab-bundle-release:v2026.10.4", digest} {
++		if !strings.Contains(string(args), want) {
++			t.Errorf("the release does not carry %q:\n%s", want, args)
++		}
++	}
++}
+diff --git a/tests/mutations.yml b/tests/mutations.yml
+index ab0bec4..63b29c1 100644
+--- a/tests/mutations.yml
++++ b/tests/mutations.yml
+@@ -85,7 +85,7 @@
+ # require editing two places, and removing one should always require a visible,
+ # reviewable act rather than a quiet deletion. Same shape as
+ # tests/coverage-baseline.json, for the same reason.
+-floor: 181
++floor: 185
+ 
+ mutations:
+   - guard: TestTheContractorWritesAResourceAddressInOnePlace
+@@ -885,13 +885,23 @@ mutations:
+ 
+   - guard: TestTheReleaseCounterRefusesARegistryItCannotRead
+     file: .github/workflows/fabricator.yml
+-    find: 'elif ! grep -q "HTTP 404" <<<"$listed"; then'
+-    replace: "elif false; then"
++    find: "elif ! grep -q \"HTTP 404\" <<<\"$listed\"; then\n            echo \"::error::could not list the release tags of"
++    replace: "elif false; then\n            echo \"::error::could not list the release tags of"
+     mentions: "numbered a release from a registry it could not read"
+     why: >
+       Treating every registry error as "no releases yet" numbers from 1
+       whenever the registry hiccups, and overwrites a real release.
+ 
++  - guard: TestAVersionIsTheMonthAndItsNumberInIt
++    file: .github/workflows/fabricator.yml
++    find: "elif ! grep -q \"HTTP 404\" <<<\"$listed\"; then\n            echo \"::error::could not list the versions of"
++    replace: "elif false; then\n            echo \"::error::could not list the versions of"
++    mentions: "numbered from a registry that could not be read"
++    why: >
++      The same failure for the platform's versions: a registry error taken
++      for "nothing published this month" numbers the next version 1, over one
++      a site may already pin.
++
+   - guard: TestTheReleaseCarriesTheApplicationAloneWithTheNewDigest
+     file: .github/workflows/fabricator.yml
+     find: '>> "${stage}/${module}/base/kustomization.yaml"'
+@@ -979,27 +989,59 @@ mutations:
+       order, so every delivery then waits for a person - and the first anyone
+       hears of it is players unable to join.
+ 
+-  - guard: TestNoMoveOfThePinOpensNothing
+-    file: .github/workflows/deliver-modules.yml
+-    find: 'if [ "$(sha256sum < "$RUNNER_TEMP/pins.json")" = "$before" ]; then'
+-    replace: "if false; then"
+-    mentions: "although there was nothing to deliver"
+-    why: >
+-      The step runs after every merge, and most merges change nothing a site
+-      reads. One that opens a pull request whatever the verb said opens an
+-      empty one for every merge, and the move that matters is then one of
+-      many nobody reads.
+-
+-  - guard: TestAMoveOfThePinIsDeliveredAsOnePullRequest
+-    file: .github/workflows/deliver-modules.yml
+-    find: '-f "tree[][path]=${PINS}"'
+-    replace: '-f "tree[][path]=scripts/versions.env"'
+-    mentions: "the pins file changed and nothing else"
+-    why: >
+-      The pull request is the pins file and nothing else, which is what lets
+-      its plan be read as "what moving the pin does" and what the standing
+-      order holds it to. A commit that writes the moved pins anywhere else
+-      moves no site and overwrites whatever was there.
++  - guard: TestEachKindOfOrderGoesToItsOwnJob
++    file: .github/workflows/fabricator.yml
++    find: 'echo "images=$(jq -c ''[.[] | select(.context)]'' <<<"$orders")"'
++    replace: 'echo "images=$(jq -c ''.'' <<<"$orders")"'
++    mentions: "it builds the orders that have a context"
++    why: >
++      An order that publishes a package has no Dockerfile. Handed to the image
++      build, it fails that job on every merge, and the failure is in a matrix
++      leg named for the platform with nothing saying the platform has no
++      image to build.
++
++  - guard: TestAPackageOfTheSameFilesIsNotPublishedAgain
++    file: .github/workflows/fabricator.yml
++    find: 'fingerprint="fp-$(git ls-tree -r HEAD -- "${files[@]}" | sha256sum | cut -c1-16)"'
++    replace: 'fingerprint="fp-$(git rev-parse HEAD | sha256sum | cut -c1-16)"'
++    mentions: "every merge would publish a version"
++    why: >
++      A version exists so that moving a site to it means something changed.
++      Fingerprinted by commit, every merge to main publishes one whatever it
++      touched, and the list a person chooses a release from is as long as the
++      commit log.
++
++  - guard: TestAVersionIsTheMonthAndItsNumberInIt
++    file: .github/workflows/fabricator.yml
++    find: 'echo "version=${month}.$((n + 1))" >> "$GITHUB_OUTPUT"'
++    replace: 'echo "version=${month}.1" >> "$GITHUB_OUTPUT"'
++    mentions: "want v2026.10.4"
++    why: >
++      A version that does not continue from the registry is published over
++      one that exists. The name a site pins then means two different packages
++      depending on when it was read, and only the digest beside it says which.
++
++  - guard: TestThePackageHoldsExactlyItsFilesAndIsPublishedForOpenTofu
++    file: .github/workflows/fabricator.yml
++    find: 'git archive --format=zip -o "${RUNNER_TEMP}/package.zip" HEAD -- "${files[@]}"'
++    replace: 'git archive --format=zip -o "${RUNNER_TEMP}/package.zip" HEAD'
++    mentions: "want exactly"
++    why: >
++      A release is the files its manifest holds and nothing else. Packed from
++      the whole repository, it carries every application's manifests and
++      every workflow to every site, changes whenever anything in the
++      repository does, and what "the platform" is stops being a question
++      with an answer.
++
++  - guard: TestAVersionIsDescribedByARelease
++    file: .github/workflows/fabricator.yml
++    find: 'gh release create "$VERSION" --repo "$REPO" --target "$SHA" \'
++    replace: 'gh release create "$VERSION" --repo "$REPO" \'
++    mentions: "does not carry"
++    why: >
++      The release's tag is the version's name on the commit it was packed
++      from. Without a target it lands on whatever main is when the step runs,
++      which after a second merge is a commit the package was not built from.
+ 
+   - guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
+     file: .github/workflows/fabricator.yml
