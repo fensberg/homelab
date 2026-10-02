@@ -272,7 +272,7 @@ func ownOwnerAndName(t *testing.T) (owner, name string) {
 // why it carries it. Anything else is refused, in every tracked file.
 func TestTheOwnersNameIsOnlyInTheRepositorysAddress(t *testing.T) {
 	owner, name := ownOwnerAndName(t)
-	for _, p := range ownerOutsideItsAddress(owner, name, readTracked(t), ownerBelongs, formerKeys(owner)) {
+	for _, p := range ownerOutsideItsAddress(owner, name, readTracked(t), ownerBelongs) {
 		t.Error(p)
 	}
 }
@@ -287,18 +287,6 @@ var ownerBelongs = map[string]string{
 	"tests/js/unit/commitlint": "the same account, in that rule's tests",
 }
 
-// formerKeys is the one thing still in the cluster under the owner's name:
-// the label key applications' namespaces had. It is kept beside the neutral
-// one until every site runs a release that sets the neutral one - the
-// tunnel's policy is reconciled from main and a namespace is labelled by a
-// release, and between the two a tunnelled route would be refused. Built
-// from the owner, so the name is not written here either; wherever the key
-// is still set or selected on, it is this exact key and nothing looser.
-// This goes when the label does.
-func formerKeys(owner string) []string {
-	return []string{"homelab." + strings.ToLower(owner) + ".com/workload"}
-}
-
 func readTracked(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -310,7 +298,7 @@ func readTracked(t *testing.T) map[string]string {
 
 // ownerOutsideItsAddress is every line that carries the owner's name other
 // than as owner/name, outside the places that say why they carry it.
-func ownerOutsideItsAddress(owner, name string, files map[string]string, belongs map[string]string, former []string) []string {
+func ownerOutsideItsAddress(owner, name string, files map[string]string, belongs map[string]string) []string {
 	lower := strings.ToLower(owner)
 	address := lower + "/" + strings.ToLower(name)
 	var out []string
@@ -325,11 +313,7 @@ func ownerOutsideItsAddress(owner, name string, files map[string]string, belongs
 			continue
 		}
 		for i, line := range strings.Split(body, "\n") {
-			l := strings.ReplaceAll(strings.ToLower(line), address, "")
-			for _, key := range former {
-				l = strings.ReplaceAll(l, key, "")
-			}
-			if strings.Contains(l, lower) {
+			if strings.Contains(strings.ReplaceAll(strings.ToLower(line), address, ""), lower) {
 				out = append(out, fmt.Sprintf("%s:%d carries the owner's name outside the repository's own address. A fork would inherit it as its own: use a name that is nobody's, or read the owner from the run.", rel, i+1))
 			}
 		}
@@ -354,7 +338,7 @@ func TestOwnerOutsideItsAddressFindsTheNameAndNotTheAddress(t *testing.T) {
 		"under a place that says why":  {"history/2026.md", "the acme-bot account\n", false},
 		"nothing of theirs":            {"a.go", "package a\n", false},
 	} {
-		got := ownerOutsideItsAddress("Acme", "Yard", map[string]string{tc.rel: tc.body}, belongs, []string{"old.acme.example/thing"})
+		got := ownerOutsideItsAddress("Acme", "Yard", map[string]string{tc.rel: tc.body}, belongs)
 		if (len(got) > 0) != tc.found {
 			t.Errorf("%s: %v", label, got)
 		}

@@ -3450,12 +3450,11 @@ node without a commit (epoch 05).
   design: epoch 08.
 - **Adding a node with no manual step:** epoch 05, with the design agreed.
 - **The network between applications (#608):** epoch 03.
-- **The old label key on applications' namespaces (#540).** It goes, with
-  the selector that reads it and the two entries that excuse them in
-  `forkable_test.go`, in the first pull request after every site runs a
-  release that sets `homelab/workload`. Not before: the tunnel's policy is
-  reconciled from `main` and a namespace is labelled by a release, and
-  between the two a tunnelled route would be refused.
+- **The old label key on applications' namespaces (#540)** went on
+  2026-10-02, after site0 ran the release that set `homelab/workload`: the
+  selector that read it and the guard's excuse for it went in the same
+  change, and the label itself leaves a namespace when its site next moves
+  to a release.
 - **Every run downloads every provider (#490).** A mirror is a real build
   with no epoch that owns it yet. Left open.
 - **`converge-estate` may always plan one change (#549).** Needs one more
