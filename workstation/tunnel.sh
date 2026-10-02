@@ -34,10 +34,16 @@
 # no hotel or office network hands out, so it cannot be shadowed by wherever
 # the operator happens to be.
 #
-# Run `install` with a 1Password session that reads the estate's vaults - the
-# same token the lawyer runs with - for the tunnel's token, which the lawyer
-# granted. The token goes from the vault into a file only the connector's
-# group can read, and is never printed.
+# THE TUNNEL'S TOKEN IS PULLED, NOT GRANTED. Nothing keeps it: the estate
+# does not grant it into a vault, so no vault and no service account gained
+# any reach for this. `install` asks the account for it, once, with the same
+# token the estate is converged with - read from the estate's vault, used for
+# two questions and dropped. It finds the tunnel by the one route the estate
+# made to this machine's address, and asks for that tunnel's token. The token
+# goes into a file only the connector's group can read, and is never printed.
+#
+# So run `install` with a 1Password session that reads the estate's vault:
+# the token the lawyer runs with.
 set -euo pipefail
 
 name="workstation-tunnel"
@@ -49,7 +55,7 @@ lock_unit="$name-lock.service"
 unit="$name.service"
 ssh_port=22
 
-token_ref="op://workstation-shared/tunnel/token"
+api="https://api.cloudflare.com/client/v4"
 
 here="$(cd "$(dirname "$0")" && pwd)"
 template="$here/../config/estate.tpl.json"
@@ -232,22 +238,52 @@ check() {
 	return "$failed"
 }
 
+# vault_or_value is a field of the estate's template: read from the vault
+# when it is a reference to one, and as it is written otherwise.
+vault_or_value() {
+	local value
+	value="$(jq -r "$1 // empty" "$template")" || fail "could not read $template"
+	if [[ $value =~ ^\{\{[[:space:]]*(op://[^[:space:]]+)[[:space:]]*\}\}$ ]]; then
+		value="$(op read "${BASH_REMATCH[1]}")" || fail "could not read $1 from the vault. Sign in with the estate's token"
+	fi
+	printf '%s' "$value" | tr -d '[:space:]'
+}
+
+# ask puts one question to the account, with the estate's token in a header
+# that never reaches a command line.
+ask() {
+	curl -fsS --max-time 30 -H @<(printf 'Authorization: Bearer %s\n' "$2") "$api$1"
+}
+
+# pull_token is the tunnel's token, from the account: the tunnel is the one
+# the estate's route to this address belongs to.
+pull_token() {
+	local address="$1" account key routes tunnel answer
+	account="$(vault_or_value .access.account_id)"
+	key="$(vault_or_value .access.api_token)"
+	[ -n "$account" ] && [ -n "$key" ] || fail "the estate's template names no account or no token to ask it with"
+
+	routes="$(ask "/accounts/$account/teamnet/routes?is_deleted=false&per_page=1000" "$key")" ||
+		fail "the account would not list its tunnel routes. Is the estate converged?"
+	tunnel="$(jq -r --arg net "$address/32" '[.result[] | select(.network == $net) | .tunnel_id] | if length == 1 then .[0] else empty end' <<<"$routes")"
+	[ -n "$tunnel" ] || fail "the account has no one tunnel routing $address. Converge the estate first: it makes the tunnel and its route"
+
+	answer="$(ask "/accounts/$account/cfd_tunnel/$tunnel/token" "$key")" || fail "the account would not give the tunnel's token"
+	unset key
+	jq -r 'if .success then .result else empty end' <<<"$answer"
+}
+
 install_tunnel() {
 	[ "$(id -u)" -ne 0 ] || fail "run this as yourself, not as root: it reads the vault as you and asks for sudo where it needs it"
 	local tool
-	for tool in op jq sudo ip awk systemctl /usr/sbin/nft; do
+	for tool in op jq curl sudo ip awk systemctl /usr/sbin/nft; do
 		command -v "$tool" >/dev/null || fail "$tool is not installed on this machine"
 	done
 
 	local address token
 	# The address the estate routes to the workstation, from the same
-	# template the estate is converged from. A vault reference is read from
-	# the vault; anything else is the address itself.
-	address="$(jq -r '.workstation.address // empty' "$template")" || fail "could not read $template"
-	if [[ $address =~ ^\{\{[[:space:]]*(op://[^[:space:]]+)[[:space:]]*\}\}$ ]]; then
-		address="$(op read "${BASH_REMATCH[1]}")" || fail "could not read the workstation's address from the vault"
-	fi
-	address="$(printf '%s' "$address" | tr -d '[:space:]')"
+	# template the estate is converged from.
+	address="$(vault_or_value .workstation.address)"
 	[[ $address =~ $ipv4 ]] || fail "the estate's config gives the workstation no IPv4 address, so there is no tunnel to it to install"
 	# An address this machine already has on its network is the house's to
 	# hand out, and the route would break the day the router hands out
@@ -256,8 +292,9 @@ install_tunnel() {
 		fail "the workstation's address in the estate's config is one this machine's network gave it. Use an address of the workstation's own, which the lock puts on loopback"
 	fi
 
-	token="$(op read "$token_ref")" || fail "could not read the tunnel's token. Converge the estate first: the lawyer grants it"
-	[ -n "$token" ] || fail "the tunnel's token is empty"
+	say "asking the account for the tunnel's token"
+	token="$(pull_token "$address")"
+	[ -n "$token" ] || fail "the account gave no token for the tunnel"
 
 	mapfile -t servers < <(resolvers)
 	[ "${#servers[@]}" -gt 0 ] || fail "this machine has no IPv4 name server in /etc/resolv.conf, and the connector finds the vendor's edge by name"

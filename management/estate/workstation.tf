@@ -8,7 +8,8 @@
 # the operator most needs to reach the machine that repairs it.
 #
 # So it has a tunnel of its own, whose connector runs on the workstation
-# itself and whose one route is the workstation's own address. An enrolled
+# itself and whose one route is an address of the workstation's own, held on
+# its loopback rather than handed out by the house's router. An enrolled
 # device sends that address to Cloudflare, exactly as it sends a site's
 # routes, and reaches the workstation's SSH through it. Nothing listens on
 # the house's public address, and the operator's laptop joins no overlay.
@@ -24,11 +25,7 @@
 
 locals {
   workstation_address = trimspace(try(local.config.workstation.address, ""))
-
-  # Who the token is granted to: the lawyer writes it to the vault
-  # <grant>-shared, as it writes each site's to <site>-shared. Not a site's
-  # key, and a plot of this name is refused below.
-  workstation_grant = "workstation"
+  workstation_name    = "workstation"
 }
 
 # One, or none: by number, so that no name is an address in a plan.
@@ -38,6 +35,23 @@ module "workstation" {
 
   account_id = local.access.account_id
   estate     = local.estate_slug
-  name       = local.workstation_grant
+  name       = local.workstation_name
   address    = local.workstation_address
+}
+
+# The address an enrolled device reaches the workstation at, or nothing.
+#
+# The tunnel's token is granted to nobody. The workstation's install pulls it
+# from the account when it installs, with the token the estate is converged
+# with, so no vault and no service account gains any reach for it
+# (workstation/tunnel.sh).
+output "workstation_route" {
+  value = [for m in module.workstation : m.route]
+
+  # One address, or none. A range would route a network into a tunnel whose
+  # connector may open one port of one machine.
+  precondition {
+    condition     = local.workstation_address == "" || (can(cidrhost("${local.workstation_address}/32", 0)) && !strcontains(local.workstation_address, "/") && !strcontains(local.workstation_address, ":"))
+    error_message = "The workstation's address in the estate's config is not one IPv4 address, so there is nothing to route to it."
+  }
 }

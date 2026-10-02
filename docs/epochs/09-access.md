@@ -112,8 +112,10 @@ on the workstation as a service (`workstation/tunnel.sh`).
   connector's user, the SSH port (which must answer) and the gateway and
   this machine's other addresses (which must not, and must answer for
   somebody not held to the rule, or the proof is of nothing).
-- **Its token is granted as a site's is**, under a name that is no site's,
-  into a vault no site's token reads.
+- **Its token is granted to nobody.** The install asks the account for it
+  once, with the token the estate is converged with, and writes it only into
+  a file the connector's group can read. A grant would have meant a new
+  vault, and a new service account to reach it.
 - **Getting in takes an enrolled device and an SSH key.** The tunnel adds a
   path, not a credential.
 

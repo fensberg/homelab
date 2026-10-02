@@ -68,7 +68,7 @@ resource "cloudflare_zero_trust_device_default_profile" "estate" {
     # And the workstation, through its own tunnel (workstation.tf).
     [for m in module.workstation : {
       address     = m.route
-      description = local.workstation_grant
+      description = local.workstation_name
     }],
   )
 }

@@ -121,7 +121,7 @@ run "a_site_name_with_nothing_to_name_a_bucket_by_fails" {
 
 # The workstation has a tunnel of its own with one route - itself - and an
 # enrolled device sends that address to Cloudflare beside every site's. Its
-# token is granted under a name that is no site's.
+# token is granted to nobody: the workstation pulls it when it installs.
 run "the_workstation_has_a_tunnel_of_its_own_with_one_route" {
   command = plan
 
@@ -141,13 +141,12 @@ run "the_workstation_has_a_tunnel_of_its_own_with_one_route" {
   }
 
   assert {
-    condition     = output.grants["workstation"].tunnel.provider == "cloudflare" && !contains(keys(output.grants["workstation"]), "object_storage")
-    error_message = "the workstation is not granted its tunnel, or is granted more than its tunnel"
+    condition     = !contains(keys(output.grants), "workstation") && output.workstation_route == ["192.0.2.50/32"]
+    error_message = "the workstation's tunnel token is granted into a vault, or its route is not said"
   }
 }
 
-# An estate that gives the workstation no address has no such tunnel, and
-# grants nothing under its name.
+# An estate that gives the workstation no address has no such tunnel.
 run "an_estate_with_no_workstation_has_no_tunnel_for_one" {
   command = plan
 
@@ -156,8 +155,8 @@ run "an_estate_with_no_workstation_has_no_tunnel_for_one" {
   }
 
   assert {
-    condition     = length(module.workstation) == 0 && !contains(keys(output.grants), "workstation")
-    error_message = "a tunnel was made, or a grant written, for a workstation the estate does not have"
+    condition     = length(module.workstation) == 0 && output.workstation_route == []
+    error_message = "a tunnel was made for a workstation the estate does not have"
   }
 }
 
@@ -169,5 +168,5 @@ run "a_workstation_address_that_is_not_one_is_refused" {
     config_path = "./tests/fixtures/workstation-not-an-address.json"
   }
 
-  expect_failures = [output.grants]
+  expect_failures = [output.workstation_route]
 }

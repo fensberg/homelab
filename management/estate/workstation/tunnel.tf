@@ -1,5 +1,5 @@
-# The workstation's tunnel: one tunnel, one route, and the token its
-# connector runs from. See ../workstation.tf for why it has its own.
+# The workstation's tunnel: one tunnel and one route. See ../workstation.tf
+# for why it has its own, and why its token is granted to nobody.
 
 resource "cloudflare_zero_trust_tunnel_cloudflared" "this" {
   account_id = var.account_id
@@ -23,11 +23,4 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_route" "this" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.this.id
   network    = "${var.address}/32"
   comment    = var.name
-}
-
-# The token the connector runs from. It serves this one tunnel and can change
-# nothing in the account.
-data "cloudflare_zero_trust_tunnel_cloudflared_token" "this" {
-  account_id = var.account_id
-  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.this.id
 }

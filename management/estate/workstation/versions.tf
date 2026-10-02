@@ -1,4 +1,4 @@
-# One site's plot: what the estate creates for a site and grants it.
+# The workstation's tunnel: made in the estate's account, by the estate's provider.
 #
 # Created by the estate because only an account-wide credential can create it,
 # and the point of the estate/site split is that no site holds one. The site is

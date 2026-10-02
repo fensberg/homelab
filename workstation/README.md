@@ -76,11 +76,16 @@ without depending on any cluster being healthy.
 
 Getting in takes an enrolled device and an SSH key.
 
-Once, after the estate has been converged with the lawyer's token:
+Once, after the estate has been converged, with the token the lawyer runs
+with:
 
 ```sh
-workstation/tunnel.sh install   # reads the tunnel's token from the vault; asks for sudo
+workstation/tunnel.sh install   # asks the account for the tunnel's token; asks for sudo
 ```
+
+The token is granted to nobody and kept in no vault: the install asks the
+account for it with the estate's own token and writes it only where the
+connector can read it.
 
 It proves itself before it says it is installed, from the connector's own
 user: the SSH port answers, and the gateway and this machine's other
