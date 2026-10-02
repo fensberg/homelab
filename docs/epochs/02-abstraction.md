@@ -2082,8 +2082,25 @@ the merge converges, and a converge that fails returns it with the rest of
   that reaches a module any other way, a root with a default tree, and a pin
   that is not a full commit hash.
 
-Not built: the pull request that moves the default pin after a module change
-merges is still opened by hand (#602).
+**The estate moves its own pin (built 2026-10-02, #602).** After every merge
+to `main`, `deliver-modules.yml` runs `procurement deliver-modules`, which
+opens the pull request moving `default` to the merged commit when anything a
+pinned tree is read for differs between the two. A person merges it, after
+reading its plan; the standing order passes it on the pull request and
+refuses it for any merge without a review. A site held at its own commit is
+not moved.
+
+- **Which paths count is read off the modules, not listed.** A pinned tree is
+  read for the modules and for whatever they reach outside themselves
+  (`homelab/details/pins`): today the applications' declarations, the Flux
+  install in the core, and the CNI's manifest. So a change to an
+  application's manifests, or a release moving a site's block, moves no pin;
+  and a module that starts reading something new is covered the day it does.
+- **A reach has to be written whole.** A path built from a value cannot be
+  read off the code, and is refused rather than passed over, because a
+  change to whatever it named would reach no site and nothing would say so.
+  The platform module's path to the Flux install and the applications
+  module's path to the declarations were rewritten as whole paths for this.
 
 **Still missing for "no commit": a site is declared in the template.** Adding
 one today is an edit to `config/management.tpl.json`. The record's answer is a

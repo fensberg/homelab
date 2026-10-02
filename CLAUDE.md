@@ -597,6 +597,12 @@ depends on it and uses them.
   because OpenTofu applies the CNI manifest rather than Flux, so a change to
   it is delivered by a converge and by nothing else.
 
+- `deliver-modules.yml` — after every merge to `main`, asks procurement
+  whether anything a pinned site reads changed (the modules, and whatever
+  they reach outside themselves), and if so opens the pull request that moves
+  the default pin in `management/pins.json` to the merged commit. A person
+  merges it, after reading its plan; it is never merged without review.
+
 ## Testing
 
 Tests come before the code they test. `tests/README.md` is the map; the two

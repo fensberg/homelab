@@ -35,6 +35,7 @@ rules:
   self-repository:
     ignore:
       - clerk.yml
+      - deliver-modules.yml
       - deploy-infrastructure.yml
       - expedite.yml
       - fabricator.yml

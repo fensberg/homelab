@@ -26,7 +26,6 @@ package pin
 import (
 	"archive/tar"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -35,17 +34,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"homelab/details/gitenv"
+	details "homelab/details/pins"
 )
 
-// File is where the pins are, from the top of the repository.
-//
-// Under management/, beside the roots, because that is what a converge
-// applies: a merge that changes this file is planned on its pull request,
-// converged when it lands, and returned with the rest of management/ if that
-// converge fails. Anywhere else, moving a pin would be a change the estate's
-// own machinery did not see.
-const File = "management/pins.json"
+// File is where the pins are, and Pins what they hold: read once for every
+// program, in homelab/details/pins, because procurement moves the default
+// this hands a site.
+const File = details.File
+
+// Pins is the estate's default and each site's own.
+type Pins = details.Pins
+
+// Read loads the pins and refuses any that is not a full commit hash.
+func Read(repoRoot string) (Pins, error) { return details.Read(repoRoot) }
 
 // dir is where pinned trees are put, from the top of the repository: one per
 // site, ignored by git.
@@ -54,48 +55,6 @@ const dir = ".pinned"
 // marker is the file in a pinned tree that says which commit it is of, so a
 // tree already in place is not extracted again.
 const marker = ".pinned-commit"
-
-// Pins is the estate's default and each site's own.
-type Pins struct {
-	// Default is the commit a site runs unless it names another. A site
-	// nobody has pinned runs this, so bringing one online needs no pin.
-	Default string `json:"default"`
-	// Sites holds a commit for each site held at a version of its own,
-	// ahead of the default or behind it.
-	Sites map[string]string `json:"per_site"`
-}
-
-// Read loads the pins and refuses any that is not a full commit hash: a
-// branch or a tag names whatever it points at today, which is not a pin.
-func Read(repoRoot string) (Pins, error) {
-	var p Pins
-	raw, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(File)))
-	if err != nil {
-		return p, fmt.Errorf("reading the pins: %w", err)
-	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
-		return p, fmt.Errorf("%s is not the pins this reads (a default and a per_site map): %w", File, err)
-	}
-	if !gitenv.IsCommit(p.Default) {
-		return p, fmt.Errorf("%s: the default pin %q is not a full commit hash. A site with no pin of its own runs the default, so there has to be one", File, p.Default)
-	}
-	for site, sha := range p.Sites {
-		if !gitenv.IsCommit(sha) {
-			return p, fmt.Errorf("%s: the pin for %s, %q, is not a full commit hash", File, site, sha)
-		}
-	}
-	return p, nil
-}
-
-// For is the commit a site runs: its own pin, or the estate's default.
-func (p Pins) For(site string) string {
-	if sha, ok := p.Sites[site]; ok {
-		return sha
-	}
-	return p.Default
-}
 
 // Dir is where a site's pinned tree is, which is what its roots' module
 // sources point into.

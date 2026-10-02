@@ -56,8 +56,8 @@ resource "terraform_data" "flux_bootstrap_apply" {
   # And whenever the directory this site reconciles changes: giving a site
   # work, or taking it all away, repoints its Flux.
   triggers_replace = [
-    filesha256("${path.module}/../../../${local.flux_core}/flux-system/gotk-components.yaml"),
-    filesha256("${path.module}/../../../${local.flux_core}/flux-system/gotk-sync.yaml"),
+    filesha256("${local.flux_install}/gotk-components.yaml"),
+    filesha256("${local.flux_install}/gotk-sync.yaml"),
     local.gitops_path,
   ]
 
@@ -77,7 +77,7 @@ resource "terraform_data" "flux_bootstrap_apply" {
       trap 'rm -f "$tmp"' EXIT
       printf '%s' "$KUBECONFIG_CONTENT" >"$tmp"
       export KUBECONFIG="$tmp"
-      flux_system="${path.module}/../../../${local.flux_core}/flux-system"
+      flux_system="${local.flux_install}"
 
       # Two applies, not one kubectl apply -k: a single invocation builds its
       # REST-mapping cache once at the start, before the CRDs it is about to
