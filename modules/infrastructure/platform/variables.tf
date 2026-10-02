@@ -143,8 +143,15 @@ locals {
   # --- what the site's Flux reconciles --------------------------------------
   # The core is what every site runs, and holds Flux's own install. A site
   # that has been given work has a directory named for it beside the core.
-  flux_core   = "clusters/core"
-  gitops_path = var.site_directory ? "clusters/${var.site}" : local.flux_core
+  #
+  # Flux's own install is in the core, and is what this module applies to
+  # start Flux. The path is written whole, from the repository's top, because
+  # it is what says a pinned tree is read for these manifests
+  # (homelab/details/pins); the core's directory is read back off it rather
+  # than written a second time.
+  flux_install = "${path.module}/../../../clusters/core/flux-system"
+  flux_core    = dirname(trimprefix(local.flux_install, "${path.module}/../../../"))
+  gitops_path  = var.site_directory ? "clusters/${var.site}" : local.flux_core
 
   # --- state database ------------------------------------------------------
   state_db_namespace = "database"

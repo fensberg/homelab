@@ -54,7 +54,12 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 		t.Run(a.Name, func(t *testing.T) {
 			// Two copies, so that nothing the first run leaves behind in its
 			// tree is taken for part of the repository by the second.
-			before := runAll(t, bin, scratchRepo(t))
+			untouched := scratchRepo(t)
+			described := map[string]bool{}
+			for _, problem := range ledgerNoLongerDescribes(t, untouched) {
+				described[problem] = true
+			}
+			before := runAll(t, bin, untouched)
 			scratch := scratchRepo(t)
 			removeApplication(t, scratch, a)
 			indexScratchTree(t, scratch)
@@ -66,6 +71,11 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 			// would say is asked directly: every proof in tests/mutations.yml
 			// still names a file that is there, and text that is in it.
 			for _, problem := range ledgerNoLongerDescribes(t, scratch) {
+				// Already so with the application there: the ledger's own
+				// runner reports that, and it is not this removal's doing.
+				if described[problem] {
+					continue
+				}
 				t.Errorf("with %s removed, %s\n\nA proof about the estate breaks a file of the estate's, or plants one; a proof that needs an application's file belongs in that application's own ledger.", a.Name, problem)
 			}
 			after := runAll(t, bin, scratch)
