@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 179
+floor: 181
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -978,6 +978,28 @@ mutations:
       to any file but the application's own pins is refused by the standing
       order, so every delivery then waits for a person - and the first anyone
       hears of it is players unable to join.
+
+  - guard: TestNoMoveOfThePinOpensNothing
+    file: .github/workflows/deliver-modules.yml
+    find: 'if [ "$(sha256sum < "$RUNNER_TEMP/pins.json")" = "$before" ]; then'
+    replace: "if false; then"
+    mentions: "although there was nothing to deliver"
+    why: >
+      The step runs after every merge, and most merges change nothing a site
+      reads. One that opens a pull request whatever the verb said opens an
+      empty one for every merge, and the move that matters is then one of
+      many nobody reads.
+
+  - guard: TestAMoveOfThePinIsDeliveredAsOnePullRequest
+    file: .github/workflows/deliver-modules.yml
+    find: '-f "tree[][path]=${PINS}"'
+    replace: '-f "tree[][path]=scripts/versions.env"'
+    mentions: "the pins file changed and nothing else"
+    why: >
+      The pull request is the pins file and nothing else, which is what lets
+      its plan be read as "what moving the pin does" and what the standing
+      order holds it to. A commit that writes the moved pins anywhere else
+      moves no site and overwrites whatever was there.
 
   - guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
     file: .github/workflows/fabricator.yml
