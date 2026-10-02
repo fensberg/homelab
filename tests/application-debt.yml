@@ -16,6 +16,7 @@
 #
 # A path that holds the name counts once on top of its lines.
 named_outside:
+  .github/patches/applications-are-removed-by-deleting-them.patch: 252
   .github/workflows/expedite.yml: 14
   .trivyignore.yaml: 2
   clusters/core/infrastructure/controllers/cloudflared.yaml: 2
