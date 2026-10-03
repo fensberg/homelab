@@ -94,10 +94,11 @@ worse version of a thing that already exists, and would then need maintaining.
 **Rejected:** a bespoke roll driver, which is what the first draft of this
 record proposed.
 
-### Cluster API waits; Tuppr and Talos's own reset do the work
+### Cluster API waits; Talos's own tools do the work
 
-**Chose, 2026-10-03:** upgrades in place by Tuppr, removal by Talos's own
-graceful reset ordered by the converge, and Cluster API deferred.
+**Chose, 2026-10-03:** upgrades in place by `talosctl upgrade` and removal by
+Talos's own graceful reset, both ordered by the converge, and Cluster API
+deferred.
 **Because:** what one node needs is narrow. Real replacement is for hardware
 that has gone, a move between hypervisors, or a resize, and two of those
 three need the second node that [`10-second-node.md`](10-second-node.md)
@@ -121,24 +122,23 @@ This narrows "Adopt, do not build" without reversing it. The removal's
 ordering is the contractor's, and is a few calls to Talos's and Kubernetes'
 own tools: nothing here watches a machine or reconciles one.
 
-### Upgrades in place: Tuppr
+### The converge rolls an upgrade, and Tuppr is not taken
 
-**Decided 2026-10-03, above; the design is not yet agreed.** From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11, the nearest neighbour this estate has.
+**Chose, 2026-10-03:** the converge runs `talosctl upgrade` one machine at a
+time, with the Health phase's checks between machines.
+**Rejected:** [Tuppr](https://github.com/home-operations/tuppr), a small
+controller that rolls a version named in git, from
+[ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on
+2026-09-11. It was chosen the same morning and given up on reading its
+requirements: its namespace is granted `os:admin` on the Talos API of every
+node, permanently, so any pod that gets into that namespace can reset or
+reconfigure every machine in the site.
+**Because:** a credential's short life is the safeguard here. The converge
+already holds Talos admin while it runs and at no other time, so it needs
+nothing new, and there is no new supplier. What Tuppr had and this does not
+is a maintenance window.
 
-[Tuppr](https://github.com/home-operations/tuppr) is a small controller. A
-`TalosUpgrade` and a `KubernetesUpgrade` resource each name a version, a
-maintenance window, and health checks written as CEL over live resources: every
-node Ready, the database at its full instance count, storage healthy - the
-questions the Health phase already asks. Bump the version in git and it rolls
-the nodes one at a time, refusing to continue while a check is false.
-
-It solves a different problem from Cluster API: Cluster API replaces machines,
-Tuppr upgrades the ones you have. For "patch Talos without losing a disk" it is
-the smaller tool, and it does not preclude Cluster API later. It would close
-most of #97, where a Talos version reaches these machines only by rebuilding
-them.
-
-What has to be proved before trusting it:
+What has to be proved before trusting an upgrade in place, whoever rolls it:
 
 - **That the data partition survives.** OpenEBS hostpath volumes live on it,
   and whether an upgrade preserves it has been a flag rather than a guarantee
@@ -148,9 +148,54 @@ What has to be proved before trusting it:
   Tailscale extension; an upgrade that drops the schematic brings nodes back
   without the overlay.
 - **That OpenTofu reads the same version** it does, or the next ignition
-  quietly downgrades (#339).
-- It is a new supplier, `home-operations`, so it comes in a pull request of its
-  own.
+  quietly downgrades (#339), and that a version bump does not make it plan
+  to replace the machines.
+- **That the path is one Talos allows.** Nothing but this repository will
+  refuse a jump across minor versions.
+
+### A machine leaves in order, and the converge is what orders it
+
+**Chose, 2026-10-03:** a `retire` phase in the converge, after `take-over`
+and before `compute`. A machine is leaving when the cluster has it and the
+config no longer asks for it. For each one, workers before control planes:
+Talos's graceful reset, which cordons it, drains it and takes it out of etcd;
+the Kubernetes node deleted; etcd asked whether it has the members it should
+and all of them vote. Only then does `compute` reach OpenTofu, which destroys
+a machine that is already empty and already out.
+**Because:** every piece is a call to Talos's or Kubernetes' own tool, and
+what is ours is the order. Workers and control planes are both in scope.
+
+### Nobody is spared for holding the runner
+
+The converge runs on a runner pod inside the cluster, and the machine under
+it can be one the change disturbs. Refusing to touch that machine was
+proposed and turned down by the operator the same day: a machine kept
+because the runner happened to land on it is a machine nothing can replace.
+
+**Chose:** a job never disturbs the machine it is running on. It does every
+other machine, cordons its own, and ends cleanly - the state lock released,
+nothing half applied - saying it handed over. A second job follows it. Runner
+pods are made new for each job and Kubernetes places nothing new on a
+cordoned node, so the second job is somewhere else by construction. It runs
+the same converge, finds one machine left, and finishes; a machine that is
+staying is uncordoned.
+**Because:** it covers an upgrade as well as a removal. An upgrade reboots
+every node, so the runner's own node is always on the list, and cordoning
+only what is leaving would have answered half the question.
+**Rejected:** finishing the last machine from a workstation, which is a
+manual step on a path a merge drives. Shielding the runner's pod so the drain
+waits for the job, which is the job waiting on itself.
+
+What it needs:
+
+- **Two workers at least** in a site that runs its own runner, or the second
+  job has nowhere to land. The config contract refuses one.
+- **No runner kept idle.** The scale set's `minRunners` is 0; a test holds
+  it there, because an idle pod on the cordoned node would take the second
+  job.
+- **The runner's pod told which node it is on**, and a converge inside a
+  cluster that cannot say refusing to retire anything.
+- **A second job in `deploy-infrastructure.yml`**, which arrives as a patch.
 
 ### A failed converge does not get to pull this epoch forward
 
