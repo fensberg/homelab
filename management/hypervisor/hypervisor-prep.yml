@@ -1777,7 +1777,13 @@
     # Asked the question Prometheus will ask, from the address it will ask
     # at. A service that is running and answering on the wrong address looks
     # healthy here and red there.
+    #
+    # Plain HTTP, because that is what the exporter serves and what
+    # Prometheus scrapes. The address is a bridge inside this host, so the
+    # request never leaves the machine, and what it carries is metrics the
+    # exporter gives to anything that can reach it.
     - name: Ask the exporter how much memory the host has
+      # checkov:skip=CKV2_ANSIBLE_1:plain HTTP to a bridge inside this host, as Prometheus scrapes it
       ansible.builtin.uri:
         url: "http://{{ sdn_gateway }}:9100/metrics"
         return_content: true
