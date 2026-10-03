@@ -96,6 +96,27 @@ site takes up the capacity; nothing else is done by hand.
 **Open:** whether the adoption runs on GitHub's scheduler, which is late
 more often than not, or on a timer inside the site.
 
+### The two signatures want a role of their own
+
+Noted 2026-10-03, when the question was whether the contractor is one role
+([`04-observability.md`](04-observability.md)). It is, for what it does
+today: every secret it generates is made, stored and never used by it to
+vouch for anything. The certificates it makes for a host's exporter are
+signed by an authority whose key it drops at once.
+
+Enrolment is different on both counts. A signing key is kept, because a
+record is signed whenever a server is admitted or a bootstrap key renewed.
+And there are two of them that must not be held together: the builder's,
+which says a box is genuine, and the cluster owner's, which admits it.
+The program that adopts a node holds the site's token and its machines'
+admin, and a signature made by that program vouches for nothing it could not
+already do.
+
+**So when this epoch is built, signing is not the contractor's.** Who signs,
+under what name, and where each key lives is decided then, with the
+separation as the fixed part: neither signer is the program that adopts, and
+neither holds the other's key.
+
 ### The third vote is a witness outside every site
 
 Agreed in direction 2026-10-03. Nothing is bought or built.
