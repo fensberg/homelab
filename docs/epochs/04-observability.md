@@ -41,6 +41,83 @@ Explicitly out of scope:
   deserves its own decision rather than arriving as a free extra.
 - Distributed tracing. There is nothing here yet that would benefit.
 
+## Acceptance criteria
+
+Agreed 2026-10-03. The epoch does not close until each is true and something
+checks it. They replace "a written answer to when do we add a node" with the
+thing that answer was for: a site that is run full on purpose, and knows it.
+
+**The aim they serve.** The estate runs lean. A host's memory is handed out
+in full and the work on it is packed past what would fit if everything peaked
+at once - 110% - on the bet that it will not. Monitoring is what checks the
+bet, and node lifecycle ([`05-node-lifecycle.md`](05-node-lifecycle.md)) is
+what acts on the answer.
+
+Capacity is read, never typed:
+
+- **1. The host is measured.** Prometheus holds each hypervisor's memory,
+  memory pressure, disk use and disk latency, and a test finds a healthy
+  target for every one.
+- **2. A site's capacity comes from its hardware.** What the host has is asked
+  of the host. Taken off it, each also read and not assumed: the
+  hypervisor's own share, its filesystem cache, anything on it that is not
+  the site's, and a reserve of one control plane to roll with.
+- **3. No machine's size or count is a literal** (#615, #566). Both are derived
+  from the capacity above, the overhead each machine carries, and the
+  largest single thing that must fit on one.
+- **4. The as-built record carries the hardware's facts**, so a pull request's
+  plan can use them with no credential.
+
+The budget, and who refuses:
+
+- **5. The hypervisor is strict.** The machines' memory never adds up to more
+  than the host's capacity. A plan that would is refused.
+- **6. Kubernetes is where the site is overfilled.** Everything that is not
+  `batch` fits in reservations with one worker gone, and leaves free a
+  floor the size of the largest necessary batch job. Limits may total 110%
+  of what the machines hold. A pull request that breaks either is refused
+  by its plan, which names the shortfall. Disk is held to a budget as
+  memory is.
+- **7. A pod with no reservation or no priority class is refused by the
+  cluster**, whoever created it, and each namespace has a quota.
+- **8. etcd's disk latency has a written level** and an alert on it (#627),
+  and either etcd has a disk of its own or that level gates what is added.
+
+Sizing needs nobody:
+
+- **9. A workload's reservation follows its measured use**, applied by the
+  autoscaler with no pull request, inside a floor and a ceiling per
+  container, in place where the cluster can, and never past a disruption
+  budget. etcd, the API server and the databases are sized by declaration
+  until there is a reason to trust a guess about them.
+- **10. An application says what it expects to need before it has run**, with
+  where the figure came from, and the plan counts that until a measurement
+  replaces it.
+
+History outlives the site:
+
+- **11. Metrics history survives a rebuild.** Snapshots go to the bucket a
+  teardown keeps, on a schedule and before a teardown, and are restored
+  when the site starts. Its limit is size. A rebuilt site shows a sample
+  older than the rebuild.
+
+The site keeps itself, and proves it:
+
+- **12. Every necessary function has a deadline and an alert on missing it**:
+  the state backup, each database's backup, each workload's backup, the
+  nightly checks, a converge.
+- **13. A converge in flight is not evicted.**
+- **14. Work is spread again after a roll** (#628), by the descheduler.
+- **15. Alerts on the bet read pressure**, not memory in use, and one says how
+  long until a resource is full at the rate it is filling.
+- **16. How a machine sheds load is declared**, not left at the kubelet's
+  defaults.
+- **17. The bet has been tested.** Staging is overfilled on purpose and the
+  right things are shed in the right order.
+- **18. The site says what it is shortest of, and what more hardware would
+  buy**: so many more weeks of history for this much disk, this much more
+  work for this much memory, none of a capability it has no hardware for.
+
 ## Known driver: nothing watches whether the estate is on its own network
 
 The strongest argument for this epoch, and it arrived by costing a night rather
@@ -498,6 +575,181 @@ an impostor on the node network. Recorded rather than left implicit.
 for each of the three. The previous round shipped this stack and asserted
 nothing about it, and it then failed to install for two days without anybody
 noticing (#459).
+
+### Full on purpose: the capacity design (agreed 2026-10-03)
+
+Settled with the operator in one conversation, against the first numbers
+this epoch's stack produced. Each is a decision; the criteria above are what
+they come to.
+
+**The first numbers.** site0, three control planes and three workers, memory
+in GiB, over the 1.76 days of history Prometheus held:
+
+| Machine         | Allocatable | Requested | Limits | Peak used |
+| --------------- | ----------- | --------- | ------ | --------- |
+| control plane 1 | 3.21        | 1.09      | 0.50   | 2.18      |
+| control plane 2 | 3.21        | 0.84      | none   | 1.70      |
+| control plane 3 | 3.21        | 0.98      | 0.33   | 1.85      |
+| worker 1        | 9.22        | 8.78      | 10.25  | 3.36      |
+| worker 2        | 9.22        | 1.28      | 1.75   | 1.83      |
+| worker 3        | 9.22        | 0.47      | 1.50   | 1.94      |
+
+The machines hold 42 GiB of the host and the work in them peaked at 13.
+Control planes use about a gibibyte more than they reserve, so nothing about
+them can be judged from requests. One worker is 95% reserved and two are
+nearly empty (#628). etcd's WAL fsync, 99th percentile, is in the 32 to 64 ms
+bucket on every member against a guidance of 10 (#627). And the history was
+1.76 days old because the site had been rebuilt: Prometheus's disk goes with
+its machine.
+
+**Overfill in Kubernetes, never at the hypervisor.** Kubernetes knows
+priorities and, short of memory, evicts the least important pod. The
+hypervisor knows machines, and short of memory it swaps or kills one, which
+may be a control plane. So the strict layer is below and the flexible one
+above. CPU is the exception that needs no rule: it slows and does not fail.
+
+**Machines are sized by the host; pods are sized by measurement.** With the
+hypervisor strict, a machine's size is not a question about use. It is the
+host's real memory, less what is taken off it, divided. It changes when the
+hardware or the count does.
+
+**The count is computed too.** Holding everything with one worker gone means
+two workers are never more than half full, and each further worker raises the
+share that can be used until its own overhead, about 0.8 GiB, costs more than
+it frees. For some 30 GiB of worker memory that is five or six machines. An
+earlier reading of these numbers, that three half-empty workers argue for two,
+was wrong for this reason.
+**Rejected for now:** adding machines under load (Cluster Autoscaler,
+Karpenter). On one host a new machine is the same memory divided again. It
+means something when there is a second host, which is
+[`10-second-node.md`](10-second-node.md)'s. And scaling replicas with load:
+almost nothing here has a second replica to add.
+
+**Tight is not seized.** Two reserves keep the site able to change itself.
+One worker's worth is kept inside Kubernetes by the rule above, so a worker
+can be drained. One control plane's worth is kept unallocated on the host,
+because a control plane is added before one is removed.
+
+**Batch is necessary, and only its timing is not.** The runner is `batch`, so
+a converge is, and the state backup, and the nightly checks. Priority orders
+who is served and promises the last in line nothing, so at a standing 110%
+batch could wait for ever and the site could not then be changed to fix it.
+Hence the floor in criterion 6 and the deadlines in 12. The floor is not idle
+memory: other pods may burst into it, and a pod over its reservation is
+evicted before one within it.
+
+**The computer sizes the computer.** The operator's words: "Computers dictate
+how much a computer needs. That's a dumb decision that needs no human
+intervention." What keeps it from a mistake is rules, not review.
+**Rejected:** a pull request for each resize.
+
+**History is production data.** The operator's ruling when the 1.76 days was
+found. **Chose** a snapshot to the bucket and a restore on start, the way a
+workload's data already goes (#588). **Rejected:** Thanos, the standard
+store for Prometheus on object storage and the first choice made, given up
+for three or four more programs running on a site being packed tight; and a
+fifth bucket, when the production bucket is already the one a teardown keeps.
+
+**An application's needs are declared before they are known.** Nothing can
+be measured before it runs, and the plan has to count it before it is merged.
+So an application states what it expects, from its publisher's own figures
+where there are any, and says that is where the number came from. It runs in
+staging, the measurement replaces the estimate, and the autoscaler keeps it
+true after that.
+
+**Left out, knowingly.** Replicas as protection against losing hardware:
+every machine shares the one host, so a replica protects against a roll and
+nothing else, and what protects the estate is the backup and the rebuild. A
+restore drill on a schedule is the habit worth taking from that. Service
+level objectives and error budgets, which the deadlines stand in for.
+
+### Two more roles: the surveyor and the engineer (agreed 2026-10-03)
+
+The contractor is some 11,000 lines against the clerk's 2,200 and the
+lawyer's 700, and the question was whether that is one role. Size is not the
+test this repository uses; what a program holds and can break is. By that
+test building, converging, demolishing, restoring and retiring are one role:
+each holds the site's token, its state and its machines' admin, and two
+programs with the same power would isolate nothing. Generating the site's
+own secrets, the exporter's certificates among them, uses that token and
+stays.
+
+**The seam is the work that holds no credential.** `plan-as-built` needs no
+vault and no state, and `survey` only probes; both ship in the binary that
+can demolish a site. This epoch adds a body of work of the same kind - the
+hardware's facts, the capacity check, what the site is shortest of - and it
+is built outside the contractor from the start.
+
+**Chose:** two roles, neither holding a key.
+
+- **The surveyor measures.** What the host has, what answers on the
+  network, what is used and at what rate. It reports and decides nothing.
+  `survey` moves to it, and #239 and #154 are its.
+- **The engineer says what the site can carry.** It takes the surveyor's
+  facts and the ratings written in this record, and stamps or refuses a
+  change before it is built: the capacity check, and `plan-as-built`, which
+  moves to it. The ratings are the operator's. The engineer applies them and
+  has no authority to set one.
+
+**Not a role:** whatever generates a certificate. It is one more secret a
+site owns. The case for a signing role is
+[`10-second-node.md`](10-second-node.md)'s, where a key is kept and two
+signatures have to stay apart.
+
+### The host is measured, and it took three tiers (built 2026-10-03)
+
+Criterion 1. The estate saw its machines and not the host under them, so the
+one number a site's capacity comes from was nobody's to read.
+
+**The exporter is Debian's package of the Prometheus project's node
+exporter**, installed by the hypervisor playbook without its recommended
+extras, which are scheduled collectors run as root that nothing here reads.
+
+**It answers on the site's gateway and nowhere else.** Its default is every
+address the host has, the LAN included. The gateway is reachable from the
+site's machines, and the untrusted zones are already closed to it.
+
+**It serves TLS and asks its caller for a certificate.** The first version
+served plain HTTP and excused the policy scan's objection to it, on the
+ground that the request never leaves the host. The operator turned that down:
+"We spent a LONG TIME building out the capability so we need to actually use
+it instead of building around it." The capability is the contractor
+generating what the estate owns end to end and keeping it in the vault. So
+the contractor generates an authority, a certificate for the exporter and one
+for its scraper, and drops the authority's key when it has signed them; they
+are one item in the site's vault, all or nothing, and replacing them is
+deleting the item. The playbook installs the exporter's half and the platform
+gives Prometheus the scraper's. That also closes what plain HTTP left open:
+any pod in the cluster could have read the host.
+**Rejected:** the exception. And a password in place of the scraper's
+certificate, which needs bcrypt and the contractor takes nothing from outside
+the standard library.
+
+**Three halves in three tiers.** The playbook installs the exporter. OpenTofu
+writes a Service with no selector and the one address behind it, and the
+Secret the scraper reads, because Flux can make neither: one is a
+node-network address and the other a credential. The Flux tree holds a
+`ScrapeConfig` that names the Service and the Secret and nothing else.
+`TestMeasuringTheHostChangesAllThreeHalvesTogether` refuses any one alone,
+`TestTheHostsExporterHasOneName` holds the four places its name is spelt to
+one, and the integration tier asks Prometheus for the host's total memory by
+name, because a target that is up proves a scrape and not a measurement.
+
+**Two of the three do not arrive with a merge.** The playbook is run by the
+hypervisor phase, which a converge leaves out, and the Service and the Secret
+are written by a module the site runs at its pinned release (#618). The
+scrape is written so that this is quiet: it carries no substituted value, and
+the operator leaves out a scrape whose Secret it cannot read. An earlier
+draft substituted the address into the chart's values, which until the pin
+moved would have been a value that was not there.
+
+**The certificates last ten years and nothing renews them.** The scrape
+failing is what will say so.
+
+**A site with two hosts would be measured one at a time.** Every hypervisor
+in a site holds the same gateway address, so the scraper reaches whichever
+its own machine is on. That is [`10-second-node.md`](10-second-node.md)'s to
+answer.
 
 ### Open: the account holds two user API tokens and the tunnel uses one of them
 

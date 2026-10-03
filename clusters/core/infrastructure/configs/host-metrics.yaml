@@ -1,0 +1,41 @@
+---
+# The host under the machines, scraped.
+#
+# The exporter is installed by the hypervisor playbook and answers over TLS
+# to a scraper that presents a certificate. Nothing here is an address or a
+# credential: the Service this names, the one address behind it and the
+# Secret this reads are written by OpenTofu
+# (modules/infrastructure/platform/monitoring.tf), because the address is on
+# the node network and the certificates come from the vault.
+#
+# That also settles what happens before they exist. This file follows main and
+# the module that writes them follows the site's pinned release (#618), so for
+# a while after a change here merges the Secret is not there. The operator
+# leaves out a scrape whose Secret it cannot read and loads the rest, so the
+# job is absent, not failing, until the site's pin moves.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: hypervisor
+  namespace: monitoring
+spec:
+  jobName: hypervisor
+  scheme: HTTPS
+  staticConfigs:
+    - targets:
+        - hypervisor.monitoring.svc:9100
+  tlsConfig:
+    # The name in the exporter's certificate, which is the name it is
+    # reached by.
+    serverName: hypervisor.monitoring.svc
+    ca:
+      secret:
+        name: host-metrics
+        key: authority.crt
+    cert:
+      secret:
+        name: host-metrics
+        key: scraper.crt
+    keySecret:
+      name: host-metrics
+      key: scraper.key
