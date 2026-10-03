@@ -663,6 +663,39 @@ nothing else, and what protects the estate is the backup and the rebuild. A
 restore drill on a schedule is the habit worth taking from that. Service
 level objectives and error budgets, which the deadlines stand in for.
 
+### Two more roles: the surveyor and the engineer (agreed 2026-10-03)
+
+The contractor is some 11,000 lines against the clerk's 2,200 and the
+lawyer's 700, and the question was whether that is one role. Size is not the
+test this repository uses; what a program holds and can break is. By that
+test building, converging, demolishing, restoring and retiring are one role:
+each holds the site's token, its state and its machines' admin, and two
+programs with the same power would isolate nothing. Generating the site's
+own secrets, the exporter's certificates among them, uses that token and
+stays.
+
+**The seam is the work that holds no credential.** `plan-as-built` needs no
+vault and no state, and `survey` only probes; both ship in the binary that
+can demolish a site. This epoch adds a body of work of the same kind - the
+hardware's facts, the capacity check, what the site is shortest of - and it
+is built outside the contractor from the start.
+
+**Chose:** two roles, neither holding a key.
+
+- **The surveyor measures.** What the host has, what answers on the
+  network, what is used and at what rate. It reports and decides nothing.
+  `survey` moves to it, and #239 and #154 are its.
+- **The engineer says what the site can carry.** It takes the surveyor's
+  facts and the ratings written in this record, and stamps or refuses a
+  change before it is built: the capacity check, and `plan-as-built`, which
+  moves to it. The ratings are the operator's. The engineer applies them and
+  has no authority to set one.
+
+**Not a role:** whatever generates a certificate. It is one more secret a
+site owns. The case for a signing role is
+[`10-second-node.md`](10-second-node.md)'s, where a key is kept and two
+signatures have to stay apart.
+
 ### The host is measured, and it took three tiers (built 2026-10-03)
 
 Criterion 1. The estate saw its machines and not the host under them, so the
