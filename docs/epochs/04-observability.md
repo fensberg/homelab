@@ -672,24 +672,46 @@ one number a site's capacity comes from was nobody's to read.
 exporter**, installed by the hypervisor playbook without its recommended
 extras, which are scheduled collectors run as root that nothing here reads.
 
-**It answers on the site's gateway and nowhere else.** It has no
-authentication and its default is every address the host has, the LAN
-included. The gateway is reachable from the site's machines, and the
-untrusted zones are already closed to it. That leaves it readable by any pod
-in the cluster, which is the exposure etcd's metrics port has (#468) and is
-recorded here for the same reason.
+**It answers on the site's gateway and nowhere else.** Its default is every
+address the host has, the LAN included. The gateway is reachable from the
+site's machines, and the untrusted zones are already closed to it.
 
-**Three halves in three tiers**, as scraping the control plane was two: the
-playbook installs it, OpenTofu writes where it answers into the
-`monitoring-vars` secret, and Prometheus scrapes what Flux substitutes.
+**It serves TLS and asks its caller for a certificate.** The first version
+served plain HTTP and excused the policy scan's objection to it, on the
+ground that the request never leaves the host. The operator turned that down:
+"We spent a LONG TIME building out the capability so we need to actually use
+it instead of building around it." The capability is the contractor
+generating what the estate owns end to end and keeping it in the vault. So
+the contractor generates an authority, a certificate for the exporter and one
+for its scraper, and drops the authority's key when it has signed them; they
+are one item in the site's vault, all or nothing, and replacing them is
+deleting the item. The playbook installs the exporter's half and the platform
+gives Prometheus the scraper's. That also closes what plain HTTP left open:
+any pod in the cluster could have read the host.
+**Rejected:** the exception. And a password in place of the scraper's
+certificate, which needs bcrypt and the contractor takes nothing from outside
+the standard library.
+
+**Three halves in three tiers.** The playbook installs the exporter. OpenTofu
+writes a Service with no selector and the one address behind it, and the
+Secret the scraper reads, because Flux can make neither: one is a
+node-network address and the other a credential. The Flux tree holds a
+`ScrapeConfig` that names the Service and the Secret and nothing else.
 `TestMeasuringTheHostChangesAllThreeHalvesTogether` refuses any one alone,
-and the integration tier asks Prometheus for the host's total memory by name,
-because a target that is up proves a scrape and not a measurement.
+`TestTheHostsExporterHasOneName` holds the four places its name is spelt to
+one, and the integration tier asks Prometheus for the host's total memory by
+name, because a target that is up proves a scrape and not a measurement.
 
 **Two of the three do not arrive with a merge.** The playbook is run by the
-hypervisor phase, which a converge leaves out, and the secret is written by a
-module the site runs at its pinned release (#618). Between the merge and
-both, the scrape job has no targets, which is quiet and not red.
+hypervisor phase, which a converge leaves out, and the Service and the Secret
+are written by a module the site runs at its pinned release (#618). The
+scrape is written so that this is quiet: it carries no substituted value, and
+the operator leaves out a scrape whose Secret it cannot read. An earlier
+draft substituted the address into the chart's values, which until the pin
+moved would have been a value that was not there.
+
+**The certificates last ten years and nothing renews them.** The scrape
+failing is what will say so.
 
 **A site with two hosts would be measured one at a time.** Every hypervisor
 in a site holds the same gateway address, so the scraper reaches whichever

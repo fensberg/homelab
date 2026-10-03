@@ -159,20 +159,6 @@ spec:
               resources:
                 requests:
                   storage: 20Gi
-        # The host under the machines. Its exporter is installed by the
-        # hypervisor playbook and answers on the site's gateway, a node-network
-        # address this repository keeps out of git: OpenTofu writes it into
-        # the monitoring-vars secret and Flux substitutes it here, as it does
-        # etcd's. tests/go/repo holds the three together.
-        #
-        # This file follows main and the module that writes the secret follows
-        # the site's pinned release (#618). Until the site's pin moves, the
-        # variable is not in the secret and substitutes to nothing, which
-        # Prometheus reads as a job with no targets.
-        additionalScrapeConfigs:
-          - job_name: hypervisor
-            static_configs:
-              - targets: ${HYPERVISOR_ENDPOINTS}
         # Watch every namespace, not only objects this chart's own release
         # labelled. Without these the CloudNativePG PodMonitor two namespaces
         # away is created, accepted and never scraped - which looks exactly

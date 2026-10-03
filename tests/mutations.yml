@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 193
+floor: 195
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1197,6 +1197,28 @@ mutations:
       network, and nothing else in the playbook would say so: the service
       starts, the scrape is green, and the host's facts are open to the
       building.
+
+  - guard: TestMeasuringTheHostChangesAllThreeHalvesTogether
+    file: management/hypervisor/hypervisor-prep.yml
+    find: "client_auth_type: RequireAndVerifyClientCert"
+    replace: "client_auth_type: NoClientCert"
+    mentions: "does not ask its caller for a certificate"
+    why: >
+      The exporter still serves TLS, the scrape still verifies it and still
+      presents its certificate, and every check that the scrape works goes on
+      passing. What changed is that the exporter no longer needs to be shown
+      one, so every pod in the cluster can read the host.
+
+  - guard: TestTheHostsExporterHasOneName
+    file: clusters/core/infrastructure/configs/host-metrics.yaml
+    find: "serverName: hypervisor.monitoring.svc"
+    replace: "serverName: hypervisor.monitoring"
+    mentions: "does not verify the exporter as"
+    why: >
+      The certificate is generated for one name and the scrape verifies
+      another. Every manifest is valid and nothing fails until Prometheus
+      refuses the exporter's certificate on the estate, which reads there as
+      a host that is down.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml

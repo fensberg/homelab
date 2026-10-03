@@ -95,9 +95,72 @@ resource "kubernetes_secret" "monitoring_vars" {
 
   data = {
     ETCD_ENDPOINTS = jsonencode(local.node_ips)
-    # Where the hypervisor's own exporter answers: the site's gateway, which
-    # every machine of the site can reach and nothing outside it can. The
-    # playbook that installs it binds it there.
-    HYPERVISOR_ENDPOINTS = jsonencode(["${local.net.node_gateway}:9100"])
+  }
+}
+
+# The host under the machines, as something Prometheus can scrape.
+#
+# Its exporter is installed by the hypervisor playbook and answers on the
+# site's gateway, over TLS, to a scraper that presents a certificate. Three
+# things here, and Flux can make none of them: where it answers is a
+# node-network address, which this repository keeps out of git, and what the
+# scraper presents is a credential.
+#
+# A Service with no selector and the one address behind it, so the scrape in
+# the Flux tree names the exporter and never an address. The name is the one
+# in the exporter's certificate, which the contractor generates
+# (scripts/contractor/internal/phases/secrets.go).
+resource "kubernetes_service" "hypervisor" {
+  metadata {
+    name      = "hypervisor"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+
+  spec {
+    cluster_ip = "None"
+
+    port {
+      name        = "metrics"
+      port        = 9100
+      target_port = 9100
+    }
+  }
+}
+
+resource "kubernetes_endpoint_slice_v1" "hypervisor" {
+  metadata {
+    name      = "hypervisor"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+
+    labels = {
+      "kubernetes.io/service-name" = kubernetes_service.hypervisor.metadata[0].name
+    }
+  }
+
+  address_type = "IPv4"
+
+  endpoint {
+    addresses = [local.net.node_gateway]
+  }
+
+  port {
+    name         = "metrics"
+    port         = 9100
+    app_protocol = "https"
+  }
+}
+
+# What Prometheus verifies the exporter against, and what it presents to it.
+# The exporter's own key is not here and never leaves the vault and the host.
+resource "kubernetes_secret" "host_metrics" {
+  metadata {
+    name      = "host-metrics"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+
+  data = {
+    "authority.crt" = "${local.site.hypervisor.metrics.authority}\n"
+    "scraper.crt"   = "${local.site.hypervisor.metrics.scraper_certificate}\n"
+    "scraper.key"   = "${local.site.hypervisor.metrics.scraper_private_key}\n"
   }
 }

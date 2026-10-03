@@ -188,8 +188,9 @@ func TestPrometheusScrapesTheHost(t *testing.T) {
 		failures, total := scrapeFailures(t, tunnel.Endpoint(), job)
 		if total == 0 {
 			t.Fatalf("Prometheus has no target at all for the host.\n\n" +
-				"The scrape was never configured, or the address it reads was substituted empty - " +
-				"see kube-prometheus-stack.yaml and the monitoring-vars secret.")
+				"The operator leaves out a scrape whose Secret it cannot read, so either the scrape's " +
+				"definition never reconciled or the host-metrics Secret is not in the monitoring " +
+				"namespace - which the platform writes at the site's pinned release.")
 		}
 		t.Fatalf("Prometheus has %d target(s) for the host and none is healthy. What Prometheus recorded:\n\n  %s\n\n"+
 			"The exporter is installed by the hypervisor phase, which a converge does not run:\n\n"+
