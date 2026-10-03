@@ -94,9 +94,36 @@ worse version of a thing that already exists, and would then need maintaining.
 **Rejected:** a bespoke roll driver, which is what the first draft of this
 record proposed.
 
-### A candidate for upgrades in place: Tuppr, beside Cluster API
+### Cluster API waits; Tuppr and Talos's own reset do the work
 
-**Not decided.** From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11, the nearest neighbour this estate has.
+**Chose, 2026-10-03:** upgrades in place by Tuppr, removal by Talos's own
+graceful reset ordered by the converge, and Cluster API deferred.
+**Because:** what one node needs is narrow. Real replacement is for hardware
+that has gone, a move between hypervisors, or a resize, and two of those
+three need the second node that [`10-second-node.md`](10-second-node.md)
+waits on. What is left is a Talos or Kubernetes version reaching running
+machines (#97) and a safe scale-down, which is the acceptance test. Cluster
+API's cost lands now - most of `compute.tf` and `talos.tf` rewritten, a
+Proxmox token that can destroy machines kept in a cluster Secret, and no plan
+for a pull request to show - and its benefit lands with a fleet.
+And the ground moved: Sidero Labs ended development of the Talos bootstrap
+and control-plane providers in 2026 and handed them to the community, with a
+move to `kubernetes-sigs` under way. The control-plane provider is the piece
+this epoch wanted.
+**Rejected:** Cluster API now, for the reasons above. Omni, which is where
+Sidero's effort has gone: it is source-available and not open source, it
+would own the Talos configuration this repository generates, and one Omni
+sits above every site.
+**Revisit when:** the providers have settled under `kubernetes-sigs`, or a
+second node is being bought, whichever is first.
+
+This narrows "Adopt, do not build" without reversing it. The removal's
+ordering is the contractor's, and is a few calls to Talos's and Kubernetes'
+own tools: nothing here watches a machine or reconciles one.
+
+### Upgrades in place: Tuppr
+
+**Decided 2026-10-03, above; the design is not yet agreed.** From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11, the nearest neighbour this estate has.
 
 [Tuppr](https://github.com/home-operations/tuppr) is a small controller. A
 `TalosUpgrade` and a `KubernetesUpgrade` resource each name a version, a

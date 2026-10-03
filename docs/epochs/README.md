@@ -55,8 +55,9 @@ earlier epoch whose decisions you are about to touch.
   [02-abstraction.md](02-abstraction.md#known-driver-the-estate-runs-at-a-few-percent-and-the-fuse-is-memory).
 - **Not replaceable:** a control-plane node cannot be replaced on its own yet.
   Identity is keyed correctly as of epoch 01, so a single-node change is now
-  expressible; nothing drives it in order. Epoch 05 adopts Cluster API and
-  `talosctl upgrade` for that rather than building a driver.
+  expressible; nothing drives it in order. Epoch 05 takes Tuppr for
+  upgrades in place and Talos's own graceful reset for removal; Cluster API
+  is deferred.
 - **Who can do what:** Claude runs unprivileged, with no vault access, and
   publishes as a GitHub App that can push signed commits and open pull
   requests but cannot approve one or change `.github/workflows/` - it
