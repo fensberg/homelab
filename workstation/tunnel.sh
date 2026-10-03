@@ -188,6 +188,18 @@ gateway() {
 	ip -4 route show default | awk '{ print $3; exit }'
 }
 
+# connected reports whether the connector has registered with the vendor's
+# edge since this machine started.
+#
+# The log is read whole and then searched. Piped into `grep -q`, grep stops
+# at the first match, the log reader is killed writing the rest, and under
+# pipefail a connector that had connected four times read as not connected.
+connected() {
+	local log
+	log="$(sudo journalctl -u "$unit" -b --no-pager -n 400 2>/dev/null)" || return 1
+	grep -q "Registered tunnel connection" <<<"$log"
+}
+
 # check proves the lock from the connector's own user, and that the connector
 # is connected.
 check() {
@@ -231,7 +243,7 @@ check() {
 	if ! systemctl is-active --quiet "$unit"; then
 		say "[FAIL] the connector is not running ($unit)"
 		failed=1
-	elif sudo journalctl -u "$unit" -b --no-pager -n 400 2>/dev/null | grep -q "Registered tunnel connection"; then
+	elif connected; then
 		say "[ok]   the connector is connected to the vendor's edge"
 	else
 		say "[FAIL] the connector is running and has not connected. See: sudo journalctl -u $unit -n 50"
@@ -331,7 +343,7 @@ install_tunnel() {
 
 	say "waiting for the connector to reach the vendor's edge"
 	for _ in $(seq 1 30); do
-		sudo journalctl -u "$unit" -b --no-pager -n 400 2>/dev/null | grep -q "Registered tunnel connection" && break
+		connected && break
 		sleep 1
 	done
 	check || fail "installed, and not right. The lines above say what"
