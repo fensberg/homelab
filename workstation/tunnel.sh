@@ -192,7 +192,9 @@ gateway() {
 # is connected.
 check() {
 	local address failed=0
-	address="$(sed -n 's/^[[:space:]]*ip daddr \([0-9.]*\) tcp dport '"$ssh_port"' accept$/\1/p' "$etc/lock.nft" | head -n 1)"
+	# Read as root: the lock lives beside the connector's token, in a
+	# directory only root and the connector's group can open.
+	address="$(sudo sed -n 's/^[[:space:]]*ip daddr \([0-9.]*\) tcp dport '"$ssh_port"' accept$/\1/p' "$etc/lock.nft" | head -n 1)"
 	[ -n "$address" ] || fail "$etc/lock.nft names no address, so the tunnel is not installed here. Run: workstation/tunnel.sh install"
 
 	systemctl is-active --quiet "$lock_unit" || fail "the lock is not loaded ($lock_unit is not active), so the connector should not be running either"
