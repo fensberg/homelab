@@ -124,6 +124,14 @@
       "valid": false,
       "go_error_contains": "node_count",
       "because": "A zone with no node_count means one machine, so the count cannot be required to be positive. Negative is the meaningless value and would otherwise reach range() in variables.tf, exactly as a negative worker count would."
+    },
+    {
+      "name": "single_worker_fails_its_precondition",
+      "fixture": "single-worker.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "worker_count",
+      "because": "A converge runs on a runner on a worker, and never retires or upgrades the machine it is on: it hands that one to the next job, which needs another worker to land on. With one worker that machine can never be replaced. None is valid, and two or more."
     }
   ]
 }

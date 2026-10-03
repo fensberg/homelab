@@ -299,7 +299,16 @@ VM.
 
 **Changing a running estate is `contractor converge-site`** (`task converge`). It
 renders, attaches to the state already in the cluster, and applies - the same
-phases as ignition minus `hypervisor` and `migrate`, plus `take-over` in front.
+phases as ignition minus `hypervisor` and `migrate`, plus `take-over` in front
+and `retire` after it.
+
+**Retire is what makes lowering a count safe.** Before OpenTofu destroys a
+machine the config no longer asks for, the machine is drained, takes itself
+out of etcd, and is deleted from Kubernetes, one at a time, with etcd and the
+databases asked whether they are whole in between. A converge never does this
+to the machine it is running on: it cordons that one, exits 4, and the same
+converge run from anywhere else finishes. See
+[`05-node-lifecycle.md`](docs/epochs/05-node-lifecycle.md).
 
 Take-over is where the safety lives. It refuses if local state exists, because
 that means an ignition stopped before Migrate and this workspace already holds

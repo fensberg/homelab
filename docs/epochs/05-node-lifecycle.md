@@ -94,24 +94,51 @@ worse version of a thing that already exists, and would then need maintaining.
 **Rejected:** a bespoke roll driver, which is what the first draft of this
 record proposed.
 
-### A candidate for upgrades in place: Tuppr, beside Cluster API
+### Cluster API waits; Talos's own tools do the work
 
-**Not decided.** From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11, the nearest neighbour this estate has.
+**Chose, 2026-10-03:** upgrades in place by `talosctl upgrade` and removal by
+Talos's own graceful reset, both ordered by the converge, and Cluster API
+deferred.
+**Because:** what one node needs is narrow. Real replacement is for hardware
+that has gone, a move between hypervisors, or a resize, and two of those
+three need the second node that [`10-second-node.md`](10-second-node.md)
+waits on. What is left is a Talos or Kubernetes version reaching running
+machines (#97) and a safe scale-down, which is the acceptance test. Cluster
+API's cost lands now - most of `compute.tf` and `talos.tf` rewritten, a
+Proxmox token that can destroy machines kept in a cluster Secret, and no plan
+for a pull request to show - and its benefit lands with a fleet.
+And the ground moved: Sidero Labs ended development of the Talos bootstrap
+and control-plane providers in 2026 and handed them to the community, with a
+move to `kubernetes-sigs` under way. The control-plane provider is the piece
+this epoch wanted.
+**Rejected:** Cluster API now, for the reasons above. Omni, which is where
+Sidero's effort has gone: it is source-available and not open source, it
+would own the Talos configuration this repository generates, and one Omni
+sits above every site.
+**Revisit when:** the providers have settled under `kubernetes-sigs`, or a
+second node is being bought, whichever is first.
 
-[Tuppr](https://github.com/home-operations/tuppr) is a small controller. A
-`TalosUpgrade` and a `KubernetesUpgrade` resource each name a version, a
-maintenance window, and health checks written as CEL over live resources: every
-node Ready, the database at its full instance count, storage healthy - the
-questions the Health phase already asks. Bump the version in git and it rolls
-the nodes one at a time, refusing to continue while a check is false.
+This narrows "Adopt, do not build" without reversing it. The removal's
+ordering is the contractor's, and is a few calls to Talos's and Kubernetes'
+own tools: nothing here watches a machine or reconciles one.
 
-It solves a different problem from Cluster API: Cluster API replaces machines,
-Tuppr upgrades the ones you have. For "patch Talos without losing a disk" it is
-the smaller tool, and it does not preclude Cluster API later. It would close
-most of #97, where a Talos version reaches these machines only by rebuilding
-them.
+### The converge rolls an upgrade, and Tuppr is not taken
 
-What has to be proved before trusting it:
+**Chose, 2026-10-03:** the converge runs `talosctl upgrade` one machine at a
+time, with the Health phase's checks between machines.
+**Rejected:** [Tuppr](https://github.com/home-operations/tuppr), a small
+controller that rolls a version named in git, from
+[ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on
+2026-09-11. It was chosen the same morning and given up on reading its
+requirements: its namespace is granted `os:admin` on the Talos API of every
+node, permanently, so any pod that gets into that namespace can reset or
+reconfigure every machine in the site.
+**Because:** a credential's short life is the safeguard here. The converge
+already holds Talos admin while it runs and at no other time, so it needs
+nothing new, and there is no new supplier. What Tuppr had and this does not
+is a maintenance window.
+
+What has to be proved before trusting an upgrade in place, whoever rolls it:
 
 - **That the data partition survives.** OpenEBS hostpath volumes live on it,
   and whether an upgrade preserves it has been a flag rather than a guarantee
@@ -121,9 +148,100 @@ What has to be proved before trusting it:
   Tailscale extension; an upgrade that drops the schematic brings nodes back
   without the overlay.
 - **That OpenTofu reads the same version** it does, or the next ignition
-  quietly downgrades (#339).
-- It is a new supplier, `home-operations`, so it comes in a pull request of its
-  own.
+  quietly downgrades (#339), and that a version bump does not make it plan
+  to replace the machines.
+- **That the path is one Talos allows.** Nothing but this repository will
+  refuse a jump across minor versions.
+
+### A machine leaves in order, and the converge is what orders it
+
+**Chose, 2026-10-03:** a `retire` phase in the converge, after `take-over`
+and before `compute`. A machine is leaving when the cluster has it and the
+config no longer asks for it. For each one, workers before control planes:
+Talos's graceful reset, which cordons it, drains it and takes it out of etcd;
+the Kubernetes node deleted; etcd asked whether it has the members it should
+and all of them vote. Only then does `compute` reach OpenTofu, which destroys
+a machine that is already empty and already out.
+**Because:** every piece is a call to Talos's or Kubernetes' own tool, and
+what is ours is the order. Workers and control planes are both in scope.
+
+The drain is `kubectl drain`, ahead of the reset, and not the one Talos's
+reset does for itself: that it honours a disruption budget is known of the
+first and was only assumed of the second.
+
+Before any machine is touched the phase refuses, with nothing changed, if:
+etcd does not have every control plane as a voting member; a database has a
+single instance; or a leaving machine holds a volume nothing will move. A
+machine that will not empty is left cordoned and running, and is not reset.
+
+### What is on a leaving machine's own disk
+
+Volumes here are OpenEBS hostpath: each is a directory on one machine, and
+goes with it. Decided 2026-10-03, on reading that the state database is three
+instances on such volumes with nothing saying which machines hold them.
+
+**Chose:** move the data at the application's layer.
+
+- **A database is moved by its operator.** The phase opens CloudNativePG's
+  maintenance window on every cluster with `reusePVC: false`, which is how
+  the operator is told a machine is not coming back: it builds the instance
+  again on another machine by replication, and switches the primary over
+  first if the machine holds it. The phase waits for every database to be
+  whole before the reset, and closes the window whatever happened, because
+  an open window stops a database healing itself. The operator calls this
+  unsuitable for a large database; OpenTofu's state is small.
+- **A database needs two instances to be moved at all.** The operator
+  refuses to drain a machine holding the only one.
+- **Every workload that declared a backup takes one first**, by the same
+  declaration a teardown reads (#588), so what it restores elsewhere is
+  current.
+- **Any other volume on the machine is a refusal**, naming the claim.
+
+**Rejected for now:** volumes with a life of their own, attached to
+whichever machine runs the pod. It is the better property in general, and
+what separates storage from compute everywhere it matters. Here it means a
+storage driver holding a hypervisor credential in the cluster for good, or
+replicated storage, which this estate removed when it did not fit the disks;
+and #330 asked for it once and closed on backups to a bucket instead.
+**Revisit when** a workload can neither replicate nor stand a restore.
+
+**Not built:** a workload that declared a backup still has its claim on the
+leaving machine, and the phase refuses it like any other. Releasing that
+claim, so the workload starts elsewhere and restores, is a deletion this
+phase does not yet make.
+
+### Nobody is spared for holding the runner
+
+The converge runs on a runner pod inside the cluster, and the machine under
+it can be one the change disturbs. Refusing to touch that machine was
+proposed and turned down by the operator the same day: a machine kept
+because the runner happened to land on it is a machine nothing can replace.
+
+**Chose:** a job never disturbs the machine it is running on. It does every
+other machine, cordons its own, and ends cleanly - the state lock released,
+nothing half applied - with an exit code of its own, 4, that says it handed
+over. A second job follows it when it sees that code. Runner
+pods are made new for each job and Kubernetes places nothing new on a
+cordoned node, so the second job is somewhere else by construction. It runs
+the same converge, finds one machine left, and finishes; a machine that is
+staying is uncordoned.
+**Because:** it covers an upgrade as well as a removal. An upgrade reboots
+every node, so the runner's own node is always on the list, and cordoning
+only what is leaving would have answered half the question.
+**Rejected:** finishing the last machine from a workstation, which is a
+manual step on a path a merge drives. Shielding the runner's pod so the drain
+waits for the job, which is the job waiting on itself.
+
+What it needs:
+
+- **Two workers at least** in a site that runs its own runner, or the second
+  job has nowhere to land. The config contract refuses one.
+- **No runner kept idle.** The scale set's `minRunners` is 0; a test holds
+  it there, because an idle pod on the cordoned node would take the second
+  job.
+- **The runner's pod told which node it is on**, and a converge inside a
+  cluster that cannot say refusing to retire anything.
+- **A second job in `deploy-infrastructure.yml`**, which arrives as a patch.
 
 ### A failed converge does not get to pull this epoch forward
 
@@ -249,69 +367,25 @@ hardware - so that capacity released by a departing worker goes somewhere rather
 than back into an idle pool. Until then the worker floor stays warm, and the
 first worker holds the container and tool caches that make CI fast.
 
-### Adding a node needs no manual step after the vault entry
+### Adding a node is an epoch of its own
 
-Agreed 2026-10-02, while closing epoch 02, where this began as "adding a
-node needs no commit". Not built. Credentials go in the site's vault and the
-site takes up the capacity; nothing else is done by hand. This epoch owns it
-because every part of it is about a machine joining, moving or leaving, and
-it is built before any site has a second node.
+Cleaved 2026-10-03. The design agreed on 2026-10-02 - a site takes up a
+second node with no manual step after a vault entry - was written here
+because every part of it is about a machine joining, moving or leaving. But
+none of it can be exercised before a second server exists, and everything
+else in this epoch can be built and proved on one node. So it moved, whole,
+to [`10-second-node.md`](10-second-node.md), which waits on a second node
+being bought.
 
-- **The nodes a site has are checked, never declared and never guessed.**
-  The contractor asks the site which nodes are there and assigns work
-  accordingly. One up is a site with one node; two up is a site with two.
-  A node gets a default share of workers.
-- **Machines may move when a node is adopted**, so the work is in making a
-  move safe - cordon, drain, remove the etcd member, replace, wait for
-  health - which is this epoch's own subject.
-- **A Proxmox cluster per site**, not nodes standing alone. So the site's
-  one API token covers a node the moment it joins, and the site's runner
-  mints and stores nothing: its vault access stays read-only and no new
-  vault is needed. The costs are Proxmox's own: a join needs root on a
-  member that is already running, every member is root on every other, and
-  two members are not a quorum when one is down. **Open:** where the third
-  vote lives.
-- **Push, with a bootstrap key that is soon worthless.** The vault entry
-  holds a key the new server accepts only until it expires. The site's
-  runner finds the entry, prepares the server with the existing playbook,
-  removes the key, and proves it dead by trying it. Only after that refusal
-  is the node adopted and given work. Every step fails closed: an expired
-  key adopts nothing and is reported; a key that still works leaves the node
-  unadopted. The aim is not that the key cannot be stolen but that a stolen
-  one is worth nothing.
-- **Enrolment is signed, and there are two signatures.** One says the box
-  is genuine and which bootstrap key unlocks it; it is the builder's. The
-  other admits the box to a cluster; it is the cluster owner's. Each member
-  carries a narrow door that admits only an enrolment so signed, so a
-  stolen door key, a compromised runner or an altered vault entry admits
-  nothing. The expiry lives in the signed record and not on the box, so an
-  expired key is renewed by signing a new record into the vault. Today both
-  signers are the operator; they are kept apart from the start because the
-  estate may one day ship a server to somebody else, and a builder whose
-  signature admitted nodes to another's cluster would hold root on it.
-- **Security owns the key.** Its checks run on the site's runner, in the
-  job that adopts: before the contractor may use a key, that it is signed
-  and unexpired; after, that it is dead; every run, that no member still
-  carries one. The patrol cannot do this - it holds no credential that
-  reaches the estate, by design - and only confirms the job ran.
-- **Not the lawyer's.** The lawyer is the estate's. A node is capacity
-  inside one site.
-- **A server that is shipped has to be worthless in transit**: it carries
-  no secret of any site, and its disk unlocks only for an untampered boot.
-  FIDO Device Onboard is the standard this resembles; read it before
-  designing against it.
-
-**Open:** the third quorum vote; and whether the adoption runs on GitHub's
-scheduler, which is late more often than not, or on a timer inside the
-site.
+What stays here is the part that design depends on: making a move safe -
+cordon, drain, remove the etcd member, replace, wait for health. Epoch 10
+uses it and does not build it.
 
 ## Deferred
 
-- **Machine classes (#566).** VM sizes are literals in `compute.tf`: control
-  planes 4 cores / 4 GiB, workers 6 / 10 GiB, disks 64 and 32 GB. They belong
-  in named classes a site picks from per role, as cloud instance types are.
-  Deferred until a second host with different hardware makes the literals
-  wrong; found in epoch 02's abstraction review, 2026-09-27.
+- **Machine classes (#566)** moved to
+  [`10-second-node.md`](10-second-node.md) on 2026-10-03: its trigger is a
+  second host with different hardware.
 - **Placement is still a re-deal.** `vm_placement` recomputes
   `i % length(hypervisors)`, so adding a hypervisor reassigns existing nodes -
   the hazard in `02-abstraction.md`. Adopting Cluster API would retire the

@@ -166,6 +166,14 @@ resource "terraform_data" "invariants" {
       error_message = "worker_count must be between 0 and 55. Zero is valid and means no workers; the ceiling keeps the 200+ band inside a single octet."
     }
 
+    # A converge runs on a runner on a worker and never retires or upgrades
+    # the machine it is on: it hands that one to the next job, which has to
+    # land on another worker. See docs/epochs/05-node-lifecycle.md.
+    precondition {
+      condition     = local.worker_count != 1
+      error_message = "worker_count must be 0, or 2 or more. With one worker, nothing can ever replace or upgrade it: the converge that would is running on it."
+    }
+
     precondition {
       condition     = length(local.dmz_zone_names) <= local.dmz_max_zones
       error_message = "Too many untrusted zones. The ceiling is what keeps every zone's subnet inside the band reserved for tenants; none is valid and is the right default."

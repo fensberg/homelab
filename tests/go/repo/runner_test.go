@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"homelab/details/kube"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -224,8 +225,8 @@ func TestRunnerPodsCannotScheduleOntoAControlPlane(t *testing.T) {
 	}
 
 	controlPlane := map[string]string{
-		"kubernetes.io/os":                      "linux",
-		"node-role.kubernetes.io/control-plane": "",
+		"kubernetes.io/os":     "linux",
+		kube.ControlPlaneLabel: "",
 	}
 	worker := map[string]string{"kubernetes.io/os": "linux"}
 
@@ -279,5 +280,70 @@ func TestRunnerPodsAreNotBestEffort(t *testing.T) {
 				t.Errorf("container %q requests no %s, so it is BestEffort and the OOM controller will choose it first (#234)", c.Name, want)
 			}
 		}
+	}
+}
+
+// A converge that retires or upgrades a machine never touches the one it runs
+// on: it cordons it and hands it to the next job
+// (docs/epochs/05-node-lifecycle.md). Both halves of that are held here.
+//
+// The runner's pod is told which node it is on, under the name the retire
+// phase reads. Not told, the phase refuses to retire anything, and every
+// scale-down halts.
+//
+// And no runner is kept idle. The next job is somewhere else only because its
+// pod is made new and Kubernetes places nothing new on a cordoned node; an
+// idle pod already on that node would take the job and be drained under it.
+func TestARunnerKnowsItsNodeAndNoneIsKeptIdle(t *testing.T) {
+	declared := regexp.MustCompile(`ownMachineVar = "([A-Z_]+)"`).FindStringSubmatch(phaseSource(t, "retire"))
+	if declared == nil {
+		t.Fatal("the retire phase no longer declares the variable it reads its own node from, so this check is asserting nothing")
+	}
+	name := declared[1]
+
+	var doc struct {
+		Spec struct {
+			Values struct {
+				MinRunners *int `yaml:"minRunners"`
+				Template   struct {
+					Spec struct {
+						Containers []struct {
+							Name string `yaml:"name"`
+							Env  []struct {
+								Name      string `yaml:"name"`
+								ValueFrom struct {
+									FieldRef struct {
+										FieldPath string `yaml:"fieldPath"`
+									} `yaml:"fieldRef"`
+								} `yaml:"valueFrom"`
+							} `yaml:"env"`
+						} `yaml:"containers"`
+					} `yaml:"spec"`
+				} `yaml:"template"`
+			} `yaml:"values"`
+		} `yaml:"spec"`
+	}
+	_, body := fluxObject(t, kindHelmRelease, runnerScaleSet)
+	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
+		t.Fatalf("parsing the runner scale set: %v", err)
+	}
+
+	if doc.Spec.Values.MinRunners == nil || *doc.Spec.Values.MinRunners != 0 {
+		t.Error("the runner scale set keeps a runner idle, or does not say that it keeps none.\n\nA job that hands its machine to the next relies on the next one's pod being new. Set minRunners to 0.")
+	}
+
+	told := false
+	for _, c := range doc.Spec.Values.Template.Spec.Containers {
+		if c.Name != "runner" {
+			continue
+		}
+		for _, e := range c.Env {
+			if e.Name == name && e.ValueFrom.FieldRef.FieldPath == "spec.nodeName" {
+				told = true
+			}
+		}
+	}
+	if !told {
+		t.Errorf("the runner container is not given %s from spec.nodeName, so a converge on it cannot tell which machine it must not retire and refuses to retire any.", name)
 	}
 }

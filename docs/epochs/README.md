@@ -15,7 +15,9 @@ earlier epoch whose decisions you are about to touch.
   it could run at all; epoch 04 built the monitoring stack (#435). Epoch 01
   signed off 2026-09-03. Epoch 02 closed 2026-10-02: it carried the
   estate/site split, the as-built record and the release a site pins. Epoch
-  05 is next, and is built before any site has a second node.
+  05 is next: replacing the machines a site has, all of it provable on one
+  node. Taking up a second node was cleaved from it on 2026-10-03 into
+  epoch 10, which waits on a second node being bought.
 - **Built:** the site lifecycle program (`scripts/contractor`) and the
   estate's (`scripts/lawyer`), each holding only its own scope's credentials;
   an idempotent Proxmox playbook, Talos + Flux provisioning, codified
@@ -53,8 +55,9 @@ earlier epoch whose decisions you are about to touch.
   [02-abstraction.md](02-abstraction.md#known-driver-the-estate-runs-at-a-few-percent-and-the-fuse-is-memory).
 - **Not replaceable:** a control-plane node cannot be replaced on its own yet.
   Identity is keyed correctly as of epoch 01, so a single-node change is now
-  expressible; nothing drives it in order. Epoch 05 adopts Cluster API and
-  `talosctl upgrade` for that rather than building a driver.
+  expressible; nothing drives it in order. Epoch 05 has the converge order
+  Talos's own upgrade and graceful reset, one machine at a time; Cluster API
+  is deferred.
 - **Who can do what:** Claude runs unprivileged, with no vault access, and
   publishes as a GitHub App that can push signed commits and open pull
   requests but cannot approve one or change `.github/workflows/` - it
@@ -77,6 +80,7 @@ earlier epoch whose decisions you are about to touch.
 | 07  | Metered Egress | `clusters/management/`, `scripts/`    | Not started | [07-metered-egress.md](07-metered-egress.md) |
 | 08  | Agent Roles    | `.github/`, `scripts/`                | In progress | [08-agent-roles.md](08-agent-roles.md)       |
 | 09  | Access         | `management/estate/`                  | Not started | [09-access.md](09-access.md)                 |
+| 10  | Second Node    | `management/`, `scripts/contractor/`  | Not started | [10-second-node.md](10-second-node.md)       |
 
 ## Working an epoch
 

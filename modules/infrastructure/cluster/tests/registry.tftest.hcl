@@ -202,6 +202,20 @@ run "negative_worker_count_fails_its_precondition" {
   expect_failures = [terraform_data.invariants]
 }
 
+run "single_worker_fails_its_precondition" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/single-worker.json"
+  }
+
+  plan_options {
+    target = [terraform_data.invariants]
+  }
+
+  expect_failures = [terraform_data.invariants]
+}
+
 run "negative_zone_node_count_fails_its_precondition" {
   command = plan
 

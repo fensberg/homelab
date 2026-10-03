@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"fmt"
+	"homelab/details/kube"
 	"sort"
 	"strings"
 	"testing"
@@ -69,7 +70,7 @@ const talosOwned = "kube-system"
 // planes, identified by the label CloudNativePG puts on its instance pods
 // rather than by a namespace name - the namespace comes from a vault value and
 // must not be written down here.
-const cnpgInstanceLabel = "cnpg.io/cluster"
+const cnpgInstanceLabel = kube.DatabaseLabel
 
 func readPlacement(t *testing.T) placement {
 	t.Helper()
@@ -82,7 +83,7 @@ func readPlacement(t *testing.T) placement {
 	for _, n := range nodes {
 		prefix := "wk"
 		role := "worker"
-		if _, ok := n.Labels["node-role.kubernetes.io/control-plane"]; ok {
+		if _, ok := n.Labels[kube.ControlPlaneLabel]; ok {
 			prefix, role = "cp", "control-plane"
 		}
 		parts := strings.Split(n.Name, "-")

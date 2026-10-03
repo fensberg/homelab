@@ -411,6 +411,18 @@ Nothing has been touched. Re-run without -whatif to do it.
 	runErr := runInterruptibly(ctx, toRun)
 	completed := runErr == nil
 
+	// Not a failure: the retire phase did all it may from the machine it is
+	// on, and the job after this one finishes. Nothing past it has run, so
+	// the workspace is sterilized here. The exit code is how the next job is
+	// told: it is the one channel a workflow already reads.
+	var handed *phases.HandedOver
+	if errors.As(runErr, &handed) {
+		fmt.Println()
+		run.Warn("HANDED OVER: " + handed.Error() + ". Run the converge again from anywhere else to finish.")
+		_ = phases.Sterilize(ctx, true)
+		os.Exit(exitHandedOver)
+	}
+
 	if runErr != nil {
 		fmt.Println()
 		run.Fail("HALTED: " + runErr.Error())
@@ -523,6 +535,10 @@ const (
 	exitMayHaveChanged = 1
 	exitUntouched      = 2
 	exitSuperseded     = 3
+	// exitHandedOver is a converge that did everything but retire the machine
+	// it runs on. Not a failure; the same converge, run again from another
+	// machine, finishes.
+	exitHandedOver = 4
 )
 
 // beforeAnyPhase is the exit code for a run that stopped before its first

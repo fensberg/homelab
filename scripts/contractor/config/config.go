@@ -599,6 +599,12 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	if site.WorkerCount < 0 {
 		return nil, fmt.Errorf("site '%s' has worker_count %d; it cannot be negative", name, site.WorkerCount)
 	}
+	// A converge runs on a runner on a worker and never retires or upgrades
+	// the machine it is on: it hands that one to the next job, which has to
+	// land on another worker (docs/epochs/05-node-lifecycle.md).
+	if site.WorkerCount == 1 {
+		return nil, fmt.Errorf("site '%s' has worker_count 1; a site has no workers or at least two. With one, nothing can ever replace or upgrade it: the converge that would is running on it", name)
+	}
 	for zone, z := range site.DMZZones {
 		if zone == "" {
 			return nil, fmt.Errorf("site '%s' has an untrusted zone with no name; the name is what its subnet, its machines and its taint are derived from", name)
