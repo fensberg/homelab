@@ -1056,6 +1056,16 @@ tools:
       finding nothing else caught - CKV_GHA_7, on the expedite workflow's dispatch
       input. Its configuration is .checkov.yaml at the repository root, which
       predates this and carries the reasoning for every exclusion in it.
+  - source: cloudflare/cloudflared
+    version: CLOUDFLARED_VERSION
+    fetch: https://github.com/cloudflare/cloudflared/releases/download/{version}/cloudflared-linux-amd64
+    reason: >-
+      The tunnel's connector, for the workstation. A site's connector is the
+      same program as an image, already approved, running in the site's
+      cluster; the workstation is no site's and runs its own, so that it can
+      be reached when a cluster cannot (workstation/tunnel.sh). Taken as a
+      single static binary from the publisher's own release, the version the
+      clusters run, and installed only if its SHA256 matches the lock.
   - source: hadolint/hadolint
     version: HADOLINT_VERSION
     fetch: https://github.com/hadolint/hadolint/releases/download/v{version}/hadolint-linux-x86_64

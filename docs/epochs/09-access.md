@@ -87,6 +87,41 @@ to learn site names in the meantime.
 with a declared public one, so an internal service cannot shadow the public
 site.
 
+### The workstation has a tunnel of its own, locked on the workstation
+
+Built 2026-10-02, ahead of the rest of this epoch, because the operator was
+about to be away for a week with the laptop off the overlay.
+
+A site's tunnel carries that site's applications and its connector runs in
+that site's cluster. The workstation is no site's and must be reachable on
+the day a cluster is not, so it has its own: the estate makes one tunnel
+with one route (`management/estate/workstation.tf`), and the connector runs
+on the workstation as a service (`workstation/tunnel.sh`).
+
+- **The address is the workstation's own**, written in the estate's config
+  and held on the workstation's loopback. Not the address the house's
+  router hands out, which moves with a lease, and in a range no other
+  network hands out, so nothing shadows it from a hotel.
+- **What the connector may open is decided on the workstation, not at the
+  vendor.** It runs as a user of its own, and a firewall rule holds that
+  user to this machine's SSH port, the resolver and the vendor's edge. A
+  route added to the tunnel by mistake, or by somebody who took the
+  account, reaches nothing else in the house. The rule is a unit the
+  connector is bound to: no rule, no connector.
+- **It proves itself.** Installing and checking both try, as the
+  connector's user, the SSH port (which must answer) and the gateway and
+  this machine's other addresses (which must not, and must answer for
+  somebody not held to the rule, or the proof is of nothing).
+- **Its token is granted to nobody.** The install asks the account for it
+  once, with the token the estate is converged with, and writes it only into
+  a file the connector's group can read. A grant would have meant a new
+  vault, and a new service account to reach it.
+- **Getting in takes an enrolled device and an SSH key.** The tunnel adds a
+  path, not a credential.
+
+Not done: the provisioning playbook does not install this, so a rebuilt
+workstation needs `workstation/tunnel.sh install` run once.
+
 ## Outcome
 
 ## Deferred

@@ -56,3 +56,49 @@ It installs a build toolchain and nothing else. Project tooling - OpenTofu,
 `op`, `talosctl`, `kubectl`, `flux` - belongs to whatever you are working on,
 not to the machine, and pinning versions here would only drift from what the
 projects expect.
+
+## Reaching it from away
+
+The workstation has a tunnel of its own, so it can be reached from an
+enrolled device anywhere without the laptop joining the overlay, and
+without depending on any cluster being healthy.
+
+- **The estate's half** is `management/estate/workstation.tf`: one tunnel,
+  one route. The address it routes is `workstation.address` in
+  `config/estate.tpl.json`. It is the workstation's own, held on loopback,
+  not the address the house's router hands out, so it does not move with a
+  DHCP lease and is not shadowed by whatever network you are on.
+- **The workstation's half** is `workstation/tunnel.sh`: the connector, as a
+  service under a user of its own, and a firewall rule that holds that user
+  to this machine's SSH port. The connector cannot open the router, the
+  hypervisor, the overlay or any other port here, whatever routes the tunnel
+  is given.
+
+Getting in takes an enrolled device and an SSH key.
+
+Once, after the estate has been converged, with the token the lawyer runs
+with:
+
+```sh
+workstation/tunnel.sh install   # asks the account for the tunnel's token; asks for sudo
+```
+
+The token is granted to nobody and kept in no vault: the install asks the
+account for it with the estate's own token and writes it only where the
+connector can read it.
+
+It proves itself before it says it is installed, from the connector's own
+user: the SSH port answers, and the gateway and this machine's other
+addresses do not. Run the proof again whenever you like:
+
+```sh
+workstation/tunnel.sh check
+```
+
+Then, from an enrolled device on another network:
+
+```sh
+ssh <you>@198.18.0.1
+```
+
+`workstation/tunnel.sh remove` takes the workstation's half off again.
