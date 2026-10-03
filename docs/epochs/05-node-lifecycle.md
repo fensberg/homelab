@@ -249,69 +249,25 @@ hardware - so that capacity released by a departing worker goes somewhere rather
 than back into an idle pool. Until then the worker floor stays warm, and the
 first worker holds the container and tool caches that make CI fast.
 
-### Adding a node needs no manual step after the vault entry
+### Adding a node is an epoch of its own
 
-Agreed 2026-10-02, while closing epoch 02, where this began as "adding a
-node needs no commit". Not built. Credentials go in the site's vault and the
-site takes up the capacity; nothing else is done by hand. This epoch owns it
-because every part of it is about a machine joining, moving or leaving, and
-it is built before any site has a second node.
+Cleaved 2026-10-03. The design agreed on 2026-10-02 - a site takes up a
+second node with no manual step after a vault entry - was written here
+because every part of it is about a machine joining, moving or leaving. But
+none of it can be exercised before a second server exists, and everything
+else in this epoch can be built and proved on one node. So it moved, whole,
+to [`10-second-node.md`](10-second-node.md), which waits on a second node
+being bought.
 
-- **The nodes a site has are checked, never declared and never guessed.**
-  The contractor asks the site which nodes are there and assigns work
-  accordingly. One up is a site with one node; two up is a site with two.
-  A node gets a default share of workers.
-- **Machines may move when a node is adopted**, so the work is in making a
-  move safe - cordon, drain, remove the etcd member, replace, wait for
-  health - which is this epoch's own subject.
-- **A Proxmox cluster per site**, not nodes standing alone. So the site's
-  one API token covers a node the moment it joins, and the site's runner
-  mints and stores nothing: its vault access stays read-only and no new
-  vault is needed. The costs are Proxmox's own: a join needs root on a
-  member that is already running, every member is root on every other, and
-  two members are not a quorum when one is down. **Open:** where the third
-  vote lives.
-- **Push, with a bootstrap key that is soon worthless.** The vault entry
-  holds a key the new server accepts only until it expires. The site's
-  runner finds the entry, prepares the server with the existing playbook,
-  removes the key, and proves it dead by trying it. Only after that refusal
-  is the node adopted and given work. Every step fails closed: an expired
-  key adopts nothing and is reported; a key that still works leaves the node
-  unadopted. The aim is not that the key cannot be stolen but that a stolen
-  one is worth nothing.
-- **Enrolment is signed, and there are two signatures.** One says the box
-  is genuine and which bootstrap key unlocks it; it is the builder's. The
-  other admits the box to a cluster; it is the cluster owner's. Each member
-  carries a narrow door that admits only an enrolment so signed, so a
-  stolen door key, a compromised runner or an altered vault entry admits
-  nothing. The expiry lives in the signed record and not on the box, so an
-  expired key is renewed by signing a new record into the vault. Today both
-  signers are the operator; they are kept apart from the start because the
-  estate may one day ship a server to somebody else, and a builder whose
-  signature admitted nodes to another's cluster would hold root on it.
-- **Security owns the key.** Its checks run on the site's runner, in the
-  job that adopts: before the contractor may use a key, that it is signed
-  and unexpired; after, that it is dead; every run, that no member still
-  carries one. The patrol cannot do this - it holds no credential that
-  reaches the estate, by design - and only confirms the job ran.
-- **Not the lawyer's.** The lawyer is the estate's. A node is capacity
-  inside one site.
-- **A server that is shipped has to be worthless in transit**: it carries
-  no secret of any site, and its disk unlocks only for an untampered boot.
-  FIDO Device Onboard is the standard this resembles; read it before
-  designing against it.
-
-**Open:** the third quorum vote; and whether the adoption runs on GitHub's
-scheduler, which is late more often than not, or on a timer inside the
-site.
+What stays here is the part that design depends on: making a move safe -
+cordon, drain, remove the etcd member, replace, wait for health. Epoch 10
+uses it and does not build it.
 
 ## Deferred
 
-- **Machine classes (#566).** VM sizes are literals in `compute.tf`: control
-  planes 4 cores / 4 GiB, workers 6 / 10 GiB, disks 64 and 32 GB. They belong
-  in named classes a site picks from per role, as cloud instance types are.
-  Deferred until a second host with different hardware makes the literals
-  wrong; found in epoch 02's abstraction review, 2026-09-27.
+- **Machine classes (#566)** moved to
+  [`10-second-node.md`](10-second-node.md) on 2026-10-03: its trigger is a
+  second host with different hardware.
 - **Placement is still a re-deal.** `vm_placement` recomputes
   `i % length(hypervisors)`, so adding a hypervisor reassigns existing nodes -
   the hazard in `02-abstraction.md`. Adopting Cluster API would retire the

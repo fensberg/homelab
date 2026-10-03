@@ -2199,8 +2199,10 @@ capacity - and what that needs is a safe way to move running machines, a
 way to admit a server nobody has yet trusted, and somebody to watch the key
 that admits it. All of it is node lifecycle, none of it means anything
 before a second node exists, and epoch 05 is built before one does. The
-design agreed here is written into
-[`05-node-lifecycle.md`](05-node-lifecycle.md).
+design agreed here was written into
+[`05-node-lifecycle.md`](05-node-lifecycle.md), and moved on 2026-10-03 to
+[`10-second-node.md`](10-second-node.md), an epoch of its own that waits on
+a second node being bought.
 
 ### Removing an application touches only its own directories
 
@@ -3440,7 +3442,7 @@ Closed with it, as its bug squash:
 
 Two criteria left the epoch rather than being met in it, both by decision:
 a site without a commit (a site is declared in git, deliberately), and a
-node without a commit (epoch 05).
+node without a commit (epoch 05, since moved to epoch 10).
 
 ## Deferred
 
@@ -3448,7 +3450,8 @@ node without a commit (epoch 05).
 
 - **Renovate and signing**, the third and fourth stages of the release
   design: epoch 08.
-- **Adding a node with no manual step:** epoch 05, with the design agreed.
+- **Adding a node with no manual step:** epoch 10 (cleaved from epoch 05 on
+  2026-10-03), with the design agreed.
 - **The network between applications (#608):** epoch 03.
 - **The old label key on applications' namespaces (#540)** went on
   2026-10-02, after site0 ran the release that set `homelab/workload`: the
