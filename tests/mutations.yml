@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 192
+floor: 193
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1185,6 +1185,18 @@ mutations:
       deleting one, because the failure being guarded against is a request
       quietly dropped from an otherwise healthy-looking spec, not a block
       vanishing where a reader would notice it.
+
+  - guard: TestMeasuringTheHostChangesAllThreeHalvesTogether
+    file: management/hypervisor/hypervisor-prep.yml
+    find: "--web.listen-address={{ sdn_gateway }}:9100"
+    replace: "--web.listen-address=:9100"
+    mentions: "not told to listen on the site's gateway alone"
+    why: >
+      The exporter has no authentication. Bound to every address, it answers
+      on the LAN the hypervisor sits on as readily as on the site's own
+      network, and nothing else in the playbook would say so: the service
+      starts, the scrape is green, and the host's facts are open to the
+      building.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml

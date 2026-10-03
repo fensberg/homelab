@@ -663,6 +663,39 @@ nothing else, and what protects the estate is the backup and the rebuild. A
 restore drill on a schedule is the habit worth taking from that. Service
 level objectives and error budgets, which the deadlines stand in for.
 
+### The host is measured, and it took three tiers (built 2026-10-03)
+
+Criterion 1. The estate saw its machines and not the host under them, so the
+one number a site's capacity comes from was nobody's to read.
+
+**The exporter is Debian's package of the Prometheus project's node
+exporter**, installed by the hypervisor playbook without its recommended
+extras, which are scheduled collectors run as root that nothing here reads.
+
+**It answers on the site's gateway and nowhere else.** It has no
+authentication and its default is every address the host has, the LAN
+included. The gateway is reachable from the site's machines, and the
+untrusted zones are already closed to it. That leaves it readable by any pod
+in the cluster, which is the exposure etcd's metrics port has (#468) and is
+recorded here for the same reason.
+
+**Three halves in three tiers**, as scraping the control plane was two: the
+playbook installs it, OpenTofu writes where it answers into the
+`monitoring-vars` secret, and Prometheus scrapes what Flux substitutes.
+`TestMeasuringTheHostChangesAllThreeHalvesTogether` refuses any one alone,
+and the integration tier asks Prometheus for the host's total memory by name,
+because a target that is up proves a scrape and not a measurement.
+
+**Two of the three do not arrive with a merge.** The playbook is run by the
+hypervisor phase, which a converge leaves out, and the secret is written by a
+module the site runs at its pinned release (#618). Between the merge and
+both, the scrape job has no targets, which is quiet and not red.
+
+**A site with two hosts would be measured one at a time.** Every hypervisor
+in a site holds the same gateway address, so the scraper reaches whichever
+its own machine is on. That is [`10-second-node.md`](10-second-node.md)'s to
+answer.
+
 ### Open: the account holds two user API tokens and the tunnel uses one of them
 
 Parked deliberately on 2026-09-21 rather than resolved. The operator's position

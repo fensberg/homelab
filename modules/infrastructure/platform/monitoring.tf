@@ -95,5 +95,9 @@ resource "kubernetes_secret" "monitoring_vars" {
 
   data = {
     ETCD_ENDPOINTS = jsonencode(local.node_ips)
+    # Where the hypervisor's own exporter answers: the site's gateway, which
+    # every machine of the site can reach and nothing outside it can. The
+    # playbook that installs it binds it there.
+    HYPERVISOR_ENDPOINTS = jsonencode(["${local.net.node_gateway}:9100"])
   }
 }

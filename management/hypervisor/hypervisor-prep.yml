@@ -1698,3 +1698,94 @@
         - configure_overlay | bool
         - ts_running | bool
       tags: [routing]
+
+    # ========================================================================
+    # 8. Host metrics
+    # ========================================================================
+    # A site's capacity is this machine's, and until this nothing measured it:
+    # the estate saw the VMs and not the memory, the pressure or the disk
+    # under them (docs/epochs/04-observability.md). The exporter is Debian's
+    # own package of the Prometheus project's node exporter.
+    #
+    # Recommends are left out on purpose. They are a set of scheduled
+    # collectors run as root - SMART, apt, others - that nothing here reads.
+    - name: Install the host's metrics exporter
+      ansible.builtin.apt:
+        name:
+          - prometheus-node-exporter
+        state: present
+        install_recommends: false
+      tags: [metrics]
+
+    # The exporter has no authentication, and its default is every address
+    # the host has - which includes the LAN this hypervisor sits on. The
+    # site's gateway is reachable from the site's own machines and from
+    # nowhere else, and the untrusted zones are already closed to it.
+    #
+    # Every hypervisor in a site holds this same gateway address, so a site
+    # with two would be measured one host at a time, whichever the scraper's
+    # machine is on. That is the second node's to answer
+    # (docs/epochs/10-second-node.md).
+    - name: Have the exporter answer on the site's gateway and nowhere else
+      ansible.builtin.copy:
+        dest: /etc/default/prometheus-node-exporter
+        content: |
+          ARGS="--web.listen-address={{ sdn_gateway }}:9100"
+        owner: root
+        group: root
+        mode: "0644"
+      register: exporter_args
+      tags: [metrics]
+
+    - name: Create the directory for the exporter's unit override
+      ansible.builtin.file:
+        path: /etc/systemd/system/prometheus-node-exporter.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      tags: [metrics]
+
+    # The gateway's address belongs to a bridge the SDN brings up, and at boot
+    # the exporter can start before it. It exits when it cannot bind; this has
+    # it try again until it can.
+    - name: Have the exporter keep trying until the gateway exists
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/prometheus-node-exporter.service.d/gateway.conf
+        content: |
+          [Unit]
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Restart=always
+          RestartSec=10
+        owner: root
+        group: root
+        mode: "0644"
+      register: exporter_unit
+      tags: [metrics]
+
+    - name: Start the exporter, again if what it was told changed
+      ansible.builtin.systemd:
+        name: prometheus-node-exporter
+        enabled: true
+        daemon_reload: true
+        state: "{{ 'restarted' if (exporter_args.changed or exporter_unit.changed) else 'started' }}"
+      tags: [metrics]
+
+    # Asked the question Prometheus will ask, from the address it will ask
+    # at. A service that is running and answering on the wrong address looks
+    # healthy here and red there.
+    - name: Ask the exporter how much memory the host has
+      ansible.builtin.uri:
+        url: "http://{{ sdn_gateway }}:9100/metrics"
+        return_content: true
+      register: exporter_answer
+      retries: 6
+      delay: 5
+      until: exporter_answer.status == 200
+      failed_when: "'node_memory_MemTotal_bytes' not in (exporter_answer.content | default(''))"
+      changed_when: false
+      check_mode: false
+      tags: [metrics]
