@@ -276,6 +276,15 @@ spec:
             # Required whenever the template is overridden: the chart supplies
             # this only for its own default runner container.
             command: ["/home/runner/run.sh"]
+            # Which node this pod is on. A converge that retires or upgrades
+            # machines never touches its own: it cordons it and hands it to
+            # the next job. The contractor refuses to retire anything from a
+            # pod that cannot say.
+            env:
+              - name: CONTRACTOR_NODE_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: spec.nodeName
             # This container builds nothing and installs nothing - the image
             # carries the whole toolchain, pinned. So it needs no capability
             # and no route to acquire one. The root filesystem stays writable

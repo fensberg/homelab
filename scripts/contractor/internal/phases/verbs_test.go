@@ -45,6 +45,7 @@ var (
 		"hypervisor": "runs Ansible against the hypervisor, and no tofu",
 		"verify":     "probes the hypervisor's network, and no tofu",
 		"health":     "asks the cluster through kubectl and talosctl, and no tofu",
+		"retire":     "asks the cluster through kubectl and talosctl; retire_test.go runs it against recording programs",
 		"plan":       "plans in a copy; TestAPlanWalksTheStepsInACopy runs its sequence",
 		"record":     "plans in a copy; TestAPublishableRecordIsSavedWhereAsked runs its sequence",
 	}

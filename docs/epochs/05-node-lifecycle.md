@@ -165,6 +165,51 @@ a machine that is already empty and already out.
 **Because:** every piece is a call to Talos's or Kubernetes' own tool, and
 what is ours is the order. Workers and control planes are both in scope.
 
+The drain is `kubectl drain`, ahead of the reset, and not the one Talos's
+reset does for itself: that it honours a disruption budget is known of the
+first and was only assumed of the second.
+
+Before any machine is touched the phase refuses, with nothing changed, if:
+etcd does not have every control plane as a voting member; a database has a
+single instance; or a leaving machine holds a volume nothing will move. A
+machine that will not empty is left cordoned and running, and is not reset.
+
+### What is on a leaving machine's own disk
+
+Volumes here are OpenEBS hostpath: each is a directory on one machine, and
+goes with it. Decided 2026-10-03, on reading that the state database is three
+instances on such volumes with nothing saying which machines hold them.
+
+**Chose:** move the data at the application's layer.
+
+- **A database is moved by its operator.** The phase opens CloudNativePG's
+  maintenance window on every cluster with `reusePVC: false`, which is how
+  the operator is told a machine is not coming back: it builds the instance
+  again on another machine by replication, and switches the primary over
+  first if the machine holds it. The phase waits for every database to be
+  whole before the reset, and closes the window whatever happened, because
+  an open window stops a database healing itself. The operator calls this
+  unsuitable for a large database; OpenTofu's state is small.
+- **A database needs two instances to be moved at all.** The operator
+  refuses to drain a machine holding the only one.
+- **Every workload that declared a backup takes one first**, by the same
+  declaration a teardown reads (#588), so what it restores elsewhere is
+  current.
+- **Any other volume on the machine is a refusal**, naming the claim.
+
+**Rejected for now:** volumes with a life of their own, attached to
+whichever machine runs the pod. It is the better property in general, and
+what separates storage from compute everywhere it matters. Here it means a
+storage driver holding a hypervisor credential in the cluster for good, or
+replicated storage, which this estate removed when it did not fit the disks;
+and #330 asked for it once and closed on backups to a bucket instead.
+**Revisit when** a workload can neither replicate nor stand a restore.
+
+**Not built:** a workload that declared a backup still has its claim on the
+leaving machine, and the phase refuses it like any other. Releasing that
+claim, so the workload starts elsewhere and restores, is a deletion this
+phase does not yet make.
+
 ### Nobody is spared for holding the runner
 
 The converge runs on a runner pod inside the cluster, and the machine under
@@ -174,7 +219,8 @@ because the runner happened to land on it is a machine nothing can replace.
 
 **Chose:** a job never disturbs the machine it is running on. It does every
 other machine, cordons its own, and ends cleanly - the state lock released,
-nothing half applied - saying it handed over. A second job follows it. Runner
+nothing half applied - with an exit code of its own, 4, that says it handed
+over. A second job follows it when it sees that code. Runner
 pods are made new for each job and Kubernetes places nothing new on a
 cordoned node, so the second job is somewhere else by construction. It runs
 the same converge, finds one machine left, and finishes; a machine that is

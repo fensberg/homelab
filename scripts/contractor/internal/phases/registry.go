@@ -55,9 +55,15 @@ var RecordPhases = []string{
 // moment the estate is known to match the config, which is what makes a record
 // trustworthy (#554). It cannot fail the converge: see Record.
 //
+// retire comes before compute because compute is where OpenTofu destroys a
+// machine the config no longer asks for, and a machine destroyed with work on
+// it, or still a member of etcd, is the failure retire exists to prevent. It
+// may end the sequence early, with a HandedOver, when the machine left to
+// retire is the one this job runs on.
+//
 // tests/go/repo/converge_order_test.go holds the ordering rule.
 var ConvergePhases = []string{
-	"render", "verify", "take-over",
+	"render", "verify", "take-over", "retire",
 	"compute", "cluster", "health", "backup", "record", "sterilize",
 }
 
@@ -95,6 +101,8 @@ func dispatch(ctx *run.Context, name string) error {
 		return Plan(ctx)
 	case "record":
 		return Record(ctx)
+	case "retire":
+		return Retire(ctx)
 	case "compute":
 		return Compute(ctx)
 	case "cluster":
