@@ -1887,17 +1887,25 @@
     # turned away - which is the property, and a service that answered
     # everybody would pass the first question as well.
     - name: Ask the exporter for its certificate
-      ansible.builtin.command: >-
-        openssl s_client -connect {{ sdn_gateway }}:9100
-        -servername {{ host_metrics_name }} -verify_hostname {{ host_metrics_name }}
-        -CAfile /etc/prometheus-node-exporter/authority.crt
-      args:
-        stdin: ""
+      # s_client keeps a connection open and waits to be typed at until its
+      # input ends, so its input is ended here and the whole of it is given
+      # twenty seconds. The first version of this passed it an empty input
+      # the wrong way and waited for ever.
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          timeout 20 openssl s_client -connect {{ sdn_gateway }}:9100 \
+            -servername {{ host_metrics_name }} -verify_hostname {{ host_metrics_name }} \
+            -CAfile /etc/prometheus-node-exporter/authority.crt </dev/null 2>&1 || true
       register: exporter_certificate
       retries: 6
       delay: 5
-      until: "'Verify return code: 0 (ok)' in exporter_certificate.stdout"
-      failed_when: "'Verify return code: 0 (ok)' not in exporter_certificate.stdout"
+      until: >-
+        'Verify return code: 0 (ok)' in exporter_certificate.stdout or
+        'Verification: OK' in exporter_certificate.stdout
+      failed_when: >-
+        'Verify return code: 0 (ok)' not in exporter_certificate.stdout and
+        'Verification: OK' not in exporter_certificate.stdout
       changed_when: false
       check_mode: false
       tags: [metrics]
