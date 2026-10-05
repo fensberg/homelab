@@ -3,6 +3,7 @@ package phases
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
@@ -51,7 +52,77 @@ func ensureGeneratedSecrets(ctx *run.Context) error {
 	if err := ensureApplicationSecrets(ctx, onepassword.EnsureField); err != nil {
 		return err
 	}
+	if err := ensureHostMetrics(ctx, onepassword.Probe, onepassword.WriteItem, time.Now()); err != nil {
+		return err
+	}
 	return assertBackupKeypair(ctx)
+}
+
+// The host's exporter and the one scraper it admits.
+//
+// The exporter on a hypervisor serves over TLS and asks whoever connects for
+// a certificate (docs/epochs/04-observability.md). Both sides' certificates
+// and the authority that signed them are generated here, by this file's rule:
+// the scraper's key is written into a Secret, so it reaches state, so it is
+// ours to generate. They are an item of their own in the site's vault, which
+// the hypervisor playbook reads the exporter's half from and the platform
+// reads the scraper's half from.
+const (
+	hostMetricsItem = "host_metrics"
+	// HostMetricsName is what the exporter answers as: the name the cluster
+	// reaches it by, and so the name in its certificate.
+	HostMetricsName = "hypervisor.monitoring.svc"
+)
+
+// ensureHostMetrics generates the host's scrape credentials when the site has
+// none, and refuses a set that is partly there.
+//
+// All or nothing, because the five are one thing: two certificates signed by
+// an authority whose key was dropped when it had signed them. A missing field
+// cannot be made again to match the rest, and generating the rest again
+// beside it would leave a hypervisor and a cluster holding halves of
+// different sets.
+func ensureHostMetrics(
+	ctx *run.Context,
+	probe func(ref string) onepassword.Status,
+	write func(vault, title string, fields map[string]string) ([]string, error),
+	now time.Time,
+) error {
+	fields := []string{"authority", "certificate", "private_key", "scraper_certificate", "scraper_private_key"}
+	var missing []string
+	for _, f := range fields {
+		if probe(fmt.Sprintf("op://%s/%s/%s", ctx.Site, hostMetricsItem, f)) != onepassword.StatusOK {
+			missing = append(missing, f)
+		}
+	}
+	switch len(missing) {
+	case 0:
+		return nil
+	case len(fields):
+	default:
+		return fmt.Errorf(`the host's scrape credentials are incomplete: %s/%s has no %s.
+
+They are generated together and one cannot be replaced alone. Delete the item
+and run this again: a new set is generated, the hypervisor phase installs the
+exporter's half and a converge the scraper's`, ctx.Site, hostMetricsItem, strings.Join(missing, ", "))
+	}
+
+	c, err := secrets.ScrapeTLS(HostMetricsName, now)
+	if err != nil {
+		return fmt.Errorf("the host's scrape credentials: %w", err)
+	}
+	// Trimmed: a field is read back without the newline a PEM block ends in.
+	if _, err := write(ctx.Site, hostMetricsItem, map[string]string{
+		"authority":           strings.TrimSpace(c.Authority),
+		"certificate":         strings.TrimSpace(c.Certificate),
+		"private_key":         strings.TrimSpace(c.PrivateKey),
+		"scraper_certificate": strings.TrimSpace(c.ScraperCertificate),
+		"scraper_private_key": strings.TrimSpace(c.ScraperPrivateKey),
+	}); err != nil {
+		return fmt.Errorf("the host's scrape credentials: %w", err)
+	}
+	run.Ok("generated the host's scrape credentials and stored them in 1Password")
+	return nil
 }
 
 // ensureApplicationSecrets generates what the site's applications declared

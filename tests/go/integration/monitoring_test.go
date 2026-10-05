@@ -169,6 +169,39 @@ func TestPrometheusScrapesTheControlPlane(t *testing.T) {
 	}
 }
 
+// The host under the machines is measured (docs/epochs/04-observability.md,
+// acceptance criterion 1). Its exporter is installed by the hypervisor
+// playbook, which a converge does not run, so the manifests can all be right
+// and the target still be down: this is the only check that sees it.
+//
+// And a target that is up proves a scrape, not a measurement. The site's
+// capacity is derived from what the host says its memory is, so that series
+// is asked for by name.
+func TestPrometheusScrapesTheHost(t *testing.T) {
+	opts := k8s.NewKubectlOptions("", kubeconfig(t), monitoringNamespace)
+	tunnel := k8s.NewTunnel(opts, k8s.ResourceTypeService, "kube-prometheus-stack-prometheus", 0, 9090)
+	defer tunnel.Close()
+	tunnel.ForwardPort(t)
+
+	const job = "hypervisor"
+	if up := instantQuery(t, tunnel.Endpoint(), fmt.Sprintf(`sum(up{job=%q})`, job)); up == 0 {
+		failures, total := scrapeFailures(t, tunnel.Endpoint(), job)
+		if total == 0 {
+			t.Fatalf("Prometheus has no target at all for the host.\n\n" +
+				"The operator leaves out a scrape whose Secret it cannot read, so either the scrape's " +
+				"definition never reconciled or the host-metrics Secret is not in the monitoring " +
+				"namespace - which the platform writes at the site's pinned release.")
+		}
+		t.Fatalf("Prometheus has %d target(s) for the host and none is healthy. What Prometheus recorded:\n\n  %s\n\n"+
+			"The exporter is installed by the hypervisor phase, which a converge does not run:\n\n"+
+			"    contractor build-site -site <site> -phase hypervisor",
+			total, strings.Join(failures, "\n  "))
+	}
+	if memory := instantQuery(t, tunnel.Endpoint(), fmt.Sprintf(`max(node_memory_MemTotal_bytes{job=%q})`, job)); memory == 0 {
+		t.Fatal("the host's exporter is scraped and reports no total memory, so a site's capacity cannot be read from it.")
+	}
+}
+
 // scrapeFailures asks Prometheus which of a job's targets are failing and why.
 func scrapeFailures(t *testing.T, endpoint, job string) ([]string, int) {
 	t.Helper()

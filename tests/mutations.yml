@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 192
+floor: 195
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1185,6 +1185,40 @@ mutations:
       deleting one, because the failure being guarded against is a request
       quietly dropped from an otherwise healthy-looking spec, not a block
       vanishing where a reader would notice it.
+
+  - guard: TestMeasuringTheHostChangesAllThreeHalvesTogether
+    file: management/hypervisor/hypervisor-prep.yml
+    find: "--web.listen-address={{ sdn_gateway }}:9100"
+    replace: "--web.listen-address=:9100"
+    mentions: "not told to listen on the site's gateway alone"
+    why: >
+      The exporter has no authentication. Bound to every address, it answers
+      on the LAN the hypervisor sits on as readily as on the site's own
+      network, and nothing else in the playbook would say so: the service
+      starts, the scrape is green, and the host's facts are open to the
+      building.
+
+  - guard: TestMeasuringTheHostChangesAllThreeHalvesTogether
+    file: management/hypervisor/hypervisor-prep.yml
+    find: "client_auth_type: RequireAndVerifyClientCert"
+    replace: "client_auth_type: NoClientCert"
+    mentions: "does not ask its caller for a certificate"
+    why: >
+      The exporter still serves TLS, the scrape still verifies it and still
+      presents its certificate, and every check that the scrape works goes on
+      passing. What changed is that the exporter no longer needs to be shown
+      one, so every pod in the cluster can read the host.
+
+  - guard: TestTheHostsExporterHasOneName
+    file: clusters/core/infrastructure/configs/host-metrics.yaml
+    find: "serverName: hypervisor.monitoring.svc"
+    replace: "serverName: hypervisor.monitoring"
+    mentions: "does not verify the exporter as"
+    why: >
+      The certificate is generated for one name and the scrape verifies
+      another. Every manifest is valid and nothing fails until Prometheus
+      refuses the exporter's certificate on the estate, which reads there as
+      a host that is down.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml

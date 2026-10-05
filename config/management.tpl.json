@@ -44,6 +44,11 @@
         "vault_provider": "{{ op://site0/hypervisor/provider }}",
         "token_id": "{{ op://site0/hypervisor/token_id }}",
         "token_secret": "{{ op://site0/hypervisor/token_secret }}",
+        "metrics": {
+          "authority": "{{ op://site0/host_metrics/authority }}",
+          "scraper_certificate": "{{ op://site0/host_metrics/scraper_certificate }}",
+          "scraper_private_key": "{{ op://site0/host_metrics/scraper_private_key }}"
+        },
         "nodes": {
           "node0": {
             "hostname": "{{ op://site0/node0/hostname }}",
