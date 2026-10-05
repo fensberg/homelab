@@ -203,7 +203,9 @@ func untestedFunctions(name string, src []byte, blocks []coverageBlock) ([]strin
 		}
 	}
 
-	before := func(aLine, aCol, bLine, bCol int) bool { return aLine < bLine || aLine == bLine && aCol <= bCol }
+	before := func(line, col, thanLine, thanCol int) bool {
+		return line < thanLine || line == thanLine && col <= thanCol
+	}
 	for _, b := range blocks {
 		for _, f := range functions {
 			if before(f.from.Line, f.from.Column, b.line, b.col) && before(b.line, b.col, f.to.Line, f.to.Column) {
