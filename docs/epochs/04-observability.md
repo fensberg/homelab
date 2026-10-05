@@ -743,6 +743,16 @@ the operator leaves out a scrape whose Secret it cannot read. An earlier
 draft substituted the address into the chart's values, which until the pin
 moved would have been a value that was not there.
 
+**They are kept base64-encoded on one line, and the first version did not.**
+It stored PEM blocks. The config is a JSON template and a vault's value is
+substituted into it as it is, so the line breaks in a PEM block made the
+rendered config unparseable: the converge for the merge failed at Render,
+and so did every other verb that renders, for as long as it stood. The
+runner's key had been kept base64-encoded for exactly this reason since
+epoch 01 and the precedent was not followed. A test now substitutes each
+generated value into JSON the way the render does, and a set stored as PEM
+blocks is refused by name before the render can meet it.
+
 **The certificates last ten years and nothing renews them.** The scrape
 failing is what will say so.
 

@@ -31,7 +31,7 @@ rendered="config/management.placeholder.json"
 # everything left.
 sed -E \
 	-e 's#"([a-z_]*_url|url|endpoint)": *"\{\{[^}]*\}\}"#"\1": "https://example.invalid/placeholder"#' \
-	-e 's#"(private_key)": *"\{\{[^}]*\}\}"#"\1": "cGxhY2Vob2xkZXI="#' \
+	-e 's#"(private_key|authority|scraper_certificate|scraper_private_key)": *"\{\{[^}]*\}\}"#"\1": "cGxhY2Vob2xkZXI="#' \
 	-e 's#\{\{[^}]*\}\}#placeholder#g' \
 	"${template}" >"${rendered}"
 

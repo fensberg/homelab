@@ -158,9 +158,11 @@ resource "kubernetes_secret" "host_metrics" {
     namespace = kubernetes_namespace.monitoring.metadata[0].name
   }
 
-  data = {
-    "authority.crt" = "${local.site.hypervisor.metrics.authority}\n"
-    "scraper.crt"   = "${local.site.hypervisor.metrics.scraper_certificate}\n"
-    "scraper.key"   = "${local.site.hypervisor.metrics.scraper_private_key}\n"
+  # Each is a PEM block the vault keeps base64-encoded, which is the form a
+  # Secret stores: handed over as it is, and decoded nowhere on the way.
+  binary_data = {
+    "authority.crt" = local.site.hypervisor.metrics.authority
+    "scraper.crt"   = local.site.hypervisor.metrics.scraper_certificate
+    "scraper.key"   = local.site.hypervisor.metrics.scraper_private_key
   }
 }

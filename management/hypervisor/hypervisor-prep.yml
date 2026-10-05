@@ -1747,10 +1747,16 @@
     - name: Install the exporter's credentials
       tags: [metrics]
       block:
+        # Each is a PEM block kept base64-encoded on one line, because the
+        # same fields are substituted into the JSON config. Decoded here, into
+        # the file, with nothing printed.
         - name: Read the exporter's credentials from 1Password
-          ansible.builtin.command: >-
-            op read --out-file {{ host_metrics_staging.path }}/{{ item.file }}
-            op://{{ site_name }}/host_metrics/{{ item.field }}
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              set -o pipefail
+              umask 077
+              op read op://{{ site_name }}/host_metrics/{{ item.field }} | base64 --decode > {{ host_metrics_staging.path }}/{{ item.file }}
           loop: "{{ host_metrics_files }}"
           loop_control:
             label: "{{ item.field }}"
