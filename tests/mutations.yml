@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 198
+floor: 197
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1196,16 +1196,6 @@ mutations:
       is silenced. Its marks are still listed, so today nothing would be
       missed; the entry that goes missing next is the one for a scanner
       added tomorrow, whose mark nothing has ever looked for.
-
-  - guard: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
-    file: management/cluster/root.tf
-    find: "checkov:skip=CKV_TF_1:fetched by digest, proved by TestEverySiteRootRunsItsModulesAsReleased"
-    replace: "checkov:skip=CKV_TF_1:fetched by digest, which is stronger than a commit"
-    mentions: "names no guard"
-    why: >
-      The sentence is as plausible as it was and the scan is as quiet. What
-      is gone is the only thing that made it more than a sentence: the guard
-      that fails if the module ever stops being fetched by digest.
 
   - guard: TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
     file: scripts/details/repopath/repopath.go

@@ -12,6 +12,9 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/applications"
+	"homelab/details/flux"
 )
 
 // A path a tool is told not to read holds nothing this repository wrote to be
@@ -173,7 +176,7 @@ func whyOurs(t *testing.T, path string, vendored map[string]bool) string {
 			return "is a pnpm lockfile with something pnpm did not write"
 		}
 		return ""
-	case filepath.Base(path) == "kustomization.yaml":
+	case filepath.Base(path) == applications.Kustomization:
 		dec := yaml.NewDecoder(strings.NewReader(readRepoFile(t, path)))
 		for {
 			var doc struct {
@@ -186,7 +189,7 @@ func whyOurs(t *testing.T, path string, vendored map[string]bool) string {
 			if err != nil {
 				return "does not parse as YAML, so what it holds is not known"
 			}
-			if doc.Kind != "Kustomization" {
+			if doc.Kind != flux.Kustomization {
 				return "holds a " + doc.Kind + ", and only a file that assembles others may go unread"
 			}
 		}
