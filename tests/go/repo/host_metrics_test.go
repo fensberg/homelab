@@ -24,9 +24,11 @@ import (
 // the address and the certificates cannot reach the other.
 //
 // Two properties of the exporter itself are held as well. It answers on the
-// site's own gateway and nowhere else: its default is every address the host
-// has, the LAN included. And it asks whoever connects for a certificate:
-// without that, anything that can reach the gateway reads the host.
+// host's own address, which is where the Service points: its first address
+// was the site's gateway, which is inside the zone's VRF and which nothing on
+// the host could serve or reach. And it asks whoever connects for a
+// certificate: that address is on the network the hypervisor sits on, and
+// without it anything there reads the host.
 const hostExporterPackage = "prometheus-node-exporter"
 
 func TestMeasuringTheHostChangesAllThreeHalvesTogether(t *testing.T) {
@@ -56,10 +58,11 @@ func TestMeasuringTheHostChangesAllThreeHalvesTogether(t *testing.T) {
 		return
 	}
 
-	if !regexp.MustCompile(`--web\.listen-address=\{\{\s*sdn_gateway\s*\}\}:9100`).MatchString(playbook) {
-		t.Error("the host's exporter is not told to listen on the site's gateway alone.\n\n" +
-			"Its default is every address the hypervisor has, which includes the LAN it sits on. " +
-			"Set --web.listen-address={{ sdn_gateway }}:9100.")
+	if !regexp.MustCompile(`--web\.listen-address=\{\{\s*ansible_host\s*\}\}:9100`).MatchString(playbook) {
+		t.Error("the host's exporter is not told to listen on the host's own address.\n\n" +
+			"That is the address the Service OpenTofu writes points Prometheus at. On the site's " +
+			"gateway it is inside the zone's VRF, where a program on the host can neither answer " +
+			"nor be reached. Set --web.listen-address={{ ansible_host }}:9100.")
 	}
 	if !regexp.MustCompile(`client_auth_type:\s*RequireAndVerifyClientCert`).MatchString(playbook) {
 		t.Error("the host's exporter does not ask its caller for a certificate.\n\n" +

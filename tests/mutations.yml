@@ -1188,15 +1188,14 @@ mutations:
 
   - guard: TestMeasuringTheHostChangesAllThreeHalvesTogether
     file: management/hypervisor/hypervisor-prep.yml
-    find: "--web.listen-address={{ sdn_gateway }}:9100"
-    replace: "--web.listen-address=:9100"
-    mentions: "not told to listen on the site's gateway alone"
+    find: "--web.listen-address={{ ansible_host }}:9100"
+    replace: "--web.listen-address={{ sdn_gateway }}:9100"
+    mentions: "not told to listen on the host's own address"
     why: >
-      The exporter has no authentication. Bound to every address, it answers
-      on the LAN the hypervisor sits on as readily as on the site's own
-      network, and nothing else in the playbook would say so: the service
-      starts, the scrape is green, and the host's facts are open to the
-      building.
+      The address this was first given. The site's gateway is inside the
+      zone's VRF, so the exporter cannot answer on it and nothing on the host
+      can reach it: the playbook's own check waited on a connection that never
+      opened, twice, before anybody knew why.
 
   - guard: TestMeasuringTheHostChangesAllThreeHalvesTogether
     file: management/hypervisor/hypervisor-prep.yml

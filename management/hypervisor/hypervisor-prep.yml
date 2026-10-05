@@ -1822,20 +1822,26 @@
       register: exporter_web
       tags: [metrics]
 
-    # Its default is every address the host has, which includes the LAN this
-    # hypervisor sits on. The site's gateway is reachable from the site's own
-    # machines and from nowhere else, and the untrusted zones are already
-    # closed to it.
+    # On this host's own address: the one the cluster already reaches the
+    # Proxmox API at. Not the site's gateway, which was the first design and
+    # could never have worked. A zone is a VRF, a routing domain of its own,
+    # and the gateway's address is inside it: a program in the host's ordinary
+    # domain can neither answer on that address nor reach it, so the exporter
+    # could not be asked anything and the check below waited on a connection
+    # that never opened.
     #
-    # Every hypervisor in a site holds this same gateway address, so a site
-    # with two would be measured one host at a time, whichever the scraper's
-    # machine is on. That is the second node's to answer
-    # (docs/epochs/10-second-node.md).
-    - name: Have the exporter answer on the site's gateway and nowhere else
+    # That makes it reachable from the network the hypervisor sits on, which
+    # the gateway was chosen to avoid. What protects it is what the exporter
+    # serves with: TLS, to a caller that presents the scraper's certificate
+    # and to nobody else.
+    #
+    # And each hypervisor answers at its own address, so a site with two is
+    # measured as two.
+    - name: Have the exporter answer on this host's own address
       ansible.builtin.copy:
         dest: /etc/default/prometheus-node-exporter
         content: |
-          ARGS="--web.listen-address={{ sdn_gateway }}:9100 --web.config.file=/etc/prometheus-node-exporter/web.yml"
+          ARGS="--web.listen-address={{ ansible_host }}:9100 --web.config.file=/etc/prometheus-node-exporter/web.yml"
         owner: root
         group: root
         mode: "0644"
@@ -1851,10 +1857,9 @@
         mode: "0755"
       tags: [metrics]
 
-    # The gateway's address belongs to a bridge the SDN brings up, and at boot
-    # the exporter can start before it. It exits when it cannot bind; this has
-    # it try again until it can.
-    - name: Have the exporter keep trying until the gateway exists
+    # At boot the exporter can start before the address it answers on is up.
+    # It exits when it cannot bind; this has it try again until it can.
+    - name: Have the exporter keep trying until its address exists
       ansible.builtin.copy:
         dest: /etc/systemd/system/prometheus-node-exporter.service.d/gateway.conf
         content: |
@@ -1886,41 +1891,67 @@
     # name it will verify it for. And that a caller with no certificate is
     # turned away - which is the property, and a service that answered
     # everybody would pass the first question as well.
-    - name: Ask the exporter for its certificate
-      # s_client keeps a connection open and waits to be typed at until its
-      # input ends, so its input is ended here and the whole of it is given
-      # twenty seconds. The first version of this passed it an empty input
-      # the wrong way and waited for ever.
-      ansible.builtin.shell:
-        executable: /bin/bash
-        cmd: |
-          timeout 20 openssl s_client -connect {{ sdn_gateway }}:9100 \
-            -servername {{ host_metrics_name }} -verify_hostname {{ host_metrics_name }} \
-            -CAfile /etc/prometheus-node-exporter/authority.crt </dev/null 2>&1 || true
-      register: exporter_certificate
-      retries: 6
-      delay: 5
-      until: >-
-        'Verify return code: 0 (ok)' in exporter_certificate.stdout or
-        'Verification: OK' in exporter_certificate.stdout
-      failed_when: >-
-        'Verify return code: 0 (ok)' not in exporter_certificate.stdout and
-        'Verification: OK' not in exporter_certificate.stdout
-      changed_when: false
-      check_mode: false
+    #
+    # When either fails, what the host itself says about the exporter is
+    # read and reported. The first two failures here said nothing but that
+    # they had failed, and finding out why took a person and a shell.
+    - name: Ask the exporter what it serves, and to whom
       tags: [metrics]
+      block:
+        # s_client keeps a connection open and waits to be typed at until its
+        # input ends, so its input is ended here and the whole of it is given
+        # twenty seconds.
+        - name: Ask the exporter for its certificate
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              timeout 20 openssl s_client -connect {{ ansible_host }}:9100 \
+                -servername {{ host_metrics_name }} -verify_hostname {{ host_metrics_name }} \
+                -CAfile /etc/prometheus-node-exporter/authority.crt </dev/null 2>&1 || true
+          register: exporter_certificate
+          retries: 3
+          delay: 5
+          until: >-
+            'Verify return code: 0 (ok)' in exporter_certificate.stdout or
+            'Verification: OK' in exporter_certificate.stdout
+          failed_when: >-
+            'Verify return code: 0 (ok)' not in exporter_certificate.stdout and
+            'Verification: OK' not in exporter_certificate.stdout
+          changed_when: false
+          check_mode: false
 
-    - name: Ask the exporter for metrics with no certificate
-      ansible.builtin.command: >-
-        curl --silent --fail --max-time 10
-        --cacert /etc/prometheus-node-exporter/authority.crt
-        --resolve {{ host_metrics_name }}:9100:{{ sdn_gateway }}
-        https://{{ host_metrics_name }}:9100/metrics
-      register: exporter_unauthenticated
-      failed_when: exporter_unauthenticated.rc == 0
-      changed_when: false
-      check_mode: false
-      tags: [metrics]
+        - name: Ask the exporter for metrics with no certificate
+          ansible.builtin.command: >-
+            curl --silent --fail --max-time 10
+            --cacert /etc/prometheus-node-exporter/authority.crt
+            --resolve {{ host_metrics_name }}:9100:{{ ansible_host }}
+            https://{{ host_metrics_name }}:9100/metrics
+          register: exporter_unauthenticated
+          failed_when: exporter_unauthenticated.rc == 0
+          changed_when: false
+          check_mode: false
+      rescue:
+        # Structure and status only: the unit's state, what it logged, what is
+        # listening, and the settings file, which holds an address and a path.
+        - name: Read what the host says about the exporter
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              echo "service: $(systemctl is-active prometheus-node-exporter)"
+              echo "version: $(prometheus-node-exporter --version 2>&1 | head -1)"
+              echo "settings: $(cat /etc/default/prometheus-node-exporter)"
+              echo "listening: $(ss -ltn | grep ':9100 ' || echo nothing on 9100)"
+              echo "plain http answers: $(timeout 5 curl -s -o /dev/null -w '%{http_code}' http://{{ ansible_host }}:9100/metrics || echo no)"
+              echo "its last lines:"
+              journalctl -u prometheus-node-exporter -n 12 --no-pager -o cat || true
+          register: exporter_state
+          changed_when: false
+          failed_when: false
+          check_mode: false
+
+        - name: Say what was found
+          ansible.builtin.fail:
+            msg: "{{ ['The exporter did not answer as it should at ' + ansible_host + ':9100. What the host says:'] + exporter_state.stdout_lines }}"
 
     # ========================================================================
     # 9. The authority this host's API answers under

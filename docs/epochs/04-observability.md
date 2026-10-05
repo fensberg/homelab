@@ -705,9 +705,17 @@ one number a site's capacity comes from was nobody's to read.
 exporter**, installed by the hypervisor playbook without its recommended
 extras, which are scheduled collectors run as root that nothing here reads.
 
-**It answers on the site's gateway and nowhere else.** Its default is every
-address the host has, the LAN included. The gateway is reachable from the
-site's machines, and the untrusted zones are already closed to it.
+**It answers on the host's own address**, the one the cluster already reaches
+the Proxmox API at. The first design bound it to the site's gateway, to keep
+it off the network the hypervisor sits on, and that could never have worked:
+a zone is a VRF, a routing domain of its own, and the gateway's address is
+inside it. A program in the host's ordinary domain can neither answer on
+that address nor reach it. The playbook's own check waited on a connection
+that never opened, and it took three runs on the estate to find out why,
+because the check reported only that it had failed. It now reads what the
+host says about the exporter and reports that. On the host's own address the
+exporter is reachable from that network, and what protects it is the
+certificate it asks for.
 
 **It serves TLS and asks its caller for a certificate.** The first version
 served plain HTTP and excused the policy scan's objection to it, on the
@@ -726,10 +734,11 @@ certificate, which needs bcrypt and the contractor takes nothing from outside
 the standard library.
 
 **Three halves in three tiers.** The playbook installs the exporter. OpenTofu
-writes a Service with no selector and the one address behind it, and the
-Secret the scraper reads, because Flux can make neither: one is a
-node-network address and the other a credential. The Flux tree holds a
-`ScrapeConfig` that names the Service and the Secret and nothing else.
+writes a Service with no selector and the hypervisors' addresses behind it,
+and the Secret the scraper reads, because Flux can make neither: one is an
+address this repository keeps out of git and the other a credential. The
+Flux tree holds a `ScrapeConfig` that names the Service and the Secret and
+nothing else.
 `TestMeasuringTheHostChangesAllThreeHalvesTogether` refuses any one alone,
 `TestTheHostsExporterHasOneName` holds the four places its name is spelt to
 one, and the integration tier asks Prometheus for the host's total memory by
@@ -756,10 +765,9 @@ blocks is refused by name before the render can meet it.
 **The certificates last ten years and nothing renews them.** The scrape
 failing is what will say so.
 
-**A site with two hosts would be measured one at a time.** Every hypervisor
-in a site holds the same gateway address, so the scraper reaches whichever
-its own machine is on. That is [`10-second-node.md`](10-second-node.md)'s to
-answer.
+**Each hypervisor is measured at its own address**, so a site with two is
+measured as two. Bound to the gateway, which every host of a site shares,
+it would have been one at a time.
 
 ### Open: the account holds two user API tokens and the tunnel uses one of them
 

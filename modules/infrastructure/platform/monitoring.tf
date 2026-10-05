@@ -101,12 +101,12 @@ resource "kubernetes_secret" "monitoring_vars" {
 # The host under the machines, as something Prometheus can scrape.
 #
 # Its exporter is installed by the hypervisor playbook and answers on the
-# site's gateway, over TLS, to a scraper that presents a certificate. Three
-# things here, and Flux can make none of them: where it answers is a
-# node-network address, which this repository keeps out of git, and what the
-# scraper presents is a credential.
+# host's own address, over TLS, to a scraper that presents a certificate. Three
+# things here, and Flux can make none of them: where it answers is an address
+# this repository keeps out of git, and what the scraper presents is a
+# credential.
 #
-# A Service with no selector and the one address behind it, so the scrape in
+# A Service with no selector and the hypervisors' addresses behind it, so the scrape in
 # the Flux tree names the exporter and never an address. The name is the one
 # in the exporter's certificate, which the contractor generates
 # (scripts/contractor/internal/phases/secrets.go).
@@ -139,8 +139,10 @@ resource "kubernetes_endpoint_slice_v1" "hypervisor" {
 
   address_type = "IPv4"
 
+  # Each hypervisor at its own address: the one the site already reaches the
+  # Proxmox API at.
   endpoint {
-    addresses = [local.net.node_gateway]
+    addresses = [for key in sort(keys(local.site.hypervisor.nodes)) : local.site.hypervisor.nodes[key].ip]
   }
 
   port {
