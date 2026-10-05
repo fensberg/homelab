@@ -180,7 +180,7 @@ func TestVaultReportFailsOnAValueTheConfigCannotCarry(t *testing.T) {
 }
 
 // When the rendered config does not parse, the field that is why is named.
-func TestAnUnparseableConfigIsTracedToTheFieldThatBrokeIt(t *testing.T) {
+func TestAnUnparsableConfigIsTracedToTheFieldThatBrokeIt(t *testing.T) {
 	template := filepath.Join(t.TempDir(), "management.tpl.json")
 	body := `{"sites": {"site0": {"hypervisor": {
   "token_id": "{{ op://site0/hypervisor/token_id }}",

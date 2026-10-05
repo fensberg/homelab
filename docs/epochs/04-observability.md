@@ -746,7 +746,7 @@ moved would have been a value that was not there.
 **They are kept base64-encoded on one line, and the first version did not.**
 It stored PEM blocks. The config is a JSON template and a vault's value is
 substituted into it as it is, so the line breaks in a PEM block made the
-rendered config unparseable: the converge for the merge failed at Render,
+rendered config unparsable: the converge for the merge failed at Render,
 and so did every other verb that renders, for as long as it stood. The
 runner's key had been kept base64-encoded for exactly this reason since
 epoch 01 and the precedent was not followed. A test now substitutes each

@@ -68,7 +68,7 @@ func TestASiteWithNoScrapeCredentialsIsGivenAWholeSet(t *testing.T) {
 
 // The config is a JSON template, and a vault's value is put into it exactly
 // as it is. The first version of this stored PEM blocks, whose line breaks
-// made the rendered config unparseable and stopped every verb that renders.
+// made the rendered config unparsable and stopped every verb that renders.
 // So each value is substituted here the way the render does it, and the
 // result has to be JSON that gives the value back.
 func TestEveryScrapeCredentialSurvivesBeingSubstitutedIntoTheConfig(t *testing.T) {

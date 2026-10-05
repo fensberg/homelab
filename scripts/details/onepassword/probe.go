@@ -31,7 +31,7 @@ const (
 	// StatusBreaksConfig: the field has content the config cannot carry. The
 	// config is a JSON template and a value is substituted into it exactly as
 	// it is, so a line break, a quote or a backslash in one makes the
-	// rendered file unparseable, and every verb that renders stops at an
+	// rendered file unparsable, and every verb that renders stops at an
 	// error naming a byte offset and no field. A value of more than one line
 	// is kept base64-encoded.
 	StatusBreaksConfig

@@ -117,7 +117,7 @@ func breaksConfig(unsafe []config.VaultRef) string {
 %s
 
 The config is a JSON template and a value goes into it exactly as it is, so
-one of these makes the rendered config unparseable and stops every verb that
+one of these makes the rendered config unparsable and stops every verb that
 renders. Keep a value of more than one line base64-encoded on a single line,
 as the runner's private key is.`, len(unsafe), listRefs(unsafe))
 }
