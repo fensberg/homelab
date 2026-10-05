@@ -387,6 +387,7 @@ var workflowFile = regexp.MustCompile(`^\.github/workflows/([^/]+\.ya?ml)$`)
 type Git func(args ...string) ([]byte, error)
 
 func execGit(args ...string) ([]byte, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.Command("git", args...)
 	var stderr bytes.Buffer

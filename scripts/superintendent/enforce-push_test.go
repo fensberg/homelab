@@ -232,3 +232,44 @@ func TestSignatureDetectionDoesNotDependOnVerifiability(t *testing.T) {
 			"this hook's question and the commit object answers it unconditionally.")
 	}
 }
+
+// The hook as git runs it for a branch: the range comes from the environment
+// pre-commit sets, and the answer is a refusal or nothing.
+//
+// The tests above this ask unsignedCommits about a range and ask the hook
+// about refs it lets through. None asked the hook about a branch, which is
+// the one case it exists for: with the call to unsignedCommits deleted from
+// it, every one of them still passed.
+func TestAPushOfAnUnsignedCommitToABranchIsRefusedByTheHook(t *testing.T) {
+	base, unsigned, signed := fixtureRepo(t)
+
+	t.Setenv(fromRefEnv, base)
+	t.Setenv(toRefEnv, unsigned)
+	err := enforcePushRun(branchPrefix + "a-branch")
+	if err == nil {
+		t.Fatal("a push adding an unsigned commit to a branch was let through")
+	}
+	// The commit, as short as the refusal writes it.
+	for _, want := range []string{unsigned[:7], branchPrefix + "a-branch"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q:\n%v", want, err)
+		}
+	}
+
+	// The same branch, and a range holding only the signed commit.
+	t.Setenv(fromRefEnv, unsigned)
+	t.Setenv(toRefEnv, signed)
+	if err := enforcePushRun(branchPrefix + "a-branch"); err != nil {
+		t.Fatalf("a push of a signed commit was refused: %v", err)
+	}
+}
+
+// A range the hook cannot read is not a range with nothing unsigned in it.
+func TestAPushWhoseRangeCannotBeReadIsRefusedByTheHook(t *testing.T) {
+	fixtureRepo(t)
+	t.Setenv(fromRefEnv, "not-a-ref")
+	t.Setenv(toRefEnv, "also-not-a-ref")
+	if err := enforcePushRun(branchPrefix + "a-branch"); err == nil {
+		t.Fatal("a push the hook could not examine was let through")
+	}
+}

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 195
+floor: 204
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1219,6 +1219,102 @@ mutations:
       another. Every manifest is valid and nothing fails until Prometheus
       refuses the exporter's certificate on the estate, which reads there as
       a host that is down.
+  - guard: TestEveryToolThatArrivesSaysHowItIsSilenced
+    file: tests/silencers.yml
+    find: "arrives_as: [CHECKOV_VERSION]"
+    replace: "arrives_as: []"
+    mentions: "has not heard of"
+    why: >
+      The scanner is still pinned and still runs, and nothing now says how it
+      is silenced. Its marks are still listed, so today nothing would be
+      missed; the entry that goes missing next is the one for a scanner
+      added tomorrow, whose mark nothing has ever looked for.
+
+  - guard: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
+    file: management/cluster/root.tf
+    find: "checkov:skip=CKV_TF_1:fetched by digest, proved by TestEverySiteRootRunsItsModulesAsReleased"
+    replace: "checkov:skip=CKV_TF_1:fetched by digest, which is stronger than a commit"
+    mentions: "names no guard"
+    why: >
+      The sentence is as plausible as it was and the scan is as quiet. What
+      is gone is the only thing that made it more than a sentence: the guard
+      that fails if the module ever stops being fetched by digest.
+
+  - guard: TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
+    file: scripts/details/repopath/repopath.go
+    find: 'exec.Command("git", "-C", root, "remote", "get-url", "origin")'
+    replace: 'exec.Command(os.Getenv("GIT"), "-C", root, "remote", "get-url", "origin")'
+    mentions: "worked out at run time"
+    why: >
+      The program that reads the repository's remote is now whatever the
+      environment names. On a workstation that is git; on a runner it is
+      whatever a compromised step exported before this ran. Semgrep objects to
+      this line either way, and is silenced on it, so the silencing is only
+      true while this guard holds.
+
+  - guard: TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
+    file: .checkov.yaml
+    find: "  - (^|/)tests/"
+    replace: "  - tests"
+    mentions: "integration-tests.yml"
+    why: >
+      This is the exclusion as it was written, and what it cost. The pattern
+      is searched for anywhere in a path, so excusing the test trees also
+      excused a workflow with "tests" in its name, and a finding in that
+      workflow went unreported for as long as the line stood.
+
+  - guard: TestAWordCodespellAcceptsIsOnlyEverWrittenAsCode
+    file: docs/epochs/01-ignition.md
+    find: "    ip route get 10.10.10.1 from <workstation> iif tailscale0"
+    replace: "ip route get 10.10.10.1 from <workstation> iif tailscale0"
+    mentions: "in a sentence"
+    why: >
+      Four spaces fewer and the command is a paragraph. The word codespell
+      was told to accept as a flag's name is now prose, which is the case
+      the acceptance was never for.
+
+  - guard: TestAWorkflowThatTakesInputsCanPublishNothing
+    file: .github/workflows/integration-tests.yml
+    find: "permissions:\n  contents: read\n\n# One at a time."
+    replace: "permissions:\n  contents: write\n\n# One at a time."
+    mentions: "may write contents"
+    why: >
+      The workflow still takes which tier and which site from whoever
+      dispatches it, and can now push. That is the arrangement the excused
+      rule exists to refuse, and the rule is excused for the whole
+      repository on the strength of this.
+
+  - guard: TestAFunctionWhoseDoorAloneIsRunIsUntested
+    file: tests/go/repo/coverage_exemptions_test.go
+    find: "if f.total > 0 && f.ran*2 <= f.total {"
+    replace: "if f.total > 0 && f.ran == 0 {"
+    mentions: "want write alone"
+    why: >
+      This is the rule as it was: a function is tested if any statement of
+      it runs. A check added at the top of an untested function, and a test
+      of that check, took the function out of the ledger with everything
+      below the check still never run.
+
+  - guard: TestAFunctionHeldInAVariableIsCounted
+    file: tests/go/repo/coverage_exemptions_test.go
+    find: "\t\tcase *ast.GenDecl:\n\t\t\tast.Inspect(d, func(n ast.Node) bool {"
+    replace: "\t\tcase *ast.BadDecl:\n\t\t\tast.Inspect(d, func(n ast.Node) bool {"
+    mentions: "want the function at line 13"
+    why: >
+      Only declared functions are counted, which is what `go tool cover
+      -func` reports. A function written as a value and held in a variable is
+      the form a test replaces, so it is exactly the code no test runs, and
+      it was invisible.
+
+  - guard: TestAProfileLineThatIsNotABlockIsRefused
+    file: tests/go/repo/coverage_exemptions_test.go
+    find: "\t\t\treturn nil, fmt.Errorf(\"a line is not a coverage block: %q\", line)"
+    replace: "\t\t\tcontinue"
+    mentions: "read as a file with nothing untested"
+    why: >
+      A profile whose shape changed is skipped line by line and every file
+      comes back with nothing untested, which the ledger would then be asked
+      to agree with.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml

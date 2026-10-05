@@ -54,5 +54,7 @@
 # version of this note spelled two of them out literally and codespell promptly
 # flagged the comment instead of the file it was excluding.
 [codespell]
+# proved by TestAWordCodespellAcceptsIsOnlyEverWrittenAsCode
 ignore-words-list = iif
-skip = ./.git,./.unreleased,./coverage,./node_modules,./clusters/core/flux-system,./clusters/bootstrap,./pnpm-lock.yaml,*/go.sum,*/node_modules
+# proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
+skip = ./.git,./.unreleased,./coverage,./node_modules,./clusters/core/flux-system/gotk-components.yaml,./clusters/bootstrap/cilium.yaml,./pnpm-lock.yaml,*/go.sum,*/node_modules

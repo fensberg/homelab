@@ -15,4 +15,6 @@
 # pnpm, not prettier, owns this file's formatting. `pnpm install` is
 # idempotent on it - re-running with no dependency change touches nothing -
 # which is the property that actually keeps a lockfile diff reviewable.
+#
+# proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
 pnpm-lock.yaml

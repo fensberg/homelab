@@ -1,0 +1,171 @@
+# How each tool this repository runs can be told to look away.
+#
+# A finding that is silenced is a decision that the tool is wrong here, and a
+# decision with nobody checking it goes on being true only by luck. So every
+# silencing names the guard that proves its reason: the words `proved by` and
+# the name of a test in tests/go/repo, in the comment that carries it or, for
+# an entry in a tool's own configuration, in the comment above the entry. A
+# reason nothing can prove is not a reason, and what it excuses is fixed.
+#
+# tests/go/repo/suppressions_test.go reads this file. It finds every silencing
+# in every tracked file by the marks below, and refuses one that names no
+# guard, or a guard that does not exist.
+#
+# It also refuses a tool this file has not heard of. Every tool that arrives -
+# pinned in scripts/versions.env, run as a pre-commit hook, used as an action
+# or run as an image in a workflow - is either under `tools:` with the ways it
+# can be silenced, or under `judges_nothing:` because it builds, fetches or
+# formats and has no finding to silence. One that is neither fails, so a new
+# scanner cannot arrive with a way to be silenced that nothing reads.
+#
+# `marks` are what silences the tool from inside the file it is reading, as
+# they appear in a comment. `config` is the tool's own configuration: a file,
+# and the lists in it whose entries each excuse something.
+
+tools:
+  checkov:
+    arrives_as: [CHECKOV_VERSION]
+    marks: ["checkov:skip="]
+    config:
+      - file: .checkov.yaml
+        lists: [skip-check, skip-path]
+
+  semgrep:
+    arrives_as: [semgrep/semgrep]
+    marks: ["nosemgrep"]
+
+  hadolint:
+    arrives_as: [HADOLINT_VERSION]
+    marks: ["hadolint ignore=", "hadolint global ignore="]
+
+  zizmor:
+    arrives_as: [ZIZMOR_VERSION]
+    marks: ["zizmor: ignore["]
+    config:
+      - file: .github/zizmor.yml
+        lists: [rules.*.ignore, rules.*.disable]
+
+  shellcheck:
+    arrives_as: [SHELLCHECK_VERSION]
+    marks: ["shellcheck disable="]
+
+  go:
+    arrives_as: [GO_VERSION, actions/setup-go, go-fmt, test]
+    marks: ["#nosec", "nolint", "lint:ignore"]
+
+  codespell:
+    arrives_as: [CODESPELL_VERSION]
+    marks: ["codespell:ignore"]
+    config:
+      - file: .codespellrc
+        keys: [ignore-words-list, skip]
+
+  trufflehog:
+    arrives_as: [TRUFFLEHOG_VERSION]
+    marks: ["trufflehog:ignore"]
+
+  gitleaks:
+    arrives_as: [gitleaks]
+    marks: ["gitleaks:allow"]
+    config:
+      - file: .gitleaks.toml
+        tables: [allowlists]
+
+  trivy:
+    arrives_as: [aquasecurity/trivy-action]
+    marks: ["trivy:ignore"]
+    config:
+      - file: .trivyignore.yaml
+        lists: [misconfigurations, vulnerabilities, secrets, licenses]
+
+  codeql:
+    arrives_as:
+      [
+        github/codeql-action/init,
+        github/codeql-action/analyze,
+        github/codeql-action/upload-sarif,
+      ]
+    marks: ["codeql[", "lgtm["]
+
+  actionlint:
+    arrives_as: [actionlint]
+    config:
+      - file: .github/actionlint.yaml
+        lists: [paths.*.ignore]
+
+  markdownlint:
+    arrives_as: [markdownlint-cli2]
+    marks: ["markdownlint-disable", "markdownlint-configure-file"]
+    config:
+      - file: .markdownlint-cli2.yaml
+        lists: [ignores]
+        maps: [config]
+
+  prettier:
+    arrives_as: [prettier]
+    marks: ["prettier-ignore"]
+    config:
+      - file: .prettierignore
+        lines: true
+
+  typescript:
+    arrives_as: [NODE_VERSION, actions/setup-node, pnpm/action-setup]
+    marks: ["eslint-disable", "@ts-ignore", "@ts-expect-error", "@ts-nocheck"]
+
+  ansible:
+    arrives_as: [ANSIBLE_CORE_VERSION]
+    marks: ["noqa"]
+
+  kubeconform:
+    arrives_as: [KUBECONFORM_VERSION]
+
+  scorecard:
+    arrives_as: [ossf/scorecard-action]
+
+  dependency-review:
+    arrives_as: [actions/dependency-review-action]
+
+  commitlint:
+    arrives_as: [commitlint]
+
+  pre-commit-hooks:
+    arrives_as:
+      - PRE_COMMIT_HOOKS_VERSION
+      - check-shebang-scripts-are-executable
+      - check-merge-conflict
+      - detect-private-key
+      - check-yaml
+      - trailing-whitespace
+      - end-of-file-fixer
+    marks: ["pragma: allowlist secret"]
+
+  # The repository's own guards, which pre-commit runs.
+  own-guards:
+    arrives_as: [enforce-push, delivery-guard, enforce-merge]
+
+# Builds, fetches, formats or runs what it is given, and has no finding of
+# its own to silence.
+judges_nothing:
+  CILIUM_VERSION: the CNI's own manifests are rendered from it
+  CLERK_MODEL_VERSION: a model the clerk asks; it can stop nothing
+  CLERK_SWEEP_MODEL_VERSION: a model the clerk asks; it can stop nothing
+  INSPECTOR_MODEL_VERSION: a model the inspector asks to explain; the gate does not call it
+  CLOUDFLARED_VERSION: the tunnel's connector
+  FLUX_VERSION: the reconciler
+  HELM_VERSION: renders charts for validation
+  KUBECTL_VERSION: builds manifests and talks to a cluster
+  ORAS_VERSION: publishes and fetches packages
+  PRE_COMMIT_VERSION: runs the hooks, each of which is named here itself
+  RCLONE_DEB_VERSION: copies to object storage
+  RUNNER_VERSION: the runner's own agent
+  TALOSCTL_VERSION: talks to the machines
+  TASK_VERSION: runs the taskfile
+  TOFU_VERSION: plans and applies; its formatter and validator have nothing to silence
+  shfmt: formats shell
+  tofu-fmt: formats OpenTofu
+  actions/checkout: fetches the repository
+  actions/create-github-app-token: mints a token
+  actions/download-artifact: fetches an artifact
+  actions/upload-artifact: stores an artifact
+  actions/github-script: runs the repository's own scripts
+  step-security/harden-runner: restricts what a job can reach; its policy is owned by guard-egress

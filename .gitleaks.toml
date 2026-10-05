@@ -19,6 +19,8 @@ useDefault = true
 # one by shape alone. Nothing here is ever read as a credential - these
 # fixtures drive registry.tf's preconditions and config.ResolveSiteNetwork,
 # neither of which parses a key.
+#
+# proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
 [[allowlists]]
 description = "tofu test fixtures - fake by construction, and never parsed as credentials"
 paths = ['''modules/infrastructure/cluster/tests/fixtures/.*\.json''']

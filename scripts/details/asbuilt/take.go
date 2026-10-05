@@ -561,6 +561,7 @@ func depth(p string) int {
 // log - a diagnostic line through ErrorSummary, never the detail. A nil env is
 // the caller's own.
 func Exec(dir string, env []string, args ...string) ([]byte, []byte, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command("tofu", args...)
 	c.Dir = dir

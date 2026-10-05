@@ -24,5 +24,7 @@ config:
 # and not ours to lint. `ignores` is belt and braces for anyone running the CLI
 # directly.
 ignores:
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
   - "**/.terraform/**"
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
   - "**/node_modules/**"

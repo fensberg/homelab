@@ -79,8 +79,8 @@ module "cluster" {
   # than the commit hash or tag these two checks ask a git source for, and
   # not something they can read. TestEverySiteRootRunsItsModulesAsReleased
   # holds what they are for.
-  # checkov:skip=CKV_TF_1:fetched from a registry by digest, not from git
-  # checkov:skip=CKV_TF_2:fetched from a registry by digest, not from git
+  # checkov:skip=CKV_TF_1:fetched by digest, proved by TestEverySiteRootRunsItsModulesAsReleased
+  # checkov:skip=CKV_TF_2:fetched by digest, proved by TestEverySiteRootRunsItsModulesAsReleased
   source = var.unreleased != "" ? "${var.unreleased}/modules/infrastructure/cluster" : "oci://${var.release}//modules/infrastructure/cluster?digest=${var.digest}"
 
   site               = var.site
