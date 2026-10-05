@@ -1913,3 +1913,100 @@
       changed_when: false
       check_mode: false
       tags: [metrics]
+
+    # ========================================================================
+    # 9. The authority this host's API answers under
+    # ========================================================================
+    # Proxmox signs its own API certificate with an authority it makes when it
+    # is installed, which no public list knows. Everything here that talks to
+    # the API - the contractor, the provider, two test tiers - has therefore
+    # had certificate verification switched off, and anything able to stand
+    # between them and the host could have answered as it.
+    #
+    # The fix is for them to trust this authority and no other, and the first
+    # half of that is here: the certificate is read off the host, over the SSH
+    # connection whose host key is already trusted, and kept in the site's
+    # vault. Nothing reads it yet. Verification is switched on in a second
+    # change, once this has run, so that no site is ever asked to verify
+    # against an authority it has not been given.
+    #
+    # Kept base64-encoded on one line, as slurp returns it: a PEM block's line
+    # breaks do not survive the paths a vault's value travels here.
+    #
+    # Once per site and not once per node: the nodes of a Proxmox cluster
+    # share one authority.
+    - name: Read the authority this host's API certificate is signed by
+      ansible.builtin.slurp:
+        src: /etc/pve/pve-root-ca.pem
+      register: pve_authority
+      run_once: true
+      tags: [authority]
+
+    - name: Refuse anything that is not a certificate
+      ansible.builtin.assert:
+        that:
+          - "'BEGIN CERTIFICATE' in (pve_authority.content | b64decode)"
+          - "'PRIVATE KEY' not in (pve_authority.content | b64decode)"
+        fail_msg: >-
+          /etc/pve/pve-root-ca.pem did not read as a certificate, so it has not
+          been stored. Nothing else was changed.
+        quiet: true
+      run_once: true
+      tags: [authority]
+
+    - name: Check what authority the vault holds for this site
+      ansible.builtin.command: >-
+        op read op://{{ site_name }}/{{ op_item }}/authority
+      register: stored_authority
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      run_once: true
+      tags: [authority]
+
+    # A certificate, so it is not a secret and may be an argument. It is still
+    # passed in the environment, like the token above it, so that one way of
+    # writing a field is the only way this playbook has.
+    - name: Store the authority in 1Password
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          op item get {{ op_item }} --vault {{ site_name }} --format=json | jq '
+            .fields |= (
+                map(select(.label != "authority"))
+                + [{id: "authority", type: "STRING", label: "authority", value: env.AUTHORITY}]
+              )
+          ' | op item edit {{ op_item }} --vault {{ site_name }}
+      environment:
+        AUTHORITY: "{{ pve_authority.content }}"
+      delegate_to: localhost
+      become: false
+      when: stored_authority.rc != 0 or stored_authority.stdout != pve_authority.content
+      run_once: true
+      tags: [authority]
+
+    - name: Read the authority back
+      ansible.builtin.command: >-
+        op read op://{{ site_name }}/{{ op_item }}/authority
+      register: authority_read_back
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      check_mode: false
+      run_once: true
+      tags: [authority]
+
+    - name: Verify the vault holds the authority this host answers under
+      ansible.builtin.assert:
+        that:
+          - authority_read_back.stdout == pve_authority.content
+        fail_msg: >-
+          The authority in op://{{ site_name }}/{{ op_item }}/authority is not
+          the one read from this host. Verification against it would refuse
+          the host, so do not switch it on until this passes.
+        success_msg: "The hypervisor's authority is in 1Password."
+      run_once: true
+      tags: [authority]
