@@ -60,7 +60,7 @@ edit per new site and buys a smaller blast radius if a router is compromised.
 
 > **Subnet collisions.** Two sites on one tailnet advertising overlapping
 > ranges collide, and traffic goes to whichever route the tailnet resolves
-> first. Each site declares its own octet and owns 10.<octet>.0.0/16;
+> first. Each site declares its own octet and owns `10.<octet>.0.0/16`;
 > uniqueness is asserted at plan time, so a collision fails before it can
 > reach the tailnet.
 
@@ -77,8 +77,8 @@ edit per new site and buys a smaller blast radius if a router is compromised.
 subnet router, and one that puts the cluster nodes on the tailnet. A client
 scoped to only the router tag fails the second with `Failed to create key`,
 which is not obviously about tags at all. Tailscale does not let you edit a
-client'"'"'s tags after it is generated - add a tag means generate a new client and
-replace the credentials in the vault.
+client'"'"'s tags after it is generated - add a tag means generate a new client
+and replace the credentials in the vault.
 
 The tag must already exist in `tagOwners` from step 1, or it cannot be
 selected here. That ordering is why the policy comes first.
@@ -119,6 +119,7 @@ tailnet by construction, so `-` is always correct here. Naming the tailnet
 explicitly only matters for a personal API key with access to several, which
 this project does not use.
 
-Ignition takes it from there. `modules/infrastructure/cluster/overlay-network.tf` mints a
-tagged key per run; the playbook logs the hypervisor in with it; the policy
-above approves the advertised route automatically.
+Ignition takes it from there.
+`modules/infrastructure/cluster/overlay-network.tf` mints a tagged key per run;
+the playbook logs the hypervisor in with it; the policy above approves the
+advertised route automatically.

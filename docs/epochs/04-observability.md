@@ -160,11 +160,11 @@ precisely what the canary already exists to do from outside without holding any
 credential that reaches in. So the division is: peers measure and report, and
 the canary notices when reports stop arriving.
 
-`scripts/contractor/internal/survey` is the first increment of this. It runs on a peer, probes
-every peer it can see rather than trusting their status, and reports one row of
-the matrix; run on each hypervisor, the rows assemble into the whole. This
-epoch owns making it periodic, making its output land somewhere durable, and
-deciding what a hole in the mesh should page for.
+`scripts/contractor/internal/survey` is the first increment of this. It runs on
+a peer, probes every peer it can see rather than trusting their status, and
+reports one row of the matrix; run on each hypervisor, the rows assemble into
+the whole. This epoch owns making it periodic, making its output land somewhere
+durable, and deciding what a hole in the mesh should page for.
 
 ## Known driver: three placement questions that are alerts, not tests
 
@@ -530,10 +530,10 @@ metrics and fails when they are zero, and a repo guard refuses an unpinned MTU.
 
 **What is not known yet.** Whether crossplay holds a player who arrives through
 the tunnel. The tunnel carries connections the player starts, and crossplay
-insists on one the _server_ starts. The first test is crossplay on, joining
-with WARP connected. If that still fails at +5 s, the second test is crossplay
-off, joining by the game server's tunnel address on port 2456. That drops console players, and puts the
-friend who plays today on the member list too.
+insists on one the _server_ starts. The first test is crossplay on, joining with
+WARP connected. If that still fails at +5 s, the second test is crossplay off,
+joining by the game server's tunnel address on port 2456. That drops console
+players, and puts the friend who plays today on the member list too.
 
 ### The control plane is scraped, and it took two tiers (done 2026-09-20)
 

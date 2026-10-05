@@ -1209,9 +1209,10 @@
           fi
           removed=0
           while [ "$(iptables -t nat -S POSTROUTING | grep -F -c -- "$spec")" -gt 1 ]; do
-            # Unquoted on purpose: the spec has to word-split into arguments.
-            # shellcheck disable=SC2086
-            iptables -t nat -D ${spec#-A }
+            # The spec is the rule as iptables prints it: split into words
+            # here, and handed over as the arguments they are.
+            read -ra rule <<< "${spec#-A }"
+            iptables -t nat -D "${rule[@]}"
             removed=$((removed + 1))
           done
           echo "removed=$removed"

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 204
+floor: 205
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1315,6 +1315,18 @@ mutations:
       A profile whose shape changed is skipped line by line and every file
       comes back with nothing untested, which the ledger would then be asked
       to agree with.
+
+  - guard: TestAWorkflowStartedByAnotherTakesNothingFromItButItsOutcome
+    file: .github/workflows/duty.yml
+    find: '          checkout: "false"'
+    replace: '          checkout: "true"'
+    mentions: "does not tell its first step to check nothing out"
+    why: >
+      The workflow runs with the default branch's token for whatever run it
+      watches, a fork's pull request included. With a checkout, that run's
+      branch is on a privileged runner, which is the whole of what zizmor's
+      warning about the trigger is for, and the warning is silenced on the
+      strength of this.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml

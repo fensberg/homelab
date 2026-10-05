@@ -20,7 +20,9 @@
 #
 # `marks` are what silences the tool from inside the file it is reading, as
 # they appear in a comment. `config` is the tool's own configuration: a file,
-# and the lists in it whose entries each excuse something.
+# and the lists in it whose entries each excuse something. Under `maps`, an
+# entry is a rule the file switches off; one it only gives settings to is
+# still on.
 
 tools:
   checkov:
@@ -48,6 +50,9 @@ tools:
   shellcheck:
     arrives_as: [SHELLCHECK_VERSION]
     marks: ["shellcheck disable="]
+    config:
+      - file: .shellcheckrc
+        keys: [disable]
 
   go:
     arrives_as: [GO_VERSION, actions/setup-go, go-fmt, test]

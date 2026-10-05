@@ -146,16 +146,31 @@ func commentOn(line string, leaders []string) string {
 }
 
 // commentAround is the comment a mark sits in: the comment on its own line,
-// and the unbroken run of comment-only lines above it.
+// and the unbroken run of comment-only lines above and below it.
 func commentAround(lines []string, i int, leaders []string) string {
 	block := []string{commentOn(lines[i], leaders)}
-	for j := i - 1; j >= 0; j-- {
+	whole := func(j int) (string, bool) {
 		trimmed := strings.TrimSpace(lines[j])
 		c := commentOn(trimmed, leaders)
-		if c == "" || c != trimmed {
+		return c, c != "" && c == trimmed
+	}
+	for j := i - 1; j >= 0; j-- {
+		c, ok := whole(j)
+		if !ok {
 			break
 		}
 		block = append(block, c)
+	}
+	// Below only when the mark is itself in a comment-only line: a mark at
+	// the end of a line of code has that code under it, not its own comment.
+	if _, ok := whole(i); ok {
+		for j := i + 1; j < len(lines); j++ {
+			c, ok := whole(j)
+			if !ok {
+				break
+			}
+			block = append(block, c)
+		}
 	}
 	return strings.Join(block, "\n")
 }
@@ -269,6 +284,11 @@ func (s silencers) configEntries(t *testing.T) []configEntry {
 							continue
 						}
 						for i := 0; i+1 < len(n.Content); i += 2 {
+							// A rule switched off. One given settings is
+							// still on, and is not a silencing.
+							if v := n.Content[i+1]; v.Kind != yaml.ScalarNode || v.Value != "false" {
+								continue
+							}
 							k := n.Content[i]
 							out = append(out, configEntry{tool, c.File + ":" + strconv.Itoa(k.Line), k.Value, k.HeadComment + "\n" + k.LineComment + "\n" + n.Content[i+1].LineComment})
 						}

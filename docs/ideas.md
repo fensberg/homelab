@@ -21,12 +21,12 @@ once it's actually being worked on.
   just not built yet for a single-cluster homelab.
 - **Make the two config-contract implementations one implementation.** The
   contract tests added in the test epoch prove `registry.tf` and
-  `scripts/contractor/config/config.go` agree, which is a real improvement over hoping.
-  Proving agreement is still second best to not having two implementations:
-  the invariants could live in the OpenTofu alone, with the Go side shelling
-  out to a targeted `tofu plan` for its fast pre-flight. That trades
-  millisecond feedback for a subprocess and a provider directory, which is
-  why it was not done now - but it is the version with no drift to detect.
+  `scripts/contractor/config/config.go` agree, which is a real improvement over
+  hoping. Proving agreement is still second best to not having two
+  implementations: the invariants could live in the OpenTofu alone, with the Go
+  side shelling out to a targeted `tofu plan` for its fast pre-flight. That
+  trades millisecond feedback for a subprocess and a provider directory, which
+  is why it was not done now - but it is the version with no drift to detect.
 
 - **Prove the off-site recovery path by restoring it, nightly.** Nothing in
   this repository has ever been restored, so the honest status of the recovery
@@ -62,53 +62,51 @@ once it's actually being worked on.
   It stays absent from CI. A destructive nuke-and-pave should not be one
   dropdown selection away in a web UI, and that is unchanged.
 
-- **1Password for ignition, OpenBao for everything else.** _Decided._ 1Password is a password
-  manager doing a secrets-manager's job here, and the seams show: access is
-  granted per vault rather than per path, so narrowing what a CI token can read
-  means splitting vaults rather than writing a policy; there are no dynamic
-  secrets, no leases, no auth methods and no audit device. Those are symptoms
-  of the wrong category of tool, not problems to fix in place — so effort spent
-  restructuring vaults is effort thrown away at migration.
+- **1Password for ignition, OpenBao for everything else.** _Decided._ 1Password
+  is a password manager doing a secrets-manager's job here, and the seams show:
+  access is granted per vault rather than per path, so narrowing what a CI token
+  can read means splitting vaults rather than writing a policy; there are no
+  dynamic secrets, no leases, no auth methods and no audit device. Those are
+  symptoms of the wrong category of tool, not problems to fix in place — so
+  effort spent restructuring vaults is effort thrown away at migration.
   **OpenBao** is the natural target: the Linux Foundation fork of HashiCorp
-  Vault after it went BUSL, so it is the production pattern this project's
-  prime directive points at; OpenTofu ships a native `openbao` key provider,
-  which would key the state encryption in
-  `docs/state-and-secret-rotation.md` directly; and External Secrets Operator
-  bridges it into Kubernetes, replacing the OpenTofu-writes-the-secret
-  arrangement `database.tf` currently apologises for.
-  **The hard part is bootstrap, and it should be designed first.** Secrets are
-  read at ignition time, from a workstation, before the cluster exists — so a
-  secrets manager running _in_ that cluster cannot serve them. That is the same
-  circular dependency the state database already has, and it has the same
+  Vault after it went BUSL, so it is the production pattern this project's prime
+  directive points at; OpenTofu ships a native `openbao` key provider, which
+  would key the state encryption in `docs/state-and-secret-rotation.md`
+  directly; and External Secrets Operator bridges it into Kubernetes, replacing
+  the OpenTofu-writes-the-secret arrangement `database.tf` currently apologises
+  for. **The hard part is bootstrap, and it should be designed first.** Secrets
+  are read at ignition time, from a workstation, before the cluster exists — so
+  a secrets manager running _in_ that cluster cannot serve them. That is the
+  same circular dependency the state database already has, and it has the same
   shape of answer: either the secrets manager lives outside the cluster (on the
   hypervisor, with its own unseal problem), or a minimal bootstrap set stays
   local and age-encrypted while everything post-bootstrap moves to OpenBao.
   Auto-unseal without a cloud KMS is the sharpest edge; transit-unseal from a
   second instance is the usual homelab answer and is worth costing before
-  committing.
-  **The shape of the answer, decided:** 1Password keeps exactly one job — the
-  handful of bootstrap credentials a human's workstation needs before any
-  cluster exists. That is the one role it is genuinely suited to, and no
-  migration removes the need for it. Everything downstream of bootstrap moves
-  to OpenBao: the in-cluster credentials, the state encryption key, the
+  committing. **The shape of the answer, decided:** 1Password keeps exactly one
+  job — the handful of bootstrap credentials a human's workstation needs before
+  any cluster exists. That is the one role it is genuinely suited to, and no
+  migration removes the need for it. Everything downstream of bootstrap moves to
+  OpenBao: the in-cluster credentials, the state encryption key, the
   object-storage keys that currently live in a Kubernetes secret indefinitely,
   and the rotation runbooks in `docs/state-and-secret-rotation.md` that dynamic
-  secrets and leases would make unnecessary rather than automated.
-  That split is what makes this incremental rather than a big-bang cutover,
-  which matters a great deal given there is one estate and no rehearsal target.
-  **A classification to start from.** The nearest neighbour sorts every secret
-  by whether it survives a rebuild and whether it is generated or supplied, and
+  secrets and leases would make unnecessary rather than automated. That split is
+  what makes this incremental rather than a big-bang cutover, which matters a
+  great deal given there is one estate and no rehearsal target. **A
+  classification to start from.** The nearest neighbour sorts every secret by
+  whether it survives a rebuild and whether it is generated or supplied, and
   gives each combination one mechanism; it is written up in
   [03-workload.md](epochs/03-workload.md) and answers most of #345 before
   OpenBao exists, because the External Secrets Operator reads 1Password too.
-  **Hard requirement to close this epoch: secrets rotate on a cadence, without
-  a human.** Not "OpenBao is deployed" - deployed and still handing out static
+  **Hard requirement to close this epoch: secrets rotate on a cadence, without a
+  human.** Not "OpenBao is deployed" - deployed and still handing out static
   credentials is the same posture as today with more moving parts. The
   acceptance test is a Postgres credential that is minted on demand, carries a
   lease, and is revoked automatically when the lease ends. That is the whole
   reason to prefer it over continuing to write generated secrets back into
-  1Password: per-run generation makes last month's leaked state worthless,
-  but only leases make _this_ month's worthless too.
+  1Password: per-run generation makes last month's leaked state worthless, but
+  only leases make _this_ month's worthless too.
 
   Per-run generation (below) is the interim, and it is deliberately the half
   that survives the migration - the generation logic moves, only the storage

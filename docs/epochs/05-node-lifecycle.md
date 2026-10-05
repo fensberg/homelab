@@ -96,7 +96,8 @@ record proposed.
 
 ### A candidate for upgrades in place: Tuppr, beside Cluster API
 
-**Not decided.** From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11, the nearest neighbour this estate has.
+**Not decided.** From [ionfury/homelab](https://github.com/ionfury/homelab),
+read at `150097e` on 2026-09-11, the nearest neighbour this estate has.
 
 [Tuppr](https://github.com/home-operations/tuppr) is a small controller. A
 `TalosUpgrade` and a `KubernetesUpgrade` resource each name a version, a

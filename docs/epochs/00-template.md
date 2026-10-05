@@ -1,10 +1,10 @@
-# Epoch NN — <name>
+# Epoch NN — `<name>`
 
 - **Tier / path:** `<path>/`
 - **Branch:** `epoch/<nn>-<slug>`
 - **PR:** #
 - **Status:** Not started | In progress | Closed
-- **Closed:** <date>
+- **Closed:** `<date>`
 
 ## Goal
 
@@ -26,7 +26,7 @@ Explicitly out of scope (and which epoch owns it instead):
 Record each non-obvious choice and the reasoning. This is the section that
 earns its keep — the diff shows _what_ changed, only this shows _why_.
 
-### <decision>
+### `<decision>`
 
 **Chose:** …
 **Because:** …

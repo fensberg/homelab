@@ -4,7 +4,7 @@
 - **Branch:** `epoch/06-consolidation`
 - **PR:** #
 - **Status:** Not started
-- **Closed:** <date>
+- **Closed:** `<date>`
 
 ## Goal
 
@@ -325,8 +325,8 @@ Three details worth keeping:
 **Semgrep's `github-actions-mutable-action-tag` rule is excluded.** It exempts
 `./` and `docker://` but not `$/`, so it fires on every job. zizmor's
 `unpinned-uses` already owns pinning under a blanket hash policy and reads
-composite actions as well as workflows - checked with a tag-pinned step in each -
-so the rule was a second owner of one check, and the wrong one.
+composite actions as well as workflows - checked with a tag-pinned step in
+each - so the rule was a second owner of one check, and the wrong one.
 
 **The direct control job was dropped from the proof.** It existed so a refusal
 through `mobilize` could be told apart from a probe that sees nothing. With
@@ -454,11 +454,11 @@ every tool with no lockfile of its own ecosystem:
   interpreter starts the system Python without the environment - checked
   rather than assumed. `install-dependencies.sh` removes what the first
   version left in the user site, and only packages the lock names.
-- **pre-commit-hooks became local system hooks** running
-  `delivered-python -m pre_commit_hooks.<module>` with the upstream 4.6.0 types, stages,
-  args and excludes, so its version lives in `versions.env` too. The hookshim
-  guard lets such a hook run in the Format lane only when the lane takes
-  delivery of that module's package from the lock before running pre-commit.
+- **pre-commit-hooks became local system hooks** running `delivered-python -m
+pre_commit_hooks.<module>` with the upstream 4.6.0 types, stages, args and
+  excludes, so its version lives in `versions.env` too. The hookshim guard lets
+  such a hook run in the Format lane only when the lane takes delivery of that
+  module's package from the lock before running pre-commit.
 - **ShellCheck in CI** no longer comes through `ludeeus/action-shellcheck`,
   which downloaded the binary and checked nothing. The lane takes delivery
   and selects files the way the action did, from what git tracks.
@@ -479,11 +479,12 @@ kubectl, talosctl) are built by another pipeline and filed as #421.
 
 ### A push costs seconds, and only what cannot be undone runs there
 
-Measured while building #416: committing took about a second, and pushing took 160. The `pre-push` hook ran `task validate` and the whole of `task test`, and
-`tests/go/repo` was 143 seconds of it - 54 in the comment-stripping re-run and
-53 in the mutation ledger, both checks on the checks, and both run again by the
-Test lane on the pull request. The push was paying twice for feedback it would
-get anyway, while the operator waited.
+Measured while building #416: committing took about a second, and pushing
+took 160. The `pre-push` hook ran `task validate` and the whole of `task
+test`, and `tests/go/repo` was 143 seconds of it - 54 in the
+comment-stripping re-run and 53 in the mutation ledger, both checks on the
+checks, and both run again by the Test lane on the pull request. The push was
+paying twice for feedback it would get anyway, while the operator waited.
 
 The operator set the bar: commit and push together under ten seconds, running
 only what cannot be undone and what is genuinely fast. What a push must stop is
@@ -500,7 +501,8 @@ and the ledger proves it.
 
 ### A candidate: one versions file that everything reads, and Renovate driving it
 
-**Not decided.** From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11.
+**Not decided.** From [ionfury/homelab](https://github.com/ionfury/homelab),
+read at `150097e` on 2026-09-11.
 
 Their `versions.env` is genuinely single: their OpenTofu reads it for Talos,
 Kubernetes and the Cilium bootstrap, Flux substitutes it into chart versions,

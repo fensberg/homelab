@@ -46,8 +46,8 @@ parameter expansion have no supply chain.
   the change that disarms the alarm on it.
 - Every path carries a **reason**, long enough to be one. "This is sensitive"
   tells a reviewer nothing they had not assumed.
-- Every building code in `tests/go/repo` is **covered** - discovered by reading the
-  directory, so a new guard cannot be added without protection.
+- Every building code in `tests/go/repo` is **covered** - discovered by reading
+  the directory, so a new guard cannot be added without protection.
 - The **script itself** trips on a guarded path, stays quiet on an innocuous
   one, does not match `vendor/tests/go/repo/x` for `tests/go/repo/`, and its
   matching agrees with the Go parser for every line in the list.

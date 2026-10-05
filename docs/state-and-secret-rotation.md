@@ -110,10 +110,10 @@ state {
 ```
 
 > **Migrating an estate that already has unencrypted state is a deliberate
-> one-time procedure, run by hand.** It is not something the contractor offers, because
-> it would be a code path used once per estate that weakens the property for as
-> long as it stays switched on. Export `TF_ENCRYPTION` yourself with the block
-> below and the contractor will leave it alone.
+> one-time procedure, run by hand.** It is not something the contractor offers,
+> because it would be a code path used once per estate that weakens the property
+> for as long as it stays switched on. Export `TF_ENCRYPTION` yourself with the
+> block below and the contractor will leave it alone.
 >
 > The sequence below has been **rehearsed for real** — as a hermetic test in
 > `tests/go/encryption`, and by hand once against a throwaway Postgres in
@@ -166,9 +166,9 @@ attacker.
 
 Easy because R2 API tokens are created and revoked through the Cloudflare API
 with no downtime, and the credential in the cluster is a Kubernetes secret
-CloudNativePG re-reads. Urgent because of the loop above: the database
-bucket's key reads `postgres/`, and `postgres/` is the state. **Treat a leaked state file as a
-leaked PKI even if the age dump was never touched.**
+CloudNativePG re-reads. Urgent because of the loop above: the database bucket's
+key reads `postgres/`, and `postgres/` is the state. **Treat a leaked state file
+as a leaked PKI even if the age dump was never touched.**
 
 The estate mints these keys (management/estate/site/object-storage.tf): one
 account-owned token per bucket, scoped to that bucket, and the lawyer writes
@@ -240,10 +240,10 @@ do, which is where the work is:
 
 Because of (3), the honest sequencing for a suspected state leak is: rotate
 everything in Layer 2 first, then decide whether the Talos PKI rotation is
-warranted, and if it is, treat rebuilding the cluster from scratch as a
-serious alternative. `contractor demolish-site` followed by a fresh ignition is well
-tested, fully automated, and takes less time than a careful CA rotation — and
-it leaves nothing behind to be uncertain about.
+warranted, and if it is, treat rebuilding the cluster from scratch as a serious
+alternative. `contractor demolish-site` followed by a fresh ignition is well
+tested, fully automated, and takes less time than a careful CA rotation — and it
+leaves nothing behind to be uncertain about.
 
 ## What off-site recovery looks like here, and why
 
@@ -291,8 +291,9 @@ deliberate limit, not an oversight.
 ### Storage stays flat, and never at the cost of the only copy
 
 The state bucket keeps `latest.tfstate.age` plus **one** previous generation.
-Two objects, fixed, forever. `postgres/` keeps 7 days rather than 30 — still a real point-in-time-recovery window, at roughly a quarter of the
-storage, for a database holding a few hundred kilobytes.
+Two objects, fixed, forever. `postgres/` keeps 7 days rather than 30 — still a
+real point-in-time-recovery window, at roughly a quarter of the storage, for a
+database holding a few hundred kilobytes.
 
 The prune obeys one rule, which is the rule that was asked for: **never delete
 the old copy until the new one is confirmed to exist.** It re-lists the bucket
