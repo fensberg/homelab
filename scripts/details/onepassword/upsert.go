@@ -279,8 +279,8 @@ func upsertFields(raw []byte, fields map[string]string) ([]string, []byte, error
 //
 // Only for commands that are given no value and print none on failure - get,
 // list, create - so what is passed along is the CLI's own sentence about an
-// item or a vault. A variable so a test can stand in for the vault.
-var op = func(args ...string) ([]byte, error) {
+// item or a vault.
+func op(args ...string) ([]byte, error) {
 	cmd := exec.Command("op", args...)
 	var said strings.Builder
 	cmd.Stderr = &said

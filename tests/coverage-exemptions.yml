@@ -126,9 +126,6 @@ files:
   - path: details/onepassword/probe.go
     uncovered: 2
     covered_by: nothing
-  - path: details/onepassword/upsert.go
-    uncovered: 2
-    covered_by: nothing
   - path: contractor/internal/phases/checkvault.go
     uncovered: 1
     covered_by: nothing
