@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 195
+floor: 198
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1218,6 +1218,38 @@ mutations:
       whatever a compromised step exported before this ran. Semgrep objects to
       this line either way, and is silenced on it, so the silencing is only
       true while this guard holds.
+
+  - guard: TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
+    file: .checkov.yaml
+    find: "  - (^|/)tests/"
+    replace: "  - tests"
+    mentions: "integration-tests.yml"
+    why: >
+      This is the exclusion as it was written, and what it cost. The pattern
+      is searched for anywhere in a path, so excusing the test trees also
+      excused a workflow with "tests" in its name, and a finding in that
+      workflow went unreported for as long as the line stood.
+
+  - guard: TestAWordCodespellAcceptsIsOnlyEverWrittenAsCode
+    file: docs/epochs/01-ignition.md
+    find: "    ip route get 10.10.10.1 from <workstation> iif tailscale0"
+    replace: "ip route get 10.10.10.1 from <workstation> iif tailscale0"
+    mentions: "in a sentence"
+    why: >
+      Four spaces fewer and the command is a paragraph. The word codespell
+      was told to accept as a flag's name is now prose, which is the case
+      the acceptance was never for.
+
+  - guard: TestAWorkflowThatTakesInputsCanPublishNothing
+    file: .github/workflows/integration-tests.yml
+    find: "permissions:\n  contents: read\n\n# One at a time."
+    replace: "permissions:\n  contents: write\n\n# One at a time."
+    mentions: "may write contents"
+    why: >
+      The workflow still takes which tier and which site from whoever
+      dispatches it, and can now push. That is the arrangement the excused
+      rule exists to refuse, and the rule is excused for the whole
+      repository on the strength of this.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml

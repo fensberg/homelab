@@ -100,12 +100,18 @@ func guardsHere(t *testing.T) map[string]bool {
 // unproved says what is wrong with the reason a silencing gives, or "" when
 // it names a guard that exists.
 func unproved(comment string, guards map[string]bool) string {
-	m := provedBy.FindStringSubmatch(comment)
-	switch {
-	case m == nil:
+	cited := provedBy.FindAllStringSubmatch(comment, -1)
+	if len(cited) == 0 {
 		return "names no guard"
-	case !guards[m[1]]:
-		return "names " + m[1] + ", and there is no guard of that name"
+	}
+	// A reason may rest on more than one guard; `and TestOther` names the rest.
+	for _, more := range regexp.MustCompile(`\band (Test[A-Za-z0-9_]+)`).FindAllStringSubmatch(comment, -1) {
+		cited = append(cited, more)
+	}
+	for _, m := range cited {
+		if !guards[m[1]] {
+			return "names " + m[1] + ", and there is no guard of that name"
+		}
 	}
 	return ""
 }

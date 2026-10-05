@@ -1,1 +1,10 @@
 * text=auto eol=lf
+
+# Somebody else's files, committed as their publisher shipped them so that a
+# version bump is a diff somebody can read. The tools told not to read them
+# are told so one file at a time, and
+# tests/go/repo/excused_paths_test.go refuses an exclusion that covers a file
+# not marked here. Vendored, not generated: generated would fold the diff away
+# in a pull request, which is the opposite of why they are committed.
+clusters/core/flux-system/gotk-components.yaml linguist-vendored
+clusters/bootstrap/cilium.yaml linguist-vendored
