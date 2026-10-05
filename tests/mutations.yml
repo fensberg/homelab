@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 194
+floor: 195
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1206,6 +1206,18 @@ mutations:
       The sentence is as plausible as it was and the scan is as quiet. What
       is gone is the only thing that made it more than a sentence: the guard
       that fails if the module ever stops being fetched by digest.
+
+  - guard: TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
+    file: scripts/details/repopath/repopath.go
+    find: 'exec.Command("git", "-C", root, "remote", "get-url", "origin")'
+    replace: 'exec.Command(os.Getenv("GIT"), "-C", root, "remote", "get-url", "origin")'
+    mentions: "worked out at run time"
+    why: >
+      The program that reads the repository's remote is now whatever the
+      environment names. On a workstation that is git; on a runner it is
+      whatever a compromised step exported before this ran. Semgrep objects to
+      this line either way, and is silenced on it, so the silencing is only
+      true while this guard holds.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml

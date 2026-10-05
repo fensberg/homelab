@@ -138,6 +138,7 @@ func backUp(kubeconfig string, d applications.BeforeTeardown, pod string) error 
 	c, cancel := context.WithTimeout(context.Background(), backupTimeout)
 	defer cancel()
 	args := append([]string{"exec", "-n", d.Namespace, pod, "-c", d.Container, "--"}, d.Command...)
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.CommandContext(c, "kubectl", args...)
 	cmd.Env = append(os.Environ(), "KUBECONFIG="+kubeconfig)

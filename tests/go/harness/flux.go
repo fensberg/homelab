@@ -60,6 +60,7 @@ func readFluxObjects() (map[string][]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	out, err := exec.Command("git", "-C", root, "ls-files", "-z", "--", FluxTree+"/*.yaml", FluxTree+"/*.yml").Output()
 	if err != nil {

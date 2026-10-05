@@ -28,6 +28,7 @@ import (
 // value cannot inject a second command. This is also an `internal/` package,
 // so nothing outside this module can call it with a different name at all.
 func Cmd(dir, name string, args ...string) error {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
@@ -45,6 +46,7 @@ func Cmd(dir, name string, args ...string) error {
 // remember to unset afterwards. Same reasoning as Cmd above: name is always
 // a hardcoded literal at every call site in this internal package.
 func CmdEnv(dir string, extraEnv []string, name string, args ...string) error {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
@@ -63,6 +65,7 @@ func CmdEnv(dir string, extraEnv []string, name string, args ...string) error {
 // above: name is always a hardcoded literal at every call site in this
 // internal package.
 func CmdOutput(dir, name string, args ...string) (string, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
@@ -444,6 +447,7 @@ func summariseStream(r io.Reader, emit func(string), tick <-chan time.Time) (lin
 }
 
 func tofuJSON(ctx *Context, what string, args []string) error {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command("tofu", args...)
 	c.Dir = ctx.Dir
@@ -582,6 +586,7 @@ func filepathBase(path string) string {
 // Same reasoning as Cmd above: name is always a hardcoded literal at every
 // call site in this internal package.
 func CmdStdin(dir string, stdin []byte, name string, args ...string) error {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
@@ -599,6 +604,7 @@ func CmdStdin(dir string, stdin []byte, name string, args ...string) error {
 // be wiped - Go strings are immutable, and the bytes stay in the heap until
 // the garbage collector happens to reuse them.
 func CmdOutputBytes(dir, name string, args ...string) ([]byte, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
@@ -622,6 +628,7 @@ func Wipe(b []byte) {
 // configured entirely through the environment so that no credential is ever
 // written to a config file on disk.
 func CmdOutputEnv(dir string, extraEnv []string, name string, args ...string) (string, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
@@ -636,6 +643,7 @@ func CmdOutputEnv(dir string, extraEnv []string, name string, args ...string) (s
 // CmdOutputQuiet is CmdOutput with stderr discarded, for probes whose failure
 // is an ordinary answer rather than a problem worth showing the operator.
 func CmdOutputQuiet(dir, name string, args ...string) (string, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir
@@ -655,6 +663,7 @@ func CmdOutputQuiet(dir, name string, args ...string) (string, error) {
 // stream corrupts it in a way that only shows up as a decryption failure with
 // no obvious cause.
 func CmdBytes(dir string, extraEnv []string, stdin []byte, name string, args ...string) ([]byte, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(name, args...)
 	c.Dir = dir

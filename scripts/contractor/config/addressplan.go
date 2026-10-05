@@ -155,6 +155,7 @@ func askAddressPlanAt(root string, sites map[string]Site) (map[string]plannedSit
 		return nil, err
 	}
 
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command("tofu", "console", "-no-color", "-state="+filepath.Join(scratch, "none.tfstate"), "-var-file="+vars.Name())
 	c.Dir = dir

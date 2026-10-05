@@ -956,6 +956,7 @@ func withRenderedCredential(
 		return 0, err
 	}
 
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command(argv[0], argv[1:]...)
 	c.Env = append(os.Environ(), envVar+"="+path)

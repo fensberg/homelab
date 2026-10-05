@@ -97,6 +97,7 @@ func Slug() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	out, err := exec.Command("git", "-C", root, "remote", "get-url", "origin").Output()
 	if err != nil {
