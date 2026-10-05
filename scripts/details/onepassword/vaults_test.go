@@ -17,3 +17,24 @@ func TestVaultNamesReadsEveryVaultOpListed(t *testing.T) {
 		t.Fatal("an unreadable answer was accepted as a list of vaults")
 	}
 }
+
+// A value is put into the JSON config exactly as the vault holds it. One with
+// a line break, a quote or a backslash stops the config parsing, and that is
+// told apart from a value that is merely there.
+func TestAValueTheConfigCannotCarryIsNotReportedAsUsable(t *testing.T) {
+	for read, want := range map[string]Status{
+		"a-value\n":                StatusOK,
+		"":                         StatusEmpty,
+		"   \n":                    StatusEmpty,
+		"first line\nsecond\n":     StatusBreaksConfig,
+		"carriage\rreturn\n":       StatusBreaksConfig,
+		"a \"quoted\" word\n":      StatusBreaksConfig,
+		"a back\\slash\n":          StatusBreaksConfig,
+		"YmFzZTY0IG9mIGEga2V5\n":   StatusOK,
+		"https://example.invalid/": StatusOK,
+	} {
+		if got := statusOf(read); got != want {
+			t.Errorf("%q read as %s, want %s", read, got, want)
+		}
+	}
+}

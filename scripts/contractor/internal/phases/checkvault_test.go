@@ -2,6 +2,8 @@ package phases
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -146,5 +148,57 @@ func TestVaultReportNeverPrintsAValue(t *testing.T) {
 	// probe - which returns no value to carry.
 	if !strings.Contains(out.String(), "op://homelab/a/f") {
 		t.Errorf("the report should name the reference:\n%s", out.String())
+	}
+}
+
+// A field that is there and has content can still stop every render: its
+// value goes into JSON as it is. The first time, the only message was a byte
+// offset in a file already wiped.
+func TestVaultReportFailsOnAValueTheConfigCannotCarry(t *testing.T) {
+	refs := []config.VaultRef{
+		{ConfigPath: "sites.site0.hypervisor.token_id", Ref: "op://site0/hypervisor/token_id"},
+		{ConfigPath: "sites.site0.hypervisor.metrics.authority", Ref: "op://site0/host_metrics/authority"},
+	}
+	probe := fakeProbe(map[string]onepassword.Status{
+		"op://site0/hypervisor/token_id":    onepassword.StatusOK,
+		"op://site0/host_metrics/authority": onepassword.StatusBreaksConfig,
+	})
+
+	var out bytes.Buffer
+	err := vaultReport(refs, probe, &out)
+	if err == nil {
+		t.Fatal("a value that stops the config parsing was reported as a complete vault")
+	}
+	for _, want := range []string{"sites.site0.hypervisor.metrics.authority", "base64"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q:\n%v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "token_id") {
+		t.Errorf("a field that is fine was named:\n%v", err)
+	}
+}
+
+// When the rendered config does not parse, the field that is why is named.
+func TestAnUnparseableConfigIsTracedToTheFieldThatBrokeIt(t *testing.T) {
+	template := filepath.Join(t.TempDir(), "management.tpl.json")
+	body := `{"sites": {"site0": {"hypervisor": {
+  "token_id": "{{ op://site0/hypervisor/token_id }}",
+  "metrics": {"authority": "{{ op://site0/host_metrics/authority }}"}}}}}`
+	if err := os.WriteFile(template, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	why := whichValuesBreakTheConfig(template, fakeProbe(map[string]onepassword.Status{
+		"op://site0/hypervisor/token_id":    onepassword.StatusOK,
+		"op://site0/host_metrics/authority": onepassword.StatusBreaksConfig,
+	}))
+	if !strings.Contains(why, "op://site0/host_metrics/authority") || strings.Contains(why, "token_id") {
+		t.Fatalf("the field at fault is not the one named:\n%s", why)
+	}
+	if clean := whichValuesBreakTheConfig(template, fakeProbe(map[string]onepassword.Status{
+		"op://site0/hypervisor/token_id":    onepassword.StatusOK,
+		"op://site0/host_metrics/authority": onepassword.StatusOK,
+	})); clean != "" {
+		t.Fatalf("a vault with nothing wrong was blamed:\n%s", clean)
 	}
 }

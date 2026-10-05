@@ -66,7 +66,7 @@ func vaultReport(refs []config.VaultRef, probe func(string) onepassword.Status, 
 		}
 	}
 
-	var missing, empty []config.VaultRef
+	var missing, empty, unsafe []config.VaultRef
 	for _, r := range refs {
 		status := probe(r.Ref)
 		switch status {
@@ -74,10 +74,12 @@ func vaultReport(refs []config.VaultRef, probe func(string) onepassword.Status, 
 			missing = append(missing, r)
 		case onepassword.StatusEmpty:
 			empty = append(empty, r)
+		case onepassword.StatusBreaksConfig:
+			unsafe = append(unsafe, r)
 		}
 		fmt.Fprintf(out, "  %-7s %-*s  %s\n", status, width, r.ConfigPath, r.Ref)
 	}
-	fmt.Fprintf(out, "\n  %d checked, %d missing, %d empty\n", len(refs), len(missing), len(empty))
+	fmt.Fprintf(out, "\n  %d checked, %d missing, %d empty, %d unsafe\n", len(refs), len(missing), len(empty), len(unsafe))
 
 	// Missing first: it is the harder failure and the one that stops a run
 	// dead at Render, where an empty field sails through and surfaces much
@@ -88,6 +90,9 @@ func vaultReport(refs []config.VaultRef, probe func(string) onepassword.Status, 
 	}
 	if len(empty) > 0 {
 		problems = append(problems, fmt.Sprintf("%d field(s) exist but are empty:\n\n%s\n\nop inject treats a blank field as success and writes an empty string, so\nthis does not fail Render - it reaches a provider as something like\n\"credentials are empty\", naming no field. Fill them in.", len(empty), listRefs(empty)))
+	}
+	if len(unsafe) > 0 {
+		problems = append(problems, breaksConfig(unsafe))
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "\n\n"))
@@ -103,4 +108,40 @@ func listRefs(refs []config.VaultRef) string {
 		lines = append(lines, fmt.Sprintf("  %s  <-  %s", r.ConfigPath, r.Ref))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// breaksConfig says which fields hold a value the config cannot carry.
+func breaksConfig(unsafe []config.VaultRef) string {
+	return fmt.Sprintf(`%d field(s) hold a line break, a quote or a backslash:
+
+%s
+
+The config is a JSON template and a value goes into it exactly as it is, so
+one of these makes the rendered config unparseable and stops every verb that
+renders. Keep a value of more than one line base64-encoded on a single line,
+as the runner's private key is.`, len(unsafe), listRefs(unsafe))
+}
+
+// whichValuesBreakTheConfig is asked when the rendered config did not parse:
+// it reads every reference again and names the ones that could be why.
+//
+// Only then, because it is a read of the vault per reference. The parser's
+// own error is a byte offset into a file that is about to be wiped, and the
+// first time this happened it took reading the change that caused it to find
+// the field.
+func whichValuesBreakTheConfig(template string, probe func(string) onepassword.Status) string {
+	refs, err := config.VaultReferences(template)
+	if err != nil {
+		return ""
+	}
+	var unsafe []config.VaultRef
+	for _, r := range refs {
+		if probe(r.Ref) == onepassword.StatusBreaksConfig {
+			unsafe = append(unsafe, r)
+		}
+	}
+	if len(unsafe) == 0 {
+		return ""
+	}
+	return breaksConfig(unsafe)
 }
