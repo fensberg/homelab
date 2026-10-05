@@ -2,6 +2,7 @@ package onepassword
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -256,4 +257,60 @@ func sortedFieldNames(fields map[string]string) []string {
 		names = append(names, k)
 	}
 	return names
+}
+
+// fakeOp stands in for the CLI: what a vault's list holds, and whether a get
+// succeeds. It records the commands it was given.
+func fakeOp(t *testing.T, list string, getErr error) *[]string {
+	t.Helper()
+	var ran []string
+	real := op
+	t.Cleanup(func() { op = real })
+	op = func(args ...string) ([]byte, error) {
+		ran = append(ran, strings.Join(args, " "))
+		switch args[1] {
+		case "get":
+			return nil, getErr
+		case "list":
+			return []byte(list), nil
+		}
+		return nil, errors.New("exit status 3: the vault said why")
+	}
+	return &ran
+}
+
+func ranCreate(ran []string) bool {
+	for _, r := range ran {
+		if strings.HasPrefix(r, "item create") {
+			return true
+		}
+	}
+	return false
+}
+
+// An item is made only when the vault has none of that title. Two runs that
+// both found it absent, or a read that merely failed, would otherwise leave
+// two, and a reference to a title held twice resolves to neither.
+func TestAnItemThatIsThereAndUnreadableIsNotMadeASecondTime(t *testing.T) {
+	ran := fakeOp(t, `[{"title": "something_else"}, {"title": "an_item"}]`, errors.New("exit status 1: timed out"))
+	_, err := WriteItem("site0", "an_item", map[string]string{"authority": "a-value"})
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("got %v, want a refusal carrying what the vault said", err)
+	}
+	if ranCreate(*ran) {
+		t.Errorf("a second item of the same title was created:\n%s", strings.Join(*ran, "\n"))
+	}
+}
+
+func TestAnItemTheVaultDoesNotHoldIsMadeAndAFailureSaysWhy(t *testing.T) {
+	ran := fakeOp(t, `[{"title": "something_else"}]`, errors.New("exit status 1: not an item"))
+	_, err := WriteItem("site0", "an_item", map[string]string{"authority": "a-value"})
+	if !ranCreate(*ran) {
+		t.Fatalf("an item the vault does not hold was not created:\n%s", strings.Join(*ran, "\n"))
+	}
+	// The stand-in's create fails, as the real one did with nothing but a
+	// number to show for it.
+	if err == nil || !strings.Contains(err.Error(), "the vault said why") {
+		t.Fatalf("got %v, want the failure to carry what the vault said", err)
+	}
 }
