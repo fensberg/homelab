@@ -47,7 +47,7 @@ files:
     uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/compute.go
-    uncovered: 5
+    uncovered: 4
     covered_by: e2e
   # Two more than before, both of them the destroy plan added for #213 and #94:
   # confirmDestroyScope reads `tofu state list` against a real estate's state,
@@ -67,7 +67,7 @@ files:
     uncovered: 2
     covered_by: e2e
   - path: contractor/internal/phases/sterilize.go
-    uncovered: 3
+    uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/verify.go
     uncovered: 1
@@ -105,7 +105,7 @@ files:
   # backup fresh and well formed, backup generations bounded, WAL archiving
   # healthy, and the deployed estate matching the code.
   - path: contractor/internal/phases/health.go
-    uncovered: 9
+    uncovered: 8
     covered_by: integration
   - path: contractor/internal/phases/health_etcd.go
     uncovered: 2
@@ -134,14 +134,11 @@ files:
   - path: contractor/internal/phases/checkvault.go
     uncovered: 1
     covered_by: nothing
-  - path: contractor/internal/phases/converge_preconditions.go
-    uncovered: 2
-    covered_by: nothing
   - path: contractor/internal/phases/encryption.go
     uncovered: 1
     covered_by: nothing
   - path: contractor/internal/phases/restore.go
-    uncovered: 2
+    uncovered: 1
     covered_by: nothing
   - path: contractor/internal/phases/secrets.go
     uncovered: 4
@@ -234,7 +231,7 @@ files:
     uncovered: 6
     covered_by: nothing
   - path: superintendent/enforce-push.go
-    uncovered: 3
+    uncovered: 1
     covered_by: nothing
   - path: superintendent/main.go
     uncovered: 3
@@ -253,17 +250,4 @@ files:
     covered_by: nothing
   - path: signedpush/main.go
     uncovered: 6
-    covered_by: nothing
-  # Found when a function stopped counting as tested for having one line run
-  # (2026-10-05). Each of these has a function a test touches and does not
-  # exercise: more than half of it has never run. Nothing covers them, and
-  # that is written here as what it is.
-  - path: contractor/internal/phases/backup.go
-    uncovered: 1
-    covered_by: nothing
-  - path: contractor/internal/phases/plan.go
-    uncovered: 2
-    covered_by: nothing
-  - path: details/repopath/repopath.go
-    uncovered: 1
     covered_by: nothing

@@ -175,7 +175,7 @@ func reclaimOrphanedDiskImage(ctx *run.Context, cfg *config.Config, net *config.
 
 	run.Info(volID + " exists outside Terraform - a prior run left it behind")
 	run.Info("deleting it so this run can download a known-good copy")
-	if err := deleteDatastoreFile(site.Hypervisor, hv, volID); err != nil {
+	if err := removeImage(site.Hypervisor, hv, volID); err != nil {
 		return fmt.Errorf(`could not delete the orphaned disk image %s: %w
 
 Delete it by hand and re-run:
