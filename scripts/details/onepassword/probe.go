@@ -28,6 +28,13 @@ const (
 	// misspelled. This is what a dangling reference in the template looks
 	// like, and it fails the run at the Render phase.
 	StatusMissing
+	// StatusBreaksConfig: the field has content the config cannot carry. The
+	// config is a JSON template and a value is substituted into it exactly as
+	// it is, so a line break, a quote or a backslash in one makes the
+	// rendered file unparsable, and every verb that renders stops at an
+	// error naming a byte offset and no field. A value of more than one line
+	// is kept base64-encoded.
+	StatusBreaksConfig
 )
 
 func (s Status) String() string {
@@ -36,6 +43,8 @@ func (s Status) String() string {
 		return "ok"
 	case StatusEmpty:
 		return "empty"
+	case StatusBreaksConfig:
+		return "unsafe"
 	default:
 		return "missing"
 	}
@@ -48,8 +57,18 @@ func Probe(ref string) Status {
 	if err != nil {
 		return StatusMissing
 	}
-	if strings.TrimSpace(string(out)) == "" {
+	return statusOf(string(out))
+}
+
+// statusOf judges what `op read` printed: the value, and the newline it ends
+// every value with.
+func statusOf(read string) Status {
+	value := strings.TrimSuffix(read, "\n")
+	switch {
+	case strings.TrimSpace(value) == "":
 		return StatusEmpty
+	case strings.ContainsAny(value, "\n\r\"\\"):
+		return StatusBreaksConfig
 	}
 	return StatusOK
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"homelab/details/secrets"
 	"regexp"
 	"strings"
 )
@@ -58,6 +59,10 @@ var shapes = map[string]func(f *Fingerprinter, v string) string{
 	"token_secret": (*Fingerprinter).uuid,
 	// binary_data takes an already-encoded value.
 	"private_key": (*Fingerprinter).base64,
+	// The host's scrape credentials, each a PEM block kept the same way.
+	"authority":                     (*Fingerprinter).base64,
+	secrets.ScraperCertificateField: (*Fingerprinter).base64,
+	secrets.ScraperPrivateKeyField:  (*Fingerprinter).base64,
 	// Part of an endpoint's hostname, and hex in every real account.
 	"account_id": func(f *Fingerprinter, v string) string { return f.hex(v, 32) },
 }

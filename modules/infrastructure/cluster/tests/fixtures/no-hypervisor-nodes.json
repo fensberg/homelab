@@ -28,9 +28,9 @@
         "token_id": "fixture@pve!fixture",
         "token_secret": "00000000-0000-0000-0000-000000000000",
         "metrics": {
-          "authority": "fixture-authority",
-          "scraper_certificate": "fixture-scraper-certificate",
-          "scraper_private_key": "fixture-scraper-key"
+          "authority": "fixture+authority+++",
+          "scraper_certificate": "fixture+scraper+certificate+",
+          "scraper_private_key": "fixture+scraper+key+"
         },
         "nodes": {}
       },

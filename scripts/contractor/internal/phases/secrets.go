@@ -1,6 +1,8 @@
 package phases
 
 import (
+	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"strings"
 	"time"
@@ -52,7 +54,7 @@ func ensureGeneratedSecrets(ctx *run.Context) error {
 	if err := ensureApplicationSecrets(ctx, onepassword.EnsureField); err != nil {
 		return err
 	}
-	if err := ensureHostMetrics(ctx, onepassword.Probe, onepassword.WriteItem, time.Now()); err != nil {
+	if err := ensureHostMetrics(ctx, onepassword.Read, onepassword.WriteItem, time.Now()); err != nil {
 		return err
 	}
 	return assertBackupKeypair(ctx)
@@ -75,54 +77,84 @@ const (
 )
 
 // ensureHostMetrics generates the host's scrape credentials when the site has
-// none, and refuses a set that is partly there.
+// none, and refuses a set that is partly there or not in the form it is kept.
 //
 // All or nothing, because the five are one thing: two certificates signed by
 // an authority whose key was dropped when it had signed them. A missing field
 // cannot be made again to match the rest, and generating the rest again
 // beside it would leave a hypervisor and a cluster holding halves of
 // different sets.
+//
+// Each is kept base64-encoded on one line, as the runner's key is. The config
+// is a JSON template and the vault's values are substituted into it as they
+// are, so a PEM block's own line breaks would stop it parsing - which the
+// first version of this did, to every verb that renders.
 func ensureHostMetrics(
 	ctx *run.Context,
-	probe func(ref string) onepassword.Status,
+	read func(ref string) (string, error),
 	write func(vault, title string, fields map[string]string) ([]string, error),
 	now time.Time,
 ) error {
-	fields := []string{"authority", "certificate", "private_key", "scraper_certificate", "scraper_private_key"}
-	var missing []string
+	fields := []string{"authority", "certificate", "private_key", secrets.ScraperCertificateField, secrets.ScraperPrivateKeyField}
+	var missing, malformed []string
 	for _, f := range fields {
-		if probe(fmt.Sprintf("op://%s/%s/%s", ctx.Site, hostMetricsItem, f)) != onepassword.StatusOK {
+		value, err := read(fmt.Sprintf("op://%s/%s/%s", ctx.Site, hostMetricsItem, f))
+		switch {
+		case err != nil || strings.TrimSpace(value) == "":
 			missing = append(missing, f)
+		case !isEncodedPEM(value):
+			malformed = append(malformed, f)
 		}
 	}
-	switch len(missing) {
-	case 0:
+	const remedy = `Delete the item and run this again:
+
+    op item delete %s --vault %s
+
+A new set is generated, the hypervisor phase installs the exporter's half and
+a converge the scraper's`
+	switch {
+	case len(malformed) > 0:
+		return fmt.Errorf(`the host's scrape credentials are not in the form they are kept in: %s/%s holds %s as something other than a PEM block, base64-encoded on one line.
+
+`+remedy, ctx.Site, hostMetricsItem, strings.Join(malformed, ", "), hostMetricsItem, ctx.Site)
+	case len(missing) == 0:
 		return nil
-	case len(fields):
-	default:
+	case len(missing) < len(fields):
 		return fmt.Errorf(`the host's scrape credentials are incomplete: %s/%s has no %s.
 
-They are generated together and one cannot be replaced alone. Delete the item
-and run this again: a new set is generated, the hypervisor phase installs the
-exporter's half and a converge the scraper's`, ctx.Site, hostMetricsItem, strings.Join(missing, ", "))
+They are generated together and one cannot be replaced alone. `+remedy,
+			ctx.Site, hostMetricsItem, strings.Join(missing, ", "), hostMetricsItem, ctx.Site)
 	}
 
 	c, err := secrets.ScrapeTLS(HostMetricsName, now)
 	if err != nil {
 		return fmt.Errorf("the host's scrape credentials: %w", err)
 	}
-	// Trimmed: a field is read back without the newline a PEM block ends in.
+	encode := func(pem string) string { return base64.StdEncoding.EncodeToString([]byte(pem)) }
 	if _, err := write(ctx.Site, hostMetricsItem, map[string]string{
-		"authority":           strings.TrimSpace(c.Authority),
-		"certificate":         strings.TrimSpace(c.Certificate),
-		"private_key":         strings.TrimSpace(c.PrivateKey),
-		"scraper_certificate": strings.TrimSpace(c.ScraperCertificate),
-		"scraper_private_key": strings.TrimSpace(c.ScraperPrivateKey),
+		"authority":                     encode(c.Authority),
+		"certificate":                   encode(c.Certificate),
+		"private_key":                   encode(c.PrivateKey),
+		secrets.ScraperCertificateField: encode(c.ScraperCertificate),
+		secrets.ScraperPrivateKeyField:  encode(c.ScraperPrivateKey),
 	}); err != nil {
 		return fmt.Errorf("the host's scrape credentials: %w", err)
 	}
 	run.Ok("generated the host's scrape credentials and stored them in 1Password")
 	return nil
+}
+
+// isEncodedPEM is a PEM block, base64-encoded with no line break.
+func isEncodedPEM(value string) bool {
+	if strings.ContainsAny(value, "\r\n") {
+		return false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return false
+	}
+	block, _ := pem.Decode(decoded)
+	return block != nil
 }
 
 // ensureApplicationSecrets generates what the site's applications declared

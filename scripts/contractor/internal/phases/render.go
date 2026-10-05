@@ -36,6 +36,11 @@ func Render(ctx *run.Context) error {
 	// it is what makes appending a node genuinely sufficient.
 	cfg, err := config.LoadRendered(ctx.ConfigRendered)
 	if err != nil {
+		// Say which field, if a value is why: the error is otherwise an offset
+		// into a file this run is about to wipe.
+		if why := whichValuesBreakTheConfig(ctx.ConfigTpl, onepassword.Probe); why != "" {
+			return fmt.Errorf("%w\n\n%s", err, why)
+		}
 		return err
 	}
 	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)

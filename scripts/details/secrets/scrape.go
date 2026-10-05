@@ -30,6 +30,14 @@ type ScrapeCredentials struct {
 	ScraperPrivateKey  string
 }
 
+// What the scraper's half is called wherever it is kept: in the vault, in the
+// config, and in the stand-in a plan against the as-built record makes for
+// it. One spelling, because each of those reads the other's.
+const (
+	ScraperCertificateField = "scraper_certificate"
+	ScraperPrivateKeyField  = "scraper_private_key"
+)
+
 // scrapeLifetime is how long the certificates are good for. Long, because
 // nothing renews them yet and an exporter that stops answering on a date is a
 // worse fault than a certificate that is old; the scrape failing is what
