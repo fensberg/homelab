@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 198
+floor: 201
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1250,6 +1250,38 @@ mutations:
       dispatches it, and can now push. That is the arrangement the excused
       rule exists to refuse, and the rule is excused for the whole
       repository on the strength of this.
+
+  - guard: TestAFunctionWhoseDoorAloneIsRunIsUntested
+    file: tests/go/repo/coverage_exemptions_test.go
+    find: "if f.total > 0 && f.ran*2 <= f.total {"
+    replace: "if f.total > 0 && f.ran == 0 {"
+    mentions: "want write alone"
+    why: >
+      This is the rule as it was: a function is tested if any statement of
+      it runs. A check added at the top of an untested function, and a test
+      of that check, took the function out of the ledger with everything
+      below the check still never run.
+
+  - guard: TestAFunctionHeldInAVariableIsCounted
+    file: tests/go/repo/coverage_exemptions_test.go
+    find: "\t\tcase *ast.GenDecl:\n\t\t\tast.Inspect(d, func(n ast.Node) bool {"
+    replace: "\t\tcase *ast.BadDecl:\n\t\t\tast.Inspect(d, func(n ast.Node) bool {"
+    mentions: "want the function at line 13"
+    why: >
+      Only declared functions are counted, which is what `go tool cover
+      -func` reports. A function written as a value and held in a variable is
+      the form a test replaces, so it is exactly the code no test runs, and
+      it was invisible.
+
+  - guard: TestAProfileLineThatIsNotABlockIsRefused
+    file: tests/go/repo/coverage_exemptions_test.go
+    find: "\t\t\treturn nil, fmt.Errorf(\"a line is not a coverage block: %q\", line)"
+    replace: "\t\t\tcontinue"
+    mentions: "read as a file with nothing untested"
+    why: >
+      A profile whose shape changed is skipped line by line and every file
+      comes back with nothing untested, which the ledger would then be asked
+      to agree with.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml
