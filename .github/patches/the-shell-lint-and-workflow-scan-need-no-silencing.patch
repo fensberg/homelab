@@ -1,8 +1,8 @@
 diff --git a/.github/actionlint.yaml b/.github/actionlint.yaml
-index d581d0b..07f135b 100644
+index d581d0b..3f59c99 100644
 --- a/.github/actionlint.yaml
 +++ b/.github/actionlint.yaml
-@@ -22,7 +22,8 @@ self-hosted-runner:
+@@ -22,14 +22,19 @@ self-hosted-runner:
  # job's first step. actionlint v1.7.12 - still its newest release - predates it
  # and reports "ref is missing".
  #
@@ -12,11 +12,17 @@ index d581d0b..07f135b 100644
  # other malformed `uses:` in the repository still fails. That was tested rather
  # than assumed: with this in place, `uses: someone/else@` is still reported.
  # #387 had recorded the only alternative as ignoring the format check for every
-@@ -32,4 +33,4 @@ self-hosted-runner:
+ # `uses:`, which is not so.
+ #
+ # Removed when: actionlint ships a release that accepts `$/`. Tracked as #387.
++#
++# What actionlint no longer checks of such a line - that it names something -
++# is checked here instead.
  paths:
    .github/workflows/*.yml:
      ignore:
 -      - 'specifying action "\$/\.github/workflows/[a-z0-9-]+" in invalid format because ref is missing'
++      # proved by TestEverySelfRepositoryReferenceNamesAnActionThatIsHere
 +      - 'specifying action "\$/\.github/(workflows|actions)/[a-z0-9-]+" in invalid format because ref is missing'
 diff --git a/.github/workflows/clerk.yml b/.github/workflows/clerk.yml
 index 785a82d..52d558d 100644
@@ -659,19 +665,19 @@ index c27414a..d4acd24 100644
 -	t.Logf("checked %d workflows, %d of which reach a local action relatively", checked, relative)
  }
 diff --git a/tests/mutations.yml b/tests/mutations.yml
-index 1df0679..77d5f00 100644
+index 816a590..f82f0e7 100644
 --- a/tests/mutations.yml
 +++ b/tests/mutations.yml
 @@ -85,7 +85,7 @@
  # require editing two places, and removing one should always require a visible,
  # reviewable act rather than a quiet deletion. Same shape as
  # tests/coverage-baseline.json, for the same reason.
--floor: 205
-+floor: 204
+-floor: 211
++floor: 210
  
  mutations:
    - guard: TestTheContractorWritesAResourceAddressInOnePlace
-@@ -1997,30 +1997,16 @@ mutations:
+@@ -2062,30 +2062,16 @@ mutations:
        written only by ordering. Before #416 this key was exported and
        consumed, and the lane trusted whatever it said.
  
