@@ -85,7 +85,7 @@ jobs:
       # fetch - which is also why the blocked egress policy above needs no
       # module proxy in its allowlist.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Setup Go
         uses: $/.github/workflows/setup-go

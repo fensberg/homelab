@@ -22,14 +22,19 @@ self-hosted-runner:
 # job's first step. actionlint v1.7.12 - still its newest release - predates it
 # and reports "ref is missing".
 #
-# Scoped to that message AND to a reference into .github/workflows, so every
+# Scoped to that message AND to a reference into .github/workflows or
+# .github/actions, the two places this repository keeps an action, so every
 # other malformed `uses:` in the repository still fails. That was tested rather
 # than assumed: with this in place, `uses: someone/else@` is still reported.
 # #387 had recorded the only alternative as ignoring the format check for every
 # `uses:`, which is not so.
 #
 # Removed when: actionlint ships a release that accepts `$/`. Tracked as #387.
+#
+# What actionlint no longer checks of such a line - that it names something -
+# is checked here instead.
 paths:
   .github/workflows/*.yml:
     ignore:
-      - 'specifying action "\$/\.github/workflows/[a-z0-9-]+" in invalid format because ref is missing'
+      # proved by TestEverySelfRepositoryReferenceNamesAnActionThatIsHere
+      - 'specifying action "\$/\.github/(workflows|actions)/[a-z0-9-]+" in invalid format because ref is missing'

@@ -58,10 +58,6 @@ var skipIsHonest = map[string]string{
 		"refuses a CI run with -short, so the skip reports that the guard runs on the pull " +
 		"request - which is true - and never that it runs nowhere.",
 
-	"zizmor_test.go": "the exemption block being gone is a real outcome with a sibling " +
-		"test that covers it - if the block has gone, the relative references should " +
-		"have gone with it, and that is what the next test asserts.",
-
 	// hermetic_tests_test.go is NOT here, and that is the point: it used to
 	// skip, its own comment records replacing that with an assertion that the
 	// walk found something, and the entry I wrote for it was refused by this

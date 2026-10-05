@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 211
+floor: 210
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -2062,30 +2062,16 @@ mutations:
       written only by ordering. Before #416 this key was exported and
       consumed, and the lane trusted whatever it said.
 
-  - guard: TestZizmorExemptionsAreStillEarned
-    file: .github/zizmor.yml
-    find: "      - clerk.yml"
-    replace: "      - codeql.yml"
-    mentions: "no longer uses a relative"
+  - guard: TestNoWorkflowReachesALocalActionByARelativePath
+    file: .github/workflows/clerk.yml
+    find: "uses: $/.github/actions/versions"
+    replace: "uses: ./.github/actions/versions"
+    mentions: "reaches a local action with a relative"
     why: >
-      A suppressed finding is invisible by construction, so an exemption that
-      has stopped being about anything is the one kind of debt nothing in CI can
-      report. The self-repository block exists only because actionlint refuses
-      the syntax zizmor asks for; when actionlint ships a release that accepts
-      it, the block becomes pure debt and this guard is the only thing that
-      would ever say so.
-
-  - guard: TestEveryRelativeActionReferenceIsAccountedFor
-    file: .github/zizmor.yml
-    find: "      - clerk.yml"
-    replace: "      # - clerk.yml"
-    mentions: "is not listed in .github/zizmor.yml"
-    why: >
-      A workflow reaching the local composite action without an entry here fails
-      the Workflow Scan lane, which is correct but is a CI-only discovery -
-      zizmor is not installed on every machine that can run `task test`. This
-      names the file locally in seconds instead, which is the difference between
-      a push-and-wait cycle and an edit.
+      The form twelve workflows used until zizmor's exemption for it was
+      removed. It reads the action out of the workspace, so it depends on a
+      checkout having happened and runs the checkout's copy; with no exemption
+      left, the Workflow Scan lane fails on it, and this says so before a push.
 
   - guard: TestEveryDependabotEcosystemGroupsItsUpdates
     file: .github/dependabot.yml

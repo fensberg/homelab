@@ -135,7 +135,7 @@ jobs:
           disable-sudo-and-containers: "false"
 
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       # Every build argument a Dockerfile declares without a default is a
       # pin, and it is filled from scripts/versions.env or from the order's
@@ -244,8 +244,9 @@ jobs:
             echo "digest=${REUSED}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # shellcheck disable=SC2086 # PINS is a list of flags by construction
-          docker build $PINS \
+          # A list of flags, built above as one line; split into words here.
+          read -ra pins <<< "$PINS"
+          docker build "${pins[@]}" \
             --label "org.opencontainers.image.revision=${SHA}" \
             --label "org.opencontainers.image.source=${SOURCE}" \
             -t "${IMAGE}:${SHA}" \
@@ -510,7 +511,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Take delivery of the registry client
         run: scripts/take-delivery.sh oras
@@ -749,7 +750,7 @@ jobs:
             sum.golang.org:443
 
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Setup Go
         uses: $/.github/workflows/setup-go
@@ -806,11 +807,11 @@ jobs:
 
           while IFS= read -r name; do
             package="${REPO_NAME}-${name}-release"
-            # $tag is jq's own variable, inside jq's program, so single quotes
-            # are right: the shell must not expand it.
-            # shellcheck disable=SC2016
+            # jq's program, in single quotes so the shell leaves it alone. It
+            # names no variable of its own: a `$` inside single quotes reads to
+            # a linter as an expansion somebody forgot.
             read -r tag digest < <(GH_TOKEN="$READ_TOKEN" gh api --paginate "${base_path}/packages/container/${package}/versions" \
-              --jq '.[] | (.metadata.container.tags | map(select(startswith("fp-") | not)) | .[0]) as $tag | select($tag != null) | "\(.created_at) \($tag) \(.name)"' \
+              --jq '.[] | {at: .created_at, name: .name, tag: (.metadata.container.tags | map(select(startswith("fp-") | not)) | .[0])} | select(.tag != null) | "\(.at) \(.tag) \(.name)"' \
               | sort -r | head -n 1 | cut -d' ' -f2-)
             if [ -z "${tag:-}" ]; then
               echo "::error::${package} holds no release, although the ${name} order makes one"
