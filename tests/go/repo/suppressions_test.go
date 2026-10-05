@@ -127,6 +127,10 @@ func commentLeaders(rel string) []string {
 		return []string{"<!--"}
 	case ".tf", ".hcl":
 		return []string{"#", "//"}
+	case ".patch", ".diff":
+		// A change somebody has yet to apply. No tool reads it as the file
+		// it describes, so a mark inside it silences nothing until it is.
+		return nil
 	}
 	return []string{"#"}
 }

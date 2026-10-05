@@ -8,8 +8,6 @@ it at all.
 
 ## The tiers
 
-<!-- prettier-ignore-start -->
-
 | Tier            | Answers                                                                   | May touch                       | Runs on a PR |
 | --------------- | ------------------------------------------------------------------------- | ------------------------------- | ------------ |
 | **unit**        | Does this function do what it says?                                       | Nothing outside the process     | Yes          |
@@ -20,8 +18,6 @@ it at all.
 | **integration** | Does the built estate still look right, and did last night's backup work? | A real, already-built estate    | No           |
 | **api**         | Does the vendor's API still behave as assumed?                            | A real vendor API               | No           |
 | **e2e**         | Can this build an estate from nothing?                                    | Creates and destroys real infra | No           |
-
-<!-- prettier-ignore-end -->
 
 **This table is data, not prose.** `TestTheDeclaredTiersAreTheMeasuredOnes`
 reads the bold name in each row and requires it to match the tiers

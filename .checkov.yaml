@@ -23,6 +23,7 @@
 #
 # Removed when something here is built to run outside Kubernetes.
 skip-check:
+  # proved by TestEveryImageBuiltHereIsRunByAManifestHere
   - CKV_DOCKER_2
 
   # CKV_K8S_8 and CKV_K8S_9: liveness and readiness probes.
@@ -54,6 +55,8 @@ skip-check:
   # nothing else is placed expecting capacity this needs. Memory is different
   # and does carry a limit - it is incompressible, so the alternative to a
   # limit there is a neighbour being evicted.
+  #
+  # proved by TestAContainerWithNoCPULimitReservesCPUAndIsLimitedInMemory
   - CKV_K8S_11
 
   # CKV_K8S_35: secrets as files rather than environment variables.
@@ -68,6 +71,8 @@ skip-check:
   # vault through a Secret written by OpenTofu.
   #
   # Removed if the server ever learns to read a password from a file.
+  #
+  # proved by TestNoSecretIsWrittenInTheTree
   - CKV_K8S_35
 
   # CKV_GHA_7: a dispatched workflow must take no inputs.

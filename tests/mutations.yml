@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 205
+floor: 211
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1327,6 +1327,71 @@ mutations:
       branch is on a privileged runner, which is the whole of what zizmor's
       warning about the trigger is for, and the warning is silenced on the
       strength of this.
+
+  - guard: TestEverySelfRepositoryReferenceNamesAnActionThatIsHere
+    file: .github/workflows/duty.yml
+    find: "uses: $/.github/workflows/mobilize"
+    replace: "uses: $/.github/workflows/mobilise"
+    mentions: "there is no action there"
+    why: >
+      One letter, in a form actionlint is told to pass without reading. The
+      workflow is valid YAML and every linter is quiet; the job fails to
+      start, on a schedule, the next time something it watches finishes.
+
+  - guard: TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
+    file: .github/runner-image/Dockerfile
+    find: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}@sha256:"
+    replace: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION} #"
+    mentions: "which is not pinned by digest"
+    why: >
+      The packages this image installs are unpinned on purpose, and hadolint
+      is silenced about it on the ground that the base underneath them cannot
+      move. On a tag it can: the same Dockerfile then builds from whatever
+      the tag was last pointed at, with unpinned packages on top.
+
+  - guard: TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn
+    file: modules/infrastructure/platform/database.tf
+    find: '"postgres://%s:%s@%s:%d/%s?sslmode=require",'
+    replace: '"postgres://tofu:%s@%s:%d/%s?sslmode=require",'
+    mentions: "user part is not a placeholder"
+    why: >
+      A name written into a string the secrets scanner is told to pass as a
+      format. Today it would be a user name; the same edit with a password in
+      it is silenced by the same comment, and that is the string the scanner
+      exists to find.
+
+  - guard: TestAContainerWithNoCPULimitReservesCPUAndIsLimitedInMemory
+    file: clusters/core/infrastructure/controllers/cloudflared.yaml
+    find: "              cpu: 50m"
+    replace: "              ephemeral-storage: 1Gi"
+    mentions: "has no CPU limit and reserves no CPU"
+    why: >
+      Checkov's rule about CPU limits is off for the whole repository, on the
+      ground that the request is what protects a node. A container with
+      neither is BestEffort for CPU among neighbours that reserved theirs,
+      and with the rule off nothing else would say so.
+
+  - guard: TestNoSecretIsWrittenInTheTree
+    file: clusters/core/infrastructure/controllers/cloudflared.yaml
+    find: "kind: NetworkPolicy"
+    replace: "kind: Secret"
+    mentions: "is a Secret, written in the repository"
+    why: >
+      A Secret in a manifest is a credential in a public repository. Checkov's
+      rule about how secrets reach a workload is off on the ground that every
+      one comes from the vault, so a Secret committed here is exactly what
+      that reasoning assumes cannot exist.
+
+  - guard: TestEveryImageBuiltHereIsRunByAManifestHere
+    file: clusters/core/infrastructure/configs/runner-scale-set.yaml
+    find: "image: ghcr.io/fensberg/homelab-runner@sha256:"
+    replace: "image: ghcr.io/actions/somebody-elses@sha256:"
+    mentions: "no manifest here runs one"
+    why: >
+      The estate's runners now run the publisher's image and the one built
+      here is run by nothing in this repository. Wherever it does run, the
+      HEALTHCHECK checkov is told not to ask for may be the only health check
+      there is.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml
