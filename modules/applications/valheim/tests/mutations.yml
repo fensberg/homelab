@@ -11,7 +11,7 @@
 # tests/go/repo that must fail. For one of this application's own tests that
 # is the guard that runs them, and `test` names which of them must be the one
 # that failed.
-floor: 19
+floor: 20
 
 mutations:
   - guard: TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas
@@ -237,3 +237,16 @@ mutations:
       nothing anywhere naming this policy - which is what 172.16.0.0/12
       being shut cost every remote player who tried, from a phone hotspot or
       a hotel.
+
+  - guard: TestEveryApplicationsOwnTestsPass
+    test: TestEveryProbeLooksForThePortTheServiceQueries
+    file: modules/applications/valheim/base/deployment.yaml
+    find: "[0-9A-F]*:0999 "
+    replace: "[0-9A-F]*:0998 "
+    mentions: "does not look for the query port"
+    why: >
+      2456 is the port everybody knows this game by, and it is the first
+      port on the Service, so it is the one a probe gets pointed at. With
+      crossplay on the server never binds it. The probe then never passes,
+      the startup budget runs out, and the server is restarted every
+      fifteen minutes forever with a manifest that validates.

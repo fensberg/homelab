@@ -220,7 +220,7 @@ task test:e2e          # DESTRUCTIVE. See below.
 ```
 
 The three below the gap read `config/management.rendered.json`, the same file
-the start button reads. So the setup step is `task render-secrets` and the
+the start button reads. So the setup step is the render phase and the
 teardown is `task clean-secrets` - no separate secret plumbing exists for
 tests, and nothing is left on disk that ignite would not have left there.
 

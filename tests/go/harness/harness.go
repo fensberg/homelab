@@ -20,8 +20,9 @@
 //
 // From config/management.rendered.json - the same file the Render phase
 // writes and the Sterilize phase wipes. Integration tests therefore need no
-// secret plumbing of their own: `task render-secrets` is the setup step, and
-// `task clean-secrets` is the teardown. Nothing here ever reads 1Password
+// secret plumbing of their own: the render phase, run with -keep-on-failure so
+// it leaves the file behind, is the setup step, and `task clean-secrets` is
+// the teardown. Nothing here ever reads 1Password
 // directly, and nothing here leaves a secret on disk that ignite would not
 // have left there anyway.
 package harness
@@ -119,9 +120,11 @@ func LoadConfig(t *testing.T) *Config {
 		t.Fatalf(`no rendered config at %s.
 
 These tiers read the same file the start button reads, so rendering it is the
-setup step:
+setup step. The render task wipes what it wrote on its way out, so it is run
+directly and told to keep it:
 
-    task render-secrets SITE=%s
+    task build
+    GH_TOKEN=$(gh auth token) ./toolshed/contractor build-site -site %s -phase render -keep-on-failure
 
 and wiping it again is the teardown:
 

@@ -26,24 +26,6 @@ skip-check:
   # proved by TestEveryImageBuiltHereIsRunByAManifestHere
   - CKV_DOCKER_2
 
-  # CKV_K8S_8 and CKV_K8S_9: liveness and readiness probes.
-  #
-  # The game server is a single process in its container. A process that exits
-  # takes the container with it and the kubelet restarts it, so a liveness
-  # probe would be checking that something which cannot be running is running.
-  # Readiness gates a Service, and there is no Service: crossplay means nothing
-  # connects inbound.
-  #
-  # The case a probe would genuinely catch is a hang without an exit. Detecting
-  # that means asking the server something over UDP, which needs a client the
-  # image deliberately does not carry - and a probe that cannot fail is worse
-  # than none, because it reports health nobody measured.
-  #
-  # Removed when a workload here serves traffic through a Service, or when
-  # there is a real check to run.
-  - CKV_K8S_8
-  - CKV_K8S_9
-
   # CKV_K8S_11: CPU limits.
   #
   # Deliberately absent, and this is the one where the check is wrong for the
