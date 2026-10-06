@@ -66,6 +66,9 @@ func Render(ctx *run.Context) error {
 	for _, h := range net.Hypervisors {
 		fmt.Fprintf(&inv, "        %q:\n", h.Hostname)
 		fmt.Fprintf(&inv, "          ansible_host: %q\n", h.IP)
+		// The datastore this node keeps machines' disks in: the storage
+		// for the driver's volumes is made beside it, on the same pool.
+		fmt.Fprintf(&inv, "          machine_disks: %q\n", h.Datastores.Disks)
 		inv.WriteString("          ansible_user: root\n")
 	}
 	if err := os.WriteFile(ctx.InventoryOut, []byte(inv.String()), 0o644); err != nil {
@@ -100,7 +103,10 @@ sdn_asn: %d
 sdn_vrf_vni: %d
 sdn_vnet_vni: %d
 sdn_vnet: %q
-`, net.NodeCIDR, net.Gateway, net.SiteCIDR, net.ASN, net.VRFVNI, net.VNetVNI, net.VNet) + zoneBlock
+worker_pool: %q
+volume_storage: %q
+`, net.NodeCIDR, net.Gateway, net.SiteCIDR, net.ASN, net.VRFVNI, net.VNetVNI, net.VNet,
+		net.WorkerPool(), config.VolumeStorage(ctx.Site)) + zoneBlock
 	if err := os.WriteFile(ctx.SiteVars, []byte(siteVars), 0o644); err != nil {
 		return err
 	}
