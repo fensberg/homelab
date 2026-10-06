@@ -5,12 +5,15 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"homelab/details/repopath"
 )
 
 // A finding that is silenced names the guard that proves it may be.
@@ -72,11 +75,21 @@ var provedBy = regexp.MustCompile(`proved by (Test[A-Za-z0-9_]+)`)
 // the directory a test runs in.
 func guardsHere(t *testing.T) map[string]bool {
 	t.Helper()
-	here, err := os.Getwd()
+	// This package, in whichever tree is being judged: the mutation ledger
+	// runs a guard from a scratch copy's root, not from here.
+	_, self, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("this test cannot find its own source file")
+	}
+	real, err := repopath.Root()
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := filepath.Glob(filepath.Join(here, "*_test.go"))
+	rel, err := filepath.Rel(real, filepath.Dir(self))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := filepath.Glob(filepath.Join(repoRoot(t), rel, "*_test.go"))
 	if err != nil {
 		t.Fatal(err)
 	}

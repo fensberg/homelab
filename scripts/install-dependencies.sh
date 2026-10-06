@@ -75,10 +75,12 @@ else
 	curl -fsSL -o "$TMP/go.tar.gz" "https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz"
 	sudo rm -rf /usr/local/go
 	sudo tar -C /usr/local -xzf "$TMP/go.tar.gz"
-	# Escaped, so that $PATH and $HOME are written as they are and expand when
+	# Quoted, so that $PATH and $HOME are written as they are and expand when
 	# .bashrc is later sourced, not now.
 	grep -q '/usr/local/go/bin' ~/.bashrc 2>/dev/null ||
-		echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >>~/.bashrc
+		cat >>~/.bashrc <<'PROFILE'
+export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+PROFILE
 	export PATH="$PATH:/usr/local/go/bin"
 	ok "go ${GO_VERSION} installed"
 fi
