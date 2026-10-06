@@ -75,7 +75,7 @@ type estate struct {
 	dir  string
 }
 
-const world = `{"what": "the world", "lifetime": "client", "lives_on": "machine", "held_by": "PersistentVolumeClaim/world", "copy": {"under": "worlds/"}, "may_lose": "2h"}`
+const records = `{"what": "the records", "lifetime": "client", "lives_on": "machine", "held_by": "PersistentVolumeClaim/records", "copy": {"under": "records/"}, "may_lose": "2h"}`
 
 func newEstate(t *testing.T, appHolds, coreHolds string) estate {
 	t.Helper()
@@ -93,10 +93,10 @@ func newEstate(t *testing.T, appHolds, coreHolds string) estate {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv(standInDir, e.dir)
 
-	e.write(filepath.Join(e.root, applications.Dir, "game", applications.Declaration),
+	e.write(filepath.Join(e.root, applications.Dir, "tenant", applications.Declaration),
 		`{"requires": [], "holds": [`+appHolds+`]}`)
 	e.write(filepath.Join(e.root, applications.SiteFilePath("site0")),
-		"spec:\n  path: ./"+applications.Dir+"/game/production\n")
+		"spec:\n  path: ./"+applications.Dir+"/tenant/production\n")
 	if coreHolds != "" {
 		e.write(filepath.Join(e.root, holds.CoreFile), `{"holds": [`+coreHolds+`]}`)
 	}
@@ -125,7 +125,7 @@ func (e estate) write(path, body string) {
 func (e estate) lists(ages ...time.Duration) {
 	var objects []string
 	for i, age := range ages {
-		objects = append(objects, fmt.Sprintf(`{"Path": "worlds/w/%d/file", "ModTime": %q}`, i, now.Add(-age).Format(time.RFC3339)))
+		objects = append(objects, fmt.Sprintf(`{"Path": "records/%d/file", "ModTime": %q}`, i, now.Add(-age).Format(time.RFC3339)))
 	}
 	e.write(filepath.Join(e.dir, "listing-bucket-p"), "["+strings.Join(objects, ",")+"]")
 }
@@ -142,14 +142,14 @@ func (e estate) asked() string {
 }
 
 func TestASiteWhoseClientDataHasAFreshCopyIsCleared(t *testing.T) {
-	e := newEstate(t, world, "")
+	e := newEstate(t, records, "")
 	e.lists(72*time.Hour, 30*time.Minute)
 	ok, out := e.clear()
 	if !ok {
-		t.Fatalf("a world copied half an hour ago, allowed two hours, was refused:\n%s", out)
+		t.Fatalf("records copied half an hour ago, allowed two hours, was refused:\n%s", out)
 	}
 	asked := e.asked()
-	for _, want := range []string{"lsjson", "--use-server-modtime", remote + ":bucket-p/worlds", "key=reader-p"} {
+	for _, want := range []string{"lsjson", "--use-server-modtime", remote + ":bucket-p/records", "key=reader-p"} {
 		if !strings.Contains(asked, want) {
 			t.Errorf("the storage was not asked with %q, so this did not look where the copy is, as the storage dates it, with the key that only reads:\n%s", want, asked)
 		}
@@ -157,13 +157,13 @@ func TestASiteWhoseClientDataHasAFreshCopyIsCleared(t *testing.T) {
 }
 
 func TestACopyOlderThanMayBeLostIsRefusedByName(t *testing.T) {
-	e := newEstate(t, world, "")
+	e := newEstate(t, records, "")
 	e.lists(72 * time.Hour)
 	ok, out := e.clear()
 	if ok {
-		t.Fatalf("a world whose newest copy is three days old, allowed two hours, was cleared:\n%s", out)
+		t.Fatalf("records whose newest copy is three days old, allowed two hours, was cleared:\n%s", out)
 	}
-	for _, want := range []string{"REFUSED", "the world (game)", "3 days old", "2 hours", "The officer changed nothing"} {
+	for _, want := range []string{"REFUSED", "the records (tenant)", "3 days old", "2 hours", "The officer changed nothing"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the refusal does not say %q:\n%s", want, out)
 		}
@@ -186,9 +186,9 @@ func TestWhatCannotBeLookedAtIsRefused(t *testing.T) {
 		"a listing that is not one": func(e estate) { e.write(filepath.Join(e.dir, "listing-bucket-p"), "not json") },
 	} {
 		t.Run(name, func(t *testing.T) {
-			e := newEstate(t, world, "")
+			e := newEstate(t, records, "")
 			arrange(e)
-			if ok, out := e.clear(); ok || !strings.Contains(out, "the world (game)") {
+			if ok, out := e.clear(); ok || !strings.Contains(out, "the records (tenant)") {
 				t.Fatalf("%s was cleared, or the refusal does not name what would be lost:\n%s", name, out)
 			}
 		})
@@ -229,7 +229,7 @@ func TestTheCoresAssetsAreAskedAboutInTheBucketTheyName(t *testing.T) {
 }
 
 func TestAnApplicationTheSiteDoesNotRunIsNotAskedAbout(t *testing.T) {
-	e := newEstate(t, world, "")
+	e := newEstate(t, records, "")
 	e.write(filepath.Join(e.root, applications.SiteFilePath("site0")), "spec: {}\n")
 	if ok, out := e.clear(); !ok || e.asked() != "" {
 		t.Fatalf("a site that runs no application was refused over one, or the storage was asked:\n%s", out)
@@ -237,14 +237,14 @@ func TestAnApplicationTheSiteDoesNotRunIsNotAskedAbout(t *testing.T) {
 }
 
 func TestWhatHoldsCannotBeReadIsRefused(t *testing.T) {
-	e := newEstate(t, `{"what": "the world", "lifetime": "forever", "lives_on": "machine", "held_by": "PersistentVolumeClaim/world"}`, "")
+	e := newEstate(t, `{"what": "the records", "lifetime": "forever", "lives_on": "machine", "held_by": "PersistentVolumeClaim/records"}`, "")
 	if ok, out := e.clear(); ok || !strings.Contains(out, "cannot be made out") {
 		t.Fatalf("a declaration with a lifetime that is not a scope was cleared:\n%s", out)
 	}
 }
 
 func TestOnlyASitesDestructionCanBeClearedYet(t *testing.T) {
-	e := newEstate(t, world, "")
+	e := newEstate(t, records, "")
 	var out strings.Builder
 	if clear(&out, e.root, "site0", "machine", now) {
 		t.Fatalf("destroying a machine was cleared, and nothing here judges that yet:\n%s", out.String())
@@ -254,7 +254,7 @@ func TestOnlyASitesDestructionCanBeClearedYet(t *testing.T) {
 // The program's own door: it answers one question, asked one way, and
 // anything else is not an order it takes.
 func TestTheOfficerAnswersOneQuestionAskedOneWay(t *testing.T) {
-	e := newEstate(t, world, "")
+	e := newEstate(t, records, "")
 	e.lists(30 * time.Minute)
 	here := func() (string, error) { return e.root, nil }
 	lost := func() (string, error) { return "", os.ErrNotExist }
@@ -287,7 +287,7 @@ func TestTheOfficerAnswersOneQuestionAskedOneWay(t *testing.T) {
 // copy made a moment ago, so the officer clears it - which it can only do by
 // having found that checkout, read what it declares and asked for the copy.
 func TestTheProgramItselfJudgesTheCheckoutItIsStartedIn(t *testing.T) {
-	e := newEstate(t, world, "")
+	e := newEstate(t, records, "")
 	e.write(filepath.Join(e.dir, "listing-bucket-p"),
 		fmt.Sprintf(`[{"Path": "copy", "ModTime": %q}]`, time.Now().Format(time.RFC3339)))
 	for _, marker := range repopath.Markers {
@@ -306,7 +306,7 @@ func TestTheProgramItselfJudgesTheCheckoutItIsStartedIn(t *testing.T) {
 	// after this is half the assertion. The other half is that the copy was
 	// asked for, which a checkout holding nothing would never do.
 	main()
-	if !strings.Contains(e.asked(), remote+":bucket-p/worlds") {
+	if !strings.Contains(e.asked(), remote+":bucket-p/records") {
 		t.Errorf("the program cleared the teardown without looking at the copy its checkout declares:\n%s", e.asked())
 	}
 }

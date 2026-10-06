@@ -48,15 +48,15 @@ func TestADeclarationThatCannotAnswerTheQuestionIsRefused(t *testing.T) {
 	}{
 		"no name":                         {Asset{Lifetime: "site", LivesOn: "machine", HeldBy: "A/b", Path: "p"}, "what"},
 		"held by nothing":                 {Asset{What: "x", Lifetime: "site", LivesOn: "machine", Path: "p"}, "held_by"},
-		"held by something not an object": {func() Asset { a := asset("site", "machine"); a.HeldBy = "world"; return a }(), "Kind/name"},
+		"held by something not an object": {func() Asset { a := asset("site", "machine"); a.HeldBy = "thing"; return a }(), "Kind/name"},
 		"a lifetime that is not a scope":  {asset("forever", "machine"), "not a scope"},
 		"living on a client":              {asset("client", "client"), "can be destroyed"},
 		"outlasted by where it lives":     {asset("machine", "site"), "outlasts it"},
 		"a tolerance and no copy":         {func() Asset { a := asset("site", "machine"); a.MayLose = "1h"; return a }(), "names no copy"},
 		"a copy under nothing":            {copyOf(asset("client", "machine"), "", "/", "1h"), "which folder"},
-		"a copy and no tolerance":         {copyOf(asset("client", "machine"), "", "worlds", ""), "gives no age"},
-		"a tolerance of nothing":          {copyOf(asset("client", "machine"), "", "worlds", "0s"), "gives no age"},
-		"an application naming a bucket":  {copyOf(asset("client", "machine"), "production", "worlds", "1h"), "environment a site runs it in"},
+		"a copy and no tolerance":         {copyOf(asset("client", "machine"), "", "copies", ""), "gives no age"},
+		"a tolerance of nothing":          {copyOf(asset("client", "machine"), "", "copies", "0s"), "gives no age"},
+		"an application naming a bucket":  {copyOf(asset("client", "machine"), "production", "copies", "1h"), "environment a site runs it in"},
 		"the core naming no bucket":       {copyOf(core, "", "postgres", "1h"), "which bucket"},
 	} {
 		err := c.a.Check()
@@ -66,7 +66,7 @@ func TestADeclarationThatCannotAnswerTheQuestionIsRefused(t *testing.T) {
 	}
 	for name, a := range map[string]Asset{
 		"with no copy":          asset("site", "machine"),
-		"an application's copy": copyOf(asset("client", "machine"), "", "worlds", "2h"),
+		"an application's copy": copyOf(asset("client", "machine"), "", "copies", "2h"),
 		"the core's copy":       copyOf(core, "database", "postgres", "1h"),
 	} {
 		if err := a.Check(); err != nil {
