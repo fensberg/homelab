@@ -21,6 +21,29 @@ func R2Endpoint(accountID string) string {
 	return "https://" + accountID + ".r2.cloudflarestorage.com"
 }
 
+// RcloneEnv configures rclone to reach an account's object storage with one
+// key, as a remote of the given name, entirely through environment variables
+// scoped to one process - so no credential is written to a config file.
+func RcloneEnv(remote, accountID, accessKeyID, secretAccessKey string) []string {
+	return []string{
+		RcloneVar(remote, "TYPE") + "=s3",
+		RcloneVar(remote, "PROVIDER") + "=Cloudflare",
+		RcloneVar(remote, RcloneKeyID) + "=" + accessKeyID,
+		RcloneVar(remote, "SECRET_ACCESS_KEY") + "=" + secretAccessKey,
+		RcloneVar(remote, "ENDPOINT") + "=" + R2Endpoint(accountID),
+		RcloneVar(remote, "NO_CHECK_BUCKET") + "=true",
+	}
+}
+
+// RcloneKeyID is the setting that carries a remote's access key id.
+const RcloneKeyID = "ACCESS_KEY_ID"
+
+// RcloneVar is the environment variable rclone reads one setting of a remote
+// from.
+func RcloneVar(remote, setting string) string {
+	return "RCLONE_CONFIG_" + remote + "_" + setting
+}
+
 // Answer is the envelope around every response. Success is the vendor's own
 // verdict, and it is checked alongside the status code: an answer can be
 // shaped like a success and still say it was not one.

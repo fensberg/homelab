@@ -184,3 +184,30 @@ func TestSlugRefusesAnOriginThatIsNotOnGitHub(t *testing.T) {
 		t.Fatalf("named %q from an origin that is not on GitHub", got)
 	}
 }
+
+// A program started inside a checkout judges that checkout, wherever in it
+// the program was started, and says so when it was started outside any.
+func TestHereIsTheCheckoutAboveTheWorkingDirectory(t *testing.T) {
+	root := t.TempDir()
+	deep := filepath.Join(root, "a", "b")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(deep)
+	if got, err := Here(); err == nil {
+		t.Fatalf("a directory under no checkout was read as being in %s", got)
+	}
+	for _, marker := range Markers {
+		if err := os.WriteFile(filepath.Join(root, marker), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := Here()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(root)
+	if resolved, _ := filepath.EvalSymlinks(got); resolved != want {
+		t.Errorf("started in %s, the checkout was read as %s", deep, got)
+	}
+}

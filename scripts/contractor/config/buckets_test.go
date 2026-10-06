@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"homelab/details/cloudflare"
 )
 
 // Every bucket the site declares has a credential of its own.
@@ -194,7 +196,7 @@ func TestTwoSitesCannotCollapseToOneSlug(t *testing.T) {
 func TestBackupPathsUseTheRemoteRcloneIsGiven(t *testing.T) {
 	env := strings.Join(RcloneEnv("acct", ObjectStorageCredential{}), "\n")
 	remote := strings.SplitN(BucketRemote("b"), ":", 2)[0]
-	if !strings.Contains(env, "RCLONE_CONFIG_"+remote+"_TYPE=") {
+	if !strings.Contains(env, cloudflare.RcloneVar(remote, "TYPE")+"=") {
 		t.Errorf("paths address the remote %q, but RcloneEnv configures a different one:\n%s", remote, env)
 	}
 	if got, want := LatestStateBackupPath("b", ClusterRoot), BucketRemote("b")+"/"+StateBackupFolder(ClusterRoot)+"/"+LatestStateBackup; got != want {

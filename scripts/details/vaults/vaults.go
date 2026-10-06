@@ -77,3 +77,8 @@ func CheckSite(site string, names []string) error {
 	}
 	return nil
 }
+
+// ObjectStorage is what a site is granted to keep things in: the name of the
+// concern in a site's config, and of the item in its shared vault that the
+// estate grants its buckets and their keys into.
+const ObjectStorage = "object_storage"

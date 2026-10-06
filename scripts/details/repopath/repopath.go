@@ -54,6 +54,17 @@ func Root() (string, error) {
 	return rootFrom(filepath.Dir(thisFile))
 }
 
+// Here returns the root of the checkout the process was started in: the
+// repository above its working directory. For a program that judges what a
+// checkout declares, and is started inside the one it is to judge.
+func Here() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return rootFrom(dir)
+}
+
 // rootFrom walks up from dir until it finds Marker.
 func rootFrom(dir string) (string, error) {
 	for {

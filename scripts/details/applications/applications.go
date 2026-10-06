@@ -33,6 +33,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"homelab/details/holds"
 )
 
 // Dir is where applications are, from the top of the repository: one
@@ -81,6 +83,10 @@ type Application struct {
 	// application runs on is destroyed (#588). An application with no data
 	// a teardown would lose leaves it out.
 	BeforeTeardown *BeforeTeardown `json:"before_teardown,omitempty"`
+	// Holds is what the application holds that is worth keeping, and for
+	// how long (homelab/details/holds). The safety officer reads it before
+	// anything the application runs on is destroyed.
+	Holds []holds.Asset `json:"holds,omitempty"`
 
 	// Name is the application's directory, which is also its namespace and
 	// its item in a site's vault. Root is that directory and Path its
@@ -288,6 +294,11 @@ func Parse(name string, raw []byte) (Application, error) {
 			return a, fmt.Errorf("%s names no before_teardown.command, so there is nothing to run that would take the backup", a.Path)
 		}
 	}
+	held, err := holds.Owned(a.Holds, a.Name, a.Path)
+	if err != nil {
+		return a, err
+	}
+	a.Holds = held
 	return a, nil
 }
 

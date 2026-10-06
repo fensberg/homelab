@@ -12,6 +12,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"homelab/details/vaults"
 )
 
 // The bounds and the vendor map below are this program's half of a contract
@@ -45,9 +47,9 @@ const (
 // alike, so asserting a vendor the code does not depend on would be noise
 // rather than a guard.
 var RequiredProvidersByConcern = map[string]string{
-	"hypervisor":      "proxmox",
-	"overlay_network": "tailscale",
-	"object_storage":  "cloudflare",
+	"hypervisor":         "proxmox",
+	"overlay_network":    "tailscale",
+	vaults.ObjectStorage: "cloudflare",
 }
 
 type Config struct {
@@ -500,14 +502,14 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	// value reaching a provider through the Go path is held to the same
 	// standard as one reaching it through tofu.
 	declared := map[string]string{
-		"hypervisor":      site.Hypervisor.Provider,
-		"overlay_network": site.OverlayNetwork.Provider,
-		"object_storage":  site.ObjectStorage.Provider,
+		"hypervisor":         site.Hypervisor.Provider,
+		"overlay_network":    site.OverlayNetwork.Provider,
+		vaults.ObjectStorage: site.ObjectStorage.Provider,
 	}
 	attested := map[string]string{
-		"hypervisor":      site.Hypervisor.VaultProvider,
-		"overlay_network": site.OverlayNetwork.VaultProvider,
-		"object_storage":  site.ObjectStorage.VaultProvider,
+		"hypervisor":         site.Hypervisor.VaultProvider,
+		"overlay_network":    site.OverlayNetwork.VaultProvider,
+		vaults.ObjectStorage: site.ObjectStorage.VaultProvider,
 	}
 	// The tunnel is held to the same three-way agreement: its token edits
 	// the site's tunnel and what an enrolled device can reach through it.

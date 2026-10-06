@@ -1,0 +1,312 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"homelab/details/applications"
+	"homelab/details/cloudflare"
+	"homelab/details/holds"
+	"homelab/details/repopath"
+)
+
+// The vault and the storage are stand-ins on PATH: this test binary, under
+// the names `op` and `rclone`, answering from files in a directory. What the
+// officer runs is then the real command line, and a test says what the vault
+// holds and what the bucket lists.
+func TestMain(m *testing.M) {
+	if dir := os.Getenv(standInDir); dir != "" {
+		switch filepath.Base(os.Args[0]) {
+		case "op":
+			os.Exit(standInVault(dir, os.Args[1:]))
+		case "rclone":
+			os.Exit(standInStorage(dir, os.Args[1:]))
+		}
+	}
+	os.Exit(m.Run())
+}
+
+const standInDir = "STAND_IN_ESTATE"
+
+// standInVault answers `op read op://vault/item/field` from the file named
+// for the field, and fails for a field with no file.
+func standInVault(dir string, args []string) int {
+	if len(args) != 2 || args[0] != "read" {
+		return 2
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "vault", filepath.Base(args[1])))
+	if err != nil {
+		return 1
+	}
+	fmt.Println(string(body))
+	return 0
+}
+
+// standInStorage answers `rclone lsjson ... remote:bucket/folder` with the
+// listing kept for that bucket, records what it was asked and with which
+// key, and fails for a bucket with no listing.
+func standInStorage(dir string, args []string) int {
+	target := args[len(args)-1]
+	asked := strings.Join(args, " ") + " key=" + os.Getenv(cloudflare.RcloneVar(remote, cloudflare.RcloneKeyID)) + "\n"
+	f, _ := os.OpenFile(filepath.Join(dir, "asked"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f.WriteString(asked)
+	f.Close()
+	_, path, _ := strings.Cut(target, ":")
+	bucket, _, _ := strings.Cut(path, "/")
+	body, err := os.ReadFile(filepath.Join(dir, "listing-"+bucket))
+	if err != nil {
+		return 3
+	}
+	fmt.Print(string(body))
+	return 0
+}
+
+var now = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+
+// estate is a repository with one application, a site that runs it, and the
+// stand-ins that answer for the site's vault and buckets.
+type estate struct {
+	t    *testing.T
+	root string
+	dir  string
+}
+
+const records = `{"what": "the records", "lifetime": "client", "lives_on": "machine", "held_by": "PersistentVolumeClaim/records", "copy": {"under": "records/"}, "may_lose": "2h"}`
+
+func newEstate(t *testing.T, appHolds, coreHolds string) estate {
+	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := estate{t, t.TempDir(), t.TempDir()}
+	bin := t.TempDir()
+	for _, name := range []string{"op", "rclone"} {
+		if err := os.Symlink(self, filepath.Join(bin, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv(standInDir, e.dir)
+
+	e.write(filepath.Join(e.root, applications.Dir, "tenant", applications.Declaration),
+		`{"requires": [], "holds": [`+appHolds+`]}`)
+	e.write(filepath.Join(e.root, applications.SiteFilePath("site0")),
+		"spec:\n  path: ./"+applications.Dir+"/tenant/production\n")
+	if coreHolds != "" {
+		e.write(filepath.Join(e.root, holds.CoreFile), `{"holds": [`+coreHolds+`]}`)
+	}
+	for field, value := range map[string]string{
+		"account_id":                          "account",
+		"production_bucket":                   "bucket-p",
+		"production_reader_access_key_id":     "reader-p",
+		"production_reader_secret_access_key": "secret-p",
+	} {
+		e.write(filepath.Join(e.dir, "vault", field), value)
+	}
+	return e
+}
+
+func (e estate) write(path, body string) {
+	e.t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		e.t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+// lists says what the production bucket holds: one object for each age.
+func (e estate) lists(ages ...time.Duration) {
+	var objects []string
+	for i, age := range ages {
+		objects = append(objects, fmt.Sprintf(`{"Path": "records/%d/file", "ModTime": %q}`, i, now.Add(-age).Format(time.RFC3339)))
+	}
+	e.write(filepath.Join(e.dir, "listing-bucket-p"), "["+strings.Join(objects, ",")+"]")
+}
+
+func (e estate) clear() (bool, string) {
+	var out strings.Builder
+	ok := clear(&out, e.root, "site0", "site", now)
+	return ok, out.String()
+}
+
+func (e estate) asked() string {
+	b, _ := os.ReadFile(filepath.Join(e.dir, "asked"))
+	return string(b)
+}
+
+func TestASiteWhoseClientDataHasAFreshCopyIsCleared(t *testing.T) {
+	e := newEstate(t, records, "")
+	e.lists(72*time.Hour, 30*time.Minute)
+	ok, out := e.clear()
+	if !ok {
+		t.Fatalf("records copied half an hour ago, allowed two hours, was refused:\n%s", out)
+	}
+	asked := e.asked()
+	for _, want := range []string{"lsjson", "--use-server-modtime", remote + ":bucket-p/records", "key=reader-p"} {
+		if !strings.Contains(asked, want) {
+			t.Errorf("the storage was not asked with %q, so this did not look where the copy is, as the storage dates it, with the key that only reads:\n%s", want, asked)
+		}
+	}
+}
+
+func TestACopyOlderThanMayBeLostIsRefusedByName(t *testing.T) {
+	e := newEstate(t, records, "")
+	e.lists(72 * time.Hour)
+	ok, out := e.clear()
+	if ok {
+		t.Fatalf("records whose newest copy is three days old, allowed two hours, was cleared:\n%s", out)
+	}
+	for _, want := range []string{"REFUSED", "the records (tenant)", "3 days old", "2 hours", "The officer changed nothing"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the refusal does not say %q:\n%s", want, out)
+		}
+	}
+	for _, leaked := range []string{"bucket-p", "reader-p", "secret-p", "account"} {
+		if strings.Contains(out, leaked) {
+			t.Errorf("the refusal carries %q, a value from the vault:\n%s", leaked, out)
+		}
+	}
+}
+
+func TestWhatCannotBeLookedAtIsRefused(t *testing.T) {
+	for name, arrange := range map[string]func(estate){
+		"a bucket with no copy in it":    func(e estate) { e.lists() },
+		"a bucket that cannot be listed": func(e estate) {},
+		"a vault without the key that reads it": func(e estate) {
+			e.lists(time.Minute)
+			os.Remove(filepath.Join(e.dir, "vault", "production_reader_access_key_id"))
+		},
+		"a listing that is not one": func(e estate) { e.write(filepath.Join(e.dir, "listing-bucket-p"), "not json") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newEstate(t, records, "")
+			arrange(e)
+			if ok, out := e.clear(); ok || !strings.Contains(out, "the records (tenant)") {
+				t.Fatalf("%s was cleared, or the refusal does not name what would be lost:\n%s", name, out)
+			}
+		})
+	}
+}
+
+func TestSomethingThatOutlivesTheSiteWithNoCopyIsRefused(t *testing.T) {
+	e := newEstate(t, `{"what": "the ledger", "lifetime": "estate", "lives_on": "site", "held_by": "PersistentVolumeClaim/ledger"}`, "")
+	if ok, out := e.clear(); ok || !strings.Contains(out, "none anywhere else") {
+		t.Fatalf("something worth keeping for the estate's life, with no copy, was cleared for the site's destruction:\n%s", out)
+	}
+	if e.asked() != "" {
+		t.Error("the storage was asked about an asset that declares no copy")
+	}
+}
+
+func TestWhatDiesWithTheSiteDoesNotStandInItsWay(t *testing.T) {
+	history := `{"what": "the metrics history", "lifetime": "site", "lives_on": "machine", "held_by": "HelmRelease/metrics"}`
+	e := newEstate(t, "", history)
+	ok, out := e.clear()
+	if !ok {
+		t.Fatalf("a site's own history, which is worth keeping only while the site lives, stopped the site being destroyed:\n%s", out)
+	}
+	if e.asked() != "" {
+		t.Error("the storage was asked about an asset the destruction does not endanger")
+	}
+}
+
+func TestTheCoresAssetsAreAskedAboutInTheBucketTheyName(t *testing.T) {
+	e := newEstate(t, "", `{"what": "the deeds", "lifetime": "estate", "lives_on": "site", "held_by": "Cluster/deeds", "copy": {"storage": "production", "under": "deeds"}, "may_lose": "1h"}`)
+	e.lists(10 * time.Minute)
+	if ok, out := e.clear(); !ok {
+		t.Fatalf("a core asset with a ten-minute-old copy, allowed an hour, was refused:\n%s", out)
+	}
+	if !strings.Contains(e.asked(), remote+":bucket-p/deeds") {
+		t.Errorf("the core's copy was not looked for where it says it is:\n%s", e.asked())
+	}
+}
+
+func TestAnApplicationTheSiteDoesNotRunIsNotAskedAbout(t *testing.T) {
+	e := newEstate(t, records, "")
+	e.write(filepath.Join(e.root, applications.SiteFilePath("site0")), "spec: {}\n")
+	if ok, out := e.clear(); !ok || e.asked() != "" {
+		t.Fatalf("a site that runs no application was refused over one, or the storage was asked:\n%s", out)
+	}
+}
+
+func TestWhatHoldsCannotBeReadIsRefused(t *testing.T) {
+	e := newEstate(t, `{"what": "the records", "lifetime": "forever", "lives_on": "machine", "held_by": "PersistentVolumeClaim/records"}`, "")
+	if ok, out := e.clear(); ok || !strings.Contains(out, "cannot be made out") {
+		t.Fatalf("a declaration with a lifetime that is not a scope was cleared:\n%s", out)
+	}
+}
+
+func TestOnlyASitesDestructionCanBeClearedYet(t *testing.T) {
+	e := newEstate(t, records, "")
+	var out strings.Builder
+	if clear(&out, e.root, "site0", "machine", now) {
+		t.Fatalf("destroying a machine was cleared, and nothing here judges that yet:\n%s", out.String())
+	}
+}
+
+// The program's own door: it answers one question, asked one way, and
+// anything else is not an order it takes.
+func TestTheOfficerAnswersOneQuestionAskedOneWay(t *testing.T) {
+	e := newEstate(t, records, "")
+	e.lists(30 * time.Minute)
+	here := func() (string, error) { return e.root, nil }
+	lost := func() (string, error) { return "", os.ErrNotExist }
+
+	for name, c := range map[string]struct {
+		args []string
+		root func() (string, error)
+		want int
+	}{
+		"asked properly, with a fresh copy": {[]string{"clear", "-site", "site0", "-destroying", "site"}, here, 0},
+		"asked about what it cannot judge":  {[]string{"clear", "-site", "site0", "-destroying", "machine"}, here, 1},
+		"with no repository to read":        {[]string{"clear", "-site", "site0", "-destroying", "site"}, lost, 1},
+		"no verb":                           {nil, here, 2},
+		"another verb":                      {[]string{"waive", "-site", "site0"}, here, 2},
+		"no site":                           {[]string{"clear", "-destroying", "site"}, here, 2},
+		"nothing said to be destroyed":      {[]string{"clear", "-site", "site0"}, here, 2},
+		"a flag that would skip it":         {[]string{"clear", "-site", "site0", "-destroying", "site", "-force"}, here, 2},
+		"an argument after the question":    {[]string{"clear", "-site", "site0", "-destroying", "site", "anyway"}, here, 2},
+	} {
+		var out, complaints strings.Builder
+		if got := run(c.args, &out, &complaints, c.root, now); got != c.want {
+			t.Errorf("%s: exited %d, want %d\n%s%s", name, got, c.want, out.String(), complaints.String())
+		}
+	}
+}
+
+// The program as it is started: its own arguments, the real clock, the
+// checkout it is started inside, and whatever answers to `op` and `rclone` on
+// PATH. The checkout here is the test's own, holding one application with a
+// copy made a moment ago, so the officer clears it - which it can only do by
+// having found that checkout, read what it declares and asked for the copy.
+func TestTheProgramItselfJudgesTheCheckoutItIsStartedIn(t *testing.T) {
+	e := newEstate(t, records, "")
+	e.write(filepath.Join(e.dir, "listing-bucket-p"),
+		fmt.Sprintf(`[{"Path": "copy", "ModTime": %q}]`, time.Now().Format(time.RFC3339)))
+	for _, marker := range repopath.Markers {
+		e.write(filepath.Join(e.root, marker), "")
+	}
+	inside := filepath.Join(e.root, "scripts", "anywhere")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(inside)
+	args := os.Args
+	t.Cleanup(func() { os.Args = args })
+	os.Args = []string{args[0], "clear", "-site", "site0", "-destroying", "site"}
+
+	// A refusal exits the process, and the test with it: reaching the line
+	// after this is half the assertion. The other half is that the copy was
+	// asked for, which a checkout holding nothing would never do.
+	main()
+	if !strings.Contains(e.asked(), remote+":bucket-p/records") {
+		t.Errorf("the program cleared the teardown without looking at the copy its checkout declares:\n%s", e.asked())
+	}
+}

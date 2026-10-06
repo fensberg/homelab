@@ -173,8 +173,16 @@ underlying error: %w`, ctx.Site, err)
 	switch err := SaveWorkloads(ctx); {
 	case errors.Is(err, errClusterUnreachable):
 		run.Warn("THE CLUSTER DID NOT ANSWER, SO NO WORKLOAD WAS ASKED TO BACK UP.")
-		run.Warn("Whatever its workloads changed since their last scheduled backup will be lost.")
+		run.Warn("Whether the copies it already has are young enough is the safety officer's to say, next.")
 	case err != nil:
+		return err
+	}
+
+	// And then somebody who takes no orders from this program looks at the
+	// copies: the fresh ones just taken, or, for a cluster that did not
+	// answer, whatever the last scheduled backup left. A dead cluster can
+	// still be demolished - when what it held is safely somewhere else.
+	if err := clearedBySafetyOfficer(ctx); err != nil {
 		return err
 	}
 

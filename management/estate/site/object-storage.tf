@@ -50,3 +50,21 @@ resource "cloudflare_account_token" "this" {
     })
   }]
 }
+
+# A second key per bucket that can list and read it and change nothing: the
+# safety officer's. It looks at a copy before a teardown is allowed to start,
+# and a key that could also delete would make the party checking a copy
+# exists one more thing able to destroy it.
+resource "cloudflare_account_token" "reader" {
+  for_each   = local.purposes
+  account_id = var.account_id
+  name       = "${var.site} ${each.key} bucket, read only"
+
+  policies = [{
+    effect            = "allow"
+    permission_groups = [{ id = var.r2_bucket_read }]
+    resources = jsonencode({
+      "com.cloudflare.edge.r2.bucket.${var.account_id}_default_${cloudflare_r2_bucket.this[each.key].name}" = "*"
+    })
+  }]
+}

@@ -117,15 +117,7 @@ func LatestStateBackupPath(bucket, root string) string {
 // would leave each caller picking a pair out of it, which is the decision this
 // signature takes away from them.
 func RcloneEnv(accountID string, cred ObjectStorageCredential) []string {
-	prefix := "RCLONE_CONFIG_" + rcloneRemote + "_"
-	return []string{
-		prefix + "TYPE=s3",
-		prefix + "PROVIDER=Cloudflare",
-		prefix + "ACCESS_KEY_ID=" + cred.AccessKeyID,
-		prefix + "SECRET_ACCESS_KEY=" + cred.SecretAccessKey,
-		prefix + "ENDPOINT=" + cloudflare.R2Endpoint(accountID),
-		prefix + "NO_CHECK_BUCKET=true",
-	}
+	return cloudflare.RcloneEnv(rcloneRemote, accountID, cred.AccessKeyID, cred.SecretAccessKey)
 }
 
 // StateBackups is where one root's age-encrypted state dumps live, and the

@@ -96,10 +96,12 @@ Sizing needs nobody:
 
 History outlives the site:
 
-- **11. Metrics history survives a rebuild.** Snapshots go to the bucket a
-  teardown keeps, on a schedule and before a teardown, and are restored
-  when the site starts. Its limit is size. A rebuilt site shows a sample
-  older than the rebuild.
+- **11. A site's history lives as long as the site.** It survives any one
+  machine being replaced, on storage that outlives a machine, and it is not
+  copied offsite. A teardown of the site takes it, knowingly. What must
+  never be taken is the only good copy of something that should outlive
+  what is being destroyed, and the safety officer refuses a teardown that
+  would (`scripts/safety-officer`, built). The storage is not built.
 
 The site keeps itself, and proves it:
 
@@ -643,12 +645,49 @@ how much a computer needs. That's a dumb decision that needs no human
 intervention." What keeps it from a mistake is rules, not review.
 **Rejected:** a pull request for each resize.
 
-**History is production data.** The operator's ruling when the 1.76 days was
-found. **Chose** a snapshot to the bucket and a restore on start, the way a
-workload's data already goes (#588). **Rejected:** Thanos, the standard
-store for Prometheus on object storage and the first choice made, given up
-for three or four more programs running on a site being packed tight; and a
-fifth bucket, when the production bucket is already the one a teardown keeps.
+**Worth keeping for as long as what it describes is alive.** The ruling that
+replaced the one below, on 2026-10-06, when the first design for criterion 11
+was costed against the storage vendor's free allowance. The operator's words:
+rented storage "really should be there for CORE storage. It's what MUST be
+offsite and used for node / site / estate recovery", and "an estate's metrics
+is valuable as long as the estate is alive. A site's metrics is valuable as
+long as the site is alive. A node's... a machine's". So every asset declares
+the scope whose lifetime it has (machine, node, site, estate, or client for
+what belongs to somebody else), the scope its working copy dies with, and
+where another copy is kept and how old it may be
+(`scripts/details/holds`). Each scope keeps its own detail and passes a
+summary up; the estate's tier waits for a second site.
+
+**A teardown stays total, and does not start when it would lose something.**
+"I still stand by demolish is TNT but we should really never use it when
+there is value." **Chose** a safety officer: a program of its own that is
+asked before a site is destroyed, reads what the site holds, looks at each
+copy itself with a key that can read a bucket and change nothing, and
+refuses by name. **Chose** no way past it - no flag, no prompt: make the
+copy, or stop the site holding the thing. **Rejected:** an override typed at
+the terminal, which is one more thing typed from habit; and a line in the
+config that gives an asset up, which is an order by another route.
+**Because** the contractor holds the detonator, and the party that says the
+explosion is safe cannot be a step of it. What enterprise calls deletion
+protection and a recovery point objective are the same two ideas; the
+declared age a copy may be is the second, and it is what makes the officer
+measure a fact where it would otherwise read a claim.
+
+**The game world stays in rented storage, as an exception.** It is a client's
+data. It moves when the cluster is stable.
+
+**Not built:** the officer is asked about a site's teardown only. A machine's
+retirement ([05](05-node-lifecycle.md)) is where a site's history and its
+state are endangered, and it is asked there when that work resumes. The
+estate's own teardown is not asked.
+
+**History is production data.** Superseded by the two above. The operator's
+ruling when the 1.76 days was found. **Chose** a snapshot to the bucket and a
+restore on start, the way a workload's data already goes (#588). **Rejected:**
+Thanos, the standard store for Prometheus on object storage and the first
+choice made, given up for three or four more programs running on a site being
+packed tight; and a fifth bucket, when the production bucket is already the
+one a teardown keeps.
 
 **An application's needs are declared before they are known.** Nothing can
 be measured before it runs, and the plan has to count it before it is merged.

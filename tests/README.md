@@ -372,6 +372,12 @@ gated two ways and passes neither of them for you:
 1. A build tag, so `go test ./...` does not compile it.
 2. `HOMELAB_E2E_CONFIRM` must equal `HOMELAB_TEST_SITE`, spelled out.
 
+A third gate is not this tier's own: its teardown is `contractor
+demolish-site`, which asks the safety officer first. Against a site holding
+something that should outlive it, with no copy young enough, the tier is
+refused like anybody else - which is the point of the officer, and means the
+tier wants a site that holds nothing.
+
 ```sh
 HOMELAB_TEST_SITE=site0 HOMELAB_E2E_CONFIRM=site0 task test:e2e
 ```

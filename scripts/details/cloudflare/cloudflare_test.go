@@ -55,3 +55,22 @@ func TestR2EndpointIsTheAccountsOwnS3Host(t *testing.T) {
 		t.Errorf("got %s", got)
 	}
 }
+
+// rclone is handed one bucket's key through its environment and nowhere else,
+// under the remote's own name, pointed at the account's own storage.
+func TestRcloneIsConfiguredForOneRemoteThroughItsEnvironment(t *testing.T) {
+	env := strings.Join(RcloneEnv("COPIES", "acct", "key-id", "key-secret"), "\n")
+	for _, want := range []string{
+		RcloneVar("COPIES", RcloneKeyID) + "=key-id",
+		RcloneVar("COPIES", "SECRET_ACCESS_KEY") + "=key-secret",
+		RcloneVar("COPIES", "ENDPOINT") + "=" + R2Endpoint("acct"),
+		RcloneVar("COPIES", "TYPE") + "=s3",
+	} {
+		if !strings.Contains(env, want) {
+			t.Errorf("rclone is not given %s:\n%s", want, env)
+		}
+	}
+	if strings.Contains(env, "OTHER") || !strings.HasSuffix(RcloneVar("OTHER", "TYPE"), "_OTHER_TYPE") {
+		t.Errorf("a setting is not named for the remote it belongs to:\n%s", env)
+	}
+}
