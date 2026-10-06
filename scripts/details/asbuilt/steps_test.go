@@ -24,7 +24,7 @@ func (f *stepTofu) run(_ string, _ []string, args ...string) ([]byte, []byte, er
 	}
 	switch {
 	case args[0] == "show":
-		return []byte(`{"format_version": "1.2", "resource_changes": []}`), nil, nil
+		return []byte(NothingPlanned), nil, nil
 	case args[0] == "state" && args[1] == "list":
 		return []byte(f.state), nil, nil
 	}
