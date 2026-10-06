@@ -42,7 +42,7 @@ should outlive it would be lost. It has no other flags and changes nothing.
 `
 
 func main() {
-	code := run(os.Args[1:], os.Stdout, os.Stderr, repopath.Root, time.Now())
+	code := run(os.Args[1:], os.Stdout, os.Stderr, repopath.Here, time.Now())
 	if code != 0 {
 		os.Exit(code)
 	}

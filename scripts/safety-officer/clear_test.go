@@ -11,6 +11,7 @@ import (
 	"homelab/details/applications"
 	"homelab/details/cloudflare"
 	"homelab/details/holds"
+	"homelab/details/repopath"
 )
 
 // The vault and the storage are stand-ins on PATH: this test binary, under
@@ -280,26 +281,32 @@ func TestTheOfficerAnswersOneQuestionAskedOneWay(t *testing.T) {
 	}
 }
 
-// The program as it is started: its own arguments, this repository's own
-// declarations, the real clock, and whatever answers to `op` and `rclone` on
-// PATH. Every bucket holds a copy made a moment ago, so whatever this
-// repository declares today, nothing is stale and the officer clears it -
-// which it can only do by having read the real declarations, found the real
-// repository and asked for each copy.
-func TestTheProgramItselfClearsThisRepositorysSiteWhenEveryCopyIsFresh(t *testing.T) {
+// The program as it is started: its own arguments, the real clock, the
+// checkout it is started inside, and whatever answers to `op` and `rclone` on
+// PATH. The checkout here is the test's own, holding one application with a
+// copy made a moment ago, so the officer clears it - which it can only do by
+// having found that checkout, read what it declares and asked for the copy.
+func TestTheProgramItselfJudgesTheCheckoutItIsStartedIn(t *testing.T) {
 	e := newEstate(t, world, "")
-	fresh := fmt.Sprintf(`[{"Path": "copy", "ModTime": %q}]`, time.Now().Format(time.RFC3339))
-	for _, purpose := range []string{"database", "state", "staging", "production"} {
-		e.write(filepath.Join(e.dir, "vault", purpose+"_bucket"), "bucket-"+purpose)
-		e.write(filepath.Join(e.dir, "vault", purpose+"_reader_access_key_id"), "reader-"+purpose)
-		e.write(filepath.Join(e.dir, "vault", purpose+"_reader_secret_access_key"), "secret-"+purpose)
-		e.write(filepath.Join(e.dir, "listing-bucket-"+purpose), fresh)
+	e.write(filepath.Join(e.dir, "listing-bucket-p"),
+		fmt.Sprintf(`[{"Path": "copy", "ModTime": %q}]`, time.Now().Format(time.RFC3339)))
+	for _, marker := range repopath.Markers {
+		e.write(filepath.Join(e.root, marker), "")
 	}
+	inside := filepath.Join(e.root, "scripts", "anywhere")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(inside)
 	args := os.Args
 	t.Cleanup(func() { os.Args = args })
-	os.Args = []string{"safety-officer", "clear", "-site", "site0", "-destroying", "site"}
+	os.Args = []string{args[0], "clear", "-site", "site0", "-destroying", "site"}
 
 	// A refusal exits the process, and the test with it: reaching the line
-	// after this is the assertion.
+	// after this is half the assertion. The other half is that the copy was
+	// asked for, which a checkout holding nothing would never do.
 	main()
+	if !strings.Contains(e.asked(), remote+":bucket-p/worlds") {
+		t.Errorf("the program cleared the teardown without looking at the copy its checkout declares:\n%s", e.asked())
+	}
 }
