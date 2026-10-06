@@ -28,7 +28,9 @@ locals {
 
 resource "kubernetes_namespace" "storage_driver" {
   metadata {
-    name = "csi-proxmox"
+    # Named for what runs in it, like every other name here, and not for
+    # the vendor whose driver it is.
+    name = "storage-driver"
 
     labels = {
       # The driver's part on each machine formats and mounts block devices,
@@ -43,7 +45,8 @@ resource "kubernetes_namespace" "storage_driver" {
 
 resource "kubernetes_secret" "storage_driver" {
   metadata {
-    name      = "proxmox-csi-plugin"
+    # The namespace already says whose; this says what it is.
+    name      = "config"
     namespace = kubernetes_namespace.storage_driver.metadata[0].name
   }
 
