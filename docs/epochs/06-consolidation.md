@@ -170,6 +170,12 @@ Explicitly out of scope (and which epoch owns it instead):
    | The GitHub API for a `github-script`         | 2 test files, each with its own object                               |
    | A sites map for the address plan             | the module's tests, the estate fixtures, the cluster fixtures        |
 
+   Measured again by #643, which added one block under a site's hypervisor
+   (the storage driver's token) and wrote the same five lines fourteen
+   times across 13 fixture files, one of which holds two sites. Nothing
+   checked that the fourteen agreed with each other, only that each still
+   parsed.
+
    The shapes that pass: a base config plus a per-case patch, merged at test
    time - the pattern [`02-abstraction.md`](02-abstraction.md) records under
    "the config fixture corpus does not scale", now owned here - read by the
