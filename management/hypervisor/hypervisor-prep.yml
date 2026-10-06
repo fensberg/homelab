@@ -161,8 +161,10 @@
     # else. Both are the site's own, written by the Render phase.
     worker_pool: "UNSET"
     volume_storage: "UNSET"
-    # The datastore this node keeps machines' disks in, from the inventory.
-    machine_disks: "UNSET"
+    # The datastore each node keeps machines' disks in is machine_disks, and
+    # it is the inventory's, one per host. It has no default here on purpose:
+    # a play's own vars outrank the inventory's, so a placeholder in this
+    # list is what every host would be given.
     driver_user: "storage-driver"
     driver_token_id: "volumes"
     # Two roles and not one, because the two rights are over different
@@ -2101,7 +2103,8 @@
         that:
           - worker_pool != "UNSET"
           - volume_storage != "UNSET"
-          - machine_disks != "UNSET"
+          - machine_disks is defined
+          - machine_disks | length > 0
         fail_msg: >-
           The worker pool, the volume storage or the machines' datastore was
           not supplied. They come from the Render phase; run this through the

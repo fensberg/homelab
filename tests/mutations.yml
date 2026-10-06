@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 209
+floor: 210
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1250,6 +1250,18 @@ mutations:
       is told, so the volume holds nothing as far as it can see - and the
       day a machine's retirement is asked about, the site's whole history
       goes with the machine and the answer was "safe".
+
+  - guard: TestNoPlayGivesADefaultToWhatTheInventorySuppliesPerHost
+    file: management/hypervisor/hypervisor-prep.yml
+    find: "    worker_pool: \"UNSET\"\n"
+    replace: "    worker_pool: \"UNSET\"\n    machine_disks: \"UNSET\"\n"
+    mentions: "gives machine_disks a value in a play's vars"
+    why: >
+      Every other value the playbook is handed has a placeholder in its vars
+      list, so the one that arrives by the inventory is given one too, for
+      symmetry. It reads as a harmless default and it is the value every host
+      gets: the play outranks the inventory. The section that needed the real
+      one refused its first run on a live hypervisor for exactly this.
 
   - guard: TestNoTeardownStartsUntilTheSafetyOfficerClearsIt
     file: scripts/contractor/internal/phases/destroy.go
