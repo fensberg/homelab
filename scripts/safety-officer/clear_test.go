@@ -279,3 +279,27 @@ func TestTheOfficerAnswersOneQuestionAskedOneWay(t *testing.T) {
 		}
 	}
 }
+
+// The program as it is started: its own arguments, this repository's own
+// declarations, the real clock, and whatever answers to `op` and `rclone` on
+// PATH. Every bucket holds a copy made a moment ago, so whatever this
+// repository declares today, nothing is stale and the officer clears it -
+// which it can only do by having read the real declarations, found the real
+// repository and asked for each copy.
+func TestTheProgramItselfClearsThisRepositorysSiteWhenEveryCopyIsFresh(t *testing.T) {
+	e := newEstate(t, world, "")
+	fresh := fmt.Sprintf(`[{"Path": "copy", "ModTime": %q}]`, time.Now().Format(time.RFC3339))
+	for _, purpose := range []string{"database", "state", "staging", "production"} {
+		e.write(filepath.Join(e.dir, "vault", purpose+"_bucket"), "bucket-"+purpose)
+		e.write(filepath.Join(e.dir, "vault", purpose+"_reader_access_key_id"), "reader-"+purpose)
+		e.write(filepath.Join(e.dir, "vault", purpose+"_reader_secret_access_key"), "secret-"+purpose)
+		e.write(filepath.Join(e.dir, "listing-bucket-"+purpose), fresh)
+	}
+	args := os.Args
+	t.Cleanup(func() { os.Args = args })
+	os.Args = []string{"safety-officer", "clear", "-site", "site0", "-destroying", "site"}
+
+	// A refusal exits the process, and the test with it: reaching the line
+	// after this is the assertion.
+	main()
+}
