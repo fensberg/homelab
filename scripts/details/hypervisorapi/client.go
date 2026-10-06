@@ -31,6 +31,22 @@ func AuthorityRef(site string) string {
 	return fmt.Sprintf("op://%s/hypervisor/authority", site)
 }
 
+// StorageDriverTokenRefs is where a site's vault keeps the storage driver's
+// token for the hypervisor's API: its id and its secret. The playbook writes
+// them, and whatever reads them looks here.
+func StorageDriverTokenRefs(site string) (id, secret string) {
+	return fmt.Sprintf("op://%s/hypervisor/storage_driver_token_id", site),
+		fmt.Sprintf("op://%s/hypervisor/storage_driver_token_secret", site)
+}
+
+// DriverVolume is the name the storage driver gives a volume it makes: owned
+// by a machine id that is no machine's, so that no machine's destruction
+// takes it.
+func DriverVolume(name string) string { return "vm-9999-" + name }
+
+// DriverVolumeOwner is that machine id.
+const DriverVolumeOwner = "9999"
+
 // Client is an HTTP client for one node of a hypervisor.
 //
 // It trusts the authority it is given and nothing else: not the system's

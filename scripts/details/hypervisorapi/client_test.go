@@ -160,3 +160,15 @@ func TestTheAuthorityIsKeptInTheSitesOwnVault(t *testing.T) {
 		t.Fatalf("looked for at %q", got)
 	}
 }
+
+// What the playbook writes is what a reader looks for, and a volume of the
+// driver's is owned by the machine id that is no machine's.
+func TestTheStorageDriversTokenAndVolumesAreNamedOneWay(t *testing.T) {
+	id, secret := StorageDriverTokenRefs("site0")
+	if id != "op://site0/hypervisor/storage_driver_token_id" || secret != "op://site0/hypervisor/storage_driver_token_secret" {
+		t.Errorf("the driver's token is looked for at %s and %s, which is not where the hypervisor's playbook stores it", id, secret)
+	}
+	if got := DriverVolume("pvc-1"); got != "vm-"+DriverVolumeOwner+"-pvc-1" {
+		t.Errorf("a driver volume is named %q, which does not carry the owner %s that keeps it out of every machine's destruction", got, DriverVolumeOwner)
+	}
+}

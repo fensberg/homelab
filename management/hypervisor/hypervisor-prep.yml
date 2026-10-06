@@ -156,6 +156,24 @@
     sdn_vrf_vni: 0
     sdn_vnet_vni: 0
 
+    # The storage driver's corner of this host: the pool of machines it may
+    # attach a volume to, and the storage that holds its volumes and nothing
+    # else. Both are the site's own, written by the Render phase.
+    worker_pool: "UNSET"
+    volume_storage: "UNSET"
+    # The datastore this node keeps machines' disks in, from the inventory.
+    machine_disks: "UNSET"
+    driver_user: "storage-driver"
+    driver_token_id: "volumes"
+    # Two roles and not one, because the two rights are over different
+    # things. Attaching is a right over a machine; making and deleting a
+    # volume is a right over a storage, and in Proxmox that second right
+    # reaches every volume the storage holds.
+    driver_attach_role: "StorageDriverAttach"
+    driver_attach_privs: "VM.Audit,VM.Config.Disk"
+    driver_volumes_role: "StorageDriverVolumes"
+    driver_volumes_privs: "Datastore.Allocate,Datastore.AllocateSpace,Datastore.Audit"
+
     # The route advertised over the overlay network is the site's whole /16,
     # not just the node subnet. Advertising the /16 means new subnets at this
     # site need no further route approval.
@@ -2049,3 +2067,297 @@
         success_msg: "The hypervisor's authority is in 1Password."
       run_once: true
       tags: [authority]
+
+    # ========================================================================
+    # 10. The storage driver's token, and the two paths it is given
+    # ========================================================================
+    # A volume that outlives a machine has to be kept by something below the
+    # machines, and here that is this host: a driver in the cluster asks
+    # Proxmox to make a volume and attach it to whichever worker runs the
+    # pod. To do that it holds a token for this host's API, inside the
+    # cluster - so what the token can reach is what a compromise of the
+    # driver can reach.
+    #
+    # It is given two paths and no more:
+    #
+    #   /pool/<the site's workers>     to attach and detach, on those machines
+    #   /storage/<the site's volumes>  to make and delete volumes, in a
+    #                                  storage that holds only its own
+    #
+    # The storage is its own, apart from the one machines' disks are on,
+    # because the right to delete a volume in a storage is the right to
+    # delete any volume in it - every machine's own disk, on the shared one.
+    #
+    # The driver's documentation grants its role at /. Nothing here does, and
+    # the last task of this section fails the run if anything ever has. If
+    # the driver cannot work inside these two paths, the answer is a
+    # different way of keeping volumes, not a wider token.
+    #
+    # The token is privilege-separated, which makes what it may do the
+    # intersection of its own grants and its user's - so both are granted
+    # the same two paths, and neither alone is enough.
+    - name: Refuse to set up the storage driver without the site's own names
+      ansible.builtin.assert:
+        that:
+          - worker_pool != "UNSET"
+          - volume_storage != "UNSET"
+          - machine_disks != "UNSET"
+        fail_msg: >-
+          The worker pool, the volume storage or the machines' datastore was
+          not supplied. They come from the Render phase; run this through the
+          contractor (task configure-hypervisor) and not by hand.
+        quiet: true
+      tags: [storage-driver]
+
+    - name: Read how the machines' datastore is kept
+      ansible.builtin.command: >-
+        pvesh get /storage/{{ machine_disks }} --output-format json
+      register: machine_disks_storage
+      changed_when: false
+      check_mode: false
+      tags: [storage-driver]
+
+    # Beside the machines' dataset, on the same pool, and not inside it: a
+    # child of the machines' dataset would be listed by the machines'
+    # datastore as its own.
+    - name: Work out where the driver's volumes are kept
+      ansible.builtin.set_fact:
+        volume_dataset: >-
+          {{ (((machine_disks_storage.stdout | from_json).pool | dirname)
+              or (machine_disks_storage.stdout | from_json).pool)
+             ~ '/' ~ volume_storage }}
+      tags: [storage-driver]
+
+    - name: Refuse a datastore this does not know how to sit beside
+      ansible.builtin.assert:
+        that:
+          - (machine_disks_storage.stdout | from_json).type == "zfspool"
+        fail_msg: >-
+          The machines' datastore {{ machine_disks }} is not a ZFS pool, and a
+          storage of the driver's own is only made beside one here. Nothing
+          has been created.
+        quiet: true
+      tags: [storage-driver]
+
+    - name: See whether the dataset for the driver's volumes exists
+      ansible.builtin.command: zfs list -H -o name {{ volume_dataset }}
+      register: volume_dataset_listed
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: [storage-driver]
+
+    - name: Create the dataset for the driver's volumes
+      ansible.builtin.command: zfs create {{ volume_dataset }}
+      when: volume_dataset_listed.rc != 0
+      tags: [storage-driver]
+
+    - name: List the storages this host knows
+      ansible.builtin.command: pvesh get /storage --output-format json
+      register: known_storages
+      changed_when: false
+      check_mode: false
+      run_once: true
+      tags: [storage-driver]
+
+    - name: Register the storage for the driver's volumes
+      ansible.builtin.command: >-
+        pvesm add zfspool {{ volume_storage }}
+        --pool {{ volume_dataset }} --content images --sparse 1
+      when: >-
+        volume_storage not in
+        (known_storages.stdout | from_json | map(attribute='storage') | list)
+      run_once: true
+      tags: [storage-driver]
+
+    - name: List the roles this host knows
+      ansible.builtin.command: pveum role list --output-format json
+      register: roles_before_driver
+      changed_when: false
+      check_mode: false
+      run_once: true
+      tags: [storage-driver]
+
+    # Added when absent and set when present, so a privilege somebody added
+    # to either role by hand is taken away again by the next run.
+    - name: Give each of the driver's roles exactly its privileges
+      ansible.builtin.command: >-
+        pveum role {{ 'modify' if item.role in
+        (roles_before_driver.stdout | from_json | map(attribute='roleid') | list)
+        else 'add' }} {{ item.role }} --privs {{ item.privs }}
+      loop:
+        - {
+            role: "{{ driver_attach_role }}",
+            privs: "{{ driver_attach_privs }}",
+          }
+        - {
+            role: "{{ driver_volumes_role }}",
+            privs: "{{ driver_volumes_privs }}",
+          }
+      changed_when: false
+      run_once: true
+      tags: [storage-driver]
+
+    - name: List the users this host knows
+      ansible.builtin.command: pveum user list --output-format json
+      register: users_before_driver
+      changed_when: false
+      check_mode: false
+      run_once: true
+      tags: [storage-driver]
+
+    - name: Create the storage driver's user
+      ansible.builtin.command: >-
+        pveum user add {{ driver_user }}@{{ pve_realm }}
+        --comment "Kubernetes storage driver: two paths, see hypervisor-prep.yml"
+      when: >-
+        (driver_user + '@' + pve_realm) not in
+        (users_before_driver.stdout | from_json | map(attribute='userid') | list)
+      run_once: true
+      tags: [storage-driver]
+
+    - name: List the storage driver's tokens
+      ansible.builtin.command: >-
+        pveum user token list {{ driver_user }}@{{ pve_realm }} --output-format json
+      register: driver_tokens
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      run_once: true
+      tags: [storage-driver]
+
+    - name: Check whether the driver's token secret is in 1Password
+      ansible.builtin.command: >-
+        op read op://{{ site_name }}/{{ op_item }}/storage_driver_token_secret
+      register: stored_driver_secret
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      run_once: true
+      tags: [storage-driver]
+
+    # The same gap the provisioning token guards against above: a token that
+    # exists here with its secret stored nowhere cannot be read back, so it
+    # is removed and made again.
+    - name: Delete a driver token whose secret is stored nowhere
+      ansible.builtin.command: >-
+        pveum user token remove {{ driver_user }}@{{ pve_realm }} {{ driver_token_id }}
+      when: >-
+        stored_driver_secret.rc != 0 and
+        driver_token_id in
+        (driver_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list)
+      run_once: true
+      tags: [storage-driver]
+
+    - name: Generate the storage driver's token, with privileges of its own
+      ansible.builtin.command: >-
+        pveum user token add {{ driver_user }}@{{ pve_realm }} {{ driver_token_id }}
+        --privsep 1 --output-format json
+      register: generated_driver_token
+      when: >-
+        driver_tokens.rc != 0 or
+        driver_token_id not in
+        (driver_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list) or
+        stored_driver_secret.rc != 0
+      run_once: true
+      tags: [storage-driver]
+
+    - name: Grant the user and its token the two paths, and those roles on them
+      ansible.builtin.command: >-
+        pveum acl modify {{ item.path }} --roles {{ item.role }}
+        --users {{ driver_user }}@{{ pve_realm }}
+        --tokens {{ driver_user }}@{{ pve_realm }}!{{ driver_token_id }}
+      loop:
+        - { path: "/pool/{{ worker_pool }}", role: "{{ driver_attach_role }}" }
+        - {
+            path: "/storage/{{ volume_storage }}",
+            role: "{{ driver_volumes_role }}",
+          }
+      # The pool's name is the site's, which is a vault value.
+      no_log: true
+      changed_when: false
+      run_once: true
+      tags: [storage-driver]
+
+    - name: Store the driver's token in 1Password
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          op item get {{ op_item }} --vault {{ site_name }} --format=json | jq --arg tid "{{ driver_user }}@{{ pve_realm }}!{{ driver_token_id }}" '
+            .fields |= (
+                map(select(.label != "storage_driver_token_id" and .label != "storage_driver_token_secret"))
+                + [
+                    {id: "storage_driver_token_id", type: "STRING", label: "storage_driver_token_id", value: $tid},
+                    {id: "storage_driver_token_secret", type: "CONCEALED", label: "storage_driver_token_secret", value: env.TOKEN_SECRET}
+                  ]
+              )
+          ' | op item edit {{ op_item }} --vault {{ site_name }}
+      environment:
+        TOKEN_SECRET: "{{ (generated_driver_token.stdout | from_json).value }}"
+      delegate_to: localhost
+      become: false
+      when: generated_driver_token.changed | default(false)
+      run_once: true
+      tags: [storage-driver]
+
+    - name: Read the driver's token secret back
+      ansible.builtin.command: >-
+        op read op://{{ site_name }}/{{ op_item }}/storage_driver_token_secret
+      register: driver_secret_read_back
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      check_mode: false
+      no_log: true
+      when: generated_driver_token.changed | default(false)
+      run_once: true
+      tags: [storage-driver]
+
+    - name: Verify the vault holds the secret this host generated
+      ansible.builtin.assert:
+        that:
+          - driver_secret_read_back.stdout == (generated_driver_token.stdout | from_json).value
+        fail_msg: >-
+          The driver's token secret in 1Password is not the one Proxmox
+          generated. Do not go on with a mismatched credential.
+        quiet: true
+      when: generated_driver_token.changed | default(false)
+      run_once: true
+      tags: [storage-driver]
+
+    # The rule, held by the host itself: whatever granted it, the driver's
+    # user and token appear in this host's access list on those two paths and
+    # nowhere else. A grant at / would make every confinement above a
+    # sentence in a comment.
+    - name: List every grant on this host
+      ansible.builtin.command: pveum acl list --output-format json
+      register: every_grant
+      changed_when: false
+      check_mode: false
+      no_log: true
+      run_once: true
+      tags: [storage-driver]
+
+    - name: Refuse a storage driver that reaches beyond its two paths
+      ansible.builtin.assert:
+        that:
+          - >-
+            every_grant.stdout | from_json
+            | selectattr('ugid', 'match', '^' ~ (driver_user | regex_escape) ~ '@' ~ (pve_realm | regex_escape) ~ '(!.*)?$')
+            | rejectattr('path', 'in', ['/pool/' ~ worker_pool, '/storage/' ~ volume_storage])
+            | list | length == 0
+          - >-
+            every_grant.stdout | from_json
+            | selectattr('ugid', 'equalto', driver_user ~ '@' ~ pve_realm ~ '!' ~ driver_token_id)
+            | list | length == 2
+        fail_msg: >-
+          The storage driver's user or token is granted something outside the
+          site's worker pool and its own volume storage, or is missing one of
+          the two. Run `pveum acl list` on the host and remove what does not
+          belong; this playbook grants those two paths and no others.
+        quiet: true
+      run_once: true
+      tags: [storage-driver]

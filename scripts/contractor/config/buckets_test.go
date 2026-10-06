@@ -284,3 +284,17 @@ func TestTheStateBackupPathIsWhereExistingBackupsAre(t *testing.T) {
 		t.Error("a root that is not one of the site's was given somewhere to keep backups")
 	}
 }
+
+// The storage driver's token is confined to a pool and a storage by name, so
+// the names are the confinement: the pool is the site's workers and no other
+// function's, and the storage is the site's own and not the one machines'
+// disks are on.
+func TestTheStorageDriversPoolAndStorageAreTheSitesOwn(t *testing.T) {
+	net := &SiteNetwork{Name: "north-street"}
+	if got := net.WorkerPool(); got != "north-street-workers" {
+		t.Errorf("the worker pool is %q, which is not the pool the cluster module puts a site's workers in", got)
+	}
+	if a, b := VolumeStorage("site0"), VolumeStorage("site1"); a == b || !strings.HasPrefix(a, "site0") {
+		t.Errorf("two sites' volume storages are %q and %q; each site's driver must be able to delete only its own", a, b)
+	}
+}

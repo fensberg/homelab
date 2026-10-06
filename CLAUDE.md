@@ -685,6 +685,15 @@ floor a pull request may not drop below and is free to leave alone.
   built until the operator agrees. A design question that turns up mid-build
   stops the build and becomes a question; it does not get answered in code.
 
+- **Check what is already built before building anything of our own.** A
+  proposal for something this estate would write and own starts by naming
+  the existing tools that already do it - including ones tried here and
+  dropped - and saying why each does or does not fit. A past rejection is
+  re-read against the present case before it is repeated: Longhorn was
+  rejected for sitting under a database that already replicates itself,
+  which says nothing about a workload that does not, and it was left off the
+  table for a day on the strength of the word "rejected" alone.
+
 - **One role, one program.** The inspector is the party that checks work before
   it may be covered up, and it owns everything that does that: the
   sensitive-path gate, `tally`'s reading of what a change takes away, and the
