@@ -275,6 +275,15 @@ charts:
     reason: The operator running the state database.
   - url: https://openebs.github.io/openebs
     reason: The storage provisioner backing every volume in the cluster.
+  - url: oci://ghcr.io/sergelogvinov/charts
+    reason: >-
+      The Proxmox storage driver for Kubernetes: volumes kept on the hypervisor
+      and attached to whichever worker needs them, so a volume outlives the
+      machine. One maintainer's project, and the one the Talos and Proxmox
+      communities use for this; nothing published by Proxmox itself does it.
+      What it is trusted with is bounded on the hypervisor, not here: its
+      token reaches the site's worker pool and a storage of its own, which
+      tests/go/api proves against the real thing.
   - url: https://kubernetes-sigs.github.io/descheduler
     reason: >-
       Rebalances pods that were scheduled correctly and are now in the wrong

@@ -8,6 +8,9 @@ resources:
   - priority-classes.yaml
   - cloudnative-pg.yaml
   - openebs.yaml
+  # Needs its namespace, token and authority from
+  # modules/infrastructure/platform/storage.tf.
+  - storage-driver.yaml
   - actions-runner-controller.yaml
   - kube-prometheus-stack.yaml
   # Needs its namespace and token from modules/infrastructure/platform/tunnel.tf.
