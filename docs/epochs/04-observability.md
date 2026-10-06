@@ -101,7 +101,11 @@ History outlives the site:
   copied offsite. A teardown of the site takes it, knowingly. What must
   never be taken is the only good copy of something that should outlive
   what is being destroyed, and the safety officer refuses a teardown that
-  would (`scripts/safety-officer`, built). The storage is not built.
+  would (`scripts/safety-officer`, built). The storage is the hypervisor's
+  storage driver for Kubernetes: its token confined to the site's worker
+  pool and a storage of its own (proven on site0), what it needs in the
+  cluster written by the platform module, the driver itself not yet
+  installed and nothing moved onto it.
 
 The site keeps itself, and proves it:
 

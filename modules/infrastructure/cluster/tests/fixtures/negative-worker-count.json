@@ -33,6 +33,11 @@
           "scraper_certificate": "fixture+scraper+certificate+",
           "scraper_private_key": "fixture+scraper+key+"
         },
+        "storage_driver": {
+          "token_id": "fixture-driver@pve!fixture",
+          "token_secret": "00000000-0000-0000-0000-000000000001",
+          "authority": "fixture+authority+++"
+        },
         "nodes": {
           "node0": {
             "hostname": "fixture-hv0",

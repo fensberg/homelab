@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"homelab/contractor/config"
 	"homelab/details/applications"
 	"homelab/details/holds"
 )
@@ -232,5 +233,21 @@ return what it returns.`, rel, fn.Name.Name, officer, teardown)
 	}
 	if exempt > 1 {
 		t.Errorf("%d functions are named %s; one build undoes itself, and no more", exempt, undoesItsOwnBuild)
+	}
+}
+
+// The storage driver's token is confined by two names, and each name is
+// written twice: once where the hypervisor is told what to grant, once where
+// OpenTofu makes the thing. If the two drift, the token is confined to a
+// pool with no machines in it, or the driver is pointed at a storage it has
+// no right to - and each half is correct when read alone.
+func TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten(t *testing.T) {
+	workers := (&config.SiteNetwork{Name: "${local.site_name}"}).WorkerPool()
+	if _, body := tofuDeclaring(t, `resource "proxmox_virtual_environment_pool" "workers"`); !strings.Contains(body, `"`+workers+`"`) {
+		t.Errorf("the pool a site's workers are put in is not %q, which is the pool the hypervisor confines the storage driver's token to", workers)
+	}
+	volumes := config.VolumeStorage("${var.site}")
+	if _, body := tofuDeclaring(t, `resource "kubernetes_secret" "storage_vars"`); !strings.Contains(body, `"`+volumes+`"`) {
+		t.Errorf("the storage the driver is told to keep volumes in is not %q, which is the one the hypervisor makes for it and grants it", volumes)
 	}
 }

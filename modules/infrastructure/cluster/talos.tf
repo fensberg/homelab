@@ -82,6 +82,19 @@ locals {
 
   machine_patches = {
     for k, v in local.all_machines : k => [
+      # Where the machine is, said the way Kubernetes says it: the site as
+      # its region and the hypervisor it runs on as its zone. The storage
+      # driver reads both to know which hypervisor to ask for a volume and
+      # which machines a volume kept there can be attached to. A label, so
+      # it is applied to a running machine without restarting it.
+      yamlencode({
+        machine = {
+          nodeLabels = {
+            "topology.kubernetes.io/region" = var.site
+            "topology.kubernetes.io/zone"   = local.hostnames[v.hypervisor]
+          }
+        }
+      }),
       yamlencode({
         apiVersion = "v1alpha1"
         kind       = "LinkConfig"
