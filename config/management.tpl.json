@@ -49,6 +49,11 @@
           "scraper_certificate": "{{ op://site0/host_metrics/scraper_certificate }}",
           "scraper_private_key": "{{ op://site0/host_metrics/scraper_private_key }}"
         },
+        "storage_driver": {
+          "token_id": "{{ op://site0/hypervisor/storage_driver_token_id }}",
+          "token_secret": "{{ op://site0/hypervisor/storage_driver_token_secret }}",
+          "authority": "{{ op://site0/hypervisor/authority }}"
+        },
         "nodes": {
           "node0": {
             "hostname": "{{ op://site0/node0/hostname }}",

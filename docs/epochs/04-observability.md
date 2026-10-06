@@ -101,7 +101,11 @@ History outlives the site:
   copied offsite. A teardown of the site takes it, knowingly. What must
   never be taken is the only good copy of something that should outlive
   what is being destroyed, and the safety officer refuses a teardown that
-  would (`scripts/safety-officer`, built). The storage is not built.
+  would (`scripts/safety-officer`, built). The storage is the hypervisor's
+  storage driver for Kubernetes: its token confined to the site's worker
+  pool and a storage of its own (proven on site0), what it needs in the
+  cluster written by the platform module, the driver itself not yet
+  installed and nothing moved onto it.
 
 The site keeps itself, and proves it:
 
@@ -675,6 +679,41 @@ measure a fact where it would otherwise read a claim.
 
 **The game world stays in rented storage, as an exception.** It is a client's
 data. It moves when the cluster is stable.
+
+**A pull request's plan is our own, and the tools that usually do it were
+looked at after the fact.** The plan a pull request gets
+(`contractor plan-as-built`) was built without the comparison being written
+down, which the operator asked about on 2026-10-06 when a change to a module
+planned as "no changes" and its effect only showed on the later change that
+moved the site's pin. The standard tools are Atlantis, a server that plans
+and applies from pull request comments, and Digger (renamed OpenTaco in
+November 2025), the same idea run inside the repository's own CI with a
+small orchestrator beside it; Terraform Cloud, Spacelift and env0 are the
+hosted form.
+
+**Kept** our own, for what they all assume. They plan a pull request against
+the real state with the real credentials, and post the plan as a comment.
+This repository is public: the plan would publish hostnames and addresses
+the config keeps in a vault, and the credentials would have to be within
+reach of a pull request, where today a pull request's plan holds none and
+runs against a recorded copy with stand-ins (#554). The state is also a
+database inside the cluster, encrypted with a key from the vault, which a
+hosted runner cannot reach and the estate's own runner refuses to serve a
+pull request from. And each needs something that listens: Atlantis a server
+GitHub can reach inside the estate, Digger its orchestrator, hosted by its
+vendor or by us.
+
+**What they have that this does not,** and where each is answered: applying
+after a merge (the converge), noticing drift (the nightly plan against real
+state), locks between concurrent pull requests (one operator), and policy
+on a plan (the repository's guards). **What was missing** was a preview of
+a module change against the sites that would take it, which every one of
+them gives; it is now the second half of the plan comment. **Not verified:**
+whether Digger can redact a plan or plan a fork's pull request without
+credentials; nothing in its documentation says it can. **Would change
+this:** the repository going private with its state somewhere a runner can
+reach, at which point Digger is the first thing to try before maintaining
+our own.
 
 **Not built:** the officer is asked about a site's teardown only. A machine's
 retirement ([05](05-node-lifecycle.md)) is where a site's history and its

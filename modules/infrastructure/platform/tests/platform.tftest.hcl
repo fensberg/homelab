@@ -145,3 +145,26 @@ run "an_application_the_pinned_commit_lacks_is_refused" {
 
   expect_failures = [kubernetes_namespace.application]
 }
+
+# The storage driver is told to verify who it is talking to, by the name the
+# hypervisor's certificate carries, and to keep its volumes in the site's own
+# storage - and it is handed the authority to verify against.
+run "the_storage_driver_verifies_the_hypervisor_and_keeps_to_its_own_storage" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for c in yamldecode(kubernetes_secret.storage_driver.data["config.yaml"]).clusters :
+      c.insecure == false && c.url == "https://fixture-hv0:8006/api2/json" && c.region == "site0"
+    ])
+    error_message = "the storage driver is told to skip verification, or is not sent to the hypervisor by the name its certificate carries, or not told which site it serves"
+  }
+  assert {
+    condition     = kubernetes_secret.storage_driver.binary_data["authority.crt"] == "fixture+authority+++"
+    error_message = "the storage driver is not handed the hypervisor's own authority, so it has nothing to verify against"
+  }
+  assert {
+    condition     = kubernetes_secret.storage_vars.data.VOLUME_STORAGE == "site0-volumes" && kubernetes_secret.storage_vars.data.HYPERVISOR_ADDRESS == "10.10.0.5"
+    error_message = "the driver's manifests are not told the site's own volume storage, or where the hypervisor is"
+  }
+}
