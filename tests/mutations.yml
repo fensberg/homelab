@@ -3237,4 +3237,10 @@ unprovable:
 #
 # An entry here is an exemption, so it costs what an exemption costs: a reason
 # somebody can read later.
-comment_dependent: []
+comment_dependent:
+  - test: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
+    reason: >
+      The comment is its subject. A tool's own configuration cannot carry a
+      reason anywhere else, so the guard a silenced entry names is written in
+      the comment above that entry, and a copy with the comments stripped is
+      a copy in which every such entry names nothing.
