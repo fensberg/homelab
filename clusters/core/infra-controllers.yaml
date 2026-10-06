@@ -25,3 +25,7 @@ spec:
     substituteFrom:
       - kind: Secret
         name: monitoring-vars
+      # Where the hypervisor is and which storage is the site's own, for
+      # the storage driver. Written by the same module, in the same way.
+      - kind: Secret
+        name: storage-vars

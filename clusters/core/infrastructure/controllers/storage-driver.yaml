@@ -1,0 +1,195 @@
+---
+# Volumes that outlive a machine.
+#
+# Local volumes die with the machine they are on, which is right for a
+# database that replicates itself and wrong for anything that keeps one copy.
+# This is the hypervisor's own storage driver for Kubernetes: a claim on the
+# class below becomes a volume kept on the hypervisor, attached to whichever
+# worker runs the pod, and attached to the next one when that worker is
+# replaced. Nothing is copied and nothing is restored.
+#
+# WHAT IT HOLDS. A token for the hypervisor's API, inside the cluster. What
+# that token reaches is decided on the hypervisor and proven against it
+# (management/hypervisor/hypervisor-prep.yml section 10, and
+# tests/go/api/storage_driver_test.go): the site's worker pool, a storage
+# that holds only this driver's volumes, and nothing else. The driver's own
+# documentation grants its role over the whole hypervisor. If it ever needs
+# more than those two paths, the answer is another way of keeping volumes,
+# not a wider token.
+#
+# WHAT IT IS GIVEN. The namespace, the token and the hypervisor's authority
+# are written by OpenTofu (modules/infrastructure/platform/storage.tf),
+# because they come from the vault. A site must run a release that writes
+# them before this arrives.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: proxmox-csi-plugin
+  namespace: flux-system
+spec:
+  type: oci
+  interval: 24h
+  url: oci://ghcr.io/sergelogvinov/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: storage-driver
+  namespace: storage-driver
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: proxmox-csi-plugin
+      version: "0.5.12"
+      sourceRef:
+        kind: HelmRepository
+        name: proxmox-csi-plugin
+        namespace: flux-system
+      interval: 12h
+  install:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  values:
+    # The chart names what it makes after itself; this keeps those names the
+    # release's own, so nothing in the cluster is named for a vendor twice.
+    fullnameOverride: storage-driver
+
+    # Written by OpenTofu from the vault, not by this chart from values in
+    # git: it carries the token.
+    # Its key in that Secret is the chart's default name for it, which the
+    # platform module uses, so it is not repeated here.
+    existingConfigSecret: config
+
+    # Without storage nothing that keeps data on it starts, so it is not the
+    # first thing to make room.
+    priorityClassName: critical
+
+    # The driver is sent to the hypervisor by name, because the certificate
+    # names the host and verification is on. This is where that name is: the
+    # address the cluster already reaches the hypervisor at.
+    hostAliases:
+      - ip: ${HYPERVISOR_ADDRESS}
+        hostnames:
+          - ${HYPERVISOR_HOSTNAME}
+
+    # The hypervisor signs its own certificate with an authority no public
+    # list knows. It is added to the ones the driver trusts, as a file among
+    # the system's own, so the driver verifies against it rather than being
+    # told to skip verification - which is what its documentation shows.
+    extraVolumes:
+      - name: hypervisor-authority
+        secret:
+          secretName: config
+          items:
+            - key: authority.crt
+              path: hypervisor.pem
+    extraVolumeMounts:
+      - name: hypervisor-authority
+        mountPath: /etc/ssl/certs/hypervisor.pem
+        subPath: hypervisor.pem
+        readOnly: true
+
+    # The controller: off the machines holding etcd quorum, like everything
+    # else this repository deploys.
+    affinity: &offControlPlane
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+
+    # The chart's own defaults, written out: a default nobody wrote down is
+    # one a chart upgrade can change without a line of this file moving.
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      runAsGroup: 65532
+      fsGroup: 65532
+      fsGroupChangePolicy: OnRootMismatch
+      seccompProfile:
+        type: RuntimeDefault
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+      seccompProfile:
+        type: RuntimeDefault
+
+    # Every image by digest. The chart takes a repository and a tag for each
+    # and joins them, so the digest rides on the tag. Seven of them: the
+    # driver's two, and the Kubernetes project's own storage sidecars, which
+    # are what turn a claim into calls on the driver.
+    controller:
+      plugin:
+        image:
+          repository: ghcr.io/sergelogvinov/proxmox-csi-controller
+          tag: v0.20.0@sha256:95ef74cce03e89a1706d9b32888a84bf44e0db439c4fe2a4334ce123728d4c3b
+        resources: &small
+          requests:
+            cpu: 10m
+            memory: 32Mi
+      attacher:
+        image:
+          repository: registry.k8s.io/sig-storage/csi-attacher
+          tag: v4.12.0@sha256:b9dc9a714a484ccdeeb6f86d88d4db9b7a5ecfc5a55da6db3a60bb3fa33c278a
+        resources: *small
+      provisioner:
+        image:
+          repository: registry.k8s.io/sig-storage/csi-provisioner
+          tag: v6.3.0@sha256:a4b0b1a37605b7b04a293e136edf7006ec1786a8eb3f4e5a945f81d667dcc371
+        resources: *small
+      resizer:
+        image:
+          repository: registry.k8s.io/sig-storage/csi-resizer
+          tag: v2.2.1@sha256:ea1d25e23479000c7e8eeb92d827df66258df4e482ca054c5e7ce3fc0f5c41a5
+        resources: *small
+      # Snapshots of a volume are not something anything here asks for.
+      snapshotter:
+        enabled: false
+
+    livenessprobe:
+      image:
+        repository: registry.k8s.io/sig-storage/livenessprobe
+        tag: v2.19.0@sha256:06da0d5b8908072f2e4522692aee8dc119fba7247a9658497e1153992cd777e9
+      resources: *small
+
+    node:
+      # The part on each machine, and only on workers: the token may attach
+      # a volume to a machine in the worker pool and to no other, so a pod
+      # with a claim on this class could never start on a control plane
+      # anyway.
+      #
+      # It runs as root and privileged, and the chart gives no value to say
+      # otherwise: it formats and mounts block devices on the host. Its
+      # priority is the chart's too, the system's own class for a daemon a
+      # node cannot work without.
+      affinity: *offControlPlane
+      plugin:
+        image:
+          repository: ghcr.io/sergelogvinov/proxmox-csi-node
+          tag: v0.20.0@sha256:e0151137a1c5fa4faea9b4622436b203f1dc246ea37a3a77d09d3855c70aabd1
+        resources: *small
+      driverRegistrar:
+        image:
+          repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
+          tag: v2.17.0@sha256:f9de845b170155199f2a2a3f9531cf13d78e31235e9db6b6582a8b0db0a50dad
+        resources: *small
+
+    storageClass:
+      # Named for what a volume on it does, not for what provides it.
+      - name: outlives-a-machine
+        storage: ${VOLUME_STORAGE}
+        # Kept when its claim is deleted. A claim is deleted by a mistake in
+        # a manifest far more often than because the data is unwanted, and a
+        # volume left behind can be found; one deleted with its claim cannot.
+        reclaimPolicy: Retain
+        fstype: ext4

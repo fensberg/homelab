@@ -76,6 +76,10 @@ type workloadPod struct {
 	// placement fields; pod-template-shaped values put them on each entry of
 	// a `containers` list instead.
 	ResourcesInContainers bool
+	// ResourcesAt is for a chart that sizes each container of the pod at a
+	// path of its own, away from the placement fields: every path from
+	// spec.values to a `resources` mapping, all of which must be complete.
+	ResourcesAt [][]string
 	// The priority class it belongs in, per the table in
 	// docs/epochs/02-abstraction.md.
 	Priority string
@@ -219,6 +223,32 @@ var workloadPods = []workloadPod{
 	// purpose". Its placement, priority, resources and security context are
 	// set in the manifest beside the others; what is missing is a guard that
 	// can express a workload which belongs on every machine.
+	{
+		What:         "the storage driver's controller",
+		Release:      "storage-driver",
+		ChartVersion: "0.5.12",
+		// proxmox-csi-plugin/values.yaml. Placement, priority and both
+		// security contexts are top-level and read by
+		// templates/controller-deployment.yaml. Resources are not: the pod
+		// has five containers and each is sized under its own key.
+		Values:               nil,
+		Priority:             "critical",
+		PodSecurityKey:       "podSecurityContext",
+		ContainerSecurityKey: "securityContext",
+		ResourcesAt: [][]string{
+			{"controller", "plugin", "resources"},
+			{"controller", "attacher", "resources"},
+			{"controller", "provisioner", "resources"},
+			{"controller", "resizer", "resources"},
+			{"livenessprobe", "resources"},
+		},
+	},
+	// The driver's part on each machine is the second pod of that release and
+	// is NOT here, for the reason node-exporter is not, turned around: it
+	// belongs on every worker, and its priority and its privileged context
+	// are written into the chart's template with no value that reaches
+	// either. Its placement and its containers' requests are set in the
+	// manifest; what this table cannot say is "the chart decides, on purpose".
 	{
 		What:         "the OpenEBS Local PV provisioner",
 		Release:      "openebs",
@@ -394,6 +424,19 @@ afford the company.`, w.What)
 					name, _ := cm["name"].(string)
 					if err := requestsAreComplete(t, cm["resources"]); err != nil {
 						t.Errorf("%s: container %q %s, so the pod is BestEffort and the OOM controller will choose it first (#237)", w.What, name, err)
+					}
+				}
+				return
+			}
+			if len(w.ResourcesAt) > 0 {
+				for _, at := range w.ResourcesAt {
+					var here any = hr.Spec.Values
+					for _, key := range at {
+						m, _ := here.(map[string]any)
+						here = m[key]
+					}
+					if err := requestsAreComplete(t, here); err != nil {
+						t.Errorf("%s: spec.values%s %s, so that container has no reservation and the OOM controller will choose it first (#237)", w.What, pathString(at), err)
 					}
 				}
 				return
