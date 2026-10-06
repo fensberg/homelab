@@ -85,7 +85,7 @@ const noisyOfflinePlan = `{"format_version": "1.2", "resource_changes": [
   {"mode": "managed", "type": "proxmox_vm", "name": "cp", "index": "unmatched",
    "change": {"actions": ["update"], "after": {"name": "recomputed"}, "after_unknown": {}, "after_sensitive": {}}}]}`
 
-const quietOfflinePlan = `{"format_version": "1.2", "resource_changes": []}`
+const quietOfflinePlan = NothingPlanned
 
 func takeFixture(t *testing.T) (Inputs, *fakeTofu) {
 	t.Helper()

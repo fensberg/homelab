@@ -11,6 +11,11 @@ import (
 	"strings"
 )
 
+// NothingPlanned is what tofu shows for a plan that changes nothing. For a
+// stand-in tofu to answer with: the tests here and the contractor's both
+// need one, and it is tofu's shape, not either's.
+const NothingPlanned = `{"format_version": "1.2", "resource_changes": []}`
+
 // PlanInputs is what planning a change against a record needs. None of it is
 // a credential: the record holds nothing real, and the template and root are
 // the pull request's own files.

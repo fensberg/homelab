@@ -327,6 +327,14 @@ would refuse (#497). It is the half of the review a pull request could not
 give: approving a diff of HCL used to mean finding out what it meant
 afterwards.
 
+**A pull request's plan is made twice when the two differ.** A site runs the
+modules of the release its line names, so a change to a module changes
+nothing a site runs, and planned as the site runs today it says so. That put
+the decision on one pull request and its evidence on another, the one-line
+change that moves the site to the new release. So `plan-as-built` plans
+again with the modules as they are in the checkout, and the comment shows
+both: what merging does now, and the whole plan once the site runs this.
+
 **A plan shows a change to the control plane's size, and it did not always.**
 `data.talos_cluster_health` is scoped to the nodes the config _asks for_, which
 is fully known at plan time, so raising `control_plane_count` once made it wait
