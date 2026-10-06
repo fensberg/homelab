@@ -80,6 +80,15 @@ run "a_site_is_granted_its_buckets_by_name_and_a_key_for_each" {
   }
 
   assert {
+    condition = alltrue([
+      for p in ["database", "state", "staging", "production"] :
+      length(output.grants["site0"].object_storage["${p}_reader_secret_access_key"]) == 64 &&
+      output.grants["site0"].object_storage["${p}_reader_access_key_id"] != ""
+    ])
+    error_message = "a bucket has no read-only key of its own for the safety officer"
+  }
+
+  assert {
     condition     = output.grants["site0"].identity.name == "North Street Office" && output.grants["site0"].tunnel.provider == "cloudflare"
     error_message = "the site is not granted its name and its tunnel"
   }

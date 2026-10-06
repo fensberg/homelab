@@ -32,3 +32,8 @@ variable "r2_bucket_write" {
   type        = string
   description = "The id of Cloudflare's permission group for reading and writing objects in one bucket."
 }
+
+variable "r2_bucket_read" {
+  type        = string
+  description = "The id of Cloudflare's permission group for listing and reading objects in one bucket, and changing none."
+}

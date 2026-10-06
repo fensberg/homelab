@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 207
+floor: 209
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1238,6 +1238,31 @@ mutations:
       The sentence is as plausible as it was and the scan is as quiet. What
       is gone is the only thing that made it more than a sentence: the guard
       that fails if a credential is ever written into that string.
+
+  - guard: TestEverythingThatKeepsDataSaysWhatItHolds
+    file: clusters/core/holds.json
+    find: '"held_by": "HelmRelease/kube-prometheus-stack"'
+    replace: '"held_by": "HelmRelease/prometheus"'
+    mentions: "declares storage (HelmRelease/kube-prometheus-stack) and nothing says what it holds"
+    why: >
+      A controller is given a volume, or the one that has it is renamed, and
+      the core's declaration is not touched. The officer knows only what it
+      is told, so the volume holds nothing as far as it can see - and the
+      day a machine's retirement is asked about, the site's whole history
+      goes with the machine and the answer was "safe".
+
+  - guard: TestNoTeardownStartsUntilTheSafetyOfficerClearsIt
+    file: scripts/contractor/internal/phases/destroy.go
+    find: "if err := clearedBySafetyOfficer(ctx); err != nil {"
+    replace: "if err := error(nil); err != nil {"
+    mentions: "starts a teardown without asking the safety officer first"
+    reads_source: true
+    why: >
+      The call comes out during a refactor of the teardown, or a second way
+      into it is written beside the first. Every test of the teardown still
+      passes, because none of them holds anything worth keeping. The site
+      that does is destroyed with nobody having looked at its copies, which
+      is the one thing the officer exists to stop.
 
   - guard: TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
     file: scripts/details/repopath/repopath.go

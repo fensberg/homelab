@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"homelab/details/vaults"
 )
 
 func validSite() Site {
@@ -134,7 +136,7 @@ func TestResolveSiteNetwork_VendorMismatch(t *testing.T) {
 	}{
 		{"hypervisor", func(s *Site) { s.Hypervisor.VaultProvider = "not-proxmox" }},
 		{"overlay_network", func(s *Site) { s.OverlayNetwork.VaultProvider = "not-tailscale" }},
-		{"object_storage", func(s *Site) { s.ObjectStorage.VaultProvider = "not-cloudflare" }},
+		{vaults.ObjectStorage, func(s *Site) { s.ObjectStorage.VaultProvider = "not-cloudflare" }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

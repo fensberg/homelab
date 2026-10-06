@@ -10,6 +10,14 @@ data "cloudflare_account_api_token_permission_groups_list" "r2_bucket_write" {
   name       = "Workers R2 Storage Bucket Item Write"
 }
 
+# The same, for a key that can list and read a bucket and change nothing in
+# it: what the safety officer holds, so the party that checks a copy exists
+# can never be what destroys one.
+data "cloudflare_account_api_token_permission_groups_list" "r2_bucket_read" {
+  account_id = local.access.account_id
+  name       = "Workers R2 Storage Bucket Item Read"
+}
+
 # A name becomes a slug the same way every time: lower case, runs of anything
 # but a letter or digit made one hyphen, none at either end.
 locals {
@@ -30,6 +38,7 @@ module "site" {
   name            = each.value.name
   tunnel_routes   = local.site_routes[each.key]
   r2_bucket_write = one(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_write.result).id
+  r2_bucket_read  = one(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_read.result).id
 }
 
 # Read by the lawyer after an apply, and written into each site's -shared

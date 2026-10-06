@@ -362,6 +362,17 @@ second time, and the command then asks for the site's real name, which is a
 vault value: it is typed at the prompt, never passed as a flag, and a wrong
 answer is refused. The key is in every log; knowing the name is knowing
 which site this is.
+**It does not start if it would lose something.** A teardown is total and
+stays total; what protects anything worth keeping is that the teardown is
+refused. Before the confirmation, every workload takes a fresh backup, and
+then the safety officer (`scripts/safety-officer`) is asked: a program of its
+own, which reads what the site holds that should outlive it
+(`holds` in an application's `application.json`, and `clusters/core/holds.json`),
+looks at each copy with a key that can read a bucket and change nothing, and
+refuses by name when the newest is older than the asset says it may be. It
+has no flag that skips it. A new volume that no `holds` entry names is
+refused by `tests/go/repo`.
+
 Interrupting a destroy deliberately does _not_ sterilize: wiping state
 part-way through a teardown is how VMs get orphaned, so it waits for tofu to
 release its lock and leaves everything in place to be re-run.

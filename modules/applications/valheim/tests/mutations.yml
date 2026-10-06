@@ -11,7 +11,7 @@
 # tests/go/repo that must fail. For one of this application's own tests that
 # is the guard that runs them, and `test` names which of them must be the one
 # that failed.
-floor: 20
+floor: 21
 
 mutations:
   - guard: TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas
@@ -250,3 +250,15 @@ mutations:
       crossplay on the server never binds it. The probe then never passes,
       the startup budget runs out, and the server is restarted every
       fifteen minutes forever with a manifest that validates.
+
+  - guard: TestEverythingThatKeepsDataSaysWhatItHolds
+    file: modules/applications/valheim/application.json
+    find: '"held_by": "PersistentVolumeClaim/world"'
+    replace: '"held_by": "PersistentVolumeClaim/saves"'
+    mentions: "declares storage (PersistentVolumeClaim/world) and nothing says what it holds"
+    why: >
+      The claim is renamed, or a second one is added, and the declaration
+      goes on naming the old one. Nothing fails: the server runs and its
+      backups run. But the safety officer now reads the volume the world
+      is on as holding nothing, and a teardown that should have been
+      refused over a stale copy is cleared.

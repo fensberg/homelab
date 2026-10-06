@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"homelab/details/vaults"
 )
 
 const sample = `
@@ -76,9 +78,9 @@ func TestMap(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := map[string]string{
-		"hypervisor":      "proxmox",
-		"overlay_network": "tailscale",
-		"object_storage":  "cloudflare",
+		"hypervisor":         "proxmox",
+		"overlay_network":    "tailscale",
+		vaults.ObjectStorage: "cloudflare",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d entries, want %d: %v", len(got), len(want), got)

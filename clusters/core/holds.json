@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "What the core holds that is worth keeping, and for how long: the same",
+    "declaration an application makes in its application.json, read by the",
+    "safety officer before anything is destroyed (scripts/details/holds).",
+    "Both are a site's own, worth keeping while the site lives, so neither",
+    "stands in the way of the site's teardown. Each lives on one machine's",
+    "disk, which is what a machine's retirement will be asked about."
+  ],
+  "holds": [
+    {
+      "what": "the site's state",
+      "lifetime": "site",
+      "lives_on": "machine",
+      "held_by": "Cluster/${STATE_DB_CLUSTER}",
+      "copy": { "storage": "database", "under": "postgres" },
+      "may_lose": "1h"
+    },
+    {
+      "what": "the metrics history",
+      "lifetime": "site",
+      "lives_on": "machine",
+      "held_by": "HelmRelease/kube-prometheus-stack"
+    }
+  ]
+}

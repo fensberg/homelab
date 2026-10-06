@@ -40,6 +40,16 @@
     "news": "892970",
     "pin": "VALHEIM_STEAM_BUILD_VERSION"
   },
+  "holds": [
+    {
+      "what": "the world",
+      "lifetime": "client",
+      "lives_on": "machine",
+      "held_by": "PersistentVolumeClaim/world",
+      "copy": { "under": "worlds" },
+      "may_lose": "2h"
+    }
+  ],
   "before_teardown": {
     "what": "the world",
     "selector": "app.kubernetes.io/name=valheim",

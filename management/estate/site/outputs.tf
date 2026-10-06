@@ -9,9 +9,11 @@ output "grants" {
     object_storage = merge(
       { provider = "cloudflare", account_id = var.account_id },
       [for p in local.purposes : {
-        "${p}_bucket"            = cloudflare_r2_bucket.this[p].name
-        "${p}_access_key_id"     = cloudflare_account_token.this[p].id
-        "${p}_secret_access_key" = sha256(cloudflare_account_token.this[p].value)
+        "${p}_bucket"                   = cloudflare_r2_bucket.this[p].name
+        "${p}_access_key_id"            = cloudflare_account_token.this[p].id
+        "${p}_secret_access_key"        = sha256(cloudflare_account_token.this[p].value)
+        "${p}_reader_access_key_id"     = cloudflare_account_token.reader[p].id
+        "${p}_reader_secret_access_key" = sha256(cloudflare_account_token.reader[p].value)
       }]...
     )
 
