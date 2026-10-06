@@ -172,6 +172,11 @@ files:
   - path: lawyer/main.go
     uncovered: 1
     covered_by: not-worth-testing
+  # One line: it hands the process's own arguments, streams and clock to
+  # run, which is where every decision is and which is tested whole.
+  - path: safety-officer/main.go
+    uncovered: 1
+    covered_by: not-worth-testing
   - path: contractor/main.go
     uncovered: 8
     covered_by: not-worth-testing

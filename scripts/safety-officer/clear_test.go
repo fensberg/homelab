@@ -249,3 +249,33 @@ func TestOnlyASitesDestructionCanBeClearedYet(t *testing.T) {
 		t.Fatalf("destroying a machine was cleared, and nothing here judges that yet:\n%s", out.String())
 	}
 }
+
+// The program's own door: it answers one question, asked one way, and
+// anything else is not an order it takes.
+func TestTheOfficerAnswersOneQuestionAskedOneWay(t *testing.T) {
+	e := newEstate(t, world, "")
+	e.lists(30 * time.Minute)
+	here := func() (string, error) { return e.root, nil }
+	lost := func() (string, error) { return "", os.ErrNotExist }
+
+	for name, c := range map[string]struct {
+		args []string
+		root func() (string, error)
+		want int
+	}{
+		"asked properly, with a fresh copy": {[]string{"clear", "-site", "site0", "-destroying", "site"}, here, 0},
+		"asked about what it cannot judge":  {[]string{"clear", "-site", "site0", "-destroying", "machine"}, here, 1},
+		"with no repository to read":        {[]string{"clear", "-site", "site0", "-destroying", "site"}, lost, 1},
+		"no verb":                           {nil, here, 2},
+		"another verb":                      {[]string{"waive", "-site", "site0"}, here, 2},
+		"no site":                           {[]string{"clear", "-destroying", "site"}, here, 2},
+		"nothing said to be destroyed":      {[]string{"clear", "-site", "site0"}, here, 2},
+		"a flag that would skip it":         {[]string{"clear", "-site", "site0", "-destroying", "site", "-force"}, here, 2},
+		"an argument after the question":    {[]string{"clear", "-site", "site0", "-destroying", "site", "anyway"}, here, 2},
+	} {
+		var out, complaints strings.Builder
+		if got := run(c.args, &out, &complaints, c.root, now); got != c.want {
+			t.Errorf("%s: exited %d, want %d\n%s%s", name, got, c.want, out.String(), complaints.String())
+		}
+	}
+}

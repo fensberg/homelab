@@ -1,6 +1,8 @@
 package holds
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,5 +91,23 @@ func TestTheCoresDeclarationIsReadWholeOrNotAtAll(t *testing.T) {
 	}
 	if got, err := ReadCore(t.TempDir()); err != nil || got != nil {
 		t.Errorf("a repository with no such file was read as %+v, %v", got, err)
+	}
+
+	root := t.TempDir()
+	path := filepath.Join(root, filepath.FromSlash(CoreFile))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"holds": [{"what": "history", "lifetime": "site", "lives_on": "machine", "held_by": "HelmRelease/metrics"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadCore(root); err != nil || len(got) != 1 || got[0].What != "history" {
+		t.Errorf("the core's file was read as %+v, %v", got, err)
+	}
+	if err := os.WriteFile(path, []byte(`{`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadCore(root); err == nil {
+		t.Error("a core file that does not parse was read as holding nothing")
 	}
 }

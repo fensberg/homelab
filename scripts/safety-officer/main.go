@@ -25,6 +25,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -41,23 +42,33 @@ should outlive it would be lost. It has no other flags and changes nothing.
 `
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "clear" {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, repopath.Root, time.Now()))
+}
+
+// run is the program: what it was asked, where to answer, how to find the
+// repository whose declarations it reads, and what time it is. It returns
+// how to exit: zero when cleared, one when refused, two when it was not
+// asked a question it answers.
+func run(args []string, out, complaints io.Writer, repository func() (string, error), now time.Time) int {
+	if len(args) < 1 || args[0] != "clear" {
+		fmt.Fprint(complaints, usage)
+		return 2
 	}
-	flags := flag.NewFlagSet("clear", flag.ExitOnError)
+	flags := flag.NewFlagSet("clear", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
 	site := flags.String("site", "", "the site's key in the config")
 	destroying := flags.String("destroying", "", "what is about to be destroyed: site")
-	if err := flags.Parse(os.Args[2:]); err != nil || *site == "" || *destroying == "" || flags.NArg() > 0 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+	if err := flags.Parse(args[1:]); err != nil || *site == "" || *destroying == "" || flags.NArg() > 0 {
+		fmt.Fprint(complaints, usage)
+		return 2
 	}
-	root, err := repopath.Root()
+	root, err := repository()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		fmt.Fprintf(out, "REFUSED: the repository whose declarations say what %s holds was not found: %v\n", *site, err)
+		return 1
 	}
-	if !clear(os.Stdout, root, *site, *destroying, time.Now()) {
-		os.Exit(1)
+	if !clear(out, root, *site, *destroying, now) {
+		return 1
 	}
+	return 0
 }
