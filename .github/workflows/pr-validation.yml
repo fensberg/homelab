@@ -129,7 +129,7 @@ jobs:
       # that installs anything. Ordering is the whole property; a gate after
       # the delivery is a receipt.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Setup Go
         uses: $/.github/workflows/setup-go
@@ -210,7 +210,7 @@ jobs:
             release-assets.githubusercontent.com:443
 
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       # From scripts/deliveries.lock by hash. This lane used
       # ludeeus/action-shellcheck, which downloaded the binary itself and
@@ -305,7 +305,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Install OpenTofu
         # The installer script from scripts/deliveries.lock by hash, run into
@@ -552,7 +552,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Setup Go
         uses: $/.github/workflows/setup-go
@@ -657,7 +657,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Setup Go
         uses: $/.github/workflows/setup-go
@@ -712,7 +712,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Setup Go
         uses: $/.github/workflows/setup-go
@@ -776,7 +776,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Setup Go
         uses: $/.github/workflows/setup-go
@@ -831,7 +831,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       # --- JavaScript / TypeScript ----------------------------------------
       # Before setup-node, so that setup-node's pnpm cache has a pnpm to
@@ -940,7 +940,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       # checkov and every package it pulls in, from scripts/deliveries.lock by
       # hash (#416). A version pin alone left over a hundred dependencies to
@@ -981,7 +981,7 @@ jobs:
             release-assets.githubusercontent.com:443
 
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       # A single static binary from the publisher's own release, installed only
       # if its SHA256 matches scripts/deliveries.lock, into ~/.local/bin - this
@@ -1019,7 +1019,7 @@ jobs:
             release-assets.githubusercontent.com:443
 
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Install zizmor (locked)
         run: scripts/take-delivery.sh zizmor
@@ -1058,7 +1058,7 @@ jobs:
             release-assets.githubusercontent.com:443
 
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Install codespell (locked)
         run: scripts/take-delivery.sh codespell
@@ -1232,7 +1232,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       # Not the marketplace action: its own action.yml runs
       # `docker run "${IMAGE}:${VERSION}"` with VERSION defaulting to

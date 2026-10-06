@@ -3,7 +3,6 @@
 package e2e_test
 
 import (
-	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -92,12 +91,7 @@ func pveRequest(t *testing.T, method, hostname, path string) (int, string) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Body = io.NopCloser(strings.NewReader(url.Values{}.Encode()))
 
-	// The provider is configured `insecure = true` against this host for the
-	// same reason - there is no trusted certificate yet, recorded in Deferred.
-	client := &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, // #nosec G402
-	}
+	client := harness.HypervisorClient(t, 30*time.Second)
 	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()

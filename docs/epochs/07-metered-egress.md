@@ -4,7 +4,7 @@
 - **Branch:** `epoch/07-metered-egress`
 - **PR:** #
 - **Status:** Not started
-- **Closed:** <date>
+- **Closed:** `<date>`
 
 ## Goal
 

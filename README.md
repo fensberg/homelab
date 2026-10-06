@@ -1,5 +1,6 @@
 # homelab
 
+```text
 homelab/
 ├── .env # Global variables for local task execution
 ├── .gitignore # Prevents rendered secrets/state from leaking
@@ -55,4 +56,4 @@ homelab/
 │ └── tests/ # Its own tests, and the proofs they catch anything
 │
 └── clusters/<site>/applications.yaml # One block per application a site runs
-x
+```

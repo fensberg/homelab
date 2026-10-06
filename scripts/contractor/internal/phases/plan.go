@@ -639,6 +639,7 @@ func planRoot(ctx *run.Context, tofu asbuilt.Tofu, push func(dir string, state [
 
 // pushState writes state into the copy through stdin.
 func pushState(dir string, state []byte) error {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c := exec.Command("tofu", "state", "push", "-lock=false", "-")
 	c.Dir = dir

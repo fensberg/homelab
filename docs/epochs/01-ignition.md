@@ -994,7 +994,8 @@ places nobody had. Documentation is where the real names actually were.
 ### The agent's identity was a single point of failure, and it failed
 
 **What happened:** GitHub suspended the `claude-bot-fensberg` machine account
-mid-session, without warning. Every push and every API call began returning 403. The boundary had been audited that same afternoon and held perfectly - the
+mid-session, without warning. Every push and every API call began returning 403.
+The boundary had been audited that same afternoon and held perfectly - the
 failure was not that the agent could do too much, it was that a third party
 revoked its ability to do anything, and no part of the design had considered
 that direction.
@@ -1386,10 +1387,11 @@ declaration, so the alert cannot be cleared by upgrading and will persist.
 **`BranchProtectionID` (high), in part.** Scorecard raises four sub-warnings and
 one of them must stay: _"'up-to-date branches' is disabled on branch main"_.
 Requiring branches to be up to date deadlocks against the epoch topology, where
-the epoch branch is normally both ahead of and behind `main` - see
-the epoch-branch topology recorded in [`02-abstraction.md`](02-abstraction.md). Turning it on would make the
-"Update branch" button mandatory and resolve nothing. The other three were
-open until 2026-10-02 (#278), and none changes a setting:
+the epoch branch is normally both ahead of and behind `main` - see the
+epoch-branch topology recorded in [`02-abstraction.md`](02-abstraction.md).
+Turning it on would make the "Update branch" button mandatory and resolve
+nothing. The other three were open until 2026-10-02 (#278), and none changes a
+setting:
 
 - **A second required reviewer** is not available to a one-person estate.
 - **Protection applying to administrators** stays off. The administrator
@@ -1560,8 +1562,9 @@ teardown is how VMs get orphaned.
 **Step 5 - prove it came up healthy rather than merely finished.** The Health
 phase gates this internally; check independently that every node is Ready, that
 every Flux Kustomization and HelmRelease has reconciled, and - the check nothing
-had before - that the overlay carries traffic rather than merely showing
-members online. `scripts/contractor/internal/survey` on the hypervisor answers the last one.
+had before - that the overlay carries traffic rather than merely showing members
+online. `scripts/contractor/internal/survey` on the hypervisor answers the last
+one.
 
 **Step 6 - the acceptance test.** Everything above is setup. Change
 `control_plane_count` from three to five and **merge it**; two more machines

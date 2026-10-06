@@ -122,7 +122,7 @@ output "state_conn_str" {
   # scanner looks one line back, not at the enclosing block, which is why the
   # first attempt at this was ignored.
   value = format(
-    # checkov:skip=CKV_SECRET_4:format string, see above
+    # checkov:skip=CKV_SECRET_4:a format, proved by TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn
     "postgres://%s:%s@%s:%d/%s?sslmode=require",
     local.state_db_owner,
     urlencode(local.site_database.password),

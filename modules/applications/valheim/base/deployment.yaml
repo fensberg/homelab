@@ -240,6 +240,48 @@ spec:
             - name: scratch
               mountPath: /scratch
 
+          # Is the server listening? Asked of the kernel, because the image
+          # carries no client that speaks the game's protocol: the line the
+          # server's socket holds in /proc/net/udp, found by its port in hex.
+          #
+          # The query port, 2457, and not the game port beside it. With
+          # crossplay on, players arrive through the vendor's relay and the
+          # server never binds 2456 at all - measured on the running server -
+          # while 2457 is bound either way. The application's own tests hold
+          # this number to the Service's query port.
+          #
+          # What this catches: a server still loading its world, one that
+          # never came up listening, and one that lost its socket and kept
+          # running. What it does not catch is a server that hangs with the
+          # socket still open, and nothing here claims otherwise.
+          #
+          # Startup is given fifteen minutes because a large world takes
+          # minutes to load and a restart in the middle of that is a loop.
+          # Until it passes, the other two do not run.
+          startupProbe:
+            exec: &listening
+              command:
+                - /bin/sh
+                - -c
+                - "grep -q '^ *[0-9]*: [0-9A-F]*:0999 ' /proc/net/udp"
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 90
+          # Takes the pod out of the Service while it is not listening, so a
+          # device on the tunnel is refused rather than sent to nothing.
+          readinessProbe:
+            exec: *listening
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Two minutes of not listening before a restart, and a restart
+          # drops every player, so it is slow on purpose.
+          livenessProbe:
+            exec: *listening
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 4
+
           # Sized from the vendor's own guidance rather than from a guess: 4 GiB
           # for a fresh world at this player count, 6-8 once it is explored and
           # built on. The request is what the scheduler reserves; the limit is

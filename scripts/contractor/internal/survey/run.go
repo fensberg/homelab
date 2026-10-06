@@ -67,6 +67,7 @@ Run it on a member of the overlay. The workstation is not one.
 }
 
 func run(ctx context.Context, cli string, per time.Duration, want Expectation) (Verdict, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	raw, err := exec.CommandContext(ctx, cli, "status", "--json").Output()
 	if err != nil {
@@ -92,6 +93,7 @@ func run(ctx context.Context, cli string, per time.Duration, want Expectation) (
 		// registered, tagged, addressed and routed can still carry nothing,
 		// and only sending something finds out.
 		//
+		// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 		// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 		out, _ := exec.CommandContext(ctx, cli,
 			"ping", "-c", "1", "--timeout", per.String(), addr).CombinedOutput()

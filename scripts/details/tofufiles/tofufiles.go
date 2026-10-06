@@ -30,6 +30,7 @@ import (
 // this repository's. Finding none is an error, because a check handed nothing
 // would pass having checked nothing.
 func Read(repoRoot string) (map[string]string, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	out, err := exec.Command("git", "-C", repoRoot, "ls-files", "-z", "--", "*.tf").Output()
 	if err != nil {

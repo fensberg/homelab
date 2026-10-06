@@ -23,25 +23,8 @@
 #
 # Removed when something here is built to run outside Kubernetes.
 skip-check:
+  # proved by TestEveryImageBuiltHereIsRunByAManifestHere
   - CKV_DOCKER_2
-
-  # CKV_K8S_8 and CKV_K8S_9: liveness and readiness probes.
-  #
-  # The game server is a single process in its container. A process that exits
-  # takes the container with it and the kubelet restarts it, so a liveness
-  # probe would be checking that something which cannot be running is running.
-  # Readiness gates a Service, and there is no Service: crossplay means nothing
-  # connects inbound.
-  #
-  # The case a probe would genuinely catch is a hang without an exit. Detecting
-  # that means asking the server something over UDP, which needs a client the
-  # image deliberately does not carry - and a probe that cannot fail is worse
-  # than none, because it reports health nobody measured.
-  #
-  # Removed when a workload here serves traffic through a Service, or when
-  # there is a real check to run.
-  - CKV_K8S_8
-  - CKV_K8S_9
 
   # CKV_K8S_11: CPU limits.
   #
@@ -54,6 +37,8 @@ skip-check:
   # nothing else is placed expecting capacity this needs. Memory is different
   # and does carry a limit - it is incompressible, so the alternative to a
   # limit there is a neighbour being evicted.
+  #
+  # proved by TestAContainerWithNoCPULimitReservesCPUAndIsLimitedInMemory
   - CKV_K8S_11
 
   # CKV_K8S_35: secrets as files rather than environment variables.
@@ -68,15 +53,34 @@ skip-check:
   # vault through a Secret written by OpenTofu.
   #
   # Removed if the server ever learns to read a password from a file.
+  #
+  # proved by TestNoSecretIsWrittenInTheTree
   - CKV_K8S_35
+
+  # CKV_GHA_7: a dispatched workflow must take no inputs.
+  #
+  # The rule is a build's: whoever dispatches a workflow would be choosing what
+  # goes into something then published under the repository's name. The
+  # integration tiers take two inputs - which tier, which site - and publish
+  # nothing. Excused for the repository and not for that one file, because
+  # the reason is general and is held for every workflow: one that takes
+  # inputs holds no write permission, so there is no output for an input to
+  # have shaped. proved by TestAWorkflowThatTakesInputsCanPublishNothing
+  #
+  # This went unseen until the exclusion of the test trees below was found to
+  # cover every path with "tests" in it, that workflow's among them.
+  - CKV_GHA_7
 
 skip-path:
   # What a release of the platform would hold from this checkout, placed by
   # the check that plans a module before it is released. A copy of part of
   # this repository: scanning it reports every finding twice. Ignored by git,
   # so absent from CI's scan and present on a machine that has run the check.
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
   - \.unreleased
-  - clusters/core/flux-system
+  # Flux's own install, committed as Flux published it.
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead and TestEveryFluxControllerIsPinnedHere
+  - clusters/core/flux-system/gotk-components\.yaml
   # clusters/bootstrap/ is Cilium's own chart output, committed verbatim for
   # the same reason flux-system is: a version bump should be a reviewable diff
   # of what actually changes in the cluster, not a one-line version bump nobody
@@ -93,7 +97,8 @@ skip-path:
   # broader ClusterRole would not be flagged. The compensating control is that
   # the manifest is committed, so that change appears in a pull request diff -
   # which is the whole reason it is committed rather than fetched at apply time.
-  - clusters/bootstrap
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead and TestTheRenderedCNIManifestMatchesThePinnedChartVersion
+  - clusters/bootstrap/cilium\.yaml
   # The core's kustomization.yaml lists flux-system as a resource, and each
   # site's builds on the core, so Checkov's kustomize build starting from any
   # of them pulls in the same vendored Deployment/ClusterRole objects and
@@ -109,7 +114,11 @@ skip-path:
   # \w+ and not a bracketed class: Checkov rewrites a skip path before
   # compiling it, and one with square brackets fails to compile, which kills
   # the scan with "nothing to repeat" and leaves the job to time out.
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
   - clusters/\w+/kustomization\.yaml
+  # And the one that assembles Flux's own install, a directory further down.
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
+  - clusters/\w+/flux-system/kustomization\.yaml
   # tofu test fixtures - deliberately fake values, some deliberately shaped
   # like a real credential (aws-shaped-key.json exists specifically to
   # trigger the AKIA/ASIA check). Checkov's secrets scanner can't tell fake
@@ -117,6 +126,7 @@ skip-path:
   # CKV_SECRET_2/CKV_SECRET_6. Hand-tuning each value to dodge the entropy
   # heuristic is fragile and would just recur on the next fixture; excluding
   # the directory is the same call already made for flux-system above.
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
   - modules/infrastructure/cluster/tests
   # The test trees. tests/go holds Go source with deliberately fake
   # credentials in its fixtures and assertions, and node_modules under
@@ -124,5 +134,7 @@ skip-path:
   # reasoning as the fixtures directory above: a secrets scanner cannot tell
   # a fake credential from a real one by shape alone, and these are all fake
   # by construction.
-  - tests
-  - node_modules
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
+  - (^|/)tests/
+  # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
+  - (^|/)node_modules/

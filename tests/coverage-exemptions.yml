@@ -18,8 +18,13 @@
 # legitimate and deliberately uncomfortable answer. That turns this from a list
 # of excuses into a map of real gaps.
 #
-# THE RULE: `uncovered` must EXACTLY match what the unit coverage profile
-# reports for that file. Not "at most" - exactly.
+# THE RULE: `uncovered` must EXACTLY match how many of that file's functions
+# the unit tests leave untested. Not "at most" - exactly.
+#
+# A function is untested when half or fewer of its statements run, and a
+# function held in a variable counts as one. It used to be "no statement runs
+# at all", which a single test of a check at a function's door satisfied; see
+# tests/go/repo/coverage_exemptions_test.go for what that let through.
 #
 # At most drifts, which is what happened to tests/coverage-baseline.json: it
 # sat at 24.5 while the real figure was 34.1, so a third of the coverage could
@@ -62,7 +67,7 @@ files:
     uncovered: 2
     covered_by: e2e
   - path: contractor/internal/phases/sterilize.go
-    uncovered: 2
+    uncovered: 1
     covered_by: e2e
   - path: contractor/internal/phases/verify.go
     uncovered: 1
@@ -121,18 +126,12 @@ files:
   # TF_ENCRYPTION, where being wrong writes plaintext state to a database
   # that ships off-site.
   - path: details/onepassword/onepassword.go
-    uncovered: 7
+    uncovered: 6
     covered_by: nothing
   - path: details/onepassword/probe.go
     uncovered: 2
     covered_by: nothing
-  - path: details/onepassword/upsert.go
-    uncovered: 3
-    covered_by: nothing
   - path: contractor/internal/phases/checkvault.go
-    uncovered: 1
-    covered_by: nothing
-  - path: contractor/internal/phases/converge_preconditions.go
     uncovered: 1
     covered_by: nothing
   - path: contractor/internal/phases/encryption.go
@@ -232,7 +231,7 @@ files:
     uncovered: 6
     covered_by: nothing
   - path: superintendent/enforce-push.go
-    uncovered: 2
+    uncovered: 1
     covered_by: nothing
   - path: superintendent/main.go
     uncovered: 3

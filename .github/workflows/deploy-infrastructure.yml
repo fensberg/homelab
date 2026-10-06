@@ -307,7 +307,7 @@ jobs:
           disable-sudo-and-containers: "false"
 
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       # No cache. scripts/contractor has zero external dependencies, so the
       # cache saves nothing - and on a self-hosted runner it persists

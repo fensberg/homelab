@@ -15,4 +15,6 @@ var (
 	awaitTCP = tcp.Await
 	// storedImage finds a disk image on a hypervisor's datastore.
 	storedImage = findStoredImage
+	// removeImage deletes one from it.
+	removeImage = deleteDatastoreFile
 )

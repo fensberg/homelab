@@ -194,10 +194,20 @@ func EnsureField(ref Ref, generate func() (string, error)) (string, string, erro
 //
 // Returns the names of the fields it changed, never their values.
 func WriteItem(vault, title string, fields map[string]string) ([]string, error) {
-	raw, err := exec.Command("op", "item", "get", title, "--vault", vault, "--format=json").Output()
+	raw, err := op("item", "get", title, "--vault", vault, "--format=json")
 	if err != nil {
-		create := exec.Command("op", "item", "create", "--category=Secure Note", "--title="+title, "--vault="+vault, "--format=json")
-		if raw, err = create.Output(); err != nil {
+		// Not there, or there and not readable? Only the first is a reason to
+		// make one. Creating on any failure is how a vault comes to hold two
+		// items of one title - a read that timed out, or two runs that both
+		// found it absent - and then no reference to either resolves.
+		held, listErr := itemsTitled(vault, title)
+		switch {
+		case listErr != nil:
+			return nil, fmt.Errorf("reading item %s in vault %s: %w; and the vault could not be listed to see whether it is there: %v", title, vault, err, listErr)
+		case held > 0:
+			return nil, fmt.Errorf("vault %s holds %d item(s) titled %s, and reading it failed: %w. Nothing was created. If there is more than one, delete all but the one in use", vault, held, title, err)
+		}
+		if raw, err = op("item", "create", "--category=Secure Note", "--title="+title, "--vault="+vault, "--format=json"); err != nil {
 			return nil, fmt.Errorf("creating item %s in vault %s: %w", title, vault, err)
 		}
 	}
@@ -261,4 +271,44 @@ func upsertFields(raw []byte, fields map[string]string) ([]string, []byte, error
 		changed = append(changed, name)
 	}
 	return changed, raw, nil
+}
+
+// op runs the 1Password CLI and returns what it printed. A failure carries
+// what the CLI said about it: the exit status alone was all a caller used to
+// get, and "exit status 3" names no cause.
+//
+// Only for commands that are given no value and print none on failure - get,
+// list, create - so what is passed along is the CLI's own sentence about an
+// item or a vault.
+func op(args ...string) ([]byte, error) {
+	cmd := exec.Command("op", args...)
+	var said strings.Builder
+	cmd.Stderr = &said
+	out, err := cmd.Output()
+	if err != nil {
+		if why := strings.TrimSpace(said.String()); why != "" {
+			return nil, fmt.Errorf("%w: %s", err, why)
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+// itemsTitled is how many items of this title a vault holds.
+func itemsTitled(vault, title string) (int, error) {
+	raw, err := op("item", "list", "--vault", vault, "--format=json")
+	if err != nil {
+		return 0, err
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return 0, fmt.Errorf("the vault's list of items is not JSON: %w", err)
+	}
+	held := 0
+	for _, it := range items {
+		if it["title"] == title {
+			held++
+		}
+	}
+	return held, nil
 }

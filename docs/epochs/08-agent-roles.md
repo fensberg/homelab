@@ -600,10 +600,10 @@ exactly the design's own claim arriving literally - "where it misreads the
 code, the misreading is the finding" - and it is worth a column of its own,
 because scoring it as either a hit or a miss loses what happened.
 
-**The running count matters more than either.** Two accepted, two rejected, and one
-rejected-but-useful is not yet an answer to "is this decorative", and the honest
-way to reach one is to keep scoring every column rather than only the one that
-confirms a prior.
+**The running count matters more than either.** Two accepted, two rejected, and
+one rejected-but-useful is not yet an answer to "is this decorative", and the
+honest way to reach one is to keep scoring every column rather than only the one
+that confirms a prior.
 
 The shape is a better signal than the ratio. **Every hit was prose or error
 handling that a reader holding the intent skims past** - a comment claiming CPU
@@ -803,7 +803,8 @@ looks like coverage.
 
 ### Compared: an agent with its permissions bypassed and a hook
 
-[ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11, runs its implementation agent with permissions bypassed and a hook
+[ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on
+2026-09-11, runs its implementation agent with permissions bypassed and a hook
 guarding `kubectl`. This estate's boundary is structural instead: the agent
 holds no infrastructure credential at all, cannot approve a pull request, and
 cannot change a workflow. A hook is a guard the agent's own process could get

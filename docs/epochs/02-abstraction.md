@@ -1360,9 +1360,9 @@ records, `harden-runner` not surviving the move being the substantive one.
 **`batch` is the one genuinely starved.** It is the only class running in the
 estate today, and it is what #236 killed.
 
-So the workers being built serve `interactive` and `batch`, and the `critical` work is a
-configuration change on machines that already exist. Those are different
-efforts and only the first needs hardware.
+So the workers being built serve `interactive` and `batch`, and the `critical`
+work is a configuration change on machines that already exist. Those are
+different efforts and only the first needs hardware.
 
 #### The stopped template is not costing what it appears to
 
@@ -2367,11 +2367,11 @@ site 1 becomes `1.x.x.x`, which is APNIC space, and `1.1.1.1` is the resolver
 this estate hands to every node in `compute.tf`. Site 1 would collide with the
 estate's own DNS on its first packet.
 
-`172.16/12` gives four usable bits in the second octet and `192.168/16` gives two
-octets in total, so `10/8` with 24 free bits is already the most generous private
-space available. Sub-dividing on non-octet boundaries would buy more dimensions
-and is rejected for the reason the scheme exists: `10.10.10.100` is readable at a
-glance and `10.10.148.100` is not.
+`172.16/12` gives four usable bits in the second octet and `192.168/16` gives
+two octets in total, so `10/8` with 24 free bits is already the most generous
+private space available. Sub-dividing on non-octet boundaries would buy more
+dimensions and is rejected for the reason the scheme exists: `10.10.10.100` is
+readable at a glance and `10.10.148.100` is not.
 
 #### Where the scheme runs out, and which wall arrives first
 
@@ -2459,13 +2459,13 @@ on the same bridge and are L2-adjacent; putting them in separate /24s invents a
 routing requirement that does not physically exist. This epoch already rejected
 it above: nodes in one Proxmox cluster must share a subnet.
 
-**It fights epoch 05's stated goal.** That epoch exists so that changing a node -
-"its image, its size, the hypervisor it sits on, or the fact that it died" - is
-ordinary. If the address encodes the hypervisor then moving a guest between boxes
-**renumbers it**, and a Talos control-plane node's address is load-bearing in
-five places: the machine config, the certificate SANs, the etcd peer URLs, the
-talosconfig endpoints, and Flannel's `public-ip` annotation. A live migration
-would become a rebuild.
+**It fights epoch 05's stated goal.** That epoch exists so that changing a
+node - "its image, its size, the hypervisor it sits on, or the fact that it
+died" - is ordinary. If the address encodes the hypervisor then moving a guest
+between boxes **renumbers it**, and a Talos control-plane node's address is
+load-bearing in five places: the machine config, the certificate SANs, the
+etcd peer URLs, the talosconfig endpoints, and Flannel's `public-ip`
+annotation. A live migration would become a rebuild.
 
 **The want behind it is legitimate and is met in the fourth octet.** Banding host
 octets by hypervisor - `100-119` for the first box's control planes, `120-139`
@@ -2563,12 +2563,13 @@ What both roots need, they read from a file rather than from each other:
 each route's address for the Service that answers there, and the estate root
 every site's addresses for their tunnels and the account's split tunnel.
 
-The nearest neighbour arrived at the same split first. [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11, keeps its
-backup buckets, PKI and persistent secrets in a `global` stack with a state of
-its own, so a cluster can be destroyed without touching it. That was read as a
-recommendation on 2026-09-11, while this estate was forgetting its buckets
-before a destroy and adopting them after; the estate root is that
-recommendation built.
+The nearest neighbour arrived at the same split first.
+[ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on
+2026-09-11, keeps its backup buckets, PKI and persistent secrets in a `global`
+stack with a state of its own, so a cluster can be destroyed without touching
+it. That was read as a recommendation on 2026-09-11, while this estate was
+forgetting its buckets before a destroy and adopting them after; the estate root
+is that recommendation built.
 
 #### The lawyer holds the estate's credentials, and only those
 
@@ -2636,16 +2637,16 @@ cannot scope them to one:
   the policy auto-approves any route in `10.0.0.0/8` for that tag, so a leaked
   site0 client can advertise site1's `/16` and take its traffic.
 
-So the lawyer creates what only an account-wide credential can create, and grants
-the site a credential narrowed to it. That means the tunnel and its run token,
-which serves that tunnel alone; the site's buckets and keys scoped to them; and a
-tailnet OAuth client that can mint keys only for `tag:site0-router` and
-`tag:site0-node`. The lawyer also owns the **tailnet policy**, which
+So the lawyer creates what only an account-wide credential can create, and
+grants the site a credential narrowed to it. That means the tunnel and its run
+token, which serves that tunnel alone; the site's buckets and keys scoped to
+them; and a tailnet OAuth client that can mint keys only for `tag:site0-router`
+and `tag:site0-node`. The lawyer also owns the **tailnet policy**, which
 `overlay-network.tf` already declined to manage because "every site deployment
 clobbers the policy every other site depends on", and which was a manual console
 step in `docs/tailnet-setup.md`. Generated from the site list, the policy
-approves each site's router for that site's own `/16` only. That is the "precise"
-option the setup doc called a chore; generating it removes the chore.
+approves each site's router for that site's own `/16` only. That is the
+"precise" option the setup doc called a chore; generating it removes the chore.
 
 This is the vending pattern organisation-scale estates use, such as a landing
 zone handing workload accounts narrow roles. Most homelab GitOps repositories
@@ -2857,8 +2858,8 @@ are the `state list` / blank-state gotcha below.
 
 The design for the provider split named as a constraint above, and the second
 cut: it divides one site's root, after the scope split has taken the estate's
-objects out of it. Written before any code moved, because the state migration is the expensive half to get wrong
-and it is an operation only `dev` can run.
+objects out of it. Written before any code moved, because the state migration is
+the expensive half to get wrong and it is an operation only `dev` can run.
 
 **Re-measured 2026-09-21.** Every count below is from the tree rather than from
 the earlier description of it.
@@ -2965,8 +2966,9 @@ has already paid for:
 
 1. **The larger half does not move.** The infrastructure root adopts the
    existing schema, so every VM, pool, Talos secret and Cloudflare object stays
-   exactly where it is. Only the eighteen listed above are touched. A migration that rewrites the whole state to move a quarter of it
-   is a migration with a much worse failure mode than it needs.
+   exactly where it is. Only the eighteen listed above are touched. A migration
+   that rewrites the whole state to move a quarter of it is a migration with a
+   much worse failure mode than it needs.
 2. **It either completes or refuses to start.** "TNT is TNT. Unexploded
    ordinance is not safe." The preconditions - both schemas reachable, the
    eighteen addresses present in the source state and absent from the target,
@@ -3284,12 +3286,12 @@ estate shares **one** R2 account - so two sites with the same slug do not
 collide noisily, they silently write into each other's state dumps and each
 other's workload data.
 
-Asserted on the slug rather than the raw name, which is the whole point:
-"North Street Office" and "north-street-office " are two names and one bucket. It is asserted in
-`registry.tf` and in `config.go`, the same both-sides shape the octet check
-already has, and `config.SiteSlug` is now exported so the check and the name
-actually used cannot drift apart - they were the same expression inline, which
-is not the same thing as being one expression.
+Asserted on the slug rather than the raw name, which is the whole point: "North
+Street Office" and "north-street-office " are two names and one bucket. It is
+asserted in `registry.tf` and in `config.go`, the same both-sides shape the
+octet check already has, and `config.SiteSlug` is now exported so the check and
+the name actually used cannot drift apart - they were the same expression
+inline, which is not the same thing as being one expression.
 
 This is the general lesson worth keeping: **a value's uniqueness requirement
 comes from what consumes it, not from what produces it.** The slug did not

@@ -184,7 +184,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Setup Go
         uses: $/.github/workflows/setup-go
@@ -478,7 +478,7 @@ jobs:
       # is written. See .github/actions/versions for why this is a step
       # rather than a setup job.
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Setup Go
         uses: $/.github/workflows/setup-go

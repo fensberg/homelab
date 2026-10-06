@@ -129,11 +129,12 @@ belongs in an epoch record.
   by OpenTofu, which `tests/go/repo` enforces.
 
   Everything below that floor is generated: the state database password is
-  created by build-site and written to 1Password, because the rule that decides is
-  where a secret ends up. A secret that becomes a resource attribute is
-  written into OpenTofu state, so a leaked state file yields a live
-  credential; those are ours to generate. A secret that only configures a
-  provider never reaches state at all. See `docs/tailnet-setup.md`. Everything past that floor is code.
+  created by build-site and written to 1Password, because the rule that decides
+  is where a secret ends up. A secret that becomes a resource attribute is
+  written into OpenTofu state, so a leaked state file yields a live credential;
+  those are ours to generate. A secret that only configures a provider never
+  reaches state at all. See `docs/tailnet-setup.md`. Everything past that floor
+  is code.
 
 - **Ignition is local-only; convergence is not.** These are two different
   operations and conflating them is what made the button a first-run tool
@@ -167,16 +168,16 @@ belongs in an epoch record.
   declaration at all. Portable concerns, like source control over plain git,
   carry none of this.
 - **Name things by function, never by vendor.** Config keys, 1Password paths,
-  and file names describe what a thing does; the vendor lives in the value or
-  in a file header. `source_control.repo_url`, not `git.github_repo_url`.
-  The one place this cannot reach is Terraform resource names —
-  `tailscale_tailnet_key` is irreducibly vendor-specific — so the abstraction lives at the config and
+  and file names describe what a thing does; the vendor lives in the value or in
+  a file header. `source_control.repo_url`, not `git.github_repo_url`. The one
+  place this cannot reach is Terraform resource names — `tailscale_tailnet_key`
+  is irreducibly vendor-specific — so the abstraction lives at the config and
   secrets layer. That keeps the _OpenTofu_ half of a vendor swap small: 60 lines
   in `overlay-network.tf` plus a provider block. It does **not** make the swap
   small overall — `hypervisor-prep.yml` carries ~50 Tailscale-specific
-  references (repo key, install, `tailscale up`, route advertisement,
-  re-auth handling), and that is where a real overlay migration would be
-  spent. See `docs/epochs/02-abstraction.md`.
+  references (repo key, install, `tailscale up`, route advertisement, re-auth
+  handling), and that is where a real overlay migration would be spent. See
+  `docs/epochs/02-abstraction.md`.
 - **Fail closed: prefer worthless over unreachable.** Wherever there is a
   choice between making a compromise unlikely and making what is compromised
   worthless, take worthless. A safeguard that lowers the probability of theft
@@ -288,14 +289,13 @@ your GitHub sign-in holds; a direct run has only what the shell has.
 **`task start` deliberately does not run build-site itself.** `task` intercepts
 Ctrl-C for its own purposes but does not proxy the signal to the process it's
 supervising - a confirmed, currently-open upstream limitation
-(`go-task/task#1408`). Ignite's own destroy-then-sterilize cleanup on
-interrupt only runs if something actually delivers it the signal, so the
-real ignition run has to be invoked directly. Every other `task`-wrapped
-build-site phase (`render-secrets`, `verify`, `configure-hypervisor`,
-`backup-state`, `kubeconfig`, `clean-secrets`) stays safe to wrap regardless, because none
-of them can reach the Compute phase - an interrupted one leaves stale
-secrets at worst, recoverable with `task clean-secrets`, never an orphaned
-VM.
+(`go-task/task#1408`). Ignite's own destroy-then-sterilize cleanup on interrupt
+only runs if something actually delivers it the signal, so the real ignition run
+has to be invoked directly. Every other `task`-wrapped build-site phase
+(`render-secrets`, `verify`, `configure-hypervisor`, `backup-state`,
+`kubeconfig`, `clean-secrets`) stays safe to wrap regardless, because none of
+them can reach the Compute phase - an interrupted one leaves stale secrets at
+worst, recoverable with `task clean-secrets`, never an orphaned VM.
 
 **Changing a running estate is `contractor converge-site`** (`task converge`). It
 renders, attaches to the state already in the cluster, and applies - the same
@@ -374,10 +374,11 @@ program that reads the private half, which `tests/go/repo` enforces, and it
 restores state and stops - what to do with it afterwards is a judgement call,
 not a next step.
 
-**Checking the vault is `contractor check-inventory`** (`task check-inventory`). It proves
-every `op://` reference in `config/management.tpl.json` resolves and is
-non-empty, and reports each one as `ok` / `empty` / `missing` — structure only,
-never a value, so the output is safe to paste into an issue or a pull request.
+**Checking the vault is `contractor check-inventory`** (`task check-inventory`).
+It proves every `op://` reference in `config/management.tpl.json` resolves and
+is non-empty, and reports each one as `ok` / `empty` / `missing` — structure
+only, never a value, so the output is safe to paste into an issue or a pull
+request.
 
 It is `AssertRenderedConfigComplete` shifted as far left as it goes. That check
 compares the template against an already-rendered config, so it can only speak
@@ -489,32 +490,33 @@ depends on it and uses them.
 ## CI
 
 - `pr-validation.yml` — one lane per check, all running in parallel, Format
-  included. The count is deliberately not written here: it was "eleven" and
-  had been thirteen since #408 added the two egress proofs, and a number in
-  prose goes stale the moment a lane is added (#429). Formatting is enforced locally first (the git hook
-  `./scripts/install-dependencies.sh` wires up via `pre-commit install`) -
-  shift left, catch it in seconds on the machine that wrote it. **Format**'s
-  CI lane, running the same `.pre-commit-config.yaml` as that hook, exists as
-  the backstop for whoever's local hook is missing or bypassed: a fresh clone
-  that skipped setup, or a bot/outside PR that never touches a git hook at
-  all. It does not gate the other lanes - a formatting slip no longer delays
-  or blocks the lanes that actually check correctness and security, and every
-  lane's result lands for every PR at roughly the same time, not staggered
-  behind however long Format took. **Shell Lint** runs ShellCheck directly, its
-  own lane for the same one-owner-per-check reason as Go and Trivy below. **Validate** proves the code resolves: `tofu validate`
-  against a placeholder config, and `kustomize build` piped through
-  `kubeconform` with the Flux substitutions applied - Go vetting/building
-  lives here too, for the same reason. **Test** is the behaviour half of Validate: Go unit and
-  contract tests, `tofu test` against the fixture corpus, and the
-  JavaScript/TypeScript tier. Everything in it is hermetic, which is what
-  lets a fork's pull request run it in full without reaching a credential.
-  **Policy Scan** (Checkov), **Dockerfile Scan** (hadolint), **Workflow
-  Scan** (zizmor) and **Spelling** (codespell) are four lanes that were one
-  until #365: Super-Linter bundled them behind a single status, hung
-  intermittently for its whole timeout, and blocked three pull requests in two
-  days. Each tool is now pinned, owned by one lane, and names itself when it
-  fails. **Semgrep**, **Trivy** and **Secrets** are the security lanes, and
-  overlap with each other on purpose - none of them comes out.
+  included. The count is deliberately not written here: it was "eleven" and had
+  been thirteen since #408 added the two egress proofs, and a number in prose
+  goes stale the moment a lane is added (#429). Formatting is enforced locally
+  first (the git hook `./scripts/install-dependencies.sh` wires up via
+  `pre-commit install`) - shift left, catch it in seconds on the machine that
+  wrote it. **Format**'s CI lane, running the same `.pre-commit-config.yaml` as
+  that hook, exists as the backstop for whoever's local hook is missing or
+  bypassed: a fresh clone that skipped setup, or a bot/outside PR that never
+  touches a git hook at all. It does not gate the other lanes - a formatting
+  slip no longer delays or blocks the lanes that actually check correctness and
+  security, and every lane's result lands for every PR at roughly the same time,
+  not staggered behind however long Format took. **Shell Lint** runs ShellCheck
+  directly, its own lane for the same one-owner-per-check reason as Go and Trivy
+  below. **Validate** proves the code resolves: `tofu validate` against a
+  placeholder config, and `kustomize build` piped through `kubeconform` with the
+  Flux substitutions applied - Go vetting/building lives here too, for the same
+  reason. **Test** is the behaviour half of Validate: Go unit and contract
+  tests, `tofu test` against the fixture corpus, and the JavaScript/TypeScript
+  tier. Everything in it is hermetic, which is what lets a fork's pull request
+  run it in full without reaching a credential. **Policy Scan** (Checkov),
+  **Dockerfile Scan** (hadolint), **Workflow Scan** (zizmor) and **Spelling**
+  (codespell) are four lanes that were one until #365: Super-Linter bundled them
+  behind a single status, hung intermittently for its whole timeout, and blocked
+  three pull requests in two days. Each tool is now pinned, owned by one lane,
+  and names itself when it fails. **Semgrep**, **Trivy** and **Secrets** are the
+  security lanes, and overlap with each other on purpose - none of them comes
+  out.
 - `codeql.yml` — CodeQL on `actions`, the only language here it supports.
   Workflows are the part of this repository that runs with a token, so that is
   where a finding matters. Moved off GitHub's default setup so it is pinned and
@@ -623,12 +625,12 @@ full, including one from a fork. integration, api and e2e need a real estate
 and never run on a pull request.
 
 **The config contract is checked, not assumed.** `registry.tf` and
-`scripts/contractor/config/config.go` implement the same invariants twice, so a bad
-config is refused whether it arrives through the start button or a bare
-`tofu plan`. `modules/infrastructure/cluster/tests/fixtures/manifest.json` is the single
-corpus both sides are run against, and the contract tests fail if a case
-exists on one side and not the other. Adding an invariant means adding it in
-both places and adding a case to that manifest.
+`scripts/contractor/config/config.go` implement the same invariants twice, so a
+bad config is refused whether it arrives through the start button or a bare
+`tofu plan`. `modules/infrastructure/cluster/tests/fixtures/manifest.json` is
+the single corpus both sides are run against, and the contract tests fail if a
+case exists on one side and not the other. Adding an invariant means adding it
+in both places and adding a case to that manifest.
 
 **A test finds what it reads by what it declares, never by where it is.** A
 test that opens `management/<root>/talos.tf` or
@@ -665,7 +667,12 @@ floor a pull request may not drop below and is free to leave alone.
   apply to the buttons that guard a dangerous act - an environment's reviewer,
   a teardown's confirmation - which are wanted.
 
-- **Agree the design before building.** Work that adds a verb, a program, a file kind, a named role, or a new place something is declared starts as a proposal, not code. The proposal covers what is being built, the open decisions with two or three options each and their trade-offs, and a recommendation. Nothing is built until the operator agrees. A design question that turns up mid-build stops the build and becomes a question; it does not get answered in code.
+- **Agree the design before building.** Work that adds a verb, a program, a file
+  kind, a named role, or a new place something is declared starts as a proposal,
+  not code. The proposal covers what is being built, the open decisions with two
+  or three options each and their trade-offs, and a recommendation. Nothing is
+  built until the operator agrees. A design question that turns up mid-build
+  stops the build and becomes a question; it does not get answered in code.
 
 - **One role, one program.** The inspector is the party that checks work before
   it may be covered up, and it owns everything that does that: the

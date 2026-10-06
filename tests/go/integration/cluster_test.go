@@ -5,7 +5,7 @@
 // infrastructure the start button built, so a failing run is a report about
 // the cluster rather than a mess to clean up.
 //
-//	task render-secrets SITE=site0
+//	./toolshed/contractor build-site -site site0 -phase render -keep-on-failure
 //	go test -tags=integration -timeout 20m ./integration/...
 //	task clean-secrets SITE=site0
 //

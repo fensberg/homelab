@@ -291,6 +291,7 @@ func cachedRepos() ([]string, error) {
 			continue
 		}
 		dir := filepath.Join(root, e.Name())
+		// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 		// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 		cmd := exec.Command("git", "-C", dir, "remote", "get-url", "origin")
 		cmd.Env = withoutRepositoryLocation(os.Environ())

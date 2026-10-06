@@ -69,6 +69,7 @@ func TestEveryRootPlansFromNothingAndKeysNoResourceByAVaultValue(t *testing.T) {
 	// to a module before it merges, and it sees it as a site would run it.
 	// A file a module reads that the release does not hold is not there, and
 	// the plan fails on it here.
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	tracked, err := exec.Command("git", "-C", repo, "ls-files", "-z").Output()
 	if err != nil {

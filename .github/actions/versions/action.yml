@@ -54,6 +54,8 @@ runs:
       # constraint above. Passing a value from a file to later steps is what
       # this action is for; the answer is to bound what may be written,
       # which the pattern does, not to find another way to write anything.
+      # proved by TestEveryPinnedVersionCanActuallyBeExported, which holds
+      # the pattern to being here and every pin to matching it.
       run: | # zizmor: ignore[github-env]
         set -euo pipefail
         pins='^[A-Z][A-Z0-9_]*_VERSION=[A-Za-z0-9][A-Za-z0-9._+-]*$'

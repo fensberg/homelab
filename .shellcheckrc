@@ -1,0 +1,11 @@
+# ShellCheck's settings for this repository.
+#
+# Follow a file a script sources. Without it ShellCheck notes that it did not
+# look (SC1091) and checks the script as though the variables the file sets
+# came from nowhere; the one script that sources scripts/versions.env used to
+# silence that note. With it, the sourced file is read and checked too.
+#
+# This file can also switch a check off for everything, with `disable=`.
+# tests/silencers.yml lists it for that reason: an entry would need the guard
+# that proves it.
+external-sources=true

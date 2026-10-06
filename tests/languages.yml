@@ -120,6 +120,8 @@ governed:
     read_by: "prettier, on every pre-commit run."
   - kind: ".codespellrc"
     read_by: "codespell, in task lint and the slow lane."
+  - kind: ".shellcheckrc"
+    read_by: "ShellCheck, wherever it runs: the Shell Lint lane and on a workstation."
   - kind: ".gitattributes"
     read_by: "git, on every checkout and diff."
   - kind: "CODEOWNERS"

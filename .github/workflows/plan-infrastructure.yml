@@ -131,7 +131,7 @@ jobs:
             storage.googleapis.com:443
 
       - name: Read pinned versions
-        uses: ./.github/actions/versions
+        uses: $/.github/actions/versions
 
       - name: Setup Go
         uses: $/.github/workflows/setup-go

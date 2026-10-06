@@ -90,6 +90,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # a version that is deliberately not receiving those updates. The versions that
 # actually decide what contractor does (the runner, tofu, rclone, kubectl) are
 # pinned explicitly, from release artefacts that do not disappear.
+# proved by TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
 # hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -100,6 +101,7 @@ RUN apt-get update \
 # install-dependencies.sh uses. Pinned by the repository's own release stream
 # rather than a version argument, because that is how the vendor ships it.
 #
+# proved by TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
 # hadolint ignore=DL3008
 RUN install -d -m 0755 /usr/share/keyrings \
     && curl -fsSL https://downloads.1password.com/linux/keys/1password.asc \

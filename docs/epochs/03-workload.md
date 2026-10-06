@@ -115,11 +115,11 @@ replace.
 
 **It also changes what a new device on the mesh means.** With an allow-all
 policy there is no such thing as a device with limited reach, so any machine
-appearing on the overlay - a cousin's computer, a rebuilt laptop, anything -
-has full access from the moment it joins. `scripts/contractor/internal/survey` reports untagged
-devices against a baseline for exactly this reason, and the reason it treats a
-new one as worth stopping for rather than logging is that there is currently no
-weaker position for such a device to be in.
+appearing on the overlay - a cousin's computer, a rebuilt laptop, anything - has
+full access from the moment it joins. `scripts/contractor/internal/survey`
+reports untagged devices against a baseline for exactly this reason, and the
+reason it treats a new one as worth stopping for rather than logging is that
+there is currently no weaker position for such a device to be in.
 
 Narrowing the policy is not this epoch's work, but it is a prerequisite of the
 epoch that puts anything on the internet, and it belongs on the same list as
@@ -1047,11 +1047,12 @@ backup pod on the node already holding it. Two pods on one node both mount it.
 
 ### What the nearest neighbour does, and what this tier takes from it
 
-From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on 2026-09-11: Talos, OpenTofu, Flux, Cilium, CloudNativePG and a Valheim server
-on the same stack, about seventeen hundred pull requests further along. Each
-item says where this estate stands now. Upgrades in place are in
-[05-node-lifecycle.md](05-node-lifecycle.md), the versions file and Renovate
-in [06-consolidation.md](06-consolidation.md), and the separate root for what
+From [ionfury/homelab](https://github.com/ionfury/homelab), read at `150097e` on
+2026-09-11: Talos, OpenTofu, Flux, Cilium, CloudNativePG and a Valheim server on
+the same stack, about seventeen hundred pull requests further along. Each item
+says where this estate stands now. Upgrades in place are in
+[05-node-lifecycle.md](05-node-lifecycle.md), the versions file and Renovate in
+[06-consolidation.md](06-consolidation.md), and the separate root for what
 outlives a cluster was built as the estate root in
 [02-abstraction.md](02-abstraction.md).
 
@@ -1287,7 +1288,9 @@ change, and does the directory the job would enter exist - and was run against
 five scenarios before it shipped.
 
 The same workflow's converge-failure path pushed a revert branch and never
-opened the pull request for it, which left a branch nothing explained. That is issue 380, filed rather than fixed here because the fix needs its own token decision.
+opened the pull request for it, which left a branch nothing explained. That is
+issue 380, filed rather than fixed here because the fix needs its own token
+decision.
 
 #### The refuse collector worked; nothing ran it
 
@@ -1485,10 +1488,11 @@ They are now one item, `op://homelab/valheim/name`, used for both.
 
 **The Secret still carries two keys.** The server takes the listing name and the
 save-file name as separate arguments, and the image has no business knowing that
-this estate happens to supply one value for both. Splitting them again later is a
-config change that touches nothing here and nothing in the image. What collapsed
-is the source, not the interface - which is the distinction worth keeping, because
-collapsing the interface would have been the easier and worse change.
+this estate happens to supply one value for both. Splitting them again later is
+a config change that touches nothing here and nothing in the image. What
+collapsed is the source, not the interface - which is the distinction worth
+keeping, because collapsing the interface would have been the easier and worse
+change.
 
 #### The hazard in this change is the world, and it is worth stating
 
@@ -2067,19 +2071,20 @@ sitting behind an exclusion list nobody could see, and one true finding was
 sitting behind a lane that hung.
 
 **hadolint found a workaround this repository had documented twice and never
-removed.** `DL3066` objects to a non-numeric `USER`, and the runner image used the
-name `runner`. That is not cosmetic here: the kubelet cannot prove a name is not
-root, so it refuses a pod with `runAsNonRoot: true` and a named image user - which
-is exactly why `runner-scale-set.yaml` pins `runAsUser: 1001` by hand, and says so
-in a comment, three blocks below another comment explaining that the listener
-container needs no such pin because _its_ image's USER is already numeric. The
-estate had reasoned it out correctly in both directions and left the image alone.
-The Dockerfile now declares `USER 1001`, and the build-time assertion that the
-account's uid is still 1001 is what makes that safe - `runner` is upstream's
-account and upstream may renumber it, so a name would follow that silently while
-the assertion fails loudly. The manifest's pin stays until the digest is bumped
-to an image built from this Dockerfile; dropping it before then would stop the
-runner starting, so #389 carries that follow-up and the order it needs.
+removed.** `DL3066` objects to a non-numeric `USER`, and the runner image used
+the name `runner`. That is not cosmetic here: the kubelet cannot prove a name is
+not root, so it refuses a pod with `runAsNonRoot: true` and a named image user -
+which is exactly why `runner-scale-set.yaml` pins `runAsUser: 1001` by hand, and
+says so in a comment, three blocks below another comment explaining that the
+listener container needs no such pin because _its_ image's USER is already
+numeric. The estate had reasoned it out correctly in both directions and left
+the image alone. The Dockerfile now declares `USER 1001`, and the build-time
+assertion that the account's uid is still 1001 is what makes that safe -
+`runner` is upstream's account and upstream may renumber it, so a name would
+follow that silently while the assertion fails loudly. The manifest's pin stays
+until the digest is bumped to an image built from this Dockerfile; dropping it
+before then would stop the runner starting, so #389 carries that follow-up and
+the order it needs.
 
 **The two workflow linters in this repository disagree, and the disagreement is
 not resolvable yet.** zizmor's `self-repository` audit wants GitHub's `$/` syntax

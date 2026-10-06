@@ -109,6 +109,7 @@ func unsignedCommits(from, to string) ([]string, error) {
 		args = []string{"log", "--format=%H", to, "--not", "--remotes=origin"}
 	}
 
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	out, err := exec.Command("git", args...).Output()
 	if err != nil {
@@ -132,6 +133,7 @@ func unsignedCommits(from, to string) ([]string, error) {
 // Both spellings are checked: `gpgsig` for the commit's own signature and
 // `gpgsig-sha256` for the object-format variant.
 func hasSignature(sha string) (bool, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	out, err := exec.Command("git", "cat-file", "commit", sha).Output()
 	if err != nil {

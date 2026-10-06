@@ -8,8 +8,6 @@ it at all.
 
 ## The tiers
 
-<!-- prettier-ignore-start -->
-
 | Tier            | Answers                                                                   | May touch                       | Runs on a PR |
 | --------------- | ------------------------------------------------------------------------- | ------------------------------- | ------------ |
 | **unit**        | Does this function do what it says?                                       | Nothing outside the process     | Yes          |
@@ -20,8 +18,6 @@ it at all.
 | **integration** | Does the built estate still look right, and did last night's backup work? | A real, already-built estate    | No           |
 | **api**         | Does the vendor's API still behave as assumed?                            | A real vendor API               | No           |
 | **e2e**         | Can this build an estate from nothing?                                    | Creates and destroys real infra | No           |
-
-<!-- prettier-ignore-end -->
 
 **This table is data, not prose.** `TestTheDeclaredTiersAreTheMeasuredOnes`
 reads the bold name in each row and requires it to match the tiers
@@ -97,11 +93,11 @@ counts - so that a bad config is refused whether it arrives through the start
 button or through a bare `tofu plan`. Defence in depth is only defence while
 both halves say the same thing, and nothing about the languages forces that.
 
-`modules/infrastructure/cluster/tests/fixtures/manifest.json` is the index that makes them
-agree. Every case in it is run twice: through `registry.tftest.hcl` on the HCL
-side and through `contract_test.go` on the Go side. The tests also check the
-corpus itself - a fixture added to one side and forgotten on the other fails
-the build rather than quietly halving its own coverage.
+`modules/infrastructure/cluster/tests/fixtures/manifest.json` is the index that
+makes them agree. Every case in it is run twice: through `registry.tftest.hcl`
+on the HCL side and through `contract_test.go` on the Go side. The tests also
+check the corpus itself - a fixture added to one side and forgotten on the other
+fails the build rather than quietly halving its own coverage.
 
 **To add a case:** write the fixture, add an entry to `manifest.json`, and add
 a `run` block of the same name to `registry.tftest.hcl`. Leaving out any of
@@ -224,26 +220,25 @@ task test:e2e          # DESTRUCTIVE. See below.
 ```
 
 The three below the gap read `config/management.rendered.json`, the same file
-the start button reads. So the setup step is `task render-secrets` and the
+the start button reads. So the setup step is the render phase and the
 teardown is `task clean-secrets` - no separate secret plumbing exists for
 tests, and nothing is left on disk that ignite would not have left there.
 
-> **A wrinkle worth knowing.** `contractor build-site -phase render` sterilizes the workspace
-> on the way out, which deletes the config it just wrote. Pass
-> `-keep-on-failure` to stop it:
-> `./toolshed/contractor build-site -site site0 -phase render -keep-on-failure`.
-> The flag name describes the failure path rather than this one; see
-> `docs/ideas.md`.
+> **A wrinkle worth knowing.** `contractor build-site -phase render` sterilizes
+> the workspace on the way out, which deletes the config it just wrote. Pass
+> `-keep-on-failure` to stop it: `./toolshed/contractor build-site -site site0
+-phase render -keep-on-failure`. The flag name describes the failure path
+> rather than this one; see `docs/ideas.md`.
 
-**Tearing an estate down** is `contractor demolish-site`, which is what the e2e tier
-calls and what a human should call. It renders the config first - that is the
-credential check, not a formality: without a 1Password session there is no
-Proxmox token and no hypervisor endpoint, so somebody with a terminal and a
-copy of this repository can run it all day and destroy nothing. `-confirm`
-must name the site's key again, and the command then asks for the site's real
-name as its vault holds it, which guards against the wrong site in the hands
-of somebody who _does_ hold the credentials. A person types it; the e2e tier
-reads it from the vault and hands it in on standard input.
+**Tearing an estate down** is `contractor demolish-site`, which is what the e2e
+tier calls and what a human should call. It renders the config first - that is
+the credential check, not a formality: without a 1Password session there is no
+Proxmox token and no hypervisor endpoint, so somebody with a terminal and a copy
+of this repository can run it all day and destroy nothing. `-confirm` must name
+the site's key again, and the command then asks for the site's real name as its
+vault holds it, which guards against the wrong site in the hands of somebody who
+_does_ hold the credentials. A person types it; the e2e tier reads it from the
+vault and hands it in on standard input.
 
 ```sh
 task destroy SITE=site0     # prints the command; does not run it

@@ -21,6 +21,7 @@ name: Duty
 # name, conclusion, event and address - no checkout, no artifact, no head
 # branch - and the job can do one thing, which is write issues.
 on:
+  # proved by TestAWorkflowStartedByAnotherTakesNothingFromItButItsOutcome
   workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows:
       - CodeQL

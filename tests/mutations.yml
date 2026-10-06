@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 195
+floor: 207
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1188,15 +1188,14 @@ mutations:
 
   - guard: TestMeasuringTheHostChangesAllThreeHalvesTogether
     file: management/hypervisor/hypervisor-prep.yml
-    find: "--web.listen-address={{ sdn_gateway }}:9100"
-    replace: "--web.listen-address=:9100"
-    mentions: "not told to listen on the site's gateway alone"
+    find: "--web.listen-address={{ ansible_host }}:9100"
+    replace: "--web.listen-address={{ sdn_gateway }}:9100"
+    mentions: "not told to listen on the host's own address"
     why: >
-      The exporter has no authentication. Bound to every address, it answers
-      on the LAN the hypervisor sits on as readily as on the site's own
-      network, and nothing else in the playbook would say so: the service
-      starts, the scrape is green, and the host's facts are open to the
-      building.
+      The address this was first given. The site's gateway is inside the
+      zone's VRF, so the exporter cannot answer on it and nothing on the host
+      can reach it: the playbook's own check waited on a connection that never
+      opened, twice, before anybody knew why.
 
   - guard: TestMeasuringTheHostChangesAllThreeHalvesTogether
     file: management/hypervisor/hypervisor-prep.yml
@@ -1219,6 +1218,146 @@ mutations:
       another. Every manifest is valid and nothing fails until Prometheus
       refuses the exporter's certificate on the estate, which reads there as
       a host that is down.
+  - guard: TestEveryToolThatArrivesSaysHowItIsSilenced
+    file: tests/silencers.yml
+    find: "arrives_as: [CHECKOV_VERSION]"
+    replace: "arrives_as: []"
+    mentions: "has not heard of"
+    why: >
+      The scanner is still pinned and still runs, and nothing now says how it
+      is silenced. Its marks are still listed, so today nothing would be
+      missed; the entry that goes missing next is the one for a scanner
+      added tomorrow, whose mark nothing has ever looked for.
+
+  - guard: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
+    file: modules/infrastructure/platform/database.tf
+    find: "a format, proved by TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn"
+    replace: "a format, with no credential written in it"
+    mentions: "names no guard"
+    why: >
+      The sentence is as plausible as it was and the scan is as quiet. What
+      is gone is the only thing that made it more than a sentence: the guard
+      that fails if a credential is ever written into that string.
+
+  - guard: TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
+    file: scripts/details/repopath/repopath.go
+    find: 'exec.Command("git", "-C", root, "remote", "get-url", "origin")'
+    replace: 'exec.Command(os.Getenv("GIT"), "-C", root, "remote", "get-url", "origin")'
+    mentions: "worked out at run time"
+    reads_source: true
+    why: >
+      The sentence is as plausible as it was and the scan is as quiet. What
+      is gone is the only thing that made it more than a sentence: the guard
+      that fails if the image ever stops starting from a pinned base.
+
+  - guard: TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
+    file: .checkov.yaml
+    find: "  - (^|/)tests/"
+    replace: "  - tests"
+    mentions: "integration-tests.yml"
+    why: >
+      This is the exclusion as it was written, and what it cost. The pattern
+      is searched for anywhere in a path, so excusing the test trees also
+      excused a workflow with "tests" in its name, and a finding in that
+      workflow went unreported for as long as the line stood.
+
+  - guard: TestAWordCodespellAcceptsIsOnlyEverWrittenAsCode
+    file: docs/epochs/01-ignition.md
+    find: "    ip route get 10.10.10.1 from <workstation> iif tailscale0"
+    replace: "ip route get 10.10.10.1 from <workstation> iif tailscale0"
+    mentions: "in a sentence"
+    why: >
+      Four spaces fewer and the command is a paragraph. The word codespell
+      was told to accept as a flag's name is now prose, which is the case
+      the acceptance was never for.
+
+  - guard: TestAWorkflowThatTakesInputsCanPublishNothing
+    file: .github/workflows/integration-tests.yml
+    find: "permissions:\n  contents: read\n\n# One at a time."
+    replace: "permissions:\n  contents: write\n\n# One at a time."
+    mentions: "may write contents"
+    why: >
+      The workflow still takes which tier and which site from whoever
+      dispatches it, and can now push. That is the arrangement the excused
+      rule exists to refuse, and the rule is excused for the whole
+      repository on the strength of this.
+
+  - guard: TestAWorkflowStartedByAnotherTakesNothingFromItButItsOutcome
+    file: .github/workflows/duty.yml
+    find: '          checkout: "false"'
+    replace: '          checkout: "true"'
+    mentions: "does not tell its first step to check nothing out"
+    why: >
+      The workflow runs with the default branch's token for whatever run it
+      watches, a fork's pull request included. With a checkout, that run's
+      branch is on a privileged runner, which is the whole of what zizmor's
+      warning about the trigger is for, and the warning is silenced on the
+      strength of this.
+
+  - guard: TestEverySelfRepositoryReferenceNamesAnActionThatIsHere
+    file: .github/workflows/duty.yml
+    find: "uses: $/.github/workflows/mobilize"
+    replace: "uses: $/.github/workflows/mobilise"
+    mentions: "there is no action there"
+    why: >
+      One letter, in a form actionlint is told to pass without reading. The
+      workflow is valid YAML and every linter is quiet; the job fails to
+      start, on a schedule, the next time something it watches finishes.
+
+  - guard: TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
+    file: .github/runner-image/Dockerfile
+    find: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}@sha256:"
+    replace: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION} #"
+    mentions: "which is not pinned by digest"
+    why: >
+      The packages this image installs are unpinned on purpose, and hadolint
+      is silenced about it on the ground that the base underneath them cannot
+      move. On a tag it can: the same Dockerfile then builds from whatever
+      the tag was last pointed at, with unpinned packages on top.
+
+  - guard: TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn
+    file: modules/infrastructure/platform/database.tf
+    find: '"postgres://%s:%s@%s:%d/%s?sslmode=require",'
+    replace: '"postgres://tofu:%s@%s:%d/%s?sslmode=require",'
+    mentions: "user part is not a placeholder"
+    why: >
+      A name written into a string the secrets scanner is told to pass as a
+      format. Today it would be a user name; the same edit with a password in
+      it is silenced by the same comment, and that is the string the scanner
+      exists to find.
+
+  - guard: TestAContainerWithNoCPULimitReservesCPUAndIsLimitedInMemory
+    file: clusters/core/infrastructure/controllers/cloudflared.yaml
+    find: "              cpu: 50m"
+    replace: "              ephemeral-storage: 1Gi"
+    mentions: "has no CPU limit and reserves no CPU"
+    why: >
+      Checkov's rule about CPU limits is off for the whole repository, on the
+      ground that the request is what protects a node. A container with
+      neither is BestEffort for CPU among neighbours that reserved theirs,
+      and with the rule off nothing else would say so.
+
+  - guard: TestNoSecretIsWrittenInTheTree
+    file: clusters/core/infrastructure/controllers/cloudflared.yaml
+    find: "kind: NetworkPolicy"
+    replace: "kind: Secret"
+    mentions: "is a Secret, written in the repository"
+    why: >
+      A Secret in a manifest is a credential in a public repository. Checkov's
+      rule about how secrets reach a workload is off on the ground that every
+      one comes from the vault, so a Secret committed here is exactly what
+      that reasoning assumes cannot exist.
+
+  - guard: TestEveryImageBuiltHereIsRunByAManifestHere
+    file: clusters/core/infrastructure/configs/runner-scale-set.yaml
+    find: "image: ghcr.io/fensberg/homelab-runner@sha256:"
+    replace: "image: ghcr.io/actions/somebody-elses@sha256:"
+    mentions: "no manifest here runs one"
+    why: >
+      The estate's runners now run the publisher's image and the one built
+      here is run by nothing in this repository. Wherever it does run, the
+      HEALTHCHECK checkov is told not to ask for may be the only health check
+      there is.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml
@@ -1889,30 +2028,16 @@ mutations:
       written only by ordering. Before #416 this key was exported and
       consumed, and the lane trusted whatever it said.
 
-  - guard: TestZizmorExemptionsAreStillEarned
-    file: .github/zizmor.yml
-    find: "      - clerk.yml"
-    replace: "      - codeql.yml"
-    mentions: "no longer uses a relative"
+  - guard: TestNoWorkflowReachesALocalActionByARelativePath
+    file: .github/workflows/clerk.yml
+    find: "uses: $/.github/actions/versions"
+    replace: "uses: ./.github/actions/versions"
+    mentions: "reaches a local action with a relative"
     why: >
-      A suppressed finding is invisible by construction, so an exemption that
-      has stopped being about anything is the one kind of debt nothing in CI can
-      report. The self-repository block exists only because actionlint refuses
-      the syntax zizmor asks for; when actionlint ships a release that accepts
-      it, the block becomes pure debt and this guard is the only thing that
-      would ever say so.
-
-  - guard: TestEveryRelativeActionReferenceIsAccountedFor
-    file: .github/zizmor.yml
-    find: "      - clerk.yml"
-    replace: "      # - clerk.yml"
-    mentions: "is not listed in .github/zizmor.yml"
-    why: >
-      A workflow reaching the local composite action without an entry here fails
-      the Workflow Scan lane, which is correct but is a CI-only discovery -
-      zizmor is not installed on every machine that can run `task test`. This
-      names the file locally in seconds instead, which is the difference between
-      a push-and-wait cycle and an edit.
+      The form twelve workflows used until zizmor's exemption for it was
+      removed. It reads the action out of the workspace, so it depends on a
+      checkout having happened and runs the checkout's copy; with no exemption
+      left, the Workflow Scan lane fails on it, and this says so before a push.
 
   - guard: TestEveryDependabotEcosystemGroupsItsUpdates
     file: .github/dependabot.yml
@@ -2355,7 +2480,7 @@ mutations:
           - name: Checkout
             uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
           - name: Export pinned versions
-    mentions: "(inside ./.github/actions/versions)"
+    mentions: "(inside $/.github/actions/versions)"
     why: >
       Moving checkout into a composite action must not be a way to stop this
       rule applying. A job that calls an action which checks out has checked
@@ -3112,4 +3237,10 @@ unprovable:
 #
 # An entry here is an exemption, so it costs what an exemption costs: a reason
 # somebody can read later.
-comment_dependent: []
+comment_dependent:
+  - test: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
+    reason: >
+      The comment is its subject. A tool's own configuration cannot carry a
+      reason anywhere else, so the guard a silenced entry names is written in
+      the comment above that entry, and a copy with the comments stripped is
+      a copy in which every such entry names nothing.

@@ -82,3 +82,19 @@ func TestTheClusterAndUntrustedImagesAreNeverConfused(t *testing.T) {
 		}
 	}
 }
+
+// The hypervisor's API is asked nothing by a client that could not tell it
+// from an impostor. With no authority to verify it against, the question is
+// not sent: it used to be, with verification off, and the API token with it.
+func TestTheHypervisorIsNotAskedAnythingWithoutItsAuthority(t *testing.T) {
+	node := config.Node{Hostname: "a-node", IP: "192.0.2.10", Datastores: config.Datastores{Images: "a-datastore"}}
+	for name, authority := range map[string]string{"none": "", "not one": "operator"} {
+		hv := config.Hypervisor{TokenID: "an-id", TokenSecret: "a-secret", Authority: authority}
+		if _, err := listDatastoreVolumes(hv, node); err == nil || !strings.Contains(err.Error(), "authority") {
+			t.Errorf("with %s for an authority, the datastore was asked: %v", name, err)
+		}
+		if err := deleteDatastoreFile(hv, node, "a-datastore:iso/an-image.img"); err == nil || !strings.Contains(err.Error(), "authority") {
+			t.Errorf("with %s for an authority, a delete was sent: %v", name, err)
+		}
+	}
+}
