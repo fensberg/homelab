@@ -1,7 +1,6 @@
 package phases
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"homelab/details/tcp"
@@ -15,6 +14,7 @@ import (
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
 	"homelab/contractor/steps"
+	"homelab/details/hypervisorapi"
 	"homelab/details/onepassword"
 )
 
@@ -79,6 +79,27 @@ func Compute(ctx *run.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// What vouches for the hypervisor's API. Read here, like the SSH
+	// credential above and for the same reason: the Hypervisor phase is what
+	// puts it in the vault, and on a new site that is after Render.
+	//
+	// Refused when it is not there, and not worked around: without it the
+	// only way to reach the API is to believe whatever answers, which is how
+	// this used to be done.
+	authority, err := onepassword.Read(hypervisorapi.AuthorityRef(ctx.Site))
+	if err != nil {
+		return fmt.Errorf(`the vault does not hold the authority this site's hypervisor answers under (%s).
+
+The Hypervisor phase reads it off the host and stores it. Run that first:
+
+    task configure-hypervisor SITE=%s
+
+Nothing has been changed. (%w)`, hypervisorapi.AuthorityRef(ctx.Site), ctx.Site, err)
+	}
+	site := cfg.Sites[ctx.Site]
+	site.Hypervisor.Authority = authority
+	cfg.Sites[ctx.Site] = site
 
 	if err := reclaimOrphanedDiskImage(ctx, cfg, net); err != nil {
 		return err
@@ -192,12 +213,9 @@ Delete it by hand and re-run:
 // download started while the delete is still running fails exactly the way the
 // orphan did.
 func deleteDatastoreFile(hv config.Hypervisor, node config.Node, volID string) error {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		// Same self-signed endpoint versions.tf already accepts with
-		// insecure = true; see listDatastoreVolumes below.
-		// nosemgrep: problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification.bypass-tls-verification
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}, //nolint:gosec
+	client, err := hypervisorapi.Client(hv.Authority, node.Hostname, 30*time.Second)
+	if err != nil {
+		return err
 	}
 
 	url := datastoreFileURL(node, volID)
@@ -273,16 +291,12 @@ func imagePrefix(node config.Node, image string) string {
 // Proxmox API - not through Terraform, which cannot answer "does this exist"
 // without already having it in state.
 func listDatastoreVolumes(hv config.Hypervisor, node config.Node) ([]string, error) {
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		// InsecureSkipVerify is deliberate, not a bug: this hits the same
-		// self-signed Proxmox endpoint versions.tf's own provider config
-		// already accepts with insecure = true. Skipping verification here
-		// too keeps this one Go call consistent with that existing,
-		// already-accepted decision rather than silently enforcing a
-		// stricter policy in one code path than the rest of the project does.
-		// nosemgrep: problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification.bypass-tls-verification
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}, //nolint:gosec
+	// Verified against the hypervisor's own authority. This used to skip
+	// verification, as the provider still does, and sent the API token to
+	// whatever answered at the address.
+	client, err := hypervisorapi.Client(hv.Authority, node.Hostname, 15*time.Second)
+	if err != nil {
+		return nil, err
 	}
 
 	url := datastoreContentURL(node)

@@ -27,12 +27,16 @@
 package harness
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"homelab/contractor/config"
+	"homelab/details/hypervisorapi"
+	"homelab/details/onepassword"
 	"homelab/details/repopath"
 )
 
@@ -235,4 +239,26 @@ func ControlPlaneIP(t *testing.T, i int) string {
 		t.Fatalf("control-plane index %d is outside this site's %d node(s)", i, len(ips))
 	}
 	return ips[i]
+}
+
+// HypervisorClient reaches the hypervisor's API as the contractor does:
+// verified against the authority the site's vault holds for it, and expecting
+// the first node's own certificate.
+//
+// The tiers that talk to the hypervisor used to switch verification off, on
+// the ground that the contractor did. It no longer does, and a test that kept
+// doing so would send the API token to whatever answered at the address.
+func HypervisorClient(t *testing.T, timeout time.Duration) *http.Client {
+	t.Helper()
+	node := FirstHypervisorNode(t)
+	authority, err := onepassword.Read(hypervisorapi.AuthorityRef(Site()))
+	if err != nil {
+		t.Fatalf("the vault does not hold the hypervisor's authority (%s), so its API cannot be verified. "+
+			"The hypervisor phase stores it: task configure-hypervisor SITE=%s\n%v", hypervisorapi.AuthorityRef(Site()), Site(), err)
+	}
+	client, err := hypervisorapi.Client(authority, node.Hostname, timeout)
+	if err != nil {
+		t.Fatalf("the hypervisor's authority in the vault cannot be used: %v", err)
+	}
+	return client
 }

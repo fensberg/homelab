@@ -187,6 +187,12 @@ type Hypervisor struct {
 	TokenID       string          `json:"token_id"`
 	TokenSecret   string          `json:"token_secret"`
 	Nodes         map[string]Node `json:"nodes"`
+
+	// Authority is the certificate the hypervisor's API certificate is signed
+	// by, as the vault keeps it. Not in the config: the hypervisor phase puts
+	// it in the vault, which on a new site is after the config is first
+	// rendered, so it is read where it is needed and set here.
+	Authority string `json:"-"`
 }
 
 type Node struct {

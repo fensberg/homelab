@@ -414,3 +414,31 @@ exec `+filepath.Join(f.dir, "tofu")+` "$@"
 		}
 	}
 }
+
+// --- machines are not built on a hypervisor nothing vouches for ---------------
+
+// The Compute phase reads what vouches for the hypervisor before it reaches
+// for it. A site whose vault does not hold that yet is told which phase puts
+// it there, and nothing is applied.
+func TestMachinesAreNotBuiltBeforeTheHypervisorsAuthorityIsInTheVault(t *testing.T) {
+	f := newVerbFixture(t)
+	programOnPath(t, "op", `case "$2" in
+  */hypervisor/authority) echo "[ERROR] that item has no such field" >&2; exit 1 ;;
+  *ssh_private_key) printf -- '-----BEGIN KEY-----\nbody\n-----END KEY-----\n' ;;
+  *) echo operator ;;
+esac
+`)
+	err := Compute(f.ctx)
+	if err == nil {
+		t.Fatal("machines were built on a hypervisor nothing vouches for")
+	}
+	for _, want := range []string{"task configure-hypervisor SITE=site0", "Nothing has been changed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q:\n%v", want, err)
+		}
+	}
+	tofu, _ := f.calls(t)
+	if first(tofu, func(c call) bool { return strings.HasPrefix(c.args, "apply") }) >= 0 {
+		t.Error("something was applied before the refusal")
+	}
+}

@@ -14,7 +14,6 @@ package api_test
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,20 +27,6 @@ import (
 	"homelab/tests/harness"
 )
 
-// hypervisorClient mirrors the one in scripts/contractor/internal/phases/compute.go,
-// including its InsecureSkipVerify: Proxmox serves a self-signed certificate
-// and versions.tf's provider block already accepts it with insecure = true.
-// A test that verified the certificate would fail for a reason that has
-// nothing to do with what it is testing.
-func hypervisorClient() *http.Client {
-	return &http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}, //nolint:gosec
-		},
-	}
-}
-
 func getJSON(t *testing.T, url, authHeader string) (int, []byte) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -51,7 +36,7 @@ func getJSON(t *testing.T, url, authHeader string) (int, []byte) {
 	require.NoError(t, err, "building the request")
 	req.Header.Set("Authorization", authHeader)
 
-	resp, err := hypervisorClient().Do(req)
+	resp, err := harness.HypervisorClient(t, 15*time.Second).Do(req)
 	require.NoError(t, err, "the hypervisor API is unreachable from this runner")
 	defer resp.Body.Close()
 

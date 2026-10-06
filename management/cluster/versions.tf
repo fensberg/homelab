@@ -14,7 +14,14 @@ provider "proxmox" {
   # Credentials are per-site because two sites are two separate clusters.
   endpoint  = "https://${local.hypervisors[0].ip}:8006/"
   api_token = "${local.site.hypervisor.token_id}=${local.site.hypervisor.token_secret}"
-  insecure  = true
+  # Still on, and the last place it is. The contractor and the test tiers
+  # verify the API against the hypervisor's own authority, expecting the
+  # node's name in its certificate (scripts/details/hypervisorapi). This
+  # provider cannot be told either: it trusts the system's roots, and it is
+  # given the node by address. Switching this off needs the authority added
+  # to what the process trusts and the node's certificate to list the address
+  # it is reached at, and the second has not been read off a host yet.
+  insecure = true
 
   # Unlike the ssh block below, this stays sourced from local.config
   # (Render's ordinary op-inject pass) rather than a targeted read in the
