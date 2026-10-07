@@ -681,8 +681,33 @@ Everything else stayed under 0.1 GiB and 0.01 cores.
   reporting a resource it rejected, for about a day, and the inhibitor for
   informational alerts, for about eleven hours.
 
-Not in this: memory by machine, which the first query for it returned
-nothing for.
+Memory in use by machine over the same window, as each machine's own
+exporter reports it:
+
+| Machine         | Peak | Average |
+| --------------- | ---- | ------- |
+| the hypervisor  | 81%  | 80%     |
+| control plane 0 | 59%  | 55%     |
+| control plane 2 | 49%  | 46%     |
+| control plane 1 | 45%  | 42%     |
+| worker 0        | 35%  | 33%     |
+| worker 2        | 21%  | 18%     |
+| worker 1        | 20%  | 19%     |
+
+- **The machines are a long way from full and the host under them is not.**
+  No worker passed 35% and no control plane 60%, while the hypervisor sat at
+  80% without moving. What the host holds is what the machines were given,
+  not what they use - and, on this host, the filesystem's cache, which this
+  reading counts as used though it is given back on demand (criterion 2
+  takes it off separately for that reason). So the room this epoch is after
+  is inside the machines: in what is reserved against what is used
+  (criterion 6), and in sizes that are derived and not given (criterion 3).
+  The hypervisor's figures are from one day; it was not measured before.
+- **The resource the operator rejected was a scrape configuration,** and the
+  estate declares one: the hypervisor's. It was rejected for about a day,
+  which is the length of time between its manifest reaching the cluster
+  from `main` and the site running the release that writes the Secret it
+  reads (#618). Nothing is rejected now.
 
 **Worth keeping for as long as what it describes is alive.** The ruling that
 replaced the one below, on 2026-10-06, when the first design for criterion 11
