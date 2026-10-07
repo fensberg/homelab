@@ -181,11 +181,14 @@ func backupRoot(ctx *run.Context, backups config.StateBackups, recipient, stamp 
 	// infrastructure and platform - and each wants its own folder here, so
 	// flattening now would only have to be undone. See 02-abstraction.md.
 	dest := backups.Folder
-	run.Info(fmt.Sprintf("uploading to %s/%s.tfstate.age", dest, stamp))
+	// What it is and when, and not where. A bucket is named for the
+	// organisation and the site, both vault values, and this line is public
+	// wherever a converge runs in Actions (#651).
+	run.Info(fmt.Sprintf("uploading the %s root's state backup, taken %s", ctx.Name, stamp))
 	if err := run.CmdEnv(ctx.Dir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, fmt.Sprintf("%s/%s.tfstate.age", dest, stamp)); err != nil {
 		return fmt.Errorf("rclone upload (timestamped): %w", err)
 	}
-	run.Info("updating " + backups.Latest)
+	run.Info("updating the copy a restore reads first")
 	if err := run.CmdEnv(ctx.Dir, rcloneEnv, "rclone", "--log-level", "ERROR", "copyto", tmpCipher, backups.Latest); err != nil {
 		return fmt.Errorf("rclone upload (latest): %w", err)
 	}

@@ -101,7 +101,9 @@ func emptyObjectStorage(ctx *run.Context) {
 		run.Info("object storage is already empty")
 		return
 	}
-	run.Warn("emptying " + remote + " - " + summary)
+	// By its purpose, not its name: a bucket is named for the organisation
+	// and the site (#651).
+	run.Warn("emptying the " + database.Key + " bucket - " + summary)
 
 	if err := run.CmdEnv(ctx.Dir, env, "rclone", "--log-level", "ERROR", "delete", remote); err != nil {
 		run.Warn("could not empty " + remote + ": " + err.Error())
