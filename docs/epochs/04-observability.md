@@ -651,6 +651,39 @@ how much a computer needs. That's a dumb decision that needs no human
 intervention." What keeps it from a mistake is rules, not review.
 **Rejected:** a pull request for each resize.
 
+**The first measured baseline, read out before the history it came from was
+dropped.** Moving Prometheus onto a volume that outlives a machine loses the
+history on the old one, once. On 2026-10-07 it held 5.6 days, and this is
+what it said, by namespace, over that whole window:
+
+| Namespace     | Memory, peak | Memory, average | CPU, peak  | CPU, average |
+| ------------- | ------------ | --------------- | ---------- | ------------ |
+| `kube-system` | 3.98 GiB     | 3.64 GiB        | 0.30 cores | 0.21 cores   |
+| `valheim`     | 2.00 GiB     | 1.82 GiB        | 0.23 cores | 0.08 cores   |
+| `monitoring`  | 1.24 GiB     | 1.07 GiB        | 0.07 cores | 0.05 cores   |
+| `database`    | 0.31 GiB     | 0.18 GiB        | 0.08 cores | 0.01 cores   |
+| `arc-runners` | 0.30 GiB     | 0.19 GiB        | 2.00 cores | under 0.01   |
+| `flux-system` | 0.29 GiB     | 0.18 GiB        | 0.02 cores | under 0.01   |
+
+Everything else stayed under 0.1 GiB and 0.01 cores.
+
+- **The game server reserves four times the memory and seventeen times the
+  CPU it was seen to use:** 8 GiB and 4 cores asked for, 2 GiB and 0.23
+  cores at its peak. The request is the publisher's figure for a world that
+  has been explored and built on, and 5.6 days of one world is not that. It
+  is the measurement criterion 9 says replaces the estimate, and the size of
+  the gap behind #628; it is not yet a reason to change the number.
+- **History grows at about 0.4 GiB a day:** 2.32 GiB for 5.6 days, so
+  fifteen days is about 6 GiB. Above the 2-5 GiB the volume was sized from,
+  and a third of the 18 GiB at which Prometheus starts dropping its oldest.
+- **One container restarted once** in the window, the database operator.
+- **Two alerts fired besides the one that always does:** the operator
+  reporting a resource it rejected, for about a day, and the inhibitor for
+  informational alerts, for about eleven hours.
+
+Not in this: memory by machine, which the first query for it returned
+nothing for.
+
 **Worth keeping for as long as what it describes is alive.** The ruling that
 replaced the one below, on 2026-10-06, when the first design for criterion 11
 was costed against the storage vendor's free allowance. The operator's words:
