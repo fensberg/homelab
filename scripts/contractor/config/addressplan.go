@@ -15,22 +15,24 @@ import (
 // The address plan's answer for one site, as the module computes it
 // (modules/infrastructure/address-plan). Only the fields Go reads.
 type plannedSite struct {
-	Slug          string             `json:"slug"`
-	SiteCIDR      string             `json:"site_cidr"`
-	PodCIDR       string             `json:"pod_cidr"`
-	ServiceCIDR   string             `json:"service_cidr"`
-	NodeCIDR      string             `json:"node_cidr"`
-	NodeGateway   string             `json:"node_gateway"`
-	ASN           int                `json:"asn"`
-	VRFVNI        int                `json:"vrf_vni"`
-	VNetVNI       int                `json:"vnet_vni"`
-	VNet          string             `json:"vnet"`
-	TemplateVMID  int                `json:"template_vm_id"`
-	StateDatabase Endpoint           `json:"state_database"`
-	ControlPlanes map[string]machine `json:"control_planes"`
-	Workers       map[string]machine `json:"workers"`
-	DMZZones      map[string]zone    `json:"dmz_zones"`
-	DMZ           map[string]machine `json:"dmz"`
+	Slug         string `json:"slug"`
+	SiteCIDR     string `json:"site_cidr"`
+	PodCIDR      string `json:"pod_cidr"`
+	ServiceCIDR  string `json:"service_cidr"`
+	NodeCIDR     string `json:"node_cidr"`
+	NodeGateway  string `json:"node_gateway"`
+	ASN          int    `json:"asn"`
+	VRFVNI       int    `json:"vrf_vni"`
+	VNetVNI      int    `json:"vnet_vni"`
+	VNet         string `json:"vnet"`
+	TemplateVMID int    `json:"template_vm_id"`
+	// The untrusted zones' template, which exists only where a zone does.
+	DMZTemplateVMID int                `json:"dmz_template_vm_id"`
+	StateDatabase   Endpoint           `json:"state_database"`
+	ControlPlanes   map[string]machine `json:"control_planes"`
+	Workers         map[string]machine `json:"workers"`
+	DMZZones        map[string]zone    `json:"dmz_zones"`
+	DMZ             map[string]machine `json:"dmz"`
 }
 
 type machine struct {
@@ -39,6 +41,8 @@ type machine struct {
 	VMID      int    `json:"vm_id"`
 	Zone      string `json:"zone"`
 	HostOctet int    `json:"host_octet"`
+	// Hypervisor is the key, in the config, of the hypervisor it is on.
+	Hypervisor string `json:"hypervisor"`
 }
 
 type zone struct {

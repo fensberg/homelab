@@ -753,6 +753,23 @@ them. **Not read from the host's API,** because it is not there: how fast
 each network interface is, and the filesystem cache's own figures. Both
 are reported by the host's exporter and belong to the dashboards.
 
+**The hypervisor's budget, and each thing taken off it.** Before any run
+in the cluster root, what each hypervisor has is held against what the site
+asks of it, and a site that asks more is refused with the whole sum
+(`scripts/contractor/internal/budget`). From the host's memory come off:
+two gibibytes the hypervisor keeps for itself; its filesystem's cache, at a
+tenth of the host and never more than sixteen gibibytes, which is the
+hypervisor's own default; whatever is given to machines on it that are not
+the site's, templates aside; and one control plane's worth, so a machine
+can be replaced by a new one before the old one is gone. Every figure is
+printed with the answer, so a refusal can be argued with. **Not yet:** the
+cache is not held to that figure on the host, so that deduction is a
+default and not a fact until the playbook sets it; processors are not
+budgeted; a pull request's plan does not refuse, because it has no
+rendered config to count machines from, and takes this up with the
+capacity check (6); and the sizes are still the cluster module's, with a
+guard holding the budget's figures to them (#615).
+
 **Worth keeping for as long as what it describes is alive.** The ruling that
 replaced the one below, on 2026-10-06, when the first design for criterion 11
 was costed against the storage vendor's free allowance. The operator's words:

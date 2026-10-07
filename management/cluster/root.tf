@@ -83,7 +83,7 @@ variable "hardware" {
       cpu_model    = string
       gpus         = list(object({ vendor = string, device = string }))
       storages     = map(object({ type = string, total_bytes = number }))
-      machines     = list(object({ id = number, memory_bytes = number, cores = number }))
+      machines     = list(object({ id = number, memory_bytes = number, cores = number, is_template = optional(bool, false) }))
     }))
   })
   default     = null

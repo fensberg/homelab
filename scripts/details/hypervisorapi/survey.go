@@ -53,6 +53,9 @@ type Machine struct {
 	ID          int   `json:"id"`
 	MemoryBytes int64 `json:"memory_bytes"`
 	Cores       int   `json:"cores"`
+	// Template says it is a template: never started, so the memory it is
+	// given on paper is asked of nobody.
+	Template bool `json:"is_template"`
 }
 
 // displayClass is the PCI class every display controller is in: VGA, 3D and
@@ -145,13 +148,15 @@ func Survey(client *http.Client, base, node, auth string) (Host, error) {
 		VMID   int   `json:"vmid"`
 		MaxMem int64 `json:"maxmem"`
 		CPUs   int   `json:"cpus"`
+		// As the API spells it; the decoder matches the field by name.
+		Template int
 	}
 	if err := ask("/qemu", &machines); err != nil {
 		return host, err
 	}
 	host.Machines = []Machine{}
 	for _, m := range machines {
-		host.Machines = append(host.Machines, Machine{ID: m.VMID, MemoryBytes: m.MaxMem, Cores: m.CPUs})
+		host.Machines = append(host.Machines, Machine{ID: m.VMID, MemoryBytes: m.MaxMem, Cores: m.CPUs, Template: m.Template == 1})
 	}
 	sort.Slice(host.Machines, func(i, j int) bool { return host.Machines[i].ID < host.Machines[j].ID })
 	return host, nil

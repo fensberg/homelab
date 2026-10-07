@@ -38,7 +38,8 @@ var aHost = map[string]string{
 	  {"storage": "offline", "type": "nfs"}]}`,
 	"/qemu": `{"data": [
 	  {"vmid": 10200, "name": "a-name-with-the-site-in-it", "maxmem": 8, "cpus": 6},
-	  {"vmid": 105, "name": "somebody-elses", "maxmem": 4, "cpus": 2}]}`,
+	  {"vmid": 105, "name": "somebody-elses", "maxmem": 4, "cpus": 2},
+	  {"vmid": 900, "name": "a-template", "maxmem": 2, "cpus": 1, "template": 1}]}`,
 }
 
 func TestAHostIsReadAsWhatItHasAndNothingThatMoves(t *testing.T) {
@@ -56,8 +57,11 @@ func TestAHostIsReadAsWhatItHasAndNothingThatMoves(t *testing.T) {
 	if len(host.Datastores) != 1 || host.Datastores["disks"].TotalBytes != 1000 || host.Datastores["disks"].Type != "zfspool" {
 		t.Errorf("the datastores were read as %+v; one that reports no size holds nothing that can be budgeted", host.Datastores)
 	}
-	if len(host.Machines) != 2 || host.Machines[0].ID != 105 || host.Machines[1].MemoryBytes != 8 {
+	if len(host.Machines) != 3 || host.Machines[0].ID != 105 || host.Machines[2].MemoryBytes != 8 {
 		t.Errorf("the machines were read as %+v; every one on the host, in id order", host.Machines)
+	}
+	if host.Machines[0].Template || !host.Machines[1].Template {
+		t.Errorf("which machines are templates was read as %+v; a template is never started, and its memory is asked of nobody", host.Machines)
 	}
 }
 

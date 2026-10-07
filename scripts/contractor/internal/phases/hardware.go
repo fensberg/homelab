@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"homelab/contractor/config"
+	"homelab/contractor/internal/budget"
 	"homelab/contractor/internal/run"
 	"homelab/details/hypervisorapi"
 	"homelab/details/onepassword"
@@ -28,11 +29,25 @@ func handOverHardware(ctx *run.Context) error {
 	if os.Getenv(hardwareAsked) == ctx.Site {
 		return nil
 	}
-	hosts, err := surveyHosts(ctx)
+	hosts, site, err := surveySite(ctx)
 	if err != nil {
 		return fmt.Errorf(`could not read what this site's hypervisor has, so nothing can be sized against it: %w
 
 Nothing has been changed`, err)
+	}
+	// And held against what the site asks of it, before tofu is given
+	// anything. The sum is printed whether it fits or not: figures of a
+	// host's size and no value from the vault, and the only way to see how
+	// near the edge a site is running.
+	lines, err := budget.Of(hosts, site)
+	if err != nil {
+		return err
+	}
+	for _, line := range lines {
+		run.Info(line.String())
+	}
+	if err := budget.Refusal(lines); err != nil {
+		return fmt.Errorf("%w.\n\nNothing has been changed", err)
 	}
 	facts, err := json.Marshal(map[string]any{"nodes": hosts})
 	if err != nil {
@@ -50,32 +65,37 @@ const hardwareAsked = "CONTRACTOR_HARDWARE_ASKED"
 
 // readHardware is every hypervisor of the site, by its key in the config,
 // asked over its own API with the provisioning token and verified against
-// its own authority.
-func readHardware(ctx *run.Context) (map[string]hypervisorapi.Host, error) {
+// its own authority - and the site as planned, which is what the answers
+// are held against.
+func readHardware(ctx *run.Context) (map[string]hypervisorapi.Host, *config.SiteNetwork, error) {
 	cfg, err := config.LoadRendered(ctx.ConfigRendered)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	site, ok := cfg.Sites[ctx.Site]
 	if !ok {
-		return nil, fmt.Errorf("the config has no site %q", ctx.Site)
+		return nil, nil, fmt.Errorf("the config has no site %q", ctx.Site)
+	}
+	planned, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return nil, nil, err
 	}
 	authority, err := onepassword.Read(hypervisorapi.AuthorityRef(ctx.Site))
 	if err != nil {
-		return nil, fmt.Errorf("the vault does not hold the authority the hypervisor answers under; the hypervisor phase stores it (task configure-hypervisor SITE=%s): %w", ctx.Site, err)
+		return nil, nil, fmt.Errorf("the vault does not hold the authority the hypervisor answers under; the hypervisor phase stores it (task configure-hypervisor SITE=%s): %w", ctx.Site, err)
 	}
 	auth := fmt.Sprintf("PVEAPIToken=%s=%s", site.Hypervisor.TokenID, site.Hypervisor.TokenSecret)
 	hosts := map[string]hypervisorapi.Host{}
 	for key, node := range site.Hypervisor.Nodes {
 		client, err := hypervisorapi.Client(authority, node.Hostname, 15*time.Second)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		host, err := hypervisorapi.Survey(client, fmt.Sprintf("https://%s:8006/api2/json", node.IP), node.Hostname, auth)
 		if err != nil {
-			return nil, fmt.Errorf("hypervisor %s: %w", key, err)
+			return nil, nil, fmt.Errorf("hypervisor %s: %w", key, err)
 		}
 		hosts[key] = host
 	}
-	return hosts, nil
+	return hosts, planned, nil
 }
