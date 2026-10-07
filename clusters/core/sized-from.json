@@ -1,0 +1,60 @@
+{
+  "_comment": [
+    "Where each of the core's reservations came from, said as data: the same",
+    "declaration an application makes in its application.json",
+    "(scripts/details/sizing). The reservations themselves are in each",
+    "manifest. Nearly all of these are estimates, and saying so is the point:",
+    "a site is packed tight on these figures, and none has been seen under",
+    "load."
+  ],
+  "sized_from": {
+    "HelmRelease/kube-prometheus-stack": {
+      "*": {
+        "kind": "estimate",
+        "basis": "Chosen per component when the stack was added, from the chart's defaults and the size of this cluster. The site at rest uses about a gibibyte across all of it."
+      }
+    },
+    "HelmRelease/cloudnative-pg": {
+      "*": {
+        "kind": "estimate",
+        "basis": "The operator's own small footprint, chosen when it was added."
+      }
+    },
+    "HelmRelease/openebs": {
+      "*": {
+        "kind": "estimate",
+        "basis": "The provisioner does almost nothing between claims; chosen when it was added."
+      }
+    },
+    "HelmRelease/gha-runner-scale-set-controller": {
+      "*": {
+        "kind": "estimate",
+        "basis": "Chosen when the runner controller was added."
+      }
+    },
+    "HelmRelease/self-hosted": {
+      "*": {
+        "kind": "estimate",
+        "basis": "Chosen when the runner was added, for the heaviest job it is given: an integration run or a converge."
+      }
+    },
+    "HelmRelease/storage-driver": {
+      "*": {
+        "kind": "estimate",
+        "basis": "The chart's defaults with memory doubled, when the driver was installed."
+      }
+    },
+    "Deployment/cloudflared": {
+      "cloudflared": {
+        "kind": "estimate",
+        "basis": "Chosen when the tunnel was added, for a connector carrying one game server's route."
+      }
+    },
+    "Cluster/${STATE_DB_CLUSTER}": {
+      "*": {
+        "kind": "estimate",
+        "basis": "Chosen for a database whose whole encrypted backup is under a megabyte."
+      }
+    }
+  }
+}

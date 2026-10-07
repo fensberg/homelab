@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 213
+floor: 214
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1298,6 +1298,19 @@ mutations:
       and the budget, which counts them at their old size, says the host
       has room. It may not: the check that exists to refuse a site its host
       cannot hold is now two gibibytes a worker short of the truth.
+
+  - guard: TestEverythingThatReservesSaysWhereItsSizeCameFrom
+    file: clusters/core/sized-from.json
+    find: '"HelmRelease/storage-driver": {'
+    replace: '"HelmRelease/storage": {'
+    mentions: "reserves (HelmRelease/storage-driver) and nothing says where its size came from"
+    why: >
+      A controller is added to the core, or one is renamed, and the file
+      that says where each size came from is not touched. Its reservation
+      then counts toward what a site can hold with nobody having said
+      whether it is a publisher's figure, a guess or a measurement - and a
+      guess nobody labelled is treated as a fact the first time capacity
+      is tight.
 
   - guard: TestNoTeardownStartsUntilTheSafetyOfficerClearsIt
     file: scripts/contractor/internal/phases/destroy.go
