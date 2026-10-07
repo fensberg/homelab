@@ -156,6 +156,15 @@
     sdn_vrf_vni: 0
     sdn_vnet_vni: 0
 
+    # How much of the host's memory its filesystem may hold as cache: a
+    # tenth, and never more than sixteen gibibytes. These are the
+    # hypervisor's own defaults for a new install, written here because the
+    # budget that decides what machines a host can hold takes the same
+    # figure off the host's memory (scripts/contractor/internal/budget), and
+    # a figure the budget counts and nothing enforces is a guess.
+    cache_share_of_memory: 10
+    cache_most_gib: 16
+
     # The storage driver's corner of this host: the pool of machines it may
     # attach a volume to, and the storage that holds its volumes and nothing
     # else. Both are the site's own, written by the Render phase.
@@ -2364,3 +2373,92 @@
         quiet: true
       run_once: true
       tags: [storage-driver]
+
+    # ========================================================================
+    # 11. The filesystem's cache, held to what the budget counts
+    # ========================================================================
+    # This host's filesystem keeps what it has read in memory, and by default
+    # takes as much as it is allowed. It gives memory back when something
+    # else wants it, but not at once - and a host whose machines were given
+    # its memory in full can run short in the meantime, which it answers by
+    # killing a machine.
+    #
+    # So the cache has a ceiling, and the ceiling is the figure the budget
+    # takes off the host before it says what the machines may have. Set on
+    # the running host, which needs no restart, and written where the host
+    # reads it when it starts.
+    #
+    # A default, and meant to be replaced: the right size is whatever keeps
+    # reads fast under the host's real load, and that is to be worked out
+    # from what the host reports about its cache once it has been watched
+    # doing its work (docs/epochs/04-observability.md, criterion 9).
+    - name: Work out the most memory the filesystem's cache may hold
+      ansible.builtin.set_fact:
+        cache_ceiling_bytes: >-
+          {{ [ (ansible_memtotal_mb | int) * 1048576 // (cache_share_of_memory | int),
+               (cache_most_gib | int) * 1073741824 ] | min }}
+      tags: [cache]
+
+    - name: See whether this host keeps its machines on that filesystem
+      ansible.builtin.stat:
+        path: /sys/module/zfs/parameters/zfs_arc_max
+      register: cache_ceiling_setting
+      tags: [cache]
+
+    - name: Read the ceiling the running host holds its cache to
+      ansible.builtin.slurp:
+        src: /sys/module/zfs/parameters/zfs_arc_max
+      register: cache_ceiling_now
+      when: cache_ceiling_setting.stat.exists
+      tags: [cache]
+
+    - name: Hold the running host's cache to the ceiling
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: echo "{{ cache_ceiling_bytes }}" > /sys/module/zfs/parameters/zfs_arc_max
+      when:
+        - cache_ceiling_setting.stat.exists
+        - (cache_ceiling_now.content | b64decode | trim) != (cache_ceiling_bytes | string)
+      tags: [cache]
+
+    # Where the host reads it when it starts. The module is loaded from the
+    # early boot image on a host that boots from this filesystem, so the
+    # image is rebuilt when the file changes; without that the ceiling would
+    # hold until the next restart and then be gone.
+    - name: Keep the ceiling across a restart
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/zfs-cache-ceiling.conf
+        content: |
+          # Written by hypervisor-prep.yml, section 11. The budget for this
+          # host's machines counts the cache at this figure.
+          options zfs zfs_arc_max={{ cache_ceiling_bytes }}
+        owner: root
+        group: root
+        mode: "0644"
+      register: cache_ceiling_file
+      when: cache_ceiling_setting.stat.exists
+      tags: [cache]
+
+    - name: Rebuild the early boot image so a restart reads the ceiling
+      ansible.builtin.command: update-initramfs -u -k all
+      when: cache_ceiling_file.changed | default(false)
+      tags: [cache]
+
+    - name: Read the ceiling back from the running host
+      ansible.builtin.slurp:
+        src: /sys/module/zfs/parameters/zfs_arc_max
+      register: cache_ceiling_held
+      when: cache_ceiling_setting.stat.exists
+      tags: [cache]
+
+    - name: Verify the host holds its cache to what the budget counts
+      ansible.builtin.assert:
+        that:
+          - (cache_ceiling_held.content | b64decode | trim) == (cache_ceiling_bytes | string)
+        fail_msg: >-
+          The host did not take the cache's ceiling. The budget counts the
+          cache at a figure the host is not held to, so what it says the
+          machines may have is more than is safe.
+        quiet: true
+      when: cache_ceiling_setting.stat.exists
+      tags: [cache]
