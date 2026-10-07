@@ -124,11 +124,18 @@ func TestAClaimOnTheKeptClassIsAttachedToAWorkerAndRemoved(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Bound", bound, "the pod started and its claim is not bound")
 
-	node, err := k8s.RunKubectlAndGetOutputE(t, opts, "get", "pod", "trial", "-o", "jsonpath={.spec.nodeName}")
+	// Asked through the client and not through kubectl, whose output this
+	// harness logs: a node's name carries the site's, which is a vault value,
+	// and this tier's log is public.
+	pod, err := k8s.GetPodE(t, opts, "trial")
 	require.NoError(t, err)
-	role, err := k8s.RunKubectlAndGetOutputE(t, opts, "get", "node", node, "-o", `jsonpath={.metadata.labels.node-role\.kubernetes\.io/control-plane}{"|"}`)
-	require.NoError(t, err)
-	assert.Equal(t, "|", role, "the pod with the claim runs on a control plane, where the driver's token may attach nothing")
+	onAControlPlane := false
+	for _, node := range k8s.GetNodes(t, opts) {
+		if node.Name == pod.Spec.NodeName {
+			_, onAControlPlane = node.Labels["node-role.kubernetes.io/control-plane"]
+		}
+	}
+	assert.False(t, onAControlPlane, "the pod with the claim runs on a control plane, where the driver's token may attach nothing")
 }
 
 // A claim on the class, and a pod that holds it and does nothing else. Off
