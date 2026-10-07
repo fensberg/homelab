@@ -40,6 +40,22 @@
     "news": "892970",
     "pin": "VALHEIM_STEAM_BUILD_VERSION"
   },
+  "sized_from": {
+    "Deployment/valheim": {
+      "valheim": {
+        "kind": "publisher",
+        "basis": "Memory is the publisher's guidance: 4 GiB for a new world at this player count, 6 to 8 once it has been explored and built on. The four processors are this estate's own choice. Neither has been seen under load: no player was logged in for the first window it was watched over."
+      },
+      "world-backup": {
+        "kind": "estimate",
+        "basis": "Chosen for rclone copying a world of tens of megabytes; never seen under load."
+      },
+      "world-restore": {
+        "kind": "estimate",
+        "basis": "The same work as the backup, in the other direction, once at start."
+      }
+    }
+  },
   "holds": [
     {
       "what": "the world",

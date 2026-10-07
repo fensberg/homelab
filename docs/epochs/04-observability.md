@@ -100,7 +100,11 @@ Sizing needs nobody:
   until there is a reason to trust a guess about them.
 - **10. An application says what it expects to need before it has run**, with
   where the figure came from, and the plan counts that until a measurement
-  replaces it.
+  replaces it. What it needs is its manifest's reservation, which is the
+  declaration; where that came from is data beside it (`sized_from`), one
+  of the publisher's figure, an estimate, or measured over a named window
+  under a named load, and the core says the same of its own. Built; the
+  plan does not count them yet (6).
 
 What is measured is looked at:
 
@@ -752,6 +756,17 @@ address plan, a pull request's plan and the safety officer do not see
 them. **Not read from the host's API,** because it is not there: how fast
 each network interface is, and the filesystem cache's own figures. Both
 are reported by the host's exporter and belong to the dashboards.
+
+**Where a size came from is data, not a comment.** The operator, on the
+proposal that a manifest's reservation is the declaration and only its
+source needs adding: "comments are lost. If it's not in code then it is
+next to worthless." So each application and the core say, container by
+container, which of three each reservation is, and a measurement has to
+name how long the thing was watched and what it was doing - an idle
+reading cannot be entered as one. Nearly everything starts as an estimate,
+the game server's memory as the publisher's figure, and nothing as
+measured. **Rejected:** a second statement of the needs themselves in the
+application's declaration, which would be the reservation written twice.
 
 **The hypervisor's budget, and each thing taken off it.** Before any run
 in the cluster root, what each hypervisor has is held against what the site

@@ -11,7 +11,7 @@
 # tests/go/repo that must fail. For one of this application's own tests that
 # is the guard that runs them, and `test` names which of them must be the one
 # that failed.
-floor: 21
+floor: 22
 
 mutations:
   - guard: TestEveryDeclaredBackupNamesAContainerAndLabelsTheWorkloadHas
@@ -262,3 +262,15 @@ mutations:
       backups run. But the safety officer now reads the volume the world
       is on as holding nothing, and a teardown that should have been
       refused over a stale copy is cleared.
+
+  - guard: TestEverythingThatReservesSaysWhereItsSizeCameFrom
+    file: modules/applications/valheim/application.json
+    find: '"world-restore": {'
+    replace: '"world-restores": {'
+    mentions: "One for each, and none for a container that is not there"
+    why: >
+      A container is renamed, or one is added beside the server, and the
+      declaration of where each size came from is left as it was. The new
+      container reserves whatever its manifest says and nothing records
+      whether anybody measured it - which is the figure that gets cut on
+      the strength of a quiet week.

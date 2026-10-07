@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	"homelab/details/holds"
+	"homelab/details/sizing"
 )
 
 // Dir is where applications are, from the top of the repository: one
@@ -87,6 +88,10 @@ type Application struct {
 	// how long (homelab/details/holds). The safety officer reads it before
 	// anything the application runs on is destroyed.
 	Holds []holds.Asset `json:"holds,omitempty"`
+	// SizedFrom is where each of the application's reservations came from
+	// (homelab/details/sizing): by the workload that reserves, then by the
+	// container in it. The reservation itself is the manifest's to say.
+	SizedFrom sizing.Declared `json:"sized_from,omitempty"`
 
 	// Name is the application's directory, which is also its namespace and
 	// its item in a site's vault. Root is that directory and Path its
@@ -293,6 +298,9 @@ func Parse(name string, raw []byte) (Application, error) {
 		if len(b.Command) == 0 {
 			return a, fmt.Errorf("%s names no before_teardown.command, so there is nothing to run that would take the backup", a.Path)
 		}
+	}
+	if err := a.SizedFrom.Check(a.Path); err != nil {
+		return a, err
 	}
 	held, err := holds.Owned(a.Holds, a.Name, a.Path)
 	if err != nil {
