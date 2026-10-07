@@ -1,9 +1,12 @@
 //go:build integration
 
 // Package integration_test exercises a real, already-provisioned estate. It
-// creates nothing and destroys nothing - everything here is a read against
-// infrastructure the start button built, so a failing run is a report about
-// the cluster rather than a mess to clean up.
+// creates nothing and destroys nothing of the estate's - everything here is
+// a read against infrastructure the start button built, so a failing run is
+// a report about the cluster rather than a mess to clean up. One test makes
+// something of its own and removes it: a claim on the storage driver's
+// class, which is the only way to ask whether a volume can be attached
+// (storage_driver_test.go says why it is here).
 //
 //	./toolshed/contractor build-site -site site0 -phase render -keep-on-failure
 //	go test -tags=integration -timeout 20m ./integration/...
