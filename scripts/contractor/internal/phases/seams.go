@@ -17,4 +17,7 @@ var (
 	storedImage = findStoredImage
 	// removeImage deletes one from it.
 	removeImage = deleteDatastoreFile
+
+	// surveyHosts asks a site's hypervisors what hardware they have.
+	surveyHosts = readHardware
 )

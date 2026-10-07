@@ -74,6 +74,28 @@ locals {
   overlay_network = local.site.overlay_network
 }
 
+variable "hardware" {
+  type = object({
+    nodes = map(object({
+      memory_bytes = number
+      cores        = number
+      sockets      = number
+      cpu_model    = string
+      gpus         = list(object({ vendor = string, device = string }))
+      storages     = map(object({ type = string, total_bytes = number }))
+      machines     = list(object({ id = number, memory_bytes = number, cores = number }))
+    }))
+  })
+  default     = null
+  description = <<-EOT
+    What each of the site's hypervisors has, by its key in the config: read
+    off the host by the contractor and handed over, never written down. Its
+    memory, processors, display devices, the size of each datastore, and
+    every machine already on it. Null only where nothing has asked a
+    hypervisor yet - a plan of a site no record has these for.
+  EOT
+}
+
 module "cluster" {
   # Fetched by the digest of the package, which is the contents: stronger
   # than the commit hash or tag these two checks ask a git source for, and
@@ -117,4 +139,15 @@ output "overlay_router_tag" {
 
 output "site_network" {
   value = module.cluster.site_network
+}
+
+# What the hypervisors have, as it was handed in. An output so that the state
+# holds it: the as-built record is taken from the state, and a pull request's
+# plan, which can ask no hypervisor anything, reads the facts from the record.
+#
+# Here in the root and not in the module, for now. A site's module is the one
+# its release holds, and a root that handed this to a module released before
+# the module had anywhere to take it would not plan.
+output "hardware" {
+  value = var.hardware
 }

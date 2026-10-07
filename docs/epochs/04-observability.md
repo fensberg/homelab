@@ -64,7 +64,10 @@ Capacity is read, never typed:
   the site's, and a reserve of one control plane to roll with.
 - **3. No machine's size or count is a literal** (#615, #566). Both are derived
   from the capacity above, the overhead each machine carries, and the
-  largest single thing that must fit on one.
+  largest single thing that must fit on one - and then rounded down to a
+  step on a short ladder of standard sizes, whole processors and round
+  amounts of memory, so a machine is "6 and 12" and never a fraction. The
+  count of workers is derived once applications say what they need (10).
 - **4. The as-built record carries the hardware's facts**, so a pull request's
   plan can use them with no credential.
 
@@ -88,11 +91,23 @@ Sizing needs nobody:
 - **9. A workload's reservation follows its measured use**, applied by the
   autoscaler with no pull request, inside a floor and a ceiling per
   container, in place where the cluster can, and never past a disruption
-  budget. etcd, the API server and the databases are sized by declaration
+  budget. Use means use under load: a size is taken from what a thing
+  needed while it was doing its work, over a long window, grows quickly
+  and shrinks slowly, and is never taken from one reading or from a thing
+  that sat idle. Until load has been seen, what was declared stands. The
+  hypervisor's own filesystem cache is sized by the same rule, from a
+  default. etcd, the API server and the databases are sized by declaration
   until there is a reason to trust a guess about them.
 - **10. An application says what it expects to need before it has run**, with
   where the figure came from, and the plan counts that until a measurement
   replaces it.
+
+What is measured is looked at:
+
+- **15. Each question this epoch asks has a dashboard**, kept in git:
+  capacity by scope (hypervisor, machine, workload), what is reserved
+  against what is used, and whether the network is what limits the site -
+  traffic against each interface's own speed, with its errors and drops.
 
 History outlives the site:
 
@@ -667,12 +682,14 @@ what it said, by namespace, over that whole window:
 
 Everything else stayed under 0.1 GiB and 0.01 cores.
 
-- **The game server reserves four times the memory and seventeen times the
-  CPU it was seen to use:** 8 GiB and 4 cores asked for, 2 GiB and 0.23
-  cores at its peak. The request is the publisher's figure for a world that
-  has been explored and built on, and 5.6 days of one world is not that. It
-  is the measurement criterion 9 says replaces the estimate, and the size of
-  the gap behind #628; it is not yet a reason to change the number.
+- **These are a site at rest, and nothing may be sized down from them.**
+  Nobody logged in to the game server in those 5.6 days. Its 2 GiB and 0.23
+  cores against the 8 GiB and 4 cores it reserves are what an empty server
+  uses, and say nothing about one with players on it. The operator, on
+  being shown the gap: "It needs to actually experience load to get a good
+  measure and that's true for any machine - I don't want us to get into the
+  habit of measuring once and then starving our machines when they need it
+  the most." The publisher's figure stands, and criterion 9 now says why.
 - **History grows at about 0.4 GiB a day:** 2.32 GiB for 5.6 days, so
   fifteen days is about 6 GiB. Above the 2-5 GiB the volume was sized from,
   and a third of the 18 GiB at which Prometheus starts dropping its oldest.
@@ -708,6 +725,33 @@ exporter reports it:
   which is the length of time between its manifest reaching the cluster
   from `main` and the site running the release that writes the Secret it
   reads (#618). Nothing is rejected now.
+
+**The order of what is left, agreed 2026-10-07.** First what reads and
+refuses and changes nothing that is running: the hardware's facts (2, 4;
+the facts are read and carried by the record, and nothing uses them yet),
+the budget and its refusal with sizes moved from the code to the config
+(5), what each application expects to need (10), the capacity check on a
+pull request (6), dashboards (15), and the alerts and deadlines (8, 12).
+Then, with [05](05-node-lifecycle.md), what moves a running machine:
+derived sizes and counts applied one machine at a time (3), reservations
+following use (9), the descheduler and the overfill test (14).
+
+**The facts come from the host, by way of the record.** A site's
+hypervisors are asked what they have - memory, processors, display
+devices, the size of each datastore, and every machine already on them -
+by the contractor, over the API it already verifies, before any run in
+the cluster root. The root outputs them unchanged so the state holds them
+and the as-built record carries them, which is how a pull request's plan,
+able to ask nothing, has them. **Rejected:** a data source in OpenTofu,
+which a plan with no credential cannot read and which is read again on
+every plan and kept nowhere. **Rejected for now:** Karpenter's provider for
+this hypervisor, which sizes machines by best fit as this intends to - it
+is alpha, joins machines by cloud-init, holds a token in the cluster that
+creates and destroys machines, and makes them outside OpenTofu, where the
+address plan, a pull request's plan and the safety officer do not see
+them. **Not read from the host's API,** because it is not there: how fast
+each network interface is, and the filesystem cache's own figures. Both
+are reported by the host's exporter and belong to the dashboards.
 
 **Worth keeping for as long as what it describes is alive.** The ruling that
 replaced the one below, on 2026-10-06, when the first design for criterion 11

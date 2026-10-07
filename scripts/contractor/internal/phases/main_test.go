@@ -26,5 +26,9 @@ import (
 func TestMain(m *testing.M) {
 	gitenv.Isolate()
 	githubAPI = "http://127.0.0.1:1"
+	// No test here has a hypervisor to ask. Each is given one host of a
+	// plausible shape, and the tests of the asking itself put the real
+	// reader back (hardware_test.go).
+	surveyHosts = aSiteWithOneHost
 	os.Exit(m.Run())
 }

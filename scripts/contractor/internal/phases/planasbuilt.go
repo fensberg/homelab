@@ -135,6 +135,18 @@ func planRoots(ctx *run.Context, recordDir string, tpl []byte, tofu asbuilt.Tofu
 				return "", err
 			}
 		}
+		// The hardware's facts, as the record holds them from the last
+		// converge. A record taken before they were read has none, and the
+		// root's own default stands for it.
+		if root.Name == config.ClusterRoot {
+			state, _, _, err := asbuilt.Read(filepath.Join(recordDir, root.Name))
+			if err != nil {
+				return "", err
+			}
+			if facts, err := asbuilt.OutputVars(state, hardwareInput); err == nil {
+				inputs.Vars[hardwareInput] = facts[hardwareInput]
+			}
+		}
 		if modules != "" {
 			inputs.Vars[strings.TrimPrefix(platform.UnreleasedVariable, "TF_VAR_")] = modules
 		}

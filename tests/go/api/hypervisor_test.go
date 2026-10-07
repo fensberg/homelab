@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"homelab/details/hypervisorapi"
 	"homelab/tests/harness"
 )
 
@@ -101,4 +102,30 @@ func TestHypervisorAPIPortServesTheAPI(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(body, &parsed))
 	assert.NotEmpty(t, parsed.Data, "the API answered on 8006 but returned no node status")
+}
+
+// The hypervisor says what it has, in the shape the contractor reads.
+//
+// A site's capacity is worked out from what its hypervisor reports: memory,
+// processors, display devices, the size of each datastore, and every machine
+// already on it. hypervisorapi.Survey asks four questions of the API with the
+// provisioning token and refuses if any goes unanswered - so a Proxmox
+// release that renames a field, or a token that loses the right to list
+// devices, stops every converge. This is where that is found first.
+// covers: api:hypervisor
+func TestTheHypervisorSaysWhatHardwareItHas(t *testing.T) {
+	site := harness.SiteConfig(t)
+	node := harness.FirstHypervisorNode(t)
+	auth := fmt.Sprintf("PVEAPIToken=%s=%s", site.Hypervisor.TokenID, site.Hypervisor.TokenSecret)
+
+	host, err := hypervisorapi.Survey(harness.HypervisorClient(t, 15*time.Second),
+		fmt.Sprintf("https://%s:8006/api2/json", node.IP), node.Hostname, auth)
+	require.NoError(t, err, "the hypervisor did not answer every question the contractor asks of it before sizing anything")
+
+	assert.Greater(t, host.MemoryBytes, int64(1<<30), "the hypervisor reports less than a gibibyte of memory")
+	assert.Positive(t, host.Cores, "the hypervisor reports no processors")
+	assert.NotNil(t, host.GPUs, "the display devices came back as unknown, not as a list that may be empty")
+	_, sized := host.Datastores[node.Datastores.Disks]
+	assert.True(t, sized, "the datastore machines' disks are kept in reports no size, so its use cannot be budgeted")
+	assert.NotEmpty(t, host.Machines, "the hypervisor lists no machines, and this site's are on it")
 }

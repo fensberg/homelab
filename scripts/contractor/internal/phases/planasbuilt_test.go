@@ -229,3 +229,57 @@ func TestTheCheckoutsOwnModulesArePlacedWhereARootReadsThem(t *testing.T) {
 		t.Errorf("the placed tree does not hold the platform module: %v", err)
 	}
 }
+
+// A pull request's plan can ask no hypervisor what it has. It is handed the
+// facts the record holds from the last converge, and a record taken before
+// there were any is planned with none, not refused.
+func TestAPlanIsHandedTheHardwareTheRecordHolds(t *testing.T) {
+	for name, c := range map[string]struct {
+		recorded string
+		want     bool
+	}{
+		"a record that holds the hardware":       {`{"nodes": {"node0": {"memory_bytes": 1}}}`, true},
+		"a record taken before it was ever read": {"", false},
+	} {
+		ctx := recordContext(t)
+		for _, root := range ctx.Roots() {
+			if err := os.MkdirAll(root.Dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		record := savedRecord(t)
+		if c.recorded != "" {
+			state, cfg, meta, err := asbuilt.Read(filepath.Join(record, config.ClusterRoot))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var facts any
+			if err := json.Unmarshal([]byte(c.recorded), &facts); err != nil {
+				t.Fatal(err)
+			}
+			state["outputs"].(map[string]any)[hardwareInput] = map[string]any{"value": facts}
+			if err := asbuilt.Write(filepath.Join(record, config.ClusterRoot), &asbuilt.Result{Quiet: true, State: state, Config: cfg}, meta); err != nil {
+				t.Fatal(err)
+			}
+		}
+		handed := false
+		tofu := func(_ string, env []string, args ...string) ([]byte, []byte, error) {
+			for _, e := range env {
+				if strings.HasPrefix(e, "TF_VAR_"+hardwareInput+"=") && strings.Contains(e, `"memory_bytes":1`) {
+					handed = true
+				}
+			}
+			if args[0] != "show" {
+				return nil, nil, nil
+			}
+			return nothingPlanned(), nil, nil
+		}
+		t.Setenv("TF_VAR_"+hardwareInput, "")
+		if err := planAsBuilt(ctx, record, tofu, noModulesOfItsOwn); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if handed != c.want {
+			t.Errorf("%s: the plan was handed the recorded hardware = %v", name, handed)
+		}
+	}
+}
