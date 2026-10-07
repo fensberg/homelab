@@ -1,14 +1,28 @@
 package budget
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"homelab/contractor/config"
+	"homelab/details/gitenv"
 	"homelab/details/hypervisorapi"
+	"homelab/details/repopath"
 )
 
 const gib = int64(1) << 30
+
+// One test here asks git which files the repository tracks, so git is not
+// left to read the machine's own configuration.
+func TestMain(m *testing.M) {
+	gitenv.Isolate()
+	os.Exit(m.Run())
+}
 
 func site(workers int) *config.SiteNetwork {
 	s := &config.SiteNetwork{Octet: 10, Reserved: []int{10199}}
@@ -134,5 +148,55 @@ func TestASiteThatIsOverIsStoppedOnlyWhenItAsksForMoreThanItHas(t *testing.T) {
 		if !strings.Contains(lines[0].String(), c.says) {
 			t.Errorf("%s: the line does not say %q:\n%s", name, c.says, lines[0])
 		}
+	}
+}
+
+// The cache is counted here as the host is held to it there.
+//
+// The budget takes the cache off a host's memory by a rule, and the
+// hypervisor's playbook sets the cache's ceiling on the host by the same
+// rule, written again in the playbook's own variables. If the two drift the
+// budget is counting a cache the host is not held to: smaller than the real
+// one and the machines are promised memory the cache is holding, larger and
+// a site is refused room it has.
+//
+// The playbook is found by what it declares, wherever it is.
+func TestTheCacheIsCountedAsTheHostIsHeldToIt(t *testing.T) {
+	root, err := repopath.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]*regexp.Regexp{
+		"share": regexp.MustCompile(`(?m)^\s*cache_share_of_memory:\s*(\d+)\s*$`),
+		"most":  regexp.MustCompile(`(?m)^\s*cache_most_gib:\s*(\d+)\s*$`),
+	}
+	found := map[string]int64{}
+	// Every tracked playbook, asked of git, so nothing that is not the
+	// repository's own is read.
+	tracked, err := exec.Command("git", "-C", root, "ls-files", "-z", "--", "*.yml", "*.yaml").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range strings.Split(strings.TrimRight(string(tracked), "\x00"), "\x00") {
+		body, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for what, pattern := range declared {
+			if m := pattern.FindSubmatch(body); m != nil {
+				n, _ := strconv.ParseInt(string(m[1]), 10, 64)
+				if _, twice := found[what]; twice {
+					t.Errorf("the cache's %s is declared in more than one place, and only one can be what the host is held to", what)
+				}
+				found[what] = n
+			}
+		}
+	}
+	if len(found) != len(declared) {
+		t.Fatalf("found %v: no playbook declares both what share of a host its cache may take and the most it may take, so nothing holds the host to what is counted here", found)
+	}
+	if found["share"] != CacheShare || found["most"]*gib != CacheMost {
+		t.Errorf("the host is held to a %dth of its memory and at most %d GiB, and the budget counts a %dth and at most %d GiB",
+			found["share"], found["most"], int64(CacheShare), CacheMost/gib)
 	}
 }

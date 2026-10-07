@@ -33,17 +33,26 @@ const gibibyte = int64(1) << 30
 // for the bookkeeping each machine costs it.
 const Kept = 2 * gibibyte
 
-// Cache is what the hypervisor's filesystem may hold in memory: a tenth of
-// the host, and never more than sixteen gibibytes, which is the hypervisor's
-// own default for a new install. Counted as memory the machines cannot have,
-// because it is given back slowly and a host that runs short before it is
-// given back kills a machine.
+// Cache is what the hypervisor's filesystem may hold in memory: a share of
+// the host, and never more than a ceiling. The hypervisor's own defaults for
+// a new install, and the figures the hypervisor's playbook holds the cache
+// to on the host - which is what makes this a deduction and not a guess, and
+// why a test holds the two to each other. Counted as memory the machines
+// cannot have, because it is given back slowly and a host that runs short
+// before it is given back kills a machine.
 func Cache(host int64) int64 {
-	if tenth := host / 10; tenth < 16*gibibyte {
-		return tenth
+	if share := host / CacheShare; share < CacheMost {
+		return share
 	}
-	return 16 * gibibyte
+	return CacheMost
 }
+
+// CacheShare is the fraction of a host its cache may take, as its
+// denominator, and CacheMost the most it may take whatever the host's size.
+const (
+	CacheShare = 10
+	CacheMost  = 16 * gibibyte
+)
 
 // Line is one hypervisor's budget: what it has, each thing taken off it, and
 // what the site asks.
