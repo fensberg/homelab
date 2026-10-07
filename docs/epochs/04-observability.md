@@ -753,6 +753,34 @@ them. **Not read from the host's API,** because it is not there: how fast
 each network interface is, and the filesystem cache's own figures. Both
 are reported by the host's exporter and belong to the dashboards.
 
+**The hypervisor's budget, and each thing taken off it.** Before any run
+in the cluster root, what each hypervisor has is held against what the site
+asks of it, and a site that asks more is refused with the whole sum
+(`scripts/contractor/internal/budget`). From the host's memory come off:
+two gibibytes the hypervisor keeps for itself; its filesystem's cache, at a
+tenth of the host and never more than sixteen gibibytes, which is the
+hypervisor's own default; whatever is given to machines on it that are not
+the site's, templates aside; and one control plane's worth, so a machine
+can be replaced by a new one before the old one is gone. Every figure is
+printed with the answer, so a refusal can be argued with. **Not yet:** the
+cache is not held to that figure on the host, so that deduction is a
+default and not a fact until the playbook sets it; processors are not
+budgeted; a pull request's plan does not refuse, because it has no
+rendered config to count machines from, and takes this up with the
+capacity check (6); and the sizes are still the cluster module's, with a
+guard holding the budget's figures to them (#615).
+
+**Tight does not mean seized.** A site is refused a hypervisor only when it
+asks for more there than it already has and that does not fit. One that is
+over and asking for what it has, or for less, is told so on every run and
+not stopped: the machines are there either way, and the converge that
+would shrink them is the one a flat refusal blocks. site0 fitted its first
+budget with a tenth of a gibibyte to spare (62.3 on the host, 42.1 for the
+site, 42.0 asked), so a host reporting a little less memory after an
+upgrade would otherwise have stopped every converge. A machine the plan no
+longer asks for is still the site's while it stands, by its id being in
+the site's band.
+
 **A host says what it has only when the site owns it.** Asked on rented
 hardware the same reading says something else each time, and the operator
 asked which: "would the data center say 'sure you can have 10,000,000

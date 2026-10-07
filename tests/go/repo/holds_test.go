@@ -7,7 +7,9 @@ import (
 	"go/token"
 	"io"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -346,5 +348,33 @@ func TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten(t *testing.T) {
 	volumes := config.VolumeStorage("${var.site}")
 	if _, body := tofuDeclaring(t, `resource "kubernetes_secret" "storage_vars"`); !strings.Contains(body, `"`+volumes+`"`) {
 		t.Errorf("the storage the driver is told to keep volumes in is not %q, which is the one the hypervisor makes for it and grants it", volumes)
+	}
+}
+
+// What each machine is given is written twice until a site's config says
+// it: where the cluster module makes the machine, and where the contractor
+// budgets a hypervisor's memory before anything is built. If the two drift,
+// the budget passes a site its host cannot hold, or refuses one it can.
+func TestAMachinesMemoryIsTheSameWhereItIsMadeAndWhereItIsBudgeted(t *testing.T) {
+	given := regexp.MustCompile(`dedicated\s*=\s*(\d+)`)
+	for resource, role := range map[string]config.MachineRole{
+		"talos_cp": config.ControlPlane, "talos_worker": config.Worker, "dmz": config.Untrusted,
+	} {
+		_, body := tofuDeclaring(t, `resource "proxmox_virtual_environment_vm" "`+resource+`"`)
+		_, block, found := strings.Cut(body, `resource "proxmox_virtual_environment_vm" "`+resource+`"`)
+		if !found {
+			t.Fatalf("the machine %s is not declared where it was found", resource)
+		}
+		if next := strings.Index(block, "\nresource "); next >= 0 {
+			block = block[:next]
+		}
+		m := given.FindStringSubmatch(block)
+		if m == nil {
+			t.Fatalf("the machine %s is given no memory this can read", resource)
+		}
+		mebibytes, _ := strconv.ParseInt(m[1], 10, 64)
+		if made, budgeted := mebibytes<<20, config.MemoryOf[role]; made != budgeted {
+			t.Errorf("a %s is made with %d MiB and budgeted at %d MiB. The budget is what refuses a site its host cannot hold, and it is holding the wrong figure", role, made>>20, budgeted>>20)
+		}
 	}
 }
