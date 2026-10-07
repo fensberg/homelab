@@ -753,6 +753,27 @@ them. **Not read from the host's API,** because it is not there: how fast
 each network interface is, and the filesystem cache's own figures. Both
 are reported by the host's exporter and belong to the dashboards.
 
+**A host says what it has only when the site owns it.** Asked on rented
+hardware the same reading says something else each time, and the operator
+asked which: "would the data center say 'sure you can have 10,000,000
+cores' or would it say 'your contract says 4 cores so here is 4 cores'?"
+The second, and it is still not the whole answer:
+
+- **A dedicated server** is read as the machine it is, like one at home.
+- **A virtual server** is read as what the plan gives it, and those
+  processors are shared. The count is right and the capacity behind it is
+  not guaranteed; what the provider took back shows as steal time, which
+  the host's exporter reports and the reading cannot. It belongs on the
+  dashboard beside the count.
+- **Capacity that is asked for on demand** has no host to read. What could
+  be had is unbounded and every unit of it is billed, so a site of that
+  kind takes its capacity from a ceiling written in its config - what was
+  agreed to be paid for - and the budget refuses anything past it.
+
+So a site's capacity has two sources, read from a host it owns or declared
+as a ceiling it rents under, and the budget (5) is where they meet. Only
+the first is built, and only site0 needs it.
+
 **Worth keeping for as long as what it describes is alive.** The ruling that
 replaced the one below, on 2026-10-06, when the first design for criterion 11
 was costed against the storage vendor's free allowance. The operator's words:
