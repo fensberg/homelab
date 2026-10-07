@@ -145,16 +145,24 @@ spec:
         # Fifteen days, on a 20 GiB volume. The estimate for a cluster this
         # size is 2-5 GiB - roughly 15-20k active series at a sample every 15
         # seconds, at about two bytes a sample - so this is four to five times
-        # the expectation. retentionSize is what actually protects the disk:
-        # every worker's data disk is 32 GiB in total and the state database
-        # writes to the same one, so Prometheus evicts its own oldest blocks
-        # rather than filling a disk out from under the estate's own backend.
+        # the expectation. retentionSize is what actually protects the
+        # volume: Prometheus evicts its own oldest blocks before the volume
+        # is full, rather than stopping when it is.
         retention: 15d
         retentionSize: 18GiB
+        # On the class that outlives a machine, and not on a worker's own
+        # disk. This is the site's history, worth keeping for as long as the
+        # site lives, and on a worker's disk it went with that worker every
+        # time one was replaced. Here the volume is kept on the hypervisor
+        # and attached to whichever worker runs Prometheus next.
+        #
+        # It is not copied anywhere else, on purpose: a teardown of the site
+        # takes it, and the site's history is worth nothing after the site
+        # (docs/epochs/04-observability.md).
         storageSpec:
           volumeClaimTemplate:
             spec:
-              storageClassName: openebs-hostpath
+              storageClassName: outlives-a-machine
               accessModes: ["ReadWriteOnce"]
               resources:
                 requests:

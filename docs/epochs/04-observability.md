@@ -103,9 +103,11 @@ History outlives the site:
   what is being destroyed, and the safety officer refuses a teardown that
   would (`scripts/safety-officer`, built). The storage is the hypervisor's
   storage driver for Kubernetes: its token confined to the site's worker
-  pool and a storage of its own (proven on site0), what it needs in the
-  cluster written by the platform module, the driver itself not yet
-  installed and nothing moved onto it.
+  pool and a storage of its own, the driver installed, and a claim on its
+  class attached to a worker and removed again by a nightly test (all
+  proven on site0). Prometheus's volume asks for that class. A site whose
+  Prometheus already had a claim keeps the old one until it is removed by
+  hand, once, and the integration tier says which a site is on.
 
 The site keeps itself, and proves it:
 
@@ -648,6 +650,64 @@ evicted before one within it.
 how much a computer needs. That's a dumb decision that needs no human
 intervention." What keeps it from a mistake is rules, not review.
 **Rejected:** a pull request for each resize.
+
+**The first measured baseline, read out before the history it came from was
+dropped.** Moving Prometheus onto a volume that outlives a machine loses the
+history on the old one, once. On 2026-10-07 it held 5.6 days, and this is
+what it said, by namespace, over that whole window:
+
+| Namespace     | Memory, peak | Memory, average | CPU, peak  | CPU, average |
+| ------------- | ------------ | --------------- | ---------- | ------------ |
+| `kube-system` | 3.98 GiB     | 3.64 GiB        | 0.30 cores | 0.21 cores   |
+| `valheim`     | 2.00 GiB     | 1.82 GiB        | 0.23 cores | 0.08 cores   |
+| `monitoring`  | 1.24 GiB     | 1.07 GiB        | 0.07 cores | 0.05 cores   |
+| `database`    | 0.31 GiB     | 0.18 GiB        | 0.08 cores | 0.01 cores   |
+| `arc-runners` | 0.30 GiB     | 0.19 GiB        | 2.00 cores | under 0.01   |
+| `flux-system` | 0.29 GiB     | 0.18 GiB        | 0.02 cores | under 0.01   |
+
+Everything else stayed under 0.1 GiB and 0.01 cores.
+
+- **The game server reserves four times the memory and seventeen times the
+  CPU it was seen to use:** 8 GiB and 4 cores asked for, 2 GiB and 0.23
+  cores at its peak. The request is the publisher's figure for a world that
+  has been explored and built on, and 5.6 days of one world is not that. It
+  is the measurement criterion 9 says replaces the estimate, and the size of
+  the gap behind #628; it is not yet a reason to change the number.
+- **History grows at about 0.4 GiB a day:** 2.32 GiB for 5.6 days, so
+  fifteen days is about 6 GiB. Above the 2-5 GiB the volume was sized from,
+  and a third of the 18 GiB at which Prometheus starts dropping its oldest.
+- **One container restarted once** in the window, the database operator.
+- **Two alerts fired besides the one that always does:** the operator
+  reporting a resource it rejected, for about a day, and the inhibitor for
+  informational alerts, for about eleven hours.
+
+Memory in use by machine over the same window, as each machine's own
+exporter reports it:
+
+| Machine         | Peak | Average |
+| --------------- | ---- | ------- |
+| the hypervisor  | 81%  | 80%     |
+| control plane 0 | 59%  | 55%     |
+| control plane 2 | 49%  | 46%     |
+| control plane 1 | 45%  | 42%     |
+| worker 0        | 35%  | 33%     |
+| worker 2        | 21%  | 18%     |
+| worker 1        | 20%  | 19%     |
+
+- **The machines are a long way from full and the host under them is not.**
+  No worker passed 35% and no control plane 60%, while the hypervisor sat at
+  80% without moving. What the host holds is what the machines were given,
+  not what they use - and, on this host, the filesystem's cache, which this
+  reading counts as used though it is given back on demand (criterion 2
+  takes it off separately for that reason). So the room this epoch is after
+  is inside the machines: in what is reserved against what is used
+  (criterion 6), and in sizes that are derived and not given (criterion 3).
+  The hypervisor's figures are from one day; it was not measured before.
+- **The resource the operator rejected was a scrape configuration,** and the
+  estate declares one: the hypervisor's. It was rejected for about a day,
+  which is the length of time between its manifest reaching the cluster
+  from `main` and the site running the release that writes the Secret it
+  reads (#618). Nothing is rejected now.
 
 **Worth keeping for as long as what it describes is alive.** The ruling that
 replaced the one below, on 2026-10-06, when the first design for criterion 11

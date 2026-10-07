@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 211
+floor: 212
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1274,6 +1274,18 @@ mutations:
       old name, from the program that renders its playbook's values. Each
       half is right when read alone; together the driver is pointed at a
       storage that does not exist, and every claim on it waits forever.
+
+  - guard: TestEverythingThatKeepsDataSaysWhatItHolds
+    file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
+    find: "              storageClassName: outlives-a-machine"
+    replace: "              storageClassName: openebs-hostpath"
+    mentions: "which lives on a machine, and the core declares it lives on a node"
+    why: >
+      The volume is moved back to a worker's own disk - to free the
+      hypervisor's storage, or by a revert that did not know what else it
+      undid - and the declaration still says the history lives on the node.
+      The safety officer believes the declaration, so the worker holding
+      the site's only copy of its history is cleared for retirement.
 
   - guard: TestNoTeardownStartsUntilTheSafetyOfficerClearsIt
     file: scripts/contractor/internal/phases/destroy.go
