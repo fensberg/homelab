@@ -103,9 +103,11 @@ History outlives the site:
   what is being destroyed, and the safety officer refuses a teardown that
   would (`scripts/safety-officer`, built). The storage is the hypervisor's
   storage driver for Kubernetes: its token confined to the site's worker
-  pool and a storage of its own (proven on site0), what it needs in the
-  cluster written by the platform module, the driver itself not yet
-  installed and nothing moved onto it.
+  pool and a storage of its own, the driver installed, and a claim on its
+  class attached to a worker and removed again by a nightly test (all
+  proven on site0). Prometheus's volume asks for that class. A site whose
+  Prometheus already had a claim keeps the old one until it is removed by
+  hand, once, and the integration tier says which a site is on.
 
 The site keeps itself, and proves it:
 

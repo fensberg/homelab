@@ -82,6 +82,43 @@ that takes whatever is on it. Say what it is, the scope it is worth keeping
 for the life of, and the scope its working copy dies with.`, k.file, k.object, k.owner, k.object)
 		}
 	}
+	// And where each says it lives is where its storage puts it. A volume
+	// on a class the storage driver provides is kept on the node and
+	// outlives any machine; a volume on any other class is on a machine's
+	// own disk and goes with it. A declaration that says otherwise is the
+	// one the safety officer would believe.
+	kept := classesThatOutliveAMachine(t)
+	livesOn := map[string]map[string]string{holds.Core: {}}
+	for _, a := range core {
+		livesOn[holds.Core][a.HeldBy] = a.LivesOn
+	}
+	for _, app := range apps {
+		livesOn[app.Name] = map[string]string{}
+		for _, a := range app.Holds {
+			livesOn[app.Name][a.HeldBy] = a.LivesOn
+		}
+	}
+	for _, k := range keeps {
+		said, ok := livesOn[k.owner][k.object]
+		if !ok || len(k.classes) == 0 {
+			continue
+		}
+		for _, class := range k.classes {
+			is := holds.Machine.String()
+			if kept[class] {
+				is = holds.Node.String()
+			}
+			if said != is {
+				t.Errorf(`%s keeps %s on the class %q, which lives on a %s, and %s declares it lives on a %s.
+
+The safety officer decides whether destroying a machine endangers it from
+that declaration. Said to live on a node when it is on a machine's disk, it is
+cleared for a retirement that takes it; the other way round, a retirement is
+refused over something that was never at risk.`, k.file, k.object, class, is, k.owner, said)
+			}
+		}
+	}
+
 	for owner, objects := range declared {
 		for object := range objects {
 			if !found[owner][object] {
@@ -91,8 +128,66 @@ for the life of, and the scope its working copy dies with.`, k.file, k.object, k
 	}
 }
 
-// keeper is one object that declares storage, and whose it is.
-type keeper struct{ file, owner, object string }
+// keeper is one object that declares storage, whose it is, and every
+// storage class it names.
+type keeper struct {
+	file, owner, object string
+	classes             []string
+}
+
+// classesThatOutliveAMachine is the classes the storage driver provides: the
+// ones its release declares, found by what declares them. Any other class in
+// the estate hands out a machine's own disk.
+func classesThatOutliveAMachine(t *testing.T) map[string]bool {
+	t.Helper()
+	_, body := fluxObject(t, kindHelmRelease, "storage-driver")
+	var release struct {
+		Spec struct {
+			Values struct {
+				StorageClass []struct {
+					Name string `yaml:"name"`
+				} `yaml:"storageClass"`
+			} `yaml:"values"`
+		} `yaml:"spec"`
+	}
+	dec := yaml.NewDecoder(strings.NewReader(body))
+	out := map[string]bool{}
+	for {
+		err := dec.Decode(&release)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("the storage driver's release does not parse: %v", err)
+		}
+		for _, c := range release.Spec.Values.StorageClass {
+			out[c.Name] = true
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("the storage driver's release declares no class, so nothing could be said to outlive a machine")
+	}
+	return out
+}
+
+// classesNamed is every storage class a manifest names, at any depth and
+// under either spelling charts and operators use.
+func classesNamed(n *yaml.Node, into *[]string) {
+	if n == nil {
+		return
+	}
+	if n.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key, value := n.Content[i].Value, n.Content[i+1]
+			if (key == "storageClassName" || key == "storageClass") && value.Kind == yaml.ScalarNode && value.Value != "" {
+				*into = append(*into, value.Value)
+			}
+		}
+	}
+	for _, c := range n.Content {
+		classesNamed(c, into)
+	}
+}
 
 // storageDeclared is every object in the repository's own manifests that
 // asks for a volume: a claim, anything carrying a claim template at any
@@ -133,7 +228,9 @@ func storageDeclared(t *testing.T) []keeper {
 				kind.Value == "Cluster" && mappingValue(mappingValue(top, "spec"), "storage") != nil ||
 				hasKey(top, "volumeClaimTemplate", "volumeClaimTemplates")
 			if keeps {
-				out = append(out, keeper{rel, owner, kind.Value + "/" + mappingValue(md, "name").Value})
+				var classes []string
+				classesNamed(top, &classes)
+				out = append(out, keeper{rel, owner, kind.Value + "/" + mappingValue(md, "name").Value, classes})
 			}
 		}
 	}

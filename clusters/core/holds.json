@@ -4,8 +4,9 @@
     "declaration an application makes in its application.json, read by the",
     "safety officer before anything is destroyed (scripts/details/holds).",
     "Both are a site's own, worth keeping while the site lives, so neither",
-    "stands in the way of the site's teardown. Each lives on one machine's",
-    "disk, which is what a machine's retirement will be asked about."
+    "stands in the way of the site's teardown. The state lives on machines'",
+    "own disks and is kept by its replicas; the history lives on the node,",
+    "on a volume that is attached to whichever machine needs it."
   ],
   "holds": [
     {
@@ -19,7 +20,7 @@
     {
       "what": "the metrics history",
       "lifetime": "site",
-      "lives_on": "machine",
+      "lives_on": "node",
       "held_by": "HelmRelease/kube-prometheus-stack"
     }
   ]

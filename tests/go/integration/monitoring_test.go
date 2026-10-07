@@ -247,3 +247,40 @@ func instantQuery(t *testing.T, endpoint, query string) float64 {
 	require.NoError(t, err, "reading the value Prometheus returned")
 	return v
 }
+
+// The site's history is on a volume that outlives the machine it is
+// attached to.
+//
+// The manifest asks for that class, and asking is not enough: a claim cannot
+// change class once it exists, so a site whose Prometheus already had a
+// claim on a worker's own disk keeps that claim, and its history goes on
+// leaving with each worker, until the old claim is removed and a new one is
+// made. Nothing in the manifest shows which of the two a site is on. The
+// claim does.
+func TestTheSitesHistoryIsOnAVolumeThatOutlivesAMachine(t *testing.T) {
+	t.Parallel()
+	opts := k8s.NewKubectlOptions("", kubeconfig(t), monitoringNamespace)
+
+	// Every claim in the namespace, by name, and Prometheus's picked out
+	// here: the operator names a claim for the Prometheus it belongs to, and
+	// which labels it copies onto one has changed between its versions.
+	listed, err := k8s.RunKubectlAndGetOutputE(t, opts, "get", "pvc",
+		"-o", `jsonpath={range .items[*]}{.metadata.name}{"="}{.spec.storageClassName}{"\n"}{end}`)
+	require.NoError(t, err, "listing the claims in the monitoring namespace")
+	found := 0
+	for _, line := range strings.Fields(listed) {
+		name, class, _ := strings.Cut(line, "=")
+		if !strings.HasPrefix(name, "prometheus-") {
+			continue
+		}
+		found++
+		assert.Equal(t, historyClass, class,
+			"Prometheus keeps its history on a %s volume. The manifest asks for %s, and a claim that already existed does not move: "+
+				"remove the old claim and its pod, and the next one is made on the right class. The history on the old one is lost, once",
+			class, historyClass)
+	}
+	require.NotZero(t, found, "Prometheus has no claim, so its history is kept nowhere that survives its pod")
+}
+
+// historyClass is the class a volume has to be on to outlive a machine.
+const historyClass = "outlives-a-machine"
