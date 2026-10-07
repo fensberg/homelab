@@ -20,27 +20,29 @@ import (
 
 // aSiteWithOneHost stands in for asking a site's hypervisors: one host, with
 // no display device and one machine that is nobody's here.
-func aSiteWithOneHost(*run.Context) (map[string]hypervisorapi.Host, error) {
+func aSiteWithOneHost(*run.Context) (map[string]hypervisorapi.Host, *config.SiteNetwork, error) {
 	return map[string]hypervisorapi.Host{"node0": {
-		MemoryBytes: 64 << 30, Cores: 16, Sockets: 1, CPUModel: "a processor",
-		GPUs:       []hypervisorapi.Device{},
-		Datastores: map[string]hypervisorapi.Datastore{"disks": {Type: "zfspool", TotalBytes: 1 << 40}},
-		Machines:   []hypervisorapi.Machine{{ID: 105, MemoryBytes: 4 << 30, Cores: 2}},
-	}}, nil
+			MemoryBytes: 64 << 30, Cores: 16, Sockets: 1, CPUModel: "a processor",
+			GPUs:       []hypervisorapi.Device{},
+			Datastores: map[string]hypervisorapi.Datastore{"disks": {Type: "zfspool", TotalBytes: 1 << 40}},
+			Machines:   []hypervisorapi.Machine{{ID: 105, MemoryBytes: 4 << 30, Cores: 2}},
+		}}, &config.SiteNetwork{Machines: []config.PlannedMachine{
+			{Role: config.Worker, VMID: 10200, Hypervisor: "node0", MemoryBytes: 10 << 30},
+		}, Reserved: []int{10200}}, nil
 }
 
 // asked resets what a run remembers of having asked, for the length of a
 // test, and counts the askings.
-func asked(t *testing.T, answer func(*run.Context) (map[string]hypervisorapi.Host, error)) *int {
+func asked(t *testing.T, answer func(*run.Context) (map[string]hypervisorapi.Host, *config.SiteNetwork, error)) *int {
 	t.Helper()
 	t.Setenv(hardwareAsked, "")
 	t.Setenv("TF_VAR_"+hardwareInput, "")
-	before, n := surveyHosts, 0
-	surveyHosts = func(ctx *run.Context) (map[string]hypervisorapi.Host, error) {
+	before, n := surveySite, 0
+	surveySite = func(ctx *run.Context) (map[string]hypervisorapi.Host, *config.SiteNetwork, error) {
 		n++
 		return answer(ctx)
 	}
-	t.Cleanup(func() { surveyHosts = before })
+	t.Cleanup(func() { surveySite = before })
 	return &n
 }
 
@@ -72,8 +74,8 @@ func TestTheHardwareIsHandedToTheClusterRootOnceForARun(t *testing.T) {
 // A hypervisor that cannot be asked stops the run before tofu is given
 // anything: a size worked out from a host nobody read is a guess.
 func TestARunThatCannotReadTheHardwareChangesNothing(t *testing.T) {
-	asked(t, func(*run.Context) (map[string]hypervisorapi.Host, error) {
-		return nil, errors.New("no answer")
+	asked(t, func(*run.Context) (map[string]hypervisorapi.Host, *config.SiteNetwork, error) {
+		return nil, nil, errors.New("no answer")
 	})
 	_, err := rootFor(run.NewContext(t.TempDir(), "site0"), "cluster", nil)
 	if err == nil || !strings.Contains(err.Error(), "Nothing has been changed") {
@@ -91,11 +93,11 @@ func TestARunThatCannotReadTheHardwareChangesNothing(t *testing.T) {
 // does answer.
 func TestTheRealAskingFindsTheHypervisorAndSaysWhichOneDidNotAnswer(t *testing.T) {
 	ctx := run.NewContext(t.TempDir(), "site0")
-	if _, err := readHardware(ctx); err == nil {
+	if _, _, err := readHardware(ctx); err == nil {
 		t.Error("the hardware was read with no rendered config")
 	}
 	mustWriteFile(t, ctx.ConfigRendered, `{"sites": {}}`)
-	if _, err := readHardware(ctx); err == nil || !strings.Contains(err.Error(), "site0") {
+	if _, _, err := readHardware(ctx); err == nil || !strings.Contains(err.Error(), "site0") {
 		t.Errorf("a config with no such site was read as one with no hypervisors: %v", err)
 	}
 
@@ -121,7 +123,7 @@ func TestTheRealAskingFindsTheHypervisorAndSaysWhichOneDidNotAnswer(t *testing.T
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	vault("exit 1")
-	if _, err := readHardware(ctx); err == nil || !strings.Contains(err.Error(), "configure-hypervisor") {
+	if _, _, err := readHardware(ctx); err == nil || !strings.Contains(err.Error(), "configure-hypervisor") {
 		t.Errorf("a vault with no authority did not send the operator to the phase that stores one: %v", err)
 	}
 
@@ -131,8 +133,32 @@ func TestTheRealAskingFindsTheHypervisorAndSaysWhichOneDidNotAnswer(t *testing.T
 	t.Cleanup(stranger.Close)
 	authority := base64.StdEncoding.EncodeToString(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: stranger.Certificate().Raw}))
 	vault("echo " + authority)
-	_, err = readHardware(ctx)
+	_, _, err = readHardware(ctx)
 	if err == nil || !strings.Contains(err.Error(), "hypervisor node0") {
 		t.Errorf("a hypervisor that does not answer was not named by its key: %v", err)
+	}
+}
+
+// A site whose machines its hypervisor cannot hold is refused before tofu is
+// given anything, and the refusal carries the whole sum.
+func TestASiteItsHypervisorCannotHoldIsRefusedWithTheSum(t *testing.T) {
+	asked(t, func(ctx *run.Context) (map[string]hypervisorapi.Host, *config.SiteNetwork, error) {
+		hosts, site, _ := aSiteWithOneHost(ctx)
+		for i := range 6 {
+			site.Machines = append(site.Machines, config.PlannedMachine{Role: config.Worker, VMID: 10201 + i, Hypervisor: "node0", MemoryBytes: 10 << 30})
+		}
+		return hosts, site, nil
+	})
+	_, err := rootFor(run.NewContext(t.TempDir(), "site0"), "cluster", nil)
+	if err == nil {
+		t.Fatal("seventy gibibytes of machines were handed to tofu for a host with sixty-four")
+	}
+	for _, want := range []string{"OVER BY", "node0 has 64.0 GiB", "ask 70.0", "Nothing has been changed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q:\n%v", want, err)
+		}
+	}
+	if os.Getenv("TF_VAR_"+hardwareInput) != "" {
+		t.Error("the root was handed the hardware of a host the site does not fit on")
 	}
 }

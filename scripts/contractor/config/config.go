@@ -391,6 +391,46 @@ type SiteNetwork struct {
 	DMZIPs      []string
 	DMZNames    []string
 	Hypervisors []Node
+
+	// Machines is every machine the site is to have, with what it is given
+	// and the hypervisor it is on, and Reserved every machine id that is the
+	// site's - its templates among them. Together they are what a
+	// hypervisor's memory is budgeted from: what the site asks of it, and
+	// which of the machines already on it are the site's own.
+	Machines []PlannedMachine
+	Reserved []int
+}
+
+// PlannedMachine is one machine the site is to have: what it is for, the
+// hypervisor it is on by that hypervisor's key in the config, and the memory
+// it is given.
+type PlannedMachine struct {
+	Role        MachineRole
+	VMID        int
+	Hypervisor  string
+	MemoryBytes int64
+}
+
+// MachineRole is what a machine is for, which is what decides its size.
+type MachineRole string
+
+const (
+	ControlPlane MachineRole = "control plane"
+	Worker       MachineRole = "worker"
+	Untrusted    MachineRole = "untrusted"
+)
+
+// gibibyte is what the sizes below are counted in.
+const gibibyte = int64(1) << 30
+
+// MemoryOf is the memory a machine of each role is given. The cluster module
+// gives it (modules/infrastructure/cluster, compute.tf) and this says the
+// same, held to it by tests/go/repo, until a site's sizes are its config's
+// to say (#615).
+var MemoryOf = map[MachineRole]int64{
+	ControlPlane: 4 * gibibyte,
+	Worker:       10 * gibibyte,
+	Untrusted:    8 * gibibyte,
 }
 
 // WorkerPool is the hypervisor's pool of a site's workers, as the cluster
@@ -706,7 +746,23 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 		zones = append(zones, rz)
 	}
 
+	var machines []PlannedMachine
+	reserved := []int{plan.TemplateVMID}
+	if plan.DMZTemplateVMID != 0 {
+		reserved = append(reserved, plan.DMZTemplateVMID)
+	}
+	for role, of := range map[MachineRole]map[string]machine{ControlPlane: plan.ControlPlanes, Worker: plan.Workers, Untrusted: plan.DMZ} {
+		for _, m := range inHostOrder(of) {
+			machines = append(machines, PlannedMachine{Role: role, VMID: m.VMID, Hypervisor: m.Hypervisor, MemoryBytes: MemoryOf[role]})
+			reserved = append(reserved, m.VMID)
+		}
+	}
+	sort.Slice(machines, func(i, j int) bool { return machines[i].VMID < machines[j].VMID })
+	sort.Ints(reserved)
+
 	return &SiteNetwork{
+		Machines:          machines,
+		Reserved:          reserved,
 		Name:              plan.Slug,
 		Key:               name,
 		Octet:             site.Octet,

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 212
+floor: 213
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1286,6 +1286,18 @@ mutations:
       undid - and the declaration still says the history lives on the node.
       The safety officer believes the declaration, so the worker holding
       the site's only copy of its history is cleared for retirement.
+
+  - guard: TestAMachinesMemoryIsTheSameWhereItIsMadeAndWhereItIsBudgeted
+    file: modules/infrastructure/cluster/compute.tf
+    find: "    dedicated = 10240"
+    replace: "    dedicated = 12288"
+    mentions: "a worker is made with 12288 MiB and budgeted at 10240 MiB"
+    why: >
+      A worker is given two more gibibytes, in the one file where a
+      machine's size is visibly set. The plan shows three machines changing
+      and the budget, which counts them at their old size, says the host
+      has room. It may not: the check that exists to refuse a site its host
+      cannot hold is now two gibibytes a worker short of the truth.
 
   - guard: TestNoTeardownStartsUntilTheSafetyOfficerClearsIt
     file: scripts/contractor/internal/phases/destroy.go
