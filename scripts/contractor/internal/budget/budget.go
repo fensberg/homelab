@@ -111,13 +111,16 @@ func Of(hosts map[string]hypervisorapi.Host, site *config.SiteNetwork) ([]Line, 
 	mine := func(id int) bool {
 		return planned[id] || (site.Octet != 0 && id/1000 == site.Octet)
 	}
+	// What is asked of each hypervisor, and the hypervisors in the order
+	// they are first asked for anything, then sorted: a line for each, in an
+	// order that is the same on every run.
 	asked := map[string]int64{}
+	var keys []string
 	for _, m := range site.Machines {
+		if _, seen := asked[m.Hypervisor]; !seen {
+			keys = append(keys, m.Hypervisor)
+		}
 		asked[m.Hypervisor] += m.MemoryBytes
-	}
-	keys := make([]string, 0, len(asked))
-	for key := range asked {
-		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 
