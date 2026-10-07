@@ -11,7 +11,7 @@ import (
 const gib = int64(1) << 30
 
 func site(workers int) *config.SiteNetwork {
-	s := &config.SiteNetwork{Reserved: []int{10199}}
+	s := &config.SiteNetwork{Octet: 10, Reserved: []int{10199}}
 	for i := range 3 {
 		s.Machines = append(s.Machines, config.PlannedMachine{Role: config.ControlPlane, VMID: 10100 + i, Hypervisor: "node0", MemoryBytes: 4 * gib})
 		s.Reserved = append(s.Reserved, 10100+i)
@@ -93,5 +93,46 @@ func TestAMachineOnAHypervisorNobodyReadIsAnError(t *testing.T) {
 	}
 	if lines, err := Of(host(), &config.SiteNetwork{}); err != nil || len(lines) != 0 {
 		t.Errorf("a site that asks for no machines was budgeted as %v, %v", lines, err)
+	}
+}
+
+// Tight does not mean seized. A site already over, asking for what it has or
+// for less, is told so and not stopped: the machines are there either way,
+// and the converge that would shrink them is the one a flat refusal blocks.
+// Asking for one gibibyte more than it stands on is refused.
+func TestASiteThatIsOverIsStoppedOnlyWhenItAsksForMoreThanItHas(t *testing.T) {
+	standing := func(workers int) map[string]hypervisorapi.Host {
+		h := host()
+		node := h["node0"]
+		node.Machines = []hypervisorapi.Machine{{ID: 100, MemoryBytes: 16 * gib}}
+		for i := range 3 {
+			node.Machines = append(node.Machines, hypervisorapi.Machine{ID: 10100 + i, MemoryBytes: 4 * gib})
+		}
+		for i := range workers {
+			node.Machines = append(node.Machines, hypervisorapi.Machine{ID: 10200 + i, MemoryBytes: 10 * gib})
+		}
+		h["node0"] = node
+		return h
+	}
+	for name, c := range map[string]struct {
+		built, planned int
+		refused        bool
+		says           string
+	}{
+		"over, and asking for what it has":      {3, 3, false, "it is not stopped"},
+		"over, and asking for less":             {3, 2, false, "fits"},
+		"over, and asking for more":             {3, 4, true, "OVER BY"},
+		"within, and asking for more than fits": {2, 3, true, "OVER BY"},
+	} {
+		lines, err := Of(standing(c.built), site(c.planned))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := Refusal(lines) != nil; got != c.refused {
+			t.Errorf("%s: refused = %v, want %v\n%s", name, got, c.refused, lines[0])
+		}
+		if !strings.Contains(lines[0].String(), c.says) {
+			t.Errorf("%s: the line does not say %q:\n%s", name, c.says, lines[0])
+		}
 	}
 }
