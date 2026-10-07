@@ -56,6 +56,9 @@ func applySteps(ctx *run.Context, phase string, workers bool) error {
 func rootFor(ctx *run.Context, name string, tofu asbuilt.Tofu) (*run.Context, error) {
 	switch name {
 	case config.ClusterRoot:
+		if err := handOverHardware(ctx); err != nil {
+			return nil, err
+		}
 		return ctx.In(ctx.Cluster), nil
 	case config.PlatformRoot:
 		if err := handOverClusterAccess(ctx, tofu); err != nil {
