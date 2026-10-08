@@ -109,7 +109,11 @@ spec:
     # the third should queue rather than preempt - see the lane model in
     # docs/epochs/02-abstraction.md. Raising it is a capacity decision worth
     # making with the measurements epoch 04 adds, not with arithmetic.
-    maxRunners: 2
+    # Four, since the runners were split. This set runs work somebody is
+    # waiting for, and when there is a queue of it there is no reason for it
+    # to wait behind a number: each runner reserves what it needs, so what
+    # limits how many run at once is whether the workers have the room.
+    maxRunners: 4
 
     # The listener: critical, and off the machines holding quorum.
     #
@@ -235,7 +239,12 @@ spec:
         # operator that cannot otherwise be placed will evict a build mid-run.
         # That is deliberate - the alternative is the estate's own reconciler
         # waiting behind a thirteen-minute job.
-        priorityClassName: batch
+        # Interactive, since the runners were split by the priority of
+        # their work: this set runs converges, a converge in flight is not to
+        # be stopped, and somebody merged something and is waiting. Work that
+        # can wait has the set beside this one (runner-scale-set-batch.yaml).
+        # The paragraph above describes the single set this used to be.
+        priorityClassName: interactive
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:

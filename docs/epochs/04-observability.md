@@ -784,9 +784,32 @@ not here: an alert when such work is stopped more than occasionally
 (`LendingIdleCapacityNeedsAccounting`), and a guard that fails on the
 change that gives a site a second hypervisor. **Built:** each namespace's
 reservation recorded beside its use, which is the pattern, and an alert
-when must-run work would not fit with a worker gone. **Not built:** work
-that can wait declared as such, the message, and a CI job retried when its
-runner is stopped.
+when must-run work would not fit with a worker gone. The runners are two
+sets, split by the priority of their work: converges on one, which is
+`interactive` and not to be stopped, and work that can wait on the other,
+which is `batch`, reserves little and has a ceiling. A stopped batch pod
+raises `WorkThatCanWaitWasStoppedForResources`, which says it was on
+purpose and is being run again. **Not built:** a CI job run again when its
+runner was stopped, which GitHub does not do unaided.
+
+**Priority work waits, and only for moments.** Offered the choice of letting
+work that cannot wait stop work that can, the operator chose otherwise:
+"Interactive work should wait BUT we need to make it so that it ONLY needs
+to wait for seconds. The batch work can have 4 different hour long jobs BUT
+only the batch runner will tackle them - the batch jobs that last only
+seconds are able to flex into the priority runner." So nothing is stopped
+to make room on the runners, and the protection is in what is let in: a job
+says which of three kinds it is - cannot wait, short, or can wait - and how
+long it ordinarily takes. Long work that can wait may ask only for its own
+runners. Short work may also fill the priority runners' idle room, and is
+short by a time limit of two minutes or less that GitHub enforces. And a
+declaration is checked against what happened: "a guard looks at the actual
+against the declared and confirms that they align" - the middle of a job's
+recent runs must be no longer than it says and no less than a third of it.
+**Honest limits:** GitHub's smallest time limit is a minute and a runner
+takes tens of seconds to start, so moments means a minute or two; jobs are
+handed to a set in the order they arrive; and no short work that can wait
+runs on these runners yet.
 
 **Where a size came from is data, not a comment.** The operator, on the
 proposal that a manifest's reservation is the declaration and only its

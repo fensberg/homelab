@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 215
+floor: 217
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -313,7 +313,7 @@ mutations:
 
       "
   - guard: TestEveryJobOnTheEstatesRunnersNamesItsSite
-    file: .github/workflows/integration-tests.yml
+    file: .github/workflows/deploy-infrastructure.yml
     find: "    runs-on: homelab-${{ matrix.site }}\n"
     replace: "    runs-on: homelab-production\n"
     mentions: "names the site it runs for with an expression"
@@ -754,8 +754,8 @@ mutations:
     # the listener - and "operator: DoesNotExist" alone no longer names one spot.
     # The anchor is YAML rather than the comment beside it on purpose:
     # TestNoTestIsSatisfiedByAComment strips comments and re-runs everything.
-    find: "priorityClassName: batch\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: DoesNotExist"
-    replace: "priorityClassName: batch\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: Exists"
+    find: "priorityClassName: interactive\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: DoesNotExist"
+    replace: "priorityClassName: interactive\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: Exists"
     mentions: "would schedule onto a control-plane node"
     why: >
       One character inverts it. With Exists a CI runner schedules ONLY onto
@@ -1324,6 +1324,33 @@ mutations:
       A note is not read on that day. This is what asks the question of
       whoever is adding the node.
 
+  - guard: TestEveryJobOnTheEstatesRunnersNamesItsSite
+    file: clusters/core/infrastructure/configs/runner-scale-set-batch.yaml
+    find: "runnerScaleSetName: homelab-batch-${SITE}"
+    replace: "runnerScaleSetName: homelab-spare-${SITE}"
+    mentions: "so that set of runners serves nothing"
+    why: >
+      A set of runners is added for a job, and the job is never pointed at
+      it - the workflow change was a separate step, or the set was renamed
+      and the job was not. Everything reconciles and every other check
+      passes. The set sits there registered with GitHub, a listener
+      running, serving nothing, and is still there a year later because
+      nothing ever said it was unused.
+
+  - guard: TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows
+    file: scripts/approved-suppliers.yml
+    find: "  - job: integration-tests.yml/test\n    kind: can-wait"
+    replace: "  - job: integration-tests.yml/test\n    kind: cannot-wait"
+    mentions: "asks for the runners for work that can wait"
+    why: >
+      A job's kind is changed where it is declared and its workflow is left
+      asking for the runners it asked for before. The declaration now says
+      the nightly tests cannot wait while they run where they are stopped
+      first - or, the other way about, a long job is called short and sits
+      on the priority runners with everything urgent queued behind it.
+      Either way what the job says and where it runs have parted, and the
+      promise that priority work waits only moments rests on them agreeing.
+
   - guard: TestNoTeardownStartsUntilTheSafetyOfficerClearsIt
     file: scripts/contractor/internal/phases/destroy.go
     find: "if err := clearedBySafetyOfficer(ctx); err != nil {"
@@ -1447,15 +1474,20 @@ mutations:
       that reasoning assumes cannot exist.
 
   - guard: TestEveryImageBuiltHereIsRunByAManifestHere
-    file: clusters/core/infrastructure/configs/runner-scale-set.yaml
-    find: "image: ghcr.io/fensberg/homelab-runner@sha256:"
-    replace: "image: ghcr.io/actions/somebody-elses@sha256:"
+    # A file planted, not a line changed. The runner's image is run by two
+    # manifests since the runners were split by the priority of their work,
+    # so taking it out of one leaves it run by the other and proves nothing.
+    file: .github/spare-image/Dockerfile
+    create: |
+      FROM scratch
     mentions: "no manifest here runs one"
     why: >
-      The estate's runners now run the publisher's image and the one built
-      here is run by nothing in this repository. Wherever it does run, the
-      HEALTHCHECK checkov is told not to ask for may be the only health check
-      there is.
+      An image is built here that nothing in this repository runs: a tool
+      somebody meant to deploy, or what is left of a workload that was taken
+      out by its manifests and not by its Dockerfile. Wherever it does run,
+      the HEALTHCHECK checkov is told not to ask for may be the only health
+      check there is - and the excuse for not asking rests on everything
+      built here running under Kubernetes.
 
   - guard: TestEveryInstalledHookTypeHasAShim
     file: .pre-commit-config.yaml

@@ -4,5 +4,6 @@ kind: Kustomization
 resources:
   - state-database.yaml
   - runner-scale-set.yaml
+  - runner-scale-set-batch.yaml
   - host-metrics.yaml
   - capacity.yaml

@@ -55,6 +55,12 @@
         "kind": "estimate",
         "basis": "Chosen for a database whose whole encrypted backup is under a megabyte."
       }
+    },
+    "HelmRelease/self-hosted-batch": {
+      "*": {
+        "kind": "estimate",
+        "basis": "Little, on purpose: work that can wait is owed almost no reservation and runs in what is free. The memory ceiling is a guess at what a nightly test run needs, and has not been seen under load."
+      }
     }
   }
 }

@@ -1,0 +1,115 @@
+---
+# The runners for work that can wait.
+#
+# The estate's runners are two sets, split by the priority of the work, and
+# this is the second (the first, and everything the two share, is in
+# runner-scale-set.yaml beside this file). A cluster makes a runner before it
+# knows which job the runner will be given, so one set could not protect a
+# converge and leave a nightly test stoppable. A job says which it is by the
+# set it asks for.
+#
+# What runs here must be safe to stop and start again: it reserves little,
+# runs in whatever is free - the idle part of another's reservation included
+# - and is the first thing stopped when that memory is wanted back. A job
+# whose runner was stopped that way is run again, and says why
+# (docs/epochs/04-observability.md).
+#
+# Every setting below that is the same as the first set's is there for the
+# reason given beside it in that file, and is not argued again here. What
+# differs is the name, the priority of the runner, and what it reserves.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: self-hosted-batch
+  namespace: arc-runners
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: gha-runner-scale-set
+      version: "0.14.2"
+      sourceRef:
+        kind: HelmRepository
+        name: actions-runner-controller
+        namespace: flux-system
+      interval: 12h
+  install:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  values:
+    githubConfigUrl: ${RUNNER_GITHUB_CONFIG_URL}
+    githubConfigSecret: ${RUNNER_SECRET_NAME}
+    runnerGroup: homelab
+
+    runnerScaleSetName: homelab-batch-${SITE}
+
+    minRunners: 0
+    maxRunners: 2
+
+    listenerTemplate:
+      spec:
+        terminationGracePeriodSeconds: 60
+        securityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        priorityClassName: critical
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        containers:
+          - name: listener
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+
+    template:
+      spec:
+        priorityClassName: batch
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          fsGroup: 1001
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+          - name: runner
+            image: ghcr.io/fensberg/homelab-runner@sha256:15ade7051773012d42e85727198d0a3cc08495a0137dfe97b9bfe6ca30c1cdd2
+            command: ["/home/runner/run.sh"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+            # Little reserved and a ceiling above it. The reservation is what
+            # the scheduler holds for the job, and work that can wait is owed
+            # almost none; it runs in what is actually free. The ceiling is
+            # there so a job that runs away is stopped itself and does not
+            # take a worker's other tenants with it.
+            resources:
+              requests:
+                cpu: 250m
+                memory: 512Mi
+              limits:
+                memory: 4Gi

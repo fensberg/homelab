@@ -41,7 +41,7 @@
 # this repository refuses those by name. Six of the seven shell scripts were in
 # exactly that state, including the gate that enforces coverage, the script
 # that sets up every machine, and all three git hooks.
-ceiling: 16
+ceiling: 15
 
 blocked:
   # Shell. Nothing runs these; the tests that mention them read their source.
@@ -77,7 +77,6 @@ blocked:
   - integration:cloudnative-pg # 302
   - integration:gha-runner-scale-set-controller # 301
   - integration:openebs # 303
-  - integration:self-hosted # 300
   - verb:check-inventory # 307
   - verb:converge-site # 299
   - verb:kubeconfig # 305

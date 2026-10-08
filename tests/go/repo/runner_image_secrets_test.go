@@ -103,7 +103,15 @@ func dockerBuildCommand(workflow string) (string, bool) {
 var scaleSetImage = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
 
 func TestRunnerScaleSetPinsItsImageByDigest(t *testing.T) {
-	_, manifest := fluxObject(t, kindHelmRelease, runnerScaleSet)
+	// Every set of runners, not the one this was written for.
+	for _, release := range runnerSets(t) {
+		t.Run(release, func(t *testing.T) { runnerImageIsPinned(t, release) })
+	}
+}
+
+// runnerImageIsPinned is that rule for one set of runners, by its release.
+func runnerImageIsPinned(t *testing.T, release string) {
+	_, manifest := fluxObject(t, kindHelmRelease, release)
 	m := scaleSetImage.FindStringSubmatch(manifest)
 	if m == nil {
 		t.Fatal("runner-scale-set.yaml names no image.\n\nWithout one the scale set silently falls back to the chart's default runner, which carries none of the toolchain the program shells out to - a converge would fail at Render with \"1Password CLI not found on PATH\".")

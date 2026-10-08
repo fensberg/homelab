@@ -1265,3 +1265,40 @@ hooks:
       rule that refuses a Claude co-authorship trailer.
 
 exemptions: []
+
+# What kind of work each job on the estate's own runners is, and how long it
+# takes.
+#
+# The runners are two sets, split by the priority of their work, and a job is
+# given to the set it asks for. So that priority work only ever waits for
+# moments, what may ask for the priority set is held to three kinds:
+#
+#   cannot-wait  somebody is waiting on it and it is not to be stopped once
+#                started - a converge. The priority set.
+#   short        nobody is waiting on it and it is over in moments, so it may
+#                fill the priority set's idle room: whatever arrives behind it
+#                waits no longer than it takes. Two minutes at most, by its
+#                own time limit, which GitHub enforces.
+#   can-wait     nobody is waiting and it takes as long as it takes. The other
+#                set only, however long the queue there.
+#
+# `takes` is how long the job ordinarily takes. tests/go/repo holds each job to
+# the set and the time limit its kind allows, and tests/go/api reads how long
+# the job's recent runs really took and fails when that and this have parted:
+# a job that got slow, or one declared long that is over in a minute and
+# could be short.
+#
+# One entry for every job that asks for one of the estate's runners, and none
+# for a job that does not.
+work:
+  - job: deploy-infrastructure.yml/apply
+    kind: cannot-wait
+    takes: 5m
+
+  - job: deploy-infrastructure.yml/converge
+    kind: cannot-wait
+    takes: 5m
+
+  - job: integration-tests.yml/test
+    kind: can-wait
+    takes: 5m

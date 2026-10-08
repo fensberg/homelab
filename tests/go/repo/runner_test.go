@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+	"slices"
+	"sort"
 )
 
 // The runner manifests name their namespaces as literals, while OpenTofu
@@ -34,6 +36,44 @@ const (
 	runnerController = "gha-runner-scale-set-controller"
 	runnerScaleSet   = "self-hosted"
 )
+
+// runnerSets is the release of every runner scale set the repository
+// declares, found by the chart it installs. The runners are more than one
+// set, split by the priority of their work, and a rule about "the runners"
+// that read one of them by name would hold for that one and say nothing of
+// the next.
+func runnerSets(t *testing.T) []string {
+	t.Helper()
+	var sets []string
+	for _, r := range whatReserves(t) {
+		kind, name, _ := strings.Cut(r.object, "/")
+		if kind != kindHelmRelease {
+			continue
+		}
+		if regexp.MustCompile(`(?m)^\s*chart:\s*gha-runner-scale-set\s*$`).MatchString(helmReleaseDocument(t, r.file, name)) {
+			sets = append(sets, name)
+		}
+	}
+	sort.Strings(sets)
+	if !slices.Contains(sets, runnerScaleSet) {
+		t.Fatalf("the runner scale sets found are %v, and the one every site's converge runs on (%s) is not among them", sets, runnerScaleSet)
+	}
+	return sets
+}
+
+// helmReleaseDocument is the one document of a manifest that declares the
+// named release, so that two releases in one file are read apart.
+func helmReleaseDocument(t *testing.T, rel, name string) string {
+	t.Helper()
+	for _, doc := range strings.Split(readRepoFile(t, rel), "\n---") {
+		if regexp.MustCompile(`(?m)^kind:\s*HelmRelease\s*$`).MatchString(doc) &&
+			regexp.MustCompile(`(?m)^  name:\s*`+regexp.QuoteMeta(name)+`\s*$`).MatchString(doc) {
+			return doc
+		}
+	}
+	t.Fatalf("%s does not declare the release %s", rel, name)
+	return ""
+}
 
 func TestRunnerManifestsAgreeWithOpenTofu(t *testing.T) {
 	tfPath, tf := tofuDeclaring(t, "runner_system_namespace =")
@@ -64,16 +104,26 @@ func TestEveryJobOnTheEstatesRunnersNamesItsSite(t *testing.T) {
 	// kept alive only so this test could compare against it, which tflint
 	// correctly called dead code. The manifest is the only declaration now,
 	// so it is the one this test reads.
-	_, manifest := fluxObject(t, kindHelmRelease, runnerScaleSet)
-	name := yamlScalar(t, manifest, "runnerScaleSetName")
-
-	// One manifest serves every site, so the name has to carry the site: a
+	// Read from the manifests, which is where the names are declared: one
+	// for each set of runners, and every one of them carries the site.
+	//
+	// One manifest serves every site, so a name has to carry the site: a
 	// fixed name would register two sites' runners as one pool, and a job
 	// for one site would be handed to the other.
-	prefix, perSite := strings.CutSuffix(name, "${SITE}")
-	if !perSite || prefix == "" {
-		t.Fatalf("the runner scale set is named %q. Every site reconciles this manifest, so the name must end in ${SITE} - under one fixed name, two sites offer their runners for each other's work.", name)
+	var prefixes []string
+	for _, release := range runnerSets(t) {
+		_, manifest := fluxObject(t, kindHelmRelease, release)
+		name := yamlScalar(t, manifest, "runnerScaleSetName")
+		prefix, perSite := strings.CutSuffix(name, "${SITE}")
+		if !perSite || prefix == "" {
+			t.Fatalf("the runner scale set %s is named %q. Every site reconciles this manifest, so the name must end in ${SITE} - under one fixed name, two sites offer their runners for each other's work.", release, name)
+		}
+		prefixes = append(prefixes, prefix)
 	}
+	// Longest first, so a job asking for one set is not read as asking for
+	// another whose name its name begins with.
+	sort.Slice(prefixes, func(i, j int) bool { return len(prefixes[i]) > len(prefixes[j]) })
+	prefix := prefixes[len(prefixes)-1]
 
 	// Every workflow, not the two that used the runners when this was
 	// written: a job anywhere that asks for one of the estate's runners has
@@ -81,15 +131,23 @@ func TestEveryJobOnTheEstatesRunnersNamesItsSite(t *testing.T) {
 	// declares. Anything else waits for a runner that will never appear.
 	runsOn := regexp.MustCompile(`(?m)^\s*runs-on:\s*(\S.*?)\s*$`)
 	asked := 0
+	askedOf := map[string]int{}
 	for _, wf := range tracked(t, func(rel string) bool {
 		return strings.HasPrefix(rel, ".github/workflows/") && strings.HasSuffix(rel, ".yml") && strings.Count(rel, "/") == 2
 	}) {
 		for _, m := range runsOn.FindAllStringSubmatch(readRepoFile(t, wf), -1) {
-			site, estate := strings.CutPrefix(m[1], prefix)
+			site, estate := "", false
+			for _, p := range prefixes {
+				if site, estate = strings.CutPrefix(m[1], p); estate {
+					prefix = p
+					break
+				}
+			}
 			if !estate {
 				continue
 			}
 			asked++
+			askedOf[prefix]++
 			// An expression, never a site written out: which sites there are
 			// is the config's to say, and a name here is one the next site
 			// is not.
@@ -100,6 +158,15 @@ func TestEveryJobOnTheEstatesRunnersNamesItsSite(t *testing.T) {
 	}
 	if asked == 0 {
 		t.Fatalf("no workflow asks for a runner named %s<site>, so either nothing runs on the estate or this has stopped reading the workflows", prefix)
+	}
+	// And every set is asked for by something. A set of runners no job asks
+	// for is a listener, a registration with GitHub and a manifest to keep
+	// up, all for nothing: the kind of thing that is added for a change that
+	// never quite landed and is then there for good.
+	for _, p := range prefixes {
+		if askedOf[p] == 0 {
+			t.Errorf("no workflow asks for a runner named %s<site>, so that set of runners serves nothing. Point the job it was made for at it, or take the set out.", p)
+		}
 	}
 }
 
@@ -196,6 +263,14 @@ func nodeAffinityAdmits(t *testing.T, terms []any, labels map[string]string) boo
 // that nothing schedules would satisfy the first assertion perfectly while
 // taking CI off the estate entirely.
 func TestRunnerPodsCannotScheduleOntoAControlPlane(t *testing.T) {
+	// Every set of runners, not the one this was written for.
+	for _, release := range runnerSets(t) {
+		t.Run(release, func(t *testing.T) { runnersKeepOffControlPlanes(t, release) })
+	}
+}
+
+// runnersKeepOffControlPlanes is that rule for one set of runners, by its release.
+func runnersKeepOffControlPlanes(t *testing.T, release string) {
 	var doc struct {
 		Spec struct {
 			Values struct {
@@ -213,7 +288,7 @@ func TestRunnerPodsCannotScheduleOntoAControlPlane(t *testing.T) {
 			} `yaml:"values"`
 		} `yaml:"spec"`
 	}
-	_, body := fluxObject(t, kindHelmRelease, runnerScaleSet)
+	_, body := fluxObject(t, kindHelmRelease, release)
 	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
 		t.Fatalf("parsing the runner scale set: %v", err)
 	}
@@ -248,6 +323,14 @@ func TestRunnerPodsCannotScheduleOntoAControlPlane(t *testing.T) {
 // belongs in the record and in review, not in a check that would fail the day
 // somebody has a good reason.
 func TestRunnerPodsAreNotBestEffort(t *testing.T) {
+	// Every set of runners, not the one this was written for.
+	for _, release := range runnerSets(t) {
+		t.Run(release, func(t *testing.T) { runnersAreNotBestEffort(t, release) })
+	}
+}
+
+// runnersAreNotBestEffort is that rule for one set of runners, by its release.
+func runnersAreNotBestEffort(t *testing.T, release string) {
 	var doc struct {
 		Spec struct {
 			Values struct {
@@ -264,7 +347,7 @@ func TestRunnerPodsAreNotBestEffort(t *testing.T) {
 			} `yaml:"values"`
 		} `yaml:"spec"`
 	}
-	_, body := fluxObject(t, kindHelmRelease, runnerScaleSet)
+	_, body := fluxObject(t, kindHelmRelease, release)
 	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
 		t.Fatalf("parsing the runner scale set: %v", err)
 	}

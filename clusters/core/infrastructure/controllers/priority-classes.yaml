@@ -71,9 +71,9 @@ value: 10000
 preemptionPolicy: Never
 globalDefault: false
 description: >-
-  Somebody is waiting for it, so queueing is the entire cost - the fast pull
-  request checks, where the job is 40 seconds and the wait is not. Takes the
-  next free slot ahead of batch work; never interrupts anything running.
+  Somebody is waiting for it, so queueing is the entire cost - a converge
+  after a merge, a player on a server. Takes the next free slot ahead of
+  batch work; never interrupts anything running.
 ---
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
@@ -83,6 +83,7 @@ value: 100
 preemptionPolicy: Never
 globalDefault: false
 description: >-
-  Must complete; need not complete now. Integration runs, converges, image
-  builds, state backups. Nothing observes its latency, so it yields the slot
-  and keeps the work.
+  Must complete; need not complete now, and may be stopped and started
+  again. Integration runs and anything else nobody is waiting on. It is not
+  counted against a site's capacity: it runs in what is free and gives it
+  back when asked.

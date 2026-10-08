@@ -193,6 +193,20 @@ Explicitly out of scope (and which epoch owns it instead):
    tests: a new fake or fixture builder outside the shared ones is refused
    unless declared, with a reason.
 
+5. **Nothing unused is kept, and something says so.** Only `go vet` reads
+   the Go here, and it does not report a function nothing calls; a fuller
+   linter is named in two comments and run by nothing. The guards that
+   exist each catch one kind of leftover - an exemption no longer needed,
+   a declaration naming something gone, an image nothing runs, a set of
+   runners no job asks for (#661, where the operator asked for this: "Shouldn't
+   there be a guard against unused, dead code? It's anti-bloat") - and none
+   catches plain unused code. The tools for it are built: the Go team's
+   `deadcode`, which reports what no program's entry point reaches, and
+   `staticcheck`, which reports what is unused inside a package. One of
+   them, pinned, as a lane of its own, and what its first run finds taken
+   out. **The test is a change:** a function added and never called fails
+   a pull request.
+
 ## Decisions
 
 ### One enumeration primitive, and the walk root was the stale part
