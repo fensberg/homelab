@@ -76,9 +76,11 @@ The budget, and who refuses:
 - **5. The hypervisor is strict.** The machines' memory never adds up to more
   than the host's capacity. A plan that would is refused.
 - **6. Kubernetes is where the site is overfilled.** Everything that is not
-  `batch` fits in reservations with one worker gone, and leaves free a
-  floor the size of the largest necessary batch job. Limits may total 110%
-  of what the machines hold. A pull request that breaks either is refused
+  `batch` fits in reservations with one worker gone. Work that can wait is
+  not counted against capacity: it runs in whatever is free, the idle part
+  of another's reservation included, and is stopped and retried when that
+  is wanted back, with a message that says so. There is no cap on the
+  total. A pull request that leaves must-run work with no room is refused
   by its plan, which names the shortfall. Disk is held to a budget as
   memory is.
 - **7. A pod with no reservation or no priority class is refused by the
@@ -756,6 +758,35 @@ address plan, a pull request's plan and the safety officer do not see
 them. **Not read from the host's API,** because it is not there: how fast
 each network interface is, and the filesystem cache's own figures. Both
 are reported by the host's exporter and belong to the dashboards.
+
+**110% was an attitude and not a rule.** The operator, when the capacity
+check was proposed with it as a limit: "110% was a number I made up. It
+shows you the approach I want to take in the estate - not an actual rule.
+We are LEAN and we can FLEX into our capacity... If we can do work then
+lets do work and we shouldn't be held back by batch or work that can be
+deferred." So only work that cannot wait has to fit, nothing caps the
+total, and what limits a site is what its machines can actually do, which
+is watched. And when to lend is not a time on a clock: "4 am is also a
+random number - patterns is a known number." Capacity is lent by what each
+workload is seen not to use, whatever the workload is.
+
+**Lent the way Kubernetes lends it, for now.** Work that can wait reserves
+little, runs in what is free and is stopped when the memory is wanted
+back; a stopped job says why and is retried, which the operator made a
+condition. **Looked at and put off** (2026-10-08): Koordinator, which
+accounts for what is safe to lend from recent use and from a longer
+prediction, at the cost of several controllers and an agent on every
+machine with the run of the host, untried on Talos; and Crane, built
+around finding the cycles in a workload's use and unmaintained since 2024.
+**Because** the site has almost no work that can wait, and a pattern is
+only known once it has been watched. **What reopens it** is in code and
+not here: an alert when such work is stopped more than occasionally
+(`LendingIdleCapacityNeedsAccounting`), and a guard that fails on the
+change that gives a site a second hypervisor. **Built:** each namespace's
+reservation recorded beside its use, which is the pattern, and an alert
+when must-run work would not fit with a worker gone. **Not built:** work
+that can wait declared as such, the message, and a CI job retried when its
+runner is stopped.
 
 **Where a size came from is data, not a comment.** The operator, on the
 proposal that a manifest's reservation is the declaration and only its
