@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 223
+floor: 222
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -341,15 +341,6 @@ mutations:
       found it; pasting it back is the regression.
 
       "
-
-  - guard: TestEveryScheduledWorkflowIsWatchedForFailing
-    file: .github/workflows/duty.yml
-    find: "      - Expedite\n"
-    replace: "      - Expediter\n"
-    mentions: "duty.yml does not watch it"
-    why: >
-      A scheduled workflow the watcher does not name fails silently, which is
-      the whole of #441.
 
   - guard: TestTheE2ETierNamesVerbsTheContractorHas
     file: tests/go/e2e/ignition_test.go
@@ -1480,9 +1471,25 @@ mutations:
       repository on the strength of this.
 
   - guard: TestAWorkflowStartedByAnotherTakesNothingFromItButItsOutcome
-    file: .github/workflows/duty.yml
-    find: '          checkout: "false"'
-    replace: '          checkout: "true"'
+    file: .github/workflows/planted-watcher.yml
+    create: |
+      name: Planted watcher
+      on:
+        workflow_run:
+          workflows: [Anything]
+          types: [completed]
+      permissions:
+        contents: read
+      jobs:
+        watch:
+          runs-on: ubuntu-latest
+          permissions:
+            contents: read
+          steps:
+            - name: Mobilize
+              uses: $/.github/workflows/mobilize
+              with:
+                checkout: "true"
     mentions: "does not tell its first step to check nothing out"
     why: >
       The workflow runs with the default branch's token for whatever run it
@@ -1492,14 +1499,14 @@ mutations:
       strength of this.
 
   - guard: TestEverySelfRepositoryReferenceNamesAnActionThatIsHere
-    file: .github/workflows/duty.yml
+    file: .github/workflows/scorecard.yml
     find: "uses: $/.github/workflows/mobilize"
     replace: "uses: $/.github/workflows/mobilise"
     mentions: "there is no action there"
     why: >
       One letter, in a form actionlint is told to pass without reading. The
       workflow is valid YAML and every linter is quiet; the job fails to
-      start, on a schedule, the next time something it watches finishes.
+      start, on a schedule, the next time it is due.
 
   - guard: TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
     file: .github/runner-image/Dockerfile
