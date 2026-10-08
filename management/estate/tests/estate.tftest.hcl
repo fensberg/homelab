@@ -179,3 +179,91 @@ run "a_workstation_address_that_is_not_one_is_refused" {
 
   expect_failures = [output.workstation_route]
 }
+
+# The watchman is what says a site has gone quiet, and a site is granted what
+# it rings with. The watchman is given the SHA-256 of each site's secret and
+# never the secret, so nothing read out of its settings can ring for a site.
+run "a_site_is_granted_what_it_rings_the_watchman_with" {
+  command = apply
+
+  variables {
+    config_path = "./tests/fixtures/two-plots.json"
+  }
+
+  assert {
+    condition = alltrue([
+      for k, g in output.grants :
+      g.heartbeat.url == "https://watchman.example.workers.dev/${k}" && length(g.heartbeat.secret) == 48
+    ])
+    error_message = "a site is not granted the watchman's address for it, at the account's own address for Workers, and a secret to ring with"
+  }
+
+  assert {
+    condition     = length(distinct([for g in output.grants : g.heartbeat.secret])) == length(output.grants)
+    error_message = "two sites ring with the same secret, so one could ring for the other after it has stopped"
+  }
+
+  assert {
+    condition     = jsondecode(module.watchman.given_in_the_clear.SITES) == { for k, g in output.grants : k => sha256(g.heartbeat.secret) }
+    error_message = "the watchman is not given exactly the SHA-256 of each site's secret, by the site's key"
+  }
+
+  assert {
+    condition = alltrue([
+      for k, g in output.grants : !strcontains(jsonencode(module.watchman.given_in_the_clear), g.heartbeat.secret)
+    ])
+    error_message = "the watchman is given a site's secret in the clear, which is what reading its settings would yield"
+  }
+}
+
+# The operator's bound on the watchman, which is tighter than the plan's: no
+# more than 200 writes a day for a site, and no silence said before two rings
+# have been missed.
+run "the_watchman_rings_no_more_often_than_the_operator_allows" {
+  command = plan
+
+  assert {
+    condition     = module.watchman.use.writes_a_day / length(local.sites) <= 200
+    error_message = "a site costs the watchman more than 200 writes a day, which is the operator's bound"
+  }
+
+  assert {
+    condition     = module.watchman.timings.quiet_after > 2 * module.watchman.timings.looks_every
+    error_message = "a silence is said before two rings have been missed, so one late ring is called a site gone quiet"
+  }
+}
+
+# Everything the estate runs on the free plan is added up and held to it, and
+# what the estate uses today fits.
+run "what_the_estate_uses_fits_the_free_plan" {
+  command = plan
+
+  assert {
+    condition     = output.free_plan_use.timers == 1 && output.free_plan_use.writes_a_day == 154 && output.free_plan_use.requests_a_day == 144
+    error_message = "one site's watchman is not counted as one timer, 144 requests and 154 writes a day"
+  }
+}
+
+# A plan that would go over is refused before anything changes. Planned here
+# against a smaller plan than the real one: two sites, and room for one.
+run "an_estate_that_would_go_over_the_free_plan_is_refused" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/two-plots.json"
+    free_plan   = { timers = 5, requests_a_day = 100000, reads_a_day = 100000, writes_a_day = 300 }
+  }
+
+  expect_failures = [output.free_plan_use]
+}
+
+# The same for the timers, which are counted for the account and not by use.
+run "a_timer_too_many_for_the_free_plan_is_refused" {
+  command = plan
+
+  variables {
+    free_plan = { timers = 0, requests_a_day = 100000, reads_a_day = 100000, writes_a_day = 1000 }
+  }
+
+  expect_failures = [output.free_plan_use]
+}

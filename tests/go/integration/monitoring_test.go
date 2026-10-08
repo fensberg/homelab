@@ -336,3 +336,63 @@ func TestTheSitesFillIsRecorded(t *testing.T) {
 	assert.Positive(t, instantQuery(t, tunnel.Endpoint(), "count(namespace:idle_reserved_memory_bytes)"),
 		"no namespace's idle reservation is being recorded, and that series is the pattern capacity is to be lent by")
 }
+
+// The cluster knows how the latest scheduled run of every workflow ended.
+//
+// A scheduled workflow that is failing is said by an alert, and the alert is
+// only as good as the question behind it: an exporter that is running and
+// was refused by GitHub, or allowed out to nowhere by its network policy,
+// answers nothing and raises nothing. So Prometheus is asked for what the
+// alert reads - one series for each workflow the scrape names - and for the
+// rules themselves having evaluated.
+//
+// covers: integration:scheduled-workflows
+func TestTheClusterKnowsHowEveryScheduledWorkflowLastEnded(t *testing.T) {
+	opts := k8s.NewKubectlOptions("", kubeconfig(t), monitoringNamespace)
+	tunnel := k8s.NewTunnel(opts, k8s.ResourceTypeService, "kube-prometheus-stack-prometheus", 0, 9090)
+	defer tunnel.Close()
+	tunnel.ForwardPort(t)
+
+	const job = "scheduled-workflows"
+	_, asked := scrapeFailures(t, tunnel.Endpoint(), job)
+	require.NotZero(t, asked, "Prometheus has no target for the scheduled workflows. Has Flux reconciled the scrape?")
+
+	// Asked about every fifteen minutes, so looked back on for longer than
+	// that: a series asked about that rarely is absent between answers.
+	known := instantQuery(t, tunnel.Endpoint(), `count(count by (workflow) (last_over_time(scheduled_workflow_run_number[40m])))`)
+	if int(known) != asked {
+		failures, _ := scrapeFailures(t, tunnel.Endpoint(), job)
+		t.Fatalf("Prometheus asks about %d scheduled workflow(s) and knows how %d of them last ended. "+
+			"What it recorded for the ones that failed to answer:\n\n  %s\n\n"+
+			"A workflow that has never run on its schedule has no latest run, and is the one honest reason for a gap.",
+			asked, int(known), strings.Join(failures, "\n  "))
+	}
+
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Get("http://" + tunnel.Endpoint() + "/api/v1/rules")
+	require.NoError(t, err, "asking Prometheus for its rules")
+	defer resp.Body.Close()
+	var answer struct {
+		Data struct {
+			Groups []struct {
+				Name  string `json:"name"`
+				Rules []struct {
+					Name      string `json:"name"`
+					Health    string `json:"health"`
+					LastError string `json:"lastError"`
+				} `json:"rules"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&answer), "reading Prometheus's rules")
+	ours := 0
+	for _, group := range answer.Data.Groups {
+		if group.Name != job {
+			continue
+		}
+		for _, rule := range group.Rules {
+			ours++
+			assert.Equal(t, "ok", rule.Health, "the rule %s did not evaluate: %s", rule.Name, rule.LastError)
+		}
+	}
+	require.NotZero(t, ours, "Prometheus holds no rule about the scheduled workflows. Has Flux reconciled them?")
+}

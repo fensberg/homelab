@@ -16,6 +16,7 @@ terraform {
 
   required_providers {
     cloudflare = { source = "cloudflare/cloudflare", version = "~> 5.25" }
+    random     = { source = "hashicorp/random", version = "~> 3.7" }
   }
 
   # The estate's own bucket, not any site's database: the estate cannot

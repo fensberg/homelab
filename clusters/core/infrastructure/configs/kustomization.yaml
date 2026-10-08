@@ -7,3 +7,6 @@ resources:
   - runner-scale-set-batch.yaml
   - host-metrics.yaml
   - capacity.yaml
+  # Asks GitHub whether each scheduled workflow is failing. Needs the
+  # ScrapeConfig and PrometheusRule kinds from the monitoring stack.
+  - scheduled-workflows.yaml

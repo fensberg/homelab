@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 218
+floor: 221
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -372,6 +372,41 @@ mutations:
       On a nightly that is a red run nobody is watching: the backup step was
       this for five nights, and took the tests after it and the patrol that
       watches the nightly down with it.
+  - guard: TestEveryWorkerIsCountedAgainstTheFreePlan
+    file: management/estate/free-plan.tf
+    find: "    watchman = module.watchman.use\n"
+    replace: "    watchmen = module.watchman.use\n"
+    mentions: "is not counted against the free plan"
+    why: >
+      A second Worker is added beside the first, or the first's line is
+      dropped from the sum while its use is reworked, and the plan-time
+      refusal goes on passing: it adds up what it is given. The Worker runs
+      and uses its share of the day's requests and writes all the same, and
+      what goes over is refused at the vendor for everything on the account,
+      part way through a day, with nothing saying so.
+  - guard: TestTheClusterIsAskedAboutEveryScheduledWorkflow
+    file: clusters/core/infrastructure/configs/scheduled-workflows.yaml
+    find: "/actions/workflows/site-sweep.yml/runs"
+    replace: "/actions/workflows/site-sweeper.yml/runs"
+    mentions: "runs on a schedule and the cluster is not asked about it"
+    why: >
+      A scheduled workflow is added, or one is renamed, and the list of
+      addresses the cluster asks about is not touched because nothing in the
+      workflow points at it. The new schedule can fail every night and the
+      alert that exists for exactly that never fires - which is the week the
+      expediter failed unnoticed, and the five nights the nightly did.
+
+  - guard: TestTheClusterIsAskedAboutEveryScheduledWorkflow
+    file: clusters/core/infrastructure/configs/scheduled-workflows.yaml
+    find: "  scrapeInterval: 15m"
+    replace: "  scrapeInterval: 5m"
+    mentions: "A caller with no token is allowed 60"
+    why: >
+      Fifteen minutes reads as slow for an alert, and shortening it is one
+      line. At five, six workflows are 72 questions an hour against an
+      allowance of sixty for the site's whole address, so GitHub refuses
+      some of every hour's - and anything else at the site asking with no
+      token is refused with them.
 
   - guard: TestNoCodePicksASiteByName
     file: .github/workflows/integration-tests.yml

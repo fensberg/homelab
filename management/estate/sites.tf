@@ -45,7 +45,7 @@ module "site" {
 # vault. Sensitive: it is every credential the estate grants.
 output "grants" {
   sensitive = true
-  value     = { for k, m in module.site : k => m.grants }
+  value     = { for k, m in module.site : k => merge(m.grants, { heartbeat = module.watchman.heartbeat[k] }) }
 
   # A plot with no site in the sites' template has no addresses, so its tunnel
   # would route nothing while looking granted.

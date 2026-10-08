@@ -801,6 +801,45 @@ The only CI work that can wait is a nightly, whose next run is the retry.
 or the first CI job that can wait and is not on a schedule is declared -
 and then only for a job that was stopped.
 
+**Nobody watches for an absence.** The dead-man's switch was a heartbeat
+posted to the channel twice a day, and the operator on it: "That heartbeat
+is stupid. I don't want to watch for the absence of something." So each
+site's always-firing alert goes to a party outside every site, the
+watchman, which writes down when it last heard from each and says once
+that a site has gone quiet and once that it is heard from again
+(`management/estate/watchman`). It is a Worker at the object-storage
+vendor, chosen by the operator over a hosted service built for this
+(healthchecks.io, Dead Man's Snitch) because the vendor is already a
+supplier and already holds the estate's recovery data, and only because it
+is free: "If not free then no." The free plan refuses what goes over and
+bills nothing, so the estate adds up what everything it runs there uses in
+a day and refuses a plan that would go over (`free-plan.tf`); a site rings
+every ten minutes, which is the operator's bound of 200 writes a day for a
+site. **Honest limits:** if the watchman itself stops nothing says so; it
+says that a site's alerting is not heard, not which part stopped; and a
+silence is said 25 to 35 minutes after it began. **Not yet:** the site's
+half - the secret reaching the cluster and the alert routed to it - which
+waits on the estate being converged and a release of the platform.
+
+**A failing schedule is said where the operator looks.** A workflow kept
+an issue open while a scheduled workflow was failing, and the nightly
+failed for five nights with the issue open, because the operator did not
+know the workflow existed or look where it wrote: "You built that workflow
+without even really consulting me on the actor or the action." So the
+cluster asks instead, and says it in the channel every alert reaches
+(`scheduled-workflows.yaml`). The repository is public, so the Prometheus
+community's JSON exporter reads each scheduled workflow's latest run with
+no credential, every fifteen minutes, inside half of what GitHub allows a
+caller with no token. **Rejected:** giving the workflow the channel's
+webhook, a second copy of a credential that nothing in the estate writes
+to GitHub; an exporter built for GitHub Actions, unmaintained and wanting a
+token. **Still to do:** the workflow that keeps the issues is retired once
+the operator has seen one message arrive this way. And the alert that
+reopens lending is a warning now and not a note, because notes are
+recorded and not sent, and a sign nobody is sent is not one.
+
+> > > > > > > feat/the-cluster-says-when-a-schedule-fails
+
 **Priority work waits, and only for moments.** Offered the choice of letting
 work that cannot wait stop work that can, the operator chose otherwise:
 "Interactive work should wait BUT we need to make it so that it ONLY needs

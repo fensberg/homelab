@@ -62,8 +62,12 @@ func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
 	for _, name := range config.Roots {
 		opts := harness.TofuOptions(t, name, nil)
 		terraform.Init(t, opts)
+		if name == config.ClusterRoot {
+			harness.HandOverRecordedHardware(t, opts)
+		}
 		// The real plan Take makes needs what the options carry: for the
-		// platform root, the cluster's real access.
+		// platform root, the cluster's real access, and for the cluster's
+		// the hardware its state records.
 		for k, v := range opts.EnvVars {
 			t.Setenv(k, v)
 		}
