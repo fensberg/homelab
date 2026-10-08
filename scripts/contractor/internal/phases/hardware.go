@@ -49,7 +49,13 @@ Nothing has been changed`, err)
 	if err := budget.Refusal(lines); err != nil {
 		return fmt.Errorf("%w.\n\nNothing has been changed", err)
 	}
-	facts, err := json.Marshal(map[string]any{"nodes": hosts})
+	// The root records what it is handed, so it is handed only what holds
+	// still. The budget above read the whole answer.
+	recorded := make(map[string]hypervisorapi.Host, len(hosts))
+	for key, host := range hosts {
+		recorded[key] = host.Recorded()
+	}
+	facts, err := json.Marshal(map[string]any{"nodes": recorded})
 	if err != nil {
 		return err
 	}

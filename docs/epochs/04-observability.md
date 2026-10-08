@@ -758,6 +758,17 @@ address plan, a pull request's plan and the safety officer do not see
 them. **Not read from the host's API,** because it is not there: how fast
 each network interface is, and the filesystem cache's own figures. Both
 are reported by the host's exporter and belong to the dashboards.
+**And not recorded,** though it is read: the size of each datastore. It was
+in the record at first, and the record is something the estate is held to
+matching. Read twice a minute apart on 2026-10-08, all four of the host's
+datastores had moved, by one to ten megabytes, and nothing else had: the
+figure is what the pool underneath has left to give. So every night's
+record was refused for an estate that had not changed. The operator: "it
+should be tracked via chart same as other measurements that move." A
+tolerance was the other answer offered and is not taken: the figure only
+falls, so any allowance is crossed in time, and deciding which differences
+count would be the contractor's own judgement inside the one check meant to
+have none. What is recorded is what is the same a minute later.
 
 **110% was an attitude and not a rule.** The operator, when the capacity
 check was proposed with it as a limit: "110% was a number I made up. It
