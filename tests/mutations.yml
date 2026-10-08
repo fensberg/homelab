@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 216
+floor: 217
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1336,6 +1336,20 @@ mutations:
       passes. The set sits there registered with GitHub, a listener
       running, serving nothing, and is still there a year later because
       nothing ever said it was unused.
+
+  - guard: TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows
+    file: scripts/approved-suppliers.yml
+    find: "  - job: integration-tests.yml/test\n    kind: can-wait"
+    replace: "  - job: integration-tests.yml/test\n    kind: cannot-wait"
+    mentions: "asks for the runners for work that can wait"
+    why: >
+      A job's kind is changed where it is declared and its workflow is left
+      asking for the runners it asked for before. The declaration now says
+      the nightly tests cannot wait while they run where they are stopped
+      first - or, the other way about, a long job is called short and sits
+      on the priority runners with everything urgent queued behind it.
+      Either way what the job says and where it runs have parted, and the
+      promise that priority work waits only moments rests on them agreeing.
 
   - guard: TestNoTeardownStartsUntilTheSafetyOfficerClearsIt
     file: scripts/contractor/internal/phases/destroy.go
