@@ -850,8 +850,10 @@ no credential, every fifteen minutes, inside half of what GitHub allows a
 caller with no token. **Rejected:** giving the workflow the channel's
 webhook, a second copy of a credential that nothing in the estate writes
 to GitHub; an exporter built for GitHub Actions, unmaintained and wanting a
-token. **Still to do:** the workflow that keeps the issues is retired once
-the operator has seen one message arrive this way. And the alert that
+token. The operator saw the first two messages arrive this way on
+2026-10-08, for the patrol and the nightly, and the workflow that kept the
+issues is retired with them: one party says a schedule is failing, in one
+place. And the alert that
 reopens lending is a warning now and not a note, because notes are
 recorded and not sent, and a sign nobody is sent is not one.
 
