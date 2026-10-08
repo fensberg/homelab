@@ -284,3 +284,55 @@ func TestTheSitesHistoryIsOnAVolumeThatOutlivesAMachine(t *testing.T) {
 
 // historyClass is the class a volume has to be on to outlive a machine.
 const historyClass = "outlives-a-machine"
+
+// How full the site is has an answer, and the answer is being kept.
+//
+// The rules that work it out are written in a query language nothing here
+// can run before they reach a cluster: a rule that names a metric the
+// cluster does not have, or joins on a label that is not there, is accepted
+// and records nothing, for ever. So this asks Prometheus whether each of the
+// site's own rules evaluated, and whether the figures they exist to produce
+// are there.
+func TestTheSitesFillIsRecorded(t *testing.T) {
+	opts := k8s.NewKubectlOptions("", kubeconfig(t), monitoringNamespace)
+	tunnel := k8s.NewTunnel(opts, k8s.ResourceTypeService, "kube-prometheus-stack-prometheus", 0, 9090)
+	defer tunnel.Close()
+	tunnel.ForwardPort(t)
+
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Get("http://" + tunnel.Endpoint() + "/api/v1/rules")
+	require.NoError(t, err, "asking Prometheus for its rules")
+	defer resp.Body.Close()
+	var answer struct {
+		Data struct {
+			Groups []struct {
+				Name  string `json:"name"`
+				Rules []struct {
+					Name      string `json:"name"`
+					Health    string `json:"health"`
+					LastError string `json:"lastError"`
+				} `json:"rules"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&answer), "reading Prometheus's rules")
+	ours := 0
+	for _, group := range answer.Data.Groups {
+		if !strings.HasPrefix(group.Name, "capacity.") {
+			continue
+		}
+		for _, rule := range group.Rules {
+			ours++
+			assert.Equal(t, "ok", rule.Health, "the rule %s in %s did not evaluate: %s", rule.Name, group.Name, rule.LastError)
+		}
+	}
+	require.NotZero(t, ours, "Prometheus holds none of the site's capacity rules. Has Flux reconciled them?")
+
+	holds := instantQuery(t, tunnel.Endpoint(), "site:workers_allocatable_memory_bytes")
+	gone := instantQuery(t, tunnel.Endpoint(), "site:workers_allocatable_memory_bytes:one_gone")
+	reserved := instantQuery(t, tunnel.Endpoint(), "site:must_run_reserved_memory_bytes")
+	assert.Positive(t, holds, "what the workers hold was recorded as nothing, so the rule matched no worker")
+	assert.Positive(t, reserved, "what must-run work reserves on the workers was recorded as nothing, so the rule matched no pod")
+	assert.Less(t, gone, holds, "what the workers hold with one gone is not less than what they hold")
+	assert.Positive(t, instantQuery(t, tunnel.Endpoint(), "count(namespace:idle_reserved_memory_bytes)"),
+		"no namespace's idle reservation is being recorded, and that series is the pattern capacity is to be lent by")
+}

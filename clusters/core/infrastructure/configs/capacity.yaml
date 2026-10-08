@@ -1,0 +1,140 @@
+---
+# How full the site is, and who is not using what they hold.
+#
+# The site runs lean: work that cannot wait must fit in what the workers
+# hold with one of them gone, and everything else runs in whatever is free.
+# Nothing here caps a total. What limits the site is what the machines can
+# actually do, and these rules are how that is seen.
+#
+# WHO MUST FIT. Everything on a worker that is not `batch`. Work that can
+# wait is not counted against capacity at all: it may be stopped to give
+# memory back and is retried, so it is never a reason there is no room.
+#
+# WHY NOT THE STACK'S OWN OVERCOMMIT ALERT. It asks the same question of
+# every machine and every pod. Here the control planes are not where work
+# goes, and work that can wait is not owed room, so its answer is about a
+# site this is not.
+#
+# WHAT IS RECORDED AND WHY. Each namespace's reservation beside what it is
+# using, kept as series of their own. The gap between them, hour by hour, is
+# the pattern idle capacity is to be lent by - and a pattern is only known
+# once it has been watched, so the watching starts here.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: capacity
+  namespace: monitoring
+spec:
+  groups:
+    - name: capacity.recorded
+      interval: 1m
+      rules:
+        # What the workers hold, and what they hold with the largest gone.
+        - record: site:workers_allocatable_memory_bytes
+          expr: >-
+            sum(kube_node_status_allocatable{resource="memory"}
+            unless on (node) kube_node_role{role="control-plane"})
+        - record: site:workers_allocatable_memory_bytes:one_gone
+          expr: >-
+            sum(kube_node_status_allocatable{resource="memory"}
+            unless on (node) kube_node_role{role="control-plane"})
+            -
+            max(kube_node_status_allocatable{resource="memory"}
+            unless on (node) kube_node_role{role="control-plane"})
+
+        # What work that cannot wait reserves on the workers: every running
+        # pod there whose priority is not batch.
+        - record: site:must_run_reserved_memory_bytes
+          expr: >-
+            sum(
+              (kube_pod_container_resource_requests{resource="memory"}
+               unless on (node) kube_node_role{role="control-plane"})
+              * on (namespace, pod) group_left ()
+              max by (namespace, pod) (kube_pod_info{priority_class!="batch"})
+              * on (namespace, pod) group_left ()
+              max by (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)
+            )
+
+        # Each namespace: what it reserves, what it uses, and what it holds
+        # and is not using. The last is what could be lent.
+        - record: namespace:reserved_memory_bytes
+          expr: >-
+            sum by (namespace) (
+              kube_pod_container_resource_requests{resource="memory"}
+              * on (namespace, pod) group_left ()
+              max by (namespace, pod) (kube_pod_status_phase{phase="Running"} == 1)
+            )
+        - record: namespace:used_memory_bytes
+          expr: >-
+            sum by (namespace) (
+              container_memory_working_set_bytes{container!="", container!="POD"}
+            )
+        - record: namespace:idle_reserved_memory_bytes
+          expr: >-
+            clamp_min(
+              namespace:reserved_memory_bytes
+              - on (namespace) namespace:used_memory_bytes,
+              0
+            )
+
+    - name: capacity.watched
+      rules:
+        - alert: MustRunWorkDoesNotFitWithAWorkerGone
+          expr: >-
+            site:must_run_reserved_memory_bytes
+            > site:workers_allocatable_memory_bytes:one_gone
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: Work that cannot wait would not fit if a worker were lost.
+            description: >-
+              Everything on the workers that is not batch reserves
+              {{ $value | humanize1024 }}B, and the workers hold less than
+              that with the largest of them gone. Replacing a worker, or
+              losing one, leaves something with nowhere to run. Nothing is
+              broken yet.
+
+        # A decision that was put off, and what reopens it.
+        #
+        # Idle capacity is lent the way Kubernetes lends it unaided: work
+        # that can wait reserves little and runs in what is free, and is
+        # stopped when the memory is wanted back. That has no accounting -
+        # nothing knows how much is safe to lend - and no foresight. Two
+        # projects add both, and were looked at on 2026-10-08:
+        #
+        #   Koordinator  publishes each machine's idle reservations as
+        #                capacity batch work is scheduled against, from recent
+        #                use and from a longer prediction. Active. Costs
+        #                several controllers and an agent on every machine
+        #                with the run of the host; not tried on Talos.
+        #   Crane        the one built around finding the cycles in a
+        #                workload's use. Unmaintained since 2024, which is why
+        #                it was passed over and not because the idea is
+        #                wrong: its prediction is the part worth reading
+        #                before building or adopting one.
+        #
+        # They were not taken up because the site had almost no work that can
+        # wait. This fires when that has stopped being true.
+        - alert: LendingIdleCapacityNeedsAccounting
+          expr: >-
+            count(
+              max_over_time(
+                (kube_pod_status_reason{reason="Evicted"}
+                 * on (namespace, pod) group_left ()
+                 max by (namespace, pod) (kube_pod_info{priority_class="batch"})
+                )[1d:5m]
+              ) > 0
+            ) > 3
+          for: 1h
+          labels:
+            severity: info
+          annotations:
+            summary: Work that can wait is being stopped for resources more than occasionally.
+            description: >-
+              More than three batch pods were evicted in a day. Lending idle
+              capacity with no accounting was chosen while almost nothing
+              could wait; this is the sign that has changed. The decision to
+              reopen is whether to trial Koordinator, which accounts for what
+              is safe to lend - see the comment on this rule in the
+              repository for what was found and why it was put off.

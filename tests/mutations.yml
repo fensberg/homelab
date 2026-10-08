@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 214
+floor: 215
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -1311,6 +1311,18 @@ mutations:
       whether it is a publisher's figure, a guess or a measurement - and a
       guess nobody labelled is treated as a fact the first time capacity
       is tight.
+
+  - guard: TestASecondHypervisorReopensHowIdleCapacityIsLent
+    file: config/management.tpl.json
+    find: '          "node0": {'
+    replace: '          "node1": { "hostname": "{{ op://site0/node1/hostname }}", "ip": "{{ op://site0/node1/ip }}", "datastores": { "disks": "local-zfs", "images": "local-iso" } }, "node0": {'
+    mentions: "has 2 hypervisors, which reopens a decision that was put off"
+    why: >
+      A second hypervisor is added to a site, which is three lines of config
+      and the day the estate has been waiting for. How idle capacity is lent
+      was decided for one host and written down with what would reopen it.
+      A note is not read on that day. This is what asks the question of
+      whoever is adding the node.
 
   - guard: TestNoTeardownStartsUntilTheSafetyOfficerClearsIt
     file: scripts/contractor/internal/phases/destroy.go

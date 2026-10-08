@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"encoding/json"
 	"errors"
 	"go/ast"
 	"go/parser"
@@ -375,6 +376,50 @@ func TestAMachinesMemoryIsTheSameWhereItIsMadeAndWhereItIsBudgeted(t *testing.T)
 		mebibytes, _ := strconv.ParseInt(m[1], 10, 64)
 		if made, budgeted := mebibytes<<20, config.MemoryOf[role]; made != budgeted {
 			t.Errorf("a %s is made with %d MiB and budgeted at %d MiB. The budget is what refuses a site its host cannot hold, and it is holding the wrong figure", role, made>>20, budgeted>>20)
+		}
+	}
+}
+
+// A second hypervisor reopens how idle capacity is lent.
+//
+// The decision was put off on 2026-10-08, with two things that would reopen
+// it. One is seen in the cluster and is an alert
+// (LendingIdleCapacityNeedsAccounting). The other is seen here: a site given
+// a second hypervisor. With one host, every machine shares the same memory
+// and lending what is idle is a matter of who is stopped first. With two,
+// where work that can wait is put starts to matter, and that is the
+// accounting Koordinator does and Kubernetes unaided does not.
+//
+// This fails on the change that adds the second hypervisor, so the question
+// is asked by whoever is adding it and not remembered by anybody. It is
+// answered by changing this test: to the decision that was made.
+func TestASecondHypervisorReopensHowIdleCapacityIsLent(t *testing.T) {
+	// Read as the program reads it, so this is not a second idea of what
+	// the config holds.
+	var template config.Config
+	if err := json.Unmarshal([]byte(readRepoFile(t, "config/management.tpl.json")), &template); err != nil {
+		t.Fatalf("the config template is not JSON this reads: %v", err)
+	}
+	if len(template.Sites) == 0 {
+		t.Fatal("the config template declares no site, so this looked at nothing")
+	}
+	for name, site := range template.Sites {
+		if len(site.Hypervisor.Nodes) == 0 {
+			t.Errorf("the site %s declares no hypervisor, so this looked at nothing for it", name)
+		}
+		if len(site.Hypervisor.Nodes) > 1 {
+			t.Errorf(`the site %s has %d hypervisors, which reopens a decision that was put off.
+
+Idle capacity is lent with no accounting: work that can wait reserves little,
+runs in what is free and is stopped when the memory is wanted back. That was
+chosen for a site with one host. With a second, where such work is placed
+matters, and two projects that account for it were looked at and not taken up:
+Koordinator, which is maintained, and Crane, which is not and whose prediction
+of a workload's cycles is still the part worth reading.
+
+Decide whether to trial Koordinator before this site grows, then change this
+test to say what was decided. What was found is beside the alert
+LendingIdleCapacityNeedsAccounting.`, name, len(site.Hypervisor.Nodes))
 		}
 	}
 }

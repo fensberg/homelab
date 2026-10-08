@@ -5,3 +5,4 @@ resources:
   - state-database.yaml
   - runner-scale-set.yaml
   - host-metrics.yaml
+  - capacity.yaml
