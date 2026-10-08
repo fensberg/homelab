@@ -54,6 +54,18 @@ output "grants" {
     error_message = "A plot in the estate vault has no site of that key in config/management.tpl.json, so the address plan has no addresses to route through its tunnel: ${join(", ", local.unplanned_plots)}."
   }
 
+  # The address every site rings is built from the account's name under
+  # workers.dev, and a site is granted that address. Written as the whole
+  # address - with workers.dev on the end, or a scheme on the front - it
+  # builds an address that is nowhere, every site is granted it, and every
+  # ring fails with nothing at the estate saying why. That is how the first
+  # site's rings failed. Refused here, before any site is granted anything,
+  # and without printing what was written.
+  precondition {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", local.access.workers_subdomain))
+    error_message = "The account's name under workers.dev, in the estate vault, must be the name alone: lower-case letters, digits and hyphens, with no dots, no scheme and no workers.dev on the end. The watchman's address is built from it, and each site is granted that address."
+  }
+
   # R2 names are 3 to 63 characters, and the longest a site gets is its
   # production bucket. Checked here, before anything is created, so an estate
   # or site name too long for it fails the plan rather than half an apply.

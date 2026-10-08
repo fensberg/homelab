@@ -267,3 +267,15 @@ run "a_timer_too_many_for_the_free_plan_is_refused" {
 
   expect_failures = [output.free_plan_use]
 }
+
+# The account's name under workers.dev is the name alone. Written as the
+# address it makes, every site would be granted an address that is nowhere.
+run "an_accounts_name_written_as_an_address_is_refused" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/workers-name-is-an-address.json"
+  }
+
+  expect_failures = [output.grants]
+}
