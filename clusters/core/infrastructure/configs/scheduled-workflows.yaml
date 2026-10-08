@@ -1,0 +1,285 @@
+---
+# Whether each scheduled workflow is failing, said by the cluster.
+#
+# A scheduled run's failure notifies only whoever last edited its cron, by
+# email. The first answer was a workflow that kept an issue open while one
+# was failing, and the nightly then failed for five nights with the issue
+# open the whole time, because an issue is not where the operator looks. So
+# the question is asked from here, and the answer goes where every other
+# alert goes.
+#
+# HOW. The repository is public, so its runs can be read with no credential.
+# The exporter below is the Prometheus community's general one: it fetches an
+# address, reads values out of the JSON that comes back, and holds nothing.
+# Prometheus asks it for the latest completed scheduled run of each workflow,
+# and a rule fires while that run is one that failed.
+#
+# WHAT IT COSTS. GitHub allows a caller with no token sixty requests an hour,
+# counted by the address they come from, which is the site's. Each workflow
+# is asked about every fifteen minutes: six workflows are 24 an hour.
+#
+# WHAT IT CANNOT SAY. That a schedule has stopped running at all - the latest
+# run stays the last good one - and anything at all while the site is down.
+# The first is the patrol's question and the second the watchman's.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scheduled-workflows
+  namespace: monitoring
+data:
+  # One series for a workflow: its latest run's number, labelled with how the
+  # run ended. A newer run is a higher number, which is how a failure that
+  # has since been followed by a success is told from one that has not.
+  config.yml: |
+    modules:
+      latest-scheduled-run:
+        headers:
+          Accept: application/vnd.github+json
+        metrics:
+          - name: scheduled_workflow_run
+            type: object
+            help: The latest completed scheduled run of a workflow, by how it ended.
+            path: '{.workflow_runs[0]}'
+            labels:
+              workflow: '{.name}'
+              conclusion: '{.conclusion}'
+            values:
+              number: '{.run_number}'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduled-workflows
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: scheduled-workflows
+spec:
+  # One. Two would ask GitHub twice as often for the same answer, and an hour
+  # without this is an hour in which a nightly's failure is said a little
+  # late.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: scheduled-workflows
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: scheduled-workflows
+    spec:
+      automountServiceAccountToken: false
+      priorityClassName: interactive
+
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+
+      securityContext:
+        runAsNonRoot: true
+        # The image's own user, nobody.
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: exporter
+          image: quay.io/prometheuscommunity/json-exporter:v0.8.0@sha256:3aad20d41a0b31dfaaf7ab1a091440e92a82a61ef68b76750eac0ad50a983652
+          args:
+            - --config.file=/etc/scheduled-workflows/config.yml
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+
+          ports:
+            - name: http
+              containerPort: 7979
+
+          # Its own metrics, which it serves whether or not GitHub answers:
+          # a probe that asked GitHub would spend the allowance on itself.
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            periodSeconds: 60
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+
+          volumeMounts:
+            - name: config
+              mountPath: /etc/scheduled-workflows
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: scheduled-workflows
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduled-workflows
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: scheduled-workflows
+spec:
+  selector:
+    app.kubernetes.io/name: scheduled-workflows
+  ports:
+    - name: http
+      port: 7979
+      targetPort: http
+---
+# What the exporter may talk to: out to GitHub over HTTPS, and in from
+# Prometheus. GitHub's API is a set of addresses nobody can enumerate, so it
+# is the internet less every private range, like the tunnel's own rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: scheduled-workflows
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: scheduled-workflows
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 7979
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# One question for each workflow that runs on a schedule: its latest
+# completed scheduled run. tests/go/repo holds this list to the workflows
+# that have a schedule, in both directions.
+#
+# The repository's own address is not written here. It is the one releases
+# are published under, less the registry, which Flux substitutes: a fork
+# asks about its own runs.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: scheduled-workflows
+  namespace: monitoring
+spec:
+  jobName: scheduled-workflows
+  metricsPath: /probe
+  # Sixty requests an hour is the allowance; see the top of this file.
+  scrapeInterval: 15m
+  scrapeTimeout: 30s
+  params:
+    module: [latest-scheduled-run]
+  staticConfigs:
+    - targets:
+        - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/codeql.yml/runs?event=schedule&status=completed&per_page=1
+        - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/expedite.yml/runs?event=schedule&status=completed&per_page=1
+        - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/integration-tests.yml/runs?event=schedule&status=completed&per_page=1
+        - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/scorecard.yml/runs?event=schedule&status=completed&per_page=1
+        - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/security-patrol.yml/runs?event=schedule&status=completed&per_page=1
+        - https://api.github.com/repos/${RELEASE_REPOSITORY#ghcr.io/}/actions/workflows/site-sweep.yml/runs?event=schedule&status=completed&per_page=1
+  relabelings:
+    # The address asked about is handed to the exporter as what to fetch,
+    # and the exporter is what is scraped. The series keep the workflow's
+    # name, which comes from GitHub's answer, and not the address.
+    - sourceLabels: [__address__]
+      targetLabel: __param_target
+    - sourceLabels: [__address__]
+      regex: .*/workflows/([^/]+)/runs.*
+      targetLabel: instance
+    - targetLabel: __address__
+      replacement: scheduled-workflows.monitoring.svc:7979
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: scheduled-workflows
+  namespace: monitoring
+spec:
+  groups:
+    - name: scheduled-workflows
+      rules:
+        # A workflow is failing while its newest completed scheduled run is
+        # one that failed. Asked every fifteen minutes and looked back on
+        # over forty, because a series asked about that rarely is absent
+        # between answers. The comparison is what clears it: once a newer
+        # run has succeeded, the failed one is no longer the newest.
+        #
+        # A cancelled or skipped run is neither: it says nothing about
+        # whether the schedule is healthy.
+        - alert: ScheduledWorkflowIsFailing
+          expr: >-
+            max by (workflow) (
+              last_over_time(scheduled_workflow_run_number{conclusion=~"failure|timed_out|startup_failure"}[40m])
+            )
+            >= on (workflow)
+            max by (workflow) (last_over_time(scheduled_workflow_run_number[40m]))
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.workflow }} is failing on its schedule."
+            description: >-
+              The latest scheduled run of {{ $labels.workflow }} failed, and
+              a scheduled failure notifies nobody else. Whatever that
+              workflow keeps true is not being kept true. This clears itself
+              when a scheduled run next succeeds.
+
+        # The other way this goes quiet: GitHub refusing the question, most
+        # likely because the site's address has used its hourly allowance.
+        - alert: ScheduledWorkflowsCannotBeRead
+          expr: last_over_time(up{job="scheduled-workflows"}[40m]) == 0
+          for: 2h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Nobody can say whether {{ $labels.instance }} is failing on its schedule."
+            description: >-
+              GitHub has not answered for {{ $labels.instance }}'s latest
+              scheduled run for two hours, so a failure of it would not be
+              said. A caller with no token is allowed sixty requests an hour
+              from one address, and this asks 24; something else at the site
+              may be using the rest.

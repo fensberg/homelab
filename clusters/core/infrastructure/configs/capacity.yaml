@@ -162,7 +162,9 @@ spec:
             ) > 3
           for: 1h
           labels:
-            severity: info
+            # A warning and not a note: notes are recorded and not sent, and
+            # this is what says a decision put off is now due.
+            severity: warning
           annotations:
             summary: Work that can wait is being stopped for resources more than occasionally.
             description: >-

@@ -821,6 +821,25 @@ silence is said 25 to 35 minutes after it began. **Not yet:** the site's
 half - the secret reaching the cluster and the alert routed to it - which
 waits on the estate being converged and a release of the platform.
 
+**A failing schedule is said where the operator looks.** A workflow kept
+an issue open while a scheduled workflow was failing, and the nightly
+failed for five nights with the issue open, because the operator did not
+know the workflow existed or look where it wrote: "You built that workflow
+without even really consulting me on the actor or the action." So the
+cluster asks instead, and says it in the channel every alert reaches
+(`scheduled-workflows.yaml`). The repository is public, so the Prometheus
+community's JSON exporter reads each scheduled workflow's latest run with
+no credential, every fifteen minutes, inside half of what GitHub allows a
+caller with no token. **Rejected:** giving the workflow the channel's
+webhook, a second copy of a credential that nothing in the estate writes
+to GitHub; an exporter built for GitHub Actions, unmaintained and wanting a
+token. **Still to do:** the workflow that keeps the issues is retired once
+the operator has seen one message arrive this way. And the alert that
+reopens lending is a warning now and not a note, because notes are
+recorded and not sent, and a sign nobody is sent is not one.
+
+> > > > > > > feat/the-cluster-says-when-a-schedule-fails
+
 **Priority work waits, and only for moments.** Offered the choice of letting
 work that cannot wait stop work that can, the operator chose otherwise:
 "Interactive work should wait BUT we need to make it so that it ONLY needs
