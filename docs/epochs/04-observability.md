@@ -817,9 +817,15 @@ a day and refuses a plan that would go over (`free-plan.tf`); a site rings
 every ten minutes, which is the operator's bound of 200 writes a day for a
 site. **Honest limits:** if the watchman itself stops nothing says so; it
 says that a site's alerting is not heard, not which part stopped; and a
-silence is said 25 to 35 minutes after it began. **Not yet:** the site's
-half - the secret reaching the cluster and the alert routed to it - which
-waits on the estate being converged and a release of the platform.
+silence is said 25 to 35 minutes after it began. **The site's half** is its
+address and its secret, read from the vault into the Secret Alertmanager
+already mounts. Not into one of their own: a pod told to mount a Secret
+that does not exist yet does not start, and a site whose core had moved
+ahead of its release would have had no alerting at all. And nothing here
+ever rings with the site's own secret to test it, because a ring is the
+site saying it is alive: the check from outside asks only what is refused.
+**Not yet:** the alert routed to the watchman, which waits on a release of
+the platform that carries the secret and the site's pin moved to it.
 
 **A failing schedule is said where the operator looks.** A workflow kept
 an issue open while a scheduled workflow was failing, and the nightly

@@ -63,8 +63,17 @@ resource "kubernetes_secret" "alerting_webhook" {
   # clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
   # has to match this exactly. Two halves of one path in two files is a real
   # cost; the alternative is the credential in git.
+  #
+  # The heartbeat's two are here and not in a Secret of their own, on
+  # purpose. Alertmanager mounts each Secret it is told to, and a pod told
+  # to mount one that does not exist yet does not start: a site whose core
+  # had moved ahead of its release would have no alerting at all, and
+  # nothing left running to say so. A key missing from a Secret that is
+  # there only fails the one notification that reads it.
   data = {
-    webhook_url = local.alerting.webhook_url
+    webhook_url      = local.alerting.webhook_url
+    heartbeat_url    = local.heartbeat.url
+    heartbeat_secret = local.heartbeat.secret
   }
 }
 

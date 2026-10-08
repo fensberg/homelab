@@ -168,3 +168,15 @@ run "the_storage_driver_verifies_the_hypervisor_and_keeps_to_its_own_storage" {
     error_message = "the driver's manifests are not told the site's own volume storage, or where the hypervisor is"
   }
 }
+
+# The site's alerting is given where to ring and what to ring with, in the
+# Secret Alertmanager already mounts - and never in one of their own, which
+# a site whose release lacked it could not start Alertmanager without.
+run "the_sites_alerting_is_given_where_to_ring_and_what_with" {
+  command = plan
+
+  assert {
+    condition     = kubernetes_secret.alerting_webhook.data.heartbeat_url == "https://watchman.fixture.invalid/site0" && kubernetes_secret.alerting_webhook.data.heartbeat_secret == "fixture-ring"
+    error_message = "the Secret Alertmanager mounts does not carry the site's own address at the watchman and the secret it rings with"
+  }
+}

@@ -23,6 +23,11 @@
       "octet": 10,
       "control_plane_count": 3,
       "worker_count": 1,
+      "heartbeat": {
+        "provider": "cloudflare",
+        "url": "https://watchman.fixture.invalid/site0",
+        "secret": "fixture-ring"
+      },
       "hypervisor": {
         "provider": "proxmox",
         "vault_provider": "proxmox",
