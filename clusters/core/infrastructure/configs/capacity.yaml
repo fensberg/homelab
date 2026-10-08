@@ -115,10 +115,10 @@ spec:
             description: >-
               {{ $labels.pod }} in {{ $labels.namespace }} was stopped by its
               machine because something that cannot wait needed the memory it
-              was running in. Nothing is broken and nothing needs doing: the
-              work is started again automatically. If this keeps happening to
-              the same work, it is not getting a quiet enough window to
-              finish in.
+              was running in. Nothing is broken. A job of the cluster's own
+              is started again by Kubernetes; a CI job is not, and runs at its
+              next schedule. If this keeps happening to the same work, it is
+              not getting a quiet enough window to finish in.
 
         # A decision that was put off, and what reopens it.
         #
@@ -141,6 +141,15 @@ spec:
         #
         # They were not taken up because the site had almost no work that can
         # wait. This fires when that has stopped being true.
+        #
+        # The same alert reopens a second thing put off: running a CI job
+        # again when its runner was stopped. GitHub does not do it unaided,
+        # and doing it means a workflow started by another holding write
+        # access to Actions, which the guard on such workflows refuses. It
+        # was not worth that while the only CI work that can wait is a
+        # nightly whose next run is the retry. If it is built, it runs again
+        # only a job that was stopped and never one that ran and failed: a
+        # job that gave its answer gives the same one twice, or is flaky.
         - alert: LendingIdleCapacityNeedsAccounting
           expr: >-
             count(
