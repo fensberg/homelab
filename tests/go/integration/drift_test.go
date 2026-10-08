@@ -34,7 +34,15 @@ func TestDeployedEstateMatchesTheCode(t *testing.T) {
 			// -detailed-exitcode: 0 means no changes, 2 means changes are
 			// pending, 1 means the plan itself errored. Terratest surfaces
 			// the code directly.
-			code := terraform.InitAndPlanWithExitCode(t, opts)
+			//
+			// Planned as the converge plans it: the cluster root is handed
+			// the hardware its state records, or the plan reports the
+			// check's own omission as a change to the estate.
+			terraform.Init(t, opts)
+			if root == config.ClusterRoot {
+				harness.HandOverRecordedHardware(t, opts)
+			}
+			code := terraform.PlanExitCode(t, opts)
 
 			require.NotEqual(t, 1, code, "the plan itself failed; the estate cannot be compared to the code until that is fixed")
 			require.Equalf(t, 0, code,

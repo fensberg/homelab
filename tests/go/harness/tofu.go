@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gruntwork-io/terratest/modules/logger"
@@ -147,4 +148,50 @@ environment to whatever it runs - so run the tier through it:
     contractor kubeconfig -site %s -- go test -C tests/go -tags=integration ./integration/...
 
 That needs a vault session (OP_SERVICE_ACCOUNT_TOKEN, or an op signin).`, Site())
+}
+
+// hardwareVariable is what the cluster root is handed its hypervisors' facts
+// in.
+const hardwareVariable = "TF_VAR_hardware"
+
+// HandOverRecordedHardware gives a plan of the cluster root the hardware its
+// state already records, and does nothing for a root that records none.
+//
+// The contractor asks each hypervisor what it has before any run in the
+// cluster root and hands the answer over; the root outputs it unchanged so
+// that the state holds it. A plan made beside the contractor hands nothing
+// over, so the root's output goes from what was recorded to nothing, and the
+// plan says the estate has changed when it has not. That is what the drift
+// check did from the day the facts were recorded: it reported a difference
+// that was only the check's own.
+//
+// What is handed over is what the last converge recorded, not a fresh look at
+// the host. The question a drift check asks is whether the estate matches the
+// code, and what the host has is neither.
+//
+// The root must already be initialised.
+func HandOverRecordedHardware(t *testing.T, opts *terraform.Options) {
+	t.Helper()
+	recorded, err := terraform.OutputJsonE(t, opts, "hardware")
+	if err != nil {
+		// A state from before the facts were recorded has no such output,
+		// and a plan of it is handed nothing, as its converge was.
+		return
+	}
+	if handed, ok := HardwareToHandOver(recorded); ok {
+		if opts.EnvVars == nil {
+			opts.EnvVars = map[string]string{}
+		}
+		opts.EnvVars[hardwareVariable] = handed
+	}
+}
+
+// HardwareToHandOver is a root's recorded hardware as the value to hand back
+// to it, and whether there is any: a root that recorded nothing says null.
+func HardwareToHandOver(output string) (string, bool) {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" || trimmed == "null" {
+		return "", false
+	}
+	return trimmed, true
 }

@@ -40,3 +40,17 @@ func TestStateIsReadablePassesWhenTheKeyIsPresent(t *testing.T) {
 		t.Errorf("refused a run that has the encryption config: %v", err)
 	}
 }
+
+// A root that recorded hardware is handed it back, and one that recorded
+// none is handed nothing: null handed over as a value would be a plan
+// against hardware of nothing at all.
+func TestRecordedHardwareIsHandedBackAndNoneIsNot(t *testing.T) {
+	if got, ok := HardwareToHandOver("  {\"nodes\":{\"node0\":{\"cores\":8}}}\n"); !ok || got != `{"nodes":{"node0":{"cores":8}}}` {
+		t.Errorf("recorded hardware was handed back as %q (%v), not as it was recorded", got, ok)
+	}
+	for _, nothing := range []string{"null", " null\n", ""} {
+		if got, ok := HardwareToHandOver(nothing); ok {
+			t.Errorf("a root that recorded %q was handed %q, and it recorded nothing", nothing, got)
+		}
+	}
+}
