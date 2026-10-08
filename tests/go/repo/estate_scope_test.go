@@ -39,6 +39,15 @@ var estateTypes = map[string]bool{
 	"cloudflare_zero_trust_tunnel_cloudflared":        true,
 	"cloudflare_zero_trust_tunnel_cloudflared_config": true,
 	"cloudflare_zero_trust_tunnel_cloudflared_route":  true,
+	// The watchman, which says when a site has gone quiet. The estate's
+	// because it has to outlive whatever it watches: one in a site's state
+	// is destroyed with the site.
+	"cloudflare_workers_script":           true,
+	"cloudflare_workers_script_subdomain": true,
+	"cloudflare_workers_cron_trigger":     true,
+	"cloudflare_workers_kv_namespace":     true,
+	// What each site rings the watchman with.
+	"random_password": true,
 }
 
 const estateRoot = "management/estate"

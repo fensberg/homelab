@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 218
+floor: 219
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -372,6 +372,18 @@ mutations:
       On a nightly that is a red run nobody is watching: the backup step was
       this for five nights, and took the tests after it and the patrol that
       watches the nightly down with it.
+  - guard: TestEveryWorkerIsCountedAgainstTheFreePlan
+    file: management/estate/free-plan.tf
+    find: "    watchman = module.watchman.use\n"
+    replace: "    watchmen = module.watchman.use\n"
+    mentions: "is not counted against the free plan"
+    why: >
+      A second Worker is added beside the first, or the first's line is
+      dropped from the sum while its use is reworked, and the plan-time
+      refusal goes on passing: it adds up what it is given. The Worker runs
+      and uses its share of the day's requests and writes all the same, and
+      what goes over is refused at the vendor for everything on the account,
+      part way through a day, with nothing saying so.
 
   - guard: TestNoCodePicksASiteByName
     file: .github/workflows/integration-tests.yml
