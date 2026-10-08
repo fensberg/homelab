@@ -8,7 +8,13 @@
     "vault_provider": "{{ op://estate/access/provider }}",
     "account_id": "{{ op://estate/access/account_id }}",
     "api_token": "{{ op://estate/access/api_token }}",
+    "workers_subdomain": "{{ op://estate/access/workers_subdomain }}",
     "members": "{{ op://estate/access/members }}"
+  },
+
+  "alerting": {
+    "provider": "slack",
+    "webhook_url": "{{ op://estate-shared/alerting/webhook_url }}"
   },
 
   "state": {
