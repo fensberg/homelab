@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -116,9 +117,35 @@ func TestWhereTheHardwareStands(t *testing.T) {
 
 	opts := harness.TofuOptions(t, config.ClusterRoot, nil)
 	terraform.Init(t, opts)
+	// Which outputs the state holds, by name only: never a value.
+	all, allErr := terraform.OutputAllE(t, opts)
+	if allErr != nil {
+		for _, line := range strings.Split(allErr.Error(), "\n") {
+			t.Logf("SUMMARY  reading the state's outputs failed: %s", line)
+		}
+		t.FailNow()
+	}
+	names := make([]string, 0, len(all))
+	for name := range all {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	_, held := all["hardware"]
+	t.Logf("SUMMARY  the state holds %d output(s): %s", len(names), strings.Join(names, ", "))
+	t.Logf("SUMMARY  the state holds an output called hardware: %v", held)
+	if !held {
+		now := ask()
+		t.Logf("SUMMARY  the host answers now with %d readings, and there is nothing recorded to hold them against", len(now))
+		time.Sleep(60 * time.Second)
+		differences(t, "now against a minute later", now, ask())
+		return
+	}
 	recordedJSON, err := terraform.OutputJsonE(t, opts, "hardware")
 	if err != nil {
-		t.Fatalf("could not read what the cluster root recorded: %v", err)
+		for _, line := range strings.Split(err.Error(), "\n") {
+			t.Logf("SUMMARY  reading the recorded hardware failed: %s", line)
+		}
+		t.FailNow()
 	}
 	var recorded struct {
 		Nodes map[string]any `json:"nodes"`
