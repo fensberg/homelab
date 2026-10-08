@@ -142,8 +142,31 @@ var workloadPods = []workloadPod{
 		ContainerSecurityKey:  "securityContext",
 	},
 	{
-		What:                  "a CI runner",
+		// A converge, which is not to be stopped once it has started and
+		// which somebody is waiting for. The runners are two sets, split by
+		// the priority of their work; this is the first.
+		What:                  "a runner for work that cannot wait",
 		Release:               "self-hosted",
+		ChartVersion:          "0.14.2",
+		Values:                []string{"template", "spec"},
+		ResourcesInContainers: true,
+		Priority:              "interactive",
+		PodSecurityKey:        "securityContext",
+		ContainerSecurityKey:  "securityContext",
+	},
+	{
+		What:                  "the listener for work that can wait",
+		Release:               "self-hosted-batch",
+		ChartVersion:          "0.14.2",
+		Values:                []string{"listenerTemplate", "spec"},
+		ResourcesInContainers: true,
+		Priority:              "critical",
+		PodSecurityKey:        "securityContext",
+		ContainerSecurityKey:  "securityContext",
+	},
+	{
+		What:                  "a runner for work that can wait",
+		Release:               "self-hosted-batch",
 		ChartVersion:          "0.14.2",
 		Values:                []string{"template", "spec"},
 		ResourcesInContainers: true,

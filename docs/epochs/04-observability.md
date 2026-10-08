@@ -784,9 +784,13 @@ not here: an alert when such work is stopped more than occasionally
 (`LendingIdleCapacityNeedsAccounting`), and a guard that fails on the
 change that gives a site a second hypervisor. **Built:** each namespace's
 reservation recorded beside its use, which is the pattern, and an alert
-when must-run work would not fit with a worker gone. **Not built:** work
-that can wait declared as such, the message, and a CI job retried when its
-runner is stopped.
+when must-run work would not fit with a worker gone. The runners are two
+sets, split by the priority of their work: converges on one, which is
+`interactive` and not to be stopped, and work that can wait on the other,
+which is `batch`, reserves little and has a ceiling. A stopped batch pod
+raises `WorkThatCanWaitWasStoppedForResources`, which says it was on
+purpose and is being run again. **Not built:** a CI job run again when its
+runner was stopped, which GitHub does not do unaided.
 
 **Where a size came from is data, not a comment.** The operator, on the
 proposal that a manifest's reservation is the declaration and only its

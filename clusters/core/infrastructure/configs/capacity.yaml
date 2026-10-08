@@ -95,6 +95,31 @@ spec:
               losing one, leaves something with nowhere to run. Nothing is
               broken yet.
 
+        # The message for work that was stopped on purpose.
+        #
+        # Work that can wait runs in memory somebody else holds and is not
+        # using, and is stopped when that is wanted back. That is the design
+        # and not a failure, and it has to say so: a job that only reports
+        # "failed" sends somebody looking for a fault that is not there.
+        - alert: WorkThatCanWaitWasStoppedForResources
+          expr: >-
+            max by (namespace, pod) (
+              kube_pod_status_reason{reason="Evicted"}
+              * on (namespace, pod) group_left ()
+              max by (namespace, pod) (kube_pod_info{priority_class="batch"})
+            ) > 0
+          labels:
+            severity: info
+          annotations:
+            summary: Work that can wait was stopped to give resources back, and is being run again.
+            description: >-
+              {{ $labels.pod }} in {{ $labels.namespace }} was stopped by its
+              machine because something that cannot wait needed the memory it
+              was running in. Nothing is broken and nothing needs doing: the
+              work is started again automatically. If this keeps happening to
+              the same work, it is not getting a quiet enough window to
+              finish in.
+
         # A decision that was put off, and what reopens it.
         #
         # Idle capacity is lent the way Kubernetes lends it unaided: work
