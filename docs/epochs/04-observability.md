@@ -110,7 +110,7 @@ Sizing needs nobody:
 
 What is measured is looked at:
 
-- **15. Each question this epoch asks has a dashboard**, kept in git:
+- **19. Each question this epoch asks has a dashboard**, kept in git:
   capacity by scope (hypervisor, machine, workload), what is reserved
   against what is used, and whether the network is what limits the site -
   traffic against each interface's own speed, with its errors and drops.
@@ -146,6 +146,34 @@ The site keeps itself, and proves it:
 - **18. The site says what it is shortest of, and what more hardware would
   buy**: so many more weeks of history for this much disk, this much more
   work for this much memory, none of a capability it has no hardware for.
+
+### Before this epoch closes
+
+Proofs that could not be had on the day the thing was built, each with what
+runs it. None is a criterion; each is a claim made above that is not yet
+shown.
+
+- **The site rings the watchman and is heard.**
+  `TestTheSiteRingsTheWatchmanAndIsHeard`, in the integration tier, asks
+  Alertmanager how many rings it sent in the last half hour and how many
+  were not taken. It could not pass until half an hour after the route
+  merged (#675, 2026-10-08), and the operator was away. The nightly runs
+  it; a failure is said in the channel as the nightly failing. By hand:
+
+  ```sh
+  task kubectl SITE=site0 -- go test -C tests/go -tags=integration -v -run TestTheSiteRingsTheWatchmanAndIsHeard ./integration/...
+  ```
+
+- **The watchman says when a site goes quiet.** Nothing makes a silence, so
+  this is shown only by one: the first time the site's alerting is down for
+  half an hour, by accident or on purpose, the channel should be told once,
+  and once more when it returns. Until that has been seen the message is
+  code that has passed its own tests and never spoken.
+
+- **A schedule that fails is said, and one that recovers is cleared.** The
+  first half was seen on 2026-10-08, for the patrol and the nightly. The
+  clearing waits on a scheduled run succeeding, which a run started by hand
+  is not.
 
 ## Known driver: nothing watches whether the estate is on its own network
 
@@ -737,7 +765,7 @@ refuses and changes nothing that is running: the hardware's facts (2, 4;
 the facts are read and carried by the record, and nothing uses them yet),
 the budget and its refusal with sizes moved from the code to the config
 (5), what each application expects to need (10), the capacity check on a
-pull request (6), dashboards (15), and the alerts and deadlines (8, 12).
+pull request (6), dashboards (19), and the alerts and deadlines (8, 12).
 Then, with [05](05-node-lifecycle.md), what moves a running machine:
 derived sizes and counts applied one machine at a time (3), reservations
 following use (9), the descheduler and the overfill test (14).
