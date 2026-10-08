@@ -359,13 +359,26 @@ func TestTheClusterKnowsHowEveryScheduledWorkflowLastEnded(t *testing.T) {
 
 	// Asked about every fifteen minutes, so looked back on for longer than
 	// that: a series asked about that rarely is absent between answers.
+	//
+	// Prometheus spreads a job's first questions across that quarter of an
+	// hour, so for that long after the scrape first reconciles it has not yet
+	// asked about some of them. That is not an answer either way, and it is
+	// said as what it is and not as a workflow nobody can read.
+	reached := instantQuery(t, tunnel.Endpoint(), fmt.Sprintf(`count(last_over_time(up{job=%q}[40m]))`, job))
+	if int(reached) < asked {
+		t.Fatalf("Prometheus has asked about %d of the %d scheduled workflows so far, so this cannot say yet whether it "+
+			"knows how each last ended. It asks about each every fifteen minutes and spreads the first round across "+
+			"that long; run this again a quarter of an hour after the scrape reconciled.", int(reached), asked)
+	}
 	known := instantQuery(t, tunnel.Endpoint(), `count(count by (workflow) (last_over_time(scheduled_workflow_run_number[40m])))`)
 	if int(known) != asked {
-		failures, _ := scrapeFailures(t, tunnel.Endpoint(), job)
-		t.Fatalf("Prometheus asks about %d scheduled workflow(s) and knows how %d of them last ended. "+
-			"What it recorded for the ones that failed to answer:\n\n  %s\n\n"+
-			"A workflow that has never run on its schedule has no latest run, and is the one honest reason for a gap.",
-			asked, int(known), strings.Join(failures, "\n  "))
+		// Named by the workflow's file and nothing else: the address asked
+		// carries the repository's, and this log is public.
+		refused := instantQuery(t, tunnel.Endpoint(), fmt.Sprintf(`count(last_over_time(up{job=%q}[40m]) == 0)`, job))
+		t.Fatalf("Prometheus asks about %d scheduled workflow(s) and knows how %d of them last ended; GitHub refused "+
+			"or did not answer %d of the questions. A workflow that has never run on its schedule has no latest "+
+			"run, and is the one honest reason for a gap. The alert ScheduledWorkflowsCannotBeRead names which.",
+			asked, int(known), int(refused))
 	}
 
 	resp, err := (&http.Client{Timeout: 20 * time.Second}).Get("http://" + tunnel.Endpoint() + "/api/v1/rules")
