@@ -28,6 +28,10 @@ func TestAlertsLandWhereTheEstateDecided(t *testing.T) {
 			"info-level alerts, recorded and not sent"},
 		{map[string]string{"alertname": "etcdMembersDown", "severity": "critical"}, "slack",
 			"a real alert"},
+		{map[string]string{"alertname": "ScheduledWorkflowIsFailing", "severity": "warning"}, "slack",
+			"a schedule that is failing, which is said nowhere else the operator looks"},
+		{map[string]string{"alertname": "LendingIdleCapacityNeedsAccounting", "severity": "warning"}, "slack",
+			"the sign that a decision put off is due, which is no sign at all if it is only recorded"},
 	} {
 		if got := routeFor(route, c.labels); got != c.want {
 			t.Errorf("%s lands on %q, want %q: %s", c.labels["alertname"], got, c.want, c.why)

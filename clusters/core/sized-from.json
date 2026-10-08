@@ -44,6 +44,12 @@
         "basis": "The chart's defaults with memory doubled, when the driver was installed."
       }
     },
+    "Deployment/scheduled-workflows": {
+      "exporter": {
+        "kind": "estimate",
+        "basis": "One small Go program answering six questions every fifteen minutes; chosen when it was added, from nothing measured."
+      }
+    },
     "Deployment/cloudflared": {
       "cloudflared": {
         "kind": "estimate",
