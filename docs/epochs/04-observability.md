@@ -62,12 +62,6 @@ Capacity is read, never typed:
   of the host. Taken off it, each also read and not assumed: the
   hypervisor's own share, its filesystem cache, anything on it that is not
   the site's, and a reserve of one control plane to roll with.
-- **3. No machine's size or count is a literal** (#615, #566). Both are derived
-  from the capacity above, the overhead each machine carries, and the
-  largest single thing that must fit on one - and then rounded down to a
-  step on a short ladder of standard sizes, whole processors and round
-  amounts of memory, so a machine is "6 and 12" and never a fraction. The
-  count of workers is derived once applications say what they need (10).
 - **4. The as-built record carries the hardware's facts**, so a pull request's
   plan can use them with no credential.
 
@@ -78,11 +72,13 @@ The budget, and who refuses:
 - **6. Kubernetes is where the site is overfilled.** Everything that is not
   `batch` fits in reservations with one worker gone. Work that can wait is
   not counted against capacity: it runs in whatever is free, the idle part
-  of another's reservation included, and is stopped and retried when that
-  is wanted back, with a message that says so. There is no cap on the
-  total. A pull request that leaves must-run work with no room is refused
-  by its plan, which names the shortfall. Disk is held to a budget as
-  memory is.
+  of another's reservation included, and is stopped when that is wanted
+  back, with a message that says so. Work of the cluster's own is then run
+  again by Kubernetes. A CI job is not, yet: running it again is parked,
+  not decided against, and when to build it is beside the alert that
+  reopens it. There is no cap on the total. A pull request that leaves
+  must-run work with no room is refused by its plan, which names the
+  shortfall. Disk is held to a budget as memory is.
 - **7. A pod with no reservation or no priority class is refused by the
   cluster**, whoever created it, and each namespace has a quota.
 - **8. etcd's disk latency has a written level** and an alert on it (#627),
@@ -90,16 +86,6 @@ The budget, and who refuses:
 
 Sizing needs nobody:
 
-- **9. A workload's reservation follows its measured use**, applied by the
-  autoscaler with no pull request, inside a floor and a ceiling per
-  container, in place where the cluster can, and never past a disruption
-  budget. Use means use under load: a size is taken from what a thing
-  needed while it was doing its work, over a long window, grows quickly
-  and shrinks slowly, and is never taken from one reading or from a thing
-  that sat idle. Until load has been seen, what was declared stands. The
-  hypervisor's own filesystem cache is sized by the same rule, from a
-  default. etcd, the API server and the databases are sized by declaration
-  until there is a reason to trust a guess about them.
 - **10. An application says what it expects to need before it has run**, with
   where the figure came from, and the plan counts that until a measurement
   replaces it. What it needs is its manifest's reservation, which is the
@@ -136,16 +122,54 @@ The site keeps itself, and proves it:
   the state backup, each database's backup, each workload's backup, the
   nightly checks, a converge.
 - **13. A converge in flight is not evicted.**
-- **14. Work is spread again after a roll** (#628), by the descheduler.
 - **15. Alerts on the bet read pressure**, not memory in use, and one says how
   long until a resource is full at the rate it is filling.
 - **16. How a machine sheds load is declared**, not left at the kubelet's
   defaults.
-- **17. The bet has been tested.** Staging is overfilled on purpose and the
-  right things are shed in the right order.
 - **18. The site says what it is shortest of, and what more hardware would
   buy**: so many more weeks of history for this much disk, this much more
   work for this much memory, none of a capability it has no hardware for.
+
+**Moved to [05](05-node-lifecycle.md) on 2026-10-08,** because each one
+changes a machine that is running and this epoch only watches: no machine's
+size or count is a literal (3), a reservation follows measured use (9), work
+is spread again after a roll (14), and the bet has been tested by
+overfilling on purpose (17). Their numbers are kept, there and here, so
+that what refers to them still finds them.
+
+What else a site should be able to say about itself (added 2026-10-08, the
+operator: "Let's bring all the untouched into the epoch"):
+
+- **20. The hardware says when it is failing.** Each disk's wear and
+  errors, each pool's errors and the result of its last scrub, and the
+  host's temperatures are held by Prometheus, and an alert says a disk or a
+  pool is going before it has gone. One host and its disks are the whole
+  site.
+- **21. A backup has been restored, lately.** Not that one exists and is
+  fresh, which the safety officer asks, but that one of each kind has been
+  restored somewhere it can do no harm and what came back was checked, on
+  a schedule, with a deadline and an alert like any other necessary
+  function (12).
+- **22. Nothing stops working on a date nobody was told.** Every
+  certificate, key and token the estate holds that expires has its date
+  read, and an alert long enough before it to act: the cluster's own
+  certificates, the vendor tokens, the overlay's keys.
+- **23. The site is looked at from outside.** Whatever a person outside is
+  given - a game server to join - is tried the way they would try it, from
+  somewhere that is not the site, and its failing is said.
+- **24. What a vendor's free plan says was used is read**, beside what the
+  estate declared it would use, for everything held to one: an alert when
+  the two part, and before a limit and not at it.
+- **25. Why a thing died can be read the next day.** Logs and the
+  cluster's events outlive the pod and the hour they were written in, for
+  as long as a site's history does and on the same storage. This reopens
+  what the Scope above deferred, on the operator's word and not on the
+  trigger written there.
+- **26. Every alert says what to do.** Each one that reaches the channel
+  names what it means and the first thing to try, and alerts a converge is
+  known to cause are quieted for as long as it runs and no longer.
+- **27. The machines agree what time it is**, and an alert says when one
+  drifts: etcd does not survive a clock that wanders.
 
 ### Before this epoch closes
 
