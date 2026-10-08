@@ -109,6 +109,27 @@ type Alerting struct {
 	WebhookURL string `json:"webhook_url"`
 }
 
+// Heartbeat is where a site rings, every few minutes, to say its alerting is
+// alive: a party outside every site that notices when the ringing stops and
+// says so, because a site that has stopped cannot.
+//
+// The site's own and not the fleet's: each site rings at an address of its
+// own with a secret of its own, which the estate generates and grants, so one
+// site cannot ring for another that has gone quiet.
+//
+// No vault_provider attestation, for the reason Alerting has none. That check
+// stops one vendor's credentials reaching another vendor's API, where they
+// fail far from their cause. A ring sent to the wrong place fails at its
+// cause and loudly: nobody hears the site, and that is said in the channel.
+type Heartbeat struct {
+	// Whose service hears the ring. Named so a reviewer sees it in git.
+	Provider string `json:"provider"`
+	// Where the site rings. Its own address there, from the vault.
+	URL string `json:"url"`
+	// What it rings with, sent as a bearer token. Never printed.
+	Secret string `json:"secret"`
+}
+
 // Tunnel is how enrolled devices reach services inside the estate from off the
 // LAN, without a port forward on the router.
 //
@@ -153,11 +174,14 @@ type Site struct {
 	//
 	// Absent means none, which is the right default and the shape every config
 	// had before this existed.
-	DMZZones       map[string]DMZZone `json:"dmz_zones"`
-	Hypervisor     Hypervisor         `json:"hypervisor"`
-	OverlayNetwork OverlayNetwork     `json:"overlay_network"`
-	ObjectStorage  ObjectStorage      `json:"object_storage"`
-	Database       Database           `json:"database"`
+	DMZZones map[string]DMZZone `json:"dmz_zones"`
+	// Where the site rings to say it is still there, and what it rings
+	// with. Absent for a site the estate has granted neither.
+	Heartbeat      Heartbeat      `json:"heartbeat"`
+	Hypervisor     Hypervisor     `json:"hypervisor"`
+	OverlayNetwork OverlayNetwork `json:"overlay_network"`
+	ObjectStorage  ObjectStorage  `json:"object_storage"`
+	Database       Database       `json:"database"`
 	// The applications the site was given, each with the values its secrets
 	// are made from. Not written in the template: composed from the site's
 	// directory in the Flux tree and what each application declares
