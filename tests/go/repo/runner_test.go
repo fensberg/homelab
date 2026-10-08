@@ -131,6 +131,7 @@ func TestEveryJobOnTheEstatesRunnersNamesItsSite(t *testing.T) {
 	// declares. Anything else waits for a runner that will never appear.
 	runsOn := regexp.MustCompile(`(?m)^\s*runs-on:\s*(\S.*?)\s*$`)
 	asked := 0
+	askedOf := map[string]int{}
 	for _, wf := range tracked(t, func(rel string) bool {
 		return strings.HasPrefix(rel, ".github/workflows/") && strings.HasSuffix(rel, ".yml") && strings.Count(rel, "/") == 2
 	}) {
@@ -146,6 +147,7 @@ func TestEveryJobOnTheEstatesRunnersNamesItsSite(t *testing.T) {
 				continue
 			}
 			asked++
+			askedOf[prefix]++
 			// An expression, never a site written out: which sites there are
 			// is the config's to say, and a name here is one the next site
 			// is not.
@@ -156,6 +158,15 @@ func TestEveryJobOnTheEstatesRunnersNamesItsSite(t *testing.T) {
 	}
 	if asked == 0 {
 		t.Fatalf("no workflow asks for a runner named %s<site>, so either nothing runs on the estate or this has stopped reading the workflows", prefix)
+	}
+	// And every set is asked for by something. A set of runners no job asks
+	// for is a listener, a registration with GitHub and a manifest to keep
+	// up, all for nothing: the kind of thing that is added for a change that
+	// never quite landed and is then there for good.
+	for _, p := range prefixes {
+		if askedOf[p] == 0 {
+			t.Errorf("no workflow asks for a runner named %s<site>, so that set of runners serves nothing. Point the job it was made for at it, or take the set out.", p)
+		}
 	}
 }
 
