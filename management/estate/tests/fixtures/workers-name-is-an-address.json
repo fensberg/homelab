@@ -1,0 +1,30 @@
+{
+  "organization": {
+    "name": "Example"
+  },
+  "access": {
+    "provider": "cloudflare",
+    "vault_provider": "cloudflare",
+    "account_id": "0123456789abcdef0123456789abcdef",
+    "api_token": "fixture",
+    "members": "someone@example.com, another@example.com",
+    "workers_subdomain": "example.workers.dev"
+  },
+  "alerting": {
+    "provider": "slack",
+    "webhook_url": "https://channel.invalid/fixture"
+  },
+  "state": {
+    "bucket": "example-estate",
+    "access_key_id": "fixture",
+    "secret_access_key": "fixture"
+  },
+  "workstation": {
+    "address": "192.0.2.50"
+  },
+  "plots": {
+    "site0": {
+      "name": "North Street Office"
+    }
+  }
+}
