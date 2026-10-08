@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 221
+floor: 223
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -407,6 +407,31 @@ mutations:
       allowance of sixty for the site's whole address, so GitHub refuses
       some of every hour's - and anything else at the site asking with no
       token is refused with them.
+
+  - guard: TestASiteRingsTheWatchmanAsOftenAsItLooksRound
+    file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
+    find: "              receiver: \"watchman\"\n              group_wait: 0s\n              group_interval: 5m\n              repeat_interval: 9m"
+    replace: "              receiver: \"watchman\"\n              group_wait: 0s\n              group_interval: 5m\n              repeat_interval: 30m"
+    mentions: "looks round every 10"
+    why: >
+      Every ten minutes reads as a lot of noise for an alert that never
+      changes, and stretching the repeat is one line that looks like tidying.
+      At half an hour the site rings less often than the watchman allows a
+      silence to last, so it is said to have gone quiet, over and over, while
+      nothing is wrong - and the channel learns to ignore the one message
+      that means a site is really down.
+
+  - guard: TestASiteRingsTheWatchmanAsOftenAsItLooksRound
+    file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
+    find: "              group_interval: 5m\n              repeat_interval: 9m"
+    replace: "              group_interval: 5m\n              repeat_interval: 10m"
+    mentions: "waits a whole look more"
+    why: >
+      Ten is the figure everybody has in mind, so ten is what gets written.
+      Alertmanager sends on a look, and a look that lands a moment before the
+      ten minutes are up sends nothing and waits for the next: the site rings
+      at fifteen about as often as at ten, one missed ring from being called
+      quiet, and nothing in the manifest shows it.
 
   - guard: TestNoCodePicksASiteByName
     file: .github/workflows/integration-tests.yml

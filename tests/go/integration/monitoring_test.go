@@ -409,3 +409,39 @@ func TestTheClusterKnowsHowEveryScheduledWorkflowLastEnded(t *testing.T) {
 	}
 	require.NotZero(t, ours, "Prometheus holds no rule about the scheduled workflows. Has Flux reconciled them?")
 }
+
+// The site is ringing the watchman, and the watchman is taking the rings.
+//
+// The route, the address and the secret each look right in their own file,
+// and all three can be right while no ring arrives: the secret the cluster
+// holds is not the one the watchman was given, or the address is not
+// reachable from the site. From outside, a ring cannot be tried without
+// being heard as the site's own. From inside it does not need trying:
+// Alertmanager counts what it sent to each kind of receiver and what failed,
+// and the watchman is the only webhook it has.
+func TestTheSiteRingsTheWatchmanAndIsHeard(t *testing.T) {
+	opts := k8s.NewKubectlOptions("", kubeconfig(t), monitoringNamespace)
+	tunnel := k8s.NewTunnel(opts, k8s.ResourceTypeService, "kube-prometheus-stack-prometheus", 0, 9090)
+	defer tunnel.Close()
+	tunnel.ForwardPort(t)
+
+	const window = "30m"
+	sent := instantQuery(t, tunnel.Endpoint(),
+		fmt.Sprintf(`sum(increase(alertmanager_notifications_total{integration="webhook"}[%s]))`, window))
+	failed := instantQuery(t, tunnel.Endpoint(),
+		fmt.Sprintf(`sum(increase(alertmanager_notifications_failed_total{integration="webhook"}[%s]))`, window))
+
+	// It rings every ten minutes, so half an hour holds three; two allows
+	// for where the window happens to start.
+	if sent < 2 {
+		t.Fatalf("Alertmanager has rung the watchman %.0f time(s) in the last %s, and it should ring every ten minutes. "+
+			"If the route reached this site less than %s ago, this cannot say yet; otherwise nothing is being sent, "+
+			"and the watchman will say the site has gone quiet, or never knew it was there.", sent, window, window)
+	}
+	if failed > 0 {
+		t.Fatalf("Alertmanager rang the watchman %.0f time(s) in the last %s and %.0f were not taken. "+
+			"A ring is refused when the secret this site holds is not the one the watchman was given for it, "+
+			"and fails outright when the address cannot be reached from here. Alertmanager's own log says which.",
+			sent, window, failed)
+	}
+}
