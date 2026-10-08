@@ -66,8 +66,25 @@ func TestTheHardwareIsHandedToTheClusterRootOnceForARun(t *testing.T) {
 		t.Fatalf("what was handed over is not what the root's variable takes: %v", err)
 	}
 	host := handed.Nodes["node0"]
-	if host.MemoryBytes != 64<<30 || host.Cores != 16 || host.GPUs == nil || len(host.Machines) != 1 || host.Datastores["disks"].TotalBytes != 1<<40 {
+	if host.MemoryBytes != 64<<30 || host.Cores != 16 || host.GPUs == nil || len(host.Machines) != 1 {
 		t.Errorf("the host reached the root as %+v", host)
+	}
+}
+
+// Only what holds still is handed to the root, because the root records it
+// and the estate is then held to matching it. A datastore's size moves by
+// megabytes a minute as the pool under it fills, so a record that held one
+// never matched the host again and every night's record was refused.
+func TestWhatIsHandedToTheRootHoldsNoReadingThatMoves(t *testing.T) {
+	asked(t, aSiteWithOneHost)
+	if _, err := rootFor(run.NewContext(t.TempDir(), "site0"), "cluster", nil); err != nil {
+		t.Fatal(err)
+	}
+	handed := os.Getenv("TF_VAR_" + hardwareInput)
+	if strings.Contains(handed, "storages") || strings.Contains(handed, "total_bytes") {
+		t.Errorf("a datastore's size was handed to the root, which records it: %s\n\n"+
+			"It is a measurement that moves. What is recorded must be the same a minute later, "+
+			"or the estate never matches its own record.", handed)
 	}
 }
 
