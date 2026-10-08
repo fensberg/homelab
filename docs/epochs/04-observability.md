@@ -790,7 +790,16 @@ sets, split by the priority of their work: converges on one, which is
 which is `batch`, reserves little and has a ceiling. A stopped batch pod
 raises `WorkThatCanWaitWasStoppedForResources`, which says it was on
 purpose and is being run again. **Not built:** a CI job run again when its
-runner was stopped, which GitHub does not do unaided.
+runner was stopped, which GitHub does not do unaided. The operator, on why
+most of a retry is wrong: "If it failed the first time we shouldn't care
+about running it a 2nd time." A job that ran and failed has given its
+answer; only one that was stopped has not, and running that one again
+needs a workflow started by another to hold write access to Actions, which
+`TestAWorkflowStartedByAnotherTakesNothingFromItButItsOutcome` refuses.
+The only CI work that can wait is a nightly, whose next run is the retry.
+**Build it when** `LendingIdleCapacityNeedsAccounting` fires for CI work,
+or the first CI job that can wait and is not on a schedule is declared -
+and then only for a job that was stopped.
 
 **Priority work waits, and only for moments.** Offered the choice of letting
 work that cannot wait stop work that can, the operator chose otherwise:

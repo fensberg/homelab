@@ -27,29 +27,43 @@ import (
 // covers: integration:self-hosted-batch
 func TestEverySetOfRunnersIsListeningForWork(t *testing.T) {
 	t.Parallel()
-	opts := k8s.NewKubectlOptions("", kubeconfig(t), "arc-systems")
-	pods, err := k8s.ListPodsE(t, opts, metav1.ListOptions{})
-	require.NoError(t, err, "listing the runner controller's pods")
+	const runners, controller = "arc-runners", "arc-systems"
 
-	// A listener is named for its set, then a hash, then what it is. The
-	// second set's name begins with the first's, so each listener is given
-	// to the longest name it starts with.
-	listening := map[string]bool{}
-	sets := []string{"self-hosted-batch", "self-hosted"}
-	for _, pod := range pods {
-		if !strings.HasSuffix(pod.Name, "-listener") || pod.Status.Phase != corev1.PodRunning {
-			continue
-		}
-		for _, set := range sets {
-			if strings.HasPrefix(pod.Name, set+"-") {
-				listening[set] = true
-				break
-			}
+	// A release is named for the estate and its set for the site, so the
+	// cluster is asked which set each release made. Helm writes the release
+	// on everything it installs.
+	made, err := k8s.RunKubectlAndGetOutputE(t, k8s.NewKubectlOptions("", kubeconfig(t), runners),
+		"get", "autoscalingrunnersets", "-o",
+		`jsonpath={range .items[*]}{.metadata.annotations.meta\.helm\.sh/release-name}={.metadata.name}{"\n"}{end}`)
+	require.NoError(t, err, "listing the sets of runners the releases made")
+	setOf := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(made), "\n") {
+		if release, set, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
+			setOf[release] = set
 		}
 	}
-	for _, set := range sets {
+
+	// A listener runs beside the controller and is labelled with the set it
+	// listens for.
+	pods, err := k8s.ListPodsE(t, k8s.NewKubectlOptions("", kubeconfig(t), controller),
+		metav1.ListOptions{LabelSelector: "actions.github.com/scale-set-namespace=" + runners})
+	require.NoError(t, err, "listing the listeners beside the runner controller")
+	listening := map[string]bool{}
+	for _, pod := range pods {
+		if pod.Status.Phase == corev1.PodRunning {
+			listening[pod.Labels["actions.github.com/scale-set-name"]] = true
+		}
+	}
+
+	for _, release := range []string{"self-hosted", "self-hosted-batch"} {
+		set, ok := setOf[release]
+		if !assert.True(t, ok,
+			"the release %s has made no set of runners in the %s namespace, so there is nothing for a job to ask for. "+
+				"The release's own status says why", release, runners) {
+			continue
+		}
 		assert.True(t, listening[set],
-			"the runner set %s has no listener running, so no job that asks for it will be given a runner. "+
-				"Its release is in the arc-runners namespace; the controller's log says why it made no listener", set)
+			"the set of runners the release %s made has no listener running in the %s namespace, so no job that asks "+
+				"for it will be given a runner. The controller's log says why it made no listener", release, controller)
 	}
 }
