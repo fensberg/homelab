@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 217
+floor: 218
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -360,6 +360,18 @@ mutations:
     why: >
       A verb renamed in the contractor and not in the tier that is only run by
       hand is exactly how that tier lost every command it had (#563).
+
+  - guard: TestAStepThatRunsTheContractorHandsItTheTokenItFetchesAReleaseWith
+    file: .github/workflows/integration-tests.yml
+    find: "          GH_TOKEN: ${{ github.token }}\n          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"
+    replace: "          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"
+    mentions: "hands it no GitHub token"
+    why: >
+      A step is added to a job, or copied from the one above it less a line,
+      and the contractor it runs is refused at Render for want of a token.
+      On a nightly that is a red run nobody is watching: the backup step was
+      this for five nights, and took the tests after it and the patrol that
+      watches the nightly down with it.
 
   - guard: TestNoCodePicksASiteByName
     file: .github/workflows/integration-tests.yml
