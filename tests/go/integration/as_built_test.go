@@ -43,7 +43,15 @@ import (
 // covers: verb:plan-as-built
 func TestTheAsBuiltRecordIsQuietAndHoldsNothingReal(t *testing.T) {
 	root := repopath.RootOrFail(t)
-	tpl, err := os.ReadFile(filepath.Join(root, "config", "management.tpl.json"))
+	committed, err := os.ReadFile(filepath.Join(root, "config", "management.tpl.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The template as the contractor plans from it: the committed one with
+	// the site's applications added, which the template itself never names.
+	// Planned from the committed text alone, the site has no applications,
+	// and everything made for one reads as about to be destroyed.
+	tpl, err := config.Compose(committed, root, harness.Site())
 	if err != nil {
 		t.Fatal(err)
 	}
