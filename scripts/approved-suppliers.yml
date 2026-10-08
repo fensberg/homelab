@@ -375,6 +375,17 @@ providers:
       enroll a device, the split tunnel, and each site's plot - its buckets,
       a key per bucket, and its tunnel. No site root requires it; a site is
       granted narrowed credentials instead.
+  - source: hashicorp/random
+    reason: >-
+      Makes a random value and keeps it in state, and reaches nothing: it has
+      no credential and calls no API. The estate root alone, for the secret
+      each site rings the watchman with. Such a secret is in state whoever
+      makes it, and the rule here is that a secret in state is ours to
+      generate. The alternative was the lawyer making it in Go and carrying
+      it through the vault and a rendered file into the same state, which is
+      more code holding the value for no less exposure. Published by
+      HashiCorp, whose providers every OpenTofu root here already depends on
+      through the registry.
 
 # Network destinations a CI job may reach.
 #

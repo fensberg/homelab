@@ -7,7 +7,12 @@
     "vault_provider": "cloudflare",
     "account_id": "0123456789abcdef0123456789abcdef",
     "api_token": "fixture",
-    "members": " , "
+    "members": " , ",
+    "workers_subdomain": "example"
+  },
+  "alerting": {
+    "provider": "slack",
+    "webhook_url": "https://channel.invalid/fixture"
   },
   "state": {
     "bucket": "example-estate",
