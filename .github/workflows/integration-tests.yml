@@ -114,7 +114,12 @@ jobs:
       fail-fast: false
       matrix:
         site: ${{ fromJSON(needs.sites.outputs.sites) }}
-    runs-on: homelab-${{ matrix.site }}
+    # The runners for work that can wait. These tests read a site that is
+    # already built, nobody is waiting on them, and stopped part-way they are
+    # simply run again - so they reserve little, run in what is free, and
+    # give it back when a converge or anything else that cannot wait needs
+    # the room.
+    runs-on: homelab-batch-${{ matrix.site }}
     # Gated on a GitHub environment so the 1Password service-account token
     # lives behind whatever protection rules that environment carries, rather
     # than being a repository secret any workflow could reach.
