@@ -193,6 +193,22 @@ Explicitly out of scope (and which epoch owns it instead):
    tests: a new fake or fixture builder outside the shared ones is refused
    unless declared, with a reason.
 
+   Measured a third time on 2026-10-08, by what a real plan is handed and
+   not by a stand-in. The contractor gives a plan of a root three things the
+   committed files do not hold: a token to fetch the site's release with,
+   the hypervisors' facts, and the config template with the site's
+   applications added. The integration tier plans for itself, on purpose - a
+   second plan that agrees is what makes a failure believable - and rebuilt
+   each of the three by hand. Each fell behind when the contractor changed
+   (#663, #670, #671), and the nightly reported an estate that had changed
+   when it had not. The operator: "Of course we want shared inputs... Shared
+   pieces are built once - not 15 times." **The shape that passes:** what a
+   plan of each root must be handed is declared once and read by the
+   contractor and the test harness alike, and the plans stay separate - each
+   still runs OpenTofu itself and reads the result itself. That shared piece
+   is where the proof belongs that a test given a changed input reports a
+   change: built once with it, not as another thing that runs every night.
+
 5. **Nothing unused is kept, and something says so.** Only `go vet` reads
    the Go here, and it does not report a function nothing calls; a fuller
    linter is named in two comments and run by nothing. The guards that
