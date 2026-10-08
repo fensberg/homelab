@@ -22,8 +22,8 @@ func TestAlertsLandWhereTheEstateDecided(t *testing.T) {
 	}{
 		{map[string]string{"alertname": "InfoInhibitor", "severity": "none"}, "nowhere",
 			"the chart's helper alert, which exists only to inhibit others (#532)"},
-		{map[string]string{"alertname": "Watchdog", "severity": "none"}, "slack-heartbeat",
-			"the dead-man's switch, which must be delivered or it proves nothing"},
+		{map[string]string{"alertname": "Watchdog", "severity": "none"}, "watchman",
+			"the dead-man's switch, which goes to the party outside the site that notices it stop"},
 		{map[string]string{"alertname": "CPUThrottlingHigh", "severity": "info"}, "nowhere",
 			"info-level alerts, recorded and not sent"},
 		{map[string]string{"alertname": "etcdMembersDown", "severity": "critical"}, "slack",

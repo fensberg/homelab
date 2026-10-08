@@ -235,22 +235,30 @@ spec:
           receiver: "slack"
           routes:
             # Watchdog fires forever, by design: it is the dead-man's switch,
-            # and what it proves is that Prometheus, Alertmanager and the path
-            # out of the estate are all working. So it must be delivered -
-            # routing it to nowhere would prove nothing - but not often. Twice
-            # a day is a heartbeat somebody can notice the absence of.
+            # and what it proves is that Prometheus, Alertmanager and the way
+            # out of the site are all working. It goes to the watchman, a
+            # party outside every site, which notices when it stops and says
+            # so in the channel (management/estate/watchman).
             #
-            # Noticing an absence is a human job, and that is this
-            # arrangement's weakness rather than a claim about it. The stronger
-            # answer is a dead-man's-snitch service that reports when pings
-            # STOP; security patrol cannot do it, because it deliberately holds
-            # no credential that reaches into the estate.
+            # It went to the channel itself, twice a day, and noticing that
+            # it had stopped was left to whoever read the channel. Nobody
+            # watches for an absence.
+            #
+            # EVERY TEN MINUTES, which is how often the watchman looks round
+            # and is the operator's bound on what a site costs it: 144 rings
+            # a day, each one write on the vendor's free plan. Alertmanager
+            # looks at a group every group_interval and sends again once
+            # repeat_interval has passed, so the ring goes out on every
+            # second look: a repeat just short of two looks, and not equal
+            # to them, because a look that lands a moment early would
+            # otherwise wait for the next and ring every fifteen.
+            # tests/go/repo holds this to the watchman's own figure.
             - matchers:
                 - alertname = "Watchdog"
-              receiver: "slack-heartbeat"
+              receiver: "watchman"
               group_wait: 0s
-              group_interval: 12h
-              repeat_interval: 12h
+              group_interval: 5m
+              repeat_interval: 9m
             # InfoInhibitor is the chart's helper, not an alert: it exists to
             # inhibit info-level alerts and says itself it is not to be acted
             # on. It carries severity "none", so the info route below misses
@@ -280,17 +288,18 @@ spec:
                   {{ range .Alerts }}{{ .Annotations.summary }}
                   {{ .Annotations.description }}
                   {{ end }}
-          - name: "slack-heartbeat"
-            slack_configs:
-              - api_url_file: /etc/alertmanager/secrets/alerting-webhook/webhook_url
-                channel: "#alerts"
+          # Where the site rings and what with are the site's own, granted
+          # by the estate and written into the Secret mounted above by the
+          # platform. Never said when it stops firing: it does not stop, and
+          # a site that has is not one that can say so.
+          - name: "watchman"
+            webhook_configs:
+              - url_file: /etc/alertmanager/secrets/alerting-webhook/heartbeat_url
                 send_resolved: false
-                title: "Heartbeat"
-                text: >-
-                  Monitoring is alive: Prometheus is evaluating rules,
-                  Alertmanager is routing them, and the estate can reach
-                  Slack. If this stops arriving, one of those three has
-                  stopped and nothing else will say so.
+                http_config:
+                  authorization:
+                    type: Bearer
+                    credentials_file: /etc/alertmanager/secrets/alerting-webhook/heartbeat_secret
         inhibit_rules: []
 
     grafana:
