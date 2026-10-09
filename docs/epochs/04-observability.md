@@ -170,6 +170,18 @@ operator: "Let's bring all the untouched into the epoch"):
   known to cause are quieted for as long as it runs and no longer.
 - **27. The machines agree what time it is**, and an alert says when one
   drifts: etcd does not survive a clock that wanders.
+- **28. The site says what it draws and what that costs** (added
+  2026-10-09). Electricity is a resource the site is given like any other,
+  and the last one nothing reads. The site holds how much power it is
+  drawing, with how that was measured and what the measure misses - a
+  processor's own count of its energy is not what comes out of the wall,
+  and is never shown as though it were. The price of a unit is declared for
+  the site, since it is the one figure here nobody can read off a machine.
+  From the two, each workload has a cost for the month, and a change says
+  what it would add before it merges - the operator: "this will cost $5
+  over the next month to implement". Two sums are kept apart and both are
+  said: what a thing adds to the bill by running, and its share of what
+  the site costs to keep on at all, which is most of it.
 
 ### Before this epoch closes
 
