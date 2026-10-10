@@ -191,3 +191,43 @@ func TestTheKeysAFileWritesTwiceAreNamed(t *testing.T) {
 		t.Error("naming the duplicates of nothing was not refused as a mistake in the asking")
 	}
 }
+
+// The program itself draws what it is asked on its own arguments, names
+// what it does when asked something else, and builds a directory with the
+// cluster's own tool.
+func TestTheProgramItselfDrawsWhatItIsAsked(t *testing.T) {
+	root := put(t, map[string]string{"one.yaml": "kind: One\n", "settings/kustomization.yaml": "resources: []\n"})
+	tools := t.TempDir()
+	// Stands in for the cluster's tool: says which directory it was asked to
+	// build, as a document.
+	script := "#!/bin/sh\n[ \"$1\" = kustomize ] || exit 1\necho \"kind: Built\"\necho \"from: $2\"\n"
+	if err := os.WriteFile(filepath.Join(tools, "kubectl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var out, complaints bytes.Buffer
+	if code := run([]string{"draw", "-root", root, "-build", "settings", "one.yaml"}, &out, &complaints); code != 0 {
+		t.Fatalf("the program did not draw what it was asked (%d): %s", code, complaints.String())
+	}
+	if !strings.Contains(out.String(), `"kind":"One"`) || !strings.Contains(out.String(), `"kind":"Built"`) || !strings.Contains(out.String(), filepath.Join(root, "settings")) {
+		t.Errorf("a file and a built directory were drawn as: %s", out.String())
+	}
+	if code := run([]string{"redraw"}, &out, &complaints); code != 2 || !strings.Contains(complaints.String(), "usage: drafter draw") {
+		t.Errorf("asked something it does not do, the program answered %d: %s", code, complaints.String())
+	}
+	if _, err := kustomized(filepath.Join(root, "settings")); err != nil {
+		t.Errorf("building with the cluster's tool: %v", err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	if _, err := kustomized(filepath.Join(root, "settings")); err == nil {
+		t.Error("a directory was built with no tool to build it")
+	}
+
+	// And as it is started: on its own arguments, leaving quietly when it
+	// has drawn what was asked.
+	args := os.Args
+	t.Cleanup(func() { os.Args = args })
+	os.Args = []string{args[0], "draw", "-root", root, "one.yaml"}
+	main()
+}

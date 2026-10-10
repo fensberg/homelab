@@ -324,3 +324,62 @@ func TestACommitsTreeIsTakenOutAsItWasThen(t *testing.T) {
 		t.Error("a commit that does not exist gave a tree")
 	}
 }
+
+// The program itself, started in a checkout, judges that checkout: it takes
+// the commit before out of it, has the real drafter redraw both, and leaves
+// quietly when the change fits. This is the one test here that reads YAML,
+// because it is the one that goes through the drafter.
+func TestTheProgramItselfJudgesTheCheckoutItIsStartedIn(t *testing.T) {
+	repo := t.TempDir()
+	manifest := filepath.Join(repo, "clusters", "core", "a.yaml")
+	write := func(replicas string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(manifest), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "kind: Deployment\nmetadata:\n  name: thing\n  namespace: things\nspec:\n  replicas: " + replicas +
+			"\n  template:\n    spec:\n      containers:\n        - name: c\n          resources:\n            requests:\n              memory: 1Gi\n"
+		if err := os.WriteFile(manifest, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("1")
+	// What marks the top of a checkout of this repository, for a program
+	// that finds its repository from where it is started.
+	if err := os.WriteFile(filepath.Join(repo, "CLAUDE.md"), []byte("a checkout\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("add", "-A")
+	git("-c", "user.name=a test", "-c", "user.email=test@example.invalid", "commit", "-q", "-m", "as it was")
+	t.Chdir(repo)
+
+	// Asked something it does not do.
+	var out, complaints bytes.Buffer
+	if code := run([]string{"approve"}, &out, &complaints); code != 2 || !strings.Contains(complaints.String(), "usage: engineer") {
+		t.Errorf("asked something it does not do, the program answered %d: %s", code, complaints.String())
+	}
+
+	// Eight more of a gibibyte each, on a site with seven to spare.
+	write("9")
+	held := record(t, &north)
+	out.Reset()
+	if code := run([]string{"stamp", "-site", "north", "-record", held, "-base", "HEAD"}, &out, &complaints); code != 1 || !strings.Contains(out.String(), "REFUSED") {
+		t.Errorf("a change that does not fit was not refused by the program itself (%d): %s%s", code, out.String(), complaints.String())
+	}
+
+	// And as it is started: on its own arguments, leaving quietly for a
+	// change that fits.
+	write("2")
+	args := os.Args
+	t.Cleanup(func() { os.Args = args })
+	os.Args = []string{args[0], "stamp", "-site", "north", "-record", held, "-base", "HEAD"}
+	main()
+}

@@ -39,19 +39,29 @@ verbs:
 `
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "stamp" {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+	code := run(os.Args[1:], os.Stdout, os.Stderr)
+	if code != 0 {
+		os.Exit(code)
+	}
+}
+
+// run is the program: what it was asked, and where to answer. It returns
+// how to exit: zero when the change is stamped, one when it is refused or
+// could not be judged, two when it was not asked something it does.
+func run(args []string, out, complaints io.Writer) int {
+	if len(args) < 1 || args[0] != "stamp" {
+		fmt.Fprint(complaints, usage)
+		return 2
 	}
 	here, err := repopath.Here()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(2)
+		fmt.Fprintln(complaints, "error:", err)
+		return 2
 	}
-	os.Exit(stamp(os.Args[2:], os.Stdout, os.Stderr, here, archived,
+	return stamp(args[1:], out, complaints, here, archived,
 		func(tree string, builds []string, paths ...string) (map[string]json.RawMessage, error) {
 			return drafter.Draw(tree, builds, paths...)
-		}))
+		})
 }
 
 // stamp is the verb, with the repository, the way a commit's tree is taken

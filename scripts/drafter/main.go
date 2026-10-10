@@ -66,18 +66,26 @@ func (d *dirs) String() string     { return strings.Join(*d, ",") }
 func (d *dirs) Set(v string) error { *d = append(*d, v); return nil }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+	code := run(os.Args[1:], os.Stdout, os.Stderr)
+	if code != 0 {
+		os.Exit(code)
 	}
-	switch os.Args[1] {
-	case "draw":
-		os.Exit(draw(os.Args[2:], os.Stdout, os.Stderr, kustomized))
-	case "duplicates":
-		os.Exit(duplicates(os.Args[2:], os.Stdout, os.Stderr))
+}
+
+// run is the program: what it was asked, and where to answer. It returns
+// how to exit: zero when it drew what was asked, one when it could not, two
+// when it was not asked something it does.
+func run(args []string, out, complaints io.Writer) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "draw":
+			return draw(args[1:], out, complaints, kustomized)
+		case "duplicates":
+			return duplicates(args[1:], out, complaints)
+		}
 	}
-	fmt.Fprint(os.Stderr, usage)
-	os.Exit(2)
+	fmt.Fprint(complaints, usage)
+	return 2
 }
 
 // duplicates is the verb that names the keys a file writes twice.

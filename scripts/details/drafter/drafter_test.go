@@ -80,3 +80,21 @@ func TestTextIsRedrawnAsAFileOfItsKindWouldBe(t *testing.T) {
 		t.Error("text that is not YAML was redrawn as documents")
 	}
 }
+
+// The keys a text writes twice are named by the real drafter, and a text it
+// cannot read is an error and not a text with none.
+func TestTheKeysATextWritesTwiceAreNamed(t *testing.T) {
+	names, err := Duplicates([]byte("steps:\n  - with:\n      ref: one\n      ref: two\n  - with:\n      ref: three\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "ref" {
+		t.Errorf("one key written twice in one mapping was named as %v", names)
+	}
+	if names, err := Duplicates([]byte("a: 1\nb: 2\n")); err != nil || len(names) != 0 {
+		t.Errorf("a text that writes no key twice: %v, %v", names, err)
+	}
+	if _, err := Duplicates([]byte("a: [never closed")); err == nil {
+		t.Error("a text that is not YAML was answered as writing no key twice")
+	}
+}
