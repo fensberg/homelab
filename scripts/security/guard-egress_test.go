@@ -1,6 +1,7 @@
 package main
 
 import (
+	"homelab/details/drafter"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,24 +51,34 @@ jobs:
         uses: actions/checkout@3d3c42e # v7.0.1
 `
 
-	got := workflowEgress("example.yml", body)
+	docs, err := drafter.Documents([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := jobsIn("example.yml", docs)
 	if len(got) != 3 {
 		t.Fatalf("got %d jobs, want 3 (schedule and workflow_dispatch are not jobs): %+v", len(got), got)
 	}
 
-	if got[0].Key() != "example.yml/hardened" || got[0].Policy != "block" {
-		t.Errorf("first job = %+v", got[0])
+	// By its name, and not by where it was written: a workflow's jobs are a
+	// mapping, which has no order to rely on.
+	job := map[string]jobEgress{}
+	for _, j := range got {
+		job[j.Job] = j
 	}
-	if strings.Join(got[0].Hosts, " ") != "api.github.com:443 github.com:443" {
-		t.Errorf("hosts = %v, want both endpoints and nothing from the following step", got[0].Hosts)
+	if hardened := job["hardened"]; hardened.Key() != "example.yml/hardened" || hardened.Policy != "block" {
+		t.Errorf("hardened job = %+v", hardened)
 	}
-	if got[1].Policy != "audit" || len(got[1].Hosts) != 0 {
-		t.Errorf("audited job = %+v, want audit with no hosts", got[1])
+	if strings.Join(job["hardened"].Hosts, " ") != "api.github.com:443 github.com:443" {
+		t.Errorf("hosts = %v, want both endpoints and nothing from the following step", job["hardened"].Hosts)
+	}
+	if audited, read := job["audited"]; !read || audited.Policy != "audit" || len(audited.Hosts) != 0 {
+		t.Errorf("audited job = %+v, want audit with no hosts", audited)
 	}
 	// The one that matters: a job nothing hardens must be reported as a job,
 	// not skipped. Skipping it is how a new job arrives unexamined.
-	if got[2].Key() != "example.yml/unguarded" || got[2].Policy != "" {
-		t.Errorf("unguarded job = %+v, want it present with no policy", got[2])
+	if unguarded, read := job["unguarded"]; !read || unguarded.Key() != "example.yml/unguarded" || unguarded.Policy != "" {
+		t.Errorf("unguarded job = %+v, want it present with no policy", unguarded)
 	}
 }
 
@@ -95,7 +106,10 @@ exemptions:
     policy: block
 `
 
-	got := declarations(body)
+	got, err := declarations(body)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 2 {
 		t.Fatalf("got %d declarations, want 2 - the exemptions section is not egress: %+v", len(got), got)
 	}

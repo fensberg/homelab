@@ -1,6 +1,7 @@
 package repo
 
 import (
+	list "homelab/details/suppliers"
 	"os"
 	"path"
 	"path/filepath"
@@ -100,7 +101,7 @@ func TestEveryJobSaysWhetherItKeepsRoot(t *testing.T) {
 				continue
 			}
 			value, _ := with["disable-sudo-and-containers"].(string)
-			policy, _ := with["egress-policy"].(string)
+			policy, _ := with[list.PolicyKey].(string)
 
 			inert := ""
 			if job.Container != nil {

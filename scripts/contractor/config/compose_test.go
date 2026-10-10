@@ -35,7 +35,7 @@ const composeTpl = `{"sites": {"site7": {"name": "{{ op://site7-shared/identity/
 // included, and nothing for a key that is a literal or a fact about a bucket.
 func TestComposeTemplateAddsTheSitesApplications(t *testing.T) {
 	root, tpl := composeFixture(t, composeTpl, map[string]string{
-		applications.SiteFilePath("site7"):                       "  path: ./" + applications.Dir + "/thing/production\n",
+		applications.SiteFilePath("site7"):                       "kind: Kustomization\nspec:\n  path: ./" + applications.Dir + "/thing/production\n",
 		applications.Dir + "/thing/" + applications.Declaration:  `{"secrets": {"keys": {"a": {"vault": "user"}, "b": {"generated": "backup_key"}, "c": {"value": "x"}, "d": {"storage": "bucket"}}}}`,
 		applications.Dir + "/unused/" + applications.Declaration: `{"secrets": {"keys": {"a": {"vault": "elsewhere"}}}}`,
 	})
@@ -106,7 +106,7 @@ func TestComposeTemplateLeavesASiteWithNoApplicationsAlone(t *testing.T) {
 // What cannot be composed is refused: an application nothing declares, a site
 // the template does not have, and a template that writes the section itself.
 func TestComposeTemplateRefusesWhatItCannotProvideFor(t *testing.T) {
-	block := "  path: ./" + applications.Dir + "/thing/production\n"
+	block := "kind: Kustomization\nspec:\n  path: ./" + applications.Dir + "/thing/production\n"
 	declared := applications.Dir + "/thing/" + applications.Declaration
 	for name, c := range map[string]struct {
 		template string

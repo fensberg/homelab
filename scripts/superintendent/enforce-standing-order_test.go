@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -232,29 +233,42 @@ func TestADeliveryPassesForAPersonAndNothingRidesAlongWithIt(t *testing.T) {
 func TestIsDeliveryAcceptsOnlyPinLines(t *testing.T) {
 	pattern := applications.SitesDir + "/*/" + applications.SiteFile
 	f, other := applications.SiteFilePath("north"), applications.SiteFilePath("south")
-	tag := `-    tag: "1.0.15-5"`
-	newTag := `+    tag: "1.0.15-6"`
-	dig := `+    digest: "sha256:` + digest('c') + `"`
+	was := releasesFile('a')
+	moved := strings.Replace(strings.Replace(was, `"1.0.16-1"`, `"1.0.16-2"`, 1), digest('a'), digest('c'), 1)
+	if moved == was || !strings.Contains(moved, digest('c')) {
+		t.Fatal("the fixture did not move its pin, so nothing below is tested")
+	}
 	for name, tc := range map[string]struct {
-		files, lines []string
-		want         bool
+		files []string
+		is    string
+		want  bool
 	}{
-		"a pin move":                         {[]string{f}, []string{tag, newTag, dig}, true},
-		"the same release to two sites":      {[]string{f, other}, []string{tag, newTag, dig, tag, newTag, dig}, true},
-		"another file too":                   {[]string{f, "x.yaml"}, []string{newTag}, false},
-		"latest instead of a release":        {[]string{f}, []string{`+    tag: "latest"`}, false},
-		"a line that is not a pin":           {[]string{f}, []string{newTag, `+  suspend: true`}, false},
-		"an empty change":                    {[]string{f}, nil, false},
-		"no file at all":                     {nil, []string{newTag}, false},
-		"another site's file":                {[]string{other}, []string{tag, newTag, dig}, true},
-		"a file of that name elsewhere":      {[]string{"elsewhere/" + applications.SiteFile}, []string{newTag}, false},
-		"a file of that name a level down":   {[]string{applications.SitesDir + "/north/extra/" + applications.SiteFile}, []string{newTag}, false},
-		"another file in a site's directory": {[]string{applications.SitesDir + "/north/kustomization.yaml"}, []string{newTag}, false},
+		"a pin move":                         {[]string{f}, moved, true},
+		"the same release to two sites":      {[]string{f, other}, moved, true},
+		"another site's file":                {[]string{other}, moved, true},
+		"another file too":                   {[]string{f, "x.yaml"}, moved, false},
+		"latest instead of a release":        {[]string{f}, strings.Replace(moved, `"1.0.16-2"`, `"latest"`, 1), false},
+		"a tag with no digest moved":         {[]string{f}, strings.Replace(was, `"1.0.16-1"`, `"1.0.16-2"`, 1), true},
+		"a digest that is not one":           {[]string{f}, strings.Replace(moved, digest('c'), "not-a-digest", 1), false},
+		"a line that is not a pin":           {[]string{f}, moved + "---\nkind: Kustomization\nmetadata:\n  name: thing\nspec:\n  suspend: true\n", false},
+		"a comment that rode along":          {[]string{f}, "# while I was here\n" + moved, false},
+		"a pin written another way":          {[]string{f}, strings.Replace(moved, `"1.0.16-2"`, `1.0.16-2`, 1), false},
+		"a release source renamed":           {[]string{f}, strings.Replace(moved, "name: thing", "name: other", 1), false},
+		"an empty change":                    {[]string{f}, was, false},
+		"no file at all":                     {nil, moved, false},
+		"a file of that name elsewhere":      {[]string{"elsewhere/" + applications.SiteFile}, moved, false},
+		"a file of that name a level down":   {[]string{applications.SitesDir + "/north/extra/" + applications.SiteFile}, moved, false},
+		"another file in a site's directory": {[]string{applications.SitesDir + "/north/kustomization.yaml"}, moved, false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := isDelivery(tc.files, tc.lines, pattern); got != tc.want {
+			texts := func(string) (string, string, error) { return was, tc.is, nil }
+			if got := isDelivery(tc.files, pattern, texts); got != tc.want {
 				t.Errorf("isDelivery = %v, want %v", got, tc.want)
 			}
 		})
+	}
+	// A file that cannot be read at either end is not a delivery.
+	if isDelivery([]string{f}, pattern, func(string) (string, string, error) { return "", "", errors.New("the commit is not there") }) {
+		t.Error("a file that could not be read was taken for a delivery")
 	}
 }

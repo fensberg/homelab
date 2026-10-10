@@ -115,7 +115,7 @@ func TestADirectoryIsReadAllTheWayDown(t *testing.T) {
 func TestWhatCannotBeReadIsRefusedAndNamed(t *testing.T) {
 	root := put(t, map[string]string{
 		"notes.txt":   "prose",
-		"broken.yaml": "kind: [unclosed",
+		"broken.yaml": "kind: [never closed",
 		"broken.json": "{",
 		"broken.env":  "A=1\nnot a setting\n",
 	})
@@ -158,5 +158,36 @@ func TestABuiltDirectoryIsRedrawnAsWhatComesOut(t *testing.T) {
 	}
 	if code, _, said := drawing(t, unbuildable, "-root", root, "-build", "app/settings"); code == 0 || !strings.Contains(said, "app/settings") {
 		t.Errorf("a directory that could not be built was drawn, or not named: %s", said)
+	}
+}
+
+// The keys a file writes twice are named, by the mapping they are twice in.
+// The same name in two mappings is not twice: three steps that each take a
+// `ref` are three mappings. And a line inside a block of text is not a key.
+func TestTheKeysAFileWritesTwiceAreNamed(t *testing.T) {
+	root := put(t, map[string]string{
+		"twice.yaml": "steps:\n  - with:\n      ref: a\n      ref: b\n  - with:\n      ref: c\nname: one\nname: two\n",
+		"clean.yaml": "steps:\n  - with:\n      ref: a\n  - with:\n      ref: b\n  - run: |\n      name: not a key\n      name: still not a key\n",
+	})
+	var out, complaints bytes.Buffer
+	if code := duplicates([]string{"-root", root, "twice.yaml", "clean.yaml"}, &out, &complaints); code != 0 {
+		t.Fatalf("naming the keys written twice failed: %s", complaints.String())
+	}
+	var found map[string][]string
+	if err := json.Unmarshal(out.Bytes(), &found); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(found["twice.yaml"], ",") != "name,ref" {
+		t.Errorf("the keys written twice were named as %v", found["twice.yaml"])
+	}
+	if names, read := found["clean.yaml"]; !read || len(names) != 0 {
+		t.Errorf("a file that writes no key twice was answered with %v", names)
+	}
+	out.Reset()
+	if code := duplicates([]string{"-root", root, "absent.yaml"}, &out, &complaints); code == 0 {
+		t.Error("a file that is not there was answered for")
+	}
+	if code := duplicates([]string{"-root", root}, &out, &complaints); code != 2 {
+		t.Error("naming the duplicates of nothing was not refused as a mistake in the asking")
 	}
 }

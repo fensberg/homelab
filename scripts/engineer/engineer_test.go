@@ -253,8 +253,8 @@ func TestAChangeIsStampedWhenItFitsAndRefusedWhenItDoesNot(t *testing.T) {
 	code, said := stampOf(t,
 		map[string][]string{core: {deployment("thing", "1", "", "1Gi")}},
 		map[string][]string{core: {deployment("thing", "8", "", "1Gi")}}, &north)
-	if code != 0 || !strings.Contains(said, "which makes 18.0 - fits") {
-		t.Errorf("seven more on eleven, in eighteen, was not stamped (%d):\n%s", code, said)
+	if code != 0 || said != "" {
+		t.Errorf("seven more on eleven, in eighteen, was not stamped in silence (%d):\n%s", code, said)
 	}
 	code, said = stampOf(t,
 		map[string][]string{core: {deployment("thing", "1", "", "1Gi")}},
@@ -265,8 +265,8 @@ func TestAChangeIsStampedWhenItFitsAndRefusedWhenItDoesNot(t *testing.T) {
 	code, said = stampOf(t,
 		map[string][]string{core: {deployment("thing", "1", "", "1Gi")}},
 		map[string][]string{core: {deployment("thing", "1", "", "1Gi"), deployment("more-of-what-waits", "20", "batch", "4Gi")}}, &north)
-	if code != 0 {
-		t.Errorf("eighty gibibytes of work that can wait was held against what cannot (%d):\n%s", code, said)
+	if code != 0 || said != "" {
+		t.Errorf("eighty gibibytes of work that can wait was held against what cannot, or something was said of it (%d):\n%s", code, said)
 	}
 }
 
@@ -275,12 +275,12 @@ func TestAChangeIsStampedWhenItFitsAndRefusedWhenItDoesNot(t *testing.T) {
 func TestAChangeAgainstASiteNobodyHasReadIsRefusedOnlyIfItAsksForSomething(t *testing.T) {
 	core := "clusters/core/a.yaml"
 	same := map[string][]string{core: {deployment("thing", "1", "", "1Gi")}}
-	if code, said := stampOf(t, same, same, nil); code != 0 || !strings.Contains(said, "is not on record") {
-		t.Errorf("a change that asks for nothing was not let through an unread site, or was not told (%d):\n%s", code, said)
+	if code, said := stampOf(t, same, same, nil); code != 0 || said != "" {
+		t.Errorf("a change that asks for nothing was not let through an unread site in silence (%d):\n%s", code, said)
 	}
 	code, said := stampOf(t, same, map[string][]string{core: {deployment("thing", "2", "", "1Gi")}}, nil)
-	if code != 1 || !strings.Contains(said, "REFUSED") {
-		t.Errorf("a change that asks for more was let through a site nobody has read (%d):\n%s", code, said)
+	if code != 1 || !strings.Contains(said, "REFUSED") || !strings.Contains(said, "is not on record") {
+		t.Errorf("a change that asks for more was let through a site nobody has read, or not told why (%d):\n%s", code, said)
 	}
 }
 

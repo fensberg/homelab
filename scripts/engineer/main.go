@@ -35,7 +35,7 @@ verbs:
   stamp   Hold a change to what the site can hold. Counts what the change
           adds to what work that cannot wait reserves, against the site's
           capacity as last recorded, and refuses a change that leaves no
-          room with a worker gone.
+          room with a worker gone. It says nothing of a change that fits.
 `
 
 func main() {
@@ -50,7 +50,7 @@ func main() {
 	}
 	os.Exit(stamp(os.Args[2:], os.Stdout, os.Stderr, here, archived,
 		func(tree string, builds []string, paths ...string) (map[string]json.RawMessage, error) {
-			return drafter.Draw(here, tree, builds, paths...)
+			return drafter.Draw(tree, builds, paths...)
 		}))
 }
 
@@ -111,7 +111,15 @@ func stamp(args []string, out, complaints io.Writer, repository string, treeAt f
 	}
 	asked, grew := change(was, is)
 
+	// Said only when it is refused. A change that fits is the ordinary case,
+	// and an answer to every one of them is an answer nobody reads on the
+	// day it matters. The operator: "I want negative, not positive,
+	// information."
 	line := capacity.Of(standing, asked)
+	refusal := capacity.Refusal(line)
+	if refusal == nil {
+		return 0
+	}
 	if line.Unread() {
 		fmt.Fprintf(out, "What %s's workers hold is not on record. This change adds %s and gives back %s.\n", *site, inGiB(asked.Added), inGiB(asked.Removed))
 	} else {
@@ -120,11 +128,8 @@ func stamp(args []string, out, complaints io.Writer, repository string, treeAt f
 	if len(grew) > 0 {
 		fmt.Fprintf(out, "\nWhat asks for more than it did:\n  %s\n", strings.Join(grew, "\n  "))
 	}
-	if err := capacity.Refusal(line); err != nil {
-		fmt.Fprintf(out, "\nREFUSED: %s\n", err)
-		return 1
-	}
-	return 0
+	fmt.Fprintf(out, "\nREFUSED: %s\n", refusal)
+	return 1
 }
 
 func inGiB(b int64) string { return fmt.Sprintf("%.1f GiB", float64(b)/float64(1<<30)) }

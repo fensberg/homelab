@@ -31,13 +31,16 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
+
+	"homelab/details/drafter"
+	"homelab/details/suppliers"
 )
 
 // jobEgress is what a workflow says about one job's outbound reach.
@@ -60,126 +63,55 @@ type declaredEgress struct {
 	Reason string
 }
 
-var (
-	topLevelKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*:`)
-	jobKey      = regexp.MustCompile(`^  ([a-zA-Z0-9_-]+):\s*$`)
-	hostEntry   = regexp.MustCompile(`^\s+- ?([a-z0-9.*-]+:\d+)\s*$`)
-	bareHost    = regexp.MustCompile(`^\s+([a-z0-9.*-]+:\d+)\s*$`)
-	policyLine  = regexp.MustCompile(`^\s+egress-policy:\s*(\w+)`)
-)
-
-// workflowEgress reads one workflow and reports every job in it.
+// jobsIn reports every job of a workflow, from the workflow as the drafter
+// redraws it.
 //
-// Hand-parsed rather than unmarshalled, for the reason reposIn gives: this is
-// the program whose whole subject is suppliers, and a YAML library would be one
-// more supplier to approve. The shape it depends on - two-space job keys under
-// a top-level `jobs:` - is the shape prettier and actionlint already enforce on
-// every file here.
-func workflowEgress(name, body string) []jobEgress {
+// This matched lines: a job was two spaces and a name, its policy the first
+// line saying egress-policy, its hosts whatever followed allowed-endpoints
+// until a line that did not look like one. It was read that way because the
+// program whose subject is suppliers would take none of its own. The
+// drafter takes the one there is, and a job here is a job: its key under
+// `jobs`, and what its steps hand the step that hardens the runner.
+func jobsIn(name string, docs []map[string]any) []jobEgress {
 	var out []jobEgress
-	var current *jobEgress
-	inJobs := false
-	inList := false
-
-	flush := func() {
-		if current != nil {
-			out = append(out, *current)
-			current = nil
+	for _, doc := range docs {
+		jobs, _ := doc["jobs"].(map[string]any)
+		keys := make([]string, 0, len(jobs))
+		for key := range jobs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			job, _ := jobs[key].(map[string]any)
+			found := jobEgress{Workflow: name, Job: key}
+			steps, _ := job["steps"].([]any)
+			for _, st := range steps {
+				step, _ := st.(map[string]any)
+				with, _ := step["with"].(map[string]any)
+				if policy, said := with[suppliers.PolicyKey].(string); said && found.Policy == "" {
+					found.Policy = policy
+				}
+				if hosts, said := with["allowed-endpoints"].(string); said {
+					found.Hosts = append(found.Hosts, strings.Fields(hosts)...)
+				}
+			}
+			out = append(out, found)
 		}
 	}
-
-	for _, line := range strings.Split(body, "\n") {
-		if topLevelKey.MatchString(line) {
-			inJobs = strings.HasPrefix(line, "jobs:")
-			inList = false
-		}
-		if m := jobKey.FindStringSubmatch(line); m != nil && inJobs {
-			flush()
-			current = &jobEgress{Workflow: name, Job: m[1]}
-			inList = false
-			continue
-		}
-		if current == nil {
-			continue
-		}
-		if m := policyLine.FindStringSubmatch(line); m != nil {
-			current.Policy = m[1]
-			inList = false
-			continue
-		}
-		if strings.Contains(strings.TrimSpace(line), "allowed-endpoints:") {
-			inList = true
-			continue
-		}
-		if inList {
-			if m := bareHost.FindStringSubmatch(line); m != nil {
-				current.Hosts = append(current.Hosts, m[1])
-				continue
-			}
-			if strings.TrimSpace(line) == "" {
-				continue
-			}
-			inList = false
-		}
-	}
-	flush()
 	return out
 }
 
-// declarations pulls the `egress:` section out of the suppliers list.
-//
-// It stops at the next top-level key, so a section added after it cannot be
-// read as more entries.
-func declarations(body string) []declaredEgress {
+// declarations is the `egress:` section of the suppliers list.
+func declarations(body string) ([]declaredEgress, error) {
+	entries, err := suppliers.EgressOf([]byte(body))
+	if err != nil {
+		return nil, err
+	}
 	var out []declaredEgress
-	var current *declaredEgress
-	inSection, inHosts := false, false
-
-	flush := func() {
-		if current != nil {
-			out = append(out, *current)
-			current = nil
-		}
+	for _, e := range entries {
+		out = append(out, declaredEgress{Key: e.Job, Policy: e.Policy, Hosts: e.Hosts, Reason: e.Reason})
 	}
-
-	for _, line := range strings.Split(body, "\n") {
-		if topLevelKey.MatchString(line) {
-			if !strings.HasPrefix(line, "egress:") {
-				flush()
-				inSection = false
-				continue
-			}
-			inSection = true
-			continue
-		}
-		if !inSection {
-			continue
-		}
-		t := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(t, "- job:"):
-			flush()
-			current = &declaredEgress{Key: strings.TrimSpace(strings.TrimPrefix(t, "- job:"))}
-			inHosts = false
-		case current == nil:
-			// a comment or blank line before the first entry
-		case strings.HasPrefix(t, "policy:"):
-			current.Policy = strings.TrimSpace(strings.TrimPrefix(t, "policy:"))
-			inHosts = false
-		case strings.HasPrefix(t, "reason:"):
-			inHosts = false
-		case strings.HasPrefix(t, "hosts:"):
-			inHosts = true
-		case inHosts:
-			if m := hostEntry.FindStringSubmatch(line); m != nil {
-				current.Hosts = append(current.Hosts, m[1])
-			} else if t != "" {
-				inHosts = false
-			}
-		}
-	}
-	flush()
-	return out
+	return out, nil
 }
 
 // Compare reports every way the workflows and the declarations disagree.
@@ -310,7 +242,10 @@ func guardEgress(args []string) int {
 	if err != nil {
 		return refuseEgress(fmt.Sprintf("cannot read %s: %v", suppliersPath, err))
 	}
-	declared := declarations(string(suppliers))
+	declared, err := declarations(string(suppliers))
+	if err != nil {
+		return refuseEgress(fmt.Sprintf("cannot read %s: %v", suppliersPath, err))
+	}
 	if len(declared) == 0 {
 		return refuseEgress(fmt.Sprintf(
 			"%s declares no egress at all. Either the 'egress:' section was removed - which "+
@@ -318,23 +253,31 @@ func guardEgress(args []string) int {
 				"this is not the suppliers list.", suppliersPath))
 	}
 
-	entries, err := os.ReadDir(filepath.Join(*root, workflowsDir))
+	// Every workflow, redrawn in one asking. The directory also holds the
+	// actions the workflows share, each in a directory of its own; a
+	// workflow is a file at the top of it.
+	drawn, err := drafter.Draw(*root, nil, workflowsDir)
 	if err != nil {
 		return refuseEgress(fmt.Sprintf("cannot read %s: %v", workflowsDir, err))
 	}
-
 	var found []jobEgress
 	workflows := 0
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+	names := make([]string, 0, len(drawn))
+	for rel := range drawn {
+		names = append(names, rel)
+	}
+	sort.Strings(names)
+	for _, rel := range names {
+		name := strings.TrimPrefix(rel, workflowsDir+"/")
+		if strings.Contains(name, "/") || !strings.HasSuffix(name, ".yml") {
 			continue
 		}
 		workflows++
-		body, err := os.ReadFile(filepath.Join(*root, workflowsDir, e.Name()))
-		if err != nil {
-			return refuseEgress(fmt.Sprintf("cannot read %s: %v", e.Name(), err))
+		var docs []map[string]any
+		if err := json.Unmarshal(drawn[rel], &docs); err != nil {
+			return refuseEgress(fmt.Sprintf("cannot read %s: %v", name, err))
 		}
-		found = append(found, workflowEgress(e.Name(), string(body))...)
+		found = append(found, jobsIn(name, docs)...)
 	}
 
 	// A walk that finds nothing passes every comparison below, which is the

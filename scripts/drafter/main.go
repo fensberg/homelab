@@ -47,6 +47,13 @@ usage: drafter draw [-root DIR] [-build DIR]... [PATH]...
 
 The answer is one JSON object on standard output: each file by its path,
 and each built directory by "built:" and its path.
+
+usage: drafter duplicates [-root DIR] PATH...
+
+  Names every key a YAML file writes twice in one mapping, by file. A file
+  that writes none is answered with an empty list. Drawing such a file is
+  refused, since the second key would silently replace the first; this is
+  for whoever needs to know which keys they are.
 `
 
 // built is what a built directory is named by in the answer, before its
@@ -59,11 +66,89 @@ func (d *dirs) String() string     { return strings.Join(*d, ",") }
 func (d *dirs) Set(v string) error { *d = append(*d, v); return nil }
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "draw" {
+	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
 	}
-	os.Exit(draw(os.Args[2:], os.Stdout, os.Stderr, kustomized))
+	switch os.Args[1] {
+	case "draw":
+		os.Exit(draw(os.Args[2:], os.Stdout, os.Stderr, kustomized))
+	case "duplicates":
+		os.Exit(duplicates(os.Args[2:], os.Stdout, os.Stderr))
+	}
+	fmt.Fprint(os.Stderr, usage)
+	os.Exit(2)
+}
+
+// duplicates is the verb that names the keys a file writes twice.
+func duplicates(args []string, out, complaints io.Writer) int {
+	flags := flag.NewFlagSet("duplicates", flag.ContinueOnError)
+	flags.SetOutput(complaints)
+	root := flags.String("root", ".", "Where the paths are from.")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if flags.NArg() == 0 {
+		fmt.Fprintln(complaints, "error: duplicates needs a file to read")
+		return 2
+	}
+	found := map[string][]string{}
+	for _, given := range flags.Args() {
+		body, err := os.ReadFile(filepath.Join(*root, filepath.FromSlash(given)))
+		if err != nil {
+			fmt.Fprintln(complaints, "error:", err)
+			return 1
+		}
+		names, err := writtenTwice(body)
+		if err != nil {
+			fmt.Fprintf(complaints, "error: %s: %v\n", given, err)
+			return 1
+		}
+		found[given] = names
+	}
+	if err := json.NewEncoder(out).Encode(found); err != nil {
+		fmt.Fprintln(complaints, "error:", err)
+		return 1
+	}
+	return 0
+}
+
+// writtenTwice is every key some mapping of a YAML text holds more than
+// once, each named once, in the order met. The text is read as its own
+// structure and not into values, because reading it into values is what
+// refuses a key written twice.
+func writtenTwice(body []byte) ([]string, error) {
+	names := []string{}
+	seen := map[string]bool{}
+	var walk func(n *yaml.Node)
+	walk = func(n *yaml.Node) {
+		if n.Kind == yaml.MappingNode {
+			here := map[string]bool{}
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				key := n.Content[i].Value
+				if here[key] && !seen[key] {
+					seen[key] = true
+					names = append(names, key)
+				}
+				here[key] = true
+			}
+		}
+		for _, child := range n.Content {
+			walk(child)
+		}
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(body))
+	for {
+		var doc yaml.Node
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return names, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("not YAML that can be read: %w", err)
+		}
+		walk(&doc)
+	}
 }
 
 // draw is the verb, with the way a directory is built handed to it.
