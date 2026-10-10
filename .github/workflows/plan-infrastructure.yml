@@ -21,6 +21,12 @@ on:
       - "modules/infrastructure/**"
       - "management/**"
       - "config/management.tpl.json"
+      # What Flux deploys, and the applications it deploys from. A change
+      # here plans as no change to any root, and is planned all the same:
+      # the plan is where a change is held to what the site can hold, and
+      # these are the changes that add to it.
+      - "clusters/**"
+      - "modules/applications/**"
 
 permissions:
   contents: read
