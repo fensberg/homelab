@@ -637,8 +637,9 @@ egress:
       toolchain and OpenTofu with its providers, fetched as the Validate lane
       fetches them, GitHub's API to find and download the record, and its
       registry for the release of the platform the site runs. And Go's module
-      proxy and checksum database, for the one dependency the engineer has:
-      it reads YAML with a library, which it may because it holds no key.
+      proxy and checksum database, for the one dependency in the estate's
+      programs: the drafter reads YAML with a library, which it may because
+      it holds no key, and the engineer reads what the drafter draws.
     hosts:
       - api.github.com:443
       - get.opentofu.org:443
