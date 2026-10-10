@@ -617,14 +617,23 @@ depends on it and uses them.
 - `deploy-infrastructure.yml` — applies OpenTofu on a self-hosted runner, and
   converges the platform. Its filters are `environments/**/infrastructure/**`,
   `modules/infrastructure/**`, `management/**`, `config/management.tpl.json`
-  and `clusters/bootstrap/**`.
+  and `clusters/**`.
+
+  `clusters/**` is there for the record a converge ends with, more than for
+  anything it applies. Flux deploys what is merged under it with no help
+  from a converge, and nothing then took a record: the site's capacity,
+  which a pull request's change is held against, stayed as it was before
+  the merge. A change only under `management/estate/` starts nothing here;
+  the estate is the lawyer's, and is converged by hand.
 
   So a change under `management/` **does** trigger it, which is what
   `converge` is for. This entry used to say the opposite - that Ignition
   changes never trigger it, "intentionally" - which was true before converge
-  existed and has been wrong since (#429). `clusters/bootstrap/**` is there
-  because OpenTofu applies the CNI manifest rather than Flux, so a change to
-  it is delivered by a converge and by nothing else.
+  existed and has been wrong since (#429). `clusters/bootstrap/**` is under
+  `clusters/**`, and needs a converge for another reason: OpenTofu applies
+  the CNI manifest rather than Flux, so a change to it is delivered by a
+  converge and by nothing else. This entry named that path as a filter for
+  as long as the workflow did not have it; it has it now.
 
 - `fabricator.yml` — builds every image the repository defines, and
   publishes the platform: the modules a site runs and the files they read, as
