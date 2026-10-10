@@ -1,4 +1,4 @@
-package fit
+package capacity
 
 import (
 	"strings"
@@ -84,7 +84,7 @@ func TestASiteNobodyHasReadIsAnErrorAndNotAFit(t *testing.T) {
 		t.Errorf("a change was held against a site with no workers read, and the answer was: %v", err)
 	}
 	// A change that asks for nothing is not stopped for it: a record with no
-	// standing must not hold up every change that touches no workload.
+	// capacity file must not hold up every change that touches no workload.
 	if err := Refusal(Of(Site{}, Change{})); err != nil {
 		t.Errorf("a change that asks for nothing was stopped because the site was not read: %v", err)
 	}

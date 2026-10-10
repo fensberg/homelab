@@ -1,4 +1,4 @@
-// Package fit says whether a change leaves room for the work that cannot
+// Package capacity says whether a change leaves room for the work that cannot
 // wait.
 //
 // Inside its machines a site is packed on purpose, and Kubernetes says who
@@ -18,7 +18,7 @@
 //
 // Every figure is named in the answer, so that a refusal can be argued
 // with.
-package fit
+package capacity
 
 import (
 	"errors"

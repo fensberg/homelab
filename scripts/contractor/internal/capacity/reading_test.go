@@ -1,4 +1,4 @@
-package fit
+package capacity
 
 import (
 	"strings"
@@ -31,7 +31,7 @@ func pods(items ...string) []byte { return []byte(`{"items":[` + strings.Join(it
 // because a part of a gibibyte is not room to promise. The largest is
 // rounded up, because it is what is taken away.
 func TestWhatTheWorkersHoldIsCountedInWholeGibibytesAndNotTheControlPlanes(t *testing.T) {
-	site, err := Standing([]byte(nodes), pods())
+	site, err := Read([]byte(nodes), pods())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestWhatTheWorkersHoldIsCountedInWholeGibibytesAndNotTheControlPlanes(t *te
 // What cannot wait is every running pod on a worker that is not batch, by
 // what it reserves, rounded up to the gibibyte above the total.
 func TestWhatCannotWaitIsEveryRunningPodOnAWorkerThatIsNotBatch(t *testing.T) {
-	site, err := Standing([]byte(nodes), pods(
+	site, err := Read([]byte(nodes), pods(
 		pod("a", "wk-0", "Running", "interactive", "2Gi", "256Mi"),
 		pod("b", "wk-1", "Running", "critical", "1500Mi"),
 		pod("c", "wk-2", "Running", "", "512Mi"),
@@ -73,7 +73,7 @@ func TestWhatCannotWaitIsEveryRunningPodOnAWorkerThatIsNotBatch(t *testing.T) {
 func TestAListingWithNoWorkerIsAnErrorAndNotASiteOfNothing(t *testing.T) {
 	onlyControlPlanes := `{"items":[{"metadata":{"name":"cp-0","labels":{"node-role.kubernetes.io/control-plane":""}},"status":{"allocatable":{"memory":"4Gi"}}}]}`
 	for name, listing := range map[string]string{"no machines": `{"items":[]}`, "no workers": onlyControlPlanes} {
-		if _, err := Standing([]byte(listing), pods()); err == nil {
+		if _, err := Read([]byte(listing), pods()); err == nil {
 			t.Errorf("a listing with %s was read as a site", name)
 		}
 	}
@@ -96,14 +96,14 @@ func TestASizeThatCannotBeReadIsRefused(t *testing.T) {
 		}
 	}
 	bad := pods(pod("a", "wk-0", "Running", "interactive", "lots"))
-	if _, err := Standing([]byte(nodes), bad); err == nil || !strings.Contains(err.Error(), "a") {
+	if _, err := Read([]byte(nodes), bad); err == nil || !strings.Contains(err.Error(), "a") {
 		t.Errorf("a pod reserving a size that cannot be read was counted, or not named: %v", err)
 	}
 }
 
 // What is kept comes back as it was written, and is written in gibibytes a
 // person can read.
-func TestAStandingIsKeptInWholeGibibytesAndComesBackTheSame(t *testing.T) {
+func TestCapacityIsKeptInWholeGibibytesAndComesBackTheSame(t *testing.T) {
 	site := Site{Workers: 27 * gib, LargestWorker: 10 * gib, MustRun: 11 * gib}
 	raw, err := Marshal(site, "2026-10-09T04:00:00Z")
 	if err != nil {
@@ -119,6 +119,6 @@ func TestAStandingIsKeptInWholeGibibytesAndComesBackTheSame(t *testing.T) {
 		t.Errorf("came back as %+v taken %q (%v)", back, taken, err)
 	}
 	if _, _, err := Unmarshal([]byte("not json")); err == nil {
-		t.Error("something that is not a standing was read as one")
+		t.Error("something that is not a capacity file was read as one")
 	}
 }

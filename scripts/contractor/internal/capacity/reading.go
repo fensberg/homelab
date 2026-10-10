@@ -1,4 +1,4 @@
-package fit
+package capacity
 
 import (
 	"encoding/json"
@@ -20,7 +20,7 @@ const canWait = "batch"
 // field is matched to the key of its own name whatever its case, and the
 // keys are Kubernetes' to choose, not this estate's to restate.
 //
-// Standing is a site as its own cluster describes it: from the list of its
+// Read is a site as its own cluster describes it: from the list of its
 // machines and the list of its pods, as `kubectl get -o json` gives them.
 //
 // Read from the cluster and not from what is declared, because only the
@@ -33,7 +33,7 @@ const canWait = "batch"
 // worker by itself, since part of a gibibyte is not room to promise; the
 // largest worker and what is reserved are rounded up, since both are taken
 // away from that room.
-func Standing(nodes, pods []byte) (Site, error) {
+func Read(nodes, pods []byte) (Site, error) {
 	var machines struct {
 		Items []struct {
 			Metadata struct {
@@ -139,7 +139,7 @@ func Bytes(written string) (int64, error) {
 	return int64(math.Round(n * by)), nil
 }
 
-// File is where a site's standing is kept, beside its as-built record.
+// File is where a site's capacity is kept, beside its as-built record.
 //
 // Beside the record and not in it. The record is the estate's state, which
 // the estate is held to matching, and a reading of what is running is the
@@ -147,7 +147,7 @@ func Bytes(written string) (int64, error) {
 // have the estate reported as changed whenever a pod was added. So it is a
 // file of its own, written whenever a record is taken, after the cluster has
 // settled - which is what makes it the site as the last change left it.
-const File = "standing.json"
+const File = "capacity.json"
 
 // kept is the file's shape: whole gibibytes, and when they were read.
 type kept struct {
@@ -157,7 +157,7 @@ type kept struct {
 	Taken            string `json:"read_at"`
 }
 
-// Marshal is a standing as the file holds it.
+// Marshal is a site's capacity as the file holds it.
 func Marshal(site Site, taken string) ([]byte, error) {
 	return json.MarshalIndent(kept{
 		WorkersGiB:       site.Workers / gibibyte,
@@ -171,7 +171,7 @@ func Marshal(site Site, taken string) ([]byte, error) {
 func Unmarshal(raw []byte) (Site, string, error) {
 	var k kept
 	if err := json.Unmarshal(raw, &k); err != nil {
-		return Site{}, "", fmt.Errorf("the site's standing is not what a record holds: %w", err)
+		return Site{}, "", fmt.Errorf("the site's capacity file is not what a record holds: %w", err)
 	}
 	return Site{Workers: k.WorkersGiB * gibibyte, LargestWorker: k.LargestWorkerGiB * gibibyte, MustRun: k.MustRunGiB * gibibyte}, k.Taken, nil
 }

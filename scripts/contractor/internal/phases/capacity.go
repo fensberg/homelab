@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"homelab/contractor/internal/fit"
+	"homelab/contractor/internal/capacity"
 	"homelab/contractor/internal/run"
 )
 
-// recordStanding reads what the site's workers hold and what work that
+// recordCapacity reads what the site's workers hold and what work that
 // cannot wait reserves on them, and keeps it beside the record.
 //
 // Here, at the end of taking a record, because this is after the cluster
@@ -22,7 +22,7 @@ import (
 // Asked of the cluster itself, the way the health phase asks it. Only the
 // cluster knows what is running. ctx is the cluster root's, whose output the
 // kubeconfig is.
-func recordStanding(ctx *run.Context, dir string, taken time.Time) error {
+func recordCapacity(ctx *run.Context, dir string, taken time.Time) error {
 	kubeconfig, cleanup, err := writeKubeconfig(ctx)
 	if err != nil {
 		return err
@@ -36,23 +36,23 @@ func recordStanding(ctx *run.Context, dir string, taken time.Time) error {
 	if err != nil {
 		return err
 	}
-	site, err := fit.Standing(nodes, pods)
+	site, err := capacity.Read(nodes, pods)
 	if err != nil {
 		return err
 	}
-	raw, err := fit.Marshal(site, taken.UTC().Format(time.RFC3339))
+	raw, err := capacity.Marshal(site, taken.UTC().Format(time.RFC3339))
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, fit.File), append(raw, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, capacity.File), append(raw, '\n'), 0o644); err != nil {
 		return err
 	}
 	// The sum with no change in it: how near the edge the site is running,
 	// said every time a record is taken.
-	run.Info(fit.Of(site, fit.Change{}).String())
-	run.Ok(fmt.Sprintf("the site's standing is saved beside the record, in %s", fit.File))
+	run.Info(capacity.Of(site, capacity.Change{}).String())
+	run.Ok(fmt.Sprintf("the site's capacity is saved beside the record, in %s", capacity.File))
 	return nil
 }
