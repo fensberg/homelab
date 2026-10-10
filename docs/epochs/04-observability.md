@@ -189,7 +189,11 @@ Proofs that could not be had on the day the thing was built, each with what
 runs it. None is a criterion; each is a claim made above that is not yet
 shown.
 
-- **The site rings the watchman and is heard.**
+- **The site rings the watchman and is heard.** _Shown on 2026-10-10:_ the
+  test passed in the integration tier, after the site's address at the
+  watchman was corrected. It had been granted one built from a name
+  written with a dot in it, which the vendor has no certificate for; the
+  estate now refuses such a name. What follows is how it was to be shown.
   `TestTheSiteRingsTheWatchmanAndIsHeard`, in the integration tier, asks
   Alertmanager how many rings it sent in the last half hour and how many
   were not taken. It could not pass until half an hour after the route
