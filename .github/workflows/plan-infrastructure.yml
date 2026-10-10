@@ -132,9 +132,15 @@ jobs:
             go.dev:443
             objects.githubusercontent.com:443
             pkg-containers.githubusercontent.com:443
+            proxy.golang.org:443
             registry.opentofu.org:443
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
+            sum.golang.org:443
+          # The commit this is checked out at is the pull request merged into
+          # its base, and the one before it is the base. The engineer reads
+          # both to say what the change adds.
+          fetch-depth: "2"
 
       - name: Read pinned versions
         uses: $/.github/actions/versions
@@ -187,6 +193,29 @@ jobs:
           go build -C scripts/contractor -o ../../toolshed/contractor .
           ./toolshed/contractor plan-as-built -site "$SITE" -record as-built-record -comment-out plan-comment.md
 
+      # What the change adds to what the site must hold, against what the
+      # site can hold: the engineer's, and its answer joins the plan's in the
+      # same comment. It is not failed here. A refusal has to reach the pull
+      # request before the job stops, so the answer is kept and the last
+      # step is what refuses.
+      - name: Hold the change to what the site can hold
+        env:
+          SITE: ${{ matrix.site }}
+        run: |
+          go build -C scripts/engineer -o ../../toolshed/engineer .
+          code=0
+          ./toolshed/engineer stamp -site "$SITE" -record as-built-record -base 'HEAD^1' > stamp.txt 2>&1 || code=$?
+          cat stamp.txt
+          {
+            echo
+            echo "### What ${SITE} can hold"
+            echo
+            echo '```text'
+            cat stamp.txt
+            echo '```'
+          } >> plan-comment.md
+          echo "${code}" > stamp.code
+
       # Handed to the job that reports it. This job runs the pull request's
       # own code - the contractor is built from the branch - and the token
       # that code can read is this job's, so this job may write nothing.
@@ -197,6 +226,14 @@ jobs:
           path: plan-comment.md
           if-no-files-found: error
           retention-days: 1
+
+      - name: Refuse a change the site cannot hold
+        run: |
+          code="$(cat stamp.code)"
+          if [ "${code}" != "0" ]; then
+            echo "::error::the engineer did not stamp this change; its reasons are in the plan's comment and in the step above"
+            exit "${code}"
+          fi
 
   # ---------------------------------------------------------------------
   # REPORT EACH SITE'S PLAN - the only job here that may write to the pull
