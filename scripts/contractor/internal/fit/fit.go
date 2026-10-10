@@ -104,6 +104,10 @@ func (l Line) String() string {
 func Refusal(l Line) error {
 	g := func(b int64) string { return fmt.Sprintf("%.1f", float64(b)/float64(gibibyte)) }
 	switch {
+	case l.Unread() && l.Change.Added <= l.Change.Removed && l.Change.LargestPod == 0:
+		// Nothing is being asked for, so there is nothing to hold against
+		// a site nobody has read.
+		return nil
 	case l.Unread():
 		return errors.New("what the site's workers hold has not been read, so this change cannot be held against it. " +
 			"That is not the same as fitting")

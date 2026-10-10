@@ -100,3 +100,25 @@ func TestASizeThatCannotBeReadIsRefused(t *testing.T) {
 		t.Errorf("a pod reserving a size that cannot be read was counted, or not named: %v", err)
 	}
 }
+
+// What is kept comes back as it was written, and is written in gibibytes a
+// person can read.
+func TestAStandingIsKeptInWholeGibibytesAndComesBackTheSame(t *testing.T) {
+	site := Site{Workers: 27 * gib, LargestWorker: 10 * gib, MustRun: 11 * gib}
+	raw, err := Marshal(site, "2026-10-09T04:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, said := range []string{`"workers_gib": 27`, `"largest_worker_gib": 10`, `"must_run_gib": 11`} {
+		if !strings.Contains(string(raw), said) {
+			t.Errorf("the file does not say %s:\n%s", said, raw)
+		}
+	}
+	back, taken, err := Unmarshal(raw)
+	if err != nil || back != site || taken != "2026-10-09T04:00:00Z" {
+		t.Errorf("came back as %+v taken %q (%v)", back, taken, err)
+	}
+	if _, _, err := Unmarshal([]byte("not json")); err == nil {
+		t.Error("something that is not a standing was read as one")
+	}
+}

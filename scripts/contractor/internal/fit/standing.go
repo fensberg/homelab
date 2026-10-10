@@ -132,3 +132,40 @@ func Bytes(written string) (int64, error) {
 	}
 	return int64(math.Round(n * by)), nil
 }
+
+// File is where a site's standing is kept, beside its as-built record.
+//
+// Beside the record and not in it. The record is the estate's state, which
+// the estate is held to matching, and a reading of what is running is the
+// same from one night to the next only by luck: a figure kept there would
+// have the estate reported as changed whenever a pod was added. So it is a
+// file of its own, written whenever a record is taken, after the cluster has
+// settled - which is what makes it the site as the last change left it.
+const File = "standing.json"
+
+// kept is the file's shape: whole gibibytes, and when they were read.
+type kept struct {
+	WorkersGiB       int64  `json:"workers_gib"`
+	LargestWorkerGiB int64  `json:"largest_worker_gib"`
+	MustRunGiB       int64  `json:"must_run_gib"`
+	Taken            string `json:"taken"`
+}
+
+// Marshal is a standing as the file holds it.
+func Marshal(site Site, taken string) ([]byte, error) {
+	return json.MarshalIndent(kept{
+		WorkersGiB:       site.Workers / gibibyte,
+		LargestWorkerGiB: site.LargestWorker / gibibyte,
+		MustRunGiB:       site.MustRun / gibibyte,
+		Taken:            taken,
+	}, "", "  ")
+}
+
+// Unmarshal reads the file back, and when it was taken.
+func Unmarshal(raw []byte) (Site, string, error) {
+	var k kept
+	if err := json.Unmarshal(raw, &k); err != nil {
+		return Site{}, "", fmt.Errorf("the site's standing is not what a record holds: %w", err)
+	}
+	return Site{Workers: k.WorkersGiB * gibibyte, LargestWorker: k.LargestWorkerGiB * gibibyte, MustRun: k.MustRunGiB * gibibyte}, k.Taken, nil
+}

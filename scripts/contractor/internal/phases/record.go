@@ -119,7 +119,9 @@ func record(ctx *run.Context, tofu asbuilt.Tofu) error {
 		}
 	}
 	run.Ok("the record is saved to " + ctx.RecordOut)
-	return nil
+	// Last, and beside the record: what the site's workers hold and what is
+	// reserved on them, read now that every root is known to be converged.
+	return recordStanding(ctx.In(ctx.Cluster), ctx.RecordOut, meta.Taken)
 }
 
 // recordedCommit is the commit of main the estate was converged to, as a
