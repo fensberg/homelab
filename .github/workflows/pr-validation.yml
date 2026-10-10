@@ -74,10 +74,82 @@ defaults:
     shell: bash
 
 jobs:
+  # Whether the merge queue is being asked to test something that has already
+  # been tested.
+  #
+  # A pull request passes this workflow before it may join the queue, and the
+  # queue then runs it again on the pull request as it would land: on top of
+  # main as it now is, and of anything ahead of it. That second run says
+  # something only when the two differ. For a pull request that is level with
+  # main and alone in the queue they are the same files, and the same files
+  # give the same answer - six minutes spent hearing it twice.
+  #
+  # So this compares the two as trees, which is the files themselves and not
+  # the commits that carry them, and asks that this workflow did pass on the
+  # pull request's own head. When both hold, every lane below is skipped,
+  # which the queue reads as passed. When main has moved, or something is
+  # ahead in the queue, the trees differ and everything runs: which is the
+  # case the queue is for.
+  already-tested:
+    name: "Already tested (merge queue)"
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      identical: ${{ steps.compare.outputs.identical }}
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`, which says
+          # which job may reach what; `security guard-egress` refuses any drift.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Compare what the queue would land with what the pull request tested
+        id: compare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          QUEUED: ${{ github.event.merge_group.head_ref }}
+        run: |
+          identical=false
+          # The queue names its branch for the pull request at its head:
+          # gh-readonly-queue/<base>/pr-<number>-<the commit it sits on>.
+          number="$(sed -n 's#^refs/heads/gh-readonly-queue/.*/pr-\([0-9][0-9]*\)-[0-9a-f]*$#\1#p' <<<"${QUEUED}")"
+          if [ -z "${number}" ]; then
+            echo "::notice::the queue's branch is not named for one pull request, so everything runs"
+          else
+            git fetch --no-tags --depth=1 origin "refs/pull/${number}/head"
+            tested="$(git rev-parse 'FETCH_HEAD^{commit}')"
+            if [ "$(git rev-parse 'HEAD^{tree}')" != "$(git rev-parse 'FETCH_HEAD^{tree}')" ]; then
+              echo "::notice::what would land differs from pull request ${number} as it was tested, so everything runs"
+            else
+              passed="$(gh api "repos/${REPO}/actions/workflows/pr-validation.yml/runs?head_sha=${tested}&event=pull_request&status=success&per_page=1" --jq '.total_count')"
+              if [ "${passed}" -ge 1 ]; then
+                identical=true
+                echo "::notice::what would land is, file for file, pull request ${number} at ${tested}, which passed. Nothing is run again."
+              else
+                echo "::notice::pull request ${number} at ${tested} has no passing run of this workflow, so everything runs"
+              fi
+            fi
+          fi
+          echo "identical=${identical}" >> "$GITHUB_OUTPUT"
+
   # -----------------------------------------------------------------
   # LANE 1: Formatting - fast, and the only lane that also runs locally
   # -----------------------------------------------------------------
   format:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Format (pre-commit)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -193,6 +265,10 @@ jobs:
   # It is not shellcheck and does not overlap with this.
   # -----------------------------------------------------------------
   shellcheck:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Shell Lint (ShellCheck)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -266,6 +342,10 @@ jobs:
   # no linter could tell, because on disk they are templates full of ${...}
   # placeholders.
   validate:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Validate (tofu, kustomize, kubeconform, go)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -528,6 +608,10 @@ jobs:
   # to make; keeping the name means there is none to make, and a lane added
   # later is covered by adding it to `needs` below.
   test-go:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Test (Go modules, OpenTofu)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -635,6 +719,10 @@ jobs:
           done
 
   vet:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Vet (every tier)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -688,6 +776,10 @@ jobs:
           go vet -tags=e2e ./...
 
   invariants:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Repository invariants"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -752,6 +844,10 @@ jobs:
         run: go test ./... -skip "$META_TESTS"
 
   meta:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Meta-tests (mutation ledger, comment stripping)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -811,6 +907,10 @@ jobs:
         run: go test ./repo/ -run "$META_TESTS"
 
   test-js:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Test (vitest)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -874,7 +974,7 @@ jobs:
 
   test:
     name: "Test (go, tofu, vitest)"
-    needs: [test-go, vet, invariants, meta, test-js]
+    needs: [already-tested, test-go, vet, invariants, meta, test-js]
     # always(), or a failed lane would SKIP this job - and a skipped required
     # check counts as passing. The result is read explicitly instead.
     if: always()
@@ -900,9 +1000,24 @@ jobs:
 
       - name: Every lane passed
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          # Each lane by name, and not every need: the comparison is a need
+          # too, and on a pull request it does not run.
+          RESULTS: >-
+            ${{ needs.test-go.result }} ${{ needs.vet.result }}
+            ${{ needs.invariants.result }} ${{ needs.meta.result }}
+            ${{ needs.test-js.result }}
+          IDENTICAL: ${{ needs.already-tested.outputs.identical }}
+          GATE: ${{ needs.already-tested.result }}
         run: |
           echo "lanes: ${RESULTS}"
+          # The queue would land exactly what the pull request tested, and
+          # the lanes were skipped for it. That is this job's one way to
+          # pass on lanes that did not run: said by the comparison itself,
+          # and only when the comparison succeeded.
+          if [ "${GATE}" = "success" ] && [ "${IDENTICAL}" = "true" ]; then
+            echo "already tested: nothing was run again"
+            exit 0
+          fi
           for r in ${RESULTS}; do
             if [ "$r" != "success" ]; then
               echo "::error::a test lane finished as '${r}'; see the lanes above this one"
@@ -920,6 +1035,10 @@ jobs:
   # scripts/versions.env, declared in scripts/approved-suppliers.yml, and owned
   # by exactly one lane - so a failure names the tool that failed.
   policy:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Policy Scan (Checkov)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
@@ -968,6 +1087,10 @@ jobs:
         run: checkov --directory . --quiet --compact --skip-download
 
   dockerfiles:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Dockerfile Scan (hadolint)"
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1004,6 +1127,10 @@ jobs:
         run: git ls-files '*Dockerfile' '*/Dockerfile' | xargs -r hadolint
 
   workflowscan:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Workflow Scan (zizmor)"
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1043,6 +1170,10 @@ jobs:
         run: zizmor .github/workflows
 
   spelling:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Spelling (codespell)"
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1078,6 +1209,10 @@ jobs:
         run: codespell
 
   semgrep:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Logic Scan (Semgrep)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -1152,6 +1287,10 @@ jobs:
   # already owns that.
   # -----------------------------------------------------------------
   trivy:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "IaC Scan (Trivy)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -1212,6 +1351,10 @@ jobs:
   # LANE 8: Secrets - waits for nothing
   # -----------------------------------------------------------------
   secrets:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Secrets Scan (TruffleHog)"
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
@@ -1296,6 +1439,10 @@ jobs:
   # use, and on no job's allowlist anywhere in scripts/approved-suppliers.yml.
   # -----------------------------------------------------------------
   egress-reachable:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Egress Proof (probe host answers unrestricted)"
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1322,6 +1469,10 @@ jobs:
           echo "$PROBE answers when unrestricted."
 
   egress-blocked:
+    # Skipped, which the queue reads as passed, when the queue would land
+    # exactly what the pull request already tested (already-tested).
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Egress Proof (block holds, sudo is gone)"
     runs-on: ubuntu-latest
     timeout-minutes: 5
