@@ -84,7 +84,9 @@ jobs:
             api.github.com:443
             github.com:443
             objects.githubusercontent.com:443
+            proxy.golang.org:443
             release-assets.githubusercontent.com:443
+            sum.golang.org:443
           fetch-depth: 0
 
       # Pinned, not whatever the image ships. scripts/attestation has zero

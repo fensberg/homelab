@@ -130,11 +130,13 @@ jobs:
           disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
+            generativelanguage.googleapis.com:443
             github.com:443
             objects.githubusercontent.com:443
+            proxy.golang.org:443
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
-            generativelanguage.googleapis.com:443
+            sum.golang.org:443
           # The commit this workflow runs from, with its history. On
           # issue_comment that is the default branch, so the pinned versions
           # and the clerk binary below come from reviewed code, never from the

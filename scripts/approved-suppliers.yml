@@ -542,8 +542,10 @@ egress:
       - generativelanguage.googleapis.com:443
       - github.com:443
       - objects.githubusercontent.com:443
+      - proxy.golang.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
+      - sum.golang.org:443
 
   - job: codeql.yml/analyze
     policy: block
@@ -1032,7 +1034,9 @@ egress:
       - api.github.com:443
       - github.com:443
       - objects.githubusercontent.com:443
+      - proxy.golang.org:443
       - release-assets.githubusercontent.com:443
+      - sum.golang.org:443
 
 # Analysis tools this repository installs and runs directly.
 #
