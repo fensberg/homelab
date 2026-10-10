@@ -284,7 +284,7 @@ func runGuard(t *testing.T, bin, root, name string) (passed bool, output string)
 
 func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 	skipIfInner(t)
-	heavy(t, "a check on the checks: it copies the repository and runs a guard per mutation, about a minute")
+	heavy(t, "a check on the checks: it copies the repository and runs a guard per mutation, side by side")
 
 	l := readLedger(t)
 
@@ -305,6 +305,11 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 			name += "/" + m.Test
 		}
 		t.Run(name, func(t *testing.T) {
+			// Side by side. Each proof has a copy of the repository of its
+			// own and runs its guard in a process of its own, so nothing one
+			// does can be seen by another - and one after another, two
+			// hundred of them were four minutes of every pull request.
+			t.Parallel()
 			required := []struct{ field, value string }{
 				{"guard", m.Guard}, {"file", m.File},
 				{"mentions", m.Mentions}, {"why", m.Why},
