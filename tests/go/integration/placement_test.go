@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"fmt"
+	"homelab/contractor/config"
 	"sort"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ func readPlacement(t *testing.T) placement {
 	for _, n := range nodes {
 		prefix := "wk"
 		role := "worker"
-		if _, ok := n.Labels["node-role.kubernetes.io/control-plane"]; ok {
+		if _, ok := n.Labels[config.ControlPlaneLabel]; ok {
 			prefix, role = "cp", "control-plane"
 		}
 		parts := strings.Split(n.Name, "-")

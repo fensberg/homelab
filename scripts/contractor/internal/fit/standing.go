@@ -6,14 +6,20 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"homelab/contractor/config"
 )
 
 // The label a control plane carries. A machine without it is a worker.
-const controlPlane = "node-role.kubernetes.io/control-plane"
+const controlPlane = config.ControlPlaneLabel
 
 // The priority class of work that can wait, which is not counted.
 const canWait = "batch"
 
+// The listings are read into fields with no names written beside them: a
+// field is matched to the key of its own name whatever its case, and the
+// keys are Kubernetes' to choose, not this estate's to restate.
+//
 // Standing is a site as its own cluster describes it: from the list of its
 // machines and the list of its pods, as `kubectl get -o json` gives them.
 //
@@ -31,13 +37,13 @@ func Standing(nodes, pods []byte) (Site, error) {
 	var machines struct {
 		Items []struct {
 			Metadata struct {
-				Name   string            `json:"name"`
-				Labels map[string]string `json:"labels"`
-			} `json:"metadata"`
+				Name   string
+				Labels map[string]string
+			}
 			Status struct {
-				Allocatable map[string]string `json:"allocatable"`
-			} `json:"status"`
-		} `json:"items"`
+				Allocatable map[string]string
+			}
+		}
 	}
 	if err := json.Unmarshal(nodes, &machines); err != nil {
 		return Site{}, fmt.Errorf("the list of machines is not what kubectl gives: %w", err)
@@ -65,21 +71,21 @@ func Standing(nodes, pods []byte) (Site, error) {
 	var running struct {
 		Items []struct {
 			Metadata struct {
-				Name string `json:"name"`
-			} `json:"metadata"`
+				Name string
+			}
 			Spec struct {
-				NodeName          string `json:"nodeName"`
-				PriorityClassName string `json:"priorityClassName"`
+				NodeName          string
+				PriorityClassName string
 				Containers        []struct {
 					Resources struct {
-						Requests map[string]string `json:"requests"`
-					} `json:"resources"`
-				} `json:"containers"`
-			} `json:"spec"`
+						Requests map[string]string
+					}
+				}
+			}
 			Status struct {
-				Phase string `json:"phase"`
-			} `json:"status"`
-		} `json:"items"`
+				Phase string
+			}
+		}
 	}
 	if err := json.Unmarshal(pods, &running); err != nil {
 		return Site{}, fmt.Errorf("the list of pods is not what kubectl gives: %w", err)
@@ -148,7 +154,7 @@ type kept struct {
 	WorkersGiB       int64  `json:"workers_gib"`
 	LargestWorkerGiB int64  `json:"largest_worker_gib"`
 	MustRunGiB       int64  `json:"must_run_gib"`
-	Taken            string `json:"taken"`
+	Taken            string `json:"read_at"`
 }
 
 // Marshal is a standing as the file holds it.

@@ -2,6 +2,7 @@ package repo
 
 import (
 	"fmt"
+	"homelab/contractor/config"
 	"sort"
 	"strings"
 	"testing"
@@ -50,8 +51,8 @@ import (
 // selector cannot.
 var (
 	aControlPlaneNode = map[string]string{
-		"kubernetes.io/os":                      "linux",
-		"node-role.kubernetes.io/control-plane": "",
+		"kubernetes.io/os":       "linux",
+		config.ControlPlaneLabel: "",
 	}
 	aWorkerNode = map[string]string{"kubernetes.io/os": "linux"}
 )
