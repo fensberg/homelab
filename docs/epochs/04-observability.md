@@ -941,23 +941,41 @@ so not built: how worn each disk is, and how large each pool is, which
 **Every one says what to do** (26), which is the rule from here on and
 not yet true of the alerts written before it.
 
-**The engineer is built, a week after it was agreed** (2026-10-10). The
-capacity sum was first written inside the contractor, against this record,
-and ran into the reason the record gives for keeping it out: the contractor
-takes no dependencies, so it cannot read YAML, and a change's reservations
-are in YAML that kustomize assembles. The operator, asked how the count
-should be made: "Can anyone currently read YAML?" Nobody could but the
-tests. So `scripts/engineer` is a program of its own that holds no key and
-may take a library, and its one verb stamps a change or refuses it: what a
-commit's tree gives a site against what the change's tree gives it, held to
-the site's capacity as last recorded (`capacity.json`, which the contractor
-writes when it takes a record, since reading a live cluster takes a
-credential). The sum itself is a standard detail, read by both. **What it
-cannot see** is a pod a chart makes that its settings do not mention, which
-is why the site as it stands is read from the site and only what a change
-adds is read from the change. **Still the contractor's, against this
-record:** `plan-as-built` and `survey`, which move when there is a reason
-to open them.
+**The engineer is built, a week after it was agreed, and the drafter with
+it** (2026-10-10). The capacity sum was first written inside the
+contractor, against this record, and ran into the reason the record gives
+for keeping it out: the contractor takes no dependencies, so it cannot read
+YAML, and a change's reservations are in YAML that kustomize assembles. The
+operator, asked how the count should be made: "Can anyone currently read
+YAML?" Nobody could but the tests, and six programs were reading it by
+matching lines. So `scripts/engineer` is a program of its own that holds no
+key, and its one verb stamps a change or refuses it: what a commit's tree
+gives a site against what the change's tree gives it, held to the site's
+capacity as last recorded (`capacity.json`, which the contractor writes
+when it takes a record, since reading a live cluster takes a credential).
+The sum itself is a standard detail, read by both.
+
+It was built with a YAML library in it and lost it the same day. The
+operator: "What actually is the purpose of parsing YAML and is that
+'really' a job for an engineer? Or should there be some lower level clerk
+that goes in, parses and feeds the parsed to the engineer like everyone
+else?" Parsing is translation and has no judgement in it; saying what a
+site can carry is nothing else. So `scripts/drafter` is the one program
+that takes a library to read a format with, "the central translator for
+everything": YAML, JSON, a file of names and values, and a directory
+kustomize assembles, each redrawn as JSON, which every other program reads
+with nothing added. It holds no key and decides nothing. **Chose** the
+drafter handing everyone JSON, **over** a YAML library in each program,
+which puts somebody else's code inside the ones that hold power, and over
+a generated summary of reservations committed beside the manifests, which
+is the figure written twice. **Owed:** the six programs that match lines
+move onto the drafter, one at a time.
+
+**What the engineer cannot see** is a pod a chart makes that its settings
+do not mention, which is why the site as it stands is read from the site
+and only what a change adds is read from the change. **Still the
+contractor's, against this record:** `plan-as-built` and `survey`, which
+move when there is a reason to open them.
 
 **Priority work waits, and only for moments.** Offered the choice of letting
 work that cannot wait stop work that can, the operator chose otherwise:
