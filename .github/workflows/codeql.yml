@@ -38,6 +38,13 @@ on:
 
 permissions: read-all
 
+# A newer push to the same pull request replaces this run. A run on main is
+# keyed by its commit and is never replaced: each is the record for that
+# commit, and the weekly run has no pull request either.
+concurrency:
+  group: codeql-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # GitHub's default shell for `run:` is `bash -e {0}`, which has no
 # pipefail: in `a | b` only b's exit status counts, so a failing command
 # feeding a working one is a green step. Naming the shell explicitly gets

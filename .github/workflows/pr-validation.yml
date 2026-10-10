@@ -15,6 +15,12 @@ on:
       # filter named main alone - neither of them one of the eight lanes that
       # decide whether a change is correct - so a broken workflow sat green.
       - "epoch/**"
+  # The merge queue. A pull request that passes here passed against main
+  # as it was when it was pushed, and main moves: two that each pass can
+  # break it together, and nothing ran on main to say so. The queue runs
+  # this workflow again on each pull request as it would land, on top of
+  # whatever is ahead of it, and merges it only if that passes.
+  merge_group:
 
 permissions: read-all
 # The meta-tests, named once. The Repository invariants lane skips them and
@@ -25,7 +31,10 @@ env:
 
 # Cancel in-progress runs if a new commit is pushed to the PR
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  # By the event and the pull request's number, or for a place in the merge
+  # queue by its own ref, which no other run has: one place in the queue is
+  # never cancelled by another.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 # All lanes run in parallel, Format included. Formatting is enforced by the
@@ -1252,8 +1261,9 @@ jobs:
       # worth handling.
       - name: Run TruffleHog
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # A pull request's own two ends, or a place in the merge queue's.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
           trufflehog git "file://$(pwd)" \
             --since-commit "${BASE_SHA}" \

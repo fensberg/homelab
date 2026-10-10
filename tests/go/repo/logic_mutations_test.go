@@ -81,7 +81,9 @@ func runContractorTests(t *testing.T, dir string) (passed bool, failed map[strin
 
 func TestEveryDecisionIsAssertedOn(t *testing.T) {
 	skipIfInner(t)
-	heavy(t, "mutates Go decisions and re-runs their tests, several seconds")
+	heavy(t, "mutates Go decisions and re-runs their tests, side by side")
+	// Beside the other slow guards and not after them.
+	t.Parallel()
 	root := repoRoot(t)
 
 	body, err := os.ReadFile(filepath.Join(root, "tests", "logic-mutations.yml"))
@@ -112,6 +114,11 @@ floor in the same diff so somebody sees it happen.`, len(l.Logic), l.Floor)
 
 	for _, m := range l.Logic {
 		t.Run(m.Decision, func(t *testing.T) {
+			// Side by side, each on a copy of its own. They used to share
+			// one copy, each breaking it and putting it back, which is what
+			// made them wait for one another.
+			t.Parallel()
+			dir := scratchContractor(t)
 			for _, missing := range []struct{ field, value string }{
 				{"file", m.File}, {"find", m.Find}, {"replace", m.Replace},
 				{"must_fail", m.MustFail}, {"why", m.Why},
@@ -140,9 +147,6 @@ entry ends up proving something other than what it says.`, n, m.File, n)
 			if err := os.WriteFile(target, []byte(mutated), 0o644); err != nil {
 				t.Fatalf("writing the mutated %s: %v", m.File, err)
 			}
-			// Put it back whatever happens, so the next entry starts from a
-			// working program rather than from this one's damage.
-			defer func() { _ = os.WriteFile(target, src, 0o644) }()
 
 			passed, failed, out := runContractorTests(t, dir)
 
