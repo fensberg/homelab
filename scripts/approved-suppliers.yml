@@ -781,6 +781,12 @@ egress:
       list to transcribe. Egress for these pods has to be controlled at the
       cluster's network layer instead (#411); until then it is uncontrolled
       and unrecorded, and this entry says so rather than implying otherwise.
+  - job: pr-validation.yml/already-tested
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
   - job: pr-validation.yml/format
     policy: block
     hosts:
