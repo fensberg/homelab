@@ -534,6 +534,17 @@ func satisfiedByProse(baseline, stripped map[string]bool, exempt map[string]stri
 // runAll returns each test's verdict, by name.
 func runAll(t *testing.T, bin, root string) map[string]bool {
 	t.Helper()
+	verdicts, out := allVerdicts(bin, root)
+	if len(verdicts) == 0 {
+		t.Fatalf("no test verdict was parsed from the run in %s:\n%s", root, out)
+	}
+	return verdicts
+}
+
+// allVerdicts is runAll with nothing of the test in it, so that two runs
+// can be made side by side: a test may only be failed from its own
+// goroutine.
+func allVerdicts(bin, root string) (map[string]bool, []byte) {
 	cmd := exec.Command(bin, "-test.v")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), repoRootEnv+"="+root)
@@ -549,10 +560,7 @@ func runAll(t *testing.T, bin, root string) map[string]bool {
 			verdicts[field(line, "--- FAIL: ")] = false
 		}
 	}
-	if len(verdicts) == 0 {
-		t.Fatalf("no test verdict was parsed from the run in %s:\n%s", root, out)
-	}
-	return verdicts
+	return verdicts, out
 }
 
 func field(line, prefix string) string {
