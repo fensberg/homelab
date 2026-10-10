@@ -31,9 +31,25 @@ const gibibyte = int64(1) << 30
 // one of them holds, and what work that cannot wait reserves on them now.
 // Memory, in bytes.
 type Site struct {
+	// Machines is how many workers there are, which is how many pods a
+	// workload that runs one on each of them asks for.
+	Machines      int
 	Workers       int64
 	LargestWorker int64
 	MustRun       int64
+}
+
+// String is the site as it stands, in whole gibibytes: what it holds, what
+// is reserved, and what that leaves with a worker gone.
+func (s Site) String() string {
+	g := func(b int64) int64 { return b / gibibyte }
+	left := s.Workers - s.LargestWorker - s.MustRun
+	verdict := fmt.Sprintf("which leaves %d to spare", g(left))
+	if left < 0 {
+		verdict = fmt.Sprintf("which is OVER BY %d", g(-left))
+	}
+	return fmt.Sprintf("the workers hold %d GiB for pods, and %d with the largest of them gone. Work that cannot wait reserves %d, %s",
+		g(s.Workers), g(s.Workers-s.LargestWorker), g(s.MustRun), verdict)
 }
 
 // Change is what a change does to what work that cannot wait reserves: what

@@ -129,10 +129,11 @@ func TestAJobWithNoPermissionsStatedHoldsTheDefault(t *testing.T) {
 func TestHeldByRefusesWhatItCannotRead(t *testing.T) {
 	for name, tc := range map[string]struct{ body, want string }{
 		"no jobs":                {"name: x\non: push\n", "no job this can read"},
-		"a tab":                  {"jobs:\n  one:\n\tsteps:\n", "indented with a tab"},
+		"a tab":                  {"jobs:\n  one:\n\tsteps:\n", "cannot be read"},
 		"a job with no steps":    {"jobs:\n  one:\n    runs-on: x\n", "no step this can read"},
-		"a line in no job":       {"jobs:\n      stray: true\n  one:\n    steps:\n      - run: x\n", "in no job"},
-		"a line in no step":      {"jobs:\n  one:\n    steps:\n        stray: true\n      - run: x\n", "in no step"},
+		"a line in no job":       {"jobs:\n      stray: true\n  one:\n    steps:\n      - run: x\n", "cannot be read"},
+		"a line in no step":      {"jobs:\n  one:\n    steps:\n        stray: true\n      - run: x\n", "cannot be read"},
+		"a job that is a word":   {"jobs:\n  one: soon\n", "not a job this can read"},
 		"permissions as a word":  {"permissions: plenty\njobs:\n  one:\n    steps:\n      - run: x\n", "is not read-all"},
 		"a scope with no level":  {"jobs:\n  one:\n    permissions:\n      contents: lots\n    steps:\n      - run: x\n", "not a scope and its level"},
 		"an unnamed environment": {"jobs:\n  one:\n    environment:\n      url: x\n    steps:\n      - run: x\n", "cannot read the name of"},

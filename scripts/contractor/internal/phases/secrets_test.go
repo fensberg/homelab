@@ -20,7 +20,7 @@ import (
 func TestApplicationSecretsAreGeneratedIntoTheSitesOwnVault(t *testing.T) {
 	root := t.TempDir()
 	for rel, body := range map[string]string{
-		applications.SiteFilePath("site0"):                      "  path: ./" + applications.Dir + "/given/production\n",
+		applications.SiteFilePath("site0"):                      "kind: Kustomization\nspec:\n  path: ./" + applications.Dir + "/given/production\n",
 		applications.Dir + "/given/" + applications.Declaration: `{"secrets": {"keys": {"a": {"vault": "typed"}, "b": {"generated": "backup_key"}, "c": {"generated": "signing_key"}}}}`,
 		applications.Dir + "/other/" + applications.Declaration: `{"secrets": {"keys": {"b": {"generated": "not_here"}}}}`,
 	} {

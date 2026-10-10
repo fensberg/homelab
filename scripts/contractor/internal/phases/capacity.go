@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"homelab/contractor/internal/capacity"
 	"homelab/contractor/internal/run"
+	"homelab/details/capacity"
 )
 
 // recordCapacity reads what the site's workers hold and what work that
@@ -50,9 +50,9 @@ func recordCapacity(ctx *run.Context, dir string, taken time.Time) error {
 	if err := os.WriteFile(filepath.Join(dir, capacity.File), append(raw, '\n'), 0o644); err != nil {
 		return err
 	}
-	// The sum with no change in it: how near the edge the site is running,
-	// said every time a record is taken.
-	run.Info(capacity.Of(site, capacity.Change{}).String())
+	// How near the edge the site is running, said every time a record is
+	// taken.
+	run.Info(site.String())
 	run.Ok(fmt.Sprintf("the site's capacity is saved beside the record, in %s", capacity.File))
 	return nil
 }

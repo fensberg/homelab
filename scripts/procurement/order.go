@@ -39,11 +39,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"homelab/details/envfile"
+	"homelab/details/suppliers"
 )
 
 // Fixed paths rather than flags, for the reason security gives: a program that
@@ -175,13 +175,10 @@ func declaredDeliveries(root string) ([]declaredDelivery, error) {
 	return deliveries, nil
 }
 
-var topLevelKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*:`)
-
 // deliveriesIn reads the tools: entries that declare a kind.
-func deliveriesIn(suppliers string, versions map[string]string) ([]declaredDelivery, error) {
+func deliveriesIn(listed string, versions map[string]string) ([]declaredDelivery, error) {
 	var out []declaredDelivery
 	var cur *declaredDelivery
-	inTools := false
 	flush := func() error {
 		defer func() { cur = nil }()
 		if cur == nil || cur.Kind == "" {
@@ -202,44 +199,31 @@ func deliveriesIn(suppliers string, versions map[string]string) ([]declaredDeliv
 		out = append(out, *cur)
 		return nil
 	}
-	for _, line := range strings.Split(suppliers, "\n") {
-		if topLevelKey.MatchString(line) {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-			inTools = strings.HasPrefix(line, "tools:")
-			continue
+	tools, err := suppliers.Tools([]byte(listed))
+	if err != nil {
+		return nil, err
+	}
+	for _, tool := range tools {
+		if err := flush(); err != nil {
+			return nil, err
 		}
-		if !inTools {
-			continue
-		}
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "- source:") {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-			cur = &declaredDelivery{Source: strings.TrimSpace(strings.TrimPrefix(t, "- source:"))}
-			continue
-		}
-		if cur == nil {
-			continue
-		}
-		if strings.HasPrefix(t, "version:") {
-			cur.VersionKey = strings.TrimSpace(strings.TrimPrefix(t, "version:"))
-			continue
-		}
-		if strings.HasPrefix(t, "binary:") {
-			cur.Binary = strings.TrimSpace(strings.TrimPrefix(t, "binary:"))
-			continue
-		}
+		cur = &declaredDelivery{Source: tool.Source, VersionKey: tool.Fields["version"], Binary: tool.Fields["binary"]}
+		// In the order of their names, so that which of two is called the
+		// second does not change from one run to the next.
+		kinds := make([]string, 0, len(deliveryKinds))
 		for kind := range deliveryKinds {
-			if strings.HasPrefix(t, kind+":") {
-				if cur.Kind != "" {
-					return nil, fmt.Errorf("the tools: entry for %s declares both %s: and %s:, and a delivery arrives one way", cur.Source, cur.Kind, kind)
-				}
-				cur.Kind = kind
-				cur.Spec = strings.TrimSpace(strings.TrimPrefix(t, kind+":"))
+			kinds = append(kinds, kind)
+		}
+		sort.Strings(kinds)
+		for _, kind := range kinds {
+			spec, declared := tool.Fields[kind]
+			if !declared {
+				continue
 			}
+			if cur.Kind != "" {
+				return nil, fmt.Errorf("the tools: entry for %s declares both %s: and %s:, and a delivery arrives one way", cur.Source, cur.Kind, kind)
+			}
+			cur.Kind, cur.Spec = kind, spec
 		}
 	}
 	if err := flush(); err != nil {

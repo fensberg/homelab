@@ -72,7 +72,7 @@ func TestWhatCannotWaitIsEveryRunningPodOnAWorkerThatIsNotBatch(t *testing.T) {
 // nothing or everything by accident.
 func TestAListingWithNoWorkerIsAnErrorAndNotASiteOfNothing(t *testing.T) {
 	onlyControlPlanes := `{"items":[{"metadata":{"name":"cp-0","labels":{"node-role.kubernetes.io/control-plane":""}},"status":{"allocatable":{"memory":"4Gi"}}}]}`
-	for name, listing := range map[string]string{"no machines": `{"items":[]}`, "no workers": onlyControlPlanes} {
+	for name, listing := range map[string]string{"no machines": `{"items":[ ]}`, "no workers": onlyControlPlanes} {
 		if _, err := Read([]byte(listing), pods()); err == nil {
 			t.Errorf("a listing with %s was read as a site", name)
 		}

@@ -71,8 +71,6 @@ debt:
   - "-refresh-only"
   - ".tfstate.age"
   - "TF_ENCRYPTION"
-  - "^[a-zA-Z_][a-zA-Z0-9_-]*:"
-  - "allowed-endpoints:"
   - "ansible-playbook"
   - "does not exist"
   - "enforce-push"

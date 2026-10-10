@@ -92,3 +92,18 @@ func TestASiteNobodyHasReadIsAnErrorAndNotAFit(t *testing.T) {
 		t.Errorf("a change that only gives back was stopped because the site was not read: %v", err)
 	}
 }
+
+// A site says how it stands in whole gibibytes: what it holds, what is
+// reserved, and what that leaves with a worker gone - or how far over it is.
+func TestASiteSaysHowItStandsInWholeGibibytes(t *testing.T) {
+	said := standing().String()
+	for _, part := range []string{"hold 27 GiB", "18 with the largest", "reserves 11", "leaves 7 to spare"} {
+		if !strings.Contains(said, part) {
+			t.Errorf("a site of 27 with 11 reserved does not say %q: %s", part, said)
+		}
+	}
+	over := Site{Workers: 27 * gib, LargestWorker: 9 * gib, MustRun: 20 * gib}.String()
+	if !strings.Contains(over, "OVER BY 2") {
+		t.Errorf("a site with twenty reserved in eighteen does not say it is over: %s", over)
+	}
+}

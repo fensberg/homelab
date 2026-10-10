@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -37,7 +38,7 @@ import (
 //     another, and it is declared.
 //
 // And the dependency-free reading the contractor makes of the same file
-// (applications.ParseAssigned) must see exactly the applications this does.
+// (applications.AssignedIn) must see exactly the applications this does.
 //
 // Found by walking the sites, so the next site's file is held to it the day
 // it is written; an estate where no site runs anything has none, and what
@@ -211,8 +212,27 @@ func siteBlockProblems(rel, body string, apps []applications.Application, enviro
 		}
 	}
 
-	// And the reading that takes no YAML library sees the same applications.
-	assigned, err := applications.ParseAssigned(rel, body)
+	// And the programs' own reading, of documents the drafter redraws for
+	// them, sees the same applications. Here the documents are decoded by
+	// this test, so that what is compared is the reading and not the
+	// drafter.
+	var documents []applications.Document
+	decoder := yaml.NewDecoder(strings.NewReader(body))
+	for {
+		var doc applications.Document
+		err := decoder.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			say("it is not YAML that can be read: %v", err)
+			return problems
+		}
+		if doc != nil {
+			documents = append(documents, doc)
+		}
+	}
+	assigned, err := applications.AssignedIn(rel, documents)
 	var read []string
 	for _, a := range assigned {
 		read = append(read, a.Application)
@@ -226,7 +246,7 @@ func siteBlockProblems(rel, body string, apps []applications.Application, enviro
 	case err != nil:
 		say("the contractor cannot read it: %v", err)
 	case len(problems) == 0 && strings.Join(read, ",") != strings.Join(here, ","):
-		say("the contractor reads this site as running %v, and it runs %v. The contractor reads the file line by line, so a path written in a shape it does not expect is an application it gives no namespace or secrets to.", read, here)
+		say("the programs read this site as running %v, and it runs %v. They read the same documents this does, so the two readings have parted over what an assignment is", read, here)
 	}
 	sort.Strings(problems)
 	return problems
@@ -279,8 +299,11 @@ func TestSiteBlockProblemsNamesEachWayABlockDepartsFromItsDeclaration(t *testing
 		"without what it requires":              {source("needy") + block("needy", "needy", "production", ""), []string{"does not run thing"}},
 		"not waiting for what it requires":      {good + source("needy") + block("needy", "needy", "production", "  dependsOn:\n    - name: infra-configs\n"), []string{"does not depend on thing"}},
 		"something that is not a block":         {good + "---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: stray\n", []string{"a ConfigMap called stray"}},
-		"a path the contractor reads otherwise": {source("thing") + strings.Replace(block("thing", "thing", "production", ""), "  path: ./"+applications.Dir+"/thing/production\n", "  path: \"./"+applications.Dir+"/thing/production\"\n", 1), []string{"the contractor reads this site as running []"}},
-		"a path in a shape only YAML reads":     {source("thing") + strings.Replace(block("thing", "thing", "production", ""), "  path: ./"+applications.Dir+"/thing/production\n", "  path:\n    ./"+applications.Dir+"/thing/production\n", 1), []string{"the contractor reads this site as running []"}},
+		// Two shapes the programs could not read while they matched lines:
+		// each was an application the contractor gave no namespace and no
+		// secrets. They are read like any other now, and are no problem.
+		"a path written in quotes":         {source("thing") + strings.Replace(block("thing", "thing", "production", ""), "  path: ./"+applications.Dir+"/thing/production\n", "  path: \"./"+applications.Dir+"/thing/production\"\n", 1), nil},
+		"a path written on the line below": {source("thing") + strings.Replace(block("thing", "thing", "production", ""), "  path: ./"+applications.Dir+"/thing/production\n", "  path:\n    ./"+applications.Dir+"/thing/production\n", 1), nil},
 	} {
 		got := siteBlockProblems(applications.SiteFilePath("siteN"), c.body, apps, environments)
 		if len(got) != len(c.want) {

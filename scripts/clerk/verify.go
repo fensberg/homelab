@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"homelab/details/drafter"
 )
 
 // Checking a finding before the operator has to.
@@ -57,7 +59,10 @@ func falsified(s snag, body string) (string, bool) {
 		return "", false
 	}
 
-	dupes := duplicateKeys(body)
+	dupes, read := duplicateKeys(body)
+	if !read {
+		return "", false
+	}
 	if len(dupes) == 0 {
 		return fmt.Sprintf("claims a duplicate key in %s, and there is none", s.Path), true
 	}
@@ -81,76 +86,22 @@ func isYAML(path string) bool {
 	return strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml")
 }
 
-// A mapping key at the start of a line, optionally opening a sequence entry.
-var mappingKey = regexp.MustCompile(`^(\s*)(-\s+)?([A-Za-z0-9_.$-]+|"[^"]*"|'[^']*'):(\s|$)`)
-
-// duplicateKeys returns the names that appear twice in one mapping.
+// duplicateKeys returns the names that appear twice in one mapping, and
+// whether the file could be read at all.
 //
-// Tracked by indentation, which is what the model was not doing: two keys with
-// the same name and the same indentation are duplicates only when they are in
-// the same mapping, and a new sequence entry starts a new one. Three `ref:`
-// keys in three `with:` blocks are three mappings, not one.
+// "Settled by a parser in milliseconds" is what the note above says of this
+// claim, and for as long as this program took no dependency it was settled
+// by something else: indentation tracked line by line, with block scalars
+// skipped by pattern. The drafter reads the file as YAML and names the keys.
+// Two keys with the same name are duplicates only when they are in the same
+// mapping; three `ref:` keys in three `with:` blocks are three mappings.
 //
-// Block scalars are skipped, because a line inside one is data. `key: value` in
-// a heredoc-shaped payload is not a key at all, and counting it would make this
-// check report duplicates that are not there - which would drop a true finding,
-// the one outcome worth avoiding more than showing a false one.
-func duplicateKeys(body string) []string {
-	protected := yamlBlockScalars(body)
-
-	type level struct {
-		indent int
-		keys   map[string]bool
+// A file that cannot be read settles nothing. That is said, and is never an
+// answer of "none": only one of the two is a reason to throw a finding away.
+func duplicateKeys(body string) ([]string, bool) {
+	names, err := drafter.Duplicates([]byte(body))
+	if err != nil {
+		return nil, false
 	}
-	var stack []level
-	var found []string
-	reported := map[string]bool{}
-
-	for i, line := range strings.Split(body, "\n") {
-		if protected[i] {
-			continue
-		}
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "---") {
-			continue
-		}
-
-		m := mappingKey.FindStringSubmatch(line)
-		if m == nil {
-			// Not a key line. A bare sequence entry still closes any deeper
-			// mapping, so the indentation stack stays honest.
-			indent := indentOf(line)
-			for len(stack) > 0 && stack[len(stack)-1].indent > indent {
-				stack = stack[:len(stack)-1]
-			}
-			continue
-		}
-
-		indent := len(m[1])
-		newItem := m[2] != ""
-		if newItem {
-			indent += len(m[2])
-		}
-		name := strings.Trim(m[3], `"'`)
-
-		for len(stack) > 0 && stack[len(stack)-1].indent > indent {
-			stack = stack[:len(stack)-1]
-		}
-		switch {
-		case len(stack) == 0 || stack[len(stack)-1].indent < indent:
-			stack = append(stack, level{indent: indent, keys: map[string]bool{}})
-		case newItem:
-			// A `- ` starts a fresh mapping at the same indentation, so the
-			// keys of the previous entry are not in scope.
-			stack[len(stack)-1].keys = map[string]bool{}
-		}
-
-		top := &stack[len(stack)-1]
-		if top.keys[name] && !reported[name] {
-			reported[name] = true
-			found = append(found, name)
-		}
-		top.keys[name] = true
-	}
-	return found
+	return names, true
 }

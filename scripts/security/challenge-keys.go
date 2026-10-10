@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"homelab/details/drafter"
 )
 
 // challenge-keys asks about a key handed to something that did not hold it.
@@ -92,24 +94,17 @@ func rank(level string) int {
 }
 
 var (
-	jobsLine  = regexp.MustCompile(`^jobs:\s*$`)
-	stepsLine = regexp.MustCompile(`^    steps:\s*$`)
-	stepStart = regexp.MustCompile(`^      - `)
-	stepLabel = regexp.MustCompile(`^      (?:- |  )(name|id|uses):\s*(.+?)\s*$`)
-	permsLine = regexp.MustCompile(`^( *)permissions:\s*(.*?)\s*$`)
-	scopeLine = regexp.MustCompile(`^ +([a-z-]+):\s*(read|write|none)\s*$`)
-	envLine   = regexp.MustCompile(`^    environment:\s*(.*?)\s*$`)
-	envName   = regexp.MustCompile(`^      name:\s*(.+?)\s*$`)
 	secretRef = regexp.MustCompile(`secrets\.([A-Za-z_][A-Za-z0-9_]*)`)
 	tokenRef  = regexp.MustCompile(`github\.token`)
 	// A token one step mints and another is handed: an App's installation
 	// token arrives this way and is in no secret by that name.
-	mintedRef  = regexp.MustCompile(`(?i)steps\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]*token[A-Za-z0-9_-]*)`)
-	inheritRef = regexp.MustCompile(`^\s+secrets:\s*inherit\s*$`)
-	quoted     = regexp.MustCompile(`^["'](.*)["']$`)
+	mintedRef = regexp.MustCompile(`(?i)steps\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]*token[A-Za-z0-9_-]*)`)
 )
 
-// keysIn is every secret and token the text names.
+// keysIn is every secret and token the text names. This is the one place a
+// pattern is still matched, and what it matches is not YAML: a secret is
+// named inside an expression, in a value or in a script, and an expression
+// is text.
 func keysIn(lines []string) []string {
 	var out []string
 	for _, l := range lines {
@@ -126,148 +121,122 @@ func keysIn(lines []string) []string {
 		for _, m := range mintedRef.FindAllStringSubmatch(l, -1) {
 			out = append(out, "the token step "+m[1]+" minted ("+m[2]+")")
 		}
-		if inheritRef.MatchString(l) {
-			out = append(out, inherited)
-		}
 	}
 	return out
 }
 
-// uncommented drops the lines that are only a comment. A secret named in one
-// is prose, and prose hands nothing out.
-func uncommented(body string) []string {
+// texts is every piece of text under a value, a line at a time, but for
+// what is under the key named. A line of a script that is only a comment is
+// left out: a secret named in one is prose, and prose hands nothing out.
+// The file's own comments are not here to leave out. The drafter read them
+// as comments.
+func texts(v any, but string) []string {
 	var out []string
-	for _, l := range strings.Split(body, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(l), "#") {
-			continue
+	switch x := v.(type) {
+	case string:
+		for _, l := range strings.Split(x, "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(l), "#") {
+				out = append(out, l)
+			}
 		}
-		out = append(out, strings.TrimRight(l, " \r"))
+	case []any:
+		for _, item := range x {
+			out = append(out, texts(item, "")...)
+		}
+	case map[string]any:
+		names := make([]string, 0, len(x))
+		for name := range x {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			if name != but {
+				out = append(out, texts(x[name], "")...)
+			}
+		}
 	}
 	return out
 }
 
-func indent(l string) int { return len(l) - len(strings.TrimLeft(l, " ")) }
-
-// permissions reads the permissions stated at one indent among these lines:
-// the scopes and their levels, and whether any were stated at all.
-func permissions(lines []string, at int) (scopes map[string]string, stated bool, err error) {
-	for i, l := range lines {
-		m := permsLine.FindStringSubmatch(l)
-		if m == nil || len(m[1]) != at {
-			continue
-		}
-		scopes = map[string]string{}
-		switch m[2] {
+// permissions reads the permissions a workflow or a job states: the scopes
+// and their levels, and whether any were stated at all.
+func permissions(of map[string]any) (scopes map[string]string, stated bool, err error) {
+	written, stated := of["permissions"]
+	if !stated {
+		return nil, false, nil
+	}
+	scopes = map[string]string{}
+	switch p := written.(type) {
+	case nil:
+	case string:
+		switch p {
 		case "read-all":
 			scopes[everyPermission] = "read"
 		case "write-all":
 			scopes[everyPermission] = "write"
-		case "{}":
-		case "":
-			for _, s := range lines[i+1:] {
-				if strings.TrimSpace(s) == "" {
-					continue
-				}
-				if indent(s) <= at {
-					break
-				}
-				p := scopeLine.FindStringSubmatch(s)
-				if p == nil {
-					return nil, false, fmt.Errorf("a permissions block holds %q, which is not a scope and its level", strings.TrimSpace(s))
-				}
-				if p[2] != "none" {
-					scopes[permissionPrefix+p[1]] = p[2]
-				}
-			}
 		default:
-			return nil, false, fmt.Errorf("permissions are written as %q, which is not read-all, write-all, {} or a block of scopes", m[2])
+			return nil, false, fmt.Errorf("permissions are written as %q, which is not read-all, write-all, {} or a block of scopes", p)
 		}
-		return scopes, true, nil
+	case map[string]any:
+		for scope, level := range p {
+			switch level {
+			case "read", "write":
+				scopes[permissionPrefix+scope] = level.(string)
+			case "none":
+			default:
+				return nil, false, fmt.Errorf("a permissions block holds %q, which is not a scope and its level", fmt.Sprintf("%s: %v", scope, level))
+			}
+		}
+	default:
+		return nil, false, fmt.Errorf("permissions are written as %q, which is not read-all, write-all, {} or a block of scopes", fmt.Sprint(p))
 	}
-	return nil, false, nil
+	return scopes, true, nil
 }
 
 // HeldBy is what every job and step of one workflow holds.
 //
-// The workflow is read by its indentation, which the formatter fixes: jobs two
-// spaces in, a job's own keys four, its steps six. Anything this cannot place
-// is an error and never a workflow that holds nothing.
+// The workflow was read by its indentation: jobs two spaces in, a job's own
+// keys four, its steps six, on the ground that the formatter fixes them.
+// It is read now as what it is, from what the drafter redraws of it. What
+// cannot be read is an error and never a workflow that holds nothing.
 func HeldBy(name, body string) (held, error) {
-	if strings.Contains(body, "\t") {
-		return nil, fmt.Errorf("%s is indented with a tab, so its jobs and steps cannot be told apart", name)
+	docs, err := drafter.Documents([]byte(body))
+	if err != nil {
+		return nil, fmt.Errorf("%s cannot be read, so what it hands out is unknown: %w", name, err)
 	}
-	lines := uncommented(body)
-	var top []string
-	jobs := map[string][]string{}
-	var order []string
-	inJobs, job := false, ""
-	for _, l := range lines {
-		switch {
-		case jobsLine.MatchString(l):
-			inJobs, job = true, ""
-		case topLevelKey.MatchString(l):
-			inJobs, job = false, ""
-			top = append(top, l)
-		case !inJobs:
-			top = append(top, l)
-		case jobKey.MatchString(l):
-			job = jobKey.FindStringSubmatch(l)[1]
-			order = append(order, job)
-		case job != "":
-			jobs[job] = append(jobs[job], l)
-		case strings.TrimSpace(l) != "":
-			return nil, fmt.Errorf("%s has %q under jobs and in no job", name, strings.TrimSpace(l))
-		}
+	if len(docs) != 1 {
+		return nil, fmt.Errorf("%s holds %d documents, and a workflow is one", name, len(docs))
 	}
-	if len(order) == 0 {
+	wf := docs[0]
+	jobs, _ := wf["jobs"].(map[string]any)
+	if len(jobs) == 0 {
 		return nil, fmt.Errorf("%s has no job this can read, so what it hands out is unknown", name)
 	}
 
 	h := held{}
-	wfPerms, wfStated, err := permissions(top, 0)
+	wfPerms, wfStated, err := permissions(wf)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	// Every holder is named even when it holds nothing, so that one which
 	// exists is told apart from one that is new.
 	h[name+", every job"] = map[string]string{}
-	for _, k := range keysIn(top) {
+	for _, k := range keysIn(texts(wf, "jobs")) {
 		h.give(name+", every job", k, "held")
 	}
 
-	for _, j := range order {
+	for j, written := range jobs {
+		job, ok := written.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%s: job %s is not a job this can read, so what it holds is unknown", name, j)
+		}
 		holder := name + ", job `" + j + "`"
-		var own []string
-		var steps [][]string
-		inSteps := false
-		for _, l := range jobs[j] {
-			switch {
-			case stepsLine.MatchString(l):
-				inSteps = true
-			case inSteps && stepStart.MatchString(l):
-				steps = append(steps, []string{l})
-			case inSteps && strings.TrimSpace(l) != "" && indent(l) <= 4:
-				inSteps = false
-				own = append(own, l)
-			case inSteps && len(steps) > 0:
-				steps[len(steps)-1] = append(steps[len(steps)-1], l)
-			case inSteps && strings.TrimSpace(l) != "":
-				return nil, fmt.Errorf("%s: job %s has %q under steps and in no step", name, j, strings.TrimSpace(l))
-			default:
-				own = append(own, l)
-			}
-		}
-		calls := false
-		for _, l := range own {
-			if strings.HasPrefix(l, "    uses:") {
-				calls = true
-			}
-		}
-		if len(steps) == 0 && !calls {
+		steps, _ := job["steps"].([]any)
+		if _, calls := job["uses"]; len(steps) == 0 && !calls {
 			return nil, fmt.Errorf("%s: job %s has no step this can read and calls no workflow, so what it holds is unknown", name, j)
 		}
 
-		perms, stated, err := permissions(own, 4)
+		perms, stated, err := permissions(job)
 		if err != nil {
 			return nil, fmt.Errorf("%s: job %s: %w", name, j, err)
 		}
@@ -283,44 +252,30 @@ func HeldBy(name, body string) (held, error) {
 		for scope, level := range perms {
 			h.give(holder, scope, level)
 		}
-		for i, l := range own {
-			m := envLine.FindStringSubmatch(l)
-			if m == nil {
-				continue
-			}
-			env := m[1]
-			if env == "" && i+1 < len(own) {
-				if n := envName.FindStringSubmatch(own[i+1]); n != nil {
-					env = n[1]
-				}
-			}
-			if q := quoted.FindStringSubmatch(env); q != nil {
-				env = q[1]
+		if written, runs := job["environment"]; runs {
+			env, _ := written.(string)
+			if named, ok := written.(map[string]any); ok {
+				env, _ = named["name"].(string)
 			}
 			if env == "" {
 				return nil, fmt.Errorf("%s: job %s runs in an environment this cannot read the name of", name, j)
 			}
 			h.give(holder, environmentPrefix+env, "held")
 		}
-		for _, k := range keysIn(own) {
+		for _, k := range keysIn(texts(job, "steps")) {
 			h.give(holder+", every step", k, "held")
+		}
+		if job["secrets"] == "inherit" {
+			h.give(holder+", every step", inherited, "held")
 		}
 
 		seen := map[string]int{}
-		for i, step := range steps {
+		for i, written := range steps {
+			step, _ := written.(map[string]any)
 			label := fmt.Sprintf("step %d", i+1)
-			found := map[string]string{}
-			for _, l := range step {
-				if m := stepLabel.FindStringSubmatch(l); m != nil && found[m[1]] == "" {
-					found[m[1]] = m[2]
-				}
-			}
 			for _, key := range []string{"name", "id", "uses"} {
-				if found[key] != "" {
-					label = found[key]
-					if q := quoted.FindStringSubmatch(label); q != nil {
-						label = q[1]
-					}
+				if said, _ := step[key].(string); said != "" {
+					label = said
 					break
 				}
 			}
@@ -329,7 +284,7 @@ func HeldBy(name, body string) (held, error) {
 				label = fmt.Sprintf("%s (%d)", label, seen[label])
 			}
 			h[holder+", step `"+label+"`"] = map[string]string{}
-			for _, k := range keysIn(step) {
+			for _, k := range keysIn(texts(step, "")) {
 				h.give(holder+", step `"+label+"`", k, "held")
 			}
 		}

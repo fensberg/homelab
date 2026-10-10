@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"homelab/details/applications"
+	"homelab/details/drafter"
 	"homelab/details/flux"
 	"homelab/details/gitenv"
 )
@@ -125,15 +126,15 @@ func (j judge) compare(from, to string, a applications.Application) ([]string, e
 		problems = append(problems, "the image's inputs did not change, so this is not a new build from its supplier")
 	}
 
-	_, lines, err = j.diff(from, to, a.Root, exclude+a.Image(), exclude+a.PinsFile(), exclude+a.Path)
+	files, lines, err = j.diff(from, to, a.Root, exclude+a.Image(), exclude+a.PinsFile(), exclude+a.Path)
 	if err != nil {
 		return nil, err
 	}
-	for _, l := range lines {
-		if !commentOrBlank.MatchString(l) {
-			problems = append(problems, "the manifests it ships changed: "+strings.TrimSpace(l))
-		}
+	shipped, err := j.shippedChanges(from, to, files, lines)
+	if err != nil {
+		return nil, err
 	}
+	problems = append(problems, shipped...)
 
 	files, _, err = j.diff(from, to, a.Path, j.orders)
 	if err != nil {
@@ -148,8 +149,67 @@ func (j judge) compare(from, to string, a applications.Application) ([]string, e
 // exclude marks a path the diff leaves out.
 const exclude = "!"
 
-// commentOrBlank is a changed YAML line that reaches no cluster.
+// commentOrBlank is a changed line that is a comment, or nothing.
 var commentOrBlank = regexp.MustCompile(`^[+-]\s*(#.*)?$`)
+
+// shippedChanges is every way what an application ships differs between two
+// commits, beyond its comments.
+//
+// A manifest is compared as what it is: redrawn at each commit, and the two
+// drawings held against each other, so that what differs is what a cluster
+// would be handed and a comment, a blank line or a key written another way
+// is not. It used to be judged a line at a time, by whether each changed
+// line looked like a comment. Anything that is not a manifest is still
+// judged that way: a script's comment is a line beginning with one, and
+// there is nothing more to it to read.
+func (j judge) shippedChanges(from, to string, files, lines []string) ([]string, error) {
+	var problems []string
+	others := false
+	for _, f := range files {
+		if !strings.HasSuffix(f, ".yaml") && !strings.HasSuffix(f, ".yml") {
+			others = true
+			continue
+		}
+		was, err := j.drawnAt(from, f)
+		if err != nil {
+			return nil, err
+		}
+		is, err := j.drawnAt(to, f)
+		if err != nil {
+			return nil, err
+		}
+		if was != is {
+			problems = append(problems, "the manifests it ships changed: "+f)
+		}
+	}
+	if !others {
+		return problems, nil
+	}
+	// With something that is not a manifest among the changes, every
+	// changed line is held to the old rule. A manifest's lines are among
+	// them, which only makes this stricter.
+	for _, l := range lines {
+		if !commentOrBlank.MatchString(l) {
+			problems = append(problems, "what it ships changed: "+strings.TrimSpace(l))
+		}
+	}
+	return problems, nil
+}
+
+// drawnAt is a manifest as it was at a commit, redrawn, as text two
+// drawings can be compared by. One that was not there is an empty drawing,
+// so that a manifest added or removed differs from itself.
+func (j judge) drawnAt(commit, file string) (string, error) {
+	body, err := j.git("show", commit+":"+file)
+	if err != nil {
+		return "", nil
+	}
+	drawn, err := drafter.Text(".yaml", []byte(body))
+	if err != nil {
+		return "", fmt.Errorf("%s at %s: %w", file, commit, err)
+	}
+	return string(drawn), nil
+}
 
 func (j judge) diff(from, to string, paths ...string) ([]string, []string, error) {
 	// Anchored at the top of the repository: the verb runs from
@@ -188,44 +248,31 @@ func (j judge) pinsAt(site, commit string) (map[string]pin, error) {
 }
 
 // releasePins reads the OCIRepository documents of a site's file: each
-// one's name, and the tag and digest it pins. Read line by line rather than
-// through a YAML library, because this module takes no dependencies; the
-// file's shape is this repository's own, and a document it cannot read
-// pins nothing, which fails the judgement rather than passing it.
+// one's name, and the tag and digest it pins.
+//
+// This took any line saying tag or digest, anywhere in a document, to be
+// the pin, because this module takes no dependencies. It reads the document
+// now, as the drafter redraws it, and a pin is what a release source says
+// under spec.ref and nowhere else. A file that cannot be read pins nothing,
+// which fails the judgement and never passes it.
 func releasePins(body string) (map[string]pin, error) {
+	docs, err := drafter.Documents([]byte(body))
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]pin{}
-	for _, doc := range strings.Split("\n"+body, "\n---") {
-		var kind, name string
+	for _, doc := range docs {
+		meta, _ := doc["metadata"].(map[string]any)
+		name, _ := meta["name"].(string)
+		if doc["kind"] != flux.OCIRepository || name == "" {
+			continue
+		}
+		spec, _ := doc["spec"].(map[string]any)
+		ref, _ := spec["ref"].(map[string]any)
 		var p pin
-		inMetadata := false
-		for _, line := range strings.Split(doc, "\n") {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-				continue
-			}
-			indented := line[0] == ' '
-			if !indented {
-				inMetadata = trimmed == "metadata:"
-			}
-			key, value, ok := strings.Cut(trimmed, ":")
-			if !ok {
-				continue
-			}
-			value = strings.Trim(strings.TrimSpace(value), `"'`)
-			switch {
-			case !indented && key == "kind":
-				kind = value
-			case inMetadata && key == "name" && name == "":
-				name = value
-			case key == "tag":
-				p.Tag = value
-			case key == "digest":
-				p.Digest = value
-			}
-		}
-		if kind == flux.OCIRepository && name != "" {
-			out[name] = p
-		}
+		p.Tag, _ = ref["tag"].(string)
+		p.Digest, _ = ref["digest"].(string)
+		out[name] = p
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("the site's file pins no release")

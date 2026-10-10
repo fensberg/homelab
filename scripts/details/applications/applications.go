@@ -26,6 +26,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"homelab/details/drafter"
 	"maps"
 	"os"
 	"path/filepath"
@@ -509,46 +510,65 @@ const (
 // settings it runs it with.
 type Assignment struct{ Application, Environment string }
 
-// assignedPath is the line of a block that says which application it is and
-// which environment's settings it reconciles: the Kustomization's path, into
-// the application's own directory.
-var assignedPath = regexp.MustCompile(`^\s+path:\s*\./` + regexp.QuoteMeta(Dir) + `/([^/\s]+)/([^/\s]+)\s*$`)
-
 // SiteFilePath is where a site's applications are assigned, from the top of
 // the repository.
 func SiteFilePath(site string) string { return SitesDir + "/" + site + "/" + SiteFile }
 
 // Assigned is the applications a site was given, in name order. A site with
 // no such file was given none.
-//
-// Read line by line rather than through a YAML library, because the programs
-// that read it take no dependencies; the file's shape is this repository's
-// own, and the tests hold every block in it to that shape.
 func Assigned(repoRoot, site string) ([]Assignment, error) {
-	body, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(SiteFilePath(site))))
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
+	docs, there, err := siteFile(repoRoot, site)
+	if err != nil || !there {
 		return nil, err
 	}
-	return ParseAssigned(SiteFilePath(site), string(body))
+	return AssignedIn(SiteFilePath(site), docs)
 }
 
-// ParseAssigned reads the assignments out of a site file's text.
-func ParseAssigned(rel, body string) ([]Assignment, error) {
+// Document is one document of a file, as the drafter redraws it.
+type Document = map[string]any
+
+// siteFile is a site's file as the drafter redraws it: the list of its
+// documents, and whether there is such a file at all.
+//
+// This was read line by line, matching what a block usually looks like,
+// because the programs that read it take no dependencies. The drafter takes
+// the one there is, and this reads what it draws.
+func siteFile(repoRoot, site string) ([]Document, bool, error) {
+	rel := SiteFilePath(site)
+	if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(rel))); os.IsNotExist(err) {
+		return nil, false, nil
+	} else if err != nil {
+		return nil, false, err
+	}
+	drawn, err := drafter.Draw(repoRoot, nil, rel)
+	if err != nil {
+		return nil, false, err
+	}
+	var docs []Document
+	if err := json.Unmarshal(drawn[rel], &docs); err != nil {
+		return nil, false, fmt.Errorf("%s was not redrawn as a list of documents: %w", rel, err)
+	}
+	return docs, true, nil
+}
+
+// AssignedIn reads the assignments out of a site file's documents: each
+// Kustomization whose path is into an application's own directory says which
+// application it is, and which environment's settings it reconciles.
+func AssignedIn(rel string, docs []Document) ([]Assignment, error) {
 	var out []Assignment
 	seen := map[string]bool{}
-	for _, line := range strings.Split(body, "\n") {
-		m := assignedPath.FindStringSubmatch(line)
-		if m == nil {
+	for _, doc := range docs {
+		spec, _ := doc["spec"].(map[string]any)
+		path, _ := spec["path"].(string)
+		parts := strings.Split(strings.TrimPrefix(path, "./"+Dir+"/"), "/")
+		if !strings.HasPrefix(path, "./"+Dir+"/") || len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 			continue
 		}
-		if seen[m[1]] {
-			return nil, fmt.Errorf("%s gives the site %s twice, and an application has one namespace", rel, m[1])
+		if seen[parts[0]] {
+			return nil, fmt.Errorf("%s gives the site %s twice, and an application has one namespace", rel, parts[0])
 		}
-		seen[m[1]] = true
-		out = append(out, Assignment{Application: m[1], Environment: m[2]})
+		seen[parts[0]] = true
+		out = append(out, Assignment{Application: parts[0], Environment: parts[1]})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Application < out[j].Application })
 	return out, nil
@@ -585,46 +605,24 @@ func (w Work) Holds(kind, namespace, name string) bool {
 	return false
 }
 
-var (
-	declaredKind = regexp.MustCompile(`^kind:\s*(\S+)\s*$`)
-	declaredMeta = regexp.MustCompile(`^  (name|namespace):\s*(\S+)\s*$`)
-)
-
-// ParseDeclared reads the objects a site file declares: each document's kind
+// DeclaredIn reads the objects a site file declares: each document's kind
 // and, from its metadata, its name and namespace. A document with a kind and
 // no name is an error, because an object this cannot name is one it would
 // leave to be read as the core.
-func ParseDeclared(rel, body string) ([]FluxObject, error) {
+func DeclaredIn(rel string, docs []Document) ([]FluxObject, error) {
 	var out []FluxObject
-	for _, doc := range strings.Split("\n"+body, "\n---") {
-		var o FluxObject
-		inMeta := false
-		for _, line := range strings.Split(doc, "\n") {
-			if m := declaredKind.FindStringSubmatch(line); m != nil {
-				o.Kind = m[1]
-			}
-			switch {
-			case line == "metadata:":
-				inMeta = true
-			case line != "" && !strings.HasPrefix(line, " "):
-				inMeta = false
-			case inMeta:
-				if m := declaredMeta.FindStringSubmatch(line); m != nil {
-					if m[1] == "name" {
-						o.Name = m[2]
-					} else {
-						o.Namespace = m[2]
-					}
-				}
-			}
-		}
-		if o.Kind == "" {
+	for _, doc := range docs {
+		kind, _ := doc["kind"].(string)
+		if kind == "" {
 			continue
 		}
-		if o.Name == "" {
-			return nil, fmt.Errorf("%s declares a %s with no name, so it cannot be told apart from the core", rel, o.Kind)
+		meta, _ := doc["metadata"].(map[string]any)
+		name, _ := meta["name"].(string)
+		namespace, _ := meta["namespace"].(string)
+		if name == "" {
+			return nil, fmt.Errorf("%s declares a %s with no name, so it cannot be told apart from the core", rel, kind)
 		}
-		out = append(out, o)
+		out = append(out, FluxObject{Kind: kind, Namespace: namespace, Name: name})
 	}
 	return out, nil
 }
@@ -633,18 +631,15 @@ func ParseDeclared(rel, body string) ([]FluxObject, error) {
 // none, and everything it runs is the core.
 func SiteWork(repoRoot, site string) (Work, error) {
 	rel := SiteFilePath(site)
-	body, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
-	if os.IsNotExist(err) {
-		return Work{}, nil
+	docs, there, err := siteFile(repoRoot, site)
+	if err != nil || !there {
+		return Work{}, err
 	}
+	objects, err := DeclaredIn(rel, docs)
 	if err != nil {
 		return Work{}, err
 	}
-	objects, err := ParseDeclared(rel, string(body))
-	if err != nil {
-		return Work{}, err
-	}
-	assigned, err := ParseAssigned(rel, string(body))
+	assigned, err := AssignedIn(rel, docs)
 	if err != nil {
 		return Work{}, err
 	}
