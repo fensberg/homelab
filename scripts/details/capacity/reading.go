@@ -6,15 +6,23 @@ import (
 	"math"
 	"strconv"
 	"strings"
-
-	"homelab/contractor/config"
 )
 
-// The label a control plane carries. A machine without it is a worker.
-const controlPlane = config.ControlPlaneLabel
+// ControlPlaneLabel is the label Kubernetes puts on a machine that is a
+// control plane. A machine without it is a worker, which is the only way a
+// worker is told: Kubernetes gives it no label of its own.
+const ControlPlaneLabel = "node-role.kubernetes.io/control-plane"
 
-// The priority class of work that can wait, which is not counted.
-const canWait = "batch"
+const controlPlane = ControlPlaneLabel
+
+// CanWait is the priority class of work that can wait, which is not counted,
+// and PriorityClassKey the key a pod names its class under.
+const (
+	CanWait          = "batch"
+	PriorityClassKey = "priorityClassName"
+)
+
+const canWait = CanWait
 
 // The listings are read into fields with no names written beside them: a
 // field is matched to the key of its own name whatever its case, and the
@@ -59,6 +67,7 @@ func Read(nodes, pods []byte) (Site, error) {
 			return Site{}, fmt.Errorf("the machine %s: what it holds for pods: %w", m.Metadata.Name, err)
 		}
 		workers[m.Metadata.Name] = true
+		site.Machines++
 		site.Workers += holds / gibibyte * gibibyte
 		if up := roundUp(holds); up > site.LargestWorker {
 			site.LargestWorker = up
@@ -151,6 +160,7 @@ const File = "capacity.json"
 
 // kept is the file's shape: whole gibibytes, and when they were read.
 type kept struct {
+	Machines         int    `json:"worker_machines"`
 	WorkersGiB       int64  `json:"workers_gib"`
 	LargestWorkerGiB int64  `json:"largest_worker_gib"`
 	MustRunGiB       int64  `json:"must_run_gib"`
@@ -160,6 +170,7 @@ type kept struct {
 // Marshal is a site's capacity as the file holds it.
 func Marshal(site Site, taken string) ([]byte, error) {
 	return json.MarshalIndent(kept{
+		Machines:         site.Machines,
 		WorkersGiB:       site.Workers / gibibyte,
 		LargestWorkerGiB: site.LargestWorker / gibibyte,
 		MustRunGiB:       site.MustRun / gibibyte,
@@ -173,5 +184,5 @@ func Unmarshal(raw []byte) (Site, string, error) {
 	if err := json.Unmarshal(raw, &k); err != nil {
 		return Site{}, "", fmt.Errorf("the site's capacity file is not what a record holds: %w", err)
 	}
-	return Site{Workers: k.WorkersGiB * gibibyte, LargestWorker: k.LargestWorkerGiB * gibibyte, MustRun: k.MustRunGiB * gibibyte}, k.Taken, nil
+	return Site{Machines: k.Machines, Workers: k.WorkersGiB * gibibyte, LargestWorker: k.LargestWorkerGiB * gibibyte, MustRun: k.MustRunGiB * gibibyte}, k.Taken, nil
 }

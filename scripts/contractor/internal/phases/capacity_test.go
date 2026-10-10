@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"homelab/contractor/internal/capacity"
 	"homelab/contractor/internal/run"
+	"homelab/details/capacity"
 )
 
 // standIns puts a tofu that hands over a kubeconfig, and a kubectl that
@@ -43,7 +43,7 @@ func TestTakingARecordKeepsTheSitesCapacityBesideIt(t *testing.T) {
 	standIns(t, twoWorkers, oneRunningPod)
 	ctx := &run.Context{Root: run.Root{Dir: t.TempDir()}}
 	out := filepath.Join(t.TempDir(), "as-built")
-	if err := recordCapacity(ctx, out, time.Date(2026, 10, 9, 4, 0, 0, 0, time.UTC)); err != nil {
+	if err := recordCapacity(ctx, out, time.Date(2026, 10, 8, 4, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(out, capacity.File))
@@ -58,7 +58,7 @@ func TestTakingARecordKeepsTheSitesCapacityBesideIt(t *testing.T) {
 	if site.Workers != 20*gib || site.LargestWorker != 10*gib || site.MustRun != 3*gib {
 		t.Errorf("two workers of ten with three reserved were kept as %+v", site)
 	}
-	if taken != "2026-10-09T04:00:00Z" {
+	if taken != "2026-10-08T04:00:00Z" {
 		t.Errorf("it does not say when it was read: %q", taken)
 	}
 }
@@ -66,7 +66,7 @@ func TestTakingARecordKeepsTheSitesCapacityBesideIt(t *testing.T) {
 // A cluster that cannot be read leaves no capacity file behind. An old one, or
 // one of nothing, would be a figure a change is let through against.
 func TestAClusterThatCannotBeReadLeavesNoCapacityBehind(t *testing.T) {
-	standIns(t, `{"items":[]}`, `{"items":[]}`)
+	standIns(t, `{"items": []}`, `{"items": []}`)
 	ctx := &run.Context{Root: run.Root{Dir: t.TempDir()}}
 	out := filepath.Join(t.TempDir(), "as-built")
 	err := recordCapacity(ctx, out, time.Now())

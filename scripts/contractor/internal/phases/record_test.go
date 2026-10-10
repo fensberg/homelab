@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"homelab/contractor/config"
-	"homelab/contractor/internal/capacity"
 	"homelab/contractor/internal/run"
 	"homelab/details/asbuilt"
+	"homelab/details/capacity"
 )
 
 // The phase's own decisions: what it tells the operator when the estate is

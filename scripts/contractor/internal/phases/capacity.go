@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"homelab/contractor/internal/capacity"
 	"homelab/contractor/internal/run"
+	"homelab/details/capacity"
 )
 
 // recordCapacity reads what the site's workers hold and what work that

@@ -31,6 +31,9 @@ const gibibyte = int64(1) << 30
 // one of them holds, and what work that cannot wait reserves on them now.
 // Memory, in bytes.
 type Site struct {
+	// Machines is how many workers there are, which is how many pods a
+	// workload that runs one on each of them asks for.
+	Machines      int
 	Workers       int64
 	LargestWorker int64
 	MustRun       int64

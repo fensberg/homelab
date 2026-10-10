@@ -6,6 +6,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"homelab/details/capacity"
 	"maps"
 	"os"
 	"regexp"
@@ -110,9 +111,8 @@ type Alerting struct {
 }
 
 // ControlPlaneLabel is the label Kubernetes puts on a machine that is a
-// control plane. A machine without it is a worker, which is the only way a
-// worker is told: Kubernetes gives it no label of its own.
-const ControlPlaneLabel = "node-role.kubernetes.io/control-plane"
+// control plane, as the standard details name it.
+const ControlPlaneLabel = capacity.ControlPlaneLabel
 
 // Heartbeat is where a site rings, every few minutes, to say its alerting is
 // alive: a party outside every site that notices when the ringing stops and

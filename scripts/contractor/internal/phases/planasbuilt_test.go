@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"homelab/contractor/config"
-	"homelab/contractor/internal/capacity"
 	"homelab/details/asbuilt"
+	"homelab/details/capacity"
 	"homelab/details/platform"
 	"homelab/details/repopath"
 )
