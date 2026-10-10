@@ -927,6 +927,20 @@ recorded and not sent, and a sign nobody is sent is not one.
 
 > > > > > > > feat/the-cluster-says-when-a-schedule-fails
 
+**The host is read for trouble, with what it already says** (2026-10-10).
+The exporter's own names were listed from the running site before a rule
+was written, and each rule is over a series on that list: a pool that will
+be full within a month at the last week's rate (15), a pool that is not
+whole and memory that is erring (20), a part at the temperature its maker
+calls critical (20), and the host's clock (27, where the cluster's own
+machines were already watched by the stack's stock rules). A test asks
+that each alert has something to read, since an alert over nothing is
+quiet in exactly the way a healthy host is. **Not there to be read,** and
+so not built: how worn each disk is, and how large each pool is, which
+"four fifths full" would need. Both want something added to the host.
+**Every one says what to do** (26), which is the rule from here on and
+not yet true of the alerts written before it.
+
 **Priority work waits, and only for moments.** Offered the choice of letting
 work that cannot wait stop work that can, the operator chose otherwise:
 "Interactive work should wait BUT we need to make it so that it ONLY needs

@@ -39,3 +39,154 @@ spec:
     keySecret:
       name: host-metrics
       key: scraper.key
+---
+# What the host says about itself, read for trouble.
+#
+# One machine and its disks are the whole site, and until this nothing read
+# what that machine reports of its own health: it was scraped, charted by
+# nobody and alerted on by nothing. Each rule here is over a series the
+# exporter was confirmed to publish on 2026-10-10. Each says what it means
+# and the first thing to do, because an alert that only names itself sends
+# somebody to work that out at the worst time.
+#
+# WHAT IS NOT HERE, because the exporter does not publish it: how worn each
+# disk is and what errors it has logged, and how large each pool is, which
+# is what "four fifths full" would be worked out from. Both need something
+# added to the host. Until then a pool is watched by what it has left and
+# how fast that is going, which is the better question anyway.
+#
+# The cluster's own machines are not here either: the monitoring stack's
+# stock rules already watch their clocks and their disks.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: host
+  namespace: monitoring
+spec:
+  groups:
+    - name: host.recorded
+      interval: 5m
+      rules:
+        # What each pool has left to give. Every dataset in a pool reports
+        # the same figure, so one is taken for the pool, which is named by
+        # the first part of the dataset's own name.
+        - record: host:pool_available_bytes
+          expr: >-
+            max by (pool) (
+              label_replace(
+                node_filesystem_avail_bytes{job="hypervisor", fstype="zfs"},
+                "pool", "$1", "device", "([^/]+).*"
+              )
+            )
+
+    - name: host
+      rules:
+        # The answer to "when do I need more storage", with time to act on
+        # it: the last week's rate, carried forward thirty days. Bytes are a
+        # resource the site is given like memory, and this is the one way it
+        # says it is running out of them.
+        - alert: HostPoolWillBeFullWithinAMonth
+          expr: predict_linear(host:pool_available_bytes[7d], 30 * 86400) < 0
+          for: 6h
+          labels:
+            severity: warning
+          annotations:
+            summary: "The pool {{ $labels.pool }} will be full within a month at the rate it is filling."
+            description: >-
+              At the rate of the last seven days, {{ $labels.pool }} has
+              nothing left to give in under thirty days. First find what is
+              growing: the site's history, a machine's disk, or backups kept
+              on the host. If it is what the site is for, this is the notice
+              to add storage, and thirty days is the time there is to do it.
+
+        # A pool that is not whole. ZFS keeps running on a pool that has
+        # lost a disk, which is the point of it and also why nothing else
+        # says so.
+        - alert: HostPoolIsNotHealthy
+          expr: node_zfs_zpool_state{job="hypervisor", state!="online"} == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The pool {{ $labels.zpool }} is {{ $labels.state }}."
+            description: >-
+              The host reports {{ $labels.zpool }} as {{ $labels.state }},
+              not online. A pool in this state is running on less than it
+              was built with, and the next disk to fail may be the last it
+              survives. On the host, `zpool status` names the disk; replace
+              it before doing anything else to the site.
+
+        # Memory that has given a wrong answer. An error the machine could
+        # correct is a warning that the module is going. One it could not
+        # correct has already handed something a wrong value.
+        - alert: HostMemoryHasErrorsItCouldNotCorrect
+          expr: increase(node_edac_uncorrectable_errors_total{job="hypervisor"}[1h]) > 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "The host's memory has returned an error it could not correct."
+            description: >-
+              Something on the host was handed a wrong value from memory in
+              the last hour. Nothing running on it can be trusted to be
+              right until the module is found and replaced: the host's
+              kernel log names the slot.
+        - alert: HostMemoryIsCorrectingErrors
+          expr: increase(node_edac_correctable_errors_total{job="hypervisor"}[1d]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "The host's memory is correcting errors."
+            description: >-
+              The host corrected at least one memory error in the last day.
+              Nothing was harmed. A module that needs correcting is one that
+              is failing: the host's kernel log names the slot, and it wants
+              replacing before an error arrives that cannot be corrected.
+
+        # A part at the temperature its own maker calls critical. Only
+        # sensors that report such a figure are judged; a threshold made up
+        # here would be right for no part in particular.
+        - alert: HostPartIsAtItsCriticalTemperature
+          expr: >-
+            node_hwmon_temp_celsius{job="hypervisor"}
+            >= on (chip, sensor)
+            (node_hwmon_temp_crit_celsius{job="hypervisor"} > 0)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "A part of the host is at the temperature its maker calls critical."
+            description: >-
+              The sensor {{ $labels.sensor }} on {{ $labels.chip }} reads
+              {{ $value }} degrees, at or past the critical figure the part
+              itself reports. It will slow itself or shut down to survive.
+              Check that the fans turn and the vents are clear before
+              looking at what the site is running.
+
+        # The host's clock. The machines on it take their time from their
+        # own sources, but the host stamps what it measures and what it
+        # backs up, and a clock nobody is correcting drifts without limit.
+        - alert: HostClockIsNotBeingCorrected
+          expr: node_timex_sync_status{job="hypervisor"} == 0
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Nothing is keeping the host's clock right."
+            description: >-
+              The host has not been synchronised to a time source for half
+              an hour, so its clock is drifting freely. On the host,
+              `chronyc tracking` or `timedatectl` says whether the time
+              service is running and what it can reach.
+        - alert: HostClockIsWrong
+          expr: abs(node_timex_offset_seconds{job="hypervisor"}) > 0.05
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The host's clock is more than a twentieth of a second out."
+            description: >-
+              The host's clock is {{ $value }} seconds from its time source
+              and has been for a quarter of an hour. What it measures is
+              stamped with the wrong time, and certificates are judged by
+              it. Check the time service on the host as for a clock that is
+              not being corrected.

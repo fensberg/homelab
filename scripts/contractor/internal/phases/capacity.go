@@ -50,9 +50,30 @@ func recordCapacity(ctx *run.Context, dir string, taken time.Time) error {
 	if err := os.WriteFile(filepath.Join(dir, capacity.File), append(raw, '\n'), 0o644); err != nil {
 		return err
 	}
-	// The sum with no change in it: how near the edge the site is running,
-	// said every time a record is taken.
-	run.Info(capacity.Of(site, capacity.Change{}).String())
+	// How near the edge the site is running, said every time a record is
+	// taken.
+	run.Info(site.String())
 	run.Ok(fmt.Sprintf("the site's capacity is saved beside the record, in %s", capacity.File))
 	return nil
+}
+
+// recordedCapacity is what a record says of the site's capacity, as a plan
+// reports it: the room a change is held against.
+//
+// A record taken before capacity was kept beside it has none. That is said,
+// and is not an error: a plan of a change that asks for nothing is still a
+// plan. It is never said as room.
+func recordedCapacity(recordDir string) string {
+	raw, err := os.ReadFile(filepath.Join(recordDir, capacity.File))
+	if os.IsNotExist(err) {
+		return "The record holds no reading of the site's capacity, so this plan cannot say how full the site is. The next converge or nightly takes one."
+	}
+	if err != nil {
+		return "The site's capacity could not be read from the record: " + err.Error()
+	}
+	site, readAt, err := capacity.Unmarshal(raw)
+	if err != nil {
+		return err.Error()
+	}
+	return fmt.Sprintf("As read %s, %s. What this change would add is not counted yet.", readAt, site)
 }

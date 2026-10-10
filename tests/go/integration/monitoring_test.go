@@ -445,3 +445,62 @@ func TestTheSiteRingsTheWatchmanAndIsHeard(t *testing.T) {
 			sent, window, failed)
 	}
 }
+
+// Every alert about the host has something to read.
+//
+// An alert over a series that is not there never fires and never errors: it
+// is quiet in exactly the way a healthy host is. The rules were written from
+// the names the host's exporter publishes, and a name is not a series with
+// the labels a rule selects by. So each rule's own evidence is asked for,
+// and the rules themselves for having evaluated.
+func TestEveryAlertAboutTheHostHasSomethingToRead(t *testing.T) {
+	opts := k8s.NewKubectlOptions("", kubeconfig(t), monitoringNamespace)
+	tunnel := k8s.NewTunnel(opts, k8s.ResourceTypeService, "kube-prometheus-stack-prometheus", 0, 9090)
+	defer tunnel.Close()
+	tunnel.ForwardPort(t)
+
+	for _, reads := range []struct{ alert, query, without string }{
+		{"HostPoolWillBeFullWithinAMonth", `count(host:pool_available_bytes)`,
+			"no pool's remaining room is recorded, so nothing will say a pool is filling"},
+		{"HostPoolIsNotHealthy", `count(node_zfs_zpool_state{job="hypervisor", state="online"})`,
+			"no pool reports whether it is online, so a pool that has lost a disk would say nothing"},
+		{"HostMemoryHasErrorsItCouldNotCorrect", `count(node_edac_uncorrectable_errors_total{job="hypervisor"})`,
+			"the host reports no count of memory errors"},
+		{"HostPartIsAtItsCriticalTemperature", `count(node_hwmon_temp_celsius{job="hypervisor"} and on (chip, sensor) (node_hwmon_temp_crit_celsius{job="hypervisor"} > 0))`,
+			"no sensor reports both a temperature and the figure its maker calls critical"},
+		{"HostClockIsNotBeingCorrected", `count(node_timex_sync_status{job="hypervisor"})`,
+			"the host does not report whether its clock is being corrected"},
+	} {
+		if n := instantQuery(t, tunnel.Endpoint(), reads.query); n == 0 {
+			t.Errorf("%s has nothing to read: %s. It would be quiet whatever the host was doing.", reads.alert, reads.without)
+		}
+	}
+
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Get("http://" + tunnel.Endpoint() + "/api/v1/rules")
+	require.NoError(t, err, "asking Prometheus for its rules")
+	defer resp.Body.Close()
+	var answer struct {
+		Data struct {
+			Groups []struct {
+				Name  string `json:"name"`
+				Rules []struct {
+					Name      string `json:"name"`
+					Health    string `json:"health"`
+					LastError string `json:"lastError"`
+				} `json:"rules"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&answer), "reading Prometheus's rules")
+	ours := 0
+	for _, group := range answer.Data.Groups {
+		if group.Name != "host" && group.Name != "host.recorded" {
+			continue
+		}
+		for _, rule := range group.Rules {
+			ours++
+			assert.Equal(t, "ok", rule.Health, "the rule %s did not evaluate: %s", rule.Name, rule.LastError)
+		}
+	}
+	require.NotZero(t, ours, "Prometheus holds no rule about the host. Has Flux reconciled them?")
+}
