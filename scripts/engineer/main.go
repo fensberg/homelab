@@ -11,6 +11,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 
 	"homelab/details/applications"
 	"homelab/details/capacity"
+	"homelab/details/drafter"
 	"homelab/details/repopath"
 )
 
@@ -46,12 +48,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}
-	os.Exit(stamp(os.Args[2:], os.Stdout, os.Stderr, here, archived, kustomized))
+	os.Exit(stamp(os.Args[2:], os.Stdout, os.Stderr, here, archived,
+		func(tree string, builds []string, paths ...string) (map[string]json.RawMessage, error) {
+			return drafter.Draw(here, tree, builds, paths...)
+		}))
 }
 
 // stamp is the verb, with the repository, the way a commit's tree is taken
 // out and the way a directory is built handed to it.
-func stamp(args []string, out, complaints io.Writer, repository string, treeAt func(repository, revision string) (string, func(), error), render renderer) int {
+func stamp(args []string, out, complaints io.Writer, repository string, treeAt func(repository, revision string) (string, func(), error), draw drawer) int {
 	fs := flag.NewFlagSet("stamp", flag.ContinueOnError)
 	fs.SetOutput(complaints)
 	site := fs.String("site", "", "The site the change is held to, by its key.")
@@ -96,11 +101,11 @@ func stamp(args []string, out, complaints io.Writer, repository string, treeAt f
 	}
 	defer done()
 
-	was, err := reserved(before, *site, workers, render)
+	was, err := reserved(before, *site, workers, draw)
 	if err != nil {
 		return fail(fmt.Errorf("before the change: %w", err))
 	}
-	is, err := reserved(repository, *site, workers, render)
+	is, err := reserved(repository, *site, workers, draw)
 	if err != nil {
 		return fail(fmt.Errorf("with the change: %w", err))
 	}
@@ -183,18 +188,4 @@ func archived(repository, revision string) (string, func(), error) {
 		}
 	}
 	return dir, done, nil
-}
-
-// kustomized builds a directory the way Flux will, with the cluster's own
-// tool. An application's settings patch its base, and only what comes out
-// says what it reserves.
-func kustomized(dir string) ([]byte, error) {
-	cmd := exec.Command("kubectl", "kustomize", dir)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("kubectl kustomize: %w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	return out, nil
 }

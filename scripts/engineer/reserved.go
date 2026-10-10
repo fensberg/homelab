@@ -2,19 +2,17 @@ package main
 
 import (
 	"bytes"
-	"errors"
+	"encoding/json"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
 	"homelab/details/applications"
 	"homelab/details/capacity"
+	"homelab/details/drafter"
+	"homelab/details/flux"
 )
 
 // workload is one thing a tree declares that reserves memory: how many pods
@@ -34,10 +32,10 @@ func (w workload) asks() int64 {
 	return int64(w.Pods) * w.PodBytes
 }
 
-// renderer builds one directory the way the cluster will: an application's
-// settings are assembled from its base, and only the assembled manifests
-// say what it reserves.
-type renderer func(dir string) ([]byte, error)
+// drawer has the drafter redraw paths, and directories to be built, of one
+// tree. What comes back is each file by its path and each built directory
+// by drafter.Built and its path, as JSON.
+type drawer func(tree string, builds []string, paths ...string) (map[string]json.RawMessage, error)
 
 // reserved is everything a tree declares for one site that reserves memory,
 // by a name that is the same in two trees when it is the same thing.
@@ -47,60 +45,113 @@ type renderer func(dir string) ([]byte, error)
 // application the site was given, built with the environment's settings it
 // was given it in. workers is how many machines a pod-for-each-machine
 // workload lands on.
-func reserved(tree, site string, workers int, render renderer) (map[string]workload, error) {
+//
+// Nothing here reads a manifest's own format. The drafter redraws each one,
+// and this reads the drawing.
+func reserved(tree, site string, workers int, draw drawer) (map[string]workload, error) {
 	out := map[string]workload{}
-	for _, dir := range []string{filepath.Join(applications.SitesDir, "core"), filepath.Join(applications.SitesDir, site)} {
-		err := filepath.WalkDir(filepath.Join(tree, dir), func(path string, d fs.DirEntry, err error) error {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			if err != nil || d.IsDir() || !isYAML(path) {
-				return err
-			}
-			body, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			rel, _ := filepath.Rel(tree, path)
-			return declared(filepath.ToSlash(rel), body, workers, out)
-		})
-		if err != nil {
-			return nil, err
+	var paths []string
+	for _, dir := range []string{applications.SitesDir + "/core", applications.SitesDir + "/" + site} {
+		if _, err := os.Stat(filepath.Join(tree, filepath.FromSlash(dir))); err == nil {
+			paths = append(paths, dir)
 		}
 	}
-	assigned, err := applications.Assigned(tree, site)
+	if len(paths) == 0 {
+		return out, nil
+	}
+	drawn, err := draw(tree, nil, paths...)
 	if err != nil {
 		return nil, err
 	}
-	for _, a := range assigned {
-		dir := filepath.Join(tree, applications.Dir, a.Application, a.Environment)
-		body, err := render(dir)
-		if err != nil {
-			return nil, fmt.Errorf("the application %s could not be built with its %s settings, so what it reserves is not known: %w", a.Application, a.Environment, err)
+	var builds []string
+	for _, rel := range sortedKeys(drawn) {
+		if !isManifest(rel) {
+			continue
 		}
-		if err := declared("application "+a.Application, body, workers, out); err != nil {
+		docs, err := documents(rel, drawn[rel])
+		if err != nil {
+			return nil, err
+		}
+		if err := declared(rel, docs, workers, out); err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(rel, applications.SitesDir+"/"+site+"/") {
+			builds = append(builds, given(docs)...)
+		}
+	}
+	if len(builds) == 0 {
+		return out, nil
+	}
+	sort.Strings(builds)
+	for _, dir := range builds {
+		if _, err := os.Stat(filepath.Join(tree, filepath.FromSlash(dir))); err != nil {
+			return nil, fmt.Errorf("the site is given what %s holds, and it is not there, so what it reserves is not known", dir)
+		}
+	}
+	assembled, err := draw(tree, builds)
+	if err != nil {
+		return nil, fmt.Errorf("an application the site is given could not be built, so what it reserves is not known: %w", err)
+	}
+	for _, dir := range builds {
+		docs, err := documents(dir, assembled[drafter.Built+dir])
+		if err != nil {
+			return nil, err
+		}
+		if err := declared("what "+dir+" builds to", docs, workers, out); err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
 }
 
-func isYAML(path string) bool {
-	return strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")
+func sortedKeys(m map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
-// declared reads every document in one file and adds what reserves.
-func declared(from string, body []byte, workers int, out map[string]workload) error {
-	dec := yaml.NewDecoder(bytes.NewReader(body))
-	for {
-		var doc map[string]any
-		err := dec.Decode(&doc)
-		if errors.Is(err, io.EOF) {
-			return nil
+// isManifest says a drawing is of a file of manifests: the drafter redraws
+// other things a directory may hold, and those declare no workload.
+func isManifest(rel string) bool {
+	return strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml")
+}
+
+// documents is a drawing as its list of documents. Numbers are kept as they
+// were written, since a size is read from its own text.
+func documents(of string, drawing json.RawMessage) ([]map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(drawing))
+	dec.UseNumber()
+	var docs []map[string]any
+	if err := dec.Decode(&docs); err != nil {
+		return nil, fmt.Errorf("the drawing of %s is not a list of documents: %w", of, err)
+	}
+	return docs, nil
+}
+
+// given is the directories a site's own documents tell Flux to build from
+// an application: each is an application the site was given, with the
+// environment's settings it was given it in.
+func given(docs []map[string]any) []string {
+	var out []string
+	for _, doc := range docs {
+		if doc["kind"] != flux.Kustomization {
+			continue
 		}
-		if err != nil {
-			return fmt.Errorf("%s is not YAML that can be read, so what it reserves is not known: %w", from, err)
+		spec, _ := doc["spec"].(map[string]any)
+		path, _ := spec["path"].(string)
+		if dir := strings.TrimPrefix(path, "./"); strings.HasPrefix(dir, applications.Dir+"/") {
+			out = append(out, dir)
 		}
+	}
+	return out
+}
+
+// declared adds what each document reserves.
+func declared(from string, docs []map[string]any, workers int, out map[string]workload) error {
+	for _, doc := range docs {
 		kind, _ := doc["kind"].(string)
 		meta, _ := doc["metadata"].(map[string]any)
 		name := fmt.Sprintf("%s/%v/%v", kind, meta["namespace"], meta["name"])
@@ -136,13 +187,14 @@ func declared(from string, body []byte, workers int, out map[string]workload) er
 			}
 			w.Pods = 1
 			out[name] = w
-		case "HelmRelease":
+		case flux.HelmRelease:
 			values, _ := spec["values"].(map[string]any)
 			if err := inValues(name, values, false, out); err != nil {
 				return fmt.Errorf("%s in %s: %w", name, from, err)
 			}
 		}
 	}
+	return nil
 }
 
 // podOf is one pod of a workload: what its containers reserve between them,
@@ -177,10 +229,13 @@ func requested(resources any) (int64, error) {
 }
 
 // count is a number of pods as a manifest writes it. One where it says
-// nothing, which is the cluster's own default.
+// nothing, or says something that is not a number, which is the cluster's
+// own default.
 func count(written any) int {
-	if n, ok := written.(int); ok && n >= 0 {
-		return n
+	if n, ok := written.(json.Number); ok {
+		if i, err := n.Int64(); err == nil && i >= 0 {
+			return int(i)
+		}
 	}
 	return 1
 }

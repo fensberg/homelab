@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"homelab/details/capacity"
+	"homelab/details/drafter"
 	"homelab/details/gitenv"
 )
 
@@ -24,80 +26,114 @@ const gib = int64(1) << 30
 
 // tree writes a repository's worth of files into a directory and returns
 // it. Every one is made up: a core, one site, and an application called
-// ledgerkeeper that the site may or may not be given.
-func tree(t *testing.T, files map[string]string) string {
+// ledgerkeeper that the site may or may not be given. Each file holds its
+// documents as the drafter would redraw them, so that nothing here reads a
+// format: the engineer does not, and its tests do not need to.
+func tree(t *testing.T, files map[string][]string) string {
 	t.Helper()
 	dir := t.TempDir()
-	base := map[string]string{}
-	for rel, body := range files {
-		base[rel] = body
-	}
-	for rel, body := range base {
+	for rel, docs := range files {
 		path := filepath.Join(dir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte("["+strings.Join(docs, ",")+"]"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return dir
 }
 
-func deployment(name string, replicas, priority string, requests ...string) string {
+// deployment is one, as a drawing: how many, at what priority, and what
+// each of its containers reserves.
+func deployment(name, replicas, priority string, requests ...string) string {
 	var containers []string
-	for i, r := range requests {
-		containers = append(containers, "        - name: c"+string(rune('0'+i))+"\n          resources:\n            requests:\n              memory: "+r)
+	for _, r := range requests {
+		containers = append(containers, `{"name":"c","resources":{"requests":{"memory":"`+r+`"}}}`)
 	}
-	doc := "---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: " + name + "\n  namespace: things\nspec:\n"
-	if replicas != "" {
-		doc += "  replicas: " + replicas + "\n"
-	}
-	doc += "  template:\n    spec:\n"
+	pod := `"containers":[` + strings.Join(containers, ",") + `]`
 	if priority != "" {
-		doc += "      priorityClassName: " + priority + "\n"
+		pod += `,"priorityClassName":"` + priority + `"`
 	}
-	return doc + "      containers:\n" + strings.Join(containers, "\n") + "\n"
+	spec := `"template":{"spec":{` + pod + `}}`
+	if replicas != "" {
+		spec += `,"replicas":` + replicas
+	}
+	return `{"kind":"Deployment","metadata":{"name":"` + name + `","namespace":"things"},"spec":{` + spec + `}}`
 }
 
-// assigned is a site's file giving it one application with one
-// environment's settings.
-const assigned = "---\nkind: Kustomization\nmetadata:\n  name: ledgerkeeper\nspec:\n  path: ./modules/applications/ledgerkeeper/staging\n"
+// assigned is the document in a site's file that gives it one application
+// with one environment's settings.
+const assigned = `{"kind":"Kustomization","metadata":{"name":"ledgerkeeper"},"spec":{"path":"./modules/applications/ledgerkeeper/staging"}}`
 
-// together stands in for building a directory: every file in it, one after
-// another, which is all the test's applications need.
-func together(dir string) ([]byte, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	var out []byte
-	for _, e := range entries {
-		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+// asDrawn stands in for the drafter: every file under what was asked for,
+// as it is, and a built directory as every document of every file in it.
+func asDrawn(tree string, builds []string, paths ...string) (map[string]json.RawMessage, error) {
+	drawn := map[string]json.RawMessage{}
+	for _, given := range paths {
+		err := filepath.WalkDir(filepath.Join(tree, filepath.FromSlash(given)), func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(tree, path)
+			drawn[filepath.ToSlash(rel)] = body
+			return nil
+		})
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, body...)
 	}
-	return out, nil
+	for _, dir := range builds {
+		entries, err := os.ReadDir(filepath.Join(tree, filepath.FromSlash(dir)))
+		if err != nil {
+			return nil, err
+		}
+		var all []json.RawMessage
+		for _, e := range entries {
+			body, err := os.ReadFile(filepath.Join(tree, filepath.FromSlash(dir), e.Name()))
+			if err != nil {
+				return nil, err
+			}
+			var docs []json.RawMessage
+			if err := json.Unmarshal(body, &docs); err != nil {
+				return nil, err
+			}
+			all = append(all, docs...)
+		}
+		joined, err := json.Marshal(all)
+		if err != nil {
+			return nil, err
+		}
+		drawn[drafter.Built+dir] = joined
+	}
+	return drawn, nil
 }
 
 // What a tree reserves is every pod of every workload it gives the site, by
 // what the pod's containers ask for between them.
 func TestWhatATreeReservesIsEveryPodOfEveryWorkloadTheSiteIsGiven(t *testing.T) {
-	dir := tree(t, map[string]string{
-		"clusters/core/infrastructure/a.yaml": deployment("two-of-them", "2", "interactive", "256Mi", "256Mi") +
-			deployment("says-nothing-of-how-many", "", "", "1Gi") +
-			deployment("can-wait", "4", "batch", "4Gi") +
-			"---\nkind: DaemonSet\nmetadata:\n  name: on-each\n  namespace: things\nspec:\n  template:\n    spec:\n      containers:\n        - name: c\n          resources:\n            requests:\n              memory: 128Mi\n" +
-			"---\nkind: HelmRelease\nmetadata:\n  name: chart\n  namespace: things\nspec:\n  values:\n    server:\n      replicaCount: 2\n      resources:\n        requests:\n          memory: 512Mi\n    worker:\n      priorityClassName: batch\n      resources:\n        requests:\n          memory: 8Gi\n",
-		"clusters/north/applications.yaml":                    assigned,
-		"clusters/south/extra.yaml":                           deployment("another-sites", "9", "", "1Gi"),
-		"modules/applications/ledgerkeeper/staging/it.yaml":   deployment("ledgerkeeper", "1", "interactive", "3Gi"),
-		"modules/applications/unassigned/staging/other.yaml":  deployment("not-given", "5", "", "1Gi"),
-		"modules/applications/ledgerkeeper/production/x.yaml": deployment("ledgerkeeper", "7", "", "9Gi"),
+	dir := tree(t, map[string][]string{
+		"clusters/core/infrastructure/a.yaml": {
+			deployment("two-of-them", "2", "interactive", "256Mi", "256Mi"),
+			deployment("says-nothing-of-how-many", "", "", "1Gi"),
+			deployment("can-wait", "4", "batch", "4Gi"),
+			`{"kind":"DaemonSet","metadata":{"name":"on-each","namespace":"things"},"spec":{"template":{"spec":{"containers":[{"name":"c","resources":{"requests":{"memory":"128Mi"}}}]}}}}`,
+			`{"kind":"HelmRelease","metadata":{"name":"chart","namespace":"things"},"spec":{"values":{
+			  "server":{"replicaCount":2,"resources":{"requests":{"memory":"512Mi"}}},
+			  "worker":{"priorityClassName":"batch","resources":{"requests":{"memory":"8Gi"}}}}}}`,
+		},
+		"clusters/core/versions.env":                          {`"not a manifest, and the drafter redraws it all the same"`},
+		"clusters/north/applications.yaml":                    {assigned},
+		"clusters/south/extra.yaml":                           {deployment("another-sites", "9", "", "1Gi")},
+		"modules/applications/ledgerkeeper/staging/it.yaml":   {deployment("ledgerkeeper", "1", "interactive", "3Gi")},
+		"modules/applications/unassigned/staging/other.yaml":  {deployment("not-given", "5", "", "1Gi")},
+		"modules/applications/ledgerkeeper/production/x.yaml": {deployment("ledgerkeeper", "7", "", "9Gi")},
 	})
-	got, err := reserved(dir, "north", 3, together)
+	got, err := reserved(dir, "north", 3, asDrawn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,19 +164,20 @@ func TestWhatATreeReservesIsEveryPodOfEveryWorkloadTheSiteIsGiven(t *testing.T) 
 // A size that cannot be read stops the count and names what wrote it. It is
 // never counted as nothing: that is a workload let through for free.
 func TestAReservationThatCannotBeReadStopsTheCountAndIsNamed(t *testing.T) {
-	dir := tree(t, map[string]string{"clusters/core/a.yaml": deployment("unreadable", "1", "", "lots")})
-	_, err := reserved(dir, "north", 3, together)
+	dir := tree(t, map[string][]string{"clusters/core/a.yaml": {deployment("unreadable", "1", "", "lots")}})
+	_, err := reserved(dir, "north", 3, asDrawn)
 	if err == nil || !strings.Contains(err.Error(), "Deployment/things/unreadable") {
 		t.Fatalf("a size that cannot be read was counted, or what wrote it was not named: %v", err)
 	}
-	broken := tree(t, map[string]string{"clusters/core/a.yaml": "kind: [unclosed"})
-	if _, err := reserved(broken, "north", 3, together); err == nil {
-		t.Error("a file that is not YAML was read as one that reserves nothing")
+	refuses := func(string, []string, ...string) (map[string]json.RawMessage, error) {
+		return nil, errors.New("a.yaml: not YAML that can be read")
 	}
-	unbuildable := tree(t, map[string]string{"clusters/north/applications.yaml": assigned})
-	if _, err := reserved(unbuildable, "north", 3, func(string) ([]byte, error) { return nil, errors.New("no such directory") }); err == nil ||
-		!strings.Contains(err.Error(), "ledgerkeeper") {
-		t.Errorf("an application that could not be built was counted as reserving nothing: %v", err)
+	if _, err := reserved(dir, "north", 3, refuses); err == nil || !strings.Contains(err.Error(), "a.yaml") {
+		t.Errorf("a file the drafter could not redraw was read as one that reserves nothing: %v", err)
+	}
+	notThere := tree(t, map[string][]string{"clusters/north/applications.yaml": {assigned}})
+	if _, err := reserved(notThere, "north", 3, asDrawn); err == nil || !strings.Contains(err.Error(), "ledgerkeeper") {
+		t.Errorf("an application whose directory is not there was counted as reserving nothing: %v", err)
 	}
 }
 
@@ -192,7 +229,7 @@ func record(t *testing.T, site *capacity.Site) string {
 	return dir
 }
 
-func stampOf(t *testing.T, before, after map[string]string, site *capacity.Site) (int, string) {
+func stampOf(t *testing.T, before, after map[string][]string, site *capacity.Site) (int, string) {
 	t.Helper()
 	was, now := tree(t, before), tree(t, after)
 	var out, complaints bytes.Buffer
@@ -202,7 +239,7 @@ func stampOf(t *testing.T, before, after map[string]string, site *capacity.Site)
 				t.Errorf("the tree was asked for at %q, not at the commit the change is from", revision)
 			}
 			return was, func() {}, nil
-		}, together)
+		}, asDrawn)
 	return code, out.String() + complaints.String()
 }
 
@@ -214,20 +251,20 @@ var north = capacity.Site{Machines: 3, Workers: 27 * gib, LargestWorker: 9 * gib
 func TestAChangeIsStampedWhenItFitsAndRefusedWhenItDoesNot(t *testing.T) {
 	core := "clusters/core/a.yaml"
 	code, said := stampOf(t,
-		map[string]string{core: deployment("thing", "1", "", "1Gi")},
-		map[string]string{core: deployment("thing", "8", "", "1Gi")}, &north)
+		map[string][]string{core: {deployment("thing", "1", "", "1Gi")}},
+		map[string][]string{core: {deployment("thing", "8", "", "1Gi")}}, &north)
 	if code != 0 || !strings.Contains(said, "which makes 18.0 - fits") {
 		t.Errorf("seven more on eleven, in eighteen, was not stamped (%d):\n%s", code, said)
 	}
 	code, said = stampOf(t,
-		map[string]string{core: deployment("thing", "1", "", "1Gi")},
-		map[string]string{core: deployment("thing", "9", "", "1Gi")}, &north)
+		map[string][]string{core: {deployment("thing", "1", "", "1Gi")}},
+		map[string][]string{core: {deployment("thing", "9", "", "1Gi")}}, &north)
 	if code != 1 || !strings.Contains(said, "REFUSED") || !strings.Contains(said, "OVER BY 1.0") || !strings.Contains(said, "Deployment/things/thing") {
 		t.Errorf("eight more on eleven, in eighteen, was not refused with what grew named (%d):\n%s", code, said)
 	}
 	code, said = stampOf(t,
-		map[string]string{core: deployment("thing", "1", "", "1Gi")},
-		map[string]string{core: deployment("thing", "1", "", "1Gi") + deployment("more-of-what-waits", "20", "batch", "4Gi")}, &north)
+		map[string][]string{core: {deployment("thing", "1", "", "1Gi")}},
+		map[string][]string{core: {deployment("thing", "1", "", "1Gi"), deployment("more-of-what-waits", "20", "batch", "4Gi")}}, &north)
 	if code != 0 {
 		t.Errorf("eighty gibibytes of work that can wait was held against what cannot (%d):\n%s", code, said)
 	}
@@ -237,11 +274,11 @@ func TestAChangeIsStampedWhenItFitsAndRefusedWhenItDoesNot(t *testing.T) {
 // something is refused for it; one that asks for nothing is not.
 func TestAChangeAgainstASiteNobodyHasReadIsRefusedOnlyIfItAsksForSomething(t *testing.T) {
 	core := "clusters/core/a.yaml"
-	same := map[string]string{core: deployment("thing", "1", "", "1Gi")}
+	same := map[string][]string{core: {deployment("thing", "1", "", "1Gi")}}
 	if code, said := stampOf(t, same, same, nil); code != 0 || !strings.Contains(said, "is not on record") {
 		t.Errorf("a change that asks for nothing was not let through an unread site, or was not told (%d):\n%s", code, said)
 	}
-	code, said := stampOf(t, same, map[string]string{core: deployment("thing", "2", "", "1Gi")}, nil)
+	code, said := stampOf(t, same, map[string][]string{core: {deployment("thing", "2", "", "1Gi")}}, nil)
 	if code != 1 || !strings.Contains(said, "REFUSED") {
 		t.Errorf("a change that asks for more was let through a site nobody has read (%d):\n%s", code, said)
 	}
@@ -250,9 +287,9 @@ func TestAChangeAgainstASiteNobodyHasReadIsRefusedOnlyIfItAsksForSomething(t *te
 // A commit's tree is taken out of the repository as it was at that commit,
 // and only the parts a site's work is declared in.
 func TestACommitsTreeIsTakenOutAsItWasThen(t *testing.T) {
-	repo := tree(t, map[string]string{
-		"clusters/core/a.yaml": deployment("thing", "1", "", "1Gi"),
-		"docs/unrelated.md":    "not a site's work",
+	repo := tree(t, map[string][]string{
+		"clusters/core/a.yaml": {deployment("thing", "1", "", "1Gi")},
+		"docs/unrelated.md":    {`"not a site's work"`},
 	})
 	git := func(args ...string) {
 		t.Helper()
@@ -265,7 +302,7 @@ func TestACommitsTreeIsTakenOutAsItWasThen(t *testing.T) {
 	git("add", "-A")
 	git("-c", "user.name=a test", "-c", "user.email=test@example.invalid", "commit", "-q", "-m", "as it was")
 	// And then it changes, in the working tree only.
-	if err := os.WriteFile(filepath.Join(repo, "clusters", "core", "a.yaml"), []byte(deployment("thing", "5", "", "1Gi")), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "clusters", "core", "a.yaml"), []byte("["+deployment("thing", "5", "", "1Gi")+"]"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	dir, done, err := archived(repo, "HEAD")
@@ -273,7 +310,7 @@ func TestACommitsTreeIsTakenOutAsItWasThen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer done()
-	got, err := reserved(dir, "north", 3, together)
+	got, err := reserved(dir, "north", 3, asDrawn)
 	if err != nil {
 		t.Fatal(err)
 	}
