@@ -17,10 +17,21 @@ index 3ad98e4..b20e1cb 100644
  # pipefail: in `a | b` only b's exit status counts, so a failing command
  # feeding a working one is a green step. Naming the shell explicitly gets
 diff --git a/.github/workflows/dependency-review.yml b/.github/workflows/dependency-review.yml
-index eae8ea1..b6d610b 100644
+index eae8ea1..f836edf 100644
 --- a/.github/workflows/dependency-review.yml
 +++ b/.github/workflows/dependency-review.yml
-@@ -12,6 +12,13 @@ on: [pull_request]
+@@ -7,11 +7,23 @@
+ #
+ # Source repository: https://github.com/actions/dependency-review-action
+ name: "Dependency Review"
+-on: [pull_request]
++on:
++  pull_request:
++  # As sensitive-paths.yml: the merge queue wants an answer from every
++  # required check, and this one compares a pull request's two ends, which
++  # were compared when it was pushed. The run starts and its job does not.
++  merge_group:
+ 
  permissions:
    contents: read
  
@@ -28,12 +39,20 @@ index eae8ea1..b6d610b 100644
 +# pull request as it now is, and an answer about a commit that has been
 +# pushed over is an answer nobody will read.
 +concurrency:
-+  group: dependency-review-${{ github.event.pull_request.number }}
++  group: dependency-review-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
 +  cancel-in-progress: true
 +
  # GitHub's default shell for `run:` is `bash -e {0}`, which has no
  # pipefail: in `a | b` only b's exit status counts, so a failing command
  # feeding a working one is a green step. Naming the shell explicitly gets
+@@ -30,6 +42,7 @@ defaults:
+ 
+ jobs:
+   dependency-review:
++    if: github.event_name == 'pull_request'
+     runs-on: ubuntu-latest
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
 diff --git a/.github/workflows/deploy-infrastructure.yml b/.github/workflows/deploy-infrastructure.yml
 index 490c03e..9361e39 100644
 --- a/.github/workflows/deploy-infrastructure.yml
@@ -81,3 +100,69 @@ index 6b5d986..3a61093 100644
  
  permissions:
    contents: read
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 424dd5a..30ec611 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -15,6 +15,12 @@ on:
+       # filter named main alone - neither of them one of the eight lanes that
+       # decide whether a change is correct - so a broken workflow sat green.
+       - "epoch/**"
++  # The merge queue. A pull request that passes here passed against main
++  # as it was when it was pushed, and main moves: two that each pass can
++  # break it together, and nothing ran on main to say so. The queue runs
++  # this workflow again on each pull request as it would land, on top of
++  # whatever is ahead of it, and merges it only if that passes.
++  merge_group:
+ 
+ permissions: read-all
+ # The meta-tests, named once. The Repository invariants lane skips them and
+@@ -25,7 +31,10 @@ env:
+ 
+ # Cancel in-progress runs if a new commit is pushed to the PR
+ concurrency:
+-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
++  # By the event and the pull request's number, or for a place in the merge
++  # queue by its own ref, which no other run has: one place in the queue is
++  # never cancelled by another.
++  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+   cancel-in-progress: true
+ 
+ # All lanes run in parallel, Format included. Formatting is enforced by the
+@@ -1252,8 +1261,9 @@ jobs:
+       # worth handling.
+       - name: Run TruffleHog
+         env:
+-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
++          # A pull request's own two ends, or a place in the merge queue's.
++          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
++          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+         run: |
+           trufflehog git "file://$(pwd)" \
+             --since-commit "${BASE_SHA}" \
+diff --git a/.github/workflows/sensitive-paths.yml b/.github/workflows/sensitive-paths.yml
+index 7c764cf..d1ffdab 100644
+--- a/.github/workflows/sensitive-paths.yml
++++ b/.github/workflows/sensitive-paths.yml
+@@ -23,6 +23,12 @@ name: Sensitive Paths
+ on:
+   pull_request:
+     types: [opened, synchronize, reopened]
++  # The merge queue asks every required check to answer for a place in the
++  # queue. This one judges a pull request - who wrote it, what was said on
++  # it - and a place in the queue is pull requests that have each been
++  # judged already. So the run starts and its job does not, which the
++  # queue reads as passed; with no run at all it would wait for ever.
++  merge_group:
+ 
+ # There is deliberately no trigger for a conversation being resolved.
+ #
+@@ -58,6 +64,7 @@ defaults:
+ jobs:
+   tripwire:
+     name: Sensitive Paths
++    if: github.event_name == 'pull_request'
+     runs-on: ubuntu-latest
+     permissions:
+       contents: read
