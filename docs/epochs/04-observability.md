@@ -968,8 +968,17 @@ with nothing added. It holds no key and decides nothing. **Chose** the
 drafter handing everyone JSON, **over** a YAML library in each program,
 which puts somebody else's code inside the ones that hold power, and over
 a generated summary of reservations committed beside the manifests, which
-is the figure written twice. **Owed:** the six programs that match lines
-move onto the drafter, one at a time.
+is the figure written twice. **The six programs that matched lines moved
+the same day,** on the operator's word: a site's applications, the
+suppliers list (which two programs each had a copy of a reader for), the
+egress guard, the key challenge, the superintendent's pins and its
+judgement of a delivery, and the clerk's check for a key written twice.
+The drafter is run with nothing of its caller's environment, since some of
+what calls it holds a vault token. **Still matched as text, because it is
+text:** a secret's name inside an expression, a pin's line in a file of
+names and values, and the clerk's blanking of comments, which has to leave
+every line where it was and so cannot go through anything that reads the
+comments away.
 
 **What the engineer cannot see** is a pod a chart makes that its settings
 do not mention, which is why the site as it stands is read from the site
