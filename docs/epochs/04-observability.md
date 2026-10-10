@@ -941,6 +941,24 @@ so not built: how worn each disk is, and how large each pool is, which
 **Every one says what to do** (26), which is the rule from here on and
 not yet true of the alerts written before it.
 
+**The engineer is built, a week after it was agreed** (2026-10-10). The
+capacity sum was first written inside the contractor, against this record,
+and ran into the reason the record gives for keeping it out: the contractor
+takes no dependencies, so it cannot read YAML, and a change's reservations
+are in YAML that kustomize assembles. The operator, asked how the count
+should be made: "Can anyone currently read YAML?" Nobody could but the
+tests. So `scripts/engineer` is a program of its own that holds no key and
+may take a library, and its one verb stamps a change or refuses it: what a
+commit's tree gives a site against what the change's tree gives it, held to
+the site's capacity as last recorded (`capacity.json`, which the contractor
+writes when it takes a record, since reading a live cluster takes a
+credential). The sum itself is a standard detail, read by both. **What it
+cannot see** is a pod a chart makes that its settings do not mention, which
+is why the site as it stands is read from the site and only what a change
+adds is read from the change. **Still the contractor's, against this
+record:** `plan-as-built` and `survey`, which move when there is a reason
+to open them.
+
 **Priority work waits, and only for moments.** Offered the choice of letting
 work that cannot wait stop work that can, the operator chose otherwise:
 "Interactive work should wait BUT we need to make it so that it ONLY needs
