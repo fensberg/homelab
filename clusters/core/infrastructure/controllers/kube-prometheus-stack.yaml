@@ -94,6 +94,12 @@ spec:
           repository: prometheus-operator/prometheus-config-reloader
           tag: v0.94.0
           sha: 142a1f11df8dd165f00375b0b1826aecb9c9adeb05c39855893138d7c7575ff7
+        # Runs beside Prometheus and beside Alertmanager, so it is reserved
+        # twice. An estimate from a week's peak of 29 MiB, not yet a
+        # measurement under load.
+        resources:
+          requests:
+            memory: 48Mi
       # The admission webhook validates PrometheusRule syntax before the API
       # server accepts it. Off, because turning it on pulls in a third image
       # from a personal namespace on ghcr.io to generate its certificates -
@@ -358,6 +364,12 @@ spec:
           repository: kiwigrid/k8s-sidecar
           tag: 2.11.2
           sha: 2912be006f62f9ea080194cf6d3afcd90daead8d101d0ba686a137a849f6a4f6
+        # One reservation for each of the two sidecars below. An estimate
+        # from a week's peaks of 82 and 76 MiB, not yet a measurement under
+        # load.
+        resources:
+          requests:
+            memory: 128Mi
         dashboards:
           enabled: true
           label: grafana_dashboard

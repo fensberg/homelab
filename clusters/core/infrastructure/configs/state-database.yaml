@@ -77,6 +77,11 @@ spec:
       memory: "256Mi"
     limits:
       memory: "512Mi"
+
+  # The class the priority classes themselves name this database for: the
+  # estate's state is what every converge reads first, so it may take a place
+  # from running work rather than wait for one.
+  priorityClassName: critical
 ---
 # A base backup every night. WAL archiving above is continuous, so this only
 # bounds how much WAL has to be replayed on restore.

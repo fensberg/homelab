@@ -1073,6 +1073,9 @@ spec:
               exec:
                 command:
                   - /cni-uninstall.sh
+          resources:
+            requests:
+              memory: 320Mi
           ports:
             - name: health
               containerPort: 9879
@@ -1514,6 +1517,9 @@ spec:
             - name: KUBERNETES_SERVICE_PORT
               value: "7445"
 
+          resources:
+            requests:
+              memory: 64Mi
           ports:
             - name: envoy-metrics
               containerPort: 9964
@@ -1708,6 +1714,9 @@ spec:
               mountPath: /tmp/cilium/config-map
               readOnly: true
 
+          resources:
+            requests:
+              memory: 128Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
