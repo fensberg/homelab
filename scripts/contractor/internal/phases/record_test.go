@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"homelab/contractor/config"
+	"homelab/contractor/internal/capacity"
 	"homelab/contractor/internal/run"
 	"homelab/details/asbuilt"
 )
@@ -146,8 +147,13 @@ func TestAPublishableRecordIsSavedWhereAsked(t *testing.T) {
 		}
 	}
 	t.Setenv("GITHUB_SHA", "0123456789abcdef")
+	// The record's last act is to ask the cluster what it holds.
+	standIns(t, twoWorkers, oneRunningPod)
 	if err := takeRecord(ctx, scriptedTofu); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(ctx.RecordOut, capacity.File)); err != nil {
+		t.Errorf("a record was saved with no capacity beside it, so a plan would have nothing to hold a change against: %v", err)
 	}
 	// Both roots, each in its own directory: a record of one would plan half
 	// a site and say nothing about the rest.

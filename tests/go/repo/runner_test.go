@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"homelab/contractor/config"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -299,8 +300,8 @@ func runnersKeepOffControlPlanes(t *testing.T, release string) {
 	}
 
 	controlPlane := map[string]string{
-		"kubernetes.io/os":                      "linux",
-		"node-role.kubernetes.io/control-plane": "",
+		"kubernetes.io/os":       "linux",
+		config.ControlPlaneLabel: "",
 	}
 	worker := map[string]string{"kubernetes.io/os": "linux"}
 

@@ -170,6 +170,18 @@ operator: "Let's bring all the untouched into the epoch"):
   known to cause are quieted for as long as it runs and no longer.
 - **27. The machines agree what time it is**, and an alert says when one
   drifts: etcd does not survive a clock that wanders.
+- **28. The site says what it draws** (added 2026-10-09). Electricity is a
+  resource the site is given like any other, and the last one nothing
+  reads. The site holds how much power it is drawing, kept as history with
+  everything else it measures, with how that was measured and what the
+  measure misses - a processor's own count of its energy is not what comes
+  out of the wall, and is never shown as though it were. The criterion is
+  the collecting. The operator: "My intent is to collect data and we can
+  use that data for something later." **An idea for later, and not asked
+  for here:** a cost for each workload and for a change before it merges
+  ("this will cost $5 over the next month to implement"), from a declared
+  price for a unit, keeping apart what a thing adds to the bill by running
+  and its share of what the site costs to keep on at all.
 
 ### Before this epoch closes
 
