@@ -206,14 +206,18 @@ jobs:
           code=0
           ./toolshed/engineer stamp -site "$SITE" -record as-built-record -base 'HEAD^1' > stamp.txt 2>&1 || code=$?
           cat stamp.txt
-          {
-            echo
-            echo "### What ${SITE} can hold"
-            echo
-            echo '```text'
-            cat stamp.txt
-            echo '```'
-          } >> plan-comment.md
+          # Said on the pull request only when it is refused. A change that
+          # fits is the ordinary case, and the engineer says nothing of it.
+          if [ "${code}" != "0" ]; then
+            {
+              echo
+              echo "### ${SITE} cannot hold this change"
+              echo
+              echo '```text'
+              cat stamp.txt
+              echo '```'
+            } >> plan-comment.md
+          fi
           echo "${code}" > stamp.code
 
       # Handed to the job that reports it. This job runs the pull request's
