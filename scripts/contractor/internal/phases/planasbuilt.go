@@ -95,9 +95,6 @@ func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu, unreleas
 	if adopted != merging {
 		summary = fmt.Sprintf("%s\n\n%s\n\n%s", strings.TrimRight(merging, "\n"), onceAdopted(ctx.Site), adopted)
 	}
-	// And how full the site is, from the same record: the room a change is
-	// held against, said on every plan.
-	summary = strings.TrimRight(summary, "\n") + "\n\n" + recordedCapacity(recordDir) + "\n"
 	fmt.Println()
 	fmt.Println(summary)
 	if ctx.CommentOut != "" {

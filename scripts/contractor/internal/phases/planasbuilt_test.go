@@ -11,7 +11,6 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/details/asbuilt"
-	"homelab/details/capacity"
 	"homelab/details/platform"
 	"homelab/details/repopath"
 )
@@ -282,66 +281,5 @@ func TestAPlanIsHandedTheHardwareTheRecordHolds(t *testing.T) {
 		if handed != c.want {
 			t.Errorf("%s: the plan was handed the recorded hardware = %v", name, handed)
 		}
-	}
-}
-
-// A plan says how full the site is, from what was recorded of it: the room a
-// change is to be held against, on every pull request, before anything is
-// refused for want of it.
-func TestAPlanSaysHowFullTheSiteIsFromWhatWasRecorded(t *testing.T) {
-	ctx := recordContext(t)
-	ctx.CommentOut = filepath.Join(t.TempDir(), "comment.md")
-	quiet := func(dir string, env []string, args ...string) ([]byte, []byte, error) {
-		if len(args) > 0 && args[0] == "show" {
-			return []byte(`{"format_version":"1.2","resource_changes":[]}`), nil, nil
-		}
-		return nil, nil, nil
-	}
-	for _, root := range ctx.Roots() {
-		if err := os.MkdirAll(root.Dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	record := savedRecord(t)
-	kept, err := capacity.Marshal(capacity.Site{Workers: 27 << 30, LargestWorker: 10 << 30, MustRun: 12 << 30}, "2026-10-10T17:21:55Z")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(record, capacity.File), kept, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := planAsBuilt(ctx, record, quiet, noModulesOfItsOwn); err != nil {
-		t.Fatal(err)
-	}
-	body, _ := os.ReadFile(ctx.CommentOut)
-	for _, said := range []string{"27 GiB", "17 with the largest", "reserves 12", "5 to spare", "2026-10-10T17:21:55Z"} {
-		if !strings.Contains(string(body), said) {
-			t.Errorf("the plan does not say %q of the site's capacity:\n%s", said, body)
-		}
-	}
-}
-
-// A record taken before capacity was kept has none, and the plan says so:
-// silence would read as a site with room.
-func TestAPlanAgainstARecordWithNoCapacitySaysThereIsNone(t *testing.T) {
-	ctx := recordContext(t)
-	ctx.CommentOut = filepath.Join(t.TempDir(), "comment.md")
-	quiet := func(dir string, env []string, args ...string) ([]byte, []byte, error) {
-		if len(args) > 0 && args[0] == "show" {
-			return []byte(`{"format_version":"1.2","resource_changes":[]}`), nil, nil
-		}
-		return nil, nil, nil
-	}
-	for _, root := range ctx.Roots() {
-		if err := os.MkdirAll(root.Dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := planAsBuilt(ctx, savedRecord(t), quiet, noModulesOfItsOwn); err != nil {
-		t.Fatal(err)
-	}
-	body, _ := os.ReadFile(ctx.CommentOut)
-	if !strings.Contains(string(body), "holds no reading of the site's capacity") {
-		t.Errorf("a record with no capacity was planned against and nothing said so:\n%s", body)
 	}
 }
