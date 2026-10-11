@@ -9,6 +9,20 @@ kind: Cluster
 metadata:
   name: ${STATE_DB_CLUSTER}
   namespace: ${STATE_DB_NAMESPACE}
+  annotations:
+    # A restart of every instance, one at a time, asked for here so that a
+    # merge is what asks for it.
+    #
+    # The operator does not replace a running instance when only its
+    # priority class changes: the class was set on this cluster, the cluster
+    # reported healthy, and all three instances went on running without it
+    # (seen on site0, 2026-10-11). An instance takes what the cluster says
+    # when it is next made, and this is what makes it again. It is the
+    # annotation the operator's own restart command sets.
+    #
+    # Change the time whenever a setting below has to reach instances the
+    # operator would otherwise leave alone.
+    kubectl.kubernetes.io/restartedAt: "2026-10-11T15:00:00Z"
 spec:
   instances: 3
 
@@ -77,6 +91,11 @@ spec:
       memory: "256Mi"
     limits:
       memory: "512Mi"
+
+  # The class the priority classes themselves name this database for: the
+  # estate's state is what every converge reads first, so it may take a place
+  # from running work rather than wait for one.
+  priorityClassName: critical
 ---
 # A base backup every night. WAL archiving above is continuous, so this only
 # bounds how much WAL has to be replayed on restore.

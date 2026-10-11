@@ -118,7 +118,7 @@ func TestADeliveryRidesTheBypassOnlyWhenTheSuppliersBuildIsAllThatChanged(t *tes
 	}{
 		{"the supplier's build alone", true, ""},
 		{"the build and a comment", true, ""},
-		{"a change to the manifests", false, "replicas: 2"},
+		{"a change to the manifests", false, "the manifests it ships changed"},
 		{"a change to the image's context", false, "Dockerfile"},
 		{"another pin of the application's", false, "EXTRA_VERSION"},
 		{"a pin of the estate's", false, estatePins},

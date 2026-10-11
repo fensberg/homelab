@@ -62,12 +62,6 @@ Capacity is read, never typed:
   of the host. Taken off it, each also read and not assumed: the
   hypervisor's own share, its filesystem cache, anything on it that is not
   the site's, and a reserve of one control plane to roll with.
-- **3. No machine's size or count is a literal** (#615, #566). Both are derived
-  from the capacity above, the overhead each machine carries, and the
-  largest single thing that must fit on one - and then rounded down to a
-  step on a short ladder of standard sizes, whole processors and round
-  amounts of memory, so a machine is "6 and 12" and never a fraction. The
-  count of workers is derived once applications say what they need (10).
 - **4. The as-built record carries the hardware's facts**, so a pull request's
   plan can use them with no credential.
 
@@ -78,11 +72,13 @@ The budget, and who refuses:
 - **6. Kubernetes is where the site is overfilled.** Everything that is not
   `batch` fits in reservations with one worker gone. Work that can wait is
   not counted against capacity: it runs in whatever is free, the idle part
-  of another's reservation included, and is stopped and retried when that
-  is wanted back, with a message that says so. There is no cap on the
-  total. A pull request that leaves must-run work with no room is refused
-  by its plan, which names the shortfall. Disk is held to a budget as
-  memory is.
+  of another's reservation included, and is stopped when that is wanted
+  back, with a message that says so. Work of the cluster's own is then run
+  again by Kubernetes. A CI job is not, yet: running it again is parked,
+  not decided against, and when to build it is beside the alert that
+  reopens it. There is no cap on the total. A pull request that leaves
+  must-run work with no room is refused by its plan, which names the
+  shortfall. Disk is held to a budget as memory is.
 - **7. A pod with no reservation or no priority class is refused by the
   cluster**, whoever created it, and each namespace has a quota.
 - **8. etcd's disk latency has a written level** and an alert on it (#627),
@@ -90,16 +86,6 @@ The budget, and who refuses:
 
 Sizing needs nobody:
 
-- **9. A workload's reservation follows its measured use**, applied by the
-  autoscaler with no pull request, inside a floor and a ceiling per
-  container, in place where the cluster can, and never past a disruption
-  budget. Use means use under load: a size is taken from what a thing
-  needed while it was doing its work, over a long window, grows quickly
-  and shrinks slowly, and is never taken from one reading or from a thing
-  that sat idle. Until load has been seen, what was declared stands. The
-  hypervisor's own filesystem cache is sized by the same rule, from a
-  default. etcd, the API server and the databases are sized by declaration
-  until there is a reason to trust a guess about them.
 - **10. An application says what it expects to need before it has run**, with
   where the figure came from, and the plan counts that until a measurement
   replaces it. What it needs is its manifest's reservation, which is the
@@ -110,7 +96,7 @@ Sizing needs nobody:
 
 What is measured is looked at:
 
-- **15. Each question this epoch asks has a dashboard**, kept in git:
+- **19. Each question this epoch asks has a dashboard**, kept in git:
   capacity by scope (hypervisor, machine, workload), what is reserved
   against what is used, and whether the network is what limits the site -
   traffic against each interface's own speed, with its errors and drops.
@@ -136,16 +122,98 @@ The site keeps itself, and proves it:
   the state backup, each database's backup, each workload's backup, the
   nightly checks, a converge.
 - **13. A converge in flight is not evicted.**
-- **14. Work is spread again after a roll** (#628), by the descheduler.
 - **15. Alerts on the bet read pressure**, not memory in use, and one says how
   long until a resource is full at the rate it is filling.
 - **16. How a machine sheds load is declared**, not left at the kubelet's
   defaults.
-- **17. The bet has been tested.** Staging is overfilled on purpose and the
-  right things are shed in the right order.
 - **18. The site says what it is shortest of, and what more hardware would
   buy**: so many more weeks of history for this much disk, this much more
   work for this much memory, none of a capability it has no hardware for.
+
+**Moved to [05](05-node-lifecycle.md) on 2026-10-08,** because each one
+changes a machine that is running and this epoch only watches: no machine's
+size or count is a literal (3), a reservation follows measured use (9), work
+is spread again after a roll (14), and the bet has been tested by
+overfilling on purpose (17). Their numbers are kept, there and here, so
+that what refers to them still finds them.
+
+What else a site should be able to say about itself (added 2026-10-08, the
+operator: "Let's bring all the untouched into the epoch"):
+
+- **20. The hardware says when it is failing.** Each disk's wear and
+  errors, each pool's errors and the result of its last scrub, and the
+  host's temperatures are held by Prometheus, and an alert says a disk or a
+  pool is going before it has gone. One host and its disks are the whole
+  site.
+- **21. A backup has been restored, lately.** Not that one exists and is
+  fresh, which the safety officer asks, but that one of each kind has been
+  restored somewhere it can do no harm and what came back was checked, on
+  a schedule, with a deadline and an alert like any other necessary
+  function (12).
+- **22. Nothing stops working on a date nobody was told.** Every
+  certificate, key and token the estate holds that expires has its date
+  read, and an alert long enough before it to act: the cluster's own
+  certificates, the vendor tokens, the overlay's keys.
+- **23. The site is looked at from outside.** Whatever a person outside is
+  given - a game server to join - is tried the way they would try it, from
+  somewhere that is not the site, and its failing is said.
+- **24. What a vendor's free plan says was used is read**, beside what the
+  estate declared it would use, for everything held to one: an alert when
+  the two part, and before a limit and not at it.
+- **25. Why a thing died can be read the next day.** Logs and the
+  cluster's events outlive the pod and the hour they were written in, for
+  as long as a site's history does and on the same storage. This reopens
+  what the Scope above deferred, on the operator's word and not on the
+  trigger written there.
+- **26. Every alert says what to do.** Each one that reaches the channel
+  names what it means and the first thing to try, and alerts a converge is
+  known to cause are quieted for as long as it runs and no longer.
+- **27. The machines agree what time it is**, and an alert says when one
+  drifts: etcd does not survive a clock that wanders.
+- **28. The site says what it draws** (added 2026-10-09). Electricity is a
+  resource the site is given like any other, and the last one nothing
+  reads. The site holds how much power it is drawing, kept as history with
+  everything else it measures, with how that was measured and what the
+  measure misses - a processor's own count of its energy is not what comes
+  out of the wall, and is never shown as though it were. The criterion is
+  the collecting. The operator: "My intent is to collect data and we can
+  use that data for something later." **An idea for later, and not asked
+  for here:** a cost for each workload and for a change before it merges
+  ("this will cost $5 over the next month to implement"), from a declared
+  price for a unit, keeping apart what a thing adds to the bill by running
+  and its share of what the site costs to keep on at all.
+
+### Before this epoch closes
+
+Proofs that could not be had on the day the thing was built, each with what
+runs it. None is a criterion; each is a claim made above that is not yet
+shown.
+
+- **The site rings the watchman and is heard.** _Shown on 2026-10-10:_ the
+  test passed in the integration tier, after the site's address at the
+  watchman was corrected. It had been granted one built from a name
+  written with a dot in it, which the vendor has no certificate for; the
+  estate now refuses such a name. What follows is how it was to be shown.
+  `TestTheSiteRingsTheWatchmanAndIsHeard`, in the integration tier, asks
+  Alertmanager how many rings it sent in the last half hour and how many
+  were not taken. It could not pass until half an hour after the route
+  merged (#675, 2026-10-08), and the operator was away. The nightly runs
+  it; a failure is said in the channel as the nightly failing. By hand:
+
+  ```sh
+  task kubectl SITE=site0 -- go test -C tests/go -tags=integration -v -run TestTheSiteRingsTheWatchmanAndIsHeard ./integration/...
+  ```
+
+- **The watchman says when a site goes quiet.** Nothing makes a silence, so
+  this is shown only by one: the first time the site's alerting is down for
+  half an hour, by accident or on purpose, the channel should be told once,
+  and once more when it returns. Until that has been seen the message is
+  code that has passed its own tests and never spoken.
+
+- **A schedule that fails is said, and one that recovers is cleared.** The
+  first half was seen on 2026-10-08, for the patrol and the nightly. The
+  clearing waits on a scheduled run succeeding, which a run started by hand
+  is not.
 
 ## Known driver: nothing watches whether the estate is on its own network
 
@@ -737,7 +805,7 @@ refuses and changes nothing that is running: the hardware's facts (2, 4;
 the facts are read and carried by the record, and nothing uses them yet),
 the budget and its refusal with sizes moved from the code to the config
 (5), what each application expects to need (10), the capacity check on a
-pull request (6), dashboards (15), and the alerts and deadlines (8, 12).
+pull request (6), dashboards (19), and the alerts and deadlines (8, 12).
 Then, with [05](05-node-lifecycle.md), what moves a running machine:
 derived sizes and counts applied one machine at a time (3), reservations
 following use (9), the descheduler and the overfill test (14).
@@ -758,6 +826,17 @@ address plan, a pull request's plan and the safety officer do not see
 them. **Not read from the host's API,** because it is not there: how fast
 each network interface is, and the filesystem cache's own figures. Both
 are reported by the host's exporter and belong to the dashboards.
+**And not recorded,** though it is read: the size of each datastore. It was
+in the record at first, and the record is something the estate is held to
+matching. Read twice a minute apart on 2026-10-08, all four of the host's
+datastores had moved, by one to ten megabytes, and nothing else had: the
+figure is what the pool underneath has left to give. So every night's
+record was refused for an estate that had not changed. The operator: "it
+should be tracked via chart same as other measurements that move." A
+tolerance was the other answer offered and is not taken: the figure only
+falls, so any allowance is crossed in time, and deciding which differences
+count would be the contractor's own judgement inside the one check meant to
+have none. What is recorded is what is the same a minute later.
 
 **110% was an attitude and not a rule.** The operator, when the capacity
 check was proposed with it as a limit: "110% was a number I made up. It
@@ -817,9 +896,15 @@ a day and refuses a plan that would go over (`free-plan.tf`); a site rings
 every ten minutes, which is the operator's bound of 200 writes a day for a
 site. **Honest limits:** if the watchman itself stops nothing says so; it
 says that a site's alerting is not heard, not which part stopped; and a
-silence is said 25 to 35 minutes after it began. **Not yet:** the site's
-half - the secret reaching the cluster and the alert routed to it - which
-waits on the estate being converged and a release of the platform.
+silence is said 25 to 35 minutes after it began. **The site's half** is its
+address and its secret, read from the vault into the Secret Alertmanager
+already mounts. Not into one of their own: a pod told to mount a Secret
+that does not exist yet does not start, and a site whose core had moved
+ahead of its release would have had no alerting at all. And nothing here
+ever rings with the site's own secret to test it, because a ring is the
+site saying it is alive: the check from outside asks only what is refused.
+**Not yet:** the alert routed to the watchman, which waits on a release of
+the platform that carries the secret and the site's pin moved to it.
 
 **A failing schedule is said where the operator looks.** A workflow kept
 an issue open while a scheduled workflow was failing, and the nightly
@@ -833,12 +918,73 @@ no credential, every fifteen minutes, inside half of what GitHub allows a
 caller with no token. **Rejected:** giving the workflow the channel's
 webhook, a second copy of a credential that nothing in the estate writes
 to GitHub; an exporter built for GitHub Actions, unmaintained and wanting a
-token. **Still to do:** the workflow that keeps the issues is retired once
-the operator has seen one message arrive this way. And the alert that
+token. The operator saw the first two messages arrive this way on
+2026-10-08, for the patrol and the nightly, and the workflow that kept the
+issues is retired with them: one party says a schedule is failing, in one
+place. And the alert that
 reopens lending is a warning now and not a note, because notes are
 recorded and not sent, and a sign nobody is sent is not one.
 
 > > > > > > > feat/the-cluster-says-when-a-schedule-fails
+
+**The host is read for trouble, with what it already says** (2026-10-10).
+The exporter's own names were listed from the running site before a rule
+was written, and each rule is over a series on that list: a pool that will
+be full within a month at the last week's rate (15), a pool that is not
+whole and memory that is erring (20), a part at the temperature its maker
+calls critical (20), and the host's clock (27, where the cluster's own
+machines were already watched by the stack's stock rules). A test asks
+that each alert has something to read, since an alert over nothing is
+quiet in exactly the way a healthy host is. **Not there to be read,** and
+so not built: how worn each disk is, and how large each pool is, which
+"four fifths full" would need. Both want something added to the host.
+**Every one says what to do** (26), which is the rule from here on and
+not yet true of the alerts written before it.
+
+**The engineer is built, a week after it was agreed, and the drafter with
+it** (2026-10-10). The capacity sum was first written inside the
+contractor, against this record, and ran into the reason the record gives
+for keeping it out: the contractor takes no dependencies, so it cannot read
+YAML, and a change's reservations are in YAML that kustomize assembles. The
+operator, asked how the count should be made: "Can anyone currently read
+YAML?" Nobody could but the tests, and six programs were reading it by
+matching lines. So `scripts/engineer` is a program of its own that holds no
+key, and its one verb stamps a change or refuses it: what a commit's tree
+gives a site against what the change's tree gives it, held to the site's
+capacity as last recorded (`capacity.json`, which the contractor writes
+when it takes a record, since reading a live cluster takes a credential).
+The sum itself is a standard detail, read by both.
+
+It was built with a YAML library in it and lost it the same day. The
+operator: "What actually is the purpose of parsing YAML and is that
+'really' a job for an engineer? Or should there be some lower level clerk
+that goes in, parses and feeds the parsed to the engineer like everyone
+else?" Parsing is translation and has no judgement in it; saying what a
+site can carry is nothing else. So `scripts/drafter` is the one program
+that takes a library to read a format with, "the central translator for
+everything": YAML, JSON, a file of names and values, and a directory
+kustomize assembles, each redrawn as JSON, which every other program reads
+with nothing added. It holds no key and decides nothing. **Chose** the
+drafter handing everyone JSON, **over** a YAML library in each program,
+which puts somebody else's code inside the ones that hold power, and over
+a generated summary of reservations committed beside the manifests, which
+is the figure written twice. **The six programs that matched lines moved
+the same day,** on the operator's word: a site's applications, the
+suppliers list (which two programs each had a copy of a reader for), the
+egress guard, the key challenge, the superintendent's pins and its
+judgement of a delivery, and the clerk's check for a key written twice.
+The drafter is run with nothing of its caller's environment, since some of
+what calls it holds a vault token. **Still matched as text, because it is
+text:** a secret's name inside an expression, a pin's line in a file of
+names and values, and the clerk's blanking of comments, which has to leave
+every line where it was and so cannot go through anything that reads the
+comments away.
+
+**What the engineer cannot see** is a pod a chart makes that its settings
+do not mention, which is why the site as it stands is read from the site
+and only what a change adds is read from the change. **Still the
+contractor's, against this record:** `plan-as-built` and `survey`, which
+move when there is a reason to open them.
 
 **Priority work waits, and only for moments.** Offered the choice of letting
 work that cannot wait stop work that can, the operator chose otherwise:

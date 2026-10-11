@@ -10,7 +10,7 @@ variable "sites" {
 
 variable "workers_subdomain" {
   type        = string
-  description = "The account's own name under workers.dev, which is where the watchman is reached. Chosen once in the vendor's console and kept in the estate's vault."
+  description = "The account's own name under workers.dev, which is where the watchman is reached. Chosen once in the vendor's console and kept in the estate's vault. The name alone: not the address it makes."
 }
 
 variable "channel" {

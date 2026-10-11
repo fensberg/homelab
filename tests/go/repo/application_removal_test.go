@@ -39,6 +39,9 @@ import (
 func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) {
 	skipIfInner(t)
 	heavy(t, "copies the repository once per application and runs every guard against each copy")
+	// Beside the other slow guards and not after them: it shares nothing
+	// with any of them but the compiled tests, which are made once.
+	t.Parallel()
 
 	root := repoRoot(t)
 	apps, err := applications.Read(root)
@@ -59,7 +62,18 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 			for _, problem := range ledgerNoLongerDescribes(t, untouched) {
 				described[problem] = true
 			}
-			before := runAll(t, bin, untouched)
+			// Every guard against the copy as it is, while the other copy
+			// is being made and the guards run against that: the two runs
+			// are the whole of this test's time and share nothing.
+			type run struct {
+				verdicts map[string]bool
+				output   []byte
+			}
+			asItIs := make(chan run, 1)
+			go func() {
+				v, out := allVerdicts(bin, untouched)
+				asItIs <- run{v, out}
+			}()
 			scratch := scratchRepo(t)
 			removeApplication(t, scratch, a)
 			indexScratchTree(t, scratch)
@@ -79,6 +93,11 @@ func TestAnApplicationIsRemovedByDeletingItsDirectoryAndItsBlocks(t *testing.T) 
 				t.Errorf("with %s removed, %s\n\nA proof about the estate breaks a file of the estate's, or plants one; a proof that needs an application's file belongs in that application's own ledger.", a.Name, problem)
 			}
 			after := runAll(t, bin, scratch)
+			was := <-asItIs
+			if len(was.verdicts) == 0 {
+				t.Fatalf("no test verdict was parsed from the run against the copy as it is:\n%s", was.output)
+			}
+			before := was.verdicts
 			var broke []string
 			for name, passed := range after {
 				if !passed && before[name] {

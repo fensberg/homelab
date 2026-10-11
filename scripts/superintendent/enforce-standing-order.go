@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"homelab/details/release"
 	"os"
 	"os/exec"
 	"path"
@@ -98,7 +99,15 @@ func enforceStandingOrder(args []string) int {
 	// sites that run it. Without the bypass it passes, so a person can merge
 	// it. Under the bypass it passes only when the release changes nothing
 	// but the build the application's supplier published.
-	if isDelivery(changedFiles, lines, *releases) {
+	asItWasAndIs := func(file string) (string, string, error) {
+		was, err := gitRunner("show", *base+":"+file)
+		if err != nil {
+			return "", "", err
+		}
+		is, err := gitRunner("show", *head+":"+file)
+		return was, is, err
+	}
+	if isDelivery(changedFiles, *releases, asItWasAndIs) {
 		if !*bypass {
 			fmt.Printf("%s delivered a release. The 4am window merges it if the supplier's build is all that changed; otherwise it waits for a review\n", *author)
 			return 0
@@ -231,28 +240,56 @@ func nonEmptyLines(s string) []string {
 	return out
 }
 
-var (
-	deliveredTag    = regexp.MustCompile(`^[+-]\s+tag:\s+"[0-9][0-9A-Za-z.]*-[0-9]+"\s*$`)
-	deliveredDigest = regexp.MustCompile(`^[+-]\s+digest:\s+"sha256:[0-9a-f]{64}"\s*$`)
-)
-
 // isDelivery reports whether a change moves release pins in sites' files and
 // does nothing else: every file one that says what a site runs, by the
-// pattern that says which those are, and every changed line a release tag or
-// a digest. A pattern rather than a path, because which sites were given the
-// work is the Flux tree's to say and not this program's to name; and more
-// than one file, because one release goes to every site that follows it.
-func isDelivery(files, changed []string, releases string) bool {
-	if len(files) == 0 || len(changed) == 0 {
+// pattern that says which those are, and every one of them the same as it
+// was but for a release's tag and digest. A pattern rather than a path,
+// because which sites were given the work is the Flux tree's to say and not
+// this program's to name; and more than one file, because one release goes
+// to every site that follows it.
+//
+// It was judged by the changed lines: each had to look like a tag or a
+// digest. Each file is read now, before and after, for the pins it holds.
+// The pins that moved are put back as they were in the text of the file as
+// it is, and the result has to be the file as it was, to the byte: so a
+// comment, a blank line or anything else that rode along is not a delivery.
+func isDelivery(files []string, releases string, texts func(file string) (was, is string, err error)) bool {
+	if len(files) == 0 {
 		return false
 	}
 	for _, f := range files {
 		if isReleases, err := path.Match(releases, f); err != nil || !isReleases {
 			return false
 		}
-	}
-	for _, line := range changed {
-		if !deliveredTag.MatchString(line) && !deliveredDigest.MatchString(line) {
+		was, is, err := texts(f)
+		if err != nil || was == is {
+			return false
+		}
+		before, err := releasePins(was)
+		if err != nil {
+			return false
+		}
+		after, err := releasePins(is)
+		if err != nil || len(after) != len(before) {
+			return false
+		}
+		undone, moved := is, 0
+		for name, now := range after {
+			then, held := before[name]
+			if !held {
+				return false
+			}
+			if now == then {
+				continue
+			}
+			if !release.Tag.MatchString(now.Tag) || !release.Digest.MatchString(now.Digest) {
+				return false
+			}
+			moved++
+			undone = strings.ReplaceAll(undone, `"`+now.Digest+`"`, `"`+then.Digest+`"`)
+			undone = strings.ReplaceAll(undone, `"`+now.Tag+`"`, `"`+then.Tag+`"`)
+		}
+		if moved == 0 || undone != was {
 			return false
 		}
 	}

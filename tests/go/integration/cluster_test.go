@@ -17,6 +17,7 @@
 package integration_test
 
 import (
+	"homelab/contractor/config"
 	"os"
 	"strings"
 	"testing"
@@ -137,7 +138,7 @@ func TestTheControlPlaneCountIsOdd(t *testing.T) {
 	// what is left after workers, so a third machine class cannot quietly
 	// join the total.
 	cp, err := k8s.GetNodesByFilterE(t, opts, metav1.ListOptions{
-		LabelSelector: "node-role.kubernetes.io/control-plane",
+		LabelSelector: config.ControlPlaneLabel,
 	})
 	require.NoError(t, err, "listing control-plane nodes")
 	require.NotEmpty(t, cp, "no node carries the control-plane role, so this asserts nothing")

@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"fmt"
+	"homelab/contractor/config"
 	"strings"
 	"testing"
 	"time"
@@ -132,7 +133,7 @@ func TestAClaimOnTheKeptClassIsAttachedToAWorkerAndRemoved(t *testing.T) {
 	onAControlPlane := false
 	for _, node := range k8s.GetNodes(t, opts) {
 		if node.Name == pod.Spec.NodeName {
-			_, onAControlPlane = node.Labels["node-role.kubernetes.io/control-plane"]
+			_, onAControlPlane = node.Labels[config.ControlPlaneLabel]
 		}
 	}
 	assert.False(t, onAControlPlane, "the pod with the claim runs on a control plane, where the driver's token may attach nothing")

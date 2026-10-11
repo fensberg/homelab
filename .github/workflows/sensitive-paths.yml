@@ -23,6 +23,12 @@ name: Sensitive Paths
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  # The merge queue asks every required check to answer for a place in the
+  # queue. This one judges a pull request - who wrote it, what was said on
+  # it - and a place in the queue is pull requests that have each been
+  # judged already. So the run starts and its job does not, which the
+  # queue reads as passed; with no run at all it would wait for ever.
+  merge_group:
 
 # There is deliberately no trigger for a conversation being resolved.
 #
@@ -58,6 +64,7 @@ defaults:
 jobs:
   tripwire:
     name: Sensitive Paths
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -77,7 +84,9 @@ jobs:
             api.github.com:443
             github.com:443
             objects.githubusercontent.com:443
+            proxy.golang.org:443
             release-assets.githubusercontent.com:443
+            sum.golang.org:443
           fetch-depth: 0
 
       # Pinned, not whatever the image ships. scripts/attestation has zero

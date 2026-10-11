@@ -256,7 +256,7 @@ func TestAssignedReadsWhatASiteWasGiven(t *testing.T) {
 	if len(got) != 2 || got[0] != (Assignment{"alpha", "production"}) || got[1] != (Assignment{"zeta", "staging"}) {
 		t.Errorf("read as %+v", got)
 	}
-	write("  path: ./" + Dir + "/alpha/production\n---\n  path: ./" + Dir + "/alpha/staging\n")
+	write("kind: Kustomization\nspec:\n  path: ./" + Dir + "/alpha/production\n---\nkind: Kustomization\nspec:\n  path: ./" + Dir + "/alpha/staging\n")
 	if _, err := Assigned(root, "site9"); err == nil || !strings.Contains(err.Error(), "twice") {
 		t.Errorf("an application given twice was accepted: %v", err)
 	}
@@ -355,7 +355,8 @@ spec:
 		}
 	}
 
-	if _, err := ParseDeclared("a/site.yaml", "kind: Kustomization\nmetadata:\n  namespace: flux-system\n"); err == nil || !strings.Contains(err.Error(), "with no name") {
+	nameless := []Document{{"kind": flux.Kustomization, "metadata": map[string]any{"namespace": "flux-system"}}}
+	if _, err := DeclaredIn("a/site.yaml", nameless); err == nil || !strings.Contains(err.Error(), "with no name") {
 		t.Errorf("a declared object with no name: %v", err)
 	}
 	if err := os.WriteFile(path, []byte(body+strings.Replace(body, "alpha-runs", "alpha-again", 1)), 0o644); err != nil {

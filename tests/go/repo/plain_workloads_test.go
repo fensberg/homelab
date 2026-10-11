@@ -2,6 +2,7 @@ package repo
 
 import (
 	"fmt"
+	"homelab/details/capacity"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,7 +68,7 @@ func TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority(t *testing.T) {
 		t.Run(w.file+"/"+w.name, func(t *testing.T) {
 			what := fmt.Sprintf("%s %q in %s", w.kind, w.name, w.file)
 
-			priority, _ := w.pod["priorityClassName"].(string)
+			priority, _ := w.pod[capacity.PriorityClassKey].(string)
 			switch {
 			case priority == "":
 				t.Errorf("%s has no priority class, so it is priority zero - below every class this estate "+

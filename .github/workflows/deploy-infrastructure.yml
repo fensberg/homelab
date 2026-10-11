@@ -32,6 +32,14 @@ on:
       - "config/management.tpl.json"
       - "environments/**/infrastructure/**"
       - "modules/infrastructure/**"
+      # What Flux deploys. A merge here changes what runs on a site with no
+      # help from a converge, and that was the trouble: nothing took a record
+      # afterwards, so the site's capacity - what a pull request's change is
+      # held against - stayed as it was before the merge, and a second
+      # change was judged against room the first had already taken. A
+      # converge here applies nothing of its own. It waits for Flux to
+      # settle and takes the record, which is the point.
+      - "clusters/**"
 
 permissions:
   contents: read
@@ -151,7 +159,9 @@ jobs:
           # its first match can fail the writer with SIGPIPE and turn a match
           # into a miss.
           site_files="$(grep -vE '^management/estate/' <<<"${files}" || true)"
-          grep -qE '^(management/|config/management\.tpl\.json$)' <<<"${site_files}" && mgmt=true
+          # clusters/ is here for the record a converge ends with, not for
+          # anything it applies: see the trigger's paths above.
+          grep -qE '^(management/|clusters/|config/management\.tpl\.json$)' <<<"${site_files}" && mgmt=true
           # The same paths the trigger filters on, not a broader guess at them.
           # This used to match any file under environments/ or modules/, so a
           # change to an application module - the game server's Deployment -

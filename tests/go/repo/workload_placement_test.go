@@ -2,6 +2,8 @@ package repo
 
 import (
 	"fmt"
+	"homelab/contractor/config"
+	"homelab/details/capacity"
 	"sort"
 	"strings"
 	"testing"
@@ -50,8 +52,8 @@ import (
 // selector cannot.
 var (
 	aControlPlaneNode = map[string]string{
-		"kubernetes.io/os":                      "linux",
-		"node-role.kubernetes.io/control-plane": "",
+		"kubernetes.io/os":       "linux",
+		config.ControlPlaneLabel: "",
 	}
 	aWorkerNode = map[string]string{"kubernetes.io/os": "linux"}
 )
@@ -397,7 +399,7 @@ correct the paths if they moved, and set ChartVersion to %s.`,
 			}
 
 			// Priority.
-			priority, _ := podSpec["priorityClassName"].(string)
+			priority, _ := podSpec[capacity.PriorityClassKey].(string)
 			switch {
 			case priority == "":
 				t.Errorf(`%s has no priority class.
@@ -668,7 +670,7 @@ func TestEveryFluxControllerIsPlacedAndGivenAPriority(t *testing.T) {
 	for _, name := range sortedKeys(deployments) {
 		spec := deployments[name]
 
-		priority, _ := spec["priorityClassName"].(string)
+		priority, _ := spec[capacity.PriorityClassKey].(string)
 		switch {
 		case priority == "":
 			t.Errorf(`the Flux controller %q ends up with no priority class.

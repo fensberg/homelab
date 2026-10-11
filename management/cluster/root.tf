@@ -82,7 +82,6 @@ variable "hardware" {
       sockets      = number
       cpu_model    = string
       gpus         = list(object({ vendor = string, device = string }))
-      storages     = map(object({ type = string, total_bytes = number }))
       machines     = list(object({ id = number, memory_bytes = number, cores = number, is_template = optional(bool, false) }))
     }))
   })
@@ -90,9 +89,11 @@ variable "hardware" {
   description = <<-EOT
     What each of the site's hypervisors has, by its key in the config: read
     off the host by the contractor and handed over, never written down. Its
-    memory, processors, display devices, the size of each datastore, and
-    every machine already on it. Null only where nothing has asked a
-    hypervisor yet - a plan of a site no record has these for.
+    memory, processors, display devices, and every machine already on it:
+    the readings that hold still, because this is recorded and the estate is
+    held to matching it. Not the size of a datastore, which moves by the
+    minute and is a measurement for a chart. Null only where nothing has
+    asked a hypervisor yet - a plan of a site no record has these for.
   EOT
 }
 

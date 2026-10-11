@@ -140,6 +140,18 @@ locals {
     webhook_url = ""
   })
 
+  # --- heartbeat -----------------------------------------------------------
+  #
+  # Where this site rings to say its alerting is alive, and what it rings
+  # with: an address and a secret of the site's own, granted by the estate.
+  # Empty for a site granted neither, which then rings nobody - and a site
+  # that has never rung is not reported as quiet.
+  heartbeat = try(local.site.heartbeat, {
+    provider = ""
+    url      = ""
+    secret   = ""
+  })
+
   # --- what the site's Flux reconciles --------------------------------------
   # The core is what every site runs, and holds Flux's own install. A site
   # that has been given work has a directory named for it beside the core.

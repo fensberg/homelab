@@ -119,3 +119,26 @@ func TestAQuestionTheHostWillNotAnswerIsARefusal(t *testing.T) {
 		t.Error("an answer that is not one was read as an empty host")
 	}
 }
+
+// What may be recorded of a host is what is the same a minute later. The
+// datastores are left out, and nothing else is: a record the estate is held
+// to matching cannot hold a reading that moves, and must hold the rest.
+func TestWhatIsRecordedOfAHostLeavesOutOnlyTheDatastores(t *testing.T) {
+	host := Host{
+		MemoryBytes: 64 << 30, Cores: 16, Sockets: 1, CPUModel: "a processor",
+		GPUs:       []Device{{Vendor: "a vendor", Device: "a card"}},
+		Datastores: map[string]Datastore{"disks": {Type: "zfspool", TotalBytes: 1 << 40}},
+		Machines:   []Machine{{ID: 105, MemoryBytes: 4 << 30, Cores: 2}},
+	}
+	recorded := host.Recorded()
+	if recorded.Datastores != nil {
+		t.Errorf("a datastore's size is among what is recorded: %+v", recorded.Datastores)
+	}
+	if recorded.MemoryBytes != host.MemoryBytes || recorded.Cores != host.Cores || recorded.Sockets != host.Sockets ||
+		recorded.CPUModel != host.CPUModel || len(recorded.GPUs) != 1 || len(recorded.Machines) != 1 {
+		t.Errorf("more than the datastores was left out of the record: %+v", recorded)
+	}
+	if host.Datastores == nil {
+		t.Error("recording a host took its datastores away from whoever read it, and the budget reads them now")
+	}
+}

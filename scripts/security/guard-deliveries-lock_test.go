@@ -98,7 +98,7 @@ func TestEveryWayALockDriftsIsRefused(t *testing.T) {
 		"a section for an undeclared tool": {
 			lockSuppliers, lockVersions, goodLock + "# [pypi: ansible-core ANSIBLE_CORE_VERSION=2.21.3]\nansible-core==2.21.3 --hash=sha256:" + hashA + "\n# [end]\n", "the lock has a section for pypi:ansible-core, which no tools: entry declares"},
 		"one name declared as two kinds": {
-			lockSuppliers + "tools:\n  - source: somebody/checkov\n    version: CHECKOV_VERSION\n    fetch: https://example.com/checkov\n",
+			strings.Replace(lockSuppliers, "\nhooks:", "  - source: somebody/checkov\n    version: CHECKOV_VERSION\n    fetch: https://example.com/checkov\n\nhooks:", 1),
 			lockVersions, goodLock, "checkov is declared as both"},
 		"a section never closed": {
 			lockSuppliers, lockVersions, strings.TrimSuffix(goodLock, "# [end]\n"), "never closed"},

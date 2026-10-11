@@ -27,12 +27,24 @@ type Host struct {
 	// empty list, which is a fact and not a gap.
 	GPUs []Device `json:"gpus"`
 	// Datastores is each storage the host knows that reports a size, by its
-	// name.
-	Datastores map[string]Datastore `json:"storages"`
+	// name. A reading that moves: the size is of what the pool under it has
+	// left to give, and falls by megabytes a minute as the pool fills. So it
+	// is for whoever asks now and is never recorded (Recorded).
+	Datastores map[string]Datastore `json:"storages,omitempty"`
 	// Machines is every virtual machine on the host, the site's and anybody
 	// else's, by id. Which are the site's is the address plan's to say; what
 	// is left is memory the site cannot have.
 	Machines []Machine `json:"machines"`
+}
+
+// Recorded is the host as it may be written into a record the estate is held
+// to matching: only the readings that are the same a minute later. What a
+// host has - its memory, its processors, its devices, the machines on it -
+// holds still until somebody changes the host. How much its datastores hold
+// does not, and belongs with the other measurements that move, on a chart.
+func (h Host) Recorded() Host {
+	h.Datastores = nil
+	return h
 }
 
 // Device is one device, as its vendor and its own name.

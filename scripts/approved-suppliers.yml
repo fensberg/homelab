@@ -535,11 +535,6 @@ endpoints:
 #                   somebody has to go and find
 
 egress:
-  - job: duty.yml/report
-    policy: block
-    hosts:
-      - api.github.com:443
-
   - job: clerk.yml/read
     policy: block
     hosts:
@@ -547,8 +542,10 @@ egress:
       - generativelanguage.googleapis.com:443
       - github.com:443
       - objects.githubusercontent.com:443
+      - proxy.golang.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
+      - sum.golang.org:443
 
   - job: codeql.yml/analyze
     policy: block
@@ -641,7 +638,10 @@ egress:
       GitHub's runner and with no credential of the estate's. The Go
       toolchain and OpenTofu with its providers, fetched as the Validate lane
       fetches them, GitHub's API to find and download the record, and its
-      registry for the release of the platform the site runs.
+      registry for the release of the platform the site runs. And Go's module
+      proxy and checksum database, for the one dependency in the estate's
+      programs: the drafter reads YAML with a library, which it may because
+      it holds no key, and the engineer reads what the drafter draws.
     hosts:
       - api.github.com:443
       - get.opentofu.org:443
@@ -650,9 +650,11 @@ egress:
       - go.dev:443
       - objects.githubusercontent.com:443
       - pkg-containers.githubusercontent.com:443
+      - proxy.golang.org:443
       - registry.opentofu.org:443
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
+      - sum.golang.org:443
 
   - job: plan-infrastructure.yml/report
     policy: block
@@ -779,6 +781,12 @@ egress:
       list to transcribe. Egress for these pods has to be controlled at the
       cluster's network layer instead (#411); until then it is uncontrolled
       and unrecorded, and this entry says so rather than implying otherwise.
+  - job: pr-validation.yml/already-tested
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
   - job: pr-validation.yml/format
     policy: block
     hosts:
@@ -1032,7 +1040,9 @@ egress:
       - api.github.com:443
       - github.com:443
       - objects.githubusercontent.com:443
+      - proxy.golang.org:443
       - release-assets.githubusercontent.com:443
+      - sum.golang.org:443
 
 # Analysis tools this repository installs and runs directly.
 #

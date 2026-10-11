@@ -39,6 +39,12 @@
       "control_plane_count": 3,
       "worker_count": 3,
 
+      "heartbeat": {
+        "provider": "cloudflare",
+        "url": "{{ op://site0-shared/heartbeat/url }}",
+        "secret": "{{ op://site0-shared/heartbeat/secret }}"
+      },
+
       "hypervisor": {
         "provider": "proxmox",
         "vault_provider": "{{ op://site0/hypervisor/provider }}",

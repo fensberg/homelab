@@ -284,7 +284,7 @@ func runGuard(t *testing.T, bin, root, name string) (passed bool, output string)
 
 func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 	skipIfInner(t)
-	heavy(t, "a check on the checks: it copies the repository and runs a guard per mutation, about a minute")
+	heavy(t, "a check on the checks: it copies the repository and runs a guard per mutation, side by side")
 
 	l := readLedger(t)
 
@@ -305,6 +305,11 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 			name += "/" + m.Test
 		}
 		t.Run(name, func(t *testing.T) {
+			// Side by side. Each proof has a copy of the repository of its
+			// own and runs its guard in a process of its own, so nothing one
+			// does can be seen by another - and one after another, two
+			// hundred of them were four minutes of every pull request.
+			t.Parallel()
 			required := []struct{ field, value string }{
 				{"guard", m.Guard}, {"file", m.File},
 				{"mentions", m.Mentions}, {"why", m.Why},
@@ -529,6 +534,17 @@ func satisfiedByProse(baseline, stripped map[string]bool, exempt map[string]stri
 // runAll returns each test's verdict, by name.
 func runAll(t *testing.T, bin, root string) map[string]bool {
 	t.Helper()
+	verdicts, out := allVerdicts(bin, root)
+	if len(verdicts) == 0 {
+		t.Fatalf("no test verdict was parsed from the run in %s:\n%s", root, out)
+	}
+	return verdicts
+}
+
+// allVerdicts is runAll with nothing of the test in it, so that two runs
+// can be made side by side: a test may only be failed from its own
+// goroutine.
+func allVerdicts(bin, root string) (map[string]bool, []byte) {
 	cmd := exec.Command(bin, "-test.v")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), repoRootEnv+"="+root)
@@ -544,10 +560,7 @@ func runAll(t *testing.T, bin, root string) map[string]bool {
 			verdicts[field(line, "--- FAIL: ")] = false
 		}
 	}
-	if len(verdicts) == 0 {
-		t.Fatalf("no test verdict was parsed from the run in %s:\n%s", root, out)
-	}
-	return verdicts
+	return verdicts, out
 }
 
 func field(line, prefix string) string {

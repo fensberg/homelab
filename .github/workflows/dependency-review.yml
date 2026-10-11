@@ -7,10 +7,22 @@
 #
 # Source repository: https://github.com/actions/dependency-review-action
 name: "Dependency Review"
-on: [pull_request]
+on:
+  pull_request:
+  # As sensitive-paths.yml: the merge queue wants an answer from every
+  # required check, and this one compares a pull request's two ends, which
+  # were compared when it was pushed. The run starts and its job does not.
+  merge_group:
 
 permissions:
   contents: read
+
+# A newer push to the same pull request replaces this run. It reads the
+# pull request as it now is, and an answer about a commit that has been
+# pushed over is an answer nobody will read.
+concurrency:
+  group: dependency-review-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 # GitHub's default shell for `run:` is `bash -e {0}`, which has no
 # pipefail: in `a | b` only b's exit status counts, so a failing command
@@ -30,6 +42,7 @@ defaults:
 
 jobs:
   dependency-review:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.

@@ -20,7 +20,7 @@
     "@commitlint/lint": "21.2.3",
     "@commitlint/load": "21.2.3",
     "@playwright/test": "1.63.0",
-    "@types/node": "26.6.3",
+    "@types/node": "26.6.4",
     "@vitest/coverage-v8": "4.1.11",
     "typescript": "7.0.2",
     "vitest": "4.1.11"

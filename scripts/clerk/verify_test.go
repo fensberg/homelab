@@ -32,7 +32,7 @@ func TestADuplicateKeyClaimIsCheckedAgainstTheFile(t *testing.T) {
           sarif_file: handover.sarif
           ref: refs/pull/1/head
 `
-	if dupes := duplicateKeys(body); len(dupes) != 0 {
+	if dupes, _ := duplicateKeys(body); len(dupes) != 0 {
 		t.Fatalf(`three keys in three mappings were read as duplicates: %v
 
 That is the model's mistake reproduced in code. Dropping a TRUE finding is the
@@ -62,7 +62,7 @@ func TestARealDuplicateKeyIsNotDiscarded(t *testing.T) {
     runs-on: ubuntu-latest
     runs-on: self-hosted
 `
-	dupes := duplicateKeys(body)
+	dupes, _ := duplicateKeys(body)
 	if len(dupes) != 1 || dupes[0] != "runs-on" {
 		t.Fatalf("a genuine duplicate in one mapping was not found: %v", dupes)
 	}
@@ -121,11 +121,11 @@ func TestWhatCannotBeSettledIsLeftAlone(t *testing.T) {
 // directly rather than only through the case above.
 func TestASequenceEntryStartsANewMapping(t *testing.T) {
 	same := "list:\n  - name: a\n    value: 1\n  - name: b\n    value: 2\n"
-	if dupes := duplicateKeys(same); len(dupes) != 0 {
+	if dupes, _ := duplicateKeys(same); len(dupes) != 0 {
 		t.Errorf("keys in separate sequence entries were read as duplicates: %v", dupes)
 	}
 	within := "list:\n  - name: a\n    name: b\n"
-	if dupes := duplicateKeys(within); len(dupes) != 1 {
+	if dupes, _ := duplicateKeys(within); len(dupes) != 1 {
 		t.Errorf("a duplicate WITHIN one sequence entry was missed: %v", dupes)
 	}
 }
@@ -141,7 +141,7 @@ func TestKeysInsideABlockScalarAreNotCounted(t *testing.T) {
     name: a
   name: real
 `
-	if dupes := duplicateKeys(body); len(dupes) != 0 {
+	if dupes, _ := duplicateKeys(body); len(dupes) != 0 {
 		t.Errorf("lines inside a block scalar were counted as keys: %v", dupes)
 	}
 }
@@ -173,7 +173,7 @@ func TestTheRepositorysOwnWorkflowsHaveNoDuplicateKeys(t *testing.T) {
 			t.Fatalf("reading %s: %v", e.Name(), err)
 		}
 		checked++
-		if dupes := duplicateKeys(string(body)); len(dupes) != 0 {
+		if dupes, _ := duplicateKeys(string(body)); len(dupes) != 0 {
 			t.Errorf("%s reported duplicate key(s) %v. Either the file really has "+
 				"them, or this check is wrong and about to discard true findings.",
 				e.Name(), dupes)

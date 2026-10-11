@@ -46,6 +46,35 @@ Note this is ordinary practice rather than novel work - Cluster API with the
 Proxmox provider does all three, which is why the decision below is to adopt it
 rather than write a driver.
 
+## Acceptance criteria moved here from epoch 04
+
+Moved on 2026-10-08 from [04](04-observability.md), which agreed them on
+2026-10-03 as part of running a site full on purpose. Each one changes a
+machine or a workload that is running, which is this epoch's to do; that
+one only measures and refuses. They keep the numbers they had there, so
+that what refers to them by number still finds them. Where one says "the
+capacity above" or names another criterion, it means epoch 04's.
+
+- **3. No machine's size or count is a literal** (#615, #566). Both are derived
+  from the capacity above, the overhead each machine carries, and the
+  largest single thing that must fit on one - and then rounded down to a
+  step on a short ladder of standard sizes, whole processors and round
+  amounts of memory, so a machine is "6 and 12" and never a fraction. The
+  count of workers is derived once applications say what they need (10).
+- **9. A workload's reservation follows its measured use**, applied by the
+  autoscaler with no pull request, inside a floor and a ceiling per
+  container, in place where the cluster can, and never past a disruption
+  budget. Use means use under load: a size is taken from what a thing
+  needed while it was doing its work, over a long window, grows quickly
+  and shrinks slowly, and is never taken from one reading or from a thing
+  that sat idle. Until load has been seen, what was declared stands. The
+  hypervisor's own filesystem cache is sized by the same rule, from a
+  default. etcd, the API server and the databases are sized by declaration
+  until there is a reason to trust a guess about them.
+- **14. Work is spread again after a roll** (#628), by the descheduler.
+- **17. The bet has been tested.** Staging is overfilled on purpose and the
+  right things are shed in the right order.
+
 ## Scope
 
 **This epoch adopts and integrates. It does not build a node controller.**
