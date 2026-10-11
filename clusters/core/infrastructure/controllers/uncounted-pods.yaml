@@ -1,0 +1,62 @@
+---
+# Nothing is admitted uncounted.
+#
+# A site's limit is what its machines hold, and the sum that says whether a
+# change fits (scripts/details/capacity) is a sum of reservations. A pod that
+# reserves no memory is counted as nothing while it uses something, and a pod
+# with no priority class has no place in the order work is shed in. Either one
+# makes the sum untrue, so neither is let in.
+#
+# WHOEVER CREATED IT. The rule is on the pod, not on the manifest that made
+# it, because a chart makes pods its settings never mention and a controller
+# makes them while nobody is looking. tests/go/repo reads what is declared;
+# this is the only place that sees what arrives.
+#
+# NO NAMESPACE IS LEFT OUT, the system's own included. A way out for one
+# namespace is a place uncounted work can be put, and the pods that run the
+# machines are the ones a site can least afford to have evicted first for
+# reserving nothing.
+#
+# WHAT IT DOES NOT ASK. A figure for the processor, a limit, or anything of
+# an init container: the sum is of memory that long-running containers
+# reserve, and this asks for exactly what the sum reads.
+#
+# Only a pod being created is judged. One already running is not touched, so
+# the nightly integration tier says whether every pod there now would be let
+# in again.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: uncounted-pods
+spec:
+  # A rule that cannot be evaluated refuses. The other choice lets a pod in
+  # whenever the rule itself is broken, which is when it is needed.
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  validations:
+    - expression: >-
+        object.spec.containers.all(c,
+          has(c.resources) && has(c.resources.requests)
+          && 'memory' in c.resources.requests)
+      message: >-
+        A container in this pod reserves no memory, so the site cannot count
+        it. Give every container a memory request.
+    - expression: >-
+        has(object.spec.priorityClassName)
+        && object.spec.priorityClassName != ''
+      message: >-
+        This pod names no priority class, so it has no place in the order
+        work is shed in. Give it one of critical, interactive or batch.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: uncounted-pods
+spec:
+  policyName: uncounted-pods
+  validationActions: ["Deny"]

@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 222
+floor: 225
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -3078,6 +3078,38 @@ mutations:
       regression this guard exists for: the integration tier spelled the
       backup's location out for itself, and when the backups moved it went on
       looking in the old place.
+
+  - guard: TestNoPodIsLetPastTheRefusalOfUncountedWork
+    file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
+    find: 'validationActions: ["Deny"]'
+    replace: 'validationActions: ["Warn"]'
+    mentions: "told so and let in"
+    why: >
+      Warn is the setting somebody reaches for when the rule has just refused
+      a pod they need, and it reads as a softer form of the same thing. It is
+      the rule switched off: every pod is admitted, and the site's sum goes
+      back to counting only the pods that chose to be counted.
+
+  - guard: TestNoPodIsLetPastTheRefusalOfUncountedWork
+    file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
+    find: "  failurePolicy: Fail"
+    replace: "  failurePolicy: Ignore"
+    mentions: "cannot be evaluated lets the pod in"
+    why: >
+      Ignore is the default people choose so that a broken rule cannot stop
+      the cluster. Here it means the refusal is absent exactly when its
+      expression is wrong, with nothing to say so.
+
+  - guard: TestNoPodIsLetPastTheRefusalOfUncountedWork
+    file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
+    find: "  policyName: uncounted-pods\n"
+    replace: "  policyName: uncounted-pods\n  matchResources:\n    namespaceSelector:\n      matchExpressions:\n        - key: kubernetes.io/metadata.name\n          operator: NotIn\n          values: [kube-system]\n"
+    mentions: "chooses which pods the rule applies to"
+    why: >
+      Leaving the system's namespace out is the standard advice for an
+      admission rule, and the first thing done when one refuses a system pod.
+      It is also a namespace-sized hole in the count, around the pods a site
+      can least afford to have evicted for reserving nothing.
 
 owed_ceiling: 52
 
