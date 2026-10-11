@@ -6,6 +6,9 @@ resources:
   # naming a PriorityClass that does not exist is refused admission rather
   # than defaulted.
   - priority-classes.yaml
+  # After the classes it tells a refused pod to choose from. Everything
+  # below is held to it from the moment it is made.
+  - uncounted-pods.yaml
   - cloudnative-pg.yaml
   - openebs.yaml
   # Needs its namespace, token and authority from

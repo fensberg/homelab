@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 223
+floor: 227
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -3090,6 +3090,50 @@ mutations:
       Without it the step that applies the network manifest ran from a
       workstation and stopped at its first line on the estate's runner, so a
       merge could not deliver a change to the network at all.
+
+  - guard: TestNoPodIsLetPastTheRefusalOfUncountedWork
+    file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
+    find: 'validationActions: ["Deny"]'
+    replace: 'validationActions: ["Warn"]'
+    mentions: "told so and let in"
+    why: >
+      Warn is the setting somebody reaches for when the rule has just refused
+      a pod they need, and it reads as a softer form of the same thing. It is
+      the rule switched off: every pod is admitted, and the site's sum goes
+      back to counting only the pods that chose to be counted.
+
+  - guard: TestNoPodIsLetPastTheRefusalOfUncountedWork
+    file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
+    find: "  failurePolicy: Fail"
+    replace: "  failurePolicy: Ignore"
+    mentions: "cannot be evaluated lets the pod in"
+    why: >
+      Ignore is the default people choose so that a broken rule cannot stop
+      the cluster. Here it means the refusal is absent exactly when its
+      expression is wrong, with nothing to say so.
+
+  - guard: TestNoPodIsLetPastTheRefusalOfUncountedWork
+    file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
+    find: "  policyName: uncounted-pods\n"
+    replace: "  policyName: uncounted-pods\n  matchResources:\n    namespaceSelector:\n      matchExpressions:\n        - key: kubernetes.io/metadata.name\n          operator: NotIn\n          values: [kube-system]\n"
+    mentions: "chooses which pods the rule applies to"
+    why: >
+      Leaving the system's namespace out is the standard advice for an
+      admission rule, and the first thing done when one refuses a system pod.
+      It is also a namespace-sized hole in the count, around the pods a site
+      can least afford to have evicted for reserving nothing.
+
+  - guard: TestTheSchedulerAChangeIsTriedWithIsTheOneASiteRuns
+    file: scripts/versions.env
+    find: "KUBERNETES_VERSION=1.36.3"
+    replace: "KUBERNETES_VERSION=1.35.9"
+    mentions: "a change is tried with Kubernetes"
+    why: >
+      The site's Kubernetes is moved in the cluster's module and this pin sits
+      in another file, for another tool, so moving one and not the other is
+      the ordinary way to do it. Nothing would fail: the trial would start,
+      the scheduler would answer, and the answer would be an older
+      scheduler's.
 
 owed_ceiling: 52
 

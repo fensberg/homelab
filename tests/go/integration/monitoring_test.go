@@ -5,6 +5,7 @@ package integration_test
 import (
 	"encoding/json"
 	"fmt"
+	"homelab/details/capacity"
 	"io"
 	"net/http"
 	"strconv"
@@ -145,7 +146,7 @@ func TestPrometheusScrapesTheControlPlane(t *testing.T) {
 	defer tunnel.Close()
 	tunnel.ForwardPort(t)
 
-	for _, job := range []string{"kube-scheduler", "kube-controller-manager", "kube-etcd"} {
+	for _, job := range []string{capacity.Scheduler, "kube-controller-manager", "kube-etcd"} {
 		t.Run(job, func(t *testing.T) {
 			up := instantQuery(t, tunnel.Endpoint(), fmt.Sprintf(`sum(up{job=%q})`, job))
 			if up > 0 {

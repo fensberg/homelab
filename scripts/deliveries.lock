@@ -13,6 +13,10 @@
 https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-linux-amd64 --hash=sha256:03f1f25d1cc93b9ad6c60569d44060bc4f17ed97075760ed8cfca4b12dcd68cc
 # [end]
 
+# [fetch: etcd ETCD_VERSION=3.6.10]
+https://github.com/etcd-io/etcd/releases/download/v3.6.10/etcd-v3.6.10-linux-amd64.tar.gz --hash=sha256:ed579fafab5701e3aaa95509969e7bc74776a4ae5269d32e3928408b406456ec
+# [end]
+
 # [fetch: flux FLUX_VERSION=2.7.1]
 https://github.com/fluxcd/flux2/releases/download/v2.7.1/flux_2.7.1_linux_amd64.tar.gz --hash=sha256:dbd088c133aee74c409d51fb26d2b3ba3727ca304b88ecc0bf6af878bec007d3
 # [end]
@@ -21,8 +25,20 @@ https://github.com/fluxcd/flux2/releases/download/v2.7.1/flux_2.7.1_linux_amd64.
 https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64 --hash=sha256:c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
 # [end]
 
+# [fetch: kube-apiserver KUBERNETES_VERSION=1.36.3]
+https://dl.k8s.io/release/v1.36.3/bin/linux/amd64/kube-apiserver --hash=sha256:1f217d397234a6d065da663c6e086fdb02c0f0de97a0758ff3e6f3956f4ef8ab
+# [end]
+
+# [fetch: kube-scheduler KUBERNETES_VERSION=1.36.3]
+https://dl.k8s.io/release/v1.36.3/bin/linux/amd64/kube-scheduler --hash=sha256:b8955d4518c902110b50a825364339b1fb673822518ce0ba081a69ed634f8eee
+# [end]
+
 # [fetch: kubeconform KUBECONFORM_VERSION=0.7.0]
 https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz --hash=sha256:c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
+# [end]
+
+# [fetch: kwokctl KWOK_VERSION=0.8.0]
+https://github.com/kubernetes-sigs/kwok/releases/download/v0.8.0/kwokctl-linux-amd64 --hash=sha256:d5743166c657283d6e827c7c4c20cacfd9009fd94830f06718ca7b2c7099461f
 # [end]
 
 # [fetch: opentofu TOFU_VERSION=1.12.6]

@@ -1,6 +1,7 @@
 package phases
 
 import (
+	"homelab/details/capacity"
 	"strings"
 	"testing"
 )
@@ -78,7 +79,7 @@ func TestDaemonSetShortfallsTreatsAnEmptyStatusAsNotReady(t *testing.T) {
 // an empty list - "nothing is failing" and "nothing exists yet" look identical
 // if you only count failures.
 func TestDaemonSetShortfallsRefusesAnEmptyList(t *testing.T) {
-	if _, err := daemonSetShortfalls([]byte(`{"items":[]}`)); err == nil {
+	if _, err := daemonSetShortfalls([]byte(capacity.Nothing)); err == nil {
 		t.Fatal("an empty DaemonSet list passed; it should be refused as a wrong answer")
 	}
 }

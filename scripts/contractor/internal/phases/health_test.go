@@ -1,6 +1,7 @@
 package phases
 
 import (
+	"homelab/details/capacity"
 	"homelab/details/repopath"
 	"os"
 	"path/filepath"
@@ -62,7 +63,7 @@ func TestNotReady_MissingConditionIsNotReady(t *testing.T) {
 // An empty list means the CRDs exist but nothing has been created yet, which
 // is emphatically not "everything is healthy".
 func TestNotReady_EmptyListIsReportedAsSuch(t *testing.T) {
-	got, err := notReady([]byte(`{"items":[]}`))
+	got, err := notReady([]byte(capacity.Nothing))
 	if err != nil {
 		t.Fatalf("notReady: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestDatabaseShortfall_MissingStatusIsZeroReady(t *testing.T) {
 // No Cluster object at all is a failure, not a vacuous pass - it means Flux
 // has not created the database this whole phase exists to wait for.
 func TestDatabaseShortfall_NoClusterIsAnError(t *testing.T) {
-	if _, _, err := databaseInstances([]byte(`{"items":[]}`)); err == nil {
+	if _, _, err := databaseInstances([]byte(capacity.Nothing)); err == nil {
 		t.Error("expected an error when no CNPG Cluster exists")
 	}
 }

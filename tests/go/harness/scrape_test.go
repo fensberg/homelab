@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"homelab/details/capacity"
 	"strings"
 	"testing"
 )
@@ -65,7 +66,7 @@ func TestScrapeFailuresKeepsToItsJob(t *testing.T) {
 // "No targets" and "failing targets" must stay distinguishable - they are
 // different faults. A job with no targets reports zero, not an empty success.
 func TestScrapeFailuresDistinguishesNoTargets(t *testing.T) {
-	failures, total, err := ScrapeFailures([]byte(targetsFixture), "kube-apiserver")
+	failures, total, err := ScrapeFailures([]byte(targetsFixture), capacity.APIServer)
 	if err != nil {
 		t.Fatal(err)
 	}
