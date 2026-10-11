@@ -1075,7 +1075,7 @@ spec:
                   - /cni-uninstall.sh
           resources:
             requests:
-              memory: 320Mi
+              memory: 256Mi
           ports:
             - name: health
               containerPort: 9879

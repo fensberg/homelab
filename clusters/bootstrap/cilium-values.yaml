@@ -84,14 +84,24 @@ hubble:
 # The chart reserves nothing, which left the agent, its proxy and the operator
 # as the only must-run work on a machine that the capacity sum could not see.
 # Each figure is an estimate from one week's peak on site0 - 245, 43 and 90 MiB
-# - rounded up, and none of them is a measurement under load yet.
+# - and none of them is a measurement under load yet.
+#
+# THE AGENT'S IS ITS PEAK AND LITTLE MORE, AND THAT IS DELIBERATE. It was
+# first set at 320Mi, rounded up for comfort. What is reserved on every
+# machine is taken from every machine, and one worker holds an application
+# whose volume keeps it there and which needs all but a few hundred mebibytes
+# of it: 64Mi of comfort here left that worker 34Mi short, the application was
+# put off its machine to make room for the agent and could not come back, and
+# it was down for hours before anybody connected the two (2026-10-11). A
+# reservation is not a limit - the agent may use more than this - so what
+# rounding up buys is only a place in the count, at every machine's expense.
 #
 # No limit on any of them. A limit on the agent is a limit on the machine's
 # network: killed for memory, every pod on that machine loses its routes until
 # it is back.
 resources:
   requests:
-    memory: 320Mi
+    memory: 256Mi
 envoy:
   resources:
     requests:
