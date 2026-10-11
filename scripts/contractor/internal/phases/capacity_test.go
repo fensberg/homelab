@@ -12,7 +12,8 @@ import (
 )
 
 // standIns puts a tofu that hands over a kubeconfig, and a kubectl that
-// answers for the machines and the pods, ahead of the real ones.
+// answers for the machines and the pods and has nothing else to list, ahead
+// of the real ones.
 func standIns(t *testing.T, nodes, pods string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -25,7 +26,7 @@ func standIns(t *testing.T, nodes, pods string) {
 	write("pods.json", pods, 0o600)
 	write("tofu", "#!/bin/sh\necho 'apiVersion: v1'\n", 0o755)
 	write("kubectl", "#!/bin/sh\ncase \"$*\" in\n  *nodes*) cat "+filepath.Join(dir, "nodes.json")+" ;;\n  *pods*) cat "+
-		filepath.Join(dir, "pods.json")+" ;;\n  *) exit 1 ;;\nesac\n", 0o755)
+		filepath.Join(dir, "pods.json")+" ;;\n  *) echo '{\"items\":[]}' ;;\nesac\n", 0o755)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
@@ -41,7 +42,7 @@ const oneRunningPod = `{"items":[{"metadata":{"name":"a"},"spec":{"nodeName":"wk
 // cluster: what a plan with no credential holds a change against.
 func TestTakingARecordKeepsTheSitesCapacityBesideIt(t *testing.T) {
 	standIns(t, twoWorkers, oneRunningPod)
-	ctx := &run.Context{Root: run.Root{Dir: t.TempDir()}}
+	ctx := &run.Context{Root: run.Root{Dir: t.TempDir()}, RepoRoot: t.TempDir(), Site: "sitex"}
 	out := filepath.Join(t.TempDir(), "as-built")
 	if err := recordCapacity(ctx, out, time.Date(2026, 10, 8, 4, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
@@ -50,16 +51,18 @@ func TestTakingARecordKeepsTheSitesCapacityBesideIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no capacity was kept beside the record: %v", err)
 	}
-	site, taken, err := capacity.Unmarshal(raw)
+	site, err := capacity.Unmarshal(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const gib = int64(1) << 30
-	if site.Workers != 20*gib || site.LargestWorker != 10*gib || site.MustRun != 3*gib {
-		t.Errorf("two workers of ten with three reserved were kept as %+v", site)
+	if got := strings.Join(site.Workers(), " "); got != "wk-0 wk-1" || len(site.Of("Pod")) != 1 {
+		t.Errorf("two workers and one pod were kept as workers %q and %d pod(s)", got, len(site.Of("Pod")))
 	}
-	if taken != "2026-10-08T04:00:00Z" {
-		t.Errorf("it does not say when it was read: %q", taken)
+	if !strings.Contains(site.String(), "wk-0 holds 10240 MiB for pods and 3072 is reserved on it") {
+		t.Errorf("the site says how it stands as %q", site.String())
+	}
+	if site.Taken != "2026-10-08T04:00:00Z" {
+		t.Errorf("it does not say when it was read: %q", site.Taken)
 	}
 }
 
@@ -67,7 +70,7 @@ func TestTakingARecordKeepsTheSitesCapacityBesideIt(t *testing.T) {
 // one of nothing, would be a figure a change is let through against.
 func TestAClusterThatCannotBeReadLeavesNoCapacityBehind(t *testing.T) {
 	standIns(t, `{"items": []}`, `{"items": []}`)
-	ctx := &run.Context{Root: run.Root{Dir: t.TempDir()}}
+	ctx := &run.Context{Root: run.Root{Dir: t.TempDir()}, RepoRoot: t.TempDir(), Site: "sitex"}
 	out := filepath.Join(t.TempDir(), "as-built")
 	err := recordCapacity(ctx, out, time.Now())
 	if err == nil || !strings.Contains(err.Error(), "none is a worker") {
