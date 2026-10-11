@@ -23,13 +23,30 @@ type workload struct {
 	CanWait  bool
 }
 
-// asks is what the workload asks the workers to hold for it. Work that can
-// wait asks for nothing: it runs in whatever is free and is not counted.
-func (w workload) asks() int64 {
-	if w.CanWait {
-		return 0
-	}
-	return int64(w.Pods) * w.PodBytes
+// pod is one pod of an application, as its manifest makes it: the workload
+// it belongs to, which of that workload's pods it is, and everything of it
+// a scheduler reads.
+type pod struct {
+	Namespace, Workload string
+	Index               int
+	Labels              any
+	Spec                capacity.Object
+}
+
+// claim is a volume an application's manifests ask for.
+type claim struct {
+	Namespace, Name string
+	Spec            capacity.Object
+}
+
+// asks is what a tree asks a site to run. An application's pods are known
+// exactly, since its manifests are the pods. Everything else is known only
+// by what it reserves: which pod of a chart a setting belongs to is the
+// chart's to say, and a chart is not rendered here.
+type asks struct {
+	Core   map[string]workload
+	Pods   []pod
+	Claims []claim
 }
 
 // drawer has the drafter redraw paths, and directories to be built, of one
@@ -37,8 +54,7 @@ func (w workload) asks() int64 {
 // by drafter.Built and its path, as JSON.
 type drawer func(tree string, builds []string, paths ...string) (map[string]json.RawMessage, error)
 
-// reserved is everything a tree declares for one site that reserves memory,
-// by a name that is the same in two trees when it is the same thing.
+// asked is everything a tree declares for one site that reserves memory.
 //
 // Three places are read, which are the three ways a site is given work: the
 // core every site runs, what the site's own directory adds, and each
@@ -48,8 +64,8 @@ type drawer func(tree string, builds []string, paths ...string) (map[string]json
 //
 // Nothing here reads a manifest's own format. The drafter redraws each one,
 // and this reads the drawing.
-func reserved(tree, site string, workers int, draw drawer) (map[string]workload, error) {
-	out := map[string]workload{}
+func asked(tree, site string, workers int, draw drawer) (asks, error) {
+	out := asks{Core: map[string]workload{}}
 	var paths []string
 	for _, dir := range []string{applications.SitesDir + "/core", applications.SitesDir + "/" + site} {
 		if _, err := os.Stat(filepath.Join(tree, filepath.FromSlash(dir))); err == nil {
@@ -61,19 +77,19 @@ func reserved(tree, site string, workers int, draw drawer) (map[string]workload,
 	}
 	drawn, err := draw(tree, nil, paths...)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
-	var builds []string
+	var builds []build
 	for _, rel := range sortedKeys(drawn) {
 		if !isManifest(rel) {
 			continue
 		}
 		docs, err := documents(rel, drawn[rel])
 		if err != nil {
-			return nil, err
+			return out, err
 		}
-		if err := declared(rel, docs, workers, out); err != nil {
-			return nil, err
+		if err := declared(rel, docs, workers, out.Core); err != nil {
+			return out, err
 		}
 		if strings.HasPrefix(rel, applications.SitesDir+"/"+site+"/") {
 			builds = append(builds, given(docs)...)
@@ -82,26 +98,75 @@ func reserved(tree, site string, workers int, draw drawer) (map[string]workload,
 	if len(builds) == 0 {
 		return out, nil
 	}
-	sort.Strings(builds)
-	for _, dir := range builds {
-		if _, err := os.Stat(filepath.Join(tree, filepath.FromSlash(dir))); err != nil {
-			return nil, fmt.Errorf("the site is given what %s holds, and it is not there, so what it reserves is not known", dir)
+	sort.Slice(builds, func(i, j int) bool { return builds[i].Dir < builds[j].Dir })
+	var dirs []string
+	for _, b := range builds {
+		if _, err := os.Stat(filepath.Join(tree, filepath.FromSlash(b.Dir))); err != nil {
+			return out, fmt.Errorf("the site is given what %s holds, and it is not there, so what it reserves is not known", b.Dir)
 		}
+		dirs = append(dirs, b.Dir)
 	}
-	assembled, err := draw(tree, builds)
+	assembled, err := draw(tree, dirs)
 	if err != nil {
-		return nil, fmt.Errorf("an application the site is given could not be built, so what it reserves is not known: %w", err)
+		return out, fmt.Errorf("an application the site is given could not be built, so what it reserves is not known: %w", err)
 	}
-	for _, dir := range builds {
-		docs, err := documents(dir, assembled[drafter.Built+dir])
+	for _, b := range builds {
+		docs, err := documents(b.Dir, assembled[drafter.Built+b.Dir])
 		if err != nil {
-			return nil, err
+			return out, err
 		}
-		if err := declared("what "+dir+" builds to", docs, workers, out); err != nil {
-			return nil, err
+		if err := out.application("what "+b.Dir+" builds to", b.Namespace, docs, workers); err != nil {
+			return out, err
 		}
 	}
 	return out, nil
+}
+
+// application adds what an application's built documents ask for. The
+// workloads whose manifests are their pods are taken as those pods; the few
+// kinds that are not are counted by what they reserve, as the core is.
+func (a *asks) application(from, namespace string, docs []map[string]any, workers int) error {
+	same := func(s string) string { return s }
+	var others []map[string]any
+	for _, doc := range docs {
+		kind, _ := doc["kind"].(string)
+		meta, _ := doc["metadata"].(map[string]any)
+		name, _ := meta["name"].(string)
+		spec, _ := doc["spec"].(map[string]any)
+		switch kind {
+		case "PersistentVolumeClaim":
+			a.Claims = append(a.Claims, claim{Namespace: namespace, Name: name, Spec: spec})
+		case "Deployment", "StatefulSet":
+			if w, err := podOf(spec); err != nil {
+				return fmt.Errorf("%s %s in %s: %w", kind, name, from, err)
+			} else if w.CanWait {
+				continue
+			}
+			template, _ := spec["template"].(map[string]any)
+			made, _ := template["spec"].(map[string]any)
+			labels, _ := template["metadata"].(map[string]any)
+			templates, _ := spec["volumeClaimTemplates"].([]any)
+			for i := 0; i < count(spec["replicas"]); i++ {
+				scheduled := capacity.Scheduling(made, same, same, same)
+				// A StatefulSet gives each of its pods a claim of its own,
+				// named for the template, the set and the pod's number.
+				for _, t := range templates {
+					tpl, _ := t.(map[string]any)
+					tplMeta, _ := tpl["metadata"].(map[string]any)
+					tplSpec, _ := tpl["spec"].(map[string]any)
+					claimed := fmt.Sprintf("%v-%s-%d", tplMeta["name"], name, i)
+					a.Claims = append(a.Claims, claim{Namespace: namespace, Name: claimed, Spec: tplSpec})
+					volumes, _ := scheduled["volumes"].([]any)
+					scheduled["volumes"] = append(volumes, capacity.Object{"name": fmt.Sprint("t", len(volumes)),
+						"persistentVolumeClaim": capacity.Object{"claimName": claimed}})
+				}
+				a.Pods = append(a.Pods, pod{Namespace: namespace, Workload: kind + "/" + name, Index: i, Labels: labels["labels"], Spec: scheduled})
+			}
+		default:
+			others = append(others, doc)
+		}
+	}
+	return declared(from, others, workers, a.Core)
 }
 
 func sortedKeys(m map[string]json.RawMessage) []string {
@@ -131,11 +196,14 @@ func documents(of string, drawing json.RawMessage) ([]map[string]any, error) {
 	return docs, nil
 }
 
-// given is the directories a site's own documents tell Flux to build from
-// an application: each is an application the site was given, with the
-// environment's settings it was given it in.
-func given(docs []map[string]any) []string {
-	var out []string
+// build is an application a site was given: the directory Flux builds it
+// from, with the environment's settings it was given it in, and the
+// namespace it is put in.
+type build struct{ Dir, Namespace string }
+
+// given is the applications a site's own documents tell Flux to build.
+func given(docs []map[string]any) []build {
+	var out []build
 	for _, doc := range docs {
 		if doc["kind"] != flux.Kustomization {
 			continue
@@ -143,7 +211,8 @@ func given(docs []map[string]any) []string {
 		spec, _ := doc["spec"].(map[string]any)
 		path, _ := spec["path"].(string)
 		if dir := strings.TrimPrefix(path, "./"); strings.HasPrefix(dir, applications.Dir+"/") {
-			out = append(out, dir)
+			namespace, _ := spec["targetNamespace"].(string)
+			out = append(out, build{Dir: dir, Namespace: namespace})
 		}
 	}
 	return out
@@ -285,32 +354,4 @@ func inValues(at string, values map[string]any, waits bool, out map[string]workl
 		}
 	}
 	return nil
-}
-
-// change is what a tree asks for that another did not: what was added to
-// what work that cannot wait reserves, what was given back, and the largest
-// single pod among what is new or was altered.
-func change(before, after map[string]workload) (capacity.Change, []string) {
-	var c capacity.Change
-	var grew []string
-	for name, now := range after {
-		was := before[name]
-		switch d := now.asks() - was.asks(); {
-		case d > 0:
-			c.Added += d
-			grew = append(grew, name)
-		case d < 0:
-			c.Removed += -d
-		}
-		if now != was && !now.CanWait && now.PodBytes > c.LargestPod {
-			c.LargestPod = now.PodBytes
-		}
-	}
-	for name, was := range before {
-		if _, still := after[name]; !still {
-			c.Removed += was.asks()
-		}
-	}
-	sort.Strings(grew)
-	return c, grew
 }

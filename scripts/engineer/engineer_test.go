@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"homelab/details/capacity"
 	"homelab/details/drafter"
@@ -64,7 +67,7 @@ func deployment(name, replicas, priority string, requests ...string) string {
 
 // assigned is the document in a site's file that gives it one application
 // with one environment's settings.
-const assigned = `{"kind":"Kustomization","metadata":{"name":"ledgerkeeper"},"spec":{"path":"./modules/applications/ledgerkeeper/staging"}}`
+const assigned = `{"kind":"Kustomization","metadata":{"name":"ledgerkeeper"},"spec":{"path":"./modules/applications/ledgerkeeper/staging","targetNamespace":"ledgerkeeper"}}`
 
 // asDrawn stands in for the drafter: every file under what was asked for,
 // as it is, and a built directory as every document of every file in it.
@@ -113,9 +116,9 @@ func asDrawn(tree string, builds []string, paths ...string) (map[string]json.Raw
 	return drawn, nil
 }
 
-// What a tree reserves is every pod of every workload it gives the site, by
-// what the pod's containers ask for between them.
-func TestWhatATreeReservesIsEveryPodOfEveryWorkloadTheSiteIsGiven(t *testing.T) {
+// What a tree asks a site for: the pods of an application it was given, as
+// its manifests make them, and what everything else reserves.
+func TestWhatATreeAsksForIsAnApplicationsPodsAndWhatEverythingElseReserves(t *testing.T) {
 	dir := tree(t, map[string][]string{
 		"clusters/core/infrastructure/a.yaml": {
 			deployment("two-of-them", "2", "interactive", "256Mi", "256Mi"),
@@ -126,38 +129,67 @@ func TestWhatATreeReservesIsEveryPodOfEveryWorkloadTheSiteIsGiven(t *testing.T) 
 			  "server":{"replicaCount":2,"resources":{"requests":{"memory":"512Mi"}}},
 			  "worker":{"priorityClassName":"batch","resources":{"requests":{"memory":"8Gi"}}}}}}`,
 		},
-		"clusters/core/versions.env":                          {`"not a manifest, and the drafter redraws it all the same"`},
-		"clusters/north/applications.yaml":                    {assigned},
-		"clusters/south/extra.yaml":                           {deployment("another-sites", "9", "", "1Gi")},
-		"modules/applications/ledgerkeeper/staging/it.yaml":   {deployment("ledgerkeeper", "1", "interactive", "3Gi")},
+		"clusters/core/versions.env":       {`"not a manifest, and the drafter redraws it all the same"`},
+		"clusters/north/applications.yaml": {assigned},
+		"clusters/south/extra.yaml":        {deployment("another-sites", "9", "", "1Gi")},
+		"modules/applications/ledgerkeeper/staging/it.yaml": {
+			deployment("ledgerkeeper", "2", "interactive", "3Gi"),
+			deployment("its-sweeper", "3", "batch", "1Gi"),
+			`{"kind":"PersistentVolumeClaim","metadata":{"name":"books"},"spec":{"storageClassName":"kept","resources":{"requests":{"storage":"5Gi"}}}}`,
+			`{"kind":"StatefulSet","metadata":{"name":"vault"},"spec":{"replicas":2,"volumeClaimTemplates":[{"metadata":{"name":"data"},"spec":{"resources":{"requests":{"storage":"1Gi"}}}}],
+			  "template":{"metadata":{"labels":{"part":"vault"}},"spec":{"priorityClassName":"interactive","containers":[{"name":"c","image":"registry.example/v:1","resources":{"requests":{"memory":"1Gi"}}}],
+			  "volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"books"}}]}}}}`,
+			`{"kind":"CronJob","metadata":{"name":"nightly"},"spec":{"jobTemplate":{"spec":{"template":{"spec":{"containers":[{"name":"c","resources":{"requests":{"memory":"64Mi"}}}]}}}}}}`,
+		},
 		"modules/applications/unassigned/staging/other.yaml":  {deployment("not-given", "5", "", "1Gi")},
 		"modules/applications/ledgerkeeper/production/x.yaml": {deployment("ledgerkeeper", "7", "", "9Gi")},
 	})
-	got, err := reserved(dir, "north", 3, asDrawn)
+	got, err := asked(dir, "north", 3, asDrawn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]int64{
-		"Deployment/things/two-of-them":              1 * gib,
-		"Deployment/things/says-nothing-of-how-many": 1 * gib,
-		"Deployment/things/can-wait":                 0,
-		"DaemonSet/things/on-each":                   3 * 128 << 20,
-		"HelmRelease/things/chart.server":            1 * gib,
-		"HelmRelease/things/chart.worker":            0,
-		"Deployment/things/ledgerkeeper":             3 * gib,
+	want := map[string]workload{
+		"Deployment/things/two-of-them":              {Pods: 2, PodBytes: 512 << 20},
+		"Deployment/things/says-nothing-of-how-many": {Pods: 1, PodBytes: gib},
+		"Deployment/things/can-wait":                 {Pods: 4, PodBytes: 4 * gib, CanWait: true},
+		"DaemonSet/things/on-each":                   {Pods: 3, PodBytes: 128 << 20},
+		"HelmRelease/things/chart.server":            {Pods: 2, PodBytes: 512 << 20},
+		"HelmRelease/things/chart.worker":            {Pods: 1, PodBytes: 8 * gib, CanWait: true},
+		"CronJob/<nil>/nightly":                      {Pods: 1, PodBytes: 64 << 20},
 	}
-	for name, asks := range want {
-		w, ok := got[name]
-		if !ok {
-			t.Errorf("%s reserves and was not found", name)
-			continue
-		}
-		if w.asks() != asks {
-			t.Errorf("%s asks for %d bytes, not %d", name, w.asks(), asks)
+	for name, w := range want {
+		if got.Core[name] != w {
+			t.Errorf("%s is %+v, not %+v", name, got.Core[name], w)
 		}
 	}
-	if len(got) != len(want) {
-		t.Errorf("found %d things that reserve, and the site is given %d: %v", len(got), len(want), got)
+	if len(got.Core) != len(want) {
+		t.Errorf("found %d things that reserve outside an application's own pods, not %d: %v", len(got.Core), len(want), got.Core)
+	}
+
+	// Two pods of the deployment and two of the set, each its own; none of
+	// the work that can wait.
+	var pods []string
+	for _, p := range got.Pods {
+		pods = append(pods, p.Namespace+" "+podName(p))
+	}
+	if strings.Join(pods, ", ") != "ledgerkeeper deployment-ledgerkeeper-0, ledgerkeeper deployment-ledgerkeeper-1, ledgerkeeper statefulset-vault-0, ledgerkeeper statefulset-vault-1" {
+		t.Fatalf("the application's pods are %v", pods)
+	}
+	second, _ := json.Marshal(got.Pods[3])
+	for _, held := range []string{`"claimName":"books"`, `"claimName":"data-vault-1"`, `"part":"vault"`, `"priorityClassName":"interactive"`, `"memory":"1Gi"`} {
+		if !strings.Contains(string(second), held) {
+			t.Errorf("the set's second pod does not hold %s: %s", held, second)
+		}
+	}
+	if strings.Contains(string(second), "registry.example") {
+		t.Errorf("the pod carries more than a scheduler reads: %s", second)
+	}
+	var claims []string
+	for _, c := range got.Claims {
+		claims = append(claims, c.Namespace+"/"+c.Name)
+	}
+	if strings.Join(claims, " ") != "ledgerkeeper/books ledgerkeeper/data-vault-0 ledgerkeeper/data-vault-1" {
+		t.Errorf("the application's claims are %v", claims)
 	}
 }
 
@@ -165,60 +197,218 @@ func TestWhatATreeReservesIsEveryPodOfEveryWorkloadTheSiteIsGiven(t *testing.T) 
 // never counted as nothing: that is a workload let through for free.
 func TestAReservationThatCannotBeReadStopsTheCountAndIsNamed(t *testing.T) {
 	dir := tree(t, map[string][]string{"clusters/core/a.yaml": {deployment("unreadable", "1", "", "lots")}})
-	_, err := reserved(dir, "north", 3, asDrawn)
+	_, err := asked(dir, "north", 3, asDrawn)
 	if err == nil || !strings.Contains(err.Error(), "Deployment/things/unreadable") {
 		t.Fatalf("a size that cannot be read was counted, or what wrote it was not named: %v", err)
 	}
 	refuses := func(string, []string, ...string) (map[string]json.RawMessage, error) {
 		return nil, errors.New("a.yaml: not YAML that can be read")
 	}
-	if _, err := reserved(dir, "north", 3, refuses); err == nil || !strings.Contains(err.Error(), "a.yaml") {
+	if _, err := asked(dir, "north", 3, refuses); err == nil || !strings.Contains(err.Error(), "a.yaml") {
 		t.Errorf("a file the drafter could not redraw was read as one that reserves nothing: %v", err)
 	}
 	notThere := tree(t, map[string][]string{"clusters/north/applications.yaml": {assigned}})
-	if _, err := reserved(notThere, "north", 3, asDrawn); err == nil || !strings.Contains(err.Error(), "ledgerkeeper") {
+	if _, err := asked(notThere, "north", 3, asDrawn); err == nil || !strings.Contains(err.Error(), "ledgerkeeper") {
 		t.Errorf("an application whose directory is not there was counted as reserving nothing: %v", err)
+	}
+	inApp := tree(t, map[string][]string{"clusters/north/applications.yaml": {assigned},
+		"modules/applications/ledgerkeeper/staging/it.yaml": {deployment("ledgerkeeper", "1", "", "lots")}})
+	if _, err := asked(inApp, "north", 3, asDrawn); err == nil || !strings.Contains(err.Error(), "Deployment ledgerkeeper") {
+		t.Errorf("an application's pod reserving a size that cannot be read was drawn, or not named: %v", err)
 	}
 }
 
-// What a change adds is what is asked for now and was not before, and what
-// it gives back the other way about. Work that can wait is neither.
-func TestAChangeIsWhatIsAskedForNowAndWasNotBefore(t *testing.T) {
-	before := map[string]workload{
-		"grows":      {Pods: 1, PodBytes: 1 * gib},
-		"shrinks":    {Pods: 2, PodBytes: 2 * gib},
-		"goes":       {Pods: 1, PodBytes: 3 * gib},
-		"untouched":  {Pods: 1, PodBytes: 6 * gib},
-		"waits-more": {Pods: 1, PodBytes: 1 * gib, CanWait: true},
+// north is a site of a control plane and two workers. One worker runs a
+// pod of the application, a pod of a set that runs on every machine and a
+// job that can wait; the other runs one pod of something in the core.
+func north(t *testing.T) capacity.Snapshot {
+	t.Helper()
+	pod := func(namespace, name, machine, class, owner, ownerName, memory string) string {
+		return `{"metadata":{"namespace":"` + namespace + `","name":"` + name + `","ownerReferences":[{"kind":"` + owner + `","name":"` + ownerName + `"}]},
+		 "spec":{"nodeName":"` + machine + `","priorityClassName":"` + class + `","containers":[{"name":"c","resources":{"requests":{"memory":"` + memory + `"}}}]},"status":{"phase":"Running"}}`
 	}
-	after := map[string]workload{
-		"grows":      {Pods: 3, PodBytes: 1 * gib},
-		"shrinks":    {Pods: 2, PodBytes: 1 * gib},
-		"untouched":  {Pods: 1, PodBytes: 6 * gib},
-		"arrives":    {Pods: 1, PodBytes: 5 * gib},
-		"waits-more": {Pods: 9, PodBytes: 9 * gib, CanWait: true},
+	s, err := capacity.Take(capacity.Listings{
+		Nodes: []byte(`{"items":[
+ {"metadata":{"name":"q-cp-100","labels":{"node-role.kubernetes.io/control-plane":""}},"status":{"allocatable":{"memory":"4Gi"}}},
+ {"metadata":{"name":"q-wk-200","labels":{}},"status":{"allocatable":{"memory":"8Gi"}}},
+ {"metadata":{"name":"q-wk-201","labels":{}},"status":{"allocatable":{"memory":"8Gi"}}}]}`),
+		Namespaces:      []byte(`{"items":[{"metadata":{"name":"ledgerkeeper"}},{"metadata":{"name":"things"}}]}`),
+		PriorityClasses: []byte(`{"items":[]}`), StorageClasses: []byte(`{"items":[]}`), Volumes: []byte(`{"items":[]}`),
+		Claims: []byte(`{"items":[{"metadata":{"namespace":"ledgerkeeper","name":"books"},"spec":{"volumeName":"v"}}]}`),
+		Pods: []byte(`{"items":[` + strings.Join([]string{
+			pod("ledgerkeeper", "ledgerkeeper-7c9-aaaaa", "q-wk-200", "interactive", "ReplicaSet", "ledgerkeeper-7c9", "3Gi"),
+			pod("things", "on-each-x", "q-wk-200", "interactive", "DaemonSet", "on-each", "128Mi"),
+			pod("things", "sweep-1", "q-wk-200", "batch", "Job", "sweep", "6Gi"),
+			pod("things", "core-thing-5-b", "q-wk-201", "interactive", "ReplicaSet", "core-thing-5", "1Gi"),
+		}, ",") + `]}`),
+	}, []string{"ledgerkeeper"}, "2026-10-11T04:00:00Z")
+	if err != nil {
+		t.Fatal(err)
 	}
-	got, grew := change(before, after)
-	// grows by two, and five arrive; shrinks by two, and three go.
-	if got.Added != 7*gib || got.Removed != 5*gib {
-		t.Errorf("added %d GiB and gave back %d, not seven and five", got.Added/gib, got.Removed/gib)
+	return s
+}
+
+func appPod(index int, memory string) pod {
+	return pod{Namespace: "ledgerkeeper", Workload: "Deployment/ledgerkeeper", Index: index, Labels: map[string]any{"app": "lk"},
+		Spec: capacity.Object{"priorityClassName": "interactive", "containers": []any{map[string]any{"name": "c0", "image": "x",
+			"resources": map[string]any{"requests": map[string]any{"memory": memory}}}}}}
+}
+
+// placed is where each pod of a trial is, by its name, with "?" for one
+// left to the scheduler.
+func placed(tr trial) map[string]string {
+	out := map[string]string{}
+	for _, o := range tr.Objects {
+		if o["kind"] == "Pod" {
+			machine, _ := dig(o, "spec", "nodeName").(string)
+			if machine == "" {
+				machine = "?"
+			}
+			out[fmt.Sprint(dig(o, "metadata", "name"))] = machine
+		}
 	}
-	// The largest pod among what is new or was altered: not the six that
-	// was already there, and not the nine that can wait.
-	if got.LargestPod != 5*gib {
-		t.Errorf("the largest pod to place is %d GiB, not five", got.LargestPod/gib)
+	return out
+}
+
+// With a worker gone, what ran on it has to be placed again, the machine is
+// not there to place it on, and a pod that runs on every machine is not
+// made again. Work that can wait is never in a trial.
+func TestAWorkerGoneLeavesItsPodsToBePlacedAndItsOwnBehind(t *testing.T) {
+	was := asks{Pods: []pod{appPod(0, "3Gi")}}
+	all := scenario(north(t), "", was, was)
+	if got := placed(all); len(got) != 3 || got["deployment-ledgerkeeper-0"] != "wk-200" {
+		t.Errorf("with every machine running, an application's untouched pod is not where it is today, or the trial holds more than what cannot wait: %v", got)
 	}
-	if strings.Join(grew, ",") != "arrives,grows" {
-		t.Errorf("what asks for more than it did is %v", grew)
+	gone := scenario(north(t), "wk-200", was, was)
+	got := placed(gone)
+	if len(got) != 2 || got["deployment-ledgerkeeper-0"] != "?" {
+		t.Errorf("with wk-200 gone, its pod is not left to be placed, or the pod of every machine was made again: %v", got)
+	}
+	for _, o := range gone.Objects {
+		if o["kind"] == "Node" && dig(o, "metadata", "name") == "wk-200" {
+			t.Error("the worker that is gone is still in the trial")
+		}
+	}
+	other := scenario(north(t), "wk-201", was, was)
+	moved := 0
+	for name, machine := range placed(other) {
+		if machine == "?" {
+			moved++
+			if !strings.Contains(other.Called["x1/"+name]+other.Called["things/"+name]+fmt.Sprint(other.Called), "made by a ReplicaSet, reserving 1Gi") {
+				t.Errorf("the pod to be placed is not called what it is: %v", other.Called)
+			}
+		}
+	}
+	if moved != 1 {
+		t.Errorf("with wk-201 gone, %d pods are to be placed, not the one it ran", moved)
+	}
+}
+
+// A pod the change alters is the scheduler's to place, and takes the place
+// of the one the site runs; one it adds is too; and what a setting outside
+// an application was raised by is added as that much more.
+func TestWhatAChangeAltersOrAddsIsLeftToTheScheduler(t *testing.T) {
+	was := asks{Pods: []pod{appPod(0, "3Gi")}, Core: map[string]workload{
+		"raised": {Pods: 1, PodBytes: gib}, "more-of-them": {Pods: 1, PodBytes: gib}, "lowered": {Pods: 2, PodBytes: 2 * gib},
+		"waits": {Pods: 1, PodBytes: gib, CanWait: true}}}
+	now := asks{Pods: []pod{appPod(0, "5Gi"), appPod(1, "5Gi")}, Core: map[string]workload{
+		"raised": {Pods: 1, PodBytes: 3 * gib}, "more-of-them": {Pods: 3, PodBytes: gib}, "lowered": {Pods: 1, PodBytes: gib},
+		"waits": {Pods: 9, PodBytes: 9 * gib, CanWait: true}, "new": {Pods: 1, PodBytes: 512 << 20}},
+		Claims: []claim{{Namespace: "ledgerkeeper", Name: "books"}, {Namespace: "elsewhere", Name: "fresh",
+			Spec: capacity.Object{"storageClassName": "kept", "resources": map[string]any{"requests": map[string]any{"storage": "2Gi"}}}}}}
+	tr := scenario(north(t), "", was, now)
+	got := placed(tr)
+	if got["deployment-ledgerkeeper-0"] != "?" || got["deployment-ledgerkeeper-1"] != "?" {
+		t.Errorf("an altered pod and an added one were not left to the scheduler: %v", got)
+	}
+	var stood []string
+	for id, called := range tr.Called {
+		if strings.HasPrefix(id, more+"/") {
+			stood = append(stood, called)
+		}
+	}
+	sort.Strings(stood)
+	want := []string{
+		"what more-of-them asks for beyond what it did, 1024 MiB", "what more-of-them asks for beyond what it did, 1024 MiB",
+		"what new asks for beyond what it did, 512 MiB", "what raised asks for beyond what it did, 2048 MiB",
+	}
+	if strings.Join(stood, "; ") != strings.Join(want, "; ") {
+		t.Errorf("what stands in for the settings that were raised is:\n  %s\nnot:\n  %s", strings.Join(stood, "\n  "), strings.Join(want, "\n  "))
+	}
+	raw, _ := json.Marshal(tr.Objects)
+	for _, held := range []string{`"name":"elsewhere"`, `"name":"engineer-more"`, `"claimRef":{"name":"fresh","namespace":"elsewhere"}`, `"storage":"2Gi"`} {
+		if !strings.Contains(string(raw), held) {
+			t.Errorf("the trial does not hold %s", held)
+		}
+	}
+	if strings.Count(string(raw), `"kind":"PersistentVolume"`) != 1 {
+		t.Errorf("a volume was made for a claim the site already holds, or none for the new one")
+	}
+	if !same(was, was) || same(was, now) {
+		t.Error("two trees were told apart, or not, wrongly")
+	}
+}
+
+// listing is the pods of a cluster a change is tried in, as kubectl lists
+// them.
+func listing(pods ...string) func() ([]byte, error) {
+	return func() ([]byte, error) { return []byte(`{"items":[` + strings.Join(pods, ",") + `]}`), nil }
+}
+
+func listed(name, rest string) string {
+	return `{"metadata":{"namespace":"n","name":"` + name + `"` + rest
+}
+
+// The scheduler's answer is read off the pods: one with no machine waits
+// and says why, one a machine is being cleared for does not, and one put
+// off its machine to make a place was evicted, whether it is on its way
+// out or already gone.
+func TestTheSchedulersAnswerIsReadOffThePods(t *testing.T) {
+	loaded := []capacity.Object{{"metadata": map[string]any{"namespace": "n", "name": "gone-already"}}}
+	got, err := verdicts(listing(
+		listed("on-a-machine", `},"spec":{"nodeName":"wk-1"}}`),
+		listed("no-room", `},"status":{"conditions":[{"type":"PodScheduled","message":"0/2 nodes are available: 2 Insufficient memory."}]}}`),
+		listed("being-cleared-for", `},"status":{"nominatedNodeName":"wk-1","conditions":[{"type":"PodScheduled","message":"waiting"}]}}`),
+		listed("on-its-way-out", `,"deletionTimestamp":"2026-10-11T00:00:00Z"},"spec":{"nodeName":"wk-1"}}`),
+	), loaded, time.Millisecond, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || !strings.Contains(got["n/no-room"], "Insufficient memory") || got["n/on-its-way-out"] != evicted || got["n/gone-already"] != evicted {
+		t.Errorf("the answer was read as %v", got)
+	}
+	if _, err := verdicts(listing(listed("unjudged", `}}`)), nil, time.Millisecond, 3); err == nil || !strings.Contains(err.Error(), "no verdict") {
+		t.Errorf("a pod the scheduler never spoke of was read as an answer: %v", err)
+	}
+	if _, err := verdicts(func() ([]byte, error) { return []byte("no"), nil }, nil, time.Millisecond, 1); err == nil {
+		t.Error("a list that is not one was read")
+	}
+	if _, err := verdicts(func() ([]byte, error) { return nil, errors.New("unreachable") }, nil, time.Millisecond, 1); err == nil {
+		t.Error("a cluster that did not answer was read as one with nothing waiting")
+	}
+}
+
+// stubborn is a scheduler that leaves waiting every pod standing in for a
+// raised setting, and one pod that waits whatever is asked.
+func stubborn(calls *int) judge {
+	return func(tr trial) (map[string]string, error) {
+		*calls++
+		waiting := map[string]string{"things/always": "it waited before the change"}
+		for id := range tr.Called {
+			if strings.HasPrefix(id, more+"/") {
+				waiting[id] = "0/2 nodes are available: 2 Insufficient memory."
+			}
+		}
+		return waiting, nil
 	}
 }
 
 // record is a site's record with its capacity in it, or with none.
-func record(t *testing.T, site *capacity.Site) string {
+func record(t *testing.T, site *capacity.Snapshot) string {
 	t.Helper()
 	dir := t.TempDir()
 	if site != nil {
-		raw, err := capacity.Marshal(*site, "2026-10-11T04:00:00Z")
+		raw, err := capacity.Marshal(*site)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -229,7 +419,7 @@ func record(t *testing.T, site *capacity.Site) string {
 	return dir
 }
 
-func stampOf(t *testing.T, before, after map[string][]string, site *capacity.Site) (int, string) {
+func stampOf(t *testing.T, before, after map[string][]string, site *capacity.Snapshot, place judge) (int, string) {
 	t.Helper()
 	was, now := tree(t, before), tree(t, after)
 	var out, complaints bytes.Buffer
@@ -239,34 +429,44 @@ func stampOf(t *testing.T, before, after map[string][]string, site *capacity.Sit
 				t.Errorf("the tree was asked for at %q, not at the commit the change is from", revision)
 			}
 			return was, func() {}, nil
-		}, asDrawn)
+		}, asDrawn, place)
 	return code, out.String() + complaints.String()
 }
 
-// A site of three workers holding nine each, with eleven reserved.
-var north = capacity.Site{Machines: 3, Workers: 27 * gib, LargestWorker: 9 * gib, MustRun: 11 * gib}
-
-// A change is stamped when what it adds still fits with a worker gone, and
-// refused when it does not, with what grew named.
-func TestAChangeIsStampedWhenItFitsAndRefusedWhenItDoesNot(t *testing.T) {
+// A change is refused when the scheduler leaves waiting something that did
+// not wait before it, with each worker gone in turn, and says nothing when
+// it does not. A change that asks the site for nothing new is not tried.
+func TestAChangeIsStampedWhenTheSchedulerPlacesItAndRefusedWhenItDoesNot(t *testing.T) {
 	core := "clusters/core/a.yaml"
-	code, said := stampOf(t,
-		map[string][]string{core: {deployment("thing", "1", "", "1Gi")}},
-		map[string][]string{core: {deployment("thing", "8", "", "1Gi")}}, &north)
-	if code != 0 || said != "" {
-		t.Errorf("seven more on eleven, in eighteen, was not stamped in silence (%d):\n%s", code, said)
+	site := north(t)
+	one := map[string][]string{core: {deployment("thing", "1", "", "1Gi")}}
+
+	calls := 0
+	if code, said := stampOf(t, one, one, &site, stubborn(&calls)); code != 0 || said != "" || calls != 0 {
+		t.Errorf("a change that asks for nothing new was tried %d time(s), or something was said of it (%d):\n%s", calls, code, said)
 	}
-	code, said = stampOf(t,
-		map[string][]string{core: {deployment("thing", "1", "", "1Gi")}},
-		map[string][]string{core: {deployment("thing", "9", "", "1Gi")}}, &north)
-	if code != 1 || !strings.Contains(said, "REFUSED") || !strings.Contains(said, "OVER BY 1.0") || !strings.Contains(said, "Deployment/things/thing") {
-		t.Errorf("eight more on eleven, in eighteen, was not refused with what grew named (%d):\n%s", code, said)
+	code, said := stampOf(t, one, map[string][]string{core: {deployment("thing", "2", "", "1Gi")}}, &site, stubborn(&calls))
+	// With every machine running, and with each of two workers gone, the
+	// site before the change and the site with it: six trials.
+	if calls != 6 {
+		t.Errorf("the change was tried %d times, not before and after for every machine running and each worker gone", calls)
 	}
-	code, said = stampOf(t,
-		map[string][]string{core: {deployment("thing", "1", "", "1Gi")}},
-		map[string][]string{core: {deployment("thing", "1", "", "1Gi"), deployment("more-of-what-waits", "20", "batch", "4Gi")}}, &north)
-	if code != 0 || said != "" {
-		t.Errorf("eighty gibibytes of work that can wait was held against what cannot, or something was said of it (%d):\n%s", code, said)
+	for _, want := range []string{"REFUSED", "With every machine running", "With wk-200 gone", "With wk-201 gone",
+		"what Deployment/things/thing asks for beyond what it did, 1024 MiB: 0/2 nodes are available", "as read 2026-10-11T04:00:00Z"} {
+		if code != 1 || !strings.Contains(said, want) {
+			t.Errorf("a change the scheduler could not place was not refused saying %q (%d):\n%s", want, code, said)
+		}
+	}
+	if strings.Contains(said, "it waited before the change") {
+		t.Errorf("a pod that waited before the change was held against it:\n%s", said)
+	}
+	placesAll := func(trial) (map[string]string, error) { return nil, nil }
+	if code, said := stampOf(t, one, map[string][]string{core: {deployment("thing", "2", "", "1Gi")}}, &site, placesAll); code != 0 || said != "" {
+		t.Errorf("a change the scheduler placed was not stamped in silence (%d):\n%s", code, said)
+	}
+	broken := func(trial) (map[string]string, error) { return nil, errors.New("the cluster would not start") }
+	if code, said := stampOf(t, one, map[string][]string{core: {deployment("thing", "2", "", "1Gi")}}, &site, broken); code != 1 || !strings.Contains(said, "would not start") {
+		t.Errorf("a change that could not be tried was let through, or not told why (%d):\n%s", code, said)
 	}
 }
 
@@ -274,13 +474,110 @@ func TestAChangeIsStampedWhenItFitsAndRefusedWhenItDoesNot(t *testing.T) {
 // something is refused for it; one that asks for nothing is not.
 func TestAChangeAgainstASiteNobodyHasReadIsRefusedOnlyIfItAsksForSomething(t *testing.T) {
 	core := "clusters/core/a.yaml"
-	same := map[string][]string{core: {deployment("thing", "1", "", "1Gi")}}
-	if code, said := stampOf(t, same, same, nil); code != 0 || said != "" {
+	calls := 0
+	unchanged := map[string][]string{core: {deployment("thing", "1", "", "1Gi")}}
+	if code, said := stampOf(t, unchanged, unchanged, nil, stubborn(&calls)); code != 0 || said != "" {
 		t.Errorf("a change that asks for nothing was not let through an unread site in silence (%d):\n%s", code, said)
 	}
-	code, said := stampOf(t, same, map[string][]string{core: {deployment("thing", "2", "", "1Gi")}}, nil)
-	if code != 1 || !strings.Contains(said, "REFUSED") || !strings.Contains(said, "is not on record") {
+	code, said := stampOf(t, unchanged, map[string][]string{core: {deployment("thing", "2", "", "1Gi")}}, nil, stubborn(&calls))
+	if code != 1 || !strings.Contains(said, "REFUSED") || !strings.Contains(said, "is not on record") || calls != 0 {
 		t.Errorf("a change that asks for more was let through a site nobody has read, or not told why (%d):\n%s", code, said)
+	}
+	stale := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stale, capacity.File), []byte(`{"workers_gib": 27}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, complaints bytes.Buffer
+	if code := stamp([]string{"-site", "north", "-record", stale, "-base", "x"}, &out, &complaints, t.TempDir(), nil, asDrawn, nil); code != 1 || !strings.Contains(complaints.String(), "holds no machine") {
+		t.Errorf("a record from before the snapshot was read as one (%d): %s", code, complaints.String())
+	}
+	if code := stamp([]string{"-site", "north"}, &out, &complaints, t.TempDir(), nil, asDrawn, nil); code != 2 {
+		t.Errorf("a stamp asked for with no record or base answered %d", code)
+	}
+}
+
+// standInPrograms puts programs of the names the trial runs ahead of the
+// real ones. Each writes down what it was asked; the one that lists pods
+// answers that everything standing in for a raised setting waits.
+func standInPrograms(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	log := filepath.Join(dir, "asked.log")
+	script := "#!/bin/sh\necho \"$(basename \"$0\") $*\" >> " + log + "\n"
+	for _, program := range []string{starter, store, apiServer, scheduler} {
+		if err := os.WriteFile(filepath.Join(dir, program), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lister := script + `case "$*" in
+  *pods.json*) for f in "$@"; do last="$f"; done; cp "$last" ` + filepath.Join(dir, "pods") + ` ;;
+  get*) if grep -q '"namespace":"` + more + `"' ` + filepath.Join(dir, "pods") + ` 2>/dev/null; then
+      echo '{"items":[{"metadata":{"namespace":"` + more + `","name":"more-1-0"},"status":{"conditions":[{"type":"PodScheduled","message":"0/2 nodes are available: 2 Insufficient memory."}]}}]}'
+    else echo '{"items":[]}'; fi ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, asker), []byte(lister), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return log
+}
+
+// quickly has a trial against programs that answer at once not wait on them
+// as it would on a real scheduler.
+func quickly(t *testing.T) {
+	t.Helper()
+	was := pause
+	pause = time.Millisecond
+	t.Cleanup(func() { pause = was })
+}
+
+// A trial starts a cluster of three programs and no more, each the one
+// already delivered; loads the site before its pods, with each machine
+// given its own taints; and stops the cluster when it is done.
+func TestATrialStartsLoadsAsksAndStopsInThatOrder(t *testing.T) {
+	log := standInPrograms(t)
+	quickly(t)
+	waiting, err := realScheduler(scenario(north(t), "", asks{}, asks{Core: map[string]workload{"raised": {Pods: 1, PodBytes: gib}}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for id, why := range waiting {
+		if id == more+"/more-1-0" && strings.Contains(why, "Insufficient memory") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("what the cluster said waits was read as %v", waiting)
+	}
+	raw, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var steps []string
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		words := strings.Fields(line)
+		step := words[0] + " " + words[1]
+		if words[1] == "apply" {
+			step += " " + filepath.Base(words[len(words)-1])
+		}
+		if len(steps) == 0 || steps[len(steps)-1] != step {
+			steps = append(steps, step)
+		}
+	}
+	want := "kwokctl create, kubectl apply standing.json, kubectl patch, kubectl apply pods.json, kubectl get, kwokctl delete"
+	if strings.Join(steps, ", ") != want {
+		t.Errorf("the trial did:\n  %s\nnot:\n  %s", strings.Join(steps, ", "), want)
+	}
+	first := strings.Split(string(raw), "\n")[0]
+	for _, held := range []string{"--components etcd,kube-apiserver,kube-scheduler", "--etcd-binary ", "--kube-apiserver-binary ", "--kube-scheduler-binary ", "--runtime binary"} {
+		if !strings.Contains(first, held) {
+			t.Errorf("the cluster was started without %q: %s", held, first)
+		}
+	}
+	if strings.Count(string(raw), "kubectl patch node") != 3 || !strings.Contains(string(raw), `{"spec":{"taints":null}}`) {
+		t.Errorf("each of three machines was not given its own taints and no others:\n%s", raw)
 	}
 }
 
@@ -310,11 +607,11 @@ func TestACommitsTreeIsTakenOutAsItWasThen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer done()
-	got, err := reserved(dir, "north", 3, asDrawn)
+	got, err := asked(dir, "north", 3, asDrawn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["Deployment/things/thing"].Pods != 1 {
+	if got.Core["Deployment/things/thing"].Pods != 1 {
 		t.Errorf("the commit's tree was read as the working tree: %+v", got)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "docs")); err == nil {
@@ -327,7 +624,7 @@ func TestACommitsTreeIsTakenOutAsItWasThen(t *testing.T) {
 
 // The program itself, started in a checkout, judges that checkout: it takes
 // the commit before out of it, has the real drafter redraw both, and leaves
-// quietly when the change fits. This is the one test here that reads YAML,
+// quietly when the change asks for nothing new. This is the one test here that reads YAML,
 // because it is the one that goes through the drafter.
 func TestTheProgramItselfJudgesTheCheckoutItIsStartedIn(t *testing.T) {
 	repo := t.TempDir()
@@ -367,19 +664,37 @@ func TestTheProgramItselfJudgesTheCheckoutItIsStartedIn(t *testing.T) {
 		t.Errorf("asked something it does not do, the program answered %d: %s", code, complaints.String())
 	}
 
-	// Eight more of a gibibyte each, on a site with seven to spare.
-	write("9")
-	held := record(t, &north)
+	// Another of a gibibyte, tried in a cluster that leaves it waiting.
+	standInPrograms(t)
+	quickly(t)
+	write("2")
+	site := north(t)
+	held := record(t, &site)
 	out.Reset()
 	if code := run([]string{"stamp", "-site", "north", "-record", held, "-base", "HEAD"}, &out, &complaints); code != 1 || !strings.Contains(out.String(), "REFUSED") {
 		t.Errorf("a change that does not fit was not refused by the program itself (%d): %s%s", code, out.String(), complaints.String())
 	}
 
 	// And as it is started: on its own arguments, leaving quietly for a
-	// change that fits.
-	write("2")
+	// change that asks the site for nothing new.
+	write("1")
 	args := os.Args
 	t.Cleanup(func() { os.Args = args })
 	os.Args = []string{args[0], "stamp", "-site", "north", "-record", held, "-base", "HEAD"}
 	main()
+}
+
+// A cluster that will not start is an error that says what the program
+// starting it said last, and never a site with nothing waiting.
+func TestAClusterThatWillNotStartIsNotAnAnswer(t *testing.T) {
+	dir := t.TempDir()
+	refuses := "#!/bin/sh\necho 'downloading' >&2\necho 'no such release' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, starter), []byte(refuses), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	waiting, err := realScheduler(scenario(north(t), "", asks{}, asks{}))
+	if err == nil || waiting != nil || !strings.Contains(err.Error(), "could not be started") || !strings.Contains(err.Error(), "no such release") {
+		t.Errorf("a cluster that would not start answered %v, %v", waiting, err)
+	}
 }
