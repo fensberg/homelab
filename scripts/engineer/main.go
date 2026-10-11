@@ -87,15 +87,19 @@ func stamp(args []string, out, complaints io.Writer, repository string, treeAt f
 
 	var standing capacity.Snapshot
 	raw, err := os.ReadFile(filepath.Join(*record, capacity.File))
-	onRecord := err == nil
+	onRecord, unread := err == nil, ""
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		// Said below, and only if the change asks the site for something.
 	case err != nil:
 		return fail(err)
 	default:
+		// A record that cannot be read is no record. It is said below, and
+		// only if the change asks the site for something: the record a site
+		// holds was written by its last converge, and a pull request that
+		// touches nothing a site runs is not that record's to stop.
 		if standing, err = capacity.Unmarshal(raw); err != nil {
-			return fail(err)
+			onRecord, unread = false, ": "+err.Error()
 		}
 	}
 
@@ -126,7 +130,7 @@ func stamp(args []string, out, complaints io.Writer, repository string, treeAt f
 		return 0
 	}
 	if !onRecord {
-		fmt.Fprintf(out, "What %s runs is not on record, and this change alters what it is asked to run.\n\nREFUSED: there is nothing to try the change against. The next converge takes the record.\n", *site)
+		fmt.Fprintf(out, "What %s runs is not on record%s.\n\nThis change alters what the site is asked to run.\n\nREFUSED: there is nothing to try the change against. The next converge takes the record.\n", *site, unread)
 		return 1
 	}
 	waits, err := held(standing, was, is, place)

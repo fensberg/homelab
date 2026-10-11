@@ -85,7 +85,7 @@
 # require editing two places, and removing one should always require a visible,
 # reviewable act rather than a quiet deletion. Same shape as
 # tests/coverage-baseline.json, for the same reason.
-floor: 225
+floor: 226
 
 mutations:
   - guard: TestTheContractorWritesAResourceAddressInOnePlace
@@ -3110,6 +3110,18 @@ mutations:
       admission rule, and the first thing done when one refuses a system pod.
       It is also a namespace-sized hole in the count, around the pods a site
       can least afford to have evicted for reserving nothing.
+
+  - guard: TestTheSchedulerAChangeIsTriedWithIsTheOneASiteRuns
+    file: scripts/versions.env
+    find: "KUBERNETES_VERSION=1.36.3"
+    replace: "KUBERNETES_VERSION=1.35.9"
+    mentions: "a change is tried with Kubernetes"
+    why: >
+      The site's Kubernetes is moved in the cluster's module and this pin sits
+      in another file, for another tool, so moving one and not the other is
+      the ordinary way to do it. Nothing would fail: the trial would start,
+      the scheduler would answer, and the answer would be an older
+      scheduler's.
 
 owed_ceiling: 52
 

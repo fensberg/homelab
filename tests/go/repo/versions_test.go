@@ -300,3 +300,37 @@ Name the pin outside the namespace. %s is the one spelling checked to be
 inert.`, key, flag, inert)
 	}
 }
+
+// The scheduler a change is tried with is the scheduler a site runs.
+//
+// The engineer's answer is only the site's answer if the two are the same
+// program. A change to how the scheduler places work arrives with a version
+// of Kubernetes, and a trial left on the old one would go on stamping what
+// the site itself no longer would. The two are pinned in two files for two
+// tools - a site's machines take theirs from the cluster's module, and a
+// delivery takes its from versions.env - so this holds them equal.
+var triedWith = regexp.MustCompile(`(?m)^KUBERNETES_VERSION=(\d+\.\d+\.\d+)$`)
+
+func TestTheSchedulerAChangeIsTriedWithIsTheOneASiteRuns(t *testing.T) {
+	env, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts", "versions.env"))
+	if err != nil {
+		t.Fatalf("reading versions.env: %v", err)
+	}
+	tried := triedWith.FindSubmatch(env)
+	if tried == nil {
+		t.Fatal("scripts/versions.env pins no KUBERNETES_VERSION=X.Y.Z, so nothing says which scheduler a change is tried with")
+	}
+	_, declared := tofuDeclaring(t, `kubernetes_version = "`)
+	runs := kubernetesVersion.FindSubmatch([]byte(declared))
+	if runs == nil {
+		t.Fatal(`could not find kubernetes_version = "X.Y.Z" where the cluster's module declares it`)
+	}
+	site := string(runs[1]) + "." + string(runs[2]) + "." + string(runs[3])
+	if string(tried[1]) != site {
+		t.Errorf(`a change is tried with Kubernetes %s and a site runs %s.
+
+The engineer stamps a change on the word of a scheduler, and it has to be the
+site's. Move KUBERNETES_VERSION in scripts/versions.env to %s and run
+task order-deliveries, in the change that moves the site.`, tried[1], site, site)
+	}
+}

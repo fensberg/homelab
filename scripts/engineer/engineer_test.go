@@ -483,14 +483,26 @@ func TestAChangeAgainstASiteNobodyHasReadIsRefusedOnlyIfItAsksForSomething(t *te
 	if code != 1 || !strings.Contains(said, "REFUSED") || !strings.Contains(said, "is not on record") || calls != 0 {
 		t.Errorf("a change that asks for more was let through a site nobody has read, or not told why (%d):\n%s", code, said)
 	}
+	// A record written before the snapshot was is no record either: it
+	// stops a change that asks for something, and nothing else.
 	stale := t.TempDir()
 	if err := os.WriteFile(filepath.Join(stale, capacity.File), []byte(`{"workers_gib": 27}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	var out, complaints bytes.Buffer
-	if code := stamp([]string{"-site", "north", "-record", stale, "-base", "x"}, &out, &complaints, t.TempDir(), nil, asDrawn, nil); code != 1 || !strings.Contains(complaints.String(), "the next converge writes one") {
-		t.Errorf("a record from before the snapshot was read as one (%d): %s", code, complaints.String())
+	stampStale := func(after map[string][]string) (int, string) {
+		was, now := tree(t, unchanged), tree(t, after)
+		var out, complaints bytes.Buffer
+		code := stamp([]string{"-site", "north", "-record", stale, "-base", "x"}, &out, &complaints, now,
+			func(string, string) (string, func(), error) { return was, func() {}, nil }, asDrawn, stubborn(&calls))
+		return code, out.String() + complaints.String()
 	}
+	if code, said := stampStale(unchanged); code != 0 || said != "" {
+		t.Errorf("a change that asks for nothing was stopped by a record that cannot be read (%d):\n%s", code, said)
+	}
+	if code, said := stampStale(map[string][]string{core: {deployment("thing", "2", "", "1Gi")}}); code != 1 || !strings.Contains(said, "the next converge writes one") || calls != 0 {
+		t.Errorf("a change that asks for more was let through a record that cannot be read, or not told why (%d):\n%s", code, said)
+	}
+	var out, complaints bytes.Buffer
 	if code := stamp([]string{"-site", "north"}, &out, &complaints, t.TempDir(), nil, asDrawn, nil); code != 2 {
 		t.Errorf("a stamp asked for with no record or base answered %d", code)
 	}
