@@ -67,9 +67,9 @@ func scenario(s capacity.Snapshot, gone string, before, now asks) trial {
 			if name == gone {
 				continue
 			}
-		case "PersistentVolumeClaim":
+		case capacity.KindClaim:
 			claims[namespace+"/"+name] = true
-		case "Pod":
+		case capacity.KindPod:
 			continue
 		}
 		add(o)
@@ -90,20 +90,20 @@ func scenario(s capacity.Snapshot, gone string, before, now asks) trial {
 		claims[c.Namespace+"/"+c.Name] = true
 		volume := fmt.Sprintf("engineer-new-%d", i)
 		size := dig(c.Spec, "resources", "requests", "storage")
-		add(capacity.Object{"apiVersion": "v1", "kind": "PersistentVolume", "metadata": capacity.Object{"name": volume},
+		add(capacity.Object{"apiVersion": "v1", "kind": capacity.KindVolume, "metadata": capacity.Object{"name": volume},
 			"spec": capacity.Object{"capacity": capacity.Object{"storage": size}, "accessModes": c.Spec["accessModes"],
-				"storageClassName": c.Spec["storageClassName"], "hostPath": capacity.Object{"path": "/x"},
+				capacity.StorageClassKey: c.Spec[capacity.StorageClassKey], "hostPath": capacity.Object{"path": "/x"},
 				"claimRef": capacity.Object{"namespace": c.Namespace, "name": c.Name}}})
-		add(capacity.Object{"apiVersion": "v1", "kind": "PersistentVolumeClaim",
+		add(capacity.Object{"apiVersion": "v1", "kind": capacity.KindClaim,
 			"metadata": capacity.Object{"namespace": c.Namespace, "name": c.Name, "annotations": capacity.Object{capacity.BoundNote: "yes"}},
-			"spec": capacity.Object{"accessModes": c.Spec["accessModes"], "storageClassName": c.Spec["storageClassName"], "volumeName": volume,
+			"spec": capacity.Object{"accessModes": c.Spec["accessModes"], capacity.StorageClassKey: c.Spec[capacity.StorageClassKey], "volumeName": volume,
 				"resources": capacity.Object{"requests": capacity.Object{"storage": size}}}})
 	}
 
 	// Where each pod of an application is today, in the order the snapshot
 	// holds them.
 	today := map[string][]string{}
-	for _, o := range s.Of("Pod") {
+	for _, o := range s.Of(capacity.KindPod) {
 		meta, _ := o["metadata"].(map[string]any)
 		namespace, _ := meta["namespace"].(string)
 		notes, _ := meta["annotations"].(map[string]any)
@@ -141,7 +141,7 @@ func scenario(s capacity.Snapshot, gone string, before, now asks) trial {
 			spec["nodeName"] = at[p.Index]
 		}
 		t.Called[p.Namespace+"/"+name] = fmt.Sprintf("%s in %s, reserving %s", p.Workload, p.Namespace, reserves(spec))
-		add(capacity.Object{"apiVersion": "v1", "kind": "Pod",
+		add(capacity.Object{"apiVersion": "v1", "kind": capacity.KindPod,
 			"metadata": capacity.Object{"namespace": p.Namespace, "name": name, "labels": p.Labels}, "spec": spec})
 	}
 
@@ -162,7 +162,7 @@ func scenario(s capacity.Snapshot, gone string, before, now asks) trial {
 			}
 			pod := fmt.Sprintf("more-%d-%d", len(t.Called), i)
 			t.Called[more+"/"+pod] = fmt.Sprintf("what %s asks for beyond what it did, %d MiB", name, extra>>20)
-			add(capacity.Object{"apiVersion": "v1", "kind": "Pod", "metadata": capacity.Object{"namespace": more, "name": pod},
+			add(capacity.Object{"apiVersion": "v1", "kind": capacity.KindPod, "metadata": capacity.Object{"namespace": more, "name": pod},
 				"spec": capacity.Object{capacity.PriorityClassKey: mustRun, "containers": []any{capacity.Object{"name": "c0", "image": "x",
 					"resources": capacity.Object{"requests": capacity.Object{"memory": fmt.Sprint(extra)}}}}}})
 		}

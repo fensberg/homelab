@@ -22,8 +22,8 @@ const (
 	starter   = "kwokctl"
 	asker     = "kubectl"
 	store     = "etcd"
-	apiServer = "kube-apiserver"
-	scheduler = "kube-scheduler"
+	apiServer = capacity.APIServer
+	scheduler = capacity.Scheduler
 )
 
 // pause is how long the scheduler is given between two looks at what it
@@ -53,17 +53,8 @@ func realScheduler(t trial) (map[string]string, error) {
 	defer os.RemoveAll(dir)
 	name := filepath.Base(dir)
 	kubeconfig := filepath.Join(dir, "kubeconfig")
-	run := func(program string, args ...string) ([]byte, error) {
-		cmd := exec.Command(program, args...)
-		cmd.Env = append(os.Environ(), "KWOK_WORKDIR="+filepath.Join(dir, "work"), "KUBECONFIG="+kubeconfig)
-		var complaints bytes.Buffer
-		cmd.Stderr = &complaints
-		out, err := cmd.Output()
-		if err != nil {
-			return nil, fmt.Errorf("%s %s: %w: %s", program, strings.Join(args, " "), err, lastLine(complaints.String()))
-		}
-		return out, nil
-	}
+	// What each program needs to find the cluster.
+	env := []string{"KWOK_WORKDIR=" + filepath.Join(dir, "work"), "KUBECONFIG=" + kubeconfig}
 
 	start := []string{"create", "cluster", "--name", name, "--runtime", "binary",
 		"--components", strings.Join([]string{store, apiServer, scheduler}, ","), "--kubeconfig", kubeconfig}
@@ -74,10 +65,12 @@ func realScheduler(t trial) (map[string]string, error) {
 			start = append(start, "--"+program+"-binary", path)
 		}
 	}
-	if _, err := run(starter, start...); err != nil {
+	if _, err := asking(starter, env, start...); err != nil {
 		return nil, fmt.Errorf("the cluster a change is tried in could not be started: %w", err)
 	}
-	defer run(starter, "delete", "cluster", "--name", name) //nolint:errcheck // the directory it lives in is removed in any case
+	// Stopped whatever happens. If it will not stop there is nothing to do
+	// about it here, and the directory it lives in is removed in any case.
+	defer func() { _, _ = asking(starter, env, "delete", "cluster", "--name", name) }()
 
 	// Everything but the pods first, so a pod finds its machine, its class
 	// and its claim already there. Every namespace is given the account a
@@ -85,7 +78,7 @@ func realScheduler(t trial) (map[string]string, error) {
 	var standing, pods []capacity.Object
 	for _, o := range t.Objects {
 		switch o["kind"] {
-		case "Pod":
+		case capacity.KindPod:
 			pods = append(pods, o)
 		case "Namespace":
 			standing = append(standing, o, capacity.Object{"apiVersion": "v1", "kind": "ServiceAccount",
@@ -103,7 +96,7 @@ func realScheduler(t trial) (map[string]string, error) {
 		if err := os.WriteFile(path, raw, 0o600); err != nil {
 			return err
 		}
-		_, err = run(asker, "apply", "--server-side", "--force-conflicts", "-f", path)
+		_, err = asking(asker, env, "apply", "--server-side", "--force-conflicts", "-f", path)
 		return err
 	}
 	if err := load("standing.json", standing); err != nil {
@@ -120,14 +113,31 @@ func realScheduler(t trial) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, err := run(asker, "patch", "node", fmt.Sprint(dig(o, "metadata", "name")), "--type", "merge", "-p", string(patch)); err != nil {
+		if _, err := asking(asker, env, "patch", "node", fmt.Sprint(dig(o, "metadata", "name")), "--type", "merge", "-p", string(patch)); err != nil {
 			return nil, err
 		}
 	}
 	if err := load("pods.json", pods); err != nil {
 		return nil, fmt.Errorf("the pods could not be loaded into the cluster a change is tried in: %w", err)
 	}
-	return verdicts(func() ([]byte, error) { return run(asker, "get", "pods", "--all-namespaces", "-o", "json") }, pods, pause, 90)
+	return verdicts(func() ([]byte, error) {
+		return asking(asker, env, "get", "pods", capacity.EveryNamespace, "-o", "json")
+	}, pods, pause, 90)
+}
+
+// asking runs one of the trial's programs with what it needs to find the
+// cluster, and gives what it printed. What it complained of last is the
+// error's, since that is where a program says why.
+func asking(program string, env []string, args ...string) ([]byte, error) {
+	cmd := exec.Command(program, args...)
+	cmd.Env = append(os.Environ(), env...)
+	var complaints bytes.Buffer
+	cmd.Stderr = &complaints
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: %w: %s", program, strings.Join(args, " "), err, lastLine(complaints.String()))
+	}
+	return out, nil
 }
 
 // verdicts waits until the scheduler has said something of every pod with no

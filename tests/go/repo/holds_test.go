@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"homelab/details/capacity"
 	"io"
 	"path/filepath"
 	"regexp"
@@ -182,7 +183,7 @@ func classesNamed(n *yaml.Node, into *[]string) {
 	if n.Kind == yaml.MappingNode {
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			key, value := n.Content[i].Value, n.Content[i+1]
-			if (key == "storageClassName" || key == "storageClass") && value.Kind == yaml.ScalarNode && value.Value != "" {
+			if (key == capacity.StorageClassKey || key == "storageClass") && value.Kind == yaml.ScalarNode && value.Value != "" {
 				*into = append(*into, value.Value)
 			}
 		}
@@ -227,9 +228,9 @@ func storageDeclared(t *testing.T) []keeper {
 			if kind == nil || md == nil || mappingValue(md, "name") == nil {
 				continue
 			}
-			keeps := kind.Value == "PersistentVolumeClaim" ||
+			keeps := kind.Value == capacity.KindClaim ||
 				kind.Value == "Cluster" && mappingValue(mappingValue(top, "spec"), "storage") != nil ||
-				hasKey(top, "volumeClaimTemplate", "volumeClaimTemplates")
+				hasKey(top, "volumeClaimTemplate", capacity.ClaimTemplatesKey)
 			if keeps {
 				var classes []string
 				classesNamed(top, &classes)

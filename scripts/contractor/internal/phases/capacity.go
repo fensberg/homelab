@@ -35,7 +35,7 @@ func recordCapacity(ctx *run.Context, dir string, taken time.Time) error {
 		"persistentvolumes": &listings.Volumes, "persistentvolumeclaims": &listings.Claims,
 		"priorityclasses": &listings.PriorityClasses, "storageclasses": &listings.StorageClasses,
 	} {
-		if *into, err = kubectl(ctx, kubeconfig, "get", list, "--all-namespaces", "-o", "json"); err != nil {
+		if *into, err = kubectl(ctx, kubeconfig, "get", list, capacity.EveryNamespace, "-o", "json"); err != nil {
 			return err
 		}
 	}

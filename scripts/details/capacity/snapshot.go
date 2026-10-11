@@ -133,7 +133,7 @@ func Take(l Listings, open []string, taken string) (Snapshot, error) {
 
 	s := Snapshot{Taken: taken}
 	for _, c := range lists["priority classes"] {
-		s.Objects = append(s.Objects, kept("scheduling.k8s.io/v1", "PriorityClass", Object{"name": at(c, "metadata", "name")}, nil,
+		s.Objects = append(s.Objects, kept("scheduling.k8s.io/v1", KindPriorityClass, Object{"name": at(c, "metadata", "name")}, nil,
 			"value", c["value"], "globalDefault", c["globalDefault"], "preemptionPolicy", c["preemptionPolicy"]))
 	}
 	for _, c := range lists["storage classes"] {
@@ -157,10 +157,10 @@ func Take(l Listings, open []string, taken string) (Snapshot, error) {
 			ns := str(ref["namespace"])
 			claim = Object{"namespace": n.namespace(ns), "name": n.within(ns, str(ref["name"]))}
 		}
-		s.Objects = append(s.Objects, kept("v1", "PersistentVolume", Object{"name": n.of(str(at(v, "metadata", "name")))}, pruned(Object{
+		s.Objects = append(s.Objects, kept("v1", KindVolume, Object{"name": n.of(str(at(v, "metadata", "name")))}, pruned(Object{
 			"capacity": at(v, "spec", "capacity"), "accessModes": at(v, "spec", "accessModes"),
-			"storageClassName": at(v, "spec", "storageClassName"), "volumeMode": at(v, "spec", "volumeMode"),
-			"claimRef": claim, "nodeAffinity": n.selectors(at(v, "spec", "nodeAffinity")),
+			StorageClassKey: at(v, "spec", StorageClassKey), "volumeMode": at(v, "spec", "volumeMode"),
+			"claimRef": claim, NodeAffinityKey: n.selectors(at(v, "spec", NodeAffinityKey)),
 			// Every volume has to be of some kind, and which is nothing a
 			// scheduler reads.
 			"hostPath": Object{"path": "/x"},
@@ -173,8 +173,8 @@ func Take(l Listings, open []string, taken string) (Snapshot, error) {
 		if volume != "" {
 			meta["annotations"] = Object{BoundNote: "yes"}
 		}
-		s.Objects = append(s.Objects, kept("v1", "PersistentVolumeClaim", meta, pruned(Object{
-			"accessModes": at(c, "spec", "accessModes"), "storageClassName": at(c, "spec", "storageClassName"),
+		s.Objects = append(s.Objects, kept("v1", KindClaim, meta, pruned(Object{
+			"accessModes": at(c, "spec", "accessModes"), StorageClassKey: at(c, "spec", StorageClassKey),
 			"volumeName": n.of(volume), "volumeMode": at(c, "spec", "volumeMode"),
 			"resources": pruned(Object{"requests": at(c, "spec", "resources", "requests")}),
 		})))
@@ -205,7 +205,7 @@ func Take(l Listings, open []string, taken string) (Snapshot, error) {
 		if machine := str(at(p, "spec", "nodeName")); machine != "" {
 			spec["nodeName"] = n.of(machine)
 		}
-		s.Objects = append(s.Objects, kept("v1", "Pod", pruned(Object{
+		s.Objects = append(s.Objects, kept("v1", KindPod, pruned(Object{
 			"namespace": n.namespace(ns), "name": n.of(ns + "/" + str(at(p, "metadata", "name"))),
 			"labels": n.values(at(p, "metadata", "labels")), "annotations": pruned(notes),
 		}), spec))
@@ -241,7 +241,7 @@ func Scheduling(spec Object, value, namespace func(string) string, claim func(st
 		}
 		out["tolerations"] = to
 	}
-	for _, list := range []string{"initContainers", "containers"} {
+	for _, list := range []string{InitContainersKey, "containers"} {
 		containers, _ := spec[list].([]any)
 		var to []any
 		for i, c := range containers {
@@ -270,8 +270,8 @@ func Scheduling(spec Object, value, namespace func(string) string, claim func(st
 	var volumes []any
 	declared, _ := spec["volumes"].([]any)
 	for i, v := range declared {
-		if name := str(at(dict(v), "persistentVolumeClaim", "claimName")); name != "" {
-			volumes = append(volumes, Object{"name": fmt.Sprintf("v%d", i), "persistentVolumeClaim": Object{"claimName": claim(name)}})
+		if name := str(at(dict(v), ClaimKey, "claimName")); name != "" {
+			volumes = append(volumes, Object{"name": fmt.Sprintf("v%d", i), ClaimKey: Object{"claimName": claim(name)}})
 		}
 	}
 	if len(volumes) > 0 {
@@ -442,7 +442,7 @@ func (s Snapshot) Workers() []string {
 // worker holds for pods and what is reserved on it.
 func (s Snapshot) String() string {
 	reserved := map[string]int64{}
-	for _, p := range s.Of("Pod") {
+	for _, p := range s.Of(KindPod) {
 		containers, _ := at(p, "spec", "containers").([]any)
 		for _, c := range containers {
 			if n, err := Bytes(str(at(dict(c), "resources", "requests", "memory"))); err == nil {

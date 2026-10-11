@@ -137,7 +137,7 @@ func TestWhatATreeAsksForIsAnApplicationsPodsAndWhatEverythingElseReserves(t *te
 			deployment("its-sweeper", "3", "batch", "1Gi"),
 			`{"kind":"PersistentVolumeClaim","metadata":{"name":"books"},"spec":{"storageClassName":"kept","resources":{"requests":{"storage":"5Gi"}}}}`,
 			`{"kind":"StatefulSet","metadata":{"name":"vault"},"spec":{"replicas":2,"volumeClaimTemplates":[{"metadata":{"name":"data"},"spec":{"resources":{"requests":{"storage":"1Gi"}}}}],
-			  "template":{"metadata":{"labels":{"part":"vault"}},"spec":{"priorityClassName":"interactive","containers":[{"name":"c","image":"registry.example/v:1","resources":{"requests":{"memory":"1Gi"}}}],
+			  "template":{"metadata":{"labels":{"part":"vault"}},"spec":{"priorityClassName":"interactive","containers":[{"name":"c","image":"images.invalid/v:1","resources":{"requests":{"memory":"1Gi"}}}],
 			  "volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"books"}}]}}}}`,
 			`{"kind":"CronJob","metadata":{"name":"nightly"},"spec":{"jobTemplate":{"spec":{"template":{"spec":{"containers":[{"name":"c","resources":{"requests":{"memory":"64Mi"}}}]}}}}}}`,
 		},
@@ -181,7 +181,7 @@ func TestWhatATreeAsksForIsAnApplicationsPodsAndWhatEverythingElseReserves(t *te
 			t.Errorf("the set's second pod does not hold %s: %s", held, second)
 		}
 	}
-	if strings.Contains(string(second), "registry.example") {
+	if strings.Contains(string(second), "images.invalid") {
 		t.Errorf("the pod carries more than a scheduler reads: %s", second)
 	}
 	var claims []string
@@ -229,17 +229,17 @@ func north(t *testing.T) capacity.Snapshot {
 	}
 	s, err := capacity.Take(capacity.Listings{
 		Nodes: []byte(`{"items":[
- {"metadata":{"name":"q-cp-100","labels":{"node-role.kubernetes.io/control-plane":""}},"status":{"allocatable":{"memory":"4Gi"}}},
- {"metadata":{"name":"q-wk-200","labels":{}},"status":{"allocatable":{"memory":"8Gi"}}},
- {"metadata":{"name":"q-wk-201","labels":{}},"status":{"allocatable":{"memory":"8Gi"}}}]}`),
+ {"metadata":{"name":"example-cp-100","labels":{"node-role.kubernetes.io/control-plane":""}},"status":{"allocatable":{"memory":"4Gi"}}},
+ {"metadata":{"name":"example-wk-200","labels":{}},"status":{"allocatable":{"memory":"8Gi"}}},
+ {"metadata":{"name":"example-wk-201","labels":{}},"status":{"allocatable":{"memory":"8Gi"}}}]}`),
 		Namespaces:      []byte(`{"items":[{"metadata":{"name":"ledgerkeeper"}},{"metadata":{"name":"things"}}]}`),
-		PriorityClasses: []byte(`{"items":[]}`), StorageClasses: []byte(`{"items":[]}`), Volumes: []byte(`{"items":[]}`),
+		PriorityClasses: []byte(capacity.Nothing), StorageClasses: []byte(capacity.Nothing), Volumes: []byte(capacity.Nothing),
 		Claims: []byte(`{"items":[{"metadata":{"namespace":"ledgerkeeper","name":"books"},"spec":{"volumeName":"v"}}]}`),
 		Pods: []byte(`{"items":[` + strings.Join([]string{
-			pod("ledgerkeeper", "ledgerkeeper-7c9-aaaaa", "q-wk-200", "interactive", "ReplicaSet", "ledgerkeeper-7c9", "3Gi"),
-			pod("things", "on-each-x", "q-wk-200", "interactive", "DaemonSet", "on-each", "128Mi"),
-			pod("things", "sweep-1", "q-wk-200", "batch", "Job", "sweep", "6Gi"),
-			pod("things", "core-thing-5-b", "q-wk-201", "interactive", "ReplicaSet", "core-thing-5", "1Gi"),
+			pod("ledgerkeeper", "ledgerkeeper-7c9-aaaaa", "example-wk-200", "interactive", "ReplicaSet", "ledgerkeeper-7c9", "3Gi"),
+			pod("things", "on-each-x", "example-wk-200", "interactive", "DaemonSet", "on-each", "128Mi"),
+			pod("things", "sweep-1", "example-wk-200", "batch", "Job", "sweep", "6Gi"),
+			pod("things", "core-thing-5-b", "example-wk-201", "interactive", "ReplicaSet", "core-thing-5", "1Gi"),
 		}, ",") + `]}`),
 	}, []string{"ledgerkeeper"}, "2026-10-11T04:00:00Z")
 	if err != nil {
@@ -250,7 +250,7 @@ func north(t *testing.T) capacity.Snapshot {
 
 func appPod(index int, memory string) pod {
 	return pod{Namespace: "ledgerkeeper", Workload: "Deployment/ledgerkeeper", Index: index, Labels: map[string]any{"app": "lk"},
-		Spec: capacity.Object{"priorityClassName": "interactive", "containers": []any{map[string]any{"name": "c0", "image": "x",
+		Spec: capacity.Object{capacity.PriorityClassKey: "interactive", "containers": []any{map[string]any{"name": "c0", "image": "x",
 			"resources": map[string]any{"requests": map[string]any{"memory": memory}}}}}}
 }
 
@@ -259,7 +259,7 @@ func appPod(index int, memory string) pod {
 func placed(tr trial) map[string]string {
 	out := map[string]string{}
 	for _, o := range tr.Objects {
-		if o["kind"] == "Pod" {
+		if o["kind"] == capacity.KindPod {
 			machine, _ := dig(o, "spec", "nodeName").(string)
 			if machine == "" {
 				machine = "?"
@@ -315,7 +315,7 @@ func TestWhatAChangeAltersOrAddsIsLeftToTheScheduler(t *testing.T) {
 		"raised": {Pods: 1, PodBytes: 3 * gib}, "more-of-them": {Pods: 3, PodBytes: gib}, "lowered": {Pods: 1, PodBytes: gib},
 		"waits": {Pods: 9, PodBytes: 9 * gib, CanWait: true}, "new": {Pods: 1, PodBytes: 512 << 20}},
 		Claims: []claim{{Namespace: "ledgerkeeper", Name: "books"}, {Namespace: "elsewhere", Name: "fresh",
-			Spec: capacity.Object{"storageClassName": "kept", "resources": map[string]any{"requests": map[string]any{"storage": "2Gi"}}}}}}
+			Spec: capacity.Object{capacity.StorageClassKey: "kept", "resources": map[string]any{"requests": map[string]any{"storage": "2Gi"}}}}}}
 	tr := scenario(north(t), "", was, now)
 	got := placed(tr)
 	if got["deployment-ledgerkeeper-0"] != "?" || got["deployment-ledgerkeeper-1"] != "?" {
@@ -341,7 +341,7 @@ func TestWhatAChangeAltersOrAddsIsLeftToTheScheduler(t *testing.T) {
 			t.Errorf("the trial does not hold %s", held)
 		}
 	}
-	if strings.Count(string(raw), `"kind":"PersistentVolume"`) != 1 {
+	if strings.Count(string(raw), `"kind":"`+capacity.KindVolume+`"`) != 1 {
 		t.Errorf("a volume was made for a claim the site already holds, or none for the new one")
 	}
 	if !same(was, was) || same(was, now) {
@@ -488,7 +488,7 @@ func TestAChangeAgainstASiteNobodyHasReadIsRefusedOnlyIfItAsksForSomething(t *te
 		t.Fatal(err)
 	}
 	var out, complaints bytes.Buffer
-	if code := stamp([]string{"-site", "north", "-record", stale, "-base", "x"}, &out, &complaints, t.TempDir(), nil, asDrawn, nil); code != 1 || !strings.Contains(complaints.String(), "holds no machine") {
+	if code := stamp([]string{"-site", "north", "-record", stale, "-base", "x"}, &out, &complaints, t.TempDir(), nil, asDrawn, nil); code != 1 || !strings.Contains(complaints.String(), "the next converge writes one") {
 		t.Errorf("a record from before the snapshot was read as one (%d): %s", code, complaints.String())
 	}
 	if code := stamp([]string{"-site", "north"}, &out, &complaints, t.TempDir(), nil, asDrawn, nil); code != 2 {
@@ -513,7 +513,7 @@ func standInPrograms(t *testing.T) string {
   *pods.json*) for f in "$@"; do last="$f"; done; cp "$last" ` + filepath.Join(dir, "pods") + ` ;;
   get*) if grep -q '"namespace":"` + more + `"' ` + filepath.Join(dir, "pods") + ` 2>/dev/null; then
       echo '{"items":[{"metadata":{"namespace":"` + more + `","name":"more-1-0"},"status":{"conditions":[{"type":"PodScheduled","message":"0/2 nodes are available: 2 Insufficient memory."}]}}]}'
-    else echo '{"items":[]}'; fi ;;
+    else echo '` + capacity.Nothing + `'; fi ;;
 esac
 `
 	if err := os.WriteFile(filepath.Join(dir, asker), []byte(lister), 0o755); err != nil {

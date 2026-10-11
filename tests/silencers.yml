@@ -156,9 +156,12 @@ judges_nothing:
   CLERK_SWEEP_MODEL_VERSION: a model the clerk asks; it can stop nothing
   INSPECTOR_MODEL_VERSION: a model the inspector asks to explain; the gate does not call it
   CLOUDFLARED_VERSION: the tunnel's connector
+  ETCD_VERSION: the store of the cluster a change is tried in
   FLUX_VERSION: the reconciler
   HELM_VERSION: renders charts for validation
   KUBECTL_VERSION: builds manifests and talks to a cluster
+  KUBERNETES_VERSION: the API server and scheduler a change is tried with; it is the engineer that refuses on the answer
+  KWOK_VERSION: starts and stops the cluster a change is tried in
   ORAS_VERSION: publishes and fetches packages
   PRE_COMMIT_VERSION: runs the hooks, each of which is named here itself
   RCLONE_DEB_VERSION: copies to object storage

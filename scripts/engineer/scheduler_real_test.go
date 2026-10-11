@@ -32,15 +32,15 @@ func TestTheRealSchedulerRefusesWhatFitsTheTotalAndNoMachine(t *testing.T) {
 	}
 	s, err := capacity.Take(capacity.Listings{
 		Nodes: []byte(`{"items":[
- {"metadata":{"name":"s-cp-100","labels":{"node-role.kubernetes.io/control-plane":""}},"spec":{"taints":[{"key":"node-role.kubernetes.io/control-plane","effect":"NoSchedule"}]},"status":{"allocatable":{"memory":"4Gi","cpu":"2","pods":"110"}}},
- {"metadata":{"name":"s-wk-200","labels":{"kubernetes.io/hostname":"s-wk-200"}},"status":{"allocatable":{"memory":"8Gi","cpu":"4","pods":"110"}}},
- {"metadata":{"name":"s-wk-201","labels":{"kubernetes.io/hostname":"s-wk-201"}},"status":{"allocatable":{"memory":"8Gi","cpu":"4","pods":"110"}}}]}`),
+ {"metadata":{"name":"example-cp-100","labels":{"node-role.kubernetes.io/control-plane":""}},"spec":{"taints":[{"key":"node-role.kubernetes.io/control-plane","effect":"NoSchedule"}]},"status":{"allocatable":{"memory":"4Gi","cpu":"2","pods":"110"}}},
+ {"metadata":{"name":"example-wk-200","labels":{"kubernetes.io/hostname":"example-wk-200"}},"status":{"allocatable":{"memory":"8Gi","cpu":"4","pods":"110"}}},
+ {"metadata":{"name":"example-wk-201","labels":{"kubernetes.io/hostname":"example-wk-201"}},"status":{"allocatable":{"memory":"8Gi","cpu":"4","pods":"110"}}}]}`),
 		Namespaces:      []byte(`{"items":[{"metadata":{"name":"running"}}]}`),
 		PriorityClasses: []byte(`{"items":[{"metadata":{"name":"interactive"},"value":10000,"preemptionPolicy":"Never"},{"metadata":{"name":"critical"},"value":1000000}]}`),
-		StorageClasses:  []byte(`{"items":[]}`), Volumes: []byte(`{"items":[]}`), Claims: []byte(`{"items":[]}`),
+		StorageClasses:  []byte(capacity.Nothing), Volumes: []byte(capacity.Nothing), Claims: []byte(capacity.Nothing),
 		Pods: []byte(`{"items":[
- {"metadata":{"namespace":"running","name":"a","ownerReferences":[{"kind":"ReplicaSet","name":"a-1"}]},"spec":{"nodeName":"s-wk-200","priorityClassName":"interactive","containers":[{"name":"c","resources":{"requests":{"memory":"6Gi"}}}]},"status":{"phase":"Running"}},
- {"metadata":{"namespace":"running","name":"b","ownerReferences":[{"kind":"ReplicaSet","name":"b-1"}]},"spec":{"nodeName":"s-wk-201","priorityClassName":"interactive","containers":[{"name":"c","resources":{"requests":{"memory":"6Gi"}}}]},"status":{"phase":"Running"}}]}`),
+ {"metadata":{"namespace":"running","name":"a","ownerReferences":[{"kind":"ReplicaSet","name":"a-1"}]},"spec":{"nodeName":"example-wk-200","priorityClassName":"interactive","containers":[{"name":"c","resources":{"requests":{"memory":"6Gi"}}}]},"status":{"phase":"Running"}},
+ {"metadata":{"namespace":"running","name":"b","ownerReferences":[{"kind":"ReplicaSet","name":"b-1"}]},"spec":{"nodeName":"example-wk-201","priorityClassName":"interactive","containers":[{"name":"c","resources":{"requests":{"memory":"6Gi"}}}]},"status":{"phase":"Running"}}]}`),
 	}, nil, "now")
 	if err != nil {
 		t.Fatal(err)

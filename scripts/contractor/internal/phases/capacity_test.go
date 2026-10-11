@@ -26,7 +26,7 @@ func standIns(t *testing.T, nodes, pods string) {
 	write("pods.json", pods, 0o600)
 	write("tofu", "#!/bin/sh\necho 'apiVersion: v1'\n", 0o755)
 	write("kubectl", "#!/bin/sh\ncase \"$*\" in\n  *nodes*) cat "+filepath.Join(dir, "nodes.json")+" ;;\n  *pods*) cat "+
-		filepath.Join(dir, "pods.json")+" ;;\n  *) echo '{\"items\":[]}' ;;\nesac\n", 0o755)
+		filepath.Join(dir, "pods.json")+" ;;\n  *) echo '"+capacity.Nothing+"' ;;\nesac\n", 0o755)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
@@ -69,7 +69,7 @@ func TestTakingARecordKeepsTheSitesCapacityBesideIt(t *testing.T) {
 // A cluster that cannot be read leaves no capacity file behind. An old one, or
 // one of nothing, would be a figure a change is let through against.
 func TestAClusterThatCannotBeReadLeavesNoCapacityBehind(t *testing.T) {
-	standIns(t, `{"items": []}`, `{"items": []}`)
+	standIns(t, capacity.Nothing, capacity.Nothing)
 	ctx := &run.Context{Root: run.Root{Dir: t.TempDir()}, RepoRoot: t.TempDir(), Site: "sitex"}
 	out := filepath.Join(t.TempDir(), "as-built")
 	err := recordCapacity(ctx, out, time.Now())

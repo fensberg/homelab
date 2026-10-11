@@ -78,7 +78,7 @@ func TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority(t *testing.T) {
 					"that does not exist is refused admission, not given zero.", what, priority)
 			}
 
-			for _, list := range []string{"initContainers", "containers"} {
+			for _, list := range []string{capacity.InitContainersKey, "containers"} {
 				containers, _ := w.pod[list].([]any)
 				if list == "containers" && len(containers) == 0 {
 					t.Fatalf("%s has no containers, so there is nothing to size", what)

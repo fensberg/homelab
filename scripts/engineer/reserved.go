@@ -134,7 +134,7 @@ func (a *asks) application(from, namespace string, docs []map[string]any, worker
 		name, _ := meta["name"].(string)
 		spec, _ := doc["spec"].(map[string]any)
 		switch kind {
-		case "PersistentVolumeClaim":
+		case capacity.KindClaim:
 			a.Claims = append(a.Claims, claim{Namespace: namespace, Name: name, Spec: spec})
 		case "Deployment", "StatefulSet":
 			if w, err := podOf(spec); err != nil {
@@ -145,7 +145,7 @@ func (a *asks) application(from, namespace string, docs []map[string]any, worker
 			template, _ := spec["template"].(map[string]any)
 			made, _ := template["spec"].(map[string]any)
 			labels, _ := template["metadata"].(map[string]any)
-			templates, _ := spec["volumeClaimTemplates"].([]any)
+			templates, _ := spec[capacity.ClaimTemplatesKey].([]any)
 			for i := 0; i < count(spec["replicas"]); i++ {
 				scheduled := capacity.Scheduling(made, same, same, same)
 				// A StatefulSet gives each of its pods a claim of its own,
@@ -158,7 +158,7 @@ func (a *asks) application(from, namespace string, docs []map[string]any, worker
 					a.Claims = append(a.Claims, claim{Namespace: namespace, Name: claimed, Spec: tplSpec})
 					volumes, _ := scheduled["volumes"].([]any)
 					scheduled["volumes"] = append(volumes, capacity.Object{"name": fmt.Sprint("t", len(volumes)),
-						"persistentVolumeClaim": capacity.Object{"claimName": claimed}})
+						capacity.ClaimKey: capacity.Object{"claimName": claimed}})
 				}
 				a.Pods = append(a.Pods, pod{Namespace: namespace, Workload: kind + "/" + name, Index: i, Labels: labels["labels"], Spec: scheduled})
 			}
