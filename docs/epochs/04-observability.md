@@ -94,13 +94,17 @@ The budget, and who refuses:
   no leader lost. etcd's own guidance of ten is not met by this disk at
   rest, so the level is what this disk does and some more, short of the
   hundred at which a heartbeat is missed. **Why it is fourteen and not
-  one,** read off the host the same day: the pool is a mirror of two
-  consumer NVMe drives of different makes, with no device set aside for its
-  write log, and it was doing 136 writes a second. So it is not crowded.
-  The time is what such a drive takes to say a write is safe, paid on both
-  sides of the mirror and once for each of three members. Holding other
-  work's writes back would not lower it; a log device that keeps its
-  writes through a power cut, or fewer members, would. **Not done:** etcd
+  one is not established.** Read off the host the same day: the pool is a
+  mirror of two consumer NVMe drives of different makes, with no device set
+  aside for its write log, doing under 200 writes a second, and the pool
+  itself answers a write in about a millisecond. So it is not crowded, and
+  the pool's own figure is a tenth of what etcd sees. What the pool's
+  figure leaves out is the time a drive takes to say a write is safe, and
+  everything between a machine's disk and the pool. Which of those the
+  other thirteen milliseconds are has not been measured, and the first
+  account written here - that it was the drives - was a guess set down as
+  a finding. It is not the network: the figure is of a write to a
+  member's own disk. **Not done:** etcd
   has no disk of its own, and nothing but the alert's own words holds an
   addition back while it fires.
 
