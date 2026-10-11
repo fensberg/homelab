@@ -1,0 +1,10 @@
+guard: TestEverySystemHookIsSkippedInTheFormatLane
+file: .pre-commit-config.yaml
+find: "entry: delivered-python -m pre_commit_hooks.check_yaml"
+replace: "entry: delivered-python -m pre_commit_hooks_extra.check_yaml"
+mentions: "the Format lane does not take delivery of pre-commit-hooks-extra"
+why: >
+  A system hook runs in the Format lane only because the lane took
+  delivery of its package from the lock. A hook whose package it did not
+  take fails there with "No module named", which is a red lane saying
+  nothing about the repository.

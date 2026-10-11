@@ -57,7 +57,7 @@ func TestNothingInstallsFromPyPIOutsideTakeDelivery(t *testing.T) {
 			// This file carries the shapes in order to refuse them, and the
 			// mutation ledger carries one in order to plant it and watch this
 			// refuse it. Neither is run.
-			if strings.HasSuffix(rel, "/deliveries_test.go") || rel == "tests/mutations.yml" {
+			if strings.HasSuffix(rel, "/deliveries_test.go") || isLedger(rel) {
 				continue
 			}
 			offenders = append(offenders, rel+":"+strconv.Itoa(n+1)+": "+strings.TrimSpace(line))

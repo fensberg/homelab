@@ -1,0 +1,11 @@
+guard: TestEverythingThatKeepsDataSaysWhatItHolds
+file: clusters/core/holds.json
+find: '"held_by": "HelmRelease/kube-prometheus-stack"'
+replace: '"held_by": "HelmRelease/prometheus"'
+mentions: "declares storage (HelmRelease/kube-prometheus-stack) and nothing says what it holds"
+why: >
+  A controller is given a volume, or the one that has it is renamed, and
+  the core's declaration is not touched. The officer knows only what it
+  is told, so the volume holds nothing as far as it can see - and the
+  day a machine's retirement is asked about, the site's whole history
+  goes with the machine and the answer was "safe".

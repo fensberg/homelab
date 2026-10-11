@@ -1,0 +1,9 @@
+guard: TestSetupPointsGitAtTheShims
+file: scripts/install-dependencies.sh
+find: "git config core.hooksPath githooks"
+replace: "true # core.hooksPath"
+mentions: "point git at githooks"
+why: >
+  Unset, git uses .git/hooks - which pre-commit owns and overwrites - so
+  the shim becomes a file nothing invokes. Everything above it is then
+  true in the repository and false on the machine.

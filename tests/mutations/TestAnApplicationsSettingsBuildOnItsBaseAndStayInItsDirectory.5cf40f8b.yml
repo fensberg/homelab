@@ -1,0 +1,14 @@
+guard: TestAnApplicationsSettingsBuildOnItsBaseAndStayInItsDirectory
+file: modules/applications/planted/staging/kustomization.yaml
+create: |
+  ---
+  apiVersion: kustomize.config.k8s.io/v1beta1
+  kind: Kustomization
+  resources:
+    - deployment.yaml
+mentions: "does not build on ../base"
+why: >
+  An environment's settings that do not build on the application's base
+  are a second copy of the thing that runs, written for one environment -
+  the copy-paste the epoch exists to stop, arriving in manifests instead
+  of code.

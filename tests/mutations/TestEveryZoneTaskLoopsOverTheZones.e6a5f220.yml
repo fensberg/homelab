@@ -1,0 +1,17 @@
+guard: TestEveryZoneTaskLoopsOverTheZones
+file: management/hypervisor/hypervisor-prep.yml
+find: "      loop: \"{{ dmz_zones }}\"\n      loop_control:\n        label: \"{{ item.name }}\"\n      run_once: true\n      tags: [sdn]\n\n    - name: List subnets on each untrusted zone's vnet"
+replace: "      run_once: true\n      tags: [sdn]\n\n    - name: List subnets on each untrusted zone's vnet"
+mentions: "without looping over the zones"
+why: >
+  Dropping the loop from a task that still reads item.vnet is what a
+  copy-paste of the block beside it produces, and it leaves the task running
+  once against an undefined item on every estate - including one with no
+  untrusted workload at all. The loop is the off switch here rather than a
+  `when:`, deliberately: a gate has to be remembered on every task, and a
+  loop over an empty list cannot run.
+
+  This entry replaced one proving a dmz_count gate. The config changed shape
+  from a count to named zones, and the old guard broke while the behaviour
+  it cared about did not - a test matching a variable's spelling rather than
+  the property it stood for.

@@ -1,0 +1,11 @@
+guard: TestNoPlayGivesADefaultToWhatTheInventorySuppliesPerHost
+file: management/hypervisor/hypervisor-prep.yml
+find: "    worker_pool: \"UNSET\"\n"
+replace: "    worker_pool: \"UNSET\"\n    machine_disks: \"UNSET\"\n"
+mentions: "gives machine_disks a value in a play's vars"
+why: >
+  Every other value the playbook is handed has a placeholder in its vars
+  list, so the one that arrives by the inventory is given one too, for
+  symmetry. It reads as a harmless default and it is the value every host
+  gets: the play outranks the inventory. The section that needed the real
+  one refused its first run on a live hypervisor for exactly this.

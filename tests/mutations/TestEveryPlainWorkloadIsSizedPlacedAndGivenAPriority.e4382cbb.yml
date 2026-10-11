@@ -1,0 +1,28 @@
+guard: TestEveryPlainWorkloadIsSizedPlacedAndGivenAPriority
+file: clusters/core/infrastructure/configs/planted-deployment.yaml
+create: |
+  ---
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: planted
+    namespace: planted
+  spec:
+    selector:
+      matchLabels:
+        app: planted
+    template:
+      metadata:
+        labels:
+          app: planted
+      spec:
+        containers:
+          - name: planted
+            image: example.invalid/planted@sha256:0000000000000000000000000000000000000000000000000000000000000000
+mentions: "has no priority class"
+why: >
+  A plain Deployment is what the HelmRelease table could not express, so
+  one shipped once with nothing keeping an 8 GiB pod off a 4 GiB control
+  plane and no guard said so (#492). This plants one the way it would
+  arrive: a new file, with nothing wrong that kustomize or Flux would
+  object to.

@@ -1,0 +1,9 @@
+guard: TestEverySilencedFindingNamesTheGuardThatProvesItMayBe
+file: modules/infrastructure/platform/database.tf
+find: "a format, proved by TestAConnectionStringInTheCodeCarriesNoCredentialOfItsOwn"
+replace: "a format, with no credential written in it"
+mentions: "names no guard"
+why: >
+  The sentence is as plausible as it was and the scan is as quiet. What
+  is gone is the only thing that made it more than a sentence: the guard
+  that fails if a credential is ever written into that string.

@@ -1,0 +1,10 @@
+guard: TestTheExpediterSubmitsTheDeclaredPinAndNothingElse
+file: .github/workflows/expedite.yml
+find: '-f "tree[][path]=${pins}" \'
+replace: '-f "tree[][path]=scripts/versions.env" \'
+mentions: "the application's own pins file"
+why: >
+  What the expediter commits is what is merged without a review. A commit
+  to any file but the application's own pins is refused by the standing
+  order, so every delivery then waits for a person - and the first anyone
+  hears of it is players unable to join.

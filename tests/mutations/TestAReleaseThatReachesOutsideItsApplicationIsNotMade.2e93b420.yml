@@ -1,0 +1,11 @@
+guard: TestAReleaseThatReachesOutsideItsApplicationIsNotMade
+file: .github/workflows/fabricator.yml
+find: 'cp -R "$module" "${rendered}/${module}"'
+replace: 'cp -R . "${rendered}/"'
+mentions: "reach outside its directory"
+why: >
+  What an application is made of is its own directory because the release
+  is rendered from a copy holding nothing else. Rendered from the whole
+  repository, a manifest that builds on another application's files, or
+  on the core's, renders and is released, and the two are coupled with
+  nothing anywhere saying so.

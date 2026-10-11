@@ -1,0 +1,18 @@
+guard: TestAGoFunctionWrittenTwiceIsDeclared
+file: scripts/sweeper/clear-queue.go
+reads_source: true
+find: "func clearQueue(args []string) int {
+
+  "
+replace:
+  "func parseVersions(body string) map[string]string {\n\tout := map[string]string{}\n\tfor _,\
+  \ line := range strings.Split(body, \"\\n\") {\n\t\tline = strings.TrimSpace(line)\n\t\tif line ==\
+  \ \"\" || strings.HasPrefix(line, \"#\") {\n\t\t\tcontinue\n\t\t}\n\t\tif k, v, ok := strings.Cut(line,\
+  \ \"=\"); ok {\n\t\t\tout[strings.TrimSpace(k)] = strings.TrimSpace(v)\n\t\t}\n\t}\n\treturn out\n\
+  }\n\nfunc clearQueue(args []string) int {\n"
+mentions: has the same signature and body in more than one package
+why:
+  "The versions.env parser was written twice, in procurement and the security guard, until this guard
+  found it; pasting it back is the regression.
+
+  "

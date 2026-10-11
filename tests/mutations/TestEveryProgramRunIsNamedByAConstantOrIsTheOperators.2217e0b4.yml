@@ -1,0 +1,10 @@
+guard: TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
+file: scripts/details/repopath/repopath.go
+find: 'exec.Command("git", "-C", root, "remote", "get-url", "origin")'
+replace: 'exec.Command(os.Getenv("GIT"), "-C", root, "remote", "get-url", "origin")'
+mentions: "worked out at run time"
+reads_source: true
+why: >
+  The sentence is as plausible as it was and the scan is as quiet. What
+  is gone is the only thing that made it more than a sentence: the guard
+  that fails if the image ever stops starting from a pinned base.

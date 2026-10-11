@@ -1,0 +1,14 @@
+guard: TestEveryChartsImagesAreGovernedOrDeclared
+file: scripts/approved-suppliers.yml
+find: "  - chart: openebs\n    pulls_from: docker.io"
+replace: "  - chart: openebs-was-declared-here\n    pulls_from: docker.io"
+mentions: "neither pins its images"
+why: >
+  The registries section asserts that every image comes from an approved
+  registry and is pinned by digest, and the walk behind it only ever
+  reads references written in this repository. A chart pulling its own
+  defaults is invisible to it, so 'no unapproved image is committed
+  here' and 'no unapproved image runs here' produce the same green.
+  Quietly dropping a declaration puts a chart back in that silence - and
+  the one that matters most is the storage provisioner handing out the
+  volumes the state database sits on.

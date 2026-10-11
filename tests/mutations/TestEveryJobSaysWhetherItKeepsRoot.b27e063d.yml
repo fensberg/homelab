@@ -1,0 +1,21 @@
+guard: TestEveryJobSaysWhetherItKeepsRoot
+file: .github/workflows/zz-blocks-on-arc.yml
+create: |
+  name: planted
+  on: push
+  jobs:
+    planted:
+      runs-on: homelab-site0
+      timeout-minutes: 1
+      steps:
+        - uses: $/.github/workflows/mobilize
+          with:
+            egress-policy: block
+            disable-sudo-and-containers: "false"
+            checkout: "false"
+mentions: "claims egress-policy: block"
+why: >
+  harden-runner returns before acting on the ARC runner, so block there
+  blocks nothing - and the jobs on that runner hold a token that reads and
+  writes the whole vault. A job that reads as restricted while reaching
+  anything is worse than one that says audit (#411).

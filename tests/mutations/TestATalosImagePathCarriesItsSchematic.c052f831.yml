@@ -1,0 +1,15 @@
+guard: TestATalosImagePathCarriesItsSchematic
+file: modules/infrastructure/cluster/compute.tf
+find: '  file_name               = "talos-${local.talos_version}-${substr(local.schematic_id, 0, 8)}.iso"'
+replace: '  file_name               = "talos-${local.talos_version}.iso"'
+mentions: "does not carry its schematic id"
+why: >
+  A schematic id says which extensions are baked into a Talos image, and the
+  download resource is identified by its datastore path. With the schematic
+  absent from that path, re-minting one - the only way to add, remove or
+  move an extension - is not a change: no diff, no fetch, and the
+  replace_triggered_by on the template has nothing to fire on. The bump then
+  looks applied, with a clean plan and a successful apply, while every node
+  keeps the old extensions. That is how a known-vulnerable Tailscale reached
+  every machine in the estate and stayed there, and the failure is silence
+  rather than an error.

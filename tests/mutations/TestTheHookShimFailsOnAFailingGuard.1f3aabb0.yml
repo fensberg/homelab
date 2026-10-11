@@ -1,0 +1,8 @@
+guard: TestTheHookShimFailsOnAFailingGuard
+file: githooks/pre-commit
+find: "set -euo pipefail"
+replace: "set -uo pipefail"
+mentions: "set -e"
+why: >
+  Without `set -e` the shim reports a failing guard and lets the commit
+  through anyway. A guard that reports rather than refuses is a log line.

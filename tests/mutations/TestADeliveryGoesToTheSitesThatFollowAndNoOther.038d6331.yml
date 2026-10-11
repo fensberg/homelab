@@ -1,0 +1,10 @@
+guard: TestADeliveryGoesToTheSitesThatFollowAndNoOther
+file: .github/workflows/fabricator.yml
+find: 'if [ "$(sha256sum < "${moved}/${i}.yaml")" != "$before" ]; then'
+replace: "if true; then"
+mentions: "is left alone"
+why: >
+  A delivery that commits every site's file, changed or not, opens a pull
+  request for a site that holds its pin and one that does not run the
+  application - an empty change that reads as a release, to the site that
+  was deliberately kept where it is.

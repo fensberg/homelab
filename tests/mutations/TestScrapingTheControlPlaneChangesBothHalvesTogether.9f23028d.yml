@@ -1,0 +1,10 @@
+guard: TestScrapingTheControlPlaneChangesBothHalvesTogether
+file: modules/infrastructure/cluster/talos.tf
+find: 'listen-metrics-urls = "http://0.0.0.0:2381"'
+replace: 'listen-metrics-urls-disabled = "http://0.0.0.0:2381"'
+mentions: "does not contain"
+why: >
+  The chart scraping etcd and Talos exposing it are two changes in two
+  tiers, applied by two different mechanisms. Losing the machine
+  configuration half leaves a target permanently red, which is how a
+  cluster teaches everybody to stop reading red targets.

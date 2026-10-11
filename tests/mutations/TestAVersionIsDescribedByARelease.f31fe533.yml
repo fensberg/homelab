@@ -1,0 +1,10 @@
+guard: TestAVersionIsDescribedByARelease
+file: .github/workflows/fabricator.yml
+find: '          if gh release view "$VERSION" --repo "$REPO" > /dev/null 2>&1; then'
+replace: "          if false; then"
+mentions: "a version already described"
+why: >
+  The step runs on every merge so that a version an earlier run could not
+  describe is described by the next. Without asking whether it is
+  described already, every merge that publishes nothing tries to create
+  the last version's release again, and the job is red from then on.

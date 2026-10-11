@@ -1,0 +1,9 @@
+guard: TestTheFabricatorPassesEveryPinADockerfileAsksFor
+file: .github/workflows/fabricator.yml
+find: 'args="${args} --build-arg ${name}=${value}"'
+replace: 'args="${args}"'
+mentions: "does not pass it"
+why: >
+  A pin that never reaches the build leaves the Dockerfile's installer to
+  choose the version - the drift versions.env exists to stop, and the
+  shape of the hand-written list this step replaced.

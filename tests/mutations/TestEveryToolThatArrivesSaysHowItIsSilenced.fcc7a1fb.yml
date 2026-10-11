@@ -1,0 +1,10 @@
+guard: TestEveryToolThatArrivesSaysHowItIsSilenced
+file: tests/silencers.yml
+find: "arrives_as: [CHECKOV_VERSION]"
+replace: "arrives_as: []"
+mentions: "has not heard of"
+why: >
+  The scanner is still pinned and still runs, and nothing now says how it
+  is silenced. Its marks are still listed, so today nothing would be
+  missed; the entry that goes missing next is the one for a scanner
+  added tomorrow, whose mark nothing has ever looked for.

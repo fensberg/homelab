@@ -1,0 +1,9 @@
+guard: TestAVersionIsTheMonthAndItsNumberInIt
+file: .github/workflows/fabricator.yml
+find: "elif ! grep -q \"HTTP 404\" <<<\"$listed\"; then\n            echo \"::error::could not list the versions of"
+replace: "elif false; then\n            echo \"::error::could not list the versions of"
+mentions: "numbered from a registry that could not be read"
+why: >
+  The same failure for the platform's versions: a registry error taken
+  for "nothing published this month" numbers the next version 1, over one
+  a site may already pin.

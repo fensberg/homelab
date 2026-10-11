@@ -1,0 +1,10 @@
+guard: TestEveryOpenTofuRootIsSeenByWhatMustSeeARoot
+file: .github/dependabot.yml
+find: "    directory: /management/platform"
+replace: "    directory: /management/platform-moved"
+mentions: "has no entry in .github/dependabot.yml"
+why:
+  "A root split out of another was validated nowhere, watched by nothing and tested by a test
+  of a different root, because each of those was a list written when there was one root.
+
+  "

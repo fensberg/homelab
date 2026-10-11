@@ -1,0 +1,13 @@
+guard: TestNoGuardSkipsWithoutSayingWhyItIsHonest
+file: tests/go/repo/cni_test.go
+find: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {"
+replace: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {\n\tt.Skip(\"undeclared\")"
+reads_source: true
+mentions: "skip without a declared reason"
+why: >
+  A skip is fail-open: the run is green and nothing distinguishes 'I
+  looked and found nothing' from 'I could not look'. This repository has
+  had to repair that shape in a plan summary, a dry run and a registry
+  check, each time after somebody noticed rather than because anything
+  said so. A new guard that skips must declare what TRUE thing the skip
+  reports, and the default is refusal.

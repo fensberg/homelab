@@ -1,0 +1,13 @@
+guard: TestNoTestNamesTheRootItReads
+file: tests/go/repo/pools_test.go
+reads_source: true
+find: "	_, compute := tofuDeclaring(t, declMachines)"
+replace: '	compute := readRepoFile(t, "management/cluster/root.tf")'
+mentions: "a path into the root management/cluster"
+why: "reads_source, because the guard parses the test files for what they name.
+
+  A guard that opens a root's file by its path checks that path. When the root was split,
+  guards written that way went on reading the root they named, and one found nothing left
+  there and kept passing. The files move again when the roots become modules.
+
+  "

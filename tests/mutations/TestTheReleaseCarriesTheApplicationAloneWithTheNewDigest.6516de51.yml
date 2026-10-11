@@ -1,0 +1,9 @@
+guard: TestTheReleaseCarriesTheApplicationAloneWithTheNewDigest
+file: .github/workflows/fabricator.yml
+find: '>> "${stage}/${module}/base/kustomization.yaml"'
+replace: "> /dev/null"
+mentions: "does not pin the image just built"
+why: >
+  Without the digest pin the release runs whatever image the manifests in
+  git name, which is not the image this build made - the release and its
+  contents would disagree.

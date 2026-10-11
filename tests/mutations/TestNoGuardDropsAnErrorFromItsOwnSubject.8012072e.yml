@@ -1,0 +1,12 @@
+guard: TestNoGuardDropsAnErrorFromItsOwnSubject
+file: tests/go/repo/cni_test.go
+find: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {"
+replace: "func TestTheHealthGateWaitsForTheCNI(t *testing.T) {\n\tif err := error(nil); err != nil {\n\t\treturn\n\t}"
+reads_source: true
+mentions: "drop an error from the thing being guarded"
+why: >
+  The quiet half of failing open. A guard that could not read its
+  subject and carried on leaves every later assertion running against a
+  smaller set than it claims to check, and it looks like ordinary Go
+  rather than like a skip. The count per file may only fall, so a new
+  drop cannot be added without somebody writing the number down.

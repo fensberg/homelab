@@ -1,0 +1,10 @@
+guard: TestAContainerWithNoCPULimitReservesCPUAndIsLimitedInMemory
+file: clusters/core/infrastructure/controllers/cloudflared.yaml
+find: "              cpu: 50m"
+replace: "              ephemeral-storage: 1Gi"
+mentions: "has no CPU limit and reserves no CPU"
+why: >
+  Checkov's rule about CPU limits is off for the whole repository, on the
+  ground that the request is what protects a node. A container with
+  neither is BestEffort for CPU among neighbours that reserved theirs,
+  and with the rule off nothing else would say so.

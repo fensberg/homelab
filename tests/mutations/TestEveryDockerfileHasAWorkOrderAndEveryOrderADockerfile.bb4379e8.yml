@@ -1,0 +1,9 @@
+guard: TestEveryDockerfileHasAWorkOrderAndEveryOrderADockerfile
+file: scripts/work-orders.json
+find: '"context": ".github/runner-image"'
+replace: '"context": ".github/runner-img"'
+mentions: "has no work order"
+why: >
+  An order pointing at the wrong directory leaves the real Dockerfile
+  unbuilt. The image looks published until somebody deploys it and finds
+  the digest never moved.

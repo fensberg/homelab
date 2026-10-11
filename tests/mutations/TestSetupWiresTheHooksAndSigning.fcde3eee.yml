@@ -1,0 +1,12 @@
+guard: TestSetupWiresTheHooksAndSigning
+file: scripts/install-dependencies.sh
+find: "\tgit config core.hooksPath githooks"
+replace: "\t: # hooks left where pre-commit put them"
+mentions: "core.hooksPath is"
+why: >
+  core.hooksPath REPLACES .git/hooks rather than merging with it, and
+  this line is the only thing that sets it. Without it git runs the
+  hooks pre-commit generates, the supplier guard in githooks/pre-commit
+  becomes a file nobody invokes, and every shim held to a standard
+  elsewhere is unreachable. Nothing announces that - the commit succeeds
+  and the guard simply never ran.

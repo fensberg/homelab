@@ -1,0 +1,12 @@
+guard: TestThereIsOnlyOneRetryAndANewOneIsRefused
+file: .github/workflows/fabricator.yml
+find: "jobs:"
+replace: "jobs:\n  for attempt in 1 2 3; do\n"
+mentions: "hand-rolls a retry"
+why: >
+  There is one retry policy - bounded attempts, never a verdict, every
+  attempt reported - and it had three implementations. Three is three
+  places for it to drift, and the fourth gets written by somebody who
+  knew about none of them. This discovers a retry-shaped loop anywhere
+  in the repository rather than checking a list of files, so a
+  hand-rolled one cannot be added somewhere nobody thought to look.

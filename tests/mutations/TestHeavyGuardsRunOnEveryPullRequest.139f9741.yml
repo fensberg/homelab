@@ -1,0 +1,10 @@
+guard: TestHeavyGuardsRunOnEveryPullRequest
+file: .github/workflows/pr-validation.yml
+find: "TestNoTestIsSatisfiedByAComment)$"
+replace: "TestNoTestIsSatisfiedByComments)$"
+mentions: "which is not a test in tests/go/repo"
+why: >
+  The meta-tests run in their own lane, named by META_TESTS. A misspelt
+  name is skipped by the invariants lane and matched by nothing in the
+  meta lane, and `go test -run` with no match passes. So a typo would
+  switch off the comment-stripping re-run with every lane green.

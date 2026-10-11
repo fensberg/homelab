@@ -1,0 +1,10 @@
+guard: TestTheDoorbellIsRungForEachApplication
+file: .github/workflows/expedite.yml
+find: 'expedite-check -appid "$news" -within 90m'
+replace: "expedite-check -appid 112 -within 90m"
+mentions: "the doorbell was not asked about"
+why: >
+  The doorbell has to be rung for the appid each application declares. One
+  that asks about a single application reports every other as quiet for
+  as long as that one is, and their players stay locked out until the
+  daily pass.

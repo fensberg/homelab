@@ -31,3 +31,8 @@ func IsCommit(s string) bool {
 	}
 	return true
 }
+
+// RemoteMain is where a clone keeps what it last saw of main on its remote.
+// Programs that publish ask whether a commit is on main by it, and their
+// tests say what main holds by writing it.
+const RemoteMain = "refs/remotes/origin/main"

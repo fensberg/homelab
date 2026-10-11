@@ -1,0 +1,10 @@
+guard: TestAnImageThatInstallsUnpinnedPackagesStartsFromAPinnedBase
+file: .github/runner-image/Dockerfile
+find: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}@sha256:"
+replace: "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION} #"
+mentions: "which is not pinned by digest"
+why: >
+  The packages this image installs are unpinned on purpose, and hadolint
+  is silenced about it on the ground that the base underneath them cannot
+  move. On a tag it can: the same Dockerfile then builds from whatever
+  the tag was last pointed at, with unpinned packages on top.

@@ -1,0 +1,13 @@
+guard: TestSetupSaysPushesWillBeRefusedWithoutARegisteredKey
+file: scripts/install-dependencies.sh
+find: "\t\twarn \"could not register the signing key, and pushes WILL be refused without it\""
+replace: "\t\twarn \"could not register the signing key, which is optional\""
+mentions: "did not say that pushes will be refused"
+why: >
+  This step presented registering the key as optional once, and it is
+  not: the all-branches ruleset wants a VERIFIED signature, so a commit
+  signed with a key GitHub does not know is refused exactly like an
+  unsigned one. The operator's editor pushed into that refusal with no
+  readable reason, and it cost an evening. A setup script that
+  understates a requirement is worse than one that says nothing, because
+  it is read as reassurance.

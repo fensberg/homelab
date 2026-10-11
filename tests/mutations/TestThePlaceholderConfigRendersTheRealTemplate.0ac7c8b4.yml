@@ -1,0 +1,11 @@
+guard: TestThePlaceholderConfigRendersTheRealTemplate
+file: .github/scripts/placeholder-config.sh
+find: "\t\"${template}\" >\"${rendered}\""
+replace: "\t\"${template}\" >/dev/null\n\techo '{}' >\"${rendered}\""
+mentions: "the template declares"
+why: >
+  Valid JSON is not enough: `{}` is valid JSON and would satisfy every
+  other check here while carrying none of the keys management/cluster
+  reads. tofu would then fail on a missing attribute and name the HCL
+  rather than the substitution that dropped it, which is the confusing
+  failure this whole file exists to prevent.

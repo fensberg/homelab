@@ -1,0 +1,20 @@
+guard: TestEveryJobSaysWhetherItKeepsRoot
+file: .github/workflows/zz-disables-sudo-on-arc.yml
+create: |
+  name: planted
+  on: push
+  jobs:
+    planted:
+      runs-on: homelab-site0
+      timeout-minutes: 1
+      steps:
+        - uses: $/.github/workflows/mobilize
+          with:
+            egress-policy: audit
+            disable-sudo-and-containers: "true"
+            checkout: "false"
+mentions: 'claims disable-sudo-and-containers: "true"'
+why: >
+  The same early return means sudo is not removed on that runner either.
+  A setting that reads as a protection and does nothing is a status that
+  says something untrue, on exactly the jobs where it would matter most.

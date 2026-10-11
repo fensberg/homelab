@@ -44,7 +44,7 @@ debt:
   - "refs/signing/"
   - "user.email=a@example.com"
 
-  # --- Paths into this repository (18)
+  # --- Paths into this repository (17)
   - "backend_pg.tf"
   - ".pre-commit-config.yaml"
   - "age-encryption.org/v1"
@@ -60,7 +60,6 @@ debt:
   - "scripts/deliveries.lock"
   - "scripts/versions.env"
   - "site.auto.yml"
-  - "tests/mutations.yml"
 
   # --- Everything else: tool flags, vendor identifiers, status wording (52)
   - "demolish-site"

@@ -1,0 +1,9 @@
+guard: TestTakeDeliveryTakesTheNamedFileOutOfAnArchive
+file: scripts/take-delivery.sh
+find: 'found="$(find "$work/$name.d" -type f -name "$name")"'
+replace: 'found="$(find "$work/$name.d" -type f -name LICENSE)"'
+mentions: "not the archive's tool"
+why: >
+  An archive carries a licence and a readme beside the binary. Taking the
+  wrong member installs something that is not the tool under the tool's
+  name, and the lane then fails far from the cause.

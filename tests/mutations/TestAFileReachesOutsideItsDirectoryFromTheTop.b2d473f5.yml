@@ -1,0 +1,8 @@
+guard: TestAFileReachesOutsideItsDirectoryFromTheTop
+file: modules/infrastructure/applications/declarations.tf
+find: '"${path.module}/../../../modules/applications/*/application.json"'
+replace: '"${path.module}/../../modules/applications/*/application.json"'
+mentions: "reaches outside its directory"
+why: >
+  The pull-request plan runs a copy of the root at the same depth, so a
+  one-level path points nowhere and the plan refuses before its first step.

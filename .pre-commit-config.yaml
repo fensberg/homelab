@@ -236,28 +236,35 @@ repos:
 
       # Refused where the mistake is made rather than where it is discovered.
       #
-      # signedpush already refuses a merge commit at push time, correctly - it
-      # replays a branch linearly so GitHub can sign each commit, and a merge
-      # has two parents. But that refusal lands after the suite has run, and
-      # clearing it needs a rebase, which diverges the branch, which needs the
-      # ref recreated, which closes the pull request. Three were lost that way
-      # in one session (#260).
+      # signedpush publishes one kind of merge: main brought into a branch,
+      # which is how a conflict with main is cleared with nothing rewritten.
+      # Any other merge it refuses at push time, correctly - that is another
+      # branch's work arriving in this one. But that refusal lands after the
+      # suite has run, and three pull requests were lost to it in one session
+      # when every merge was refused (#260).
       #
       # commit-msg is the stage because git does not run pre-commit for merges.
       # The guard refuses only an UNSIGNED merge, which is the same property
       # question enforce-push asks: somebody who signs locally publishes with
       # plain git and needs no replay, so a merge from them is fine.
       - id: enforce-merge
-        name: refuse a merge commit signedpush cannot publish (commit-msg)
+        name: refuse a merge signedpush cannot publish (commit-msg)
         entry: task enforce-merge
         language: system
         stages: [commit-msg]
         pass_filenames: false
         always_run: true
 
+      # -count=1, so that the answer is about the tree being pushed. Go keeps
+      # a test's result and gives it back when it believes nothing the test
+      # read has changed, and on 2026-10-11 it believed that of a tree whose
+      # workflows had just been patched: the guards were reported as passing
+      # on one machine and refused the same tree on another. These guards
+      # read the whole repository, and a kept answer costs the same six
+      # seconds to distrust as it saves.
       - id: test
         name: the fast guards (pre-push)
-        entry: go test -C tests/go -short ./repo
+        entry: go test -C tests/go -count=1 -short ./repo
         language: system
         pass_filenames: false
         always_run: true

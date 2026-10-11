@@ -1,0 +1,11 @@
+guard: TestEverySiteRootRunsItsModulesAsReleased
+file: management/cluster/root.tf
+find: '  source = var.unreleased != "" ? "${var.unreleased}/modules/infrastructure/cluster" : "oci://${var.release}//modules/infrastructure/cluster?digest=${var.digest}"'
+replace: '  source = "../../modules/infrastructure/cluster"'
+mentions: "calls a module from"
+why:
+  "A root that calls its modules by path runs whatever is on the commit being converged, on
+  every site at once. A release is what lets code merge without reaching a site, and it only
+  holds if no root can reach its modules around it.
+
+  "

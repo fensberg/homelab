@@ -1,0 +1,22 @@
+guard: TestEverySiteRunsItsApplicationsAsTheyAreDeclared
+file: clusters/site9/applications.yaml
+create: |
+  ---
+  apiVersion: kustomize.toolkit.fluxcd.io/v1
+  kind: Kustomization
+  metadata:
+    name: planted
+    namespace: flux-system
+  spec:
+    sourceRef:
+      kind: GitRepository
+      name: flux-system
+    path: ./modules/applications/planted/production
+    targetNamespace: planted
+mentions: "no application of that name"
+why: >
+  A site's block is the only thing that says the site runs an
+  application, so it is where running one has to be held to what the
+  application declares. A block for something nothing declares is a
+  Kustomization reconciled as Flux itself - which may create anything
+  anywhere - pointed at a directory no guard reads as an application.

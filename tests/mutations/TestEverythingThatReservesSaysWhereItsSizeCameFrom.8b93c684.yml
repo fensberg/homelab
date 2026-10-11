@@ -1,0 +1,12 @@
+guard: TestEverythingThatReservesSaysWhereItsSizeCameFrom
+file: clusters/core/sized-from.json
+find: '"HelmRelease/storage-driver": {'
+replace: '"HelmRelease/storage": {'
+mentions: "reserves (HelmRelease/storage-driver) and nothing says where its size came from"
+why: >
+  A controller is added to the core, or one is renamed, and the file
+  that says where each size came from is not touched. Its reservation
+  then counts toward what a site can hold with nobody having said
+  whether it is a publisher's figure, a guess or a measurement - and a
+  guess nobody labelled is treated as a fact the first time capacity
+  is tight.

@@ -1,0 +1,21 @@
+guard: TestEveryJobSaysWhetherItKeepsRoot
+file: .github/workflows/zz-keeps-root-quietly.yml
+create: |
+  name: planted
+  on: push
+  jobs:
+    planted:
+      runs-on: ubuntu-latest
+      timeout-minutes: 1
+      steps:
+        - uses: $/.github/workflows/mobilize
+          with:
+            egress-policy: block
+            disable-sudo-and-containers: "false"
+            checkout: "false"
+mentions: "keeps root with no reason declared"
+why: >
+  Keeping root on a GitHub-hosted runner is sometimes right - a Docker
+  action, an image build - but it reopens the way a later step can
+  switch egress enforcement off, so it is an exception somebody has to
+  write down beside the job's egress entry rather than a value in a file.

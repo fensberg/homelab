@@ -1,0 +1,10 @@
+guard: TestSetupWiresTheHooksAndSigning
+file: scripts/install-dependencies.sh
+find: '"$(dirname "$0")/take-delivery.sh" ansible-core pre-commit pre-commit-hooks checkov zizmor codespell'
+replace: '"$(dirname "$0")/take-delivery.sh" ansible-core pre-commit checkov zizmor codespell'
+mentions: "never takes delivery of pre-commit-hooks"
+why: >
+  .pre-commit-config.yaml runs pre-commit-hooks as local hooks from this
+  install. A workstation set up without it fails every commit on "No
+  module named pre_commit_hooks" - or, if an old copy is lying around,
+  runs whichever version that was.

@@ -1,0 +1,14 @@
+guard: TestEveryWorkloadIsSizedPlacedAndGivenAPriority
+file: clusters/core/infrastructure/controllers/openebs.yaml
+find: "      localpv:"
+replace: "      localpvv:"
+mentions: "the cluster has been running without it"
+why: >
+  This is the failure the whole table exists for, and it is silent. OpenEBS
+  is a subchart, so its provisioner's resources and placement live two
+  levels down at localpv-provisioner.localpv rather than at the top level
+  the other two charts use. Helm accepts a value at a path no template
+  reads without an error, a warning or an event - the manifest says the
+  provisioner has requests and is off the control plane, and the pod has
+  neither. One misspelt key is the whole distance between configured and
+  configured-looking, and nothing else in this repository would notice.

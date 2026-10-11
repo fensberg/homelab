@@ -1,0 +1,17 @@
+guard: TestEveryGoModuleHasACoverageFloor
+file: tests/coverage-baseline.json
+# Anchored on the KEY rather than on the key and its number. The number is
+# a ratchet every change that adds tests moves, so an entry naming one
+# breaks whenever coverage improves - which is the ledger going red for the
+# opposite of a problem. Found exactly that way when go/clerk went 56 -> 63.8.
+find: '"go/clerk":'
+replace: '"go-clerk-was-here":'
+mentions: "has no floor for"
+why: >
+  A module with no floor has its coverage measured and compared against
+  nothing. Six of the seven were in that state, two of them modules no task
+  ran at all, so the number the gate reported for "go" described one module
+  while appearing to describe the project. The floor is written by hand on
+  purpose - a floor that ratchets automatically records whatever the last
+  green run happened to hit - so the thing that must not be forgotten is
+  writing it, and this is what refuses to forget.

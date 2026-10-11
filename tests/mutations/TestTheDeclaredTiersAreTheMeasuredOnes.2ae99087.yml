@@ -1,0 +1,13 @@
+guard: TestTheDeclaredTiersAreTheMeasuredOnes
+file: tests/README.md
+find: "| **fuzz**        | What happens on input nobody thought of?"
+replace: "| **fuzzing**     | What happens on input nobody thought of?"
+mentions: "has no floor for it"
+why: >
+  The tier table is the one place a reader looks to find out what tiers
+  exist, and nothing checked it against what is actually measured. It had
+  already drifted: five tiers declared against eight counted, so tofu, js
+  and fuzz were floored and reported on every run while being absent from
+  the table. A tier that loses its row goes back to being invisible in
+  exactly the way a missing check is - which is the allow-list failure this
+  repository spent a day removing one level down.

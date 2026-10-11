@@ -1,0 +1,11 @@
+guard: TestTheRenderedCNIManifestMatchesThePinnedChartVersion
+file: scripts/versions.env
+find: "CILIUM_VERSION=1.20.1"
+replace: "CILIUM_VERSION=1.19.7"
+mentions: "render-cni"
+why: >
+  Bumping the pin and forgetting to re-render is the failure this guard
+  exists for, so the mutation is exactly that. The committed manifest is
+  generated, and a generated file nobody can prove is current silently
+  becomes the source of truth while still claiming to be a copy - the
+  estate would then be running a version no file in it names.

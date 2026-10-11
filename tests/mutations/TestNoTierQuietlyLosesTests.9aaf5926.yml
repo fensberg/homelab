@@ -1,0 +1,12 @@
+guard: TestNoTierQuietlyLosesTests
+file: tests/coverage-baseline.json
+find: '"integration": 14,'
+replace: '"integration": 99,'
+mentions: "integration tier has"
+why: >
+  Unit tests are cheap and the count always rises; the tiers that drive
+  real infrastructure are hard, and theirs can fall without anybody
+  noticing, because the total still looks healthy. On the day this was
+  written the cheap tiers held 513 tests and the three that touch a real
+  estate held 25. Raising a floor above the real count stands in for the
+  count falling below the floor - the failure this exists to catch.

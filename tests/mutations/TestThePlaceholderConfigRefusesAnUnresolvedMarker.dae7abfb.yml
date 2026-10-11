@@ -1,0 +1,11 @@
+guard: TestThePlaceholderConfigRefusesAnUnresolvedMarker
+file: .github/scripts/placeholder-config.sh
+find: 'if grep -q ''{{'' "${rendered}"; then'
+replace: "if false; then"
+mentions: "did not say why"
+why: >
+  A template marker the sweep could not match reaches tofu as the
+  literal text `{{`, which is a value no provider recognises. The
+  refusal is what turns that into an error naming this script and the
+  line, rather than one naming whichever provider happened to read the
+  key first.

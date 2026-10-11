@@ -1,0 +1,10 @@
+guard: TestAnImageOfTheSameInputsIsReused
+file: .github/workflows/fabricator.yml
+find: 'printf ''%s\n'' "$PINS"; } | sha256sum'
+replace: "true; } | sha256sum"
+mentions: "a new pin kept the old fingerprint"
+why: >
+  A fingerprint that leaves out the pins reuses the old image when only a
+  pin moved - which is exactly what a new Steam build is. The expediter's
+  update would merge, the fabricator would reuse yesterday's image, and
+  production would never get the build players' clients now demand.

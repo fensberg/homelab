@@ -1,0 +1,9 @@
+guard: TestAVersionIsTheMonthAndItsNumberInIt
+file: .github/workflows/fabricator.yml
+find: 'echo "version=${month}.$((n + 1))" >> "$GITHUB_OUTPUT"'
+replace: 'echo "version=${month}.1" >> "$GITHUB_OUTPUT"'
+mentions: "want v2026.10.4"
+why: >
+  A version that does not continue from the registry is published over
+  one that exists. The name a site pins then means two different packages
+  depending on when it was read, and only the digest beside it says which.

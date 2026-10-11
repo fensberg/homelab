@@ -1,0 +1,19 @@
+guard: TestRunnerPodsCannotScheduleOntoAControlPlane
+file: clusters/core/infrastructure/configs/runner-scale-set.yaml
+# Anchored on the priority class above it, because this file now carries
+# the same anti-control-plane rule twice - once for the runner and once for
+# the listener - and "operator: DoesNotExist" alone no longer names one spot.
+# The anchor is YAML rather than the comment beside it on purpose:
+# TestNoTestIsSatisfiedByAComment strips comments and re-runs everything.
+find: "priorityClassName: interactive\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: DoesNotExist"
+replace: "priorityClassName: interactive\n        affinity:\n          nodeAffinity:\n            requiredDuringSchedulingIgnoredDuringExecution:\n              nodeSelectorTerms:\n                - matchExpressions:\n                    - key: node-role.kubernetes.io/control-plane\n                      operator: Exists"
+mentions: "would schedule onto a control-plane node"
+why: >
+  One character inverts it. With Exists a CI runner schedules ONLY onto
+  control planes, which is the precise arrangement the worker pool was
+  built to end - eight concurrent jobs pulling large images beside etcd is
+  how a control plane becomes intermittently unwell, and one integration
+  run was already killed for it. The guard evaluates the affinity against
+  a synthetic node rather than matching its text, because a check for the
+  string "DoesNotExist" passes just as happily once the operator has been
+  flipped.

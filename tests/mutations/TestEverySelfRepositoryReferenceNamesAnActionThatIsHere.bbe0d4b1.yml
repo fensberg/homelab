@@ -1,0 +1,9 @@
+guard: TestEverySelfRepositoryReferenceNamesAnActionThatIsHere
+file: .github/workflows/scorecard.yml
+find: "uses: $/.github/workflows/mobilize"
+replace: "uses: $/.github/workflows/mobilise"
+mentions: "there is no action there"
+why: >
+  One letter, in a form actionlint is told to pass without reading. The
+  workflow is valid YAML and every linter is quiet; the job fails to
+  start, on a schedule, the next time it is due.

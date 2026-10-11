@@ -1,0 +1,12 @@
+guard: TestNoTeardownStartsUntilTheSafetyOfficerClearsIt
+file: scripts/contractor/internal/phases/destroy.go
+find: "if err := clearedBySafetyOfficer(ctx); err != nil {"
+replace: "if err := error(nil); err != nil {"
+mentions: "starts a teardown without asking the safety officer first"
+reads_source: true
+why: >
+  The call comes out during a refactor of the teardown, or a second way
+  into it is written beside the first. Every test of the teardown still
+  passes, because none of them holds anything worth keeping. The site
+  that does is destroyed with nobody having looked at its copies, which
+  is the one thing the officer exists to stop.

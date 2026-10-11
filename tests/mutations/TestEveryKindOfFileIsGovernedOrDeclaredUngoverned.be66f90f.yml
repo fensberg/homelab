@@ -1,0 +1,16 @@
+guard: TestEveryKindOfFileIsGovernedOrDeclaredUngoverned
+file: scripts/undeclared-language.rs
+create: |
+  fn main() {
+      println!("nothing in this estate reads this file");
+  }
+mentions: 'covers ".rs"'
+why: >
+  Every tool here is bound to a file type, so a language nobody declared
+  is a language nothing checks - not linted, not built, not covered, not
+  proved, and silent about all of it. The aggregate that used to hold a
+  default opinion about unfamiliar files went in #365, which makes this
+  the only thing standing between a new extension and no checks at all.
+  Planted rather than substituted because the guard has nothing to say
+  until an undeclared kind is PRESENT, and no file in the tree can be
+  edited into being a different language.

@@ -1,0 +1,12 @@
+guard: TestEveryZoneResourceIsKeyedOffItsMachines
+file: modules/infrastructure/cluster/compute.tf
+find: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.dmz_hypervisors)"
+replace: "resource \"proxmox_download_file\" \"dmz_disk_image\" {\n  for_each = toset(local.all_vm_hypervisors)"
+mentions: "keyed off"
+why: >
+  The mutation is the line the resource directly above it uses, which is
+  what makes it the plausible one: copying a neighbouring for_each reads as
+  consistency rather than as a change of meaning. It pulls a 4.5GB image
+  onto every hypervisor forever, including an estate that has deprecated
+  its last untrusted workload - and nothing fails, so the only symptom is
+  disk somebody notices months later.

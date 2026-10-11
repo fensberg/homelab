@@ -1,0 +1,8 @@
+guard: TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode
+file: modules/infrastructure/cluster/compute.tf
+find: "  datastore_id = local.datastores[each.value].images\n  node_name    = local.hostnames[each.value]\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+replace: "  datastore_id = \"local-iso\"\n  node_name    = local.hostnames[each.value]\n  url          = \"https://factory.talos.dev/image/${local.schematic_id}"
+mentions: "a hypervisor fact the config declares"
+why: >
+  A storage name written into the code is a host nobody can describe without
+  editing it; the second hypervisor on other storage fails to place a disk.

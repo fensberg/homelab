@@ -1,0 +1,11 @@
+guard: TestTheFormatLaneRefusesASupplierBeforeInstallingAnything
+file: .github/workflows/setup-go/action.yml
+find: "go-version: ${{ env.GO_VERSION }}"
+replace: 'go-version: "1.26.7"'
+mentions: "sets up Go without reading GO_VERSION"
+why: >
+  The Format lane no longer writes a Go version at all; it trusts the
+  shared setup-go to read the pin. That trust is only safe while the
+  shared action actually does, and a literal there agrees with
+  scripts/versions.env exactly until the pin moves - on the lane that runs
+  the supplier gate before anything is installed.

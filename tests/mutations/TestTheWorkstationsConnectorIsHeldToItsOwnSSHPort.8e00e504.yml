@@ -1,0 +1,10 @@
+guard: TestTheWorkstationsConnectorIsHeldToItsOwnSSHPort
+file: workstation/tunnel.sh
+find: "\t\tip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/3 } reject"
+replace: "\t\t# nothing refused here"
+mentions: "never refuses the private ranges"
+why: >
+  The connector forwards wherever the account's routes send it, and the
+  account is the vendor's computer. Without this line the connector, a
+  process inside the house, can open the router, the hypervisor and the
+  overlay on the vendor's edge ports, for anybody who can add a route.

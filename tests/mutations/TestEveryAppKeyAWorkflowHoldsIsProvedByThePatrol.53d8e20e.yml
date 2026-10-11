@@ -1,0 +1,9 @@
+guard: TestEveryAppKeyAWorkflowHoldsIsProvedByThePatrol
+file: .github/workflows/security-patrol.yml
+find: "          CLERK_BOT_PRIVATE_KEY: ${{ secrets.CLERK_BOT_PRIVATE_KEY }}"
+replace: '          CLERK_BOT_PRIVATE_KEY: ""'
+mentions: "does not prove it still mints a token"
+why: >
+  A key is used only when there is something to do with it, so one that
+  has stopped working is found on the day it is needed. The patrol proves
+  each by using it; a key it is not handed is a key nobody is watching.

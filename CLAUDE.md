@@ -810,7 +810,7 @@ floor a pull request may not drop below and is free to leave alone.
   in CI on every pull request. **Commit and push together stay under ten
   seconds:** the `pre-push` hook runs only what cannot be undone once
   published and the guards that answer in milliseconds
-  (`go test -C tests/go -short ./repo`); a guard costing seconds calls
+  (`go test -C tests/go -count=1 -short ./repo`); a guard costing seconds calls
   `heavy()` and waits for the pull request. Run `task validate` and
   `task test` by hand when you want the whole answer before pushing.
   `validate` and `test` are separate on purpose - "does it resolve" and

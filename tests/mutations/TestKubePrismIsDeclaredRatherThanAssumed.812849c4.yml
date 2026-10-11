@@ -1,0 +1,17 @@
+guard: TestKubePrismIsDeclaredRatherThanAssumed
+file: modules/infrastructure/cluster/talos.tf
+find: "              port    = 7445\n            }\n          }\n        }\n      }),\n\n      # The taint,"
+replace: "              port    = 7446\n            }\n          }\n        }\n      }),\n\n      # The taint,"
+mentions: "7445"
+why: >
+  Moved in one patch collection and not the other, which is the realistic
+  drift: the port is declared once per collection and as k8sServicePort in
+  the Cilium values, and a change that updates the one somebody was looking
+  at leaves the rest behind. It breaks the pod network on whichever
+  machines took the stale value, with nothing anywhere naming a port.
+
+  The mutation targets the untrusted zone's collection deliberately. This
+  guard used to assert only that the file mentioned KubePrism somewhere,
+  which a second machine class made insufficient - the zone's agents need
+  the endpoint exactly as much as a worker's do, and the check would have
+  been satisfied by somebody else's declaration.

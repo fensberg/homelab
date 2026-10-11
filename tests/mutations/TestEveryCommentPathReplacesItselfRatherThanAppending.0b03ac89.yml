@@ -1,0 +1,22 @@
+guard: TestEveryCommentPathReplacesItselfRatherThanAppending
+file: .github/workflows/github-script/zz-appends-a-comment.js
+create: |
+  module.exports = async ({ github, context }) => {
+    const marker = '<!-- planted -->';
+    const repo = { owner: context.repo.owner, repo: context.repo.repo };
+    const { data: comments } = await github.rest.issues.listComments({
+      ...repo, issue_number: context.issue.number,
+    });
+    const existing = comments.find(c => c.body.startsWith(marker));
+    await github.rest.issues.createComment({
+      ...repo, issue_number: context.issue.number, body: marker,
+    });
+  };
+mentions: "finds the previous comment and does not"
+why: >
+  A comment with no marker cannot be found again on the next push, so
+  every run adds another and the oldest sits at the top. That is noise
+  of the specific kind that makes a reviewer stop reading the comments,
+  on the lane that comments about changes to real infrastructure - and
+  the one path that had this defect went unnoticed for months because
+  its job gates on directories that did not exist yet.

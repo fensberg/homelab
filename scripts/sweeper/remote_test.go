@@ -1,6 +1,7 @@
 package main
 
 import (
+	"homelab/details/gitenv"
 	"io"
 	"os"
 	"os/exec"
@@ -24,10 +25,10 @@ func fixtureWithRemotes(t *testing.T) {
 	for _, args := range [][]string{
 		{"init", "-q"},
 		{"-c", "user.email=a@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "base"},
-		{"update-ref", "refs/remotes/origin/main", "HEAD"},
+		{"update-ref", gitenv.RemoteMain, "HEAD"},
 		{"update-ref", "refs/remotes/origin/feat/closed", "HEAD"},
 		{"update-ref", "refs/remotes/origin/revert/converge-failed-abcdef12", "HEAD"},
-		{"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"},
+		{"symbolic-ref", "refs/remotes/origin/HEAD", gitenv.RemoteMain},
 	} {
 		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)

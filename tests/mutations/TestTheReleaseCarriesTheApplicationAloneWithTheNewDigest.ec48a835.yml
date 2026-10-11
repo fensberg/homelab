@@ -1,0 +1,10 @@
+guard: TestTheReleaseCarriesTheApplicationAloneWithTheNewDigest
+file: .github/workflows/fabricator.yml
+find: 'cp -R "$module" "${stage}/${module}"'
+replace: 'cp -R . "${stage}/"'
+mentions: "files that are not the application's"
+why: >
+  A release is the application's own directory and nothing else. One
+  staged from more than that ships whatever else was beside it to every
+  site that runs the application, and lets its manifests build on files
+  that are not its own.

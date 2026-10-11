@@ -1,0 +1,10 @@
+guard: TestNoPodIsLetPastTheRefusalOfUncountedWork
+file: clusters/core/infrastructure/controllers/uncounted-pods.yaml
+find: "  policyName: uncounted-pods\n"
+replace: "  policyName: uncounted-pods\n  matchResources:\n    namespaceSelector:\n      matchExpressions:\n        - key: kubernetes.io/metadata.name\n          operator: NotIn\n          values: [kube-system]\n"
+mentions: "chooses which pods the rule applies to"
+why: >
+  Leaving the system's namespace out is the standard advice for an
+  admission rule, and the first thing done when one refuses a system pod.
+  It is also a namespace-sized hole in the count, around the pods a site
+  can least afford to have evicted for reserving nothing.

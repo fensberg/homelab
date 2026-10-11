@@ -1,0 +1,12 @@
+guard: TestEveryMachineClassIsAssignedAPool
+file: modules/infrastructure/cluster/pools.tf
+find: "  for_each = local.workers"
+replace: "  for_each = local.control_plane"
+mentions: "never placed in a pool"
+why: >
+  The pools break by addition rather than by deletion - a new class of
+  machine is written beside the others and nothing says where it belongs,
+  so the hypervisor grows an ungrouped machine and the grouping quietly
+  stops being true of everything. This mutation is the shape that failure
+  actually takes: the workers keep a pool assignment, so nothing looks
+  missing, but no line in pool_members iterates local.workers any more.

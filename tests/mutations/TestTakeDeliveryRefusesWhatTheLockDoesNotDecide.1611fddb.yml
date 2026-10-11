@@ -1,0 +1,9 @@
+guard: TestTakeDeliveryRefusesWhatTheLockDoesNotDecide
+file: scripts/take-delivery.sh
+find: 'echo "refusing $name: it is an installer script and nothing here says how to run it" >&2'
+replace: 'sh "$file"'
+mentions: "an installer script ran with flags nobody wrote down"
+why: >
+  An installer script is code from a supplier. Running one this script
+  has no flags for means running it with whatever defaults it has -
+  including falling back to sudo - rather than refusing.

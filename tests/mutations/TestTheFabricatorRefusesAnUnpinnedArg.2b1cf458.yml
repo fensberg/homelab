@@ -1,0 +1,8 @@
+guard: TestTheFabricatorRefusesAnUnpinnedArg
+file: .github/workflows/fabricator.yml
+find: 'value="$(printenv "$name" || true)"'
+replace: 'value="$(printenv "$name" || echo unset)"'
+mentions: "passed a Dockerfile asking for UNPINNED_VERSION"
+why: >
+  An ARG nobody pinned has to stop the build. Filled with a placeholder,
+  the image builds with a version string that pins nothing.

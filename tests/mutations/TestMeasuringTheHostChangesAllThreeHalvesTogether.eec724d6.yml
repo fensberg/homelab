@@ -1,0 +1,10 @@
+guard: TestMeasuringTheHostChangesAllThreeHalvesTogether
+file: management/hypervisor/hypervisor-prep.yml
+find: "--web.listen-address={{ ansible_host }}:9100"
+replace: "--web.listen-address={{ sdn_gateway }}:9100"
+mentions: "not told to listen on the host's own address"
+why: >
+  The address this was first given. The site's gateway is inside the
+  zone's VRF, so the exporter cannot answer on it and nothing on the host
+  can reach it: the playbook's own check waited on a connection that never
+  opened, twice, before anybody knew why.

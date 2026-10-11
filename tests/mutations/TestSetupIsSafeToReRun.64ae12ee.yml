@@ -1,0 +1,11 @@
+guard: TestSetupIsSafeToReRun
+file: scripts/install-dependencies.sh
+find: "if git -C \"$repo_root\" config --get commit.gpgsign | grep -qx true; then\n\tskip \"commit signing already configured\""
+replace: "if false; then\n\tskip \"commit signing already configured\""
+mentions: "did not recognise that signing was already set up"
+why: >
+  Without the already-configured check a re-run generates a new signing
+  key, replacing the one GitHub knows about - which turns a working
+  setup into refused pushes, on a script whose own header promises it is
+  safe to re-run. The person most likely to re-run it is the person who
+  just had a push refused.

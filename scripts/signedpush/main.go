@@ -170,12 +170,17 @@ recreated with it. See docs/epochs/01-ignition.md.`, branch, baseSHA[:8], branch
 		}
 	}
 
-	revs, err := git("rev-list", "--reverse", baseSHA+"..HEAD")
+	// The branch's own commits and no others. A merge of main brings main's
+	// commits into what HEAD reaches, and those are published already: only
+	// the merge itself is the branch's, and it is replayed with both of its
+	// parents.
+	revs, err := git("rev-list", "--reverse", "--first-parent", baseSHA+"..HEAD")
 	if err != nil {
 		return err
 	}
 	commits := strings.Fields(revs)
-	if err := refuseMerges(commits); err != nil {
+	broughtIn, err := mergesOfMain(commits)
+	if err != nil {
 		return err
 	}
 	if err := refuseStacked(branch); err != nil {
@@ -219,22 +224,11 @@ recreated with it. See docs/epochs/01-ignition.md.`, branch, baseSHA[:8], branch
 		_ = a.deleteRef(owner, repo, strings.TrimPrefix(scratch, "refs/"))
 	}()
 
-	parent := baseSHA
-	for _, c := range commits {
-		tree, err := git("rev-parse", c+"^{tree}")
-		if err != nil {
-			return err
-		}
-		message, err := git("log", "-1", "--format=%B", c)
-		if err != nil {
-			return err
-		}
-		signed, err := a.createCommit(owner, repo, strings.TrimRight(message, "\n"), tree, []string{parent})
-		if err != nil {
-			return err
-		}
-		fmt.Printf("  %s -> %s  signed\n", c[:8], signed[:8])
-		parent = signed
+	parent, err := replay(commits, baseSHA, broughtIn, func(message, tree string, parents []string) (string, error) {
+		return a.createCommit(owner, repo, message, tree, parents)
+	})
+	if err != nil {
+		return err
 	}
 
 	if err := a.setRef(owner, repo, headRef, parent, branchExists); err != nil {
@@ -259,43 +253,97 @@ recreated with it. See docs/epochs/01-ignition.md.`, branch, baseSHA[:8], branch
 	return nil
 }
 
-// refuseMerges stops a branch containing a merge commit from being published.
+// replay makes each of a branch's commits again through create, in order, on
+// top of base, and gives the last one made.
 //
-// This program replays commits as a linear chain: each signed commit gets one
-// parent, the previously signed one. A merge commit has two, and flattening it
-// does not fail - it silently produces replicas of everything the merge
-// brought in, with new SHAs. The branch then contains duplicates of commits
-// already on main, main is no longer an ancestor of it, and merging would
-// write those duplicates into main's history.
-//
-// That happened once, to a branch that had `git merge origin/main` run on it.
-// Nothing complained; the branch simply grew a second copy of three merged
-// pull requests. Refusing is the honest behaviour until this replays merges
-// properly, because the failure is invisible in the output and obvious only
-// days later in the log.
-func refuseMerges(commits []string) error {
+// Each is made with the tree and the message it has here. Its first parent is
+// the commit made before it, since that is the signed one. A merge of main
+// keeps main's commit as its second parent, as it is: that commit is on
+// GitHub already, under the SHA it has here.
+func replay(commits []string, base string, broughtIn map[string]string, create func(message, tree string, parents []string) (string, error)) (string, error) {
+	parent := base
 	for _, c := range commits {
-		parents, err := git("rev-list", "--parents", "-n", "1", c)
+		tree, err := git("rev-parse", c+"^{tree}")
 		if err != nil {
-			return err
+			return "", err
 		}
-		// "<sha> <parent> [<parent>...]" - more than two fields means a merge.
-		if len(strings.Fields(parents)) > 2 {
-			subject, _ := git("log", "-1", "--format=%s", c)
-			return fmt.Errorf(`%s is a merge commit, and publishing replays commits as a linear chain.
+		message, err := git("log", "-1", "--format=%B", c)
+		if err != nil {
+			return "", err
+		}
+		parents := []string{parent}
+		if other, merge := broughtIn[c]; merge {
+			parents = append(parents, other)
+		}
+		signed, err := create(strings.TrimRight(message, "\n"), tree, parents)
+		if err != nil {
+			return "", err
+		}
+		fmt.Printf("  %s -> %s  signed\n", c[:8], signed[:8])
+		parent = signed
+	}
+	return parent, nil
+}
+
+// mergesOfMain finds the merge commits among a branch's own, and says what
+// each brought in: the commit of main that is its second parent.
+//
+// A merge of main is the one merge this program publishes. It is how a
+// branch that conflicts with main is brought up to it: no history is
+// rewritten, so there is nothing to force, the branch keeps its name and its
+// pull request keeps its number. The merge is replayed as a signed commit
+// with two parents - the branch's previous signed commit, and main's commit
+// exactly as it is, since that one is on GitHub already.
+//
+// It used to refuse every merge, for a reason that still holds for the way it
+// then worked: each commit was replayed with one parent, and a merge
+// flattened that way republishes everything it brought in as new commits.
+// That happened once. The branch grew a second copy of three merged pull
+// requests and main stopped being an ancestor of it. Refusing was right until
+// a merge was replayed as a merge, which is what this is. What the refusal
+// cost was the other half: with no rewrite allowed on any branch either, a
+// conflict with main could only be cleared by a new branch and a new pull
+// request, and on 2026-10-11 one line of conflict cost exactly that.
+//
+// Any other merge is still refused. A merge of another branch is that
+// branch's work arriving in this one, which is a stacked branch by another
+// route; and a merge with more than two parents is nothing this needs.
+func mergesOfMain(commits []string) (map[string]string, error) {
+	broughtIn := map[string]string{}
+	for _, c := range commits {
+		listed, err := git("rev-list", "--parents", "-n", "1", c)
+		if err != nil {
+			return nil, err
+		}
+		// "<sha> <parent> [<parent>...]"
+		parents := strings.Fields(listed)[1:]
+		if len(parents) < 2 {
+			continue
+		}
+		subject, _ := git("log", "-1", "--format=%s", c)
+		if len(parents) > 2 {
+			return nil, fmt.Errorf(`%s merges more than two histories, which is nothing this publishes.
 
     %s  %s
 
-Flattening it would republish everything the merge brought in as new commits,
-so the branch would carry duplicates of history already on main and main would
-stop being an ancestor of it.
+Merge main alone:
 
-Rebase instead, which keeps the branch linear:
-
-    git fetch origin && git rebase origin/main`, c[:8], c[:8], subject)
+    git fetch origin && git merge origin/main`, c[:8], c[:8], subject)
 		}
+		if _, err := git("merge-base", "--is-ancestor", parents[1], "origin/main"); err != nil {
+			return nil, fmt.Errorf(`%s is a merge of something that is not on main.
+
+    %s  %s
+
+Only a merge of main is published. What it brought in (%s) is not a commit of
+origin/main as this clone has it, so it is another branch's work, and a branch
+carries only its own. If it is main and this clone is behind:
+
+    git fetch origin main`, c[:8], c[:8], subject, parents[1][:8])
+		}
+		broughtIn[c] = parents[1]
 	}
-	return nil
+	return broughtIn, nil
 }
 
 // ensureLocal makes a remote object available locally, fetching only if it is
