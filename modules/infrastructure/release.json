@@ -12,6 +12,7 @@
   "holds": [
     "clusters/bootstrap/cilium.yaml",
     "clusters/core/flux-system",
+    "clusters/core/routes.json",
     "modules/applications/*/application.json",
     "modules/infrastructure"
   ]
