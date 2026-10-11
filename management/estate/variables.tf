@@ -18,6 +18,15 @@ variable "applications_path" {
   EOT
 }
 
+variable "core_routes_path" {
+  type        = string
+  default     = null
+  description = <<-EOT
+    Where the core says what of it is reached from away, as a route like an
+    application's. Unset outside tests: the estate reads the repository's own.
+  EOT
+}
+
 variable "config_path" {
   type        = string
   default     = "../../config/estate.rendered.json"
@@ -63,4 +72,5 @@ module "address_plan" {
 module "applications" {
   source    = "../../modules/infrastructure/applications"
   directory = var.applications_path
+  core      = var.core_routes_path
 }

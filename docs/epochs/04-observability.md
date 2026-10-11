@@ -574,6 +574,22 @@ Pushgateway was rejected: a stale push and a fresh one look identical unless
 something checks a timestamp, and the fault being watched for is exactly the
 one that stops pushes arriving.
 
+**Superseded 2026-10-11, in what goes in front and not in the tunnel.**
+The dashboards are reached the way the game server came to be: as an
+address an enrolled device is routed to, with no public name and no
+application of their own. Who may reach them is who may enroll a device,
+which is the estate's member list and is set once. The operator, asked who
+should be let in: "Shouldn't the access only be limited by cloudflare zero?
+... I could see tagged by team but nothing more granular than that." So
+there is no Access application for the dashboards and no list of people
+for them. What of the core is reached from away is declared beside the
+core (`clusters/core/routes.json`), as an application declares its own,
+and the address plan is handed both. It lands in two steps, because the
+address reaches a site only with a release: first the declaration, then,
+once a site's line has moved, the Service that takes the address and the
+rule that lets the tunnel's connector reach it. What follows is the
+decision as it was first made.
+
 **Grafana is reached through Cloudflare Tunnel, behind Cloudflare Access.**
 The operator chose the tunnel over an overlay-only service. Two consequences,
 recorded because they were accepted rather than discovered: it builds the

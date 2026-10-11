@@ -15,10 +15,11 @@ resources:
 # looks at is reviewed like everything else, and handed to Grafana by the
 # sidecar that watches for the label below.
 #
-# Not one of them holds a "$". Flux substitutes into everything it applies
-# and the Validate lane substitutes with a tool that takes a bare "$name"
-# too, so a dashboard's own variable would be blanked on its way in. They
-# are written with no variables, and tests/go/repo holds them to it.
+# Not one of them holds a variable. Flux substitutes into everything it
+# applies and the Validate lane substitutes with a tool that takes a bare
+# "$name" too, so a dashboard's own variable would be blanked on its way in.
+# They are written with none, and tests/go/repo holds them to it. A "$"
+# before a digit is part of a pattern and is left alone by both.
 configMapGenerator:
   - name: dashboard-what-the-site-holds
     namespace: monitoring
