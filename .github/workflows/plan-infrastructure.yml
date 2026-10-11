@@ -126,6 +126,7 @@ jobs:
           disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
+            dl.k8s.io:443
             get.opentofu.org:443
             ghcr.io:443
             github.com:443
@@ -198,6 +199,12 @@ jobs:
       # same comment. It is not failed here. A refusal has to reach the pull
       # request before the job stops, so the answer is kept and the last
       # step is what refuses.
+      # The engineer has the site's own scheduler try the change, and these are
+      # that scheduler: Kubernetes' store, API server and scheduler, and the
+      # tool that starts them, each from scripts/deliveries.lock by hash.
+      - name: Take delivery of the scheduler a change is tried with
+        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kube-scheduler
+
       - name: Hold the change to what the site can hold
         env:
           SITE: ${{ matrix.site }}

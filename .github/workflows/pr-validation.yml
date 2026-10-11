@@ -619,6 +619,11 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+    env:
+      # The engineer's test of the real scheduler skips on a machine that has
+      # none of its programs. Here they are delivered, so a missing one is a
+      # failure and not a quiet pass.
+      ENGINEER_NEEDS_SCHEDULER: "1"
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
@@ -631,6 +636,7 @@ jobs:
           disable-sudo-and-containers: "true"
           allowed-endpoints: >
             api.github.com:443
+            dl.k8s.io:443
             get.opentofu.org:443
             github.com:443
             go.dev:443
@@ -662,6 +668,11 @@ jobs:
         # removed (#410). Until #416 the script was fetched and executed with
         # nothing checking what arrived.
         run: scripts/take-delivery.sh opentofu
+
+      # The engineer's own tests run a real scheduler over a small site, so
+      # that what it reads is what a scheduler really says.
+      - name: Take delivery of the scheduler a change is tried with
+        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kube-scheduler
 
       # Every OpenTofu root with a tests/ directory, discovered rather than
       # listed - the cluster and estate roots and every module. A list of
