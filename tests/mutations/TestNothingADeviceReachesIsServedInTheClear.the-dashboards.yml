@@ -1,0 +1,11 @@
+guard: TestNothingADeviceReachesIsServedInTheClear
+file: clusters/core/infrastructure/configs/dashboards-route.yaml
+find: "    - name: https\n"
+replace: "    - name: http\n"
+mentions: "is not served over HTTPS"
+why: >
+  The dashboards ask for no login, so whoever is on the path between an
+  enrolled device and the site reads everything the site knows about itself.
+  A Service that says it is served in the clear is the first thing that would
+  be written when the certificate was in the way, and nothing else would
+  notice.

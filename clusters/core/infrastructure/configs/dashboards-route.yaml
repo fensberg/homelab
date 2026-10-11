@@ -18,7 +18,12 @@
 # WHO THAT IS. A device enrolled with the estate, and nothing else: the
 # tunnel has no public name, and who may enroll a device is the estate's
 # member list. The dashboards ask for no login of their own, which is why
-# this address must never be given a public name.
+# this address must never be given a name that resolves for anybody else's
+# network to something of ours.
+#
+# OVER HTTPS, AS EVERYTHING A DEVICE REACHES IS. The port is named for it and
+# tests/go/repo refuses a routed Service whose port is not; Grafana serves the
+# certificate itself (the monitoring stack's values say how).
 apiVersion: v1
 kind: Service
 metadata:
@@ -31,7 +36,7 @@ spec:
     app.kubernetes.io/name: grafana
     app.kubernetes.io/instance: kube-prometheus-stack
   ports:
-    - name: http
+    - name: https
       protocol: TCP
-      port: 80
+      port: 443
       targetPort: 3000

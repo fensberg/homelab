@@ -329,6 +329,23 @@ spec:
       # machines can route to - IS the authentication, and that has to be
       # true before it is reachable rather than after.
       grafana.ini:
+        # SERVED OVER HTTPS, AND BY GRAFANA ITSELF. Nothing a device reaches
+        # is served in the clear (tests/go/repo holds every routed Service to
+        # it), and nothing stands in front of Grafana to do it for it: one
+        # more container on a worker is memory this site does not have to
+        # spare. The certificate is one any browser already trusts, for the
+        # name the estate gives this site's dashboards, and it is read again
+        # as it is renewed, so a renewal restarts nothing.
+        #
+        # It is the operator's to issue and nobody else's
+        # (docs/epochs/11-black-box-white-glove.md). The site is handed it as
+        # a Secret and holds nothing that could get it another.
+        server:
+          protocol: https
+          domain: ${NAME_DASHBOARDS}
+          cert_file: /etc/grafana/served/tls.crt
+          cert_key: /etc/grafana/served/tls.key
+          certs_watch_interval: 1h
         auth:
           disable_login_form: true
         # And basic auth off with it. The chart ships an admin secret holding a
@@ -347,6 +364,37 @@ spec:
         analytics:
           reporting_enabled: false
           check_for_updates: false
+      extraSecretMounts:
+        - name: served-certificate
+          secretName: dashboards-certificate
+          mountPath: /etc/grafana/served
+          readOnly: true
+          # The key is read by Grafana's own group and by nothing else in
+          # the pod.
+          defaultMode: 0440
+          optional: false
+      # WHAT ELSE SPEAKS TO GRAFANA, AND HOW IT CHECKS WHO ANSWERED. The
+      # certificate is for one name and Grafana now answers nothing without
+      # it, so everything that calls it calls it by that name and checks the
+      # certificate like a browser would. Nothing here is told to skip the
+      # check. The sidecars reach it inside the pod, where the name is made
+      # to mean the pod itself; Prometheus reaches the pod by its address and
+      # is told which name to expect. The kubelet's probes are the one caller
+      # that cannot check a name, which is how the kubelet probes anything.
+      hostAliases:
+        - ip: 127.0.0.1
+          hostnames:
+            - ${NAME_DASHBOARDS}
+      readinessProbe:
+        httpGet:
+          scheme: HTTPS
+      livenessProbe:
+        httpGet:
+          scheme: HTTPS
+      serviceMonitor:
+        scheme: https
+        tlsConfig:
+          serverName: ${NAME_DASHBOARDS}
       # Dashboards come from git, through the sidecar that watches for
       # labelled ConfigMaps, so a dashboard somebody draws in the UI is a
       # draft rather than an artefact. Nothing persists: the database holds
@@ -374,8 +422,10 @@ spec:
           enabled: true
           label: grafana_dashboard
           searchNamespace: ALL
+          reloadURL: https://${NAME_DASHBOARDS}:3000/api/admin/provisioning/dashboards/reload
         datasources:
           enabled: true
+          reloadURL: https://${NAME_DASHBOARDS}:3000/api/admin/provisioning/datasources/reload
       securityContext:
         runAsNonRoot: true
         runAsUser: 472
