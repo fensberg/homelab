@@ -17,7 +17,7 @@ var site = Listings{
  {"metadata":{"name":"north-street-office-wk-200","labels":{"kubernetes.io/hostname":"north-street-office-wk-200","zone":"quay"}},"status":{"allocatable":{"memory":"8Gi"}}},
  {"metadata":{"name":"north-street-office-wk-201","labels":{"kubernetes.io/hostname":"north-street-office-wk-201","zone":"quay"}},"status":{"allocatable":{"memory":"8Gi"}}}]}`),
 	Namespaces: []byte(`{"items":[
- {"metadata":{"name":"ledger","labels":{"kubernetes.io/metadata.name":"ledger"}}},
+ {"metadata":{"name":"ledger","labels":{"kubernetes.io/metadata.name":"ledger","pod-security.kubernetes.io/enforce":"privileged","pod-security.kubernetes.io/warn-version":"latest"}}},
  {"metadata":{"name":"pastime","labels":{"kubernetes.io/metadata.name":"pastime"}}}]}`),
 	PriorityClasses: []byte(`{"items":[{"metadata":{"name":"interactive"},"value":10000,"preemptionPolicy":"Never"}]}`),
 	StorageClasses:  []byte(`{"items":[{"metadata":{"name":"kept"},"provisioner":"somebody.example/driver","volumeBindingMode":"WaitForFirstConsumer"}]}`),
@@ -129,6 +129,15 @@ func TestWhatSelectsAThingByNameStillSelectsItInASnapshot(t *testing.T) {
 	taint := str(at(dict(at(tainted, "spec", "taints").([]any)[0]), "value"))
 	if taint == "" || !strings.Contains(text(at(daemon, "spec", "tolerations")), `"value":"`+taint+`"`) {
 		t.Errorf("the toleration does not carry the taint's value %q: %s", taint, text(daemon))
+	}
+
+	// A namespace keeps the labels it can be selected by, and none of the
+	// ones the API server acts on: those are refused under any other value.
+	for _, ns := range s.Of("Namespace") {
+		labels := dict(at(ns, "metadata", "labels"))
+		if len(labels) != 1 || labels["kubernetes.io/metadata.name"] == nil {
+			t.Errorf("a namespace's labels are %v, not the one it is selected by", labels)
+		}
 	}
 
 	if len(s.Of(KindPod)) != 3 {

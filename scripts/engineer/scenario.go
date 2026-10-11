@@ -19,6 +19,17 @@ const (
 	mustRun = "interactive"
 )
 
+// offControlPlanes keeps a pod standing in for a raised setting on the
+// workers. Which pod a setting belongs to is not known, so where it may go
+// is not either, and what is known is the estate's own rule: work goes on
+// the workers. Left free, a stand-in was placed on a control plane that the
+// workload it stands for would never be given.
+var offControlPlanes = capacity.Object{capacity.NodeAffinityKey: capacity.Object{
+	capacity.RequiredKey: capacity.Object{capacity.SelectorTermsKey: []any{
+		capacity.Object{capacity.MatchExpressionsKey: []any{capacity.Object{"key": capacity.ControlPlaneLabel, "operator": capacity.HasNoLabel}}},
+	}},
+}}
+
 // trial is a site set up for the scheduler to judge: everything to load, in
 // the order to load it, and what to call each pod when saying it waits.
 type trial struct {
@@ -63,6 +74,9 @@ func scenario(s capacity.Snapshot, gone string, before, now asks) trial {
 		switch o["kind"] {
 		case "Namespace":
 			namespaces[name] = true
+			// A record outlives the program that took it, and the first one
+			// taken of a real site kept labels a namespace is refused with.
+			o = withLabels(o, capacity.Selectable(meta["labels"]))
 		case "Node":
 			if name == gone {
 				continue
@@ -128,7 +142,7 @@ func scenario(s capacity.Snapshot, gone string, before, now asks) trial {
 			owner = "nothing"
 		}
 		t.Called[namespace+"/"+fmt.Sprint(meta["name"])] = fmt.Sprintf("a pod the site runs today, made by a %s, reserving %s", owner, reserves(spec))
-		add(o)
+		add(distinctlyNamed(o))
 	}
 	for _, p := range now.Pods {
 		name := podName(p)
@@ -163,11 +177,65 @@ func scenario(s capacity.Snapshot, gone string, before, now asks) trial {
 			pod := fmt.Sprintf("more-%d-%d", len(t.Called), i)
 			t.Called[more+"/"+pod] = fmt.Sprintf("what %s asks for beyond what it did, %d MiB", name, extra>>20)
 			add(capacity.Object{"apiVersion": "v1", "kind": capacity.KindPod, "metadata": capacity.Object{"namespace": more, "name": pod},
-				"spec": capacity.Object{capacity.PriorityClassKey: mustRun, "containers": []any{capacity.Object{"name": "c0", "image": "x",
-					"resources": capacity.Object{"requests": capacity.Object{"memory": fmt.Sprint(extra)}}}}}})
+				"spec": capacity.Object{capacity.PriorityClassKey: mustRun, "affinity": offControlPlanes,
+					"containers": []any{capacity.Object{"name": "c0", "image": "x",
+						"resources": capacity.Object{"requests": capacity.Object{"memory": fmt.Sprint(extra)}}}}}})
 		}
 	}
 	return t
+}
+
+// withLabels is an object with these labels and no others.
+func withLabels(o capacity.Object, labels capacity.Object) capacity.Object {
+	out := capacity.Object{}
+	for k, v := range o {
+		out[k] = v
+	}
+	meta := capacity.Object{}
+	for k, v := range dict(o["metadata"]) {
+		if k != "labels" {
+			meta[k] = v
+		}
+	}
+	if len(labels) > 0 {
+		meta["labels"] = labels
+	}
+	out["metadata"] = meta
+	return out
+}
+
+// distinctlyNamed is a pod whose containers each have a name of their own,
+// by the list each is in and its place there. A snapshot names them so now.
+// The first taken of a real site gave a pod's first container and its first
+// init container the same name, which a pod is refused for, and a record
+// outlives the program that took it.
+func distinctlyNamed(o capacity.Object) capacity.Object {
+	out := capacity.Object{}
+	for k, v := range o {
+		out[k] = v
+	}
+	spec := capacity.Object{}
+	for k, v := range dict(o["spec"]) {
+		spec[k] = v
+	}
+	for _, list := range []string{capacity.InitContainersKey, "containers"} {
+		containers, _ := spec[list].([]any)
+		if len(containers) == 0 {
+			continue
+		}
+		named := make([]any, len(containers))
+		for i, c := range containers {
+			one := capacity.Object{}
+			for k, v := range dict(c) {
+				one[k] = v
+			}
+			one["name"] = fmt.Sprintf("%c%d", list[0], i)
+			named[i] = one
+		}
+		spec[list] = named
+	}
+	out["spec"] = spec
+	return out
 }
 
 // unplaced is a pod with no machine named, for the scheduler to place.

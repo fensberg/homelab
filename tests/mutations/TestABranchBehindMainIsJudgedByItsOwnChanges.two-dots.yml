@@ -1,0 +1,11 @@
+guard: TestABranchBehindMainIsJudgedByItsOwnChanges
+file: .github/scripts/sensitive-paths.sh
+find: 'git diff --name-only "${BASE}...${HEAD}"'
+replace: 'git diff --name-only "${BASE}" "${HEAD}"'
+mentions: "was refused for what main gained"
+why: >
+  Two commits side by side is the ordinary way to ask git what differs, and
+  it reads correctly on every branch that is level with main, which is
+  every branch on the day it is opened. It goes wrong only once main has
+  moved on: then it counts what main gained as what the branch removed, and
+  the pull request is refused for a proof it never touched.

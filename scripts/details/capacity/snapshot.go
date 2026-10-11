@@ -142,7 +142,7 @@ func Take(l Listings, open []string, taken string) (Snapshot, error) {
 	}
 	for _, ns := range lists["namespaces"] {
 		name := str(at(ns, "metadata", "name"))
-		s.Objects = append(s.Objects, kept("v1", "Namespace", Object{"name": n.namespace(name), "labels": n.values(at(ns, "metadata", "labels"))}, nil))
+		s.Objects = append(s.Objects, kept("v1", "Namespace", Object{"name": n.namespace(name), "labels": n.values(Selectable(at(ns, "metadata", "labels")))}, nil))
 	}
 	for _, node := range lists["nodes"] {
 		s.Objects = append(s.Objects, kept("v1", "Node",
@@ -213,6 +213,29 @@ func Take(l Listings, open []string, taken string) (Snapshot, error) {
 	return s, nil
 }
 
+// enforced is the labels on a namespace that the API server acts on itself:
+// which pods it will admit there. A scheduler reads none of them.
+const enforced = "pod-security.kubernetes.io/"
+
+// Selectable is a namespace's labels without the ones the API server acts
+// on, which leaves the ones a rule about pods may select the namespace by.
+//
+// The others are not only unread. Their values are a fixed few words, so a
+// value replaced by a counter is refused as the namespace is made, and one
+// left as it was would have the trial's API server turn away pods for how
+// they are secured, which is not the question a trial asks. The first
+// snapshot of a real site carried them renamed, and the site could not be
+// loaded at all (2026-10-11).
+func Selectable(labels any) Object {
+	out := Object{}
+	for k, v := range dict(labels) {
+		if !strings.HasPrefix(k, enforced) {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // Scheduling is the part of a pod a scheduler reads, and nothing else of
 // it: what it reserves, its class, where it may and may not go, and the
 // claims that hold it to a volume. value replaces a label's value or a
@@ -246,7 +269,9 @@ func Scheduling(spec Object, value, namespace func(string) string, claim func(st
 		var to []any
 		for i, c := range containers {
 			container := dict(c)
-			one := Object{"name": fmt.Sprintf("c%d", i), "image": "x",
+			// Named for its list as well as its place in it: a pod's
+			// containers are one set of names, whichever list each is in.
+			one := Object{"name": fmt.Sprintf("%c%d", list[0], i), "image": "x",
 				"resources":     pruned(Object{"requests": at(container, "resources", "requests")}),
 				"restartPolicy": container["restartPolicy"]}
 			// A port taken on the machine itself is a thing two pods
