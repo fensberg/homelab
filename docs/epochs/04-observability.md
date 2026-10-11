@@ -1136,6 +1136,73 @@ many there are is seen only through what it reserves. And a claim the site
 does not hold yet is taken as one its storage will provide wherever the
 pod lands.
 
+**Placing a delay, everywhere and without being asked** (criterion 34,
+designed 2026-10-11, not built). The operator's rule is that a trace is not
+a thing a workload is given once it has gone wrong: "stack trace should be
+EVERYWHERE by default." So every part of this is collected for a machine and
+everything on it, and none of it is switched on for one workload. A
+workload is covered by being on the site, and nothing may leave a namespace
+out, which a guard holds as it does for the refusal of uncounted pods.
+
+Four things are asked of every layer, and they are four collectors because
+no one of them answers the other three:
+
+- **How long work waited, for each pod.** How long a machine's work waits
+  for a processor, for memory and for a disk is held today for the machine
+  as a whole. Kubernetes keeps the same for each pod, and whether the
+  version a site runs hands it over has to be looked at first. If it does,
+  this costs nothing: nothing more runs.
+- **What the network did with every flow.** The network's own agent sees
+  every packet and can say how long a connection took, what was dropped and
+  why, and which name was asked for. It is turned off here, for the reason
+  given where it was turned off: its relay wants certificates. Only its
+  figures are wanted, which the agent serves itself with no relay and no
+  certificates. No new supplier, and no new pod: the agent does more.
+- **How long each operation took, at each layer.** What is held for a disk
+  today is the time spent and how many operations, which gives the usual
+  case and hides the slow one - and the slow one is the question. A
+  collector in each machine's kernel keeps how long each write took, as a
+  spread and not an average, and the same collector on the hypervisor keeps
+  it for the drives and the volumes under the machines. One tool at both
+  layers, so the two are read in the same terms. A new supplier, and one
+  more pod on every machine.
+- **What a program was doing.** The trace itself: a profiler that samples
+  what every process on a machine is running, many times a second, from
+  the kernel, with nothing changed in the programs. It answers what none
+  of the others can - not that a thing was slow, or where it waited, but
+  what it was doing instead. Kept on the site's own history, and read in
+  the dashboards the site already has. A new supplier, a pod on every
+  machine, and something to keep what they send.
+
+**Chose** collectors that sit under the workloads, **over** asking each
+workload to say what it is doing. The second is how a trace across several
+services is usually had, and it is rejected for now and not for ever:
+nothing a site runs today hands a request from one service to another, and
+a rule that every workload must be changed before it is traced is the
+opposite of by default. What reopens it is the first application that
+does.
+
+**What it costs is the design's hard part, and is not settled here.** Three
+of the four are something more running on every machine, and a site is run
+full: on 2026-10-11 one worker had thirty mebibytes to spare for the
+application its volume holds there, and a reservation of 64 on every
+machine had already cost that application its place once. So nothing here
+is added on an estimate. Each is run on site0 first, measured doing its
+work, given the reservation it was seen to need, and tried by the engineer
+as what it is - a pod on every machine. **And the first of them cannot
+land until that worker has room**, which is either that application's own
+reservation measured under load, or a larger worker. That is not a
+detail of this design; it is the order of the work.
+
+**The order:** what waits for each pod, since it may be free; then the
+network's figures, since the supplier is approved and the agent is already
+there; then how long each operation took, which is what would have placed
+etcd's slow writes; then the profiler, which is the largest. Each is its
+own change with its own measurement. **An alert for two layers coming
+apart** follows a week of each layer's readings and not before: a level
+taken from one hour is the mistake this record already made three times in
+one afternoon about one disk.
+
 **Priority work waits, and only for moments.** Offered the choice of letting
 work that cannot wait stop work that can, the operator chose otherwise:
 "Interactive work should wait BUT we need to make it so that it ONLY needs
