@@ -70,17 +70,21 @@ The budget, and who refuses:
 - **5. The hypervisor is strict.** The machines' memory never adds up to more
   than the host's capacity. A plan that would is refused.
 - **6. Kubernetes is where the site is overfilled.** Everything that is not
-  `batch` fits in reservations with one worker gone. Work that can wait is
+  `batch` has a machine to run on with any one worker gone, by the word of
+  the site's own scheduler. Work that can wait is
   not counted against capacity: it runs in whatever is free, the idle part
   of another's reservation included, and is stopped when that is wanted
   back, with a message that says so. Work of the cluster's own is then run
   again by Kubernetes. A CI job is not, yet: running it again is parked,
   not decided against, and when to build it is beside the alert that
   reopens it. There is no cap on the total. A pull request that leaves
-  must-run work with no room is refused by its plan, which names the
-  shortfall. Disk is held to a budget as memory is.
+  must-run work with nowhere to run is refused by its plan, which says
+  what waits and why in the scheduler's words. Disk is held to a budget as
+  memory is.
 - **7. A pod with no reservation or no priority class is refused by the
-  cluster**, whoever created it, and each namespace has a quota.
+  cluster**, whoever created it, in every namespace. No namespace has a
+  quota: a site's limit is what its machines hold, and nothing is admitted
+  that the scheduler cannot count.
 - **8. etcd's disk latency has a written level** and an alert on it (#627),
   and either etcd has a disk of its own or that level gates what is added.
 
@@ -985,6 +989,64 @@ do not mention, which is why the site as it stands is read from the site
 and only what a change adds is read from the change. **Still the
 contractor's, against this record:** `plan-as-built` and `survey`, which
 move when there is a reason to open them.
+
+**The sum was the wrong thing to have built, and the scheduler replaced it
+a day later** (2026-10-11). The engineer added up what a change reserved
+and held the total to what the workers hold with the largest gone. Asked
+whether a large workload could make that figure wrong, the answer was that
+the figure was a budget and had been presented as a fit: it could not see
+that room is spread over machines, a volume that keeps a pod on one of
+them, which work may evict which, or anything but memory. The operator:
+"provisioning seems like a solved problem. Do we really need to build this
+custom logic? We are not kubernetes experts but someone is." Somebody is,
+and their answer is a program: the scheduler. A pull request's plan holds
+no credential and cannot ask the site's, which is how the sum came to be
+written; the operator's way out was the one the plan itself already uses.
+"We built an encrypted value plan that we check against that can tell us
+what's changing without needing a credential. Can't we do something
+similar with a scheduler?"
+
+So a site's `capacity.json` is now a snapshot of what its scheduler sees,
+taken by the contractor at the end of a record: the machines, the pods on
+each, the volumes that hold a pod to a machine and the classes that rank
+work. It is published, so it is made by keeping and not by scrubbing: only
+the fields a scheduler reads are copied, and every name among them is
+replaced, the same way wherever it appears. The engineer loads it into a
+cluster of three programs - Kubernetes' store, API server and scheduler,
+at the version a site runs - with each worker gone in turn, and refuses a
+change that leaves waiting something that did not wait before it. Tried on
+site0 before it was built: with its fullest worker gone everything was
+placed again but one pod whose volume the trial had not carried over, and
+the workers turned out to be reserved at 94%, 22% and 8% of what each
+holds, which the sum had been reading as five gibibytes to spare.
+
+**Chose** exact for an application and close for everything else. An
+application's manifests are its pods, so a change to one is tried as the
+pods it makes, in place of the ones the site runs. A chart's settings say
+what is reserved and not which pod reserves it, so what a change raises
+them by is tried as that much more, and the refusal says it is close and
+not exact. **Rejected:** rendering every chart on the pull request, which
+is exact and fetches every chart's source into a job that fetches almost
+nothing; and the sum kept beside the scheduler as an early warning, which
+is two answers to one question. **Rejected** the tool's own way of taking
+a snapshot from a cluster, after the trial: it wrote times its own restore
+could not read, stopped without a word at a kind it was not told of, and
+left out everything an operator owns. Only its starting and stopping of a
+cluster is used. **Each worker in turn, and not the largest:** site0's
+three are the same size to a few kilobytes, and which was "largest" was
+the emptiest. **No quota for a namespace** (7): a quota is a figure
+somebody sets for each thing, which is the habit this estate is avoiding.
+A wall between applications matters once a client chooses them from a
+menu, and is epoch 11's to raise.
+
+**Known and not closed.** Work that can wait is left out of a trial, since
+it is stopped to give room back; `interactive` work may not stop it, so on
+the site itself such a pod waits for a job to end. A pod made by an
+operator - an instance of the state database, a runner's listener - is in
+the snapshot and is placed again when its worker goes, but a change to how
+many there are is seen only through what it reserves. And a claim the site
+does not hold yet is taken as one its storage will provide wherever the
+pod lands.
 
 **Priority work waits, and only for moments.** Offered the choice of letting
 work that cannot wait stop work that can, the operator chose otherwise:
