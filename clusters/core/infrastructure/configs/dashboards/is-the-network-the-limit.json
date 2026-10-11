@@ -151,7 +151,7 @@
     {
       "type": "timeseries",
       "title": "Traffic",
-      "description": "What each interface carries, in bits a second, for an interface that does not say its speed.",
+      "description": "What each interface carries, in bits a second, for an interface that does not say its speed. An interface carrying nothing is left out.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -159,12 +159,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|lxc.*\"}[5m]) * 8",
+          "expr": "rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|lxc.*\"}[5m]) * 8 > 0",
           "legendFormat": "sent, {{job}} {{instance}} {{device}}"
         },
         {
           "refId": "B",
-          "expr": "rate(node_network_receive_bytes_total{device!~\"lo|veth.*|lxc.*\"}[5m]) * 8",
+          "expr": "rate(node_network_receive_bytes_total{device!~\"lo|veth.*|lxc.*\"}[5m]) * 8 > 0",
           "legendFormat": "received, {{job}} {{instance}} {{device}}"
         }
       ],
@@ -200,7 +200,7 @@
     {
       "type": "timeseries",
       "title": "Dropped and wrong",
-      "description": "Packets an interface dropped or got wrong, a second. Any of these on an interface that is not full is a fault and not a limit.",
+      "description": "Packets an interface dropped or got wrong, a second. A low and level rate is usually frames of a kind nothing on the machine listens for, and is no fault. What matters is a rate that rises with the traffic, or any at all that are wrong.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"

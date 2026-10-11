@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -14,6 +15,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// substituted is a "$" that something on a dashboard's way to Grafana would
+// take for a variable of its own: Flux takes the braced form, and the lane
+// that validates takes a bare name too.
+var substituted = regexp.MustCompile(`\$(\{|[A-Za-z_])\w*`)
 
 // dashboards is every dashboard in what Flux applies, by its path. Found by
 // what it is - a JSON file holding panels - and not by where it is kept.
@@ -47,7 +53,7 @@ func dashboards(t *testing.T) map[string]string {
 // A dashboard is kept in git, reaches Grafana, and says what each picture is
 // for.
 //
-// Three ways one fails without anything saying so. It holds a "$": Flux
+// Three ways one fails without anything saying so. It holds a variable: Flux
 // substitutes into everything it applies, and the lane that validates
 // substitutes a bare "$name" too, so a dashboard's own variable is blanked
 // on the way in and its panels are empty for no reason anybody can see. It
@@ -65,8 +71,10 @@ func TestEveryDashboardReachesGrafanaAndSaysWhatItIsFor(t *testing.T) {
 
 	for _, path := range paths {
 		body := all[path]
-		if strings.Contains(body, "$") {
-			t.Errorf("%s holds a \"$\". What Flux applies is substituted into on its way in, so a dashboard's own variable arrives blank. Write the panel with no variable.", path)
+		// A "$" before a digit is a part of a pattern, which nothing
+		// substitutes: the rules beside the dashboards use it the same way.
+		if m := substituted.FindString(body); m != "" {
+			t.Errorf("%s holds %q. What Flux applies is substituted into on its way in, so a dashboard's own variable arrives blank. Write the panel with no variable.", path, m)
 		}
 		var d map[string]any
 		if err := json.Unmarshal([]byte(body), &d); err != nil {
