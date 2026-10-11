@@ -1,0 +1,10 @@
+guard: TestNoGoCommandResolvesAgainstTheRootlessRepository
+file: .github/workflows/sensitive-paths.yml
+find: "go run -C scripts/security . challenge-keys"
+replace: "go run ./scripts/security challenge-keys"
+mentions: "resolves that path from the repository root"
+why: >
+  There is no module at the repository root, so this form fails with
+  "cannot find main module" every time it runs. It shipped once and the
+  sensitive-path gate failed on its first real pull request with a Go
+  error instead of a verdict.

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
+	"homelab/details/gitenv"
 	"os/exec"
 	"strings"
 	"testing"
 )
 
-// refuseMerges shells out to git, so it is exercised against a real throwaway
+// mergesOfMain shells out to git, so it is exercised against a real throwaway
 // repository rather than a stub. The bug it guards against was invisible in
 // this program's output and only obvious in the log days later, which is
 // exactly the kind that needs a test rather than care.
@@ -40,35 +42,103 @@ func inDir(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func TestRefuseMergesAcceptsALinearBranch(t *testing.T) {
+// conflicted is a branch one commit ahead of where it left main, with main
+// moved on by one commit since: the state a branch is in when it has to be
+// brought up to main. It returns main's commit.
+func conflicted(t *testing.T, dir string) string {
+	t.Helper()
+	inDir(t, dir, "checkout", "-q", "-b", "piece")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "the piece's own work")
+	inDir(t, dir, "checkout", "-q", "main")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "somebody else's, merged to main")
+	onMain := inDir(t, dir, "rev-parse", "HEAD")
+	inDir(t, dir, "update-ref", gitenv.RemoteMain, onMain)
+	inDir(t, dir, "checkout", "-q", "piece")
+	return onMain
+}
+
+func TestALinearBranchHasNoMerges(t *testing.T) {
 	dir := gitRepo(t)
 	t.Chdir(dir)
 	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "one")
 	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "two")
 
 	revs := inDir(t, dir, "rev-list", "HEAD~2..HEAD")
-	if err := refuseMerges(strings.Fields(revs)); err != nil {
-		t.Errorf("a linear branch must publish: %v", err)
+	if merges, err := mergesOfMain(strings.Fields(revs)); err != nil || len(merges) != 0 {
+		t.Errorf("a linear branch must publish as it is: %v, %v", merges, err)
 	}
 }
 
-func TestRefuseMergesRejectsAMergeCommit(t *testing.T) {
+// A merge of main is published as a merge: one signed commit with two
+// parents, the branch's previous signed commit and main's commit as it is.
+// Nothing main already holds is made again, which is what flattening a merge
+// did, and what refusing every merge was protecting against.
+func TestAMergeOfMainIsPublishedAsAMergeAndMainIsNotMadeAgain(t *testing.T) {
 	dir := gitRepo(t)
 	t.Chdir(dir)
 	base := inDir(t, dir, "rev-parse", "HEAD")
-	inDir(t, dir, "checkout", "-q", "-b", "side")
-	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "side work")
-	inDir(t, dir, "checkout", "-q", "main")
-	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "main work")
-	inDir(t, dir, "merge", "-q", "--no-ff", "-m", "Merge side", "side")
+	onMain := conflicted(t, dir)
+	inDir(t, dir, "merge", "-q", "--no-ff", "-m", "bring the piece up to main", "main")
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "more of the piece's work")
 
-	revs := inDir(t, dir, "rev-list", base+"..HEAD")
-	err := refuseMerges(strings.Fields(revs))
-	if err == nil {
-		t.Fatal("a merge commit must be refused - flattening it silently replicates history")
+	commits := strings.Fields(inDir(t, dir, "rev-list", "--reverse", "--first-parent", base+"..HEAD"))
+	if len(commits) != 3 {
+		t.Fatalf("the piece's own commits are %d, not its two and the merge: main's were counted as its own", len(commits))
 	}
-	if !strings.Contains(err.Error(), "rebase") {
-		t.Errorf("the error should name the way out, got: %v", err)
+	merges, err := mergesOfMain(commits)
+	if err != nil {
+		t.Fatalf("a merge of main must publish: %v", err)
+	}
+	if len(merges) != 1 || merges[commits[1]] != onMain {
+		t.Fatalf("the merge is said to bring in %v, not main's commit %s", merges, onMain)
+	}
+
+	var made [][]string
+	var said []string
+	last, err := replay(commits, base, merges, func(message, _ string, parents []string) (string, error) {
+		made = append(made, parents)
+		said = append(said, message)
+		return fmt.Sprintf("signed-%d-000000", len(made)), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{base}, {"signed-1-000000", onMain}, {"signed-2-000000"}}
+	if fmt.Sprint(made) != fmt.Sprint(want) || last != "signed-3-000000" {
+		t.Errorf("the commits were made on\n  %v\nnot on\n  %v", made, want)
+	}
+	for _, message := range said {
+		if strings.Contains(message, "somebody else's") {
+			t.Error("a commit main already holds was made again, which is the duplicate history a flattened merge leaves")
+		}
+	}
+}
+
+// A merge of anything but main is another branch's work arriving in this
+// one, and is refused with what it brought in named.
+func TestAMergeOfAnythingButMainIsRefused(t *testing.T) {
+	dir := gitRepo(t)
+	t.Chdir(dir)
+	base := inDir(t, dir, "rev-parse", "HEAD")
+	conflicted(t, dir)
+	inDir(t, dir, "checkout", "-q", "-b", "another", base)
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "another piece's work")
+	inDir(t, dir, "checkout", "-q", "piece")
+	inDir(t, dir, "merge", "-q", "--no-ff", "-m", "take the other piece's work", "another")
+
+	commits := strings.Fields(inDir(t, dir, "rev-list", "--reverse", "--first-parent", base+"..HEAD"))
+	_, err := mergesOfMain(commits)
+	if err == nil || !strings.Contains(err.Error(), "not on main") {
+		t.Fatalf("a merge of another branch was let through, or refused for another reason: %v", err)
+	}
+
+	inDir(t, dir, "checkout", "-q", "-b", "third", base)
+	inDir(t, dir, "commit", "-q", "--allow-empty", "-m", "a third piece's work")
+	inDir(t, dir, "checkout", "-q", "-b", "all-at-once", base)
+	inDir(t, dir, "merge", "-q", "--no-ff", "-m", "three histories", "main", "third")
+	commits = strings.Fields(inDir(t, dir, "rev-list", "--first-parent", base+"..HEAD"))
+	if _, err := mergesOfMain(commits); err == nil || !strings.Contains(err.Error(), "more than two") {
+		t.Errorf("a merge of three histories was let through, or refused for another reason: %v", err)
 	}
 }
 

@@ -1,0 +1,10 @@
+guard: TestEachKindOfOrderGoesToItsOwnJob
+file: .github/workflows/fabricator.yml
+find: 'echo "images=$(jq -c ''[.[] | select(.context)]'' <<<"$orders")"'
+replace: 'echo "images=$(jq -c ''.'' <<<"$orders")"'
+mentions: "it builds the orders that have a context"
+why: >
+  An order that publishes a package has no Dockerfile. Handed to the image
+  build, it fails that job on every merge, and the failure is in a matrix
+  leg named for the platform with nothing saying the platform has no
+  image to build.

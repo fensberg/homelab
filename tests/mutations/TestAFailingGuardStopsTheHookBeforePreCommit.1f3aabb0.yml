@@ -1,0 +1,11 @@
+guard: TestAFailingGuardStopsTheHookBeforePreCommit
+file: githooks/pre-commit
+find: "set -euo pipefail"
+replace: "set -uo pipefail"
+mentions: "exited 0 with a refusing guard"
+why: >
+  Without set -e the shim reports a refusing supplier guard and then
+  reaches pre-commit anyway, so the commit proceeds and the unapproved
+  delivery is installed. The difference between a guard that refuses and
+  one that comments is a single flag, and it is the flag somebody
+  removes while debugging a hook.

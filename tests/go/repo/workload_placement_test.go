@@ -481,7 +481,7 @@ func requiredNodeSelectorTerms(t *testing.T, podSpec map[string]any) []any {
 	if !ok {
 		return nil
 	}
-	nodeAffinity, ok := affinity["nodeAffinity"].(map[string]any)
+	nodeAffinity, ok := affinity[capacity.NodeAffinityKey].(map[string]any)
 	if !ok {
 		return nil
 	}
@@ -498,7 +498,7 @@ func declaredPriorityClasses(t *testing.T) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
 	// Found by a class it declares; every class in that file is read.
-	_, classes := fluxObject(t, "PriorityClass", "critical")
+	_, classes := fluxObject(t, capacity.KindPriorityClass, "critical")
 	dec := yaml.NewDecoder(strings.NewReader(classes))
 	for {
 		var doc struct {
@@ -510,7 +510,7 @@ func declaredPriorityClasses(t *testing.T) map[string]bool {
 		if err := dec.Decode(&doc); err != nil {
 			break
 		}
-		if doc.Kind == "PriorityClass" {
+		if doc.Kind == capacity.KindPriorityClass {
 			out[doc.Metadata.Name] = true
 		}
 	}

@@ -1,0 +1,23 @@
+guard: TestEverySharedScriptIsNamedAndEveryNameIsAScript
+file: .github/workflows/zz-names-a-missing-script.yml
+create: |
+  name: planted
+  on: push
+  jobs:
+    planted:
+      runs-on: ubuntu-latest
+      timeout-minutes: 1
+      steps:
+        - uses: $/.github/workflows/mobilize
+          with:
+            egress-policy: block
+            checkout: "false"
+        - uses: $/.github/workflows/github-script
+          with:
+            name: nothing-by-this-name
+mentions: "and there is no .github/workflows/github-script/nothing-by-this-name.js"
+why: >
+  A step naming a script that is not there fails only when its job runs,
+  and the jobs using shared scripts run only on infrastructure changes -
+  so the break would surface on exactly the pull request where a reviewer
+  needed the plan comment.

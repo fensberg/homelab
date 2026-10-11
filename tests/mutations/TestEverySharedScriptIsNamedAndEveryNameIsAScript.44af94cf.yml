@@ -1,0 +1,10 @@
+guard: TestEverySharedScriptIsNamedAndEveryNameIsAScript
+file: .github/workflows/github-script/zz-nobody-runs-this.js
+create: |
+  module.exports = async () => {};
+mentions: "is not run by any step"
+why: >
+  A script beside the shared action runs with a job's token whenever a
+  step names it. One nothing names is code with that reach and no reason
+  to exist, and the next step to name it inherits whatever it does without
+  anybody having read it for that purpose.

@@ -1,0 +1,20 @@
+guard: TestEveryJobSaysWhetherItKeepsRoot
+file: .github/workflows/zz-says-nothing-about-root.yml
+create: |
+  name: planted
+  on: push
+  jobs:
+    planted:
+      runs-on: ubuntu-latest
+      timeout-minutes: 1
+      steps:
+        - uses: $/.github/workflows/mobilize
+          with:
+            egress-policy: block
+            checkout: "false"
+mentions: "does not say whether it keeps root"
+why: >
+  With sudo, any later step in a job can stop harden-runner's agent or
+  flush its rules and then call out, so a block holds only as long as
+  root is gone (#410). A job that does not say is a job whose answer is
+  "keep it" by default, which is the state every job was in.

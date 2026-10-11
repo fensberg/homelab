@@ -1,0 +1,8 @@
+guard: TestTheReleaseCounterFollowsTheRegistry
+file: .github/workflows/fabricator.yml
+find: 'echo "tag=${VERSION}-$((n + 1))"'
+replace: 'echo "tag=${VERSION}-1"'
+mentions: 'want "tag=1.0.15-4'
+why: >
+  A counter that restarts at 1 republishes a tag that already exists, and
+  the release a pin names changes under it.

@@ -1,0 +1,11 @@
+guard: TestThePlaceholderConfigKeepsTheShapeProvidersCheck
+file: .github/scripts/placeholder-config.sh
+find: "\t-e 's#\"([a-z_]*_url|url|endpoint)\": *\"\\{\\{[^}]*\\}\\}\"#\"\\1\": \"https://example.invalid/placeholder\"#' \\"
+replace: "\t-e 's#__no_such_key__##' \\"
+mentions: "has no scheme"
+why: >
+  The flux provider checks the repository URL has a scheme it recognises
+  while validate is still evaluating its configuration block, before any
+  resource is read. Without the URL-shaped pass those keys render as the
+  bare word `placeholder`, and the Validate lane fails on a provider
+  rather than on anything in the change.

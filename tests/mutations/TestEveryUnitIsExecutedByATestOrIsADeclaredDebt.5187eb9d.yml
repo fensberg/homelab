@@ -1,0 +1,14 @@
+guard: TestEveryUnitIsExecutedByATestOrIsADeclaredDebt
+file: tests/coverage-blocklist.yml
+find: "  - ansible:management/hypervisor/hypervisor-prep.yml # 293"
+replace: "  # - ansible:management/hypervisor/hypervisor-prep.yml was here"
+mentions: "executed by no test"
+why: >
+  The regime is fail-closed: a unit nothing executes is a failure unless it
+  is named as a debt. Removing an entry for something still untested is the
+  move that turns a block list back into an allow list, quietly, one line
+  at a time - and an allow list cannot tell the difference between a check
+  that is absent and a check that is fine. That is not hypothetical here:
+  coverage measured one Go module of seven, two modules were run by nothing
+  at all, and three whole tiers sat outside the regime with nothing saying
+  so.

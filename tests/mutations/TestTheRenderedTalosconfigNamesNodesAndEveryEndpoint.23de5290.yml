@@ -1,0 +1,11 @@
+guard: TestTheRenderedTalosconfigNamesNodesAndEveryEndpoint
+file: modules/infrastructure/cluster/talos.tf
+find: "  nodes                = local.node_ips"
+replace: "  nodes                = []"
+mentions: "nodes"
+why: >
+  The Talos provider leaves `nodes` empty unless told otherwise, and an
+  empty one is not a broken credential - it is a working one on which every
+  node-targeted command refuses on first use. The runtime guard in
+  writeTalosconfigTo catches it at the moment of use; this catches the
+  branch that removed it, which is cheaper by a whole diagnostic.

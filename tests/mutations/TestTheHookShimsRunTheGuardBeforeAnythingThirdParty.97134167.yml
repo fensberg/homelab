@@ -1,0 +1,12 @@
+guard: TestTheHookShimsRunTheGuardBeforeAnythingThirdParty
+file: githooks/pre-commit
+find: "./toolshed/security guard-deliveries"
+replace: ": # the guard no longer runs"
+mentions: "the guard never ran"
+why: >
+  The shim exists for one reason: pre-commit clones and installs seven
+  third-party repositories before it runs any hook, so a supplier guard
+  that is itself a pre-commit hook reports after the code it exists to
+  refuse has already executed - with the vault session's privileges, on
+  the developer's machine. Gating execution is not gating download. A
+  guard that stops running here leaves nothing anywhere else checking.

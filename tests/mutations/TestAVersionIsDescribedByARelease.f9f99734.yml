@@ -1,0 +1,9 @@
+guard: TestAVersionIsDescribedByARelease
+file: .github/workflows/fabricator.yml
+find: 'gh release create "$VERSION" --repo "$REPO" --target "$SHA" \'
+replace: 'gh release create "$VERSION" --repo "$REPO" \'
+mentions: "does not carry"
+why: >
+  The release's tag is the version's name on the commit it was packed
+  from. Without a target it lands on whatever main is when the step runs,
+  which after a second merge is a commit the package was not built from.

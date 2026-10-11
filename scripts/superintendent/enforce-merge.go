@@ -1,35 +1,29 @@
-// What cannot be published - a merge commit on a branch that signedpush must
-// replay.
+// What cannot be published - a merge commit signedpush will not replay.
 //
-// signedpush publishes by replaying a branch's commits as a linear chain,
-// creating each through GitHub's Git Data API so GitHub signs it. A merge
-// commit has two parents and cannot be replayed that way: flattening it would
-// republish everything the merge brought in as new commits, so the branch
-// would carry duplicates of history already on main and main would stop being
-// an ancestor of it. signedpush therefore refuses, and says to rebase.
+// signedpush publishes by replaying a branch's commits, creating each through
+// GitHub's Git Data API so GitHub signs it. It replays one kind of merge: main
+// brought into a branch, which is how a conflict with main is cleared without
+// rewriting anything. A merge of anything else is another branch's work
+// arriving in this one, and signedpush refuses it.
 //
 // It refuses at PUSH time, which is too late to be cheap. By then the merge
-// commit exists, the full test suite has run on it, and clearing it means a
-// rebase - which diverges the branch from its remote, which signedpush also
-// refuses, which means deleting and recreating the ref, which closes the pull
-// request (#260). One `git merge` costs a pull request.
-//
-// So the refusal moves to where the mistake is made. This runs at commit-msg,
-// which git executes for merges - pre-commit is not run for them at all, which
-// is why the stage matters.
+// commit exists and the full test suite has run on it. So the refusal is also
+// here, where the mistake is made. This runs at commit-msg, which git executes
+// for merges - pre-commit is not run for them at all, which is why the stage
+// matters.
 //
 // WHO THIS APPLIES TO, which is the question that got the push guard wrong
 // once already. It is not "is this the agent". It is the same property
-// question enforce-push asks, one stage earlier: an UNSIGNED merge commit is the
-// dead end, because only a party that cannot sign locally needs signedpush to
-// publish it.
+// question enforce-push asks, one stage earlier: an UNSIGNED merge commit is
+// the one that has to go through signedpush, because only a party that cannot
+// sign locally needs it to publish.
 //
 //   - The human has a user account, signs locally, and pushes with plain git.
-//     A merge commit from them publishes perfectly well, and the Update branch
-//     button on an epoch branch produces exactly one. Refusing that would
+//     Any merge commit from them publishes perfectly well. Refusing that would
 //     block the only party doing nothing wrong.
 //   - The agent holds no user account by design, so it cannot sign locally at
-//     all and must publish through signedpush, which cannot carry a merge.
+//     all and must publish through signedpush, which carries a merge of main
+//     and no other.
 //
 // One honest difference from enforce-push, since it changes what this can claim.
 // enforce-push inspects commits that exist and asks whether a signature is
@@ -67,6 +61,12 @@ func signsLocally() bool {
 	return strings.EqualFold(strings.TrimSpace(string(out)), "true")
 }
 
+// mergesMain reports whether the merge being made brings in main and nothing
+// else: what is being merged is a commit origin/main already holds.
+func mergesMain() bool {
+	return exec.Command("git", "merge-base", "--is-ancestor", "MERGE_HEAD", "origin/main").Run() == nil
+}
+
 func enforceMerge(args []string) int {
 	if !mergeInProgress() {
 		return 0
@@ -74,18 +74,25 @@ func enforceMerge(args []string) int {
 	if signsLocally() {
 		return 0
 	}
+	// The one merge signedpush publishes: main, brought into a branch to
+	// clear a conflict with it.
+	if mergesMain() {
+		return 0
+	}
 
 	fmt.Print(`superintendent: this would be a merge commit, and it cannot be published.
 
-signedpush replays a branch as a linear chain so GitHub can sign each commit,
-and a merge commit has two parents. It would be refused at push time - after
-the tests have run on it, and when clearing it costs a rebase, a recreated ref
-and a closed pull request.
+signedpush publishes one kind of merge: main, brought into a branch. What is
+being merged here is not a commit of origin/main, so it is another branch's
+work, and it would be refused at push time - after the tests have run on it.
 
-Take the rebase now instead:
+Stop now instead:
 
     git merge --abort
-    git fetch origin && git rebase origin/main
+
+If it is main you meant, and this clone is behind it:
+
+    git fetch origin && git merge origin/main
 
 If you sign your own commits, this does not apply to you - set commit.gpgsign
 and a plain push publishes a merge perfectly well.

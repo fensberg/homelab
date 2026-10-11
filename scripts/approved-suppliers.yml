@@ -435,6 +435,15 @@ endpoints:
       - get.opentofu.org:443
       - registry.opentofu.org:443
 
+  - group: kubernetes-release
+    reason: >-
+      Kubernetes' own release server, for the API server and the scheduler a
+      change is tried with (scripts/engineer). Each is fetched by
+      take-delivery.sh and refused unless it is the file the lock was ordered
+      with.
+    hosts:
+      - dl.k8s.io:443
+
   - group: container-mirrors
     reason: Pulling the analysis images the pull request lanes run in.
     hosts:
@@ -641,9 +650,13 @@ egress:
       registry for the release of the platform the site runs. And Go's module
       proxy and checksum database, for the one dependency in the estate's
       programs: the drafter reads YAML with a library, which it may because
-      it holds no key, and the engineer reads what the drafter draws.
+      it holds no key, and the engineer reads what the drafter draws. And
+      Kubernetes' release server, for the API server and scheduler the
+      engineer tries a change with; the tool that starts them and their store
+      come from GitHub's releases, already reached.
     hosts:
       - api.github.com:443
+      - dl.k8s.io:443
       - get.opentofu.org:443
       - ghcr.io:443
       - github.com:443
@@ -831,6 +844,7 @@ egress:
     policy: block
     hosts:
       - api.github.com:443
+      - dl.k8s.io:443
       - get.opentofu.org:443
       - github.com:443
       - go.dev:443
@@ -1096,6 +1110,43 @@ tools:
       be reached when a cluster cannot (workstation/tunnel.sh). Taken as a
       single static binary from the publisher's own release, the version the
       clusters run, and installed only if its SHA256 matches the lock.
+  - source: kubernetes-sigs/kwok
+    version: KWOK_VERSION
+    binary: kwokctl
+    fetch: https://github.com/kubernetes-sigs/kwok/releases/download/v{version}/kwokctl-linux-amd64
+    reason: >-
+      Starts and stops the cluster the engineer tries a change in: Kubernetes'
+      own store, API server and scheduler, with no machines behind them. It is
+      the Kubernetes project's own tool for running a scheduler against
+      machines that are not there, approved by the operator on 2026-10-11
+      after a trial against site0. Only its starting and stopping of a cluster
+      is used. Its snapshot commands are not: taking one from a real cluster
+      needed three corrections in the trial, so the estate takes its own.
+  - source: kubernetes/kubernetes
+    version: KUBERNETES_VERSION
+    binary: kube-apiserver
+    fetch: https://dl.k8s.io/release/v{version}/bin/linux/amd64/kube-apiserver
+    reason: >-
+      The API server of the cluster the engineer tries a change in, from the
+      Kubernetes project's own release server, at the version a site runs: it
+      is what admits a pod and gives it the rank its class carries, so that
+      the scheduler is handed what a site's would be. Approved with the
+      scheduler and the store on 2026-10-11.
+  - source: kubernetes/kubernetes
+    version: KUBERNETES_VERSION
+    binary: kube-scheduler
+    fetch: https://dl.k8s.io/release/v{version}/bin/linux/amd64/kube-scheduler
+    reason: >-
+      The scheduler itself. Whether a change fits a site is this program's
+      answer and nobody else's: the estate used to add up what a change
+      reserved, and a sum cannot see that room is spread over machines.
+  - source: etcd-io/etcd
+    version: ETCD_VERSION
+    fetch: https://github.com/etcd-io/etcd/releases/download/v{version}/etcd-v{version}-linux-amd64.tar.gz
+    reason: >-
+      The store the API server above keeps its objects in, for the minute a
+      trial lasts. From the publisher's own release, and the same program a
+      site's control planes already run as part of Talos.
   - source: hadolint/hadolint
     version: HADOLINT_VERSION
     fetch: https://github.com/hadolint/hadolint/releases/download/v{version}/hadolint-linux-x86_64

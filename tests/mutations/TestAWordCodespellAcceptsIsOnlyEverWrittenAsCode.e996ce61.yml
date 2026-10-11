@@ -1,0 +1,9 @@
+guard: TestAWordCodespellAcceptsIsOnlyEverWrittenAsCode
+file: docs/epochs/01-ignition.md
+find: "    ip route get 10.10.10.1 from <workstation> iif tailscale0"
+replace: "ip route get 10.10.10.1 from <workstation> iif tailscale0"
+mentions: "in a sentence"
+why: >
+  Four spaces fewer and the command is a paragraph. The word codespell
+  was told to accept as a flag's name is now prose, which is the case
+  the acceptance was never for.

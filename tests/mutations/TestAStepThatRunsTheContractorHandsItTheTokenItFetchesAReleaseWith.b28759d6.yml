@@ -1,0 +1,11 @@
+guard: TestAStepThatRunsTheContractorHandsItTheTokenItFetchesAReleaseWith
+file: .github/workflows/integration-tests.yml
+find: "          GH_TOKEN: ${{ github.token }}\n          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"
+replace: "          SITE: ${{ matrix.site }}\n        run: ./toolshed/contractor record-as-built"
+mentions: "hands it no GitHub token"
+why: >
+  A step is added to a job, or copied from the one above it less a line,
+  and the contractor it runs is refused at Render for want of a token.
+  On a nightly that is a red run nobody is watching: the backup step was
+  this for five nights, and took the tests after it and the patrol that
+  watches the nightly down with it.

@@ -1,0 +1,13 @@
+guard: TestEveryShimPassesGitsOwnArgumentsThrough
+file: githooks/commit-msg
+find: "\t--hook-type=commit-msg"
+replace: "\t--hook-type=pre-commit"
+mentions: "did not pass"
+why: >
+  commit-msg is the stage that runs commitlint, and this repository
+  holds two rules there that CI cannot catch cheaply - no self
+  co-authorship, and a lower-case subject. A published commit subject
+  cannot be amended, because non_fast_forward applies to every branch
+  here, so each violation that reaches a push costs a rewritten branch
+  and a replaced pull request. A shim naming the wrong stage runs the
+  wrong hooks and looks installed.

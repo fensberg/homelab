@@ -1,0 +1,9 @@
+guard: TestHeavyGuardsRunOnEveryPullRequest
+file: .github/workflows/pr-validation.yml
+find: 'run: go test ./repo/ -run "$META_TESTS"'
+replace: 'run: go test ./repo/ -run "^TestSomethingElse$"'
+mentions: "no lane runs them"
+why: >
+  The full run skips the meta-tests on the promise that another lane runs
+  them. If that lane stops selecting them, the mutation ledger and the
+  comment-stripping re-run run nowhere.

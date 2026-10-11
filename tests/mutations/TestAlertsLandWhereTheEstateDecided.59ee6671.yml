@@ -1,0 +1,9 @@
+guard: TestAlertsLandWhereTheEstateDecided
+file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
+find: 'alertname = "InfoInhibitor"'
+replace: 'alertname = "InfoInhibit0r"'
+mentions: "InfoInhibitor lands on"
+why: >
+  A route that no longer matches its alert is silent until the alert
+  arrives somewhere it was not meant to - here, Slack, every hour, which
+  is what #532 was. A typo in a matcher is the plausible way to lose it.

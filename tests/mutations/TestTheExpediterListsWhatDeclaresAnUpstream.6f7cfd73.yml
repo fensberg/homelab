@@ -1,0 +1,10 @@
+guard: TestTheExpediterListsWhatDeclaresAnUpstream
+file: .github/workflows/expedite.yml
+find: 'upstreams="$(go run -C scripts/procurement . expedite-upstreams)"'
+replace: 'upstreams=''[{"name":"planted"}]'''
+mentions: "which declares no upstream"
+why: >
+  Every job of the expediter works through this list, and the last of them
+  merges without a review. A step that hands them anything but what the
+  applications declare has the expediter asking a supplier about, and
+  moving a pin for, something no application asked for.

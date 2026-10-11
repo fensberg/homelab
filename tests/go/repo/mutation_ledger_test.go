@@ -125,15 +125,60 @@ func applicationMutations(t *testing.T) []mutation {
 	return out
 }
 
+// ledgerEntries is where the estate's proofs are kept, one to a file.
+//
+// One to a file because they were one list in one file, with a count of them
+// at its head, and every pull request that added a guard appended to the
+// same place and raised the same number: any two of them conflicted, and a
+// conflict here costs a new branch and a new pull request. A file of its own
+// is touched by nobody else. What the count was for - that a proof is not
+// removed quietly - is the directory's entry in .github/sensitive-paths: a
+// deleted proof is a deleted file, and that opens a review.
+const ledgerEntries = "tests/mutations"
+
+// isLedger reports whether a path is the ledger or one of its proofs. Several
+// guards leave it out of what they read: a proof has to hold the broken form
+// of the thing its guard refuses.
+func isLedger(rel string) bool {
+	rel = filepath.ToSlash(rel)
+	return rel == ledgerEntries+".yml" || strings.HasPrefix(rel, ledgerEntries+"/")
+}
+
 func readLedger(t *testing.T) ledger {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), "tests", "mutations.yml"))
+	root := repoRoot(t)
+	body, err := os.ReadFile(filepath.Join(root, "tests", "mutations.yml"))
 	if err != nil {
 		t.Fatalf("reading tests/mutations.yml: %v", err)
 	}
 	var l ledger
 	if err := yaml.Unmarshal(body, &l); err != nil {
 		t.Fatalf("parsing tests/mutations.yml: %v", err)
+	}
+	if len(l.Mutations) > 0 {
+		t.Fatalf("tests/mutations.yml holds %d proof(s) under mutations:. Each is a file of its own under %s, named for its guard, so that two changes adding one never meet.", len(l.Mutations), ledgerEntries)
+	}
+	files, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(ledgerEntries), "*.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(files)
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("reading %s: %v", file, err)
+		}
+		var m mutation
+		if err := yaml.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("parsing %s/%s: %v", ledgerEntries, filepath.Base(file), err)
+		}
+		if m.Guard == "" || !strings.HasPrefix(filepath.Base(file), m.Guard+".") {
+			t.Fatalf("%s/%s proves the guard %q and is not named for it. A proof is found by its guard's name, so name the file <guard>.<anything>.yml.", ledgerEntries, filepath.Base(file), m.Guard)
+		}
+		l.Mutations = append(l.Mutations, m)
+	}
+	if len(l.Mutations) == 0 {
+		t.Fatalf("%s holds no proof at all, so nothing shows any guard fails when it should", ledgerEntries)
 	}
 	return l
 }
@@ -287,15 +332,6 @@ func TestTheLedgerProvesEachGuardFailsWhenItShould(t *testing.T) {
 	heavy(t, "a check on the checks: it copies the repository and runs a guard per mutation, side by side")
 
 	l := readLedger(t)
-
-	if len(l.Mutations) < l.Floor {
-		t.Fatalf("the ledger holds %d entries and its floor is %d.\n\n"+
-			"An entry was removed. Each one is the committed proof that a guard "+
-			"actually catches something; deleting it makes a red check go away and "+
-			"takes the proof with it. If a guard genuinely no longer applies, lower "+
-			"the floor in the same diff so somebody sees it happen.",
-			len(l.Mutations), l.Floor)
-	}
 
 	bin := testBinary(t)
 

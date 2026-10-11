@@ -1,0 +1,14 @@
+guard: TestEveryFluxControllerIsPlacedAndGivenAPriority
+file: clusters/core/flux-system/kustomization.yaml
+find: "  - target:\n      kind: Deployment\n    patch: |"
+replace: "  - target:\n      kind: Deployment\n      name: source-controller\n    patch: |"
+mentions: "has no required node affinity after the overlay is applied"
+why: >
+  Flux's four controllers are patched as a group, by kind rather than by
+  name, precisely so that an upgrade adding or renaming one cannot slip out
+  from under the patch. Narrowing the target to a single name still builds -
+  kustomize is perfectly happy, and `task validate` stays green - while
+  three of the four quietly go back to running wherever the scheduler puts
+  them, including on the machines holding quorum. The guard applies the
+  patches the way kustomize would and then reads the result, because
+  nothing about a well-formed patch says which pods it reached.

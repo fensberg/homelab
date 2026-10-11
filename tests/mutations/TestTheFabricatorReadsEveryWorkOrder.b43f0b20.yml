@@ -1,0 +1,8 @@
+guard: TestTheFabricatorReadsEveryWorkOrder
+file: .github/workflows/fabricator.yml
+find: '[ -f "${dir}/image/Dockerfile" ] || continue'
+replace: "continue"
+mentions: "the step's orders for the fixture are"
+why: >
+  A step that hands the matrix fewer orders than there are builds some
+  images and silently not others. This one drops every application.

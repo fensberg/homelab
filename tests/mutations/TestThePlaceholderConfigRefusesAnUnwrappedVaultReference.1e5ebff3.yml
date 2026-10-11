@@ -1,0 +1,12 @@
+guard: TestThePlaceholderConfigRefusesAnUnwrappedVaultReference
+file: .github/scripts/placeholder-config.sh
+find: 'if grep -q ''op://'' "${rendered}"; then'
+replace: "if false; then"
+mentions: "accepted a bare op://"
+why: >
+  `op inject` substitutes nothing that is not wrapped in braces, so an
+  unwrapped reference is valid JSON that survives every schema check
+  after it and reaches whatever reads that key as the literal string
+  "op://homelab/...". This is the backstop for the hermetic version of
+  the same check, for anything that renders the template without running
+  the test suite.

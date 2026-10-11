@@ -1,0 +1,12 @@
+guard: TestEveryWorkerIsCountedAgainstTheFreePlan
+file: management/estate/free-plan.tf
+find: "    watchman = module.watchman.use\n"
+replace: "    watchmen = module.watchman.use\n"
+mentions: "is not counted against the free plan"
+why: >
+  A second Worker is added beside the first, or the first's line is
+  dropped from the sum while its use is reworked, and the plan-time
+  refusal goes on passing: it adds up what it is given. The Worker runs
+  and uses its share of the day's requests and writes all the same, and
+  what goes over is refused at the vendor for everything on the account,
+  part way through a day, with nothing saying so.

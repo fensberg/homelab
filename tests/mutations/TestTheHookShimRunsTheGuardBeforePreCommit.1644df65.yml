@@ -1,0 +1,10 @@
+guard: TestTheHookShimRunsTheGuardBeforePreCommit
+file: githooks/pre-commit
+find: "./toolshed/security guard-deliveries"
+replace: "true # security used to run here"
+mentions: "does not run"
+why: >
+  The shim is the only thing that runs before pre-commit clones and
+  installs seven third-party repositories. Without it the check happens
+  after the code it exists to refuse has already executed, with the vault
+  session's privileges, on the developer's machine.

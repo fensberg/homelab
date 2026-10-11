@@ -2,6 +2,7 @@ package repo
 
 import (
 	"errors"
+	"homelab/details/capacity"
 	"io"
 	"sort"
 	"strings"
@@ -132,7 +133,7 @@ func whatReserves(t *testing.T) []reserver {
 			case "Deployment", "StatefulSet", "DaemonSet":
 				pod := mappingValue(mappingValue(spec, "template"), "spec")
 				var names []string
-				for _, list := range []string{"initContainers", "containers"} {
+				for _, list := range []string{capacity.InitContainersKey, "containers"} {
 					if l := mappingValue(pod, list); l != nil {
 						for _, c := range l.Content {
 							if n := mappingValue(c, "name"); n != nil {

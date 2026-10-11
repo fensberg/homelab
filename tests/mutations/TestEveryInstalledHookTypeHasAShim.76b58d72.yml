@@ -1,0 +1,15 @@
+guard: TestEveryInstalledHookTypeHasAShim
+file: .pre-commit-config.yaml
+find: "default_install_hook_types: [pre-commit, pre-push, commit-msg]"
+replace: "default_install_hook_types: [pre-commit, pre-push, commit-msg, prepare-commit-msg]"
+mentions: "is never invoked"
+why: >
+  core.hooksPath replaces .git/hooks rather than merging with it, so a
+  stage listed here without a matching shim in githooks/ has a hook that
+  exists, is correct, and is never invoked. commit-msg was exactly that:
+  two commitlint rules this repository holds deliberately were enforced
+  only by CI, so each violation cost a push rather than a second at the
+  terminal, and one cost a rewritten branch and a replaced pull request.
+  The mutation adds a stage rather than deleting the shim, because the
+  failure being guarded against is somebody adding a stage to this config
+  and reasonably assuming that is the whole job.

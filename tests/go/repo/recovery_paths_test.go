@@ -42,7 +42,6 @@ func TestRecoveryInstructionsNameTheWorkstationBinary(t *testing.T) {
 		// very guard puts the wrong path back and requires this to go red. A
 		// guard and the proof that it works cannot both refuse to contain the
 		// thing being guarded against.
-		filepath.Join("tests", "mutations.yml"): true,
 
 		// This file names the path in order to refuse it.
 		filepath.Join("tests", "go", "repo", "recovery_paths_test.go"): true,
@@ -83,7 +82,7 @@ func TestRecoveryInstructionsNameTheWorkstationBinary(t *testing.T) {
 		}
 
 		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil || exempt[rel] || rel == filepath.Join("tests", "go", "repo", "recovery_paths_test.go") {
+		if relErr != nil || exempt[rel] || isLedger(rel) || rel == filepath.Join("tests", "go", "repo", "recovery_paths_test.go") {
 			return nil
 		}
 

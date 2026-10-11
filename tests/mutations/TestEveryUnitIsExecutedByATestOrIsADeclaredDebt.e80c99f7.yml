@@ -1,0 +1,11 @@
+guard: TestEveryUnitIsExecutedByATestOrIsADeclaredDebt
+file: modules/infrastructure/platform/tests/platform.tftest.hcl
+find: "  expect_failures = [var.site]"
+replace: "  expect_failures = []"
+mentions: "tofu:modules/infrastructure/platform/variables.tf"
+why:
+  "A validation counted as exercised when a test file held the word expect_failures and the
+  variable's name anywhere, in any root. Emptying the list still passed. The list is read now,
+  from the tests of the root the validation is in.
+
+  "

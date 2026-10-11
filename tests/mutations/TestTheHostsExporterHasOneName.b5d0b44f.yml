@@ -1,0 +1,10 @@
+guard: TestTheHostsExporterHasOneName
+file: clusters/core/infrastructure/configs/host-metrics.yaml
+find: "serverName: hypervisor.monitoring.svc"
+replace: "serverName: hypervisor.monitoring"
+mentions: "does not verify the exporter as"
+why: >
+  The certificate is generated for one name and the scrape verifies
+  another. Every manifest is valid and nothing fails until Prometheus
+  refuses the exporter's certificate on the estate, which reads there as
+  a host that is down.

@@ -1,0 +1,12 @@
+guard: TestTheDNSResolversAreDeclaredInOnePlace
+file: modules/infrastructure/cluster/variables.tf
+find: '  dns_resolvers = ["1.1.1.1", "1.0.0.1"]'
+replace: "  dns_resolvers        = [\"1.1.1.1\", \"1.0.0.1\"]\n  fallback_dns_servers = [\"9.9.9.9\"]"
+mentions: "names the resolver"
+why: >
+  The resolvers were written out four times - twice in cloud-init and
+  twice in Talos's ResolverConfig - which is the duplication the
+  one-place rule already forbids for versions, and it fails the same
+  way: three get updated and the fourth machine class resolves through
+  something nobody meant. It is also the only route a fork has to point
+  the estate at internal resolvers.

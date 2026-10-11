@@ -1,6 +1,7 @@
 package main
 
 import (
+	"homelab/details/gitenv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,5 +112,20 @@ func TestGuardMergeIsSilentWhenNoMergeIsHappening(t *testing.T) {
 	}
 	if code := inDir(t, dir, func() int { return enforceMerge(nil) }); code != 0 {
 		t.Error("an ordinary commit was refused, so every commit in the repository now fails")
+	}
+}
+
+// The one merge signedpush publishes: main brought into a branch, which is
+// how a conflict with main is cleared with nothing rewritten. What is being
+// merged is a commit origin/main holds, and that is all this asks of it.
+func TestGuardMergeAllowsAnUnsignedMergeOfMain(t *testing.T) {
+	dir := repoMidMerge(t, false)
+	mark := exec.Command("git", "update-ref", gitenv.RemoteMain, "MERGE_HEAD")
+	mark.Dir = dir
+	if out, err := mark.CombinedOutput(); err != nil {
+		t.Fatalf("saying what main holds: %v\n%s", err, out)
+	}
+	if code := inDir(t, dir, func() int { return enforceMerge(nil) }); code != 0 {
+		t.Error("an unsigned merge of main was refused. It is the merge signedpush replays with both its parents, and refusing it is what made a conflict cost a new branch and a new pull request")
 	}
 }

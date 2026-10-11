@@ -1,0 +1,10 @@
+guard: TestMeasuringTheHostChangesAllThreeHalvesTogether
+file: management/hypervisor/hypervisor-prep.yml
+find: "client_auth_type: RequireAndVerifyClientCert"
+replace: "client_auth_type: NoClientCert"
+mentions: "does not ask its caller for a certificate"
+why: >
+  The exporter still serves TLS, the scrape still verifies it and still
+  presents its certificate, and every check that the scrape works goes on
+  passing. What changed is that the exporter no longer needs to be shown
+  one, so every pod in the cluster can read the host.

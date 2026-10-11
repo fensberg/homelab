@@ -56,7 +56,7 @@ func TestEveryGuardIsProvedOrDeclaredUnprovable(t *testing.T) {
 	}
 
 	proved := map[string]bool{}
-	for _, m := range l.Mutations {
+	for _, m := range readLedger(t).Mutations {
 		proved[m.Guard] = true
 	}
 	exemptTest := map[string]bool{}

@@ -1,0 +1,11 @@
+guard: TestTheShimsFindTheDeliveredPreCommitAndSayWhenThereIsNone
+file: githooks/commit-msg
+find: 'PATH="$HOME/.local/bin:$PATH"'
+replace: "true"
+mentions: "where pre-commit was delivered to ~/.local/bin"
+why: >
+  take-delivery.sh puts pre-commit in ~/.local/bin, and the first shell
+  after setup often lacks that directory on PATH - Debian adds it only
+  if it existed at login. Without the shim adding it, every hook this
+  repository relies on refuses to run on exactly the machine that was
+  just set up.

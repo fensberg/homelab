@@ -1,0 +1,9 @@
+guard: TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith
+file: scripts/take-delivery.sh
+find: 'if ! echo "${sha}  ${file}" | sha256sum -c --quiet -; then'
+replace: "if false; then"
+mentions: "installed a file whose hash the lock does not list"
+why: >
+  The hash check is the whole of what scripts/deliveries.lock is worth.
+  Without it every lane installs exactly as before and stays green, while
+  a replaced release asset goes onto every runner and workstation.

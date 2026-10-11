@@ -1,0 +1,11 @@
+guard: TestADeliveryIsTakenForEachApplicationWhoseBuildMoved
+file: .github/workflows/expedite.yml
+find: '+app_info_update 1 +app_info_print "$app" +quit'
+replace: "+app_info_update 1 +app_info_print 111 +quit"
+mentions: "the delivery is"
+why: >
+  SteamCMD has to be asked about each application's own appid. Asked about
+  one for all of them, it records that one's build as every other's, and
+  the expediter submits a pin for a build the application's supplier never
+  published - which the standing order then passes, because it is one
+  line, in the right file, set to a number.

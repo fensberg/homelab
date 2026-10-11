@@ -1,0 +1,11 @@
+guard: TestTheCoverageGateRefusesWhatItCannotJudge
+file: scripts/coverage-gate.sh
+find: "	echo \"known languages: $(jq -r '.baselines | keys | join(\", \")' \"$BASELINE_FILE\")\" >&2\n	exit 2"
+replace: "	echo \"known languages: $(jq -r '.baselines | keys | join(\", \")' \"$BASELINE_FILE\")\" >&2\n	exit 0"
+mentions: "want 2"
+why: >
+  A gate asked about a key it has no baseline for cannot judge, and exiting
+  0 makes that indistinguishable from judging and passing. This estate's
+  rule is that "I was not told what belongs here" and "nothing is wrong"
+  must never share an exit code - and this is the exact path a new module
+  takes before somebody writes its floor down.

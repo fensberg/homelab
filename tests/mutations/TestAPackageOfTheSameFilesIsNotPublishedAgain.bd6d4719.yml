@@ -1,0 +1,10 @@
+guard: TestAPackageOfTheSameFilesIsNotPublishedAgain
+file: .github/workflows/fabricator.yml
+find: 'fingerprint="fp-$(git ls-tree -r HEAD -- "${files[@]}" | sha256sum | cut -c1-16)"'
+replace: 'fingerprint="fp-$(git rev-parse HEAD | sha256sum | cut -c1-16)"'
+mentions: "every merge would publish a version"
+why: >
+  A version exists so that moving a site to it means something changed.
+  Fingerprinted by commit, every merge to main publishes one whatever it
+  touched, and the list a person chooses a release from is as long as the
+  commit log.

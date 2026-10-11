@@ -1,0 +1,13 @@
+guard: TestNoTestNamesTheRootItReads
+file: tests/go/repo/control_plane_metrics_test.go
+reads_source: true
+find: '	_, stack := fluxObject(t, kindHelmRelease, "kube-prometheus-stack")'
+replace: '	stack := readRepoFile(t, "clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml")'
+mentions: "a path into the Flux tree"
+why: "reads_source, as the entry above.
+
+  The Flux tree is about to become a shared core and a directory per site. A guard that opens
+  a manifest by its path would break on that move, or read a directory that no longer holds
+  what it checks.
+
+  "

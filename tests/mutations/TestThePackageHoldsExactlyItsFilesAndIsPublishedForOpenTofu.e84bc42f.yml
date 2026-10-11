@@ -1,0 +1,11 @@
+guard: TestThePackageHoldsExactlyItsFilesAndIsPublishedForOpenTofu
+file: .github/workflows/fabricator.yml
+find: 'git archive --format=zip -o "${RUNNER_TEMP}/package.zip" HEAD -- "${files[@]}"'
+replace: 'git archive --format=zip -o "${RUNNER_TEMP}/package.zip" HEAD'
+mentions: "want exactly"
+why: >
+  A release is the files its manifest holds and nothing else. Packed from
+  the whole repository, it carries every application's manifests and
+  every workflow to every site, changes whenever anything in the
+  repository does, and what "the platform" is stops being a question
+  with an answer.

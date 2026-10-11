@@ -1,0 +1,10 @@
+guard: TestTheReleaseIsNamedForTheVersionTheSoftwareReports
+file: .github/workflows/fabricator.yml
+find: 'sed -n "s/.*${pattern}.*/\1/p"'
+replace: 'sed -n "s/.*${pattern}.*/&/p"'
+mentions: "want version="
+why: >
+  The step has to read the version the pattern captures, and nothing
+  around it. One that prints the whole line names a release for a line of
+  log, and the tag a site pins would be whatever the software happened to
+  print that day.

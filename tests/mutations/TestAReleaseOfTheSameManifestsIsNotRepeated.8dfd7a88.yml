@@ -1,0 +1,9 @@
+guard: TestAReleaseOfTheSameManifestsIsNotRepeated
+file: .github/workflows/fabricator.yml
+find: 'kubectl kustomize "$environment" >> "${RUNNER_TEMP}/fingerprint.yaml"'
+replace: 'cat "$kustomization" >> "${RUNNER_TEMP}/fingerprint.yaml"'
+mentions: "a comment changed the release fingerprint"
+why: >
+  Fingerprinting the files rather than what they render to counts a
+  comment as a change, which is #514 again: a release of nothing, and a
+  pull request for the operator asking to deploy it.

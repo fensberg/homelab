@@ -1,0 +1,14 @@
+guard: TestTheConfigDocumentHasOneReader
+file: tests/go/harness/scrape.go
+reads_source: true
+find: '	if answer.Status != "success" {'
+replace: "	var _ struct {\n\t\tSites map[string]any `json:\"sites\"`\n\t}\n\tif answer.Status != \"success\" {"
+mentions: "second reader of the rendered config"
+why: >
+  reads_source, because the guard parses Go files for their struct tags
+  rather than running them.
+
+  A struct carrying the config's own top-level key, in a module that is not
+  the config package. This is exactly what the harness used to hold, and
+  the shape a new tier writes when it wants "just the one field" and
+  declares a small struct for it instead of importing the reader.

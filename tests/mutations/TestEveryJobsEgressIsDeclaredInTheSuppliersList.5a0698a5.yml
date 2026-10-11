@@ -1,0 +1,12 @@
+guard: TestEveryJobsEgressIsDeclaredInTheSuppliersList
+file: .github/workflows/sensitive-paths.yml
+find: "            api.github.com:443"
+replace: "            api.github.com:443\n            evil.example.com:443"
+mentions: "which the suppliers list does not declare for it"
+why: >
+  A job quietly gaining an endpoint is what this whole mapping exists to
+  refuse, and it is the change most likely to look routine in a diff: one
+  more line in a list of hosts, in a file somebody is reading for another
+  reason. scripts/approved-suppliers.yml says which job may reach what, and
+  a workflow that reaches further than its entry has widened this estate's
+  outbound surface with nothing to say so.

@@ -1,0 +1,19 @@
+guard: TestEveryTunnelRouteIsAServiceAddressAndTheReverse
+file: clusters/core/infrastructure/configs/planted-service.yaml
+create: |
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: planted
+    namespace: planted
+  spec:
+    clusterIP: 10.196.40.46
+    ports:
+      - port: 80
+mentions: "sets clusterIP: 10.196.40.46"
+why: >
+  A hand-set address is one site's address written where every site reads
+  it, and the tunnel routes only what an application declares. It
+  converges cleanly at the one site whose range it is in, fails at every
+  other, and nothing an enrolled device is given leads to it.

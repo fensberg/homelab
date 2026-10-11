@@ -28,6 +28,50 @@ if [ ! -r "$LIST" ]; then
 fi
 
 changed=$(cat)
+
+# A proof that was removed has to be said to have been.
+#
+# Each proof that a guard fails when it should is a file of its own, so that
+# adding one conflicts with nobody. What a count of them used to give - that
+# one is not lost without somebody meaning it - is this: a changed file under
+# the proofs' directory that is no longer there was removed, and a removal
+# that the list of removals does not name, with a reason, stops here. It is
+# refused and not reported, because a report is a thing a reviewer has to
+# notice and this is a thing nobody has to.
+PROOFS="${MUTATION_PROOFS_DIR:-tests/mutations}"
+REMOVED="${MUTATION_PROOFS_REMOVED:-tests/mutations-removed.yml}"
+unsaid=""
+while IFS= read -r file; do
+	case "$file" in
+	"$PROOFS"/*.yml) ;;
+	*) continue ;;
+	esac
+	if [ -e "$file" ]; then
+		continue
+	fi
+	name="${file##*/}"
+	# The entry naming it, and a reason on the line after.
+	if ! grep -F -x -A1 -e "  - proof: ${name}" "$REMOVED" 2>/dev/null | grep -Eq '^    reason: +[^[:space:]]'; then
+		unsaid="${unsaid}  ${file}
+"
+	fi
+done <<PROOFS_EOF
+$changed
+PROOFS_EOF
+if [ -n "$unsaid" ]; then
+	cat >&2 <<PROOFS_EOF
+This change removes proof(s) from the mutation ledger and does not say so:
+
+${unsaid}
+Each is the committed proof that a guard fails when it should. If it was
+removed by mistake, put it back. If the guard no longer needs it, name it in
+${REMOVED} with the reason, in the same change:
+
+  - proof: <the file's name>
+    reason: <why the guard no longer needs this proof>
+PROOFS_EOF
+	exit 1
+fi
 hits=""
 matched=""
 rules=0

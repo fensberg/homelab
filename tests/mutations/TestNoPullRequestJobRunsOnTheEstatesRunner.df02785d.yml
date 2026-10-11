@@ -1,0 +1,10 @@
+guard: TestNoPullRequestJobRunsOnTheEstatesRunner
+file: .github/workflows/plan-infrastructure.yml
+find: "    # A pull request's code never runs on the estate's runner.\n    runs-on: ubuntu-latest\n"
+replace: "    # A pull request's code never runs on the estate's runner.\n    runs-on: homelab-site0\n"
+mentions: "runs pull-request code on homelab-site0"
+why: >
+  Moving the plan back onto the estate's runner reads as a speed-up - it
+  already holds the providers. It hands every branch pushed to this
+  repository the estate's network and its runner, with no reviewer left to
+  stop it (#554).

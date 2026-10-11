@@ -1,0 +1,9 @@
+guard: TestTakeDeliveryHandsPipEveryHashAndEachSharedLineOnce
+file: scripts/take-delivery.sh
+find: '"$venv/bin/python" -m pip install --require-hashes -r'
+replace: '"$venv/bin/python" -m pip install -r'
+mentions: "was not told to require hashes"
+why: >
+  Without --require-hashes pip treats the hashes as optional, resolves
+  whatever it likes for anything unlisted, and installs it - the lock
+  becomes a list of suggestions.

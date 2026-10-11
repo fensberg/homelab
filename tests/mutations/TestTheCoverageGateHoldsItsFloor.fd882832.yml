@@ -1,0 +1,12 @@
+guard: TestTheCoverageGateHoldsItsFloor
+file: scripts/coverage-gate.sh
+find: '	if (c + 0 < f + 0)      { print "regressed" }'
+replace: '	if (c + 0 < -1)         { print "regressed" }'
+mentions: "want 1"
+why: >
+  With the comparison against a number nothing can be below, every
+  coverage figure reports as held and the gate exits 0 forever - a ratchet
+  that has quietly stopped holding anything, which is worse than none
+  because the green check says otherwise. Nothing executed this script
+  before; the only test that named it read one line of the workflow that
+  calls it.

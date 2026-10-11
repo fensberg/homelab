@@ -1,0 +1,21 @@
+guard: TestEveryBypassMergeIsJudgedWhereItMerges
+file: .github/workflows/bypass-merge-unjudged.yml
+create: |
+  name: "Bypass merge unjudged"
+  on: workflow_dispatch
+  permissions:
+    contents: read
+  jobs:
+    release:
+      runs-on: ubuntu-latest
+      timeout-minutes: 5
+      steps:
+        - name: Merge
+          run: |
+            gh pr merge "$PR" --squash --admin --match-head-commit "$HEAD"
+mentions: "never runs enforce-standing-order"
+why: >
+  The Sensitive Paths check that judges the standing order is one of the
+  checks the bypass skips, and it had run under a holder login that
+  matched nobody. A merge under the bypass is bounded only by a judgement
+  made in the job that merges.

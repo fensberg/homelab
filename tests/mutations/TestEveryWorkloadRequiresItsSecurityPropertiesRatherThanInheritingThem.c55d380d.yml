@@ -1,0 +1,10 @@
+guard: TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem
+file: clusters/core/infrastructure/controllers/actions-runner-controller.yaml
+find: "      runAsNonRoot: true"
+replace: "      runAsNonRoot: false"
+mentions: "runAsNonRoot"
+why: >
+  The controller does not run as root because its base image says
+  USER 65532, and nothing in this repository can see that change. Remove
+  the assertion and the property becomes something an upstream rebuild can
+  take away with no diff here, no event, and a pod that keeps starting.

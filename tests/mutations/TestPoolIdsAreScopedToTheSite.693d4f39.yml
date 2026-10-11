@@ -1,0 +1,11 @@
+guard: TestPoolIdsAreScopedToTheSite
+file: modules/infrastructure/cluster/pools.tf
+find: 'pool_id = "${local.site_name}-workers"'
+replace: 'pool_id = "workers"'
+mentions: "does not include the site"
+why: >
+  Pools are datacenter-scoped, so a bare `workers` collides the moment two
+  sites share a Proxmox cluster - and Proxmox answers a collision by
+  adopting the other estate's machines into this pool rather than by
+  failing. The config supports several sites by design, so the collision is
+  expressible rather than theoretical, and it is silent.

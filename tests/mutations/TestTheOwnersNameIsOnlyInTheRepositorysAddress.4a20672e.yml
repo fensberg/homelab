@@ -1,0 +1,10 @@
+guard: TestTheOwnersNameIsOnlyInTheRepositorysAddress
+file: clusters/core/flux-system/gotk-sync.yaml
+find: "  url: https://github.com/fensberg/homelab"
+replace: "  url: https://github.com/homelab/estate"
+mentions: "carries the owner's name outside the repository's own address"
+why: >
+  The guard reads who the owner is from the one line that says where the
+  repository lives, and looks for that name everywhere else. Given an
+  owner whose name is all over the repository, it has to find it; a guard
+  that found nothing then would find nothing for the real owner either.

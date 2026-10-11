@@ -1,0 +1,15 @@
+guard: TestTheTaskfileDiscoversModulesRatherThanListingThem
+file: taskfile.yml
+find: '          go test -C "$dir" ./...'
+replace: "          go test -C scripts/contractor ./..."
+mentions: "vets or tests named modules"
+why: >
+  clerk and inspector sat outside both `validate` and `test:go` for their
+  whole lives, so neither was compiled or run by anything - not locally,
+  not in CI. Every guard written for the clerk had passed only in the
+  terminal that wrote it, and would have gone on passing after the code it
+  guards stopped working, because nothing ever ran it again. A module is
+  added by creating a directory with a go.mod in it, and nothing about that
+  act suggests two lists elsewhere need editing, which is exactly why the
+  lists are asserted rather than remembered. The sweep is the fix; this
+  entry is what stops it turning back into a list.

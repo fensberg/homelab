@@ -1,0 +1,10 @@
+guard: TestTakeDeliveryHandsPipEveryHashAndEachSharedLineOnce
+file: scripts/take-delivery.sh
+find: '"$venv/bin/python" -m pip install --require-hashes -r'
+replace: "python3 -m pip install --user --break-system-packages --require-hashes -r"
+mentions: "did not run from the isolated environment"
+why: >
+  In the user site, a package the OS already ships satisfies the lock with
+  no hash compared - Debian's jinja2 did, on the first real run - and the
+  locked packages replace the OS's own for every Python program the
+  account runs (#423).

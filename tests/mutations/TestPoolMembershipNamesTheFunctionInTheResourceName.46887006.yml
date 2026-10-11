@@ -1,0 +1,13 @@
+guard: TestPoolMembershipNamesTheFunctionInTheResourceName
+file: modules/infrastructure/cluster/pools.tf
+find: 'resource "proxmox_pool_membership" "workers"'
+replace: 'resource "proxmox_pool_membership" "by_function"'
+mentions: "named for the grouping rather than for a function"
+why: >
+  The plan comment renders a resource name and redacts the for_each key,
+  because a key can be a hypervisor's real hostname and nothing downstream
+  can tell a safe key from an unsafe one. So the function has to live in
+  the name: the first version of this file keyed membership by function and
+  produced nine identical "<redacted>" rows on the change whose entire
+  purpose is that somebody can see which machine is which. This guard is
+  what stops the tidier, unreadable form coming back.

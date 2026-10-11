@@ -1,0 +1,10 @@
+guard: TestTheDNSResolversAreDeclaredInOnePlace
+file: modules/infrastructure/platform/variables.tf
+find: "  object_storage = local.site.object_storage"
+replace: "  object_storage = local.site.object_storage\n  dns_servers    = [\"9.9.9.9\"]"
+mentions: "names the resolver"
+why:
+  "The same restatement, in the root the guard could not see while it read three named files of
+  the other one.
+
+  "

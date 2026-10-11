@@ -1,0 +1,8 @@
+guard: TestTheReleaseCounterRefusesARegistryItCannotRead
+file: .github/workflows/fabricator.yml
+find: "elif ! grep -q \"HTTP 404\" <<<\"$listed\"; then\n            echo \"::error::could not list the release tags of"
+replace: "elif false; then\n            echo \"::error::could not list the release tags of"
+mentions: "numbered a release from a registry it could not read"
+why: >
+  Treating every registry error as "no releases yet" numbers from 1
+  whenever the registry hiccups, and overwrites a real release.

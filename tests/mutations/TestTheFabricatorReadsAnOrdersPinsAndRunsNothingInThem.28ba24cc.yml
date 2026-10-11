@@ -1,0 +1,9 @@
+guard: TestTheFabricatorReadsAnOrdersPinsAndRunsNothingInThem
+file: .github/workflows/fabricator.yml
+find: "            while IFS='=' read -r name value; do\n              if [[ \"$name\" =~ ^[A-Z][A-Z0-9_]*$ ]]; then\n                export \"${name}=${value}\"\n              fi\n            done < \"$ORDER_PINS\"\n"
+replace: "            set -a; . \"$ORDER_PINS\"; set +a\n"
+mentions: "was executed"
+why: >
+  An application's pins file is written by the application and read in a
+  job that publishes images. Sourcing it is the short way to read it, and
+  it runs whatever the file says with that job's credentials.

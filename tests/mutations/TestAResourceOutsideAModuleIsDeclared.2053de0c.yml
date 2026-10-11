@@ -1,0 +1,10 @@
+guard: TestAResourceOutsideAModuleIsDeclared
+file: management/cluster/root.tf
+find: 'module "cluster" {'
+replace: "resource \"terraform_data\" \"one_off\" {}\n\nmodule \"cluster\" {"
+mentions: "is declared in a root rather than in a module"
+why:
+  "A resource written into a root is built for one site and copied for the next. The roots were
+  carved into modules so that a second site is the same module called again.
+
+  "

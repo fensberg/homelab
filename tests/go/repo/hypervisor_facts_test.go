@@ -75,7 +75,7 @@ func TestAHypervisorsFactsAreDeclaredOnceAndNeverInTheCode(t *testing.T) {
 		}
 		// Prose explains, and the mutation ledger has to name what it plants
 		// to prove this guard.
-		if strings.HasPrefix(rel, "docs/") || strings.HasSuffix(rel, ".md") || rel == "tests/mutations.yml" {
+		if strings.HasPrefix(rel, "docs/") || strings.HasSuffix(rel, ".md") || isLedger(rel) {
 			return false
 		}
 		switch filepath.Ext(rel) {

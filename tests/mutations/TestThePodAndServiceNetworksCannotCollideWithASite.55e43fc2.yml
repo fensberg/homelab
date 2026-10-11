@@ -1,0 +1,11 @@
+guard: TestThePodAndServiceNetworksCannotCollideWithASite
+file: modules/infrastructure/address-plan/allocation.tf
+find: '      pod_cidr     = "10.${100 + s.octet}.0.0/16"'
+replace: '      pod_cidr     = "10.0.0.0/8"'
+mentions: "overlaps"
+why: >
+  10.0.0.0/8 is the shape a CNI default tends to take and it contains
+  every site subnet this estate can define, because site octets are
+  asserted 1-95. Pods sharing addresses with the machines they run on is
+  routing that works until two things want the same address, and it
+  cannot be corrected without rebuilding the cluster.

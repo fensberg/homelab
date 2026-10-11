@@ -1,0 +1,11 @@
+guard: TestASecondHypervisorReopensHowIdleCapacityIsLent
+file: config/management.tpl.json
+find: '          "node0": {'
+replace: '          "node1": { "hostname": "{{ op://site0/node1/hostname }}", "ip": "{{ op://site0/node1/ip }}", "datastores": { "disks": "local-zfs", "images": "local-iso" } }, "node0": {'
+mentions: "has 2 hypervisors, which reopens a decision that was put off"
+why: >
+  A second hypervisor is added to a site, which is three lines of config
+  and the day the estate has been waiting for. How idle capacity is lent
+  was decided for one host and written down with what would reopen it.
+  A note is not read on that day. This is what asks the question of
+  whoever is adding the node.

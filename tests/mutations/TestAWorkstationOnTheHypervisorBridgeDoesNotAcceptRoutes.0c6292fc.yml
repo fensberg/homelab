@@ -1,0 +1,10 @@
+guard: TestAWorkstationOnTheHypervisorBridgeDoesNotAcceptRoutes
+file: workstation/provision.yml
+find: '--advertise-tags=''{{ overlay_tag }}''"]'
+replace: '--advertise-tags=''{{ overlay_tag }}'' --accept-routes"]'
+mentions: "incompatible"
+why: >
+  The node subnet is in an EVPN VRF with no route back to the tailnet, so
+  accepting the advertised route replaces a working LAN path with one that
+  carries requests and returns nothing. Three ignitions halted at Verify
+  before this was understood.

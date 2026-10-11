@@ -1,0 +1,9 @@
+guard: TestEverySystemHookIsSkippedInTheFormatLane
+file: .github/workflows/pr-validation.yml
+find: "SKIP: tofu-fmt,go-fmt,delivery-guard"
+replace: "SKIP: tofu-fmt,go-fmt"
+mentions: "is not in the Format lane's SKIP list"
+why: >
+  A system hook runs in the Format lane, which installs pre-commit and
+  nothing else, so it fails on a binary that lane does not have. The whole
+  lane went red on a hook that could never have run in it.

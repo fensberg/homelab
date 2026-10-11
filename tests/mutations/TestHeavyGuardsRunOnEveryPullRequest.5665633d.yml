@@ -1,0 +1,9 @@
+guard: TestHeavyGuardsRunOnEveryPullRequest
+file: .github/workflows/pr-validation.yml
+find: "run: go test ./... -skip"
+replace: "run: go test -short ./... -skip"
+mentions: "runs Go tests with -short"
+why: >
+  -short is the push budget. In CI it would skip the mutation ledger, the
+  comment-stripping re-run and every other heavy guard with a green
+  result, and nothing anywhere would run them.

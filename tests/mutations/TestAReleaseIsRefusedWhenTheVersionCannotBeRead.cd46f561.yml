@@ -1,0 +1,8 @@
+guard: TestAReleaseIsRefusedWhenTheVersionCannotBeRead
+file: .github/workflows/fabricator.yml
+find: "echo \"::error::the built image never printed a line matching the order's version pattern, so there is no version to release it as\"\n            exit 1"
+replace: "version=unknown"
+mentions: "named a version"
+why: >
+  Releasing under a placeholder when the version could not be read puts
+  a release in production that names no real version.

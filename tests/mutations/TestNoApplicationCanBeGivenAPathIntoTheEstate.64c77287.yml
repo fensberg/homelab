@@ -1,0 +1,23 @@
+guard: TestNoApplicationCanBeGivenAPathIntoTheEstate
+file: modules/applications/second-policy.yaml
+create: |
+  ---
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: planted-extra
+    namespace: planted
+  spec:
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: planted
+    policyTypes:
+      - Egress
+    egress:
+      - {}
+mentions: "permits egress to everything"
+why: >
+  NetworkPolicies are additive, so a second file selecting the same pods
+  opens the estate without touching the one the guard used to read. The
+  diff looks like a new file rather than a weakened rule, and the guard
+  stayed green through exactly this shape once already.

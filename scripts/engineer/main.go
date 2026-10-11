@@ -32,10 +32,11 @@ const usage = `engineer says what a site can carry.
 usage: engineer <verb> [flags]
 
 verbs:
-  stamp   Hold a change to what the site can hold. Counts what the change
-          adds to what work that cannot wait reserves, against the site's
-          capacity as last recorded, and refuses a change that leaves no
-          room with a worker gone. It says nothing of a change that fits.
+  stamp   Hold a change to what the site can hold. Has the site's own
+          scheduler place what the change asks for on the site as last
+          recorded, with each worker gone in turn, and refuses a change
+          that leaves work that cannot wait with nowhere to run. It says
+          nothing of a change that fits.
 `
 
 func main() {
@@ -61,12 +62,12 @@ func run(args []string, out, complaints io.Writer) int {
 	return stamp(args[1:], out, complaints, here, archived,
 		func(tree string, builds []string, paths ...string) (map[string]json.RawMessage, error) {
 			return drafter.Draw(tree, builds, paths...)
-		})
+		}, realScheduler)
 }
 
 // stamp is the verb, with the repository, the way a commit's tree is taken
-// out and the way a directory is built handed to it.
-func stamp(args []string, out, complaints io.Writer, repository string, treeAt func(repository, revision string) (string, func(), error), draw drawer) int {
+// out, the way a directory is built and the scheduler handed to it.
+func stamp(args []string, out, complaints io.Writer, repository string, treeAt func(repository, revision string) (string, func(), error), draw drawer, place judge) int {
 	fs := flag.NewFlagSet("stamp", flag.ContinueOnError)
 	fs.SetOutput(complaints)
 	site := fs.String("site", "", "The site the change is held to, by its key.")
@@ -84,26 +85,28 @@ func stamp(args []string, out, complaints io.Writer, repository string, treeAt f
 		return 1
 	}
 
-	var standing capacity.Site
-	read := ""
+	var standing capacity.Snapshot
 	raw, err := os.ReadFile(filepath.Join(*record, capacity.File))
+	onRecord, unread := err == nil, ""
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		// Said below, and only refused if the change asks for something.
+		// Said below, and only if the change asks the site for something.
 	case err != nil:
 		return fail(err)
 	default:
-		var at string
-		if standing, at, err = capacity.Unmarshal(raw); err != nil {
-			return fail(err)
+		// A record that cannot be read is no record. It is said below, and
+		// only if the change asks the site for something: the record a site
+		// holds was written by its last converge, and a pull request that
+		// touches nothing a site runs is not that record's to stop.
+		if standing, err = capacity.Unmarshal(raw); err != nil {
+			onRecord, unread = false, ": "+err.Error()
 		}
-		read = "as read " + at
 	}
 
 	// A workload that runs a pod on each worker asks for as many as there
 	// are, which the site's own record says. With no record, one: the
 	// change is refused below in any case if it asks for anything.
-	workers := max(standing.Machines, 1)
+	workers := max(len(standing.Workers()), 1)
 
 	before, done, err := treeAt(repository, *base)
 	if err != nil {
@@ -111,38 +114,36 @@ func stamp(args []string, out, complaints io.Writer, repository string, treeAt f
 	}
 	defer done()
 
-	was, err := reserved(before, *site, workers, draw)
+	was, err := asked(before, *site, workers, draw)
 	if err != nil {
 		return fail(fmt.Errorf("before the change: %w", err))
 	}
-	is, err := reserved(repository, *site, workers, draw)
+	is, err := asked(repository, *site, workers, draw)
 	if err != nil {
 		return fail(fmt.Errorf("with the change: %w", err))
 	}
-	asked, grew := change(was, is)
-
-	// Said only when it is refused. A change that fits is the ordinary case,
-	// and an answer to every one of them is an answer nobody reads on the
-	// day it matters. The operator: "I want negative, not positive,
-	// information."
-	line := capacity.Of(standing, asked)
-	refusal := capacity.Refusal(line)
-	if refusal == nil {
+	// Said only when it is refused. A change that asks the site for what
+	// it already runs is the ordinary case, and an answer to every one of
+	// them is an answer nobody reads on the day it matters. The operator:
+	// "I want negative, not positive, information."
+	if same(was, is) {
 		return 0
 	}
-	if line.Unread() {
-		fmt.Fprintf(out, "What %s's workers hold is not on record. This change adds %s and gives back %s.\n", *site, inGiB(asked.Added), inGiB(asked.Removed))
-	} else {
-		fmt.Fprintf(out, "%s, %s: %s\n", *site, read, line)
+	if !onRecord {
+		fmt.Fprintf(out, "What %s runs is not on record%s.\n\nThis change alters what the site is asked to run.\n\nREFUSED: there is nothing to try the change against. The next converge takes the record.\n", *site, unread)
+		return 1
 	}
-	if len(grew) > 0 {
-		fmt.Fprintf(out, "\nWhat asks for more than it did:\n  %s\n", strings.Join(grew, "\n  "))
+	waits, err := held(standing, was, is, place)
+	if err != nil {
+		return fail(err)
 	}
-	fmt.Fprintf(out, "\nREFUSED: %s\n", refusal)
+	if len(waits) == 0 {
+		return 0
+	}
+	fmt.Fprintf(out, "%s, as read %s, tried with this change by the site's own scheduler.\n\n%s\n", *site, standing.Taken, strings.Join(waits, "\n\n"))
+	fmt.Fprintf(out, "\nREFUSED: work that cannot wait would have nowhere to run. A pod of an application is tried as the pod its manifest makes; anything else the change raises is tried as that much more, which is close and not exact.\n")
 	return 1
 }
-
-func inGiB(b int64) string { return fmt.Sprintf("%.1f GiB", float64(b)/float64(1<<30)) }
 
 // archived takes a commit's tree out of the repository into a directory of
 // its own: the parts a site's work is declared in, and nothing else.

@@ -1,0 +1,13 @@
+guard: TestThePlaceholderConfigRefusesOutputThatIsNotJSON
+file: .github/scripts/placeholder-config.sh
+find: 'if ! jq empty "${rendered}" 2>/dev/null; then'
+replace: "if false; then"
+mentions: "exited 0 having written"
+why: >
+  Every other check in that script asks whether a substitution was
+  MISSED. This one asks whether one went too far, which is the case that
+  produced no evidence at all: a marker missing its closing braces lets
+  sed run on to the JSON's own, swallowing the structure between them.
+  No marker survives and no op:// survives, so the script exits 0 with a
+  file that is not JSON - and tofu then fails inside a provider
+  configuration block naming neither the script nor the template.

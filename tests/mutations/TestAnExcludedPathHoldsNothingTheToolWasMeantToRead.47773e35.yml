@@ -1,0 +1,10 @@
+guard: TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
+file: .checkov.yaml
+find: "  - (^|/)tests/"
+replace: "  - tests"
+mentions: "integration-tests.yml"
+why: >
+  This is the exclusion as it was written, and what it cost. The pattern
+  is searched for anywhere in a path, so excusing the test trees also
+  excused a workflow with "tests" in its name, and a finding in that
+  workflow went unreported for as long as the line stood.

@@ -1,0 +1,24 @@
+guard: TestEveryHelmReleaseSaysWhereItsPodSpecLives
+file: clusters/core/infrastructure/controllers/undescribed-chart.yaml
+create: |
+  ---
+  apiVersion: helm.toolkit.fluxcd.io/v2
+  kind: HelmRelease
+  metadata:
+    name: something-nobody-sized
+    namespace: default
+  spec:
+    interval: 30m
+    chart:
+      spec:
+        chart: something
+        version: "1.0.0"
+mentions: "are not described in workloadPods"
+why: >
+  A table of the workloads somebody thought about is not a guard, it is a
+  list. Without this half, adding a chart and forgetting to describe it
+  reads exactly like adding a chart that is fine - the same silence and
+  the same exit code, which is the shape of every check this repository has
+  had to repair. Planted rather than substituted because the failure only
+  exists once a release is PRESENT and undescribed; there is nothing in the
+  tree to edit into that state.

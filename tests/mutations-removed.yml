@@ -1,0 +1,20 @@
+# Proofs that were removed from the mutation ledger, and why each was.
+#
+# A proof is a file under tests/mutations/. Adding one touches nothing but
+# itself. Removing one is refused by the sensitive-path check
+# (.github/scripts/sensitive-paths.sh) unless the same change names the file
+# here with a reason: a proof nobody meant to lose fails the build, and one
+# somebody did mean to lose says so where a reviewer reads it.
+#
+# This is what the count at the head of the old ledger was for. It was
+# replaced because every change that added a guard had to raise it, so any
+# two of them conflicted; nothing here is touched by adding.
+#
+# One entry to a removal, as two lines, in this shape exactly - the check
+# reads it with grep:
+#
+#   - proof: TheGuardItProved.0a1b2c3d.yml
+#     reason: why the guard no longer needs this proof
+#
+# tests/go/repo holds every entry to naming a file that is really gone.
+removed: []

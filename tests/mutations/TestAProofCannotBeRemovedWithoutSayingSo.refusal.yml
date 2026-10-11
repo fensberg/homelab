@@ -1,0 +1,11 @@
+guard: TestAProofCannotBeRemovedWithoutSayingSo
+file: .github/scripts/sensitive-paths.sh
+find: "PROOFS_EOF\n\texit 1\nfi"
+replace: "PROOFS_EOF\nfi"
+mentions: "the change was not refused"
+why: >
+  The check that says a proof was removed and then carries on is a report,
+  and a report is what the sensitive-path comment already is: something a
+  reviewer has to notice. The count this replaced failed the build. Take
+  the exit away and a removed proof is one more line in a comment that
+  fires on every change to the ledger, additions included.

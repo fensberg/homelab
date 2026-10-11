@@ -1,0 +1,11 @@
+# --- deliveries: one lock, one installer, and ordering holds no bypass ----
+guard: TestNothingInstallsFromPyPIOutsideTakeDelivery
+file: scripts/install-dependencies.sh
+find: '"$(dirname "$0")/take-delivery.sh" ansible-core pre-commit pre-commit-hooks checkov zizmor codespell'
+replace: 'python3 -m pip install --user --break-system-packages "checkov==${CHECKOV_VERSION}"'
+mentions: "installs from a Python package index outside scripts/take-delivery.sh"
+why: >
+  A second installer beside take-delivery.sh pins the tool and lets every
+  dependency it pulls in resolve fresh on each install - over a hundred
+  packages for checkov alone - while the lock sits there looking like the
+  thing that decides what arrives (#416).
