@@ -1,0 +1,37 @@
+---
+# Where the dashboards are reached from away.
+#
+# A Service at an address known before it exists, because the estate routes
+# an enrolled device to that address through the tunnel: the route is
+# declared beside the core (routes.json), the address plan turns it into
+# this site's own address, and the site hands it to Flux as the variable
+# below. tests/go/repo holds the two to each other, since a route to an
+# address nothing answers on converges cleanly and reaches nothing.
+#
+# A Service of its own, and not a setting of the chart's. The chart's Service
+# exists already, and the address of a Service that exists cannot be changed:
+# giving it this one would fail every upgrade of the chart from then on. So
+# the chart's is left as it is, for what reaches the dashboards from inside
+# the cluster, and this one selects the same pods for what reaches them from
+# outside it.
+#
+# WHO THAT IS. A device enrolled with the estate, and nothing else: the
+# tunnel has no public name, and who may enroll a device is the estate's
+# member list. The dashboards ask for no login of their own, which is why
+# this address must never be given a public name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboards
+  namespace: monitoring
+spec:
+  type: ClusterIP
+  clusterIP: ${ADDRESS_DASHBOARDS}
+  selector:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: kube-prometheus-stack
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 3000

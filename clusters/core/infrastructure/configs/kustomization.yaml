@@ -10,6 +10,9 @@ resources:
   # Asks GitHub whether each scheduled workflow is failing. Needs the
   # ScrapeConfig and PrometheusRule kinds from the monitoring stack.
   - scheduled-workflows.yaml
+  # Needs the dashboards' address from the site's cluster-vars, which a site
+  # has once it runs a release that reads clusters/core/routes.json.
+  - dashboards-route.yaml
 # The dashboards, one for each question epoch 04 asks of a site (criterion
 # 19). Each is a file under dashboards/, kept here so that what a person
 # looks at is reviewed like everything else, and handed to Grafana by the

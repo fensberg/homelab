@@ -562,3 +562,18 @@ func TestEveryDashboardPanelHasSomethingToShow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotZero(t, asked, "no dashboard panel was found to ask about, so this checked nothing")
 }
+
+// The dashboards answer where the estate routes an enrolled device to them.
+//
+// tests/go/repo holds the route the core declares to a Service that takes
+// its address. It cannot see whether anything is behind that Service: it
+// selects the dashboards' pods by labels a chart chose, and a Service that
+// selects nothing is accepted, given its address, routed to, and answers
+// nobody.
+func TestTheDashboardsAnswerWhereTheTunnelReachesThem(t *testing.T) {
+	opts := k8s.NewKubectlOptions("", kubeconfig(t), monitoringNamespace)
+	behind, err := k8s.RunKubectlAndGetOutputE(t, opts, "get", "endpointslices",
+		"-l", "kubernetes.io/service-name=dashboards", "-o", "jsonpath={.items[*].endpoints[*].conditions.ready}")
+	require.NoError(t, err, "asking what is behind the Service the tunnel reaches the dashboards by")
+	assert.Contains(t, behind, "true", "nothing ready is behind the Service the tunnel reaches the dashboards by, so an enrolled device is routed to an address that answers nobody")
+}

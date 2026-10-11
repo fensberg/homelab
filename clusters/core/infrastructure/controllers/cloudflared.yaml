@@ -188,3 +188,18 @@ spec:
             matchExpressions:
               - key: homelab/workload
                 operator: Exists
+
+    # And what of the core is reached from away (clusters/core/routes.json):
+    # the dashboards, on the port they serve. Named here, pod and port,
+    # because the core's namespaces are not marked as an application's are
+    # and reaching one of them is reaching everything that watches the site.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - protocol: TCP
+          port: 3000

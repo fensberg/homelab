@@ -21,7 +21,9 @@
 set -euo pipefail
 
 echo "RELEASE_REPOSITORY=ghcr.io/example/homelab"
-for declaration in modules/applications/*/application.json; do
+# What of the core is reached from away is a route like an application's, and
+# is declared beside the core.
+for declaration in clusters/core/routes.json modules/applications/*/application.json; do
 	[ -e "$declaration" ] || continue
 	jq -r '(.routes // {}) | to_entries[] | "ADDRESS_\(.key | ascii_upcase | gsub("-"; "_"))=192.0.2.\(.value)"' "$declaration"
 done

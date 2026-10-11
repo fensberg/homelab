@@ -1,0 +1,10 @@
+guard: TestEveryTunnelRouteIsAServiceAddressAndTheReverse
+file: clusters/core/infrastructure/configs/dashboards-route.yaml
+find: "  type: ClusterIP\n  clusterIP: ${ADDRESS_DASHBOARDS}\n"
+replace: "  type: ClusterIP\n"
+mentions: "declares the route dashboards, and no Service"
+why: >
+  A Service works without the line: Kubernetes gives it an address, the
+  dashboards answer on it from inside the cluster, and nothing looks wrong.
+  The estate goes on routing an enrolled device to the address the core
+  declared, where nothing is, and the page never loads.
