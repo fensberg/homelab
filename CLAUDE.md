@@ -311,6 +311,16 @@ applying afterwards would build a second estate beside the first, with the same
 names, VM ids and addresses. Nothing can tell those two situations apart from
 inside, so it stops.
 
+A converge waits for its own state database to be at rest before it applies
+anything. The state is in a database the estate runs, and a merge that
+changes that database's manifest restarts it and starts a converge from the
+same commit, seconds apart: the converge was mid-apply when the database went
+down under it (#690). So after take-over it asks the cluster two things -
+unattended, whether Flux has applied the commit it is of, and then whether
+the database has every instance ready with nothing being rolled out, looked
+at twice. Take-over's own wait is for a port, which answers while an
+instance is on its way down.
+
 A converge also never destroys on failure. Ignition's failure path tears down
 what it built because a half-finished ignition leaves VMs nobody tracks; a
 converge starts from an estate that was already running, so answering a
