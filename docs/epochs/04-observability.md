@@ -94,17 +94,19 @@ The budget, and who refuses:
   no leader lost. etcd's own guidance of ten is not met by this disk at
   rest, so the level is what this disk does and some more, short of the
   hundred at which a heartbeat is missed. **Why it is fourteen and not
-  one is not established.** Read off the host the same day: the pool is a
-  mirror of two consumer NVMe drives of different makes, with no device set
-  aside for its write log, doing under 200 writes a second, and the pool
-  itself answers a write in about a millisecond. So it is not crowded, and
-  the pool's own figure is a tenth of what etcd sees. What the pool's
-  figure leaves out is the time a drive takes to say a write is safe, and
-  everything between a machine's disk and the pool. Which of those the
-  other thirteen milliseconds are has not been measured, and the first
-  account written here - that it was the drives - was a guess set down as
-  a finding. It is not the network: the figure is of a write to a
-  member's own disk. **Not done:** etcd
+  one is half established,** and by hand. Read off the host the same day:
+  the pool is a mirror of two consumer NVMe drives with no device set aside
+  for its write log, doing under 200 writes a second. Written to as etcd
+  writes - small blocks, each one made safe before the next - the pool
+  itself takes a millisecond and a half, and three and a half for the
+  slowest hundredth. So the drives are not it, and the pool is not
+  crowded: something like ten of the fourteen milliseconds are spent
+  between a machine's disk and the pool, in the layers that make a virtual
+  disk of it. Which layer is not known. The first account written here
+  blamed the drives, on no measure of them. It is not the network: the
+  figure is of a write to a member's own disk. Finding this much took
+  three commands run by hand on the hypervisor, which is what criterion 34
+  is for. **Not done:** etcd
   has no disk of its own, and nothing but the alert's own words holds an
   addition back while it fires.
 
@@ -248,6 +250,21 @@ operator: "Let's bring all the untouched into the epoch"):
   is drifting is not. **Not decided:** which alerts those are, and what
   sends the mail - a site runs no mail server, and one at the estate's edge
   was put off until a second site is real.
+- **34. A delay can be placed** (added 2026-10-11). Everything a request
+  passes through says how long it held it, kept as history, so that where
+  the time went is read off and not found by experiment. The operator, on
+  being handed a third command to run by hand to find out why etcd's
+  writes are slow: "Why are we one-offing the logs when the logs should
+  tell us explicitly where the bottleneck is. These are exactly the things
+  we should have a log of and a monitor for because it keeps this lean
+  machine running at high efficiency. The hotter it runs the less room for
+  these unknown bumps it has." A write is the first case and the measure
+  of the rest: what the program saw, what its machine's disk saw, what the
+  hypervisor's volume saw and what the drive saw, side by side, with an
+  alert when two neighbours come apart. The same for a packet and for a
+  processor's time. It is the other half of running full: a site with
+  room to spare absorbs a delay nobody can explain, and one run at its
+  edge does not.
 
 ### Before this epoch closes
 
