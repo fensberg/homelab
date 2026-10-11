@@ -79,6 +79,28 @@ securityContext:
 hubble:
   enabled: false
 
+# What the network reserves on every machine, so the scheduler counts it.
+#
+# The chart reserves nothing, which left the agent, its proxy and the operator
+# as the only must-run work on a machine that the capacity sum could not see.
+# Each figure is an estimate from one week's peak on site0 - 245, 43 and 90 MiB
+# - rounded up, and none of them is a measurement under load yet.
+#
+# No limit on any of them. A limit on the agent is a limit on the machine's
+# network: killed for memory, every pod on that machine loses its routes until
+# it is back.
+resources:
+  requests:
+    memory: 320Mi
+envoy:
+  resources:
+    requests:
+      memory: 64Mi
+operator:
+  resources:
+    requests:
+      memory: 128Mi
+
 # The MTU is pinned rather than detected, because detection reads the wrong
 # interface here.
 #
