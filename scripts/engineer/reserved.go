@@ -47,6 +47,10 @@ type asks struct {
 	Core   map[string]workload
 	Pods   []pod
 	Claims []claim
+	// Each is the workloads among Core that run a pod on every machine,
+	// with everything of that pod a scheduler reads. What one of these is
+	// raised by is taken from every machine, and is tried on each.
+	Each map[string]capacity.Object
 }
 
 // drawer has the drafter redraw paths, and directories to be built, of one
@@ -65,9 +69,12 @@ type drawer func(tree string, builds []string, paths ...string) (map[string]json
 // Nothing here reads a manifest's own format. The drafter redraws each one,
 // and this reads the drawing.
 func asked(tree, site string, workers int, draw drawer) (asks, error) {
-	out := asks{Core: map[string]workload{}}
+	out := asks{Core: map[string]workload{}, Each: map[string]capacity.Object{}}
 	var paths []string
-	for _, dir := range []string{applications.SitesDir + "/core", applications.SitesDir + "/" + site} {
+	// The network is the third: it is what every machine runs before Flux
+	// can, applied by a converge and not by Flux, and it reserves on every
+	// machine like anything else that runs there.
+	for _, dir := range []string{applications.SitesDir + "/core", applications.SitesDir + "/bootstrap", applications.SitesDir + "/" + site} {
 		if _, err := os.Stat(filepath.Join(tree, filepath.FromSlash(dir))); err == nil {
 			paths = append(paths, dir)
 		}
@@ -88,7 +95,7 @@ func asked(tree, site string, workers int, draw drawer) (asks, error) {
 		if err != nil {
 			return out, err
 		}
-		if err := declared(rel, docs, workers, out.Core); err != nil {
+		if err := declared(rel, docs, workers, out.Core, out.Each); err != nil {
 			return out, err
 		}
 		if strings.HasPrefix(rel, applications.SitesDir+"/"+site+"/") {
@@ -166,7 +173,7 @@ func (a *asks) application(from, namespace string, docs []map[string]any, worker
 			others = append(others, doc)
 		}
 	}
-	return declared(from, others, workers, a.Core)
+	return declared(from, others, workers, a.Core, a.Each)
 }
 
 func sortedKeys(m map[string]json.RawMessage) []string {
@@ -219,7 +226,7 @@ func given(docs []map[string]any) []build {
 }
 
 // declared adds what each document reserves.
-func declared(from string, docs []map[string]any, workers int, out map[string]workload) error {
+func declared(from string, docs []map[string]any, workers int, out map[string]workload, each map[string]capacity.Object) error {
 	for _, doc := range docs {
 		kind, _ := doc["kind"].(string)
 		meta, _ := doc["metadata"].(map[string]any)
@@ -240,6 +247,12 @@ func declared(from string, docs []map[string]any, workers int, out map[string]wo
 			}
 			w.Pods = workers
 			out[name] = w
+			// Kept with where its pods may go, so that what it is raised
+			// by can be tried on each machine it runs on and no other.
+			template, _ := spec["template"].(map[string]any)
+			made, _ := template["spec"].(map[string]any)
+			same := func(s string) string { return s }
+			each[name] = capacity.Scheduling(made, same, same, same)
 		case "Job":
 			w, err := podOf(spec)
 			if err != nil {

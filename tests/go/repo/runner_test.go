@@ -301,10 +301,10 @@ func runnersKeepOffControlPlanes(t *testing.T, release string) {
 	}
 
 	controlPlane := map[string]string{
-		"kubernetes.io/os":       "linux",
+		capacity.OSLabel:         "linux",
 		config.ControlPlaneLabel: "",
 	}
-	worker := map[string]string{"kubernetes.io/os": "linux"}
+	worker := map[string]string{capacity.OSLabel: "linux"}
 
 	if nodeAffinityAdmits(t, req.NodeSelectorTerms, controlPlane) {
 		t.Error("a CI runner would schedule onto a control-plane node, which is the thing the worker pool was built to stop.")

@@ -225,6 +225,40 @@ func lastLine(s string) string {
 	return lines[len(lines)-1]
 }
 
+// placedSomewhere refuses a trial in which a workload that runs on every
+// machine could be placed on none of them while asking for nothing.
+//
+// A machine the workload is not on leaves its pod waiting, and that is how
+// such a machine is left out. But a pod that waits on every machine is not a
+// workload that runs nowhere: it is a rule the trial could not follow, and
+// leaving every machine out would pass whatever the change asked for. It was
+// found that way, on a real site, the day this was written: an impossible
+// raise went through in silence.
+func placedSomewhere(standing trial, waiting map[string]string) error {
+	asked, waits := map[string]int{}, map[string]int{}
+	why := map[string]string{}
+	for _, o := range standing.Objects {
+		called, _ := dig(o, "metadata", "annotations", calledNote).(string)
+		if called == "" {
+			continue
+		}
+		// What it is called says the workload first, and then the machine.
+		workload, _, _ := strings.Cut(called, " asks for beyond what it did on ")
+		asked[workload]++
+		id := fmt.Sprint(dig(o, "metadata", "namespace"), "/", dig(o, "metadata", "name"))
+		if said, waited := waiting[id]; waited {
+			waits[workload]++
+			why[workload] = said
+		}
+	}
+	for workload, n := range asked {
+		if waits[workload] == n {
+			return fmt.Errorf("%s could be placed on no machine at all, even asking for nothing, so what it was raised by cannot be tried: %s", strings.TrimPrefix(workload, "what "), why[workload])
+		}
+	}
+	return nil
+}
+
 // held is every worker a change left work waiting on the loss of, with what
 // waits and why. A pod that waited before the change is not the change's
 // doing and is left out: a site already short is not made safer by stopping
@@ -232,8 +266,16 @@ func lastLine(s string) string {
 func held(s capacity.Snapshot, before, now asks, place judge) ([]string, error) {
 	var out []string
 	for _, gone := range append([]string{""}, s.Workers()...) {
-		was, err := place(scenario(s, gone, before, before))
+		// The site before the change, with a pod asking for nothing wherever
+		// the change raises something that runs on every machine: a machine
+		// that workload does not run on leaves its pod waiting in both.
+		standing := scenario(s, gone, before, before)
+		standing.Objects = append(standing.Objects, onEachMachine(standing.Objects, before, now, true)...)
+		was, err := place(standing)
 		if err != nil {
+			return nil, err
+		}
+		if err := placedSomewhere(standing, was); err != nil {
 			return nil, err
 		}
 		trial := scenario(s, gone, before, now)

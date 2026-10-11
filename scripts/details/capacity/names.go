@@ -25,6 +25,18 @@ const (
 	MatchExpressionsKey = "matchExpressions"
 	HasNoLabel          = "DoesNotExist"
 
+	// HostnameLabel is the label a machine carries its own name under, which
+	// is how a pod is held to one machine and still left to the scheduler.
+	HostnameLabel = "kubernetes.io/hostname"
+
+	// OSLabel is the label a machine says what it runs under, in Kubernetes'
+	// own word for it.
+	OSLabel = "kubernetes.io/os"
+	// Where a pod says which machines it may be on by their labels, and how
+	// its pods are to be spread.
+	NodeSelectorKey = "nodeSelector"
+	SpreadKey       = "topologySpreadConstraints"
+
 	// EveryNamespace has kubectl list a kind wherever it is.
 	EveryNamespace = "--all-namespaces"
 	// Nothing is a list with nothing in it, as kubectl gives one.
