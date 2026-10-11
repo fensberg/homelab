@@ -95,6 +95,39 @@ spec:
               losing one, leaves something with nowhere to run. Nothing is
               broken yet.
 
+        # What the scheduler itself says, and the only one of these that is
+        # about a machine and not a total.
+        #
+        # The alert above adds up what is reserved and compares it with what
+        # the workers hold, which is a budget: it cannot see that room is
+        # spread over machines, or a volume that keeps a pod on one of them.
+        # A pull request is tried against the site's own scheduler for that
+        # reason (scripts/engineer), and this is the same question asked of
+        # the running site: is there work that cannot wait, which the
+        # scheduler has looked at and found no machine for. It is what a
+        # change the trial could not see, or a machine lost, looks like from
+        # here. Work that can wait is left out: waiting is what it does.
+        - alert: WorkThatCannotWaitHasNoMachineToRunOn
+          expr: >-
+            max by (namespace, pod) (
+              kube_pod_status_unschedulable
+              * on (namespace, pod) group_left ()
+              max by (namespace, pod) (kube_pod_info{priority_class!="batch"})
+            ) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Work that cannot wait has been without a machine for ten minutes.
+            description: >-
+              The scheduler has found no machine for {{ $labels.pod }} in
+              {{ $labels.namespace }}. Its reason is on the pod: kubectl
+              describe it and read the last event. If the reason is memory,
+              the site is full for a pod of that size: give room back by
+              lowering what something reserves, or add a worker. If it is a
+              volume, the pod is held to a machine that is gone or full, and
+              it will not move by itself.
+
         # The message for work that was stopped on purpose.
         #
         # Work that can wait runs in memory somebody else holds and is not

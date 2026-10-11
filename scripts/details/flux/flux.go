@@ -15,4 +15,7 @@ const (
 	// OCIRepository is a source pinned to an artifact in a registry: how a
 	// site names the release of an application it runs.
 	OCIRepository = "OCIRepository"
+	// Kustomizations is the kind above as kubectl is asked for it, said in
+	// full: Kubernetes' own kustomize has a kind of the same short name.
+	Kustomizations = "kustomizations.kustomize.toolkit.fluxcd.io"
 )

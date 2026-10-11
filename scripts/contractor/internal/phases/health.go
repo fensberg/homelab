@@ -156,6 +156,13 @@ To inspect it instead, build again with the cluster kept:
 // so the timeouts are generous and the failure, when it comes, names what
 // never arrived rather than saying "timed out".
 func waitFor(ctx *run.Context, kubeconfig, what string, timeout time.Duration, check healthCheck) error {
+	return waitUntil(ctx, kubeconfig, what, timeout, check,
+		"This phase refuses to continue rather than migrating state into a degraded\ncluster. "+rerunAdvice(ctx))
+}
+
+// waitUntil is waitFor with what to say when the wait is given up on, for a
+// wait that is not the health phase's and whose way out is not its.
+func waitUntil(ctx *run.Context, kubeconfig, what string, timeout time.Duration, check healthCheck, givenUp string) error {
 	run.Info("waiting for " + what + " ...")
 	started := time.Now()
 	deadline := started.Add(timeout)
@@ -189,8 +196,7 @@ known - the estate may be perfectly well. Install %s where this runs, then
 
 %v
 
-This phase refuses to continue rather than migrating state into a degraded
-cluster. %s`, what, timeout, last, rerunAdvice(ctx))
+%s`, what, timeout, last, givenUp)
 		}
 		// Say it when it changes, and once a minute otherwise.
 		//
