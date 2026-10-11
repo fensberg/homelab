@@ -22,9 +22,22 @@ metadata:
     #
     # Change the time whenever a setting below has to reach instances the
     # operator would otherwise leave alone.
-    kubectl.kubernetes.io/restartedAt: "2026-10-11T15:00:00Z"
+    kubectl.kubernetes.io/restartedAt: "2026-10-11T19:00:00Z"
 spec:
   instances: 3
+
+  # The primary is replaced by switching over to a replica first, and never
+  # restarted where it stands.
+  #
+  # The restart above was asked for once with the operator's default, which
+  # restarts the primary in place. The two replicas were made again and took
+  # the class; the primary was restarted inside the pod it already had, and
+  # went on without it, with the cluster reporting healthy (seen on site0,
+  # 2026-10-11). A pod takes what the cluster says only when it is made, so a
+  # primary that is never made again never takes a change at all. Switching
+  # over costs a few seconds of the database being read-only, each time, and
+  # buys every instance being what this file says.
+  primaryUpdateMethod: switchover
 
   # Named explicitly rather than relying on whichever StorageClass happens to
   # be marked default. OpenEBS Local PV Hostpath is marked default today, but

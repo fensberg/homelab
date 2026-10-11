@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // The sensitive-path list is a rule, so it is checked like one.
@@ -288,6 +290,89 @@ func TestSensorAndParserAgreeOnEveryPath(t *testing.T) {
 		}
 		if !strings.Contains(out, "tripped=true") {
 			t.Errorf("the parser accepts %q but the script does not match %q", e.Path, probe)
+		}
+	}
+}
+
+// removedProofs is where a removed proof is said to have been.
+const removedProofs = "tests/mutations-removed.yml"
+
+// A proof cannot be removed from the mutation ledger without the change
+// saying so.
+//
+// The ledger was one list with a count at its head, and a change that took
+// an entry away without lowering the count failed. The count went because
+// every change adding a guard raised it and so conflicted with every other.
+// What it gave is kept here, by the check that already reads what a change
+// touched: a proof that is gone, and that the list of removals does not name
+// with a reason, stops the check. Without this, a proof that is one of two
+// for its guard could be deleted and nothing would fail.
+func TestAProofCannotBeRemovedWithoutSayingSo(t *testing.T) {
+	site := t.TempDir()
+	write := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(site, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("list", "docs/  # nothing here is touched\n")
+	write(ledgerEntries+"/StillHere.1.yml", "guard: StillHere\n")
+	sensor := func(removals, changed string) (string, error) {
+		t.Helper()
+		write(removedProofs, removals)
+		cmd := exec.Command("bash", filepath.Join(repoRoot(t), ".github", "scripts", "sensitive-paths.sh"))
+		cmd.Dir = site
+		cmd.Env = append(os.Environ(), "SENSITIVE_PATHS_FILE="+filepath.Join(site, "list"))
+		cmd.Stdin = strings.NewReader(changed)
+		var out, said bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &out, &said
+		err := cmd.Run()
+		return said.String(), err
+	}
+	const gone = ledgerEntries + "/WasProved.9.yml"
+
+	if said, err := sensor("removed: []\n", ledgerEntries+"/StillHere.1.yml\nREADME.md\n"); err != nil {
+		t.Errorf("a change to a proof that is still there was refused: %v\n%s", err, said)
+	}
+	said, err := sensor("removed: []\n", gone+"\n")
+	if err == nil || !strings.Contains(said, gone) {
+		t.Errorf("a proof was removed and the change was not refused, or what was removed was not named: %v\n%s", err, said)
+	}
+	if said, err := sensor("removed:\n  - proof: WasProved.9.yml\n    reason: the guard it proved was removed with the thing it guarded\n", gone+"\n"); err != nil {
+		t.Errorf("a removal that is named with its reason was refused: %v\n%s", err, said)
+	}
+	if _, err := sensor("removed:\n  - proof: WasProved.9.yml\n    reason:\n", gone+"\n"); err == nil {
+		t.Error("a removal named with no reason was let through, which is a line anybody can add")
+	}
+	if _, err := sensor("removed:\n  - proof: AnotherWasProved.9.yml\n    reason: it names a different proof\n", gone+"\n"); err == nil {
+		t.Error("a removal was let through on the strength of a line naming some other proof")
+	}
+}
+
+// Every removal on the list is of a proof that is really gone, with a
+// reason. A line naming a proof that is still there is a removal approved
+// before it has been made.
+func TestARemovalNamesAProofThatIsReallyGone(t *testing.T) {
+	root := repoRoot(t)
+	var list struct {
+		Removed []struct {
+			Proof  string `yaml:"proof"`
+			Reason string `yaml:"reason"`
+		} `yaml:"removed"`
+	}
+	if err := yaml.Unmarshal([]byte(repoFileText(t, removedProofs)), &list); err != nil {
+		t.Fatalf("parsing %s: %v", removedProofs, err)
+	}
+	for _, r := range list.Removed {
+		if strings.TrimSpace(r.Reason) == "" {
+			t.Errorf("%s names %q as removed and gives no reason", removedProofs, r.Proof)
+		}
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(ledgerEntries), r.Proof)); err == nil {
+			t.Errorf("%s names %q as removed, and it is still there. A removal is said in the change that makes it, not before.", removedProofs, r.Proof)
 		}
 	}
 }
