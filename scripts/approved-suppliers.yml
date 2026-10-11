@@ -650,9 +650,13 @@ egress:
       registry for the release of the platform the site runs. And Go's module
       proxy and checksum database, for the one dependency in the estate's
       programs: the drafter reads YAML with a library, which it may because
-      it holds no key, and the engineer reads what the drafter draws.
+      it holds no key, and the engineer reads what the drafter draws. And
+      Kubernetes' release server, for the API server and scheduler the
+      engineer tries a change with; the tool that starts them and their store
+      come from GitHub's releases, already reached.
     hosts:
       - api.github.com:443
+      - dl.k8s.io:443
       - get.opentofu.org:443
       - ghcr.io:443
       - github.com:443
@@ -840,6 +844,7 @@ egress:
     policy: block
     hosts:
       - api.github.com:443
+      - dl.k8s.io:443
       - get.opentofu.org:443
       - github.com:443
       - go.dev:443
