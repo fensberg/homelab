@@ -485,11 +485,11 @@ func requiredNodeSelectorTerms(t *testing.T, podSpec map[string]any) []any {
 	if !ok {
 		return nil
 	}
-	required, ok := nodeAffinity["requiredDuringSchedulingIgnoredDuringExecution"].(map[string]any)
+	required, ok := nodeAffinity[capacity.RequiredKey].(map[string]any)
 	if !ok {
 		return nil
 	}
-	terms, _ := required["nodeSelectorTerms"].([]any)
+	terms, _ := required[capacity.SelectorTermsKey].([]any)
 	return terms
 }
 

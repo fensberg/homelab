@@ -710,3 +710,34 @@ func TestAClusterThatWillNotStartIsNotAnAnswer(t *testing.T) {
 		t.Errorf("a cluster that would not start answered %v, %v", waiting, err)
 	}
 }
+
+// A record outlives the program that took it. The first taken of a real
+// site held two things a cluster refuses: a namespace labelled for how its
+// pods are secured, under a value that had been replaced, and a pod whose
+// first container and first init container had one name between them. A
+// trial loads neither as it was written.
+func TestATrialLoadsARecordTakenBeforeTheSnapshotWasPutRight(t *testing.T) {
+	old := capacity.Snapshot{Objects: []capacity.Object{
+		{"kind": "Namespace", "metadata": map[string]any{"name": "x1", "labels": map[string]any{
+			"pod-security.kubernetes.io/enforce": "x2", "selected-by": "x1"}}},
+		{"kind": "Node", "metadata": map[string]any{"name": "wk-200"}},
+		{"kind": capacity.KindPod, "metadata": map[string]any{"namespace": "x1", "name": "x3"}, "spec": map[string]any{"nodeName": "wk-200",
+			capacity.InitContainersKey: []any{map[string]any{"name": "c0"}},
+			"containers":               []any{map[string]any{"name": "c0"}, map[string]any{"name": "c1"}}}},
+	}}
+	raw, err := json.Marshal(scenario(old, "", asks{}, asks{Core: map[string]workload{"raised": {Pods: 1, PodBytes: gib}}}).Objects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded := string(raw)
+	if strings.Contains(loaded, "pod-security") || !strings.Contains(loaded, `"selected-by":"x1"`) {
+		t.Errorf("the namespace is loaded with a label it is refused for, or without the one it is selected by: %s", loaded)
+	}
+	if !strings.Contains(loaded, `"initContainers":[{"name":"i0"}]`) || !strings.Contains(loaded, `"containers":[{"name":"c0"},{"name":"c1"}]`) {
+		t.Errorf("the pod's containers do not each have a name of their own: %s", loaded)
+	}
+	// What stands in for a raised setting goes where the estate puts work.
+	if !strings.Contains(loaded, `"key":"`+capacity.ControlPlaneLabel+`","operator":"`+capacity.HasNoLabel+`"`) {
+		t.Errorf("a pod standing in for a raised setting may be placed on a control plane: %s", loaded)
+	}
+}

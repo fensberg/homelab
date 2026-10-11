@@ -2,6 +2,7 @@ package repo
 
 import (
 	"homelab/contractor/config"
+	"homelab/details/capacity"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -225,7 +226,7 @@ func nodeAffinityAdmits(t *testing.T, terms []any, labels map[string]string) boo
 		if !ok {
 			t.Fatalf("a nodeSelectorTerm is not a mapping: %#v", term)
 		}
-		exprs, ok := m["matchExpressions"].([]any)
+		exprs, ok := m[capacity.MatchExpressionsKey].([]any)
 		if !ok {
 			t.Fatalf("a nodeSelectorTerm has no matchExpressions: %#v", m)
 		}
@@ -238,7 +239,7 @@ func nodeAffinityAdmits(t *testing.T, terms []any, labels map[string]string) boo
 			switch op {
 			case "Exists":
 				all = all && present
-			case "DoesNotExist":
+			case capacity.HasNoLabel:
 				all = all && !present
 			default:
 				// Refused rather than ignored. An operator this evaluator does
