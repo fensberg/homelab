@@ -1,0 +1,250 @@
+{
+  "uid": "is-the-network-the-limit",
+  "title": "Is the network what limits the site",
+  "description": "Traffic on each interface against that interface's own speed, with what it dropped and what it got wrong.",
+  "tags": ["estate"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "editable": false,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "What changed",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "enable": true,
+        "iconColor": "orange",
+        "expr": "changes(kube_daemonset_metadata_generation[2m]) > 0 or changes(kube_deployment_metadata_generation[2m]) > 0 or changes(kube_statefulset_metadata_generation[2m]) > 0",
+        "step": "2m",
+        "titleFormat": "changed: {{namespace}}/{{daemonset}}{{deployment}}{{statefulset}}"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Sent, as a share of the interface's speed",
+      "description": "An interface near its own speed is the limit. One far below it is not, whatever the traffic looks like in bytes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|lxc.*|cilium.*|tap.*|fwpr.*|fwln.*\"}[5m]) / (node_network_speed_bytes{device!~\"lo|veth.*|lxc.*|cilium.*|tap.*|fwpr.*|fwln.*\"} > 0)",
+          "legendFormat": "{{job}} {{instance}} {{device}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.8
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Received, as a share of the interface's speed",
+      "description": "The same, for what arrives.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_network_receive_bytes_total{device!~\"lo|veth.*|lxc.*|cilium.*|tap.*|fwpr.*|fwln.*\"}[5m]) / (node_network_speed_bytes{device!~\"lo|veth.*|lxc.*|cilium.*|tap.*|fwpr.*|fwln.*\"} > 0)",
+          "legendFormat": "{{job}} {{instance}} {{device}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.8
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Traffic",
+      "description": "What each interface carries, in bits a second, for an interface that does not say its speed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|lxc.*\"}[5m]) * 8",
+          "legendFormat": "sent, {{job}} {{instance}} {{device}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(node_network_receive_bytes_total{device!~\"lo|veth.*|lxc.*\"}[5m]) * 8",
+          "legendFormat": "received, {{job}} {{instance}} {{device}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Dropped and wrong",
+      "description": "Packets an interface dropped or got wrong, a second. Any of these on an interface that is not full is a fault and not a limit.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_network_receive_drop_total{device!~\"lo|veth.*|lxc.*\"}[5m]) + rate(node_network_transmit_drop_total{device!~\"lo|veth.*|lxc.*\"}[5m]) > 0",
+          "legendFormat": "dropped, {{job}} {{instance}} {{device}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(node_network_receive_errs_total{device!~\"lo|veth.*|lxc.*\"}[5m]) + rate(node_network_transmit_errs_total{device!~\"lo|veth.*|lxc.*\"}[5m]) > 0",
+          "legendFormat": "wrong, {{job}} {{instance}} {{device}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ]
+}

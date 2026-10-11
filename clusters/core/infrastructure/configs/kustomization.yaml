@@ -10,3 +10,31 @@ resources:
   # Asks GitHub whether each scheduled workflow is failing. Needs the
   # ScrapeConfig and PrometheusRule kinds from the monitoring stack.
   - scheduled-workflows.yaml
+# The dashboards, one for each question epoch 04 asks of a site (criterion
+# 19). Each is a file under dashboards/, kept here so that what a person
+# looks at is reviewed like everything else, and handed to Grafana by the
+# sidecar that watches for the label below.
+#
+# Not one of them holds a "$". Flux substitutes into everything it applies
+# and the Validate lane substitutes with a tool that takes a bare "$name"
+# too, so a dashboard's own variable would be blanked on its way in. They
+# are written with no variables, and tests/go/repo holds them to it.
+configMapGenerator:
+  - name: dashboard-what-the-site-holds
+    namespace: monitoring
+    files: [dashboards/what-the-site-holds.json]
+  - name: dashboard-where-the-time-goes
+    namespace: monitoring
+    files: [dashboards/where-the-time-goes.json]
+  - name: dashboard-is-the-network-the-limit
+    namespace: monitoring
+    files: [dashboards/is-the-network-the-limit.json]
+  - name: dashboard-is-the-site-keeping-itself
+    namespace: monitoring
+    files: [dashboards/is-the-site-keeping-itself.json]
+generatorOptions:
+  # Named as written: nothing mounts these by name, and a name that changes
+  # with every edit leaves the old dashboard behind until it is pruned.
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"

@@ -131,6 +131,18 @@ What is measured is looked at:
   can show it, so that what went wrong is seen beside what changed just
   before. Connecting an application going down to the change that put it
   off its machine took a snapshot and arithmetic, five hours later.
+  **Built 2026-10-11, four of them, each named for what it answers:** what
+  the site holds and what is using it (the hypervisor, each machine, each
+  namespace, reserved against used); where the time goes (a write at each
+  layer, and what each machine's work waited for); whether the network is
+  what limits the site; and whether the site is keeping itself (its
+  alerts, its ring, its schedules, work with no machine). Every one marks
+  on its timeline each workload whose declared form changed, which is what
+  a converge or Flux applying something looks like from inside. None holds
+  a variable: what Flux applies is substituted into, and a dashboard's own
+  would arrive blank. **Not in them:** what the site draws (28), which
+  wants its own reading first, and a mark for a change that alters no
+  workload, such as a secret or a setting of the machines.
 
 History outlives the site:
 
