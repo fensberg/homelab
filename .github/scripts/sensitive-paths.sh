@@ -29,6 +29,21 @@ fi
 
 changed=$(cat)
 
+# What the change itself altered, and not what main altered since.
+#
+# The caller hands over the files that differ between the base and the head.
+# For a branch level with main those are the change. For a branch main has
+# moved on from, they are also everything main gained that the branch does
+# not have yet, read backwards as the branch having taken it away: a guard
+# main added looks removed, a sensitive file main touched looks touched, and
+# a review conversation is opened on a file the pull request does not hold,
+# which GitHub refuses (HTTP 422, #692). So where the two commits are known,
+# the list is taken again from where the branch left main. The three dots are
+# the whole of it.
+if [ -n "${BASE:-}" ] && [ -n "${HEAD:-}" ]; then
+	changed=$(git diff --name-only "${BASE}...${HEAD}")
+fi
+
 # A proof that was removed has to be said to have been.
 #
 # Each proof that a guard fails when it should is a file of its own, so that

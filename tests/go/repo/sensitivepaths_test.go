@@ -376,3 +376,72 @@ func TestARemovalNamesAProofThatIsReallyGone(t *testing.T) {
 		}
 	}
 }
+
+// A branch that main has moved on from is judged by what it changed, and not
+// by what main gained while it was open.
+//
+// Between the base and the head, everything main gained since reads as
+// something the branch took away. A proof main added looked removed, and
+// the change was refused for it; a sensitive file main touched looked
+// touched, and the conversation opened for it was anchored to a file the
+// pull request did not hold, which GitHub refused on every attempt (#692).
+func TestABranchBehindMainIsJudgedByItsOwnChanges(t *testing.T) {
+	site := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = site
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	write := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(site, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("init", "-q", "-b", "main")
+	git("config", "commit.gpgsign", "false")
+	git("config", "user.name", "whoever opened the piece")
+	git("config", "user.email", "piece@example.invalid")
+	write("list", "guarded/  # what breaks if this is wrong\n")
+	write("guarded/kept", "as it was\n")
+	write(removedProofs, "removed: []\n")
+	write("notes", "as they were\n")
+	git("add", ".")
+	git("commit", "-qm", "where the branch leaves main")
+
+	git("checkout", "-q", "-b", "piece")
+	write("notes", "the piece's own change\n")
+	git("commit", "-qam", "the piece")
+	head := git("rev-parse", "HEAD")
+
+	git("checkout", "-q", "main")
+	write("guarded/kept", "changed on main since\n")
+	write(ledgerEntries+"/AddedOnMain.1.yml", "guard: AddedOnMain\n")
+	git("add", ".")
+	git("commit", "-qm", "main moves on")
+	base := git("rev-parse", "HEAD")
+	git("checkout", "-q", "piece")
+
+	cmd := exec.Command("bash", filepath.Join(repoRoot(t), ".github", "scripts", "sensitive-paths.sh"))
+	cmd.Dir = site
+	cmd.Env = append(os.Environ(), "SENSITIVE_PATHS_FILE="+filepath.Join(site, "list"), "BASE="+base, "HEAD="+head)
+	// What the caller hands over: every file that differs between the two.
+	cmd.Stdin = strings.NewReader(git("diff", "--name-only", base, head) + "\n")
+	var out, said bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &said
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("a branch main has moved on from was refused for what main gained: %v\n%s", err, said.String())
+	}
+	if !strings.Contains(out.String(), "tripped=false") {
+		t.Errorf("a branch that touched nothing sensitive tripped the alarm for what main touched:\n%s", out.String())
+	}
+}
