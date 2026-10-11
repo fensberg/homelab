@@ -129,6 +129,8 @@ func realScheduler(t trial) (map[string]string, error) {
 // cluster, and gives what it printed. What it complained of last is the
 // error's, since that is where a program says why.
 func asking(program string, env []string, args ...string) ([]byte, error) {
+	// proved by TestEveryProgramRunIsNamedByAConstantOrIsTheOperators
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.Command(program, args...)
 	cmd.Env = append(os.Environ(), env...)
 	var complaints bytes.Buffer
