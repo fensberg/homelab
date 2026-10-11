@@ -104,6 +104,11 @@ What is measured is looked at:
   capacity by scope (hypervisor, machine, workload), what is reserved
   against what is used, and whether the network is what limits the site -
   traffic against each interface's own speed, with its errors and drops.
+  **A change is a mark on the timeline** (added 2026-10-11): every converge
+  and everything Flux applies is recorded where a dashboard and an alert
+  can show it, so that what went wrong is seen beside what changed just
+  before. Connecting an application going down to the change that put it
+  off its machine took a snapshot and arithmetic, five hours later.
 
 History outlives the site:
 
@@ -124,7 +129,11 @@ The site keeps itself, and proves it:
 
 - **12. Every necessary function has a deadline and an alert on missing it**:
   the state backup, each database's backup, each workload's backup, the
-  nightly checks, a converge.
+  nightly checks, a converge, and every workflow that runs on a schedule
+  (added 2026-10-11). A scheduled workflow that stops running says nothing:
+  its last run stays the newest one. The deadline is measured and not read
+  off the schedule, since GitHub runs a schedule when it has room. Built
+  for the scheduled workflows; the rest are not.
 - **13. A converge in flight is not evicted.**
 - **15. Alerts on the bet read pressure**, not memory in use, and one says how
   long until a resource is full at the rate it is filling.
@@ -186,6 +195,36 @@ operator: "Let's bring all the untouched into the epoch"):
   ("this will cost $5 over the next month to implement"), from a declared
   price for a unit, keeping apart what a thing adds to the bill by running
   and its share of what the site costs to keep on at all.
+- **29. A change is tried against the real site, every time the site is
+  read** (added 2026-10-11, as were the four after it). Whenever a snapshot
+  is taken it is loaded into the scheduler with no change asked of it. A
+  snapshot that will not load, or a site that is not schedulable as it
+  stands, is said to somebody then, and not found by the next pull request.
+  Four faults in one day were invisible on made-up sites and plain on
+  site0's own.
+- **30. When work that cannot wait is put off its machine, the site says so
+  at the time, and says what took its place.** An application was put off
+  its machine for the network's agent. What said so was two stock alerts a
+  quarter of an hour later, that a pod was not ready, and nothing said why.
+- **31. Work that can run on only one machine is known, and that machine is
+  watched for the room it needs.** A pod held to a machine by its volume is
+  listed, and an alert says when it could not be placed again if it were
+  made again today. One such pod has thirty mebibytes to spare on the only
+  machine it can use, and nothing declares that or watches it.
+- **32. The record a pull request is held to is never stale without that
+  being said.** A converge run from a workstation mends the site and
+  publishes no record, so a change goes on being tried against the site as
+  it was. Either such a converge publishes, or how old the record is
+  against the site's last change is watched.
+- **33. What is down reaches the operator's phone.** Everything goes to one
+  channel today, and an application was down for five hours between its
+  first alert and anybody acting on it. The estate holds an address that
+  turns a mail into a text on the operator's phone
+  (`op://estate-shared/alerting/alert_email`). An alert that means a thing
+  is down is sent there as well as to the channel; one that means a thing
+  is drifting is not. **Not decided:** which alerts those are, and what
+  sends the mail - a site runs no mail server, and one at the estate's edge
+  was put off until a second site is real.
 
 ### Before this epoch closes
 
