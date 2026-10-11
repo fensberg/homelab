@@ -130,6 +130,7 @@ case "$1 $2" in
     case "$*" in
       *-json*) cat ` + filepath.Join(f.dir, "outputs") + ` ;;
       *state_conn_str*) cat ` + filepath.Join(f.dir, "connstr") + ` ;;
+      *kubeconfig*) printf 'apiVersion: v1\nclusters: []\nusers: []\n' ;;
       *) printf 'a-value' ;;
     esac ;;
   "state list") [ -n "$3" ] || printf 'a.tracked\nb.tracked\n' ;;
@@ -139,11 +140,22 @@ case "$1 $2" in
 esac
 `
 	op := "#!/bin/sh\ncase \"$2\" in *ssh_private_key) printf -- '-----BEGIN KEY-----\\nbody\\n-----END KEY-----\\n' ;; *) echo operator ;; esac\n"
-	for name, body := range map[string]string{"tofu": tofu, "op": op} {
+	// The cluster, as a converge meets it before it applies anything: a state
+	// database with every instance ready and nothing being done to it.
+	kubectl := "#!/bin/sh\necho '{\"items\":[{\"spec\":{\"instances\":3},\"status\":{\"readyInstances\":3,\"phase\":\"" + atRestHealthy + "\"}}]}'\n"
+	for name, body := range map[string]string{"tofu": tofu, "op": op, "kubectl": kubectl} {
 		if err := os.WriteFile(filepath.Join(f.dir, name), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
+
+	// A verb here is run as somebody at a workstation runs it, wherever
+	// these tests themselves are run: unattended, a converge also waits for
+	// Flux to have applied the commit it is of.
+	t.Setenv("GITHUB_ACTIONS", "")
+	was := restPause
+	restPause = time.Millisecond
+	t.Cleanup(func() { restPause = was })
 
 	// What a phase sets in the environment, put back when the test ends.
 	for _, name := range []string{"PROXMOX_VE_SSH_USERNAME", "PROXMOX_VE_SSH_PRIVATE_KEY", "TF_VAR_cluster_access", "TF_VAR_kubeconfig"} {

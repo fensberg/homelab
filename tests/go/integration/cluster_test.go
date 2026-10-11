@@ -18,6 +18,7 @@ package integration_test
 
 import (
 	"homelab/contractor/config"
+	"homelab/details/flux"
 	"os"
 	"strings"
 	"testing"
@@ -159,7 +160,7 @@ func TestFluxKustomizationsAreReconciled(t *testing.T) {
 	// reason that is not a defect.
 	retry.DoWithRetry(t, "wait for the Flux Kustomizations to report Ready", 30, 10*time.Second, func() (string, error) {
 		out, err := k8s.RunKubectlAndGetOutputE(t, opts,
-			"get", "kustomizations.kustomize.toolkit.fluxcd.io", "-A",
+			"get", flux.Kustomizations, "-A",
 			"-o", "jsonpath={range .items[*]}{.metadata.name}={.status.conditions[?(@.type=='Ready')].status}{'\\n'}{end}")
 		if err != nil {
 			return "", err

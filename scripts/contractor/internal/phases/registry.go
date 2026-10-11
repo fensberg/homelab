@@ -90,7 +90,17 @@ func dispatch(ctx *run.Context, name string) error {
 	case "verify":
 		return Verify(ctx)
 	case "take-over":
-		return TakeOver(ctx)
+		if err := TakeOver(ctx); err != nil {
+			return err
+		}
+		// A converge is about to write to the state it has just reached. A
+		// plan and a record only read it, and wait for nothing. Asked here,
+		// of the phase as a verb runs it, and not inside TakeOver: reading
+		// the cluster's access reaches the state through TakeOver itself.
+		if ctx.Converge {
+			return awaitRest(ctx)
+		}
+		return nil
 	case "plan":
 		return Plan(ctx)
 	case "record":
