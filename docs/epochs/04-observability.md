@@ -94,19 +94,19 @@ The budget, and who refuses:
   no leader lost. etcd's own guidance of ten is not met by this disk at
   rest, so the level is what this disk does and some more, short of the
   hundred at which a heartbeat is missed. **Why it is fourteen and not
-  one is half established,** and by hand. Read off the host the same day:
-  the pool is a mirror of two consumer NVMe drives with no device set aside
-  for its write log, doing under 200 writes a second. Written to as etcd
-  writes - small blocks, each one made safe before the next - the pool
-  itself takes a millisecond and a half, and three and a half for the
-  slowest hundredth. So the drives are not it, and the pool is not
-  crowded: something like ten of the fourteen milliseconds are spent
-  between a machine's disk and the pool, in the layers that make a virtual
-  disk of it. Which layer is not known. The first account written here
-  blamed the drives, on no measure of them. It is not the network: the
-  figure is of a write to a member's own disk. Finding this much took
-  three commands run by hand on the hypervisor, which is what criterion 34
-  is for. **Not done:** etcd
+  one:** the usual write is accounted for at every layer, and the slow one
+  at none. Read the same day, first by hand on the hypervisor and then off
+  what the site already collected: the pool is a mirror of two consumer
+  NVMe drives with no device set aside for its write log, and is not
+  crowded. A drive makes a write safe in a millisecond and a half on
+  average; a control plane's own disk sees under three, and a millisecond
+  more for the write itself. So a usual write to etcd's log costs about
+  four milliseconds, a little over one of them added by the layers that
+  make a virtual disk. The fourteen is the slowest hundredth, and nothing
+  on the site keeps how long each operation took at any layer below etcd,
+  so where those are slow is not known. Two accounts written here before
+  this one each named a cause on less than that. It is not the network:
+  the figure is of a write to a member's own disk. **Not done:** etcd
   has no disk of its own, and nothing but the alert's own words holds an
   addition back while it fires.
 
@@ -250,21 +250,30 @@ operator: "Let's bring all the untouched into the epoch"):
   is drifting is not. **Not decided:** which alerts those are, and what
   sends the mail - a site runs no mail server, and one at the estate's edge
   was put off until a second site is real.
-- **34. A delay can be placed** (added 2026-10-11). Everything a request
-  passes through says how long it held it, kept as history, so that where
-  the time went is read off and not found by experiment. The operator, on
-  being handed a third command to run by hand to find out why etcd's
-  writes are slow: "Why are we one-offing the logs when the logs should
-  tell us explicitly where the bottleneck is. These are exactly the things
-  we should have a log of and a monitor for because it keeps this lean
-  machine running at high efficiency. The hotter it runs the less room for
-  these unknown bumps it has." A write is the first case and the measure
-  of the rest: what the program saw, what its machine's disk saw, what the
-  hypervisor's volume saw and what the drive saw, side by side, with an
-  alert when two neighbours come apart. The same for a packet and for a
-  processor's time. It is the other half of running full: a site with
-  room to spare absorbs a delay nobody can explain, and one run at its
-  edge does not.
+- **34. A delay can be placed, anywhere, without having been asked for**
+  (added 2026-10-11). Everything a request passes through says how long it
+  held it, kept as history, so that where the time went is read off and
+  not found by experiment. The operator, on being handed a third command
+  to run by hand to find out why etcd's writes are slow: "Why are we
+  one-offing the logs when the logs should tell us explicitly where the
+  bottleneck is. These are exactly the things we should have a log of and
+  a monitor for because it keeps this lean machine running at high
+  efficiency. The hotter it runs the less room for these unknown bumps it
+  has." And: "this applied to everything, not just etcd. stack trace
+  should be EVERYWHERE by default." So it is not a thing a workload is
+  given when it has gone wrong. Whatever a site runs is traced from the
+  moment it runs, by being on the site: its writes, its packets, its turn
+  on a processor, and what it was doing when it was slow.
+  **Held today, and unread until now:** how long each disk at each layer
+  spends on a write and on making one safe, as averages, and how long each
+  machine's work waits for a disk, for memory and for a processor. They
+  are recorded as series as of this criterion. **Not held:** how long each
+  operation took, which is what places a slow one; any of it for one pod
+  and not a whole machine; anything of the network, whose own view of
+  every flow is turned off; and what a program was doing, which is the
+  stack trace itself. Each of those is something more running on every
+  machine of a site that is run full, so each is sized and agreed before
+  it is added.
 
 ### Before this epoch closes
 

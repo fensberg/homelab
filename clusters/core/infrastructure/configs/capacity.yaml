@@ -77,6 +77,44 @@ spec:
               0
             )
 
+    # Where a write's time goes, layer by layer (criterion 34).
+    #
+    # Every machine and the hypervisor already count how long their disks
+    # spend on writes and on making a write safe, and nothing read it: why
+    # etcd's writes are slow was looked for with three commands run by hand
+    # on the hypervisor while the answer, as far as averages go, was here.
+    # These keep it as a figure for each disk at each layer - the job says
+    # which: a machine's own disk, or the hypervisor's drives and the
+    # volumes it makes of them - beside what etcd itself saw.
+    #
+    # THEY ARE AVERAGES, AND THAT IS THEIR LIMIT. A disk counts the time it
+    # spent and how many operations, not how long each took. Read on site0
+    # on 2026-10-11: a drive makes a write safe in a millisecond and a half,
+    # a machine's disk in under three, and the slowest hundredth of etcd's
+    # writes take fourteen. So the usual case is accounted for at every
+    # layer and the worst case at none. Placing that needs each layer to
+    # keep how long each operation took, which nothing on the site does yet.
+    - name: delay.recorded
+      interval: 1m
+      rules:
+        - record: disk:write_seconds
+          expr: >-
+            rate(node_disk_write_time_seconds_total[5m])
+            / (rate(node_disk_writes_completed_total[5m]) > 0)
+        - record: disk:made_safe_seconds
+          expr: >-
+            rate(node_disk_flush_requests_time_seconds_total[5m])
+            / (rate(node_disk_flush_requests_total[5m]) > 0)
+        - record: etcd:log_write_seconds
+          expr: >-
+            sum by (instance) (rate(etcd_disk_wal_fsync_duration_seconds_sum[5m]))
+            / (sum by (instance) (rate(etcd_disk_wal_fsync_duration_seconds_count[5m])) > 0)
+        - record: etcd:log_write_seconds:slowest_hundredth
+          expr: >-
+            histogram_quantile(0.99, sum by (instance, le) (
+              rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m])
+            ))
+
     - name: capacity.watched
       rules:
         - alert: MustRunWorkDoesNotFitWithAWorkerGone
