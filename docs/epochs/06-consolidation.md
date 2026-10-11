@@ -528,12 +528,41 @@ what no later push repairs - an unsigned commit, a secret, a real name or
 address in a public repository. Everything else is a red check fixed by the next
 push.
 
-So the hook runs `go test -C tests/go -short ./repo`, about three seconds. A
-guard that costs whole seconds calls `heavy(t, why)` and skips under `-short`,
-which is Go's own mechanism for exactly this rather than a list somebody keeps.
+So the hook runs `go test -C tests/go -count=1 -short ./repo`, about six
+seconds. A guard that costs whole seconds calls `heavy(t, why)` and skips
+under `-short`, which is Go's own mechanism for exactly this rather than a
+list somebody keeps.
 The skip is honest only while something runs those guards, so
 `TestHeavyGuardsRunOnEveryPullRequest` refuses a workflow that passes `-short`,
 and the ledger proves it.
+
+**A conflict with main cost a pull request, and no longer does**
+(2026-10-11). One line of conflict in the mutation ledger closed #686 and
+reopened it as #687, with the operator applying the same workflow patch
+twice. The operator: "Our system should work for and protect us, not be one
+giant round-a-bout circus that's pedantic." Three causes, none of which
+was protecting anything:
+
+- The ledger was one list with a count at its head, so any two changes that
+  added a guard conflicted. Each proof is a file of its own under
+  `tests/mutations/`, and that directory is a sensitive path: a removed
+  proof is a deleted file that opens a review, which is what the count was
+  for.
+- No branch may be rewritten, and `signedpush` refused every merge, so a
+  conflict left a new branch as the only way forward. It refused merges
+  because it replayed each commit with one parent, and a merge flattened
+  that way republishes what it brought in. It now replays a merge of main
+  as a merge, with main's own commit as its second parent, and refuses any
+  other. Tried on GitHub before it was relied on: a branch nine workflow
+  files behind main was brought up to it, and the merge came back signed
+  with both parents. Not tried: a branch that also carries its own applied
+  patch while main's workflows have moved.
+- The hook's guards answered from Go's kept results, which passed a tree
+  on one machine that the same guards refused on another. It runs with
+  `-count=1`.
+
+What remains is the patch itself: applying one is five steps for the
+operator, and is #688.
 
 ### A candidate: one versions file that everything reads, and Renovate driving it
 
