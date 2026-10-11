@@ -28,21 +28,23 @@ run "valid_estate_plans_cleanly" {
 # Both come from what the applications declare, through the address plan;
 # this proves the estate carries every route of every site, each at the
 # site's own address. Against applications written for the test, so that it
-# holds whichever the estate has: two of them, with three routes between them.
+# holds whichever the estate has: two of them, with three routes between them,
+# and one of the core's, which is carried like any other.
 run "the_split_tunnel_carries_every_route" {
   command = plan
 
   variables {
     config_path       = "./tests/fixtures/two-plots.json"
     applications_path = "../../modules/infrastructure/applications/tests/fixtures/declared"
+    core_routes_path  = "../../modules/infrastructure/applications/tests/fixtures/core/one.json"
   }
 
   assert {
     condition = toset([for t in cloudflare_zero_trust_device_default_profile.estate.include : t.address]) == toset([
-      "10.196.40.7/32", "10.196.40.8/32", "10.196.40.9/32",
-      "10.196.80.7/32", "10.196.80.8/32", "10.196.80.9/32",
+      "10.196.40.5/32", "10.196.40.7/32", "10.196.40.8/32", "10.196.40.9/32",
+      "10.196.80.5/32", "10.196.80.7/32", "10.196.80.8/32", "10.196.80.9/32",
     ])
-    error_message = "the split tunnel does not carry every route the applications declare at each site's own address"
+    error_message = "the split tunnel does not carry every route the applications and the core declare, at each site's own address"
   }
 }
 

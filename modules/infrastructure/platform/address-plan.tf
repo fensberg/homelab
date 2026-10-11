@@ -18,4 +18,5 @@ module "address_plan" {
 module "applications" {
   source    = "../applications"
   directory = var.applications_path
+  core      = var.core_routes_path
 }

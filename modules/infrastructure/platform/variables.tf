@@ -69,6 +69,15 @@ variable "applications_path" {
   EOT
 }
 
+variable "core_routes_path" {
+  type        = string
+  default     = null
+  description = <<-EOT
+    Where the core says what of it is reached from away. Unset outside this
+    module's tests, for the reason the applications' path above is.
+  EOT
+}
+
 variable "site_directory" {
   type        = bool
   description = <<-EOT

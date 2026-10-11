@@ -21,6 +21,7 @@ variables {
   # holds whichever applications the estate has. The fixture gives the site
   # one of them, alpha, in staging.
   applications_path = "../applications/tests/fixtures/declared"
+  core_routes_path  = "../applications/tests/fixtures/core/none.json"
 }
 
 run "the_platform_plans_from_the_clusters_access_alone" {
