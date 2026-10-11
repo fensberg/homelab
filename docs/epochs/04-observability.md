@@ -93,9 +93,16 @@ The budget, and who refuses:
   in an ordinary bad five minutes and 46 in the worst of three days, with
   no leader lost. etcd's own guidance of ten is not met by this disk at
   rest, so the level is what this disk does and some more, short of the
-  hundred at which a heartbeat is missed. **Not done:** etcd has no disk of
-  its own, and nothing but the alert's own words holds an addition back
-  while it fires.
+  hundred at which a heartbeat is missed. **Why it is fourteen and not
+  one,** read off the host the same day: the pool is a mirror of two
+  consumer NVMe drives of different makes, with no device set aside for its
+  write log, and it was doing 136 writes a second. So it is not crowded.
+  The time is what such a drive takes to say a write is safe, paid on both
+  sides of the mirror and once for each of three members. Holding other
+  work's writes back would not lower it; a log device that keeps its
+  writes through a power cut, or fewer members, would. **Not done:** etcd
+  has no disk of its own, and nothing but the alert's own words holds an
+  addition back while it fires.
 
 Sizing needs nobody:
 
