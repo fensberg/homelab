@@ -246,15 +246,15 @@ func Scheduling(spec Object, value, namespace func(string) string, claim func(st
 	for _, key := range []string{PriorityClassKey, "overhead", "hostNetwork"} {
 		out[key] = spec[key]
 	}
-	if selector := dict(spec["nodeSelector"]); len(selector) > 0 {
+	if selector := dict(spec[NodeSelectorKey]); len(selector) > 0 {
 		to := Object{}
 		for k, v := range selector {
 			to[k] = value(str(v))
 		}
-		out["nodeSelector"] = to
+		out[NodeSelectorKey] = to
 	}
 	out["affinity"] = renamed(spec["affinity"])
-	out["topologySpreadConstraints"] = renamed(spec["topologySpreadConstraints"])
+	out[SpreadKey] = renamed(spec[SpreadKey])
 	if tolerations, _ := spec["tolerations"].([]any); len(tolerations) > 0 {
 		var to []any
 		for _, t := range tolerations {
@@ -349,6 +349,13 @@ func (n *names) selectors(v any) any {
 	return walk(v, n.of, n.namespace)
 }
 
+// AsWritten is the labels whose values a snapshot keeps as they are: what
+// kind of machine a machine is. Kubernetes writes them on every machine,
+// they are the same few words on every cluster there is, and a manifest
+// selects machines by them in those words - so a snapshot that replaced
+// them would hold no machine a manifest's own rule could find.
+var AsWritten = map[string]bool{OSLabel: true, "kubernetes.io/arch": true}
+
 // values is a set of labels with each value renamed and each key kept.
 func (n *names) values(labels any) any {
 	in := dict(labels)
@@ -357,6 +364,10 @@ func (n *names) values(labels any) any {
 	}
 	out := Object{}
 	for k, v := range in {
+		if AsWritten[k] {
+			out[k] = v
+			continue
+		}
 		out[k] = n.of(str(v))
 	}
 	return out

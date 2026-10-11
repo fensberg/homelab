@@ -159,11 +159,21 @@ func scenario(s capacity.Snapshot, gone string, before, now asks) trial {
 			"metadata": capacity.Object{"namespace": p.Namespace, "name": name, "labels": p.Labels}, "spec": spec})
 	}
 
+	for _, o := range onEachMachine(t.Objects, before, now, false) {
+		meta := dict(o["metadata"])
+		t.Called[fmt.Sprint(meta["namespace"], "/", meta["name"])] = fmt.Sprint(dict(meta["annotations"])[calledNote])
+		add(o)
+	}
+
 	// What a setting was raised by, as pods of that much. Where a setting
 	// asks for more pods than it did, the new ones are whole.
 	for _, name := range sortedNames(now.Core) {
 		is, had := now.Core[name], before.Core[name]
 		if is.CanWait {
+			continue
+		}
+		// One that runs on every machine was tried on every machine above.
+		if _, everywhere := now.Each[name]; everywhere {
 			continue
 		}
 		for i := 0; i < is.Pods; i++ {
@@ -235,6 +245,98 @@ func distinctlyNamed(o capacity.Object) capacity.Object {
 		spec[list] = named
 	}
 	out["spec"] = spec
+	return out
+}
+
+// calledNote is where a pod standing in for something carries what to call
+// it when it is said to wait.
+const calledNote = "engineer/called"
+
+// onEachMachine is what a workload that runs on every machine was raised by,
+// as one pod of that much held to each machine in a trial.
+//
+// A setting raised on such a workload is not that much more for the
+// scheduler to place where there is room. It is that much taken from every
+// machine, and the question is whether each machine still holds what it
+// must: the network agent was given a reservation on every machine, and on
+// one worker that put an application off the only machine its volume lets
+// it run on (#694, #695). So each pod is held to its machine by the
+// machine's own name, keeps the workload's class - which is what lets it
+// put other work off - and its rules for where it may go.
+//
+// Which machines the workload runs on is its rules' to say and is not
+// worked out here. A machine it does not run on leaves its pod waiting
+// whatever is asked, so the trial of the site before the change is given
+// the same pods asking for nothing (probe), and a pod that waits in both is
+// the change's doing in neither.
+func onEachMachine(objects []capacity.Object, before, now asks, probe bool) []capacity.Object {
+	var machines []string
+	for _, o := range objects {
+		if o["kind"] == "Node" {
+			machines = append(machines, fmt.Sprint(dig(o, "metadata", "name")))
+		}
+	}
+	sort.Strings(machines)
+	var out []capacity.Object
+	for n, name := range sortedNames(now.Core) {
+		scheduled, everywhere := now.Each[name]
+		is, had := now.Core[name], before.Core[name]
+		if !everywhere || is.CanWait {
+			continue
+		}
+		extra := is.PodBytes
+		if !had.CanWait {
+			extra -= had.PodBytes
+		}
+		if extra <= 0 {
+			continue
+		}
+		asked := fmt.Sprint(extra)
+		if probe {
+			asked = "0"
+		}
+		for _, machine := range machines {
+			// Its class and its rules about machines, and nothing of its
+			// rules about other pods. The pod it stands for is on the
+			// machine already, beside whatever it has to be beside; a rule
+			// that it be near one pod or apart from another is answered by
+			// that pod and not by this one, and names pods by labels a
+			// snapshot does not keep.
+			spec := capacity.Object{}
+			for k, v := range scheduled {
+				switch k {
+				case "containers", capacity.InitContainersKey, "volumes", capacity.SpreadKey:
+				case "affinity":
+					if machines := dict(v)[capacity.NodeAffinityKey]; machines != nil {
+						spec[k] = capacity.Object{capacity.NodeAffinityKey: machines}
+					}
+				default:
+					spec[k] = v
+				}
+			}
+			// Held to its machine, and to whatever else the workload asks
+			// of a machine - but not to what kind of machine it is. Every
+			// machine of a site is the kind its workloads run on, and a
+			// record taken before a snapshot kept those words holds them
+			// replaced, where no rule would find them.
+			held := capacity.Object{capacity.HostnameLabel: machine}
+			for k, v := range dict(scheduled[capacity.NodeSelectorKey]) {
+				if !capacity.AsWritten[k] {
+					held[k] = v
+				}
+			}
+			spec[capacity.NodeSelectorKey] = held
+			if spec[capacity.PriorityClassKey] == nil {
+				spec[capacity.PriorityClassKey] = mustRun
+			}
+			spec["containers"] = []any{capacity.Object{"name": "c0", "image": "x",
+				"resources": capacity.Object{"requests": capacity.Object{"memory": asked}}}}
+			out = append(out, capacity.Object{"apiVersion": "v1", "kind": capacity.KindPod,
+				"metadata": capacity.Object{"namespace": more, "name": fmt.Sprintf("each-%d-%s", n, machine),
+					"annotations": capacity.Object{calledNote: fmt.Sprintf("what %s asks for beyond what it did on %s, %d MiB", name, machine, extra>>20)}},
+				"spec": spec})
+		}
+	}
 	return out
 }
 

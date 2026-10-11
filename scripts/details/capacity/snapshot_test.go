@@ -14,7 +14,7 @@ var site = Listings{
  {"metadata":{"name":"north-street-office-cp-100","labels":{"node-role.kubernetes.io/control-plane":"","kubernetes.io/hostname":"north-street-office-cp-100"}},
   "spec":{"taints":[{"key":"dedicated","value":"north-street-office","effect":"NoSchedule"}]},
   "status":{"allocatable":{"memory":"3Gi","cpu":"2"},"capacity":{"memory":"4Gi"},"nodeInfo":{"machineID":"abc"},"addresses":[{"address":"10.9.8.7"}]}},
- {"metadata":{"name":"north-street-office-wk-200","labels":{"kubernetes.io/hostname":"north-street-office-wk-200","zone":"quay"}},"status":{"allocatable":{"memory":"8Gi"}}},
+ {"metadata":{"name":"north-street-office-wk-200","labels":{"kubernetes.io/hostname":"north-street-office-wk-200","zone":"quay","kubernetes.io/os":"linux"}},"status":{"allocatable":{"memory":"8Gi"}}},
  {"metadata":{"name":"north-street-office-wk-201","labels":{"kubernetes.io/hostname":"north-street-office-wk-201","zone":"quay"}},"status":{"allocatable":{"memory":"8Gi"}}}]}`),
 	Namespaces: []byte(`{"items":[
  {"metadata":{"name":"ledger","labels":{"kubernetes.io/metadata.name":"ledger","pod-security.kubernetes.io/enforce":"privileged","pod-security.kubernetes.io/warn-version":"latest"}}},
@@ -93,6 +93,12 @@ func TestWhatSelectsAThingByNameStillSelectsItInASnapshot(t *testing.T) {
 		t.Errorf("the volume is not held to wk-201: %s", text(volume))
 	}
 	worker := find("Node", func(o Object) bool { return at(o, "metadata", "name") == "wk-201" })
+	// What kind of machine it is stays in Kubernetes' own words, which a
+	// manifest selects by; where it is does not.
+	first := find("Node", func(o Object) bool { return at(o, "metadata", "name") == "wk-200" })
+	if at(first, "metadata", "labels", OSLabel) != "linux" || at(first, "metadata", "labels", "zone") == "quay" {
+		t.Errorf("a machine's kind was replaced, or its place was kept: %s", text(first))
+	}
 	if at(worker, "metadata", "labels", "kubernetes.io/hostname") != "wk-201" {
 		t.Errorf("the worker's own label does not say wk-201: %s", text(worker))
 	}

@@ -52,10 +52,10 @@ import (
 // selector cannot.
 var (
 	aControlPlaneNode = map[string]string{
-		"kubernetes.io/os":       "linux",
+		capacity.OSLabel:         "linux",
 		config.ControlPlaneLabel: "",
 	}
-	aWorkerNode = map[string]string{"kubernetes.io/os": "linux"}
+	aWorkerNode = map[string]string{capacity.OSLabel: "linux"}
 )
 
 // workloadPod is one pod-producing thing, and where in its manifest the fields
