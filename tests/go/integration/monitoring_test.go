@@ -6,8 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"homelab/details/capacity"
+	"homelab/details/repopath"
 	"io"
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -504,4 +508,57 @@ func TestEveryAlertAboutTheHostHasSomethingToRead(t *testing.T) {
 		}
 	}
 	require.NotZero(t, ours, "Prometheus holds no rule about the host. Has Flux reconciled them?")
+}
+
+// Every panel of every dashboard asks Prometheus something it can answer.
+//
+// tests/go/repo holds a dashboard to reaching Grafana and to saying what each
+// picture is for. It cannot see whether a picture has anything in it: a
+// query for a series nobody collects is a valid query, and draws an empty
+// panel that looks like a quiet site. So each is asked here, of the site's
+// own Prometheus. One that only has an answer while something is wrong says
+// so in what it asks - it ends in a comparison, or falls back to nothing -
+// and is held to being a query Prometheus accepts and no more.
+func TestEveryDashboardPanelHasSomethingToShow(t *testing.T) {
+	opts := k8s.NewKubectlOptions("", kubeconfig(t), monitoringNamespace)
+	tunnel := k8s.NewTunnel(opts, k8s.ResourceTypeService, "kube-prometheus-stack-prometheus", 0, 9090)
+	defer tunnel.Close()
+	tunnel.ForwardPort(t)
+
+	root := repopath.RootOrFail(t)
+	asked := 0
+	err := filepath.WalkDir(filepath.Join(root, harness.FluxTree), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".json" {
+			return err
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var board struct {
+			Panels []struct {
+				Title   string
+				Targets []struct{ Expr string }
+			}
+		}
+		if json.Unmarshal(body, &board) != nil || len(board.Panels) == 0 {
+			return nil
+		}
+		for _, panel := range board.Panels {
+			for _, target := range panel.Targets {
+				asked++
+				// Accepted at all: instantQuery fails the test on a query
+				// Prometheus refuses.
+				n := instantQuery(t, tunnel.Endpoint(), "count("+target.Expr+")")
+				onlyWhenWrong := strings.Contains(target.Expr, "> 0") || strings.Contains(target.Expr, "or vector(0)")
+				if n == 0 && !onlyWhenWrong {
+					t.Errorf("%s: the panel %q has nothing to show for %q. A series nobody collects draws an empty picture, which reads as a quiet site.",
+						filepath.Base(path), panel.Title, target.Expr)
+				}
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotZero(t, asked, "no dashboard panel was found to ask about, so this checked nothing")
 }

@@ -87,6 +87,28 @@ The budget, and who refuses:
   that the scheduler cannot count.
 - **8. etcd's disk latency has a written level** and an alert on it (#627),
   and either etcd has a disk of its own or that level gates what is added.
+  The level is written and alerted on (2026-10-11): the slowest hundredth
+  of etcd's log writes over 64 milliseconds for a quarter of an hour. Read
+  on site0 first, as it had to be: 14 milliseconds in an ordinary hour, 40
+  in an ordinary bad five minutes and 46 in the worst of three days, with
+  no leader lost. etcd's own guidance of ten is not met by this disk at
+  rest, so the level is what this disk does and some more, short of the
+  hundred at which a heartbeat is missed. **Why it is fourteen and not
+  one:** the usual write is accounted for at every layer, and the slow one
+  at none. Read the same day, first by hand on the hypervisor and then off
+  what the site already collected: the pool is a mirror of two consumer
+  NVMe drives with no device set aside for its write log, and is not
+  crowded. A drive makes a write safe in a millisecond and a half on
+  average; a control plane's own disk sees under three, and a millisecond
+  more for the write itself. So a usual write to etcd's log costs about
+  four milliseconds, a little over one of them added by the layers that
+  make a virtual disk. The fourteen is the slowest hundredth, and nothing
+  on the site keeps how long each operation took at any layer below etcd,
+  so where those are slow is not known. Two accounts written here before
+  this one each named a cause on less than that. It is not the network:
+  the figure is of a write to a member's own disk. **Not done:** etcd
+  has no disk of its own, and nothing but the alert's own words holds an
+  addition back while it fires.
 
 Sizing needs nobody:
 
@@ -104,6 +126,23 @@ What is measured is looked at:
   capacity by scope (hypervisor, machine, workload), what is reserved
   against what is used, and whether the network is what limits the site -
   traffic against each interface's own speed, with its errors and drops.
+  **A change is a mark on the timeline** (added 2026-10-11): every converge
+  and everything Flux applies is recorded where a dashboard and an alert
+  can show it, so that what went wrong is seen beside what changed just
+  before. Connecting an application going down to the change that put it
+  off its machine took a snapshot and arithmetic, five hours later.
+  **Built 2026-10-11, four of them, each named for what it answers:** what
+  the site holds and what is using it (the hypervisor, each machine, each
+  namespace, reserved against used); where the time goes (a write at each
+  layer, and what each machine's work waited for); whether the network is
+  what limits the site; and whether the site is keeping itself (its
+  alerts, its ring, its schedules, work with no machine). Every one marks
+  on its timeline each workload whose declared form changed, which is what
+  a converge or Flux applying something looks like from inside. None holds
+  a variable: what Flux applies is substituted into, and a dashboard's own
+  would arrive blank. **Not in them:** what the site draws (28), which
+  wants its own reading first, and a mark for a change that alters no
+  workload, such as a secret or a setting of the machines.
 
 History outlives the site:
 
@@ -124,7 +163,11 @@ The site keeps itself, and proves it:
 
 - **12. Every necessary function has a deadline and an alert on missing it**:
   the state backup, each database's backup, each workload's backup, the
-  nightly checks, a converge.
+  nightly checks, a converge, and every workflow that runs on a schedule
+  (added 2026-10-11). A scheduled workflow that stops running says nothing:
+  its last run stays the newest one. The deadline is measured and not read
+  off the schedule, since GitHub runs a schedule when it has room. Built
+  for the scheduled workflows; the rest are not.
 - **13. A converge in flight is not evicted.**
 - **15. Alerts on the bet read pressure**, not memory in use, and one says how
   long until a resource is full at the rate it is filling.
@@ -186,6 +229,63 @@ operator: "Let's bring all the untouched into the epoch"):
   ("this will cost $5 over the next month to implement"), from a declared
   price for a unit, keeping apart what a thing adds to the bill by running
   and its share of what the site costs to keep on at all.
+- **29. A change is tried against the real site, every time the site is
+  read** (added 2026-10-11, as were the four after it). Whenever a snapshot
+  is taken it is loaded into the scheduler with no change asked of it. A
+  snapshot that will not load, or a site that is not schedulable as it
+  stands, is said to somebody then, and not found by the next pull request.
+  Four faults in one day were invisible on made-up sites and plain on
+  site0's own.
+- **30. When work that cannot wait is put off its machine, the site says so
+  at the time, and says what took its place.** An application was put off
+  its machine for the network's agent. What said so was two stock alerts a
+  quarter of an hour later, that a pod was not ready, and nothing said why.
+  Half built: an alert says, as it happens, that the scheduler put work off
+  its machine. It cannot say which pod or for what, which the scheduler
+  names only in events the site does not keep yet (25).
+- **31. Work that can run on only one machine is known, and that machine is
+  watched for the room it needs.** A pod held to a machine by its volume is
+  listed, and an alert says when it could not be placed again if it were
+  made again today. One such pod has thirty mebibytes to spare on the only
+  machine it can use, and nothing declares that or watches it.
+- **32. The record a pull request is held to is never stale without that
+  being said.** A converge run from a workstation mends the site and
+  publishes no record, so a change goes on being tried against the site as
+  it was. Either such a converge publishes, or how old the record is
+  against the site's last change is watched.
+- **33. What is down reaches the operator's phone.** Everything goes to one
+  channel today, and an application was down for five hours between its
+  first alert and anybody acting on it. The estate holds an address that
+  turns a mail into a text on the operator's phone
+  (`op://estate-shared/alerting/alert_email`). An alert that means a thing
+  is down is sent there as well as to the channel; one that means a thing
+  is drifting is not. **Not decided:** which alerts those are, and what
+  sends the mail - a site runs no mail server, and one at the estate's edge
+  was put off until a second site is real.
+- **34. A delay can be placed, anywhere, without having been asked for**
+  (added 2026-10-11). Everything a request passes through says how long it
+  held it, kept as history, so that where the time went is read off and
+  not found by experiment. The operator, on being handed a third command
+  to run by hand to find out why etcd's writes are slow: "Why are we
+  one-offing the logs when the logs should tell us explicitly where the
+  bottleneck is. These are exactly the things we should have a log of and
+  a monitor for because it keeps this lean machine running at high
+  efficiency. The hotter it runs the less room for these unknown bumps it
+  has." And: "this applied to everything, not just etcd. stack trace
+  should be EVERYWHERE by default." So it is not a thing a workload is
+  given when it has gone wrong. Whatever a site runs is traced from the
+  moment it runs, by being on the site: its writes, its packets, its turn
+  on a processor, and what it was doing when it was slow.
+  **Held today, and unread until now:** how long each disk at each layer
+  spends on a write and on making one safe, as averages, and how long each
+  machine's work waits for a disk, for memory and for a processor. They
+  are recorded as series as of this criterion. **Not held:** how long each
+  operation took, which is what places a slow one; any of it for one pod
+  and not a whole machine; anything of the network, whose own view of
+  every flow is turned off; and what a program was doing, which is the
+  stack trace itself. Each of those is something more running on every
+  machine of a site that is run full, so each is sized and agreed before
+  it is added.
 
 ### Before this epoch closes
 
@@ -1047,6 +1147,73 @@ the snapshot and is placed again when its worker goes, but a change to how
 many there are is seen only through what it reserves. And a claim the site
 does not hold yet is taken as one its storage will provide wherever the
 pod lands.
+
+**Placing a delay, everywhere and without being asked** (criterion 34,
+designed 2026-10-11, not built). The operator's rule is that a trace is not
+a thing a workload is given once it has gone wrong: "stack trace should be
+EVERYWHERE by default." So every part of this is collected for a machine and
+everything on it, and none of it is switched on for one workload. A
+workload is covered by being on the site, and nothing may leave a namespace
+out, which a guard holds as it does for the refusal of uncounted pods.
+
+Four things are asked of every layer, and they are four collectors because
+no one of them answers the other three:
+
+- **How long work waited, for each pod.** How long a machine's work waits
+  for a processor, for memory and for a disk is held today for the machine
+  as a whole. Kubernetes keeps the same for each pod, and whether the
+  version a site runs hands it over has to be looked at first. If it does,
+  this costs nothing: nothing more runs.
+- **What the network did with every flow.** The network's own agent sees
+  every packet and can say how long a connection took, what was dropped and
+  why, and which name was asked for. It is turned off here, for the reason
+  given where it was turned off: its relay wants certificates. Only its
+  figures are wanted, which the agent serves itself with no relay and no
+  certificates. No new supplier, and no new pod: the agent does more.
+- **How long each operation took, at each layer.** What is held for a disk
+  today is the time spent and how many operations, which gives the usual
+  case and hides the slow one - and the slow one is the question. A
+  collector in each machine's kernel keeps how long each write took, as a
+  spread and not an average, and the same collector on the hypervisor keeps
+  it for the drives and the volumes under the machines. One tool at both
+  layers, so the two are read in the same terms. A new supplier, and one
+  more pod on every machine.
+- **What a program was doing.** The trace itself: a profiler that samples
+  what every process on a machine is running, many times a second, from
+  the kernel, with nothing changed in the programs. It answers what none
+  of the others can - not that a thing was slow, or where it waited, but
+  what it was doing instead. Kept on the site's own history, and read in
+  the dashboards the site already has. A new supplier, a pod on every
+  machine, and something to keep what they send.
+
+**Chose** collectors that sit under the workloads, **over** asking each
+workload to say what it is doing. The second is how a trace across several
+services is usually had, and it is rejected for now and not for ever:
+nothing a site runs today hands a request from one service to another, and
+a rule that every workload must be changed before it is traced is the
+opposite of by default. What reopens it is the first application that
+does.
+
+**What it costs is the design's hard part, and is not settled here.** Three
+of the four are something more running on every machine, and a site is run
+full: on 2026-10-11 one worker had thirty mebibytes to spare for the
+application its volume holds there, and a reservation of 64 on every
+machine had already cost that application its place once. So nothing here
+is added on an estimate. Each is run on site0 first, measured doing its
+work, given the reservation it was seen to need, and tried by the engineer
+as what it is - a pod on every machine. **And the first of them cannot
+land until that worker has room**, which is either that application's own
+reservation measured under load, or a larger worker. That is not a
+detail of this design; it is the order of the work.
+
+**The order:** what waits for each pod, since it may be free; then the
+network's figures, since the supplier is approved and the agent is already
+there; then how long each operation took, which is what would have placed
+etcd's slow writes; then the profiler, which is the largest. Each is its
+own change with its own measurement. **An alert for two layers coming
+apart** follows a week of each layer's readings and not before: a level
+taken from one hour is the mistake this record already made three times in
+one afternoon about one disk.
 
 **Priority work waits, and only for moments.** Offered the choice of letting
 work that cannot wait stop work that can, the operator chose otherwise:

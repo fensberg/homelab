@@ -268,6 +268,84 @@ spec:
               workflow keeps true is not being kept true. This clears itself
               when a scheduled run next succeeds.
 
+        # The third way a schedule fails: it does not run.
+        #
+        # A workflow that is failing says so above, and one that stopped
+        # running says nothing, for ever: its last run stays the newest, and
+        # if that one passed, the alert above is content. It also cannot
+        # clear. A patrol that failed and then was not run again for seven
+        # hours went on saying "failing" about a fault mended six hours
+        # before (2026-10-11).
+        #
+        # WHEN A RUN IS DUE IS MEASURED, NOT READ OFF THE SCHEDULE. GitHub
+        # runs a schedule when it has room, and drops runs when it has not.
+        # Over the nine days to 2026-10-11 the two workflows asked for every
+        # hour ran every three to six hours, and went as long as nine and a
+        # half; the two asked for every day ran a day apart, one of them up
+        # to two and a half hours late. So each deadline is the longest gap
+        # seen and some more, and what it says when it fires is that GitHub
+        # has left the workflow longer than it ever has, or that the
+        # workflow has been switched off.
+        #
+        # Counted by the run's number, which goes up by one for each run
+        # whatever it concluded. Only once the series has been there for most
+        # of the time looked back over: a Prometheus that has just started
+        # has seen no run arrive, and that is not a schedule that stopped.
+        #
+        # tests/go/repo holds every scheduled workflow to being named in the
+        # one of these that matches how often it is asked for.
+        - record: scheduled_workflow:latest_run_number
+          expr: max by (instance) (last_over_time(scheduled_workflow_run_number[40m]))
+        - alert: ScheduledWorkflowHasNotRunWhenDue
+          expr: >-
+            changes(scheduled_workflow:latest_run_number{instance=~"expedite.yml|security-patrol.yml"}[12h:15m]) == 0
+            and on (instance)
+            count_over_time(scheduled_workflow:latest_run_number[12h:15m]) >= 40
+          labels:
+            severity: warning
+            asked_for: hourly
+          annotations:
+            summary: "{{ $labels.instance }} has not run on its schedule for twelve hours."
+            description: >-
+              {{ $labels.instance }} is asked for every hour and no scheduled
+              run of it has finished in twelve. GitHub runs it every three to
+              six hours when it is busy and has never left it this long. Look
+              at the workflow's page: if it is disabled, enable it; if GitHub
+              is not starting it, start one by hand, which does not replace
+              the schedule but does the work it is behind on.
+        - alert: ScheduledWorkflowHasNotRunWhenDue
+          expr: >-
+            changes(scheduled_workflow:latest_run_number{instance=~"integration-tests.yml|site-sweep.yml"}[30h:15m]) == 0
+            and on (instance)
+            count_over_time(scheduled_workflow:latest_run_number[30h:15m]) >= 100
+          labels:
+            severity: warning
+            asked_for: daily
+          annotations:
+            summary: "{{ $labels.instance }} has not run on its schedule for thirty hours."
+            description: >-
+              {{ $labels.instance }} is asked for every day and no scheduled
+              run of it has finished in thirty hours, which is longer than
+              GitHub has ever left it. Look at the workflow's page: if it is
+              disabled, enable it; if it is waiting for a runner, the
+              estate's runner is what to look at; otherwise start one by
+              hand.
+        - alert: ScheduledWorkflowHasNotRunWhenDue
+          expr: >-
+            changes(scheduled_workflow:latest_run_number{instance=~"codeql.yml|scorecard.yml"}[9d:1h]) == 0
+            and on (instance)
+            count_over_time(scheduled_workflow:latest_run_number[9d:1h]) >= 190
+          labels:
+            severity: warning
+            asked_for: weekly
+          annotations:
+            summary: "{{ $labels.instance }} has not run on its schedule for nine days."
+            description: >-
+              {{ $labels.instance }} is asked for every week and no scheduled
+              run of it has finished in nine days. Look at the workflow's
+              page: if it is disabled, enable it; otherwise start one by
+              hand.
+
         # The other way this goes quiet: GitHub refusing the question, most
         # likely because the site's address has used its hourly allowance.
         - alert: ScheduledWorkflowsCannotBeRead

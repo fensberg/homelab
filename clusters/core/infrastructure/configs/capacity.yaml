@@ -77,6 +77,44 @@ spec:
               0
             )
 
+    # Where a write's time goes, layer by layer (criterion 34).
+    #
+    # Every machine and the hypervisor already count how long their disks
+    # spend on writes and on making a write safe, and nothing read it: why
+    # etcd's writes are slow was looked for with three commands run by hand
+    # on the hypervisor while the answer, as far as averages go, was here.
+    # These keep it as a figure for each disk at each layer - the job says
+    # which: a machine's own disk, or the hypervisor's drives and the
+    # volumes it makes of them - beside what etcd itself saw.
+    #
+    # THEY ARE AVERAGES, AND THAT IS THEIR LIMIT. A disk counts the time it
+    # spent and how many operations, not how long each took. Read on site0
+    # on 2026-10-11: a drive makes a write safe in a millisecond and a half,
+    # a machine's disk in under three, and the slowest hundredth of etcd's
+    # writes take fourteen. So the usual case is accounted for at every
+    # layer and the worst case at none. Placing that needs each layer to
+    # keep how long each operation took, which nothing on the site does yet.
+    - name: delay.recorded
+      interval: 1m
+      rules:
+        - record: disk:write_seconds
+          expr: >-
+            rate(node_disk_write_time_seconds_total[5m])
+            / (rate(node_disk_writes_completed_total[5m]) > 0)
+        - record: disk:made_safe_seconds
+          expr: >-
+            rate(node_disk_flush_requests_time_seconds_total[5m])
+            / (rate(node_disk_flush_requests_total[5m]) > 0)
+        - record: etcd:log_write_seconds
+          expr: >-
+            sum by (instance) (rate(etcd_disk_wal_fsync_duration_seconds_sum[5m]))
+            / (sum by (instance) (rate(etcd_disk_wal_fsync_duration_seconds_count[5m])) > 0)
+        - record: etcd:log_write_seconds:slowest_hundredth
+          expr: >-
+            histogram_quantile(0.99, sum by (instance, le) (
+              rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m])
+            ))
+
     - name: capacity.watched
       rules:
         - alert: MustRunWorkDoesNotFitWithAWorkerGone
@@ -127,6 +165,79 @@ spec:
               lowering what something reserves, or add a worker. If it is a
               volume, the pod is held to a machine that is gone or full, and
               it will not move by itself.
+
+        # Said at the time, and not a quarter of an hour later by its effects.
+        #
+        # When the scheduler has work that outranks what is running and no
+        # room for it, it puts the lower-ranked work off its machine. That is
+        # the design for work that can wait. It is also what happened to an
+        # application that cannot: the network's agent was given a
+        # reservation on every machine, and on the one machine that
+        # application can use, the agent was placed at its expense
+        # (2026-10-11). What said so was "pod not ready", fifteen minutes on,
+        # and nothing said why.
+        #
+        # This says that it happened, as it happens. It cannot say which pod
+        # was put off or for what: the scheduler counts its victims and names
+        # them only in events, which the site does not keep yet (criterion
+        # 25). If the work put off cannot wait and has nowhere else to go, the
+        # alert above follows this one within ten minutes and names it.
+        - alert: WorkWasPutOffItsMachineForWorkThatOutranksIt
+          expr: sum(increase(scheduler_preemption_victims_sum[15m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: The scheduler put running work off its machine to place work that outranks it.
+            description: >-
+              {{ $value | printf "%.0f" }} pod(s) were put off their machines
+              in the last quarter of an hour, because something that
+              outranks them had no room. If what was put off can wait, it is
+              being run again and nothing is wrong. If it cannot, look at
+              what changed just before: a reservation raised on something
+              that runs on every machine is the usual cause, and the pod it
+              cost will be named by the next alert if it has nowhere to go.
+
+        # etcd's disk, held to a written level (criterion 8).
+        #
+        # etcd answers nothing it has not first written to its log, so how
+        # long that write takes is how slow the whole control plane is, and a
+        # write slower than a heartbeat is how a member is thought dead. The
+        # control planes have no disk of their own: their log shares the
+        # hypervisor's pool with every volume on the site.
+        #
+        # THE LEVEL IS WHAT THIS DISK DOES, AND SOME MORE. Read on site0 over
+        # the three days to 2026-10-11, for the slowest hundredth of writes:
+        # 14 milliseconds in an ordinary hour, 40 in an ordinary bad five
+        # minutes, 46 in the worst. etcd's own guidance is ten, which this
+        # disk does not meet at rest and which nothing here has suffered for:
+        # no leader was lost in those three days. So the level is not etcd's
+        # ten. It is 64 milliseconds held for a quarter of an hour: slower
+        # than this disk has been seen to be, for longer than a burst, and
+        # still short of the hundred at which a heartbeat is missed. The
+        # histogram's own steps are 32 and 64, so a level between them would
+        # be a number nothing measures.
+        #
+        # The stock alert for this fires at half a second, which is a control
+        # plane already failing.
+        - alert: EtcdIsWaitingOnItsDisk
+          expr: >-
+            histogram_quantile(0.99, sum by (instance, le) (
+              rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m])
+            )) > 0.064
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: etcd's writes to its log are slower than this site's disk has ever made them.
+            description: >-
+              The slowest hundredth of etcd's log writes on
+              {{ $labels.instance }} have taken more than 64 milliseconds for
+              a quarter of an hour ({{ $value | humanizeDuration }} now). The
+              most seen on this disk before was 46. At a hundred a member
+              starts missing heartbeats. Something is using the disk etcd
+              shares: look at what was added or is writing heavily, and move
+              or slow it. Do not add anything that writes to this pool while
+              this fires.
 
         # The message for work that was stopped on purpose.
         #

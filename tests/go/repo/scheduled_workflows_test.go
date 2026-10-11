@@ -117,3 +117,115 @@ func TestTheClusterIsAskedAboutEveryScheduledWorkflow(t *testing.T) {
 			"from one address, and this may use half. Ask less often.", path, anHour, len(asked), every, allowed)
 	}
 }
+
+// Every scheduled workflow has a deadline, and it is the deadline for how
+// often that workflow is asked for.
+//
+// A workflow that stops running says nothing: its last run stays the newest
+// one, and the alert for a failing schedule is content with it. So each has
+// an alert for not having run when due. The deadlines differ by how often a
+// workflow is asked for, and a workflow named under the wrong one is
+// either never late or always late. One that is named under none has no
+// deadline at all, which is how it was for all of them.
+func TestEveryScheduledWorkflowHasADeadlineForHowOftenItIsAskedFor(t *testing.T) {
+	// How often each is asked for, by its most frequent schedule: a cron
+	// with a day of the week is weekly, one with an hour is daily, and one
+	// with neither is hourly.
+	askedFor := map[string]string{}
+	rank := map[string]int{"hourly": 0, "daily": 1, "weekly": 2}
+	for file, body := range workflowTexts(t) {
+		var wf struct {
+			On struct {
+				Schedule []struct {
+					Cron string `yaml:"cron"`
+				} `yaml:"schedule"`
+			} `yaml:"on"`
+		}
+		_ = yaml.Unmarshal([]byte(body), &wf)
+		for _, s := range wf.On.Schedule {
+			fields := strings.Fields(s.Cron)
+			if len(fields) != 5 {
+				t.Fatalf("%s is scheduled by %q, which is not five fields", file, s.Cron)
+			}
+			often := "hourly"
+			switch {
+			case fields[4] != "*":
+				often = "weekly"
+			case fields[1] != "*":
+				often = "daily"
+			}
+			if was, said := askedFor[file]; !said || rank[often] < rank[was] {
+				askedFor[file] = often
+			}
+		}
+	}
+	if len(askedFor) == 0 {
+		t.Fatal("no workflow was found with a schedule, so this checked nothing")
+	}
+
+	const kind, alert = "PrometheusRule", "ScheduledWorkflowHasNotRunWhenDue"
+	path, manifest := fluxObject(t, kind, "scheduled-workflows")
+	var rule struct {
+		Spec struct {
+			Groups []struct {
+				Rules []struct {
+					Alert  string            `yaml:"alert"`
+					Expr   string            `yaml:"expr"`
+					Labels map[string]string `yaml:"labels"`
+				} `yaml:"rules"`
+			} `yaml:"groups"`
+		} `yaml:"spec"`
+	}
+	for _, doc := range strings.Split(manifest, "\n---") {
+		var probe struct {
+			Kind string `yaml:"kind"`
+		}
+		if yaml.Unmarshal([]byte(doc), &probe) == nil && probe.Kind == kind {
+			if err := yaml.Unmarshal([]byte(doc), &rule); err != nil {
+				t.Fatalf("reading the %s in %s: %v", kind, path, err)
+			}
+		}
+	}
+	named := regexp.MustCompile(`instance=~"([^"]+)"`)
+	deadline := map[string]string{}
+	for _, g := range rule.Spec.Groups {
+		for _, r := range g.Rules {
+			if r.Alert != alert {
+				continue
+			}
+			found := named.FindAllStringSubmatch(r.Expr, -1)
+			if len(found) == 0 {
+				t.Errorf("an alert %s in %s names no workflow, so it is about every one of them at one deadline", alert, path)
+			}
+			for _, m := range found {
+				for _, file := range strings.Split(m[1], "|") {
+					if was, twice := deadline[file]; twice && was != r.Labels["asked_for"] {
+						t.Errorf("%s is given two deadlines in %s, for %s and for %s", file, path, was, r.Labels["asked_for"])
+					}
+					deadline[file] = r.Labels["asked_for"]
+				}
+			}
+		}
+	}
+
+	var files []string
+	for file := range askedFor {
+		files = append(files, file)
+	}
+	sort.Strings(files)
+	for _, file := range files {
+		switch got := deadline[file]; {
+		case got == "":
+			t.Errorf("%s is asked for %s and has no deadline: if it stopped running, nothing would say so. "+
+				"Name it in the %s alert for %s workflows in %s.", file, askedFor[file], alert, askedFor[file], path)
+		case got != askedFor[file]:
+			t.Errorf("%s is asked for %s and is held to the deadline for a %s workflow in %s, so it is either never late or always late.",
+				file, askedFor[file], got, path)
+		}
+	}
+	for file := range deadline {
+		if _, scheduled := askedFor[file]; !scheduled {
+			t.Errorf("%s gives %s a deadline, and no workflow of that name runs on a schedule.", path, file)
+		}
+	}
+}
