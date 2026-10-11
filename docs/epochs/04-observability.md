@@ -87,6 +87,15 @@ The budget, and who refuses:
   that the scheduler cannot count.
 - **8. etcd's disk latency has a written level** and an alert on it (#627),
   and either etcd has a disk of its own or that level gates what is added.
+  The level is written and alerted on (2026-10-11): the slowest hundredth
+  of etcd's log writes over 64 milliseconds for a quarter of an hour. Read
+  on site0 first, as it had to be: 14 milliseconds in an ordinary hour, 40
+  in an ordinary bad five minutes and 46 in the worst of three days, with
+  no leader lost. etcd's own guidance of ten is not met by this disk at
+  rest, so the level is what this disk does and some more, short of the
+  hundred at which a heartbeat is missed. **Not done:** etcd has no disk of
+  its own, and nothing but the alert's own words holds an addition back
+  while it fires.
 
 Sizing needs nobody:
 
@@ -206,6 +215,9 @@ operator: "Let's bring all the untouched into the epoch"):
   at the time, and says what took its place.** An application was put off
   its machine for the network's agent. What said so was two stock alerts a
   quarter of an hour later, that a pod was not ready, and nothing said why.
+  Half built: an alert says, as it happens, that the scheduler put work off
+  its machine. It cannot say which pod or for what, which the scheduler
+  names only in events the site does not keep yet (25).
 - **31. Work that can run on only one machine is known, and that machine is
   watched for the room it needs.** A pod held to a machine by its volume is
   listed, and an alert says when it could not be placed again if it were
