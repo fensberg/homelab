@@ -71,7 +71,13 @@ resource "terraform_data" "flux_bootstrap_apply" {
       KUBECONFIG_CONTENT = var.kubeconfig
       GITOPS_PATH        = local.gitops_path
     }
-    command = <<-EOT
+    # Named, because the script below is bash and says so in its first line:
+    # `pipefail` is not something every /bin/sh has. Left to the default, the
+    # script runs under whatever sh the machine has, so it worked from a
+    # workstation whose sh takes the option and stopped at its first line
+    # anywhere whose sh does not.
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
       set -euo pipefail
       tmp=$(mktemp)
       trap 'rm -f "$tmp"' EXIT

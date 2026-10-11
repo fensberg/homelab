@@ -210,35 +210,15 @@ first in the OOM controller's.`,
 		len(besteffort), strings.Join(besteffort, "\n  "))
 }
 
-// priorityExemptions are the deployed pods deliberately left unclassified, with
-// the reason and the condition that removes the exemption. An omission and a
-// considered exemption must not look the same from here.
-var priorityExemptions = map[string]string{
-	cnpgInstanceLabel: "The state database. Setting priorityClassName on a " +
-		"CloudNativePG Cluster changes the instance pod spec, which CNPG answers " +
-		"with a rolling restart and a switchover of the database holding this " +
-		"estate's OpenTofu state. The control-plane taint needs a toleration on " +
-		"that same spec, so both are done in one edit and one restart rather than " +
-		"two. Remove this when the taint lands.",
-}
-
+// No pod is excused. The state database was, until its instances were made
+// again with the class its cluster names.
 func TestDeployedWorkloadsCarryThePriorityTheyDeclare(t *testing.T) {
 	t.Parallel()
 	p := readPlacement(t)
 
 	var unclassified []string
 	for _, pod := range p.pods {
-		if pod.Spec.PriorityClassName != "" {
-			continue
-		}
-		exempt := false
-		for label := range priorityExemptions {
-			if _, ok := pod.Labels[label]; ok {
-				exempt = true
-				break
-			}
-		}
-		if !exempt {
+		if pod.Spec.PriorityClassName == "" {
 			unclassified = append(unclassified, p.where(pod))
 		}
 	}
@@ -250,7 +230,7 @@ func TestDeployedWorkloadsCarryThePriorityTheyDeclare(t *testing.T) {
 
 Priority zero is below critical, interactive and batch alike. Either the
 manifest does not set one - repo-tier tests cover that - or it does and the
-value did not arrive. If it is deliberate, add it to priorityExemptions with
-the reason and the condition that removes the exemption.`,
+value did not arrive. A value that arrived on the object and not on its pods
+needs the pods made again.`,
 		len(unclassified), strings.Join(unclassified, "\n  "))
 }
