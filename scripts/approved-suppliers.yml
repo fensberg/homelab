@@ -435,6 +435,15 @@ endpoints:
       - get.opentofu.org:443
       - registry.opentofu.org:443
 
+  - group: kubernetes-release
+    reason: >-
+      Kubernetes' own release server, for the API server and the scheduler a
+      change is tried with (scripts/engineer). Each is fetched by
+      take-delivery.sh and refused unless it is the file the lock was ordered
+      with.
+    hosts:
+      - dl.k8s.io:443
+
   - group: container-mirrors
     reason: Pulling the analysis images the pull request lanes run in.
     hosts:
