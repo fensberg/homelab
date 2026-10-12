@@ -9,6 +9,11 @@ mock_provider "cloudflare" {
   }
 }
 
+# The operator's account, which holds the domain names are served under.
+mock_provider "cloudflare" {
+  alias = "operator"
+}
+
 variables {
   config_path = "./tests/fixtures/valid.json"
   sites_path  = "./tests/fixtures/sites.json"
@@ -293,11 +298,11 @@ run "one_site_serves_under_the_domain_alone" {
   }
 
   assert {
-    condition = { for route, record in module.site["site0"].served : route => "${record.name} ${record.type} ${record.content} ${record.proxied}" } == {
-      "back-door"  = "back-door.served.example A 10.196.40.9 false"
-      "front-door" = "front-door.served.example A 10.196.40.7 false"
-      "side-door"  = "side-door.served.example A 10.196.40.8 false"
-      "the-yard"   = "the-yard.served.example A 10.196.40.5 false"
+    condition = { for at, record in cloudflare_dns_record.served : at => "${record.name} ${record.type} ${record.content} ${record.proxied}" } == {
+      "site0/back-door"  = "back-door.served.example A 10.196.40.9 false"
+      "site0/front-door" = "front-door.served.example A 10.196.40.7 false"
+      "site0/side-door"  = "side-door.served.example A 10.196.40.8 false"
+      "site0/the-yard"   = "the-yard.served.example A 10.196.40.5 false"
     }
     error_message = "a route's name is the route under the domain, resolving to the route's own address and not proxied"
   }
@@ -319,13 +324,13 @@ run "more_than_one_site_serves_under_a_label_of_its_own" {
   }
 
   assert {
-    condition     = length(distinct(flatten([for site in module.site : [for record in site.served : record.name]]))) == 8
+    condition     = length(distinct([for record in cloudflare_dns_record.served : record.name])) == 8
     error_message = "two sites share a name, so one certificate would be for both"
   }
   assert {
-    condition = alltrue(flatten([
-      for key, site in module.site : [for route, record in site.served : record.name == "${route}.${local.site_label[key]}.served.example"]
-    ]))
+    condition = alltrue([
+      for at, record in cloudflare_dns_record.served : record.name == "${split("/", at)[1]}.${local.site_label[split("/", at)[0]]}.served.example"
+    ])
     error_message = "with more than one site, a route's name is the route, the site's label and the domain"
   }
 }

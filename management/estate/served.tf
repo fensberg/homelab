@@ -27,10 +27,52 @@ locals {
   }
 }
 
+# The operator's own credential, and not the estate's: it changes the
+# records of the one domain and nothing else, and the estate's token is not
+# given that domain at all. Two providers of one vendor, because they are two
+# parties' accounts. This one is here only while the proof is.
+provider "cloudflare" {
+  alias     = "operator"
+  api_token = local.served.api_token
+}
+
 # Looked up by its name: the zone's id is the vendor's, and the name is what
-# the estate vault holds. A domain the estate token cannot see fails here.
+# the vault holds. A domain the operator's token cannot see fails here.
 data "cloudflare_zone" "served" {
+  provider = cloudflare.operator
+
   filter = {
     name = local.served.domain
   }
+}
+
+# The name of each thing a device reaches, resolving to its own address. One
+# record for each route of each site, so a name exists exactly where a route
+# does and goes when the route does.
+#
+# Not proxied: the address is private, and what answers on it is reached
+# through the tunnel by an enrolled device and by nothing at the vendor's
+# edge.
+locals {
+  served_names = {
+    for k in keys(local.sites) : k => { for route, address in local.site_routes[k] : route => "${route}.${local.served_under[k]}" }
+  }
+  served_records = merge([
+    for k in keys(local.sites) : {
+      for route, address in local.site_routes[k] : "${k}/${route}" => { name = local.served_names[k][route], address = address, route = route }
+    }
+  ]...)
+}
+
+resource "cloudflare_dns_record" "served" {
+  provider = cloudflare.operator
+  for_each = local.served_records
+
+  zone_id = data.cloudflare_zone.served.zone_id
+  name    = each.value.name
+  type    = "A"
+  content = each.value.address
+  ttl     = 300
+  proxied = false
+  comment = "what an enrolled device reaches ${each.value.route} by"
 }

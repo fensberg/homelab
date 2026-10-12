@@ -29,11 +29,12 @@ const (
 // prove, so it is the estate's own and no site's.
 var accountKey = onepassword.Ref{Vault: vaults.Estate, Item: "issuer", Field: "account_key"}
 
-// Where the two things the notary is given are kept. The credential that
-// changes the domain's records is the estate's own; the domain is in the
-// vault every site reads, as a proof's is allowed to be.
+// Where the two things the notary is given are kept: the domain, and the
+// operator's own credential for its records. Neither is the estate's. They
+// are in a vault the estate reads only while this is a proof, and the
+// estate's own token is not what changes the domain.
 var (
-	recordsToken = onepassword.Ref{Vault: vaults.Estate, Item: "access", Field: "api_token"}
+	recordsToken = onepassword.Ref{Vault: vaults.EstateShared, Item: "poc", Field: "api_token"}
 	servedDomain = onepassword.Ref{Vault: vaults.EstateShared, Item: "poc", Field: "domain"}
 )
 

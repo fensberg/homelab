@@ -25,13 +25,8 @@ output "grants" {
     # The names this site serves under, as one field: what its certificate is
     # issued for, and what the site reads to know what it is called. A site
     # with no route serves under none and is granted none.
-    length(local.served_names) == 0 ? {} : {
-      served = { names = join(" ", sort(values(local.served_names))) }
+    length(var.served_names) == 0 ? {} : {
+      served = { names = join(" ", sort(values(var.served_names))) }
     },
   )
-}
-
-output "served" {
-  description = "The record for each thing a device reaches in this site, by route."
-  value       = cloudflare_dns_record.served
 }

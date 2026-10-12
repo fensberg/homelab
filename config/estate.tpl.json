@@ -25,7 +25,8 @@
 
   "served": {
     "provider": "cloudflare",
-    "domain": "{{ op://estate-shared/poc/domain }}"
+    "domain": "{{ op://estate-shared/poc/domain }}",
+    "api_token": "{{ op://estate-shared/poc/api_token }}"
   },
 
   "workstation": {

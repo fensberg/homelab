@@ -21,7 +21,8 @@
   },
   "served": {
     "provider": "cloudflare",
-    "domain": "served.example"
+    "domain": "served.example",
+    "api_token": "fixture"
   },
   "plots": {
     "site0": {
