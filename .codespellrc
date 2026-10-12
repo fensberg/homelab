@@ -33,6 +33,13 @@
 # file by hand since `task render-cni` regenerates it. Removed when: the
 # rendered output stops being committed.
 #
+# clusters/core/infrastructure/controllers/gateway-api.yaml is the Gateway
+# API's own definitions, as a chart renders them, committed verbatim - the
+# same case again, and the same word: the label-selector operator, in the
+# definitions' own account of a selector. Nothing edits it by hand since
+# `task render-gateway-api` regenerates it. Removed when: the rendered output
+# stops being committed.
+#
 # pnpm-lock.yaml and go.sum are generated integrity databases: long runs of
 # base64 and hex, inside which codespell reliably finds "misspellings". Nothing
 # edits either by hand and no linter here has anything useful to say about
@@ -57,4 +64,4 @@
 # proved by TestAWordCodespellAcceptsIsOnlyEverWrittenAsCode
 ignore-words-list = iif
 # proved by TestAnExcludedPathHoldsNothingTheToolWasMeantToRead
-skip = ./.git,./.unreleased,./coverage,./node_modules,./clusters/core/flux-system/gotk-components.yaml,./clusters/bootstrap/cilium.yaml,./pnpm-lock.yaml,*/go.sum,*/node_modules
+skip = ./.git,./.unreleased,./coverage,./node_modules,./clusters/core/flux-system/gotk-components.yaml,./clusters/bootstrap/cilium.yaml,./clusters/core/infrastructure/controllers/gateway-api.yaml,./pnpm-lock.yaml,*/go.sum,*/node_modules

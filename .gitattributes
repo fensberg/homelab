@@ -8,3 +8,4 @@
 # in a pull request, which is the opposite of why they are committed.
 clusters/core/flux-system/gotk-components.yaml linguist-vendored
 clusters/bootstrap/cilium.yaml linguist-vendored
+clusters/core/infrastructure/controllers/gateway-api.yaml linguist-vendored
