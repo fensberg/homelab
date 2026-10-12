@@ -28,8 +28,10 @@ go 1.26.0
 
 require (
 	github.com/gruntwork-io/terratest v1.0.1
+	github.com/hashicorp/hcl/v2 v2.22.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/stretchr/testify v1.12.1
+	github.com/zclconf/go-cty v1.15.0
 	gopkg.in/yaml.v3 v3.0.1
 	homelab/contractor v0.0.0-00010101000000-000000000000
 	homelab/details v0.0.0
@@ -111,7 +113,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-safetemp v1.0.0 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
-	github.com/hashicorp/hcl/v2 v2.22.0 // indirect
 	github.com/hashicorp/terraform-json v0.23.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -134,7 +135,6 @@ require (
 	github.com/ulikunitz/xz v0.5.16 // indirect
 	github.com/urfave/cli v1.22.16 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	github.com/zclconf/go-cty v1.15.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect

@@ -1,0 +1,11 @@
+guard: TestEveryLayerIsGivenEachVariableItNames
+file: clusters/core/infrastructure/controllers/kube-prometheus-stack.yaml
+find: "      endpoints: ${ETCD_ENDPOINTS}\n"
+replace: "      endpoints: ${ADDRESS_PRIVATE_ACCESS}\n"
+mentions: "is not given it"
+why: >
+  A variable looks the same in every layer, and validation fills them all
+  for every layer alike, so one used in a layer that is not given it passes
+  every check before a merge. Flux then refuses the whole layer: on
+  2026-10-12 that was the controllers, with two new tools in it, and
+  everything behind them waited while every manifest looked right.
