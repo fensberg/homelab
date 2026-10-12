@@ -192,3 +192,55 @@ run "an_alias_to_a_missing_service_is_reported" {
     error_message = "an alias with no target was not reported, or was given a record"
   }
 }
+
+# What a person types is a name, reached at a fixed address. Every site that
+# has the address has the name with the site in it, and the site an alias
+# points at has the short one, which is the one it is then served by.
+run "a_name_is_each_sites_own_and_short_where_an_alias_says_so" {
+  command = plan
+
+  variables {
+    domain          = "example.com"
+    aliases         = { porch = "site1" }
+    fixed_addresses = { the-yard = 5 }
+    served          = { porch = "the-yard", gate = "the-yard" }
+  }
+
+  assert {
+    condition     = output.records["porch.site0.example.com"] == "10.196.40.5" && output.records["porch.site1.example.com"] == "10.196.80.5" && output.records["porch.example.com"] == "10.196.80.5"
+    error_message = "a name does not resolve to its fixed address in each site, with the alias at the site it points to"
+  }
+  assert {
+    condition     = output.sites.site0.served.porch == { hostname = "porch.site0.example.com", at = "the-yard", address = "10.196.40.5" }
+    error_message = "a site an alias does not point at is not served by the name with the site in it"
+  }
+  assert {
+    condition     = output.sites.site1.served.porch.hostname == "porch.example.com" && output.sites.site1.served.gate.hostname == "gate.site1.example.com"
+    error_message = "the site an alias points at is not served by the short name, or a name with no alias was given one"
+  }
+}
+
+run "nothing_is_served_by_name_until_there_is_a_domain" {
+  command = plan
+
+  variables {
+    fixed_addresses = { the-yard = 5 }
+    served          = { porch = "the-yard" }
+  }
+
+  assert {
+    condition     = length(output.sites.site0.served) == 0
+    error_message = "a name was made with no domain declared"
+  }
+}
+
+run "a_name_at_an_address_the_plan_was_not_given_is_refused" {
+  command = plan
+
+  variables {
+    domain = "example.com"
+    served = { porch = "the-yard" }
+  }
+
+  expect_failures = [var.served]
+}

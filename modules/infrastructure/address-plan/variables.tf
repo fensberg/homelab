@@ -37,6 +37,21 @@ variable "aliases" {
   }
 }
 
+variable "served" {
+  type        = map(string)
+  default     = {}
+  description = <<-EOT
+    What a person types for something reached from away: name => the fixed
+    address it is reached at, by that address's name. Every site that has the
+    address has the name, as <name>.<site>.<domain>.
+  EOT
+
+  validation {
+    condition     = alltrue([for at in values(var.served) : contains(keys(var.fixed_addresses), at)])
+    error_message = "A name is reached at a fixed address the plan was not given, so it would resolve to nothing."
+  }
+}
+
 variable "fixed_addresses" {
   type        = map(number)
   default     = {}

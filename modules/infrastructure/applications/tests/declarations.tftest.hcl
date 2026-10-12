@@ -76,3 +76,30 @@ run "the_estates_own_declarations_are_read" {
     error_message = "an application's directory is its namespace, and one of them is not a name a namespace can have"
   }
 }
+
+# A name is what a person types, and it is reached at a route somebody
+# declared: the core's own or an application's.
+run "names_are_read_with_the_route_each_is_reached_at" {
+  command = plan
+
+  variables {
+    directory = "./tests/fixtures/declared"
+    core      = "./tests/fixtures/core/named.json"
+  }
+
+  assert {
+    condition     = jsonencode(output.served) == jsonencode({ "gate" = "the-yard", "porch" = "front-door" })
+    error_message = "a name is not listed with the route it is reached at, the core's own or an application's"
+  }
+}
+
+run "a_name_at_a_route_nothing_declares_is_refused" {
+  command = plan
+
+  variables {
+    directory = "./tests/fixtures/declared"
+    core      = "./tests/fixtures/core/named-nowhere.json"
+  }
+
+  expect_failures = [output.served]
+}

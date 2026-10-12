@@ -3,7 +3,7 @@
 # granted and the one place it is decided.
 output "grants" {
   sensitive = true
-  value = {
+  value = merge({
     identity = { name = var.name }
 
     object_storage = merge(
@@ -21,5 +21,20 @@ output "grants" {
       provider = "cloudflare"
       token    = data.cloudflare_zero_trust_tunnel_cloudflared_token.this.token
     }
-  }
+    },
+    # What a site that serves something by name gets its certificates with.
+    # Named for the one value it holds: the credential for the domain's
+    # records.
+    length(var.served) == 0 ? {} : {
+      certificates = {
+        provider  = "cloudflare"
+        dns_token = cloudflare_account_token.certificates[0].value
+      }
+    },
+  )
+}
+
+output "served" {
+  description = "The hostname route for each name this site serves."
+  value       = cloudflare_zero_trust_network_hostname_route.served
 }

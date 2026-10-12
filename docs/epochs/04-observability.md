@@ -1508,6 +1508,79 @@ failing is what will say so.
 measured as two. Bound to the gateway, which every host of a site shares,
 it would have been one at a time.
 
+### What a device reaches is served by name, over HTTPS, and each layer has one owner (agreed 2026-10-12)
+
+It began with the dashboards about to be served in the clear, went by way
+of a licence that is now epoch 11's
+([11](11-black-box-white-glove.md)), and came back to this: a tool for
+each job, and no job done twice.
+
+**Each layer a request passes, and the one thing that owns it.**
+
+| Layer                 | The job                                            | Owner             |
+| --------------------- | -------------------------------------------------- | ----------------- |
+| Who may come in       | Enrol a device, know whose it is                   | the vendor's edge |
+| Getting in            | Carry an enrolled device to a private address      | the tunnel        |
+| Private names         | A name that means something to an enrolled device  | the tunnel        |
+| The cluster's network | Connect pods, and say which may speak to which     | Cilium            |
+| Web routing           | Take a hostname to the application, and hold HTTPS | Traefik           |
+| Certificates          | Get one for each name, and renew it                | cert-manager      |
+
+Three of these can do a neighbour's job, and none is let to. **Chose** a
+guard for each, with a refusal underneath it where there is one: Cilium's
+own routing of web traffic stays switched off; Traefik is given no
+credential that gets a certificate and no path to anything that issues
+one; and the tunnel has no public name, so the vendor's edge ends no
+HTTPS of this estate's. The operator: "I don't want us to accidentally
+break our convention."
+
+**Traefik, over Cilium's own gateway.** Cilium can route web traffic and
+is already on every machine, and it was the first proposal. Checked
+against its documentation, it wanted the agent restarted on every machine,
+a band of load-balancer addresses, and policy written a second way, since
+what passes its gateway carries an identity the six policies here cannot
+name. Traefik is a pod at an address the tunnel already knows how to
+route to. This does not touch why Cilium is here, which is that a policy
+is enforced ([03](03-workload.md)).
+
+**cert-manager, over Traefik's own certificates.** Traefik keeps them in a
+file on one disk, so in one pod on one machine. And an application that
+is not a web application wants one too.
+
+**A certificate for each name, as short-lived as the issuer gives.** The
+operator's terms, not a choice of coverage: "free, automatic, and supports
+least-privilege. Default fail closed with anything leaked being default
+worthless." So a key is good for one name, for days; and Traefik listens
+for HTTPS and for nothing else, so an application with no certificate is
+not reached and is not served in the clear. **Its limit, said with it:**
+the vendor scopes a credential for a domain's records to the whole domain
+and no narrower, so what cert-manager holds could repoint any name under
+the estate's domain. It is each site's own and the estate can withdraw
+it.
+
+**Names are the things themselves.** "URLs should be specifics. We
+abstracted the function for vault values so they could be swapped out
+easily." So it is `grafana.<domain>`, by the scheme epoch 09 already
+chose: `<name>.<site>.<domain>`, and the short one where the config
+declares the alias. A name resolves for an enrolled device and has no
+public record ([09](09-access.md)).
+
+**The Gateway API, now.** It is how an application says which hostname is
+its own and how the platform says who may attach to the front door, and
+neither Traefik nor anything else is named in an application for it.
+**Its cost, accepted by the operator as temporary:** until Traefik
+releases support for a listener an application declares for itself
+(merged upstream 2026-09-28 and in no release when this was written; 3.7
+does not have it), each application's listener and certificate are
+written on the platform's Gateway and not in the application's own
+directory. Each such line says so, and is moved the day a release has it.
+
+**Not yet answered: what is reached by the public.** Nothing is. A
+website can be given a public name on the same tunnel, handed to the same
+front door, and the third guard is then changed on purpose to allow that
+name and nothing private. Mail and anything else that is not the web
+cannot come through the tunnel at all.
+
 ### Open: the account holds two user API tokens and the tunnel uses one of them
 
 Parked deliberately on 2026-09-21 rather than resolved. The operator's position

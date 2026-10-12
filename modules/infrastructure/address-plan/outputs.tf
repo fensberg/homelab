@@ -13,6 +13,7 @@ locals {
         fixed_addresses = {
           for name, n in var.fixed_addresses : name => cidrhost(local.ranges[key].service_cidr, n)
         }
+        served = local.served[key]
       })
     }
     records = merge(local.records, local.alias_records)

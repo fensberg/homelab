@@ -24,7 +24,8 @@ locals {
   # handed every route a site has from one place. Written whole, like the
   # declarations below, because that is what puts it in a release.
   core_declaration = "${path.module}/../../../clusters/core/routes.json"
-  core_routes      = jsondecode(file(coalesce(var.core, local.core_declaration))).routes
+  core             = jsondecode(file(coalesce(var.core, local.core_declaration)))
+  core_routes      = local.core.routes
 
   # Every application's declaration, reached from the repository's top as
   # every file outside a module is. Written whole and in one string - the
@@ -56,6 +57,19 @@ locals {
     ) : claim.name => claim...
   }
 
+  # Each name a person types, as whoever declared it did: the route it is
+  # reached at. Grouped like the routes, and for their reason.
+  name_claims = {
+    for claim in concat(
+      flatten([
+        for app, d in local.declared : [
+          for name, route in try(d.names, {}) : { app = app, name = name, route = route }
+        ]
+      ]),
+      [for name, route in try(local.core.names, {}) : { app = "the core", name = name, route = route }],
+    ) : claim.name => claim...
+  }
+
   # Each declared Secret, by "<application>.<name>": which application's
   # namespace it goes in, and each key's source. A dot, which neither name
   # can hold, so the key reads back as the two and is one a `moved` block can
@@ -83,6 +97,20 @@ output "routes" {
   precondition {
     condition     = alltrue([for claims in values(local.route_claims) : length(claims) == 1])
     error_message = "A route of one name is declared twice, by two applications or by one and the core, so two Services would be given one address: ${join(", ", [for name, claims in local.route_claims : name if length(claims) > 1])}."
+  }
+}
+
+output "served" {
+  description = "Every name a person types for something reached from away, an application's or the core's: name => the route it is reached at. The address plan's served."
+  value       = { for name, claims in local.name_claims : name => claims[0].route }
+
+  precondition {
+    condition     = alltrue([for claims in values(local.name_claims) : length(claims) == 1])
+    error_message = "A name is declared twice, by two applications or by one and the core, so one address in a browser would be two things: ${join(", ", [for name, claims in local.name_claims : name if length(claims) > 1])}."
+  }
+  precondition {
+    condition     = alltrue([for claims in values(local.name_claims) : contains(keys(local.route_claims), claims[0].route)])
+    error_message = "A name is declared at a route nothing declares, so it would be reached nowhere: ${join(", ", [for name, claims in local.name_claims : "${name} at ${claims[0].route}" if !contains(keys(local.route_claims), claims[0].route)])}."
   }
 }
 

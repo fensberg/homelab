@@ -65,6 +65,11 @@ resource "cloudflare_zero_trust_device_default_profile" "estate" {
         }
       ]
     ]),
+    # And where the vendor answers a private name from (served.tf).
+    [for range in var.resolved_through : {
+      address     = range
+      description = "private names"
+    } if local.names_are_served],
     # And the workstation, through its own tunnel (workstation.tf).
     [for m in module.workstation : {
       address     = m.route
