@@ -10,6 +10,9 @@ resources:
   # Asks GitHub whether each scheduled workflow is failing. Needs the
   # ScrapeConfig and PrometheusRule kinds from the monitoring stack.
   - scheduled-workflows.yaml
+  # Whether what should be running, is: alerts on what Flux says of what it
+  # applies and on what cert-manager says of each certificate.
+  - running.yaml
   # A site's private access: the issuer, the address, the Gateway and each
   # name's listener. Needs the kinds cert-manager and the Gateway API bring,
   # and the address and names from the site's cluster-vars.
@@ -39,6 +42,9 @@ configMapGenerator:
   - name: dashboard-is-the-site-keeping-itself
     namespace: monitoring
     files: [dashboards/is-the-site-keeping-itself.json]
+  - name: dashboard-is-what-should-run-running
+    namespace: monitoring
+    files: [dashboards/is-what-should-run-running.json]
 generatorOptions:
   # Named as written: nothing mounts these by name, and a name that changes
   # with every edit leaves the old dashboard behind until it is pruned.

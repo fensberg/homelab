@@ -1,0 +1,101 @@
+---
+# Whether what should be running, is.
+#
+# A site is told what to run by git, and Flux is what makes it so. When Flux
+# cannot - a layer it refuses, a chart that will not install - everything
+# already running goes on running and nothing new arrives, so nothing looks
+# wrong from outside. On 2026-10-12 a layer stood refused for ten minutes
+# and what found out was a converge that happened to be waiting on it.
+#
+# And a site's certificates last days and renew themselves. One that has
+# stopped renewing is a name that stops loading on a date nobody was told
+# (docs/epochs/04-observability.md, criterion 22).
+#
+# WHAT IS READ. What Flux says of each object it applies, which the metrics
+# exporter is told to report (controllers/kube-prometheus-stack.yaml), and
+# what cert-manager says of each certificate (controllers/cert-manager.yaml).
+# The same series are on the dashboard that asks this question.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: running
+  namespace: monitoring
+spec:
+  groups:
+    - name: running.alerts
+      rules:
+        # Ten minutes, which is the time a layer is given to apply. Less than
+        # that is a layer still being applied.
+        - alert: ALayerOfTheSiteHasNotBeenApplied
+          expr: >-
+            max by (exported_namespace, name, why) (
+              flux_object_info{customresource_kind="Kustomization", ready!="True"}
+            ) == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Flux has not been able to apply the layer {{ $labels.name }}.
+            description: >-
+              The layer {{ $labels.name }} has not been ready for ten minutes,
+              and Flux gives the reason {{ $labels.why }}. What it was to
+              change has not changed, and every layer that waits on it is
+              waiting too. What was already running is untouched. The
+              layer's own message says what it refused:
+              `kubectl -n flux-system get kustomization {{ $labels.name }}`.
+
+        - alert: AReleaseIsNotInstalled
+          expr: >-
+            max by (exported_namespace, name, why) (
+              flux_object_info{customresource_kind="HelmRelease", ready!="True"}
+            ) == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: The release {{ $labels.name }} in {{ $labels.exported_namespace }} is not installed.
+            description: >-
+              Flux has not been able to install or upgrade the release
+              {{ $labels.name }} for fifteen minutes, and gives the reason
+              {{ $labels.why }}. What it installs is absent, or is the
+              version before. The release's own message says what was
+              refused:
+              `kubectl -n {{ $labels.exported_namespace }} get helmrelease {{ $labels.name }}`.
+
+        # A certificate lasts about six days and is renewed with about two
+        # left. Under a day is one that should have been renewed a day ago.
+        - alert: ACertificateIsRunningOutAndHasNotBeenRenewed
+          expr: >-
+            certmanager_certificate_expiration_timestamp_seconds - time() < 86400
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: The certificate {{ $labels.name }} runs out within a day and has not been renewed.
+            description: >-
+              The certificate {{ $labels.name }} in
+              {{ $labels.exported_namespace }} is good for
+              {{ $value | humanizeDuration }} more. It should have been
+              renewed with about two days left, and was not. When it runs
+              out, the name it is for stops loading for everybody. Why it
+              was not renewed is on the certificate and the requests under
+              it:
+              `kubectl -n {{ $labels.exported_namespace }} describe certificate {{ $labels.name }}`.
+
+        - alert: ACertificateCannotBeIssued
+          expr: >-
+            max by (exported_namespace, name) (
+              certmanager_certificate_ready_status{condition!="True"}
+            ) == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: The certificate {{ $labels.name }} has not been issued.
+            description: >-
+              cert-manager has not been able to issue or renew the
+              certificate {{ $labels.name }} in
+              {{ $labels.exported_namespace }} for half an hour. The one in
+              use, if there is one, is still good until it runs out. Why is
+              on the certificate and the requests under it:
+              `kubectl -n {{ $labels.exported_namespace }} describe certificate {{ $labels.name }}`.
