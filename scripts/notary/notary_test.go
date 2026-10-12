@@ -413,3 +413,31 @@ func TestDueSaysWhyASiteIsOwedACertificate(t *testing.T) {
 		}
 	}
 }
+
+func TestTheProgramEndsWithAStatusThatSaysWhatHappened(t *testing.T) {
+	w := newWorld(t)
+	for _, wrong := range [][]string{nil, {"renew"}, {"issue", "-everything"}, {"issue", "now"}} {
+		if got := run(wrong); got != 2 {
+			t.Errorf("%v is not something the notary is asked, and it ended with %d", wrong, got)
+		}
+	}
+	if w.accounts != 0 {
+		t.Fatal("something not asked properly reached the issuer")
+	}
+
+	// Started as a program, with a site that is owed a certificate.
+	w.Keep(vaults.SiteShared(site), servedItem, namesField, "front-door."+domain)
+	was := os.Args
+	os.Args = []string{"notary", "issue", "-rehearse"}
+	t.Cleanup(func() { os.Args = was })
+	main()
+	if w.orders != 1 || w.Kept(vaults.SiteShared(site), certificateItem, chainField) != "" {
+		t.Errorf("a rehearsal started as a program made %d order(s) and wrote to the vault or did not", w.orders)
+	}
+
+	// And one that cannot be done says so by its status.
+	w.life = 90 * 24 * time.Hour
+	if got := run([]string{"issue"}); got != 1 {
+		t.Errorf("a certificate that was refused ended the program with %d", got)
+	}
+}

@@ -44,19 +44,27 @@ lawyer has granted each site its names.
 `
 
 func main() {
-	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
-	if len(os.Args) < 2 || os.Args[1] != "issue" {
-		flag.Usage()
-		os.Exit(2)
+	if status := run(os.Args[1:]); status != 0 {
+		os.Exit(status)
 	}
-	flags := flag.NewFlagSet("issue", flag.ExitOnError)
+}
+
+// run is the program with its arguments, and the status it ends with: 2 for
+// something it was not asked properly, 1 for something it could not do.
+func run(args []string) int {
+	flags := flag.NewFlagSet("issue", flag.ContinueOnError)
+	flags.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	rehearse := flags.Bool("rehearse", false, "ask the issuer's rehearsal service and write nothing")
-	_ = flags.Parse(os.Args[2:])
+	if len(args) < 1 || args[0] != "issue" || flags.Parse(args[1:]) != nil || flags.NArg() > 0 {
+		flags.Usage()
+		return 2
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := issue(ctx, *rehearse); err != nil {
 		console.Fail(err.Error())
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
