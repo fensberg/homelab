@@ -58,6 +58,20 @@ type Answer[T any] struct {
 	Result T `json:"result"`
 }
 
+// Record is one of a zone's DNS records, as far as anything here reads one.
+// Data is what a record carries when it is not one value: who may issue a
+// certificate for the domain is a tag and a value.
+type Record struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+	Comment string `json:"comment"`
+	Data    struct {
+		Tag   string `json:"tag"`
+		Value string `json:"value"`
+	} `json:"data"`
+}
+
 // Get asks base+path with a bearer token and returns the result. A refusal is
 // an error naming Cloudflare's own reason, never an empty result: an empty
 // list read out of a 403 is an answer somebody will act on.

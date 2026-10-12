@@ -14,13 +14,7 @@ var apiBase = cf.API
 // zone is the domain's records, and the credential that changes them.
 type zone struct{ token, id string }
 
-type record struct {
-	ID   string `json:"id"`
-	Data struct {
-		Tag   string `json:"tag"`
-		Value string `json:"value"`
-	} `json:"data"`
-}
+type record = cf.Record
 
 // zoneOf finds the domain's zone by its name. A token that cannot see it
 // finds none, which is said as that and not as an empty answer.
@@ -38,6 +32,53 @@ func zoneOf(token, domain string) (zone, error) {
 }
 
 func (z zone) records() string { return "/zones/" + z.id + "/dns_records" }
+
+// publish makes each name of a site's resolve to its address, and removes
+// the names of routes the site no longer has. A name is the notary's to
+// remove only when the notary made it, which a record says in its comment:
+// anything else on the domain is the operator's own and is never touched.
+//
+// The addresses are private ones, reached through a site's tunnel by an
+// enrolled device and by nothing else, so a name that resolves to one opens
+// nothing. Not proxied, for the same reason: nothing at the vendor's edge
+// can reach it.
+func (z zone) publish(site string, serves served) (made, removed int, err error) {
+	mark := "served by " + site
+	held, err := cf.Get[[]record](apiBase, z.token, z.records(), url.Values{"type": {"A"}, "comment.exact": {mark}, "per_page": {"1000"}})
+	if err != nil {
+		return 0, 0, err
+	}
+	current := map[string]bool{}
+	for _, r := range held {
+		// Asked for by its mark and checked for it all the same: a filter
+		// the vendor stopped honouring would hand back every record there is.
+		if r.Comment != mark {
+			continue
+		}
+		if address, wanted := serves[r.Name]; wanted && address == r.Content && !current[r.Name] {
+			current[r.Name] = true
+			continue
+		}
+		if _, err := cf.Send[any](http.MethodDelete, apiBase, z.token, z.records()+"/"+r.ID, nil); err != nil {
+			return made, removed, err
+		}
+		if _, wanted := serves[r.Name]; !wanted {
+			removed++
+		}
+	}
+	for _, name := range serves.names() {
+		if current[name] {
+			continue
+		}
+		if _, err := cf.Send[record](http.MethodPost, apiBase, z.token, z.records(), map[string]any{
+			"type": "A", "name": name, "content": serves[name], "ttl": 300, "proxied": false, "comment": mark,
+		}); err != nil {
+			return made, removed, err
+		}
+		made++
+	}
+	return made, removed, nil
+}
 
 // prove publishes what the issuer asks to find under a name, and returns
 // what takes it away again. The record is the whole of the proof: whoever

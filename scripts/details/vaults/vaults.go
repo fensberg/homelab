@@ -36,6 +36,35 @@ const sharedSuffix = "-shared"
 // estate grants that site.
 func SiteShared(site string) string { return site + sharedSuffix }
 
+// Operator is the vault of what is the operator's and no estate's: the
+// domain every site's names are under, the credential that changes its
+// records, and the key the issuer of certificates knows the operator by.
+// Named for the proof it is today. Neither the lawyer's token nor any
+// site's may see it.
+const Operator = "poc"
+
+// CheckNotary holds the notary's token to the operator's vault and the
+// vaults of what each site is granted, where it reads what a site serves
+// and writes the site its certificate. The estate's own vault and a site's
+// own are refused: the party that issues holds nothing that builds.
+//
+// Refused vaults are counted, never named: names reach a public Actions log.
+func CheckNotary(names []string) error {
+	if !slices.Contains(names, Operator) {
+		return fmt.Errorf("the 1Password token cannot see the %q vault. The notary's service account must be granted it", Operator)
+	}
+	refused := 0
+	for _, n := range names {
+		if n != Operator && (n == EstateShared || !strings.HasSuffix(n, sharedSuffix)) {
+			refused++
+		}
+	}
+	if refused > 0 {
+		return fmt.Errorf("the 1Password token reaches %d vault(s) that are neither %q nor a site's %q vault. The notary holds what issues a certificate and writes each site its own; the estate's vaults and a site's own vault must not be granted to its service account", refused, Operator, "*"+sharedSuffix)
+	}
+	return nil
+}
+
 // SitesAmong is every site that has a vault of what the estate grants it,
 // among the vaults a token sees, sorted. The estate's own shared vault is
 // not a site's.

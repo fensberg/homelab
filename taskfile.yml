@@ -154,18 +154,18 @@ tasks:
     desc: "Apply management/estate/ to the estate that stands"
     cmds:
       - go run -C scripts/lawyer . converge-estate
-      # And then each site is issued the certificate it serves under, when
-      # it is owed one. After the lawyer, because the lawyer is what grants a
-      # site the names a certificate is for.
-      - task: issue-certificates
 
-  # The notary: the party that issues each site its certificate, with the
-  # same service account the lawyer runs on. Safe to run at any time: a site
-  # whose certificate is current is left alone and nothing is asked of the
-  # issuer. `-- -rehearse` asks the issuer's rehearsal service and writes
-  # nothing.
+  # The notary: the party that names what each site serves and issues it the
+  # certificate it serves under. The operator's, and not the estate's: run
+  # with the notary's own 1Password service account as
+  # OP_SERVICE_ACCOUNT_TOKEN, which the notary refuses if it reaches an
+  # estate's vault, as the lawyer refuses one that reaches the operator's.
+  # So it is a step of its own after converge-estate and not the end of it.
+  # Safe to run at any time: a site whose certificate is current is issued
+  # nothing. `-- -rehearse` asks the issuer's rehearsal service and grants
+  # no certificate.
   issue-certificates:
-    desc: "Issue each site the certificate it serves under, when it is owed one"
+    desc: "Name what each site serves and issue it a certificate, when it is owed one"
     cmds:
       - go run -C scripts/notary . issue {{.CLI_ARGS}}
 

@@ -22,11 +22,16 @@ output "grants" {
       token    = data.cloudflare_zero_trust_tunnel_cloudflared_token.this.token
     }
     },
-    # The names this site serves under, as one field: what its certificate is
-    # issued for, and what the site reads to know what it is called. A site
-    # with no route serves under none and is granted none.
-    length(var.served_names) == 0 ? {} : {
-      served = { names = join(" ", sort(values(var.served_names))) }
+    # What of this site a device reaches, for the party that names it: each
+    # route and its address, and the label that sets this site's names apart
+    # when the estate has more than one. The estate does not know the domain
+    # a name is under, and makes no name. A site with no route is granted
+    # nothing here.
+    length(var.tunnel_routes) == 0 ? {} : {
+      served = merge(
+        { routes = join(" ", [for route in sort(keys(var.tunnel_routes)) : "${route}=${var.tunnel_routes[route]}"]) },
+        var.served_under == "" ? {} : { under = var.served_under },
+      )
     },
   )
 }

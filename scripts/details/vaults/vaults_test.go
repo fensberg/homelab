@@ -61,3 +61,21 @@ func TestSitesAmongAreTheVaultsOfWhatASiteIsGranted(t *testing.T) {
 		t.Errorf("the sites are %v; the estate's own shared vault, a site's own vault and a vault with no site in its name are not one", got)
 	}
 }
+
+func TestTheNotarySeesTheOperatorsVaultAndWhatEachSiteIsGrantedNothingMore(t *testing.T) {
+	if err := CheckNotary([]string{Operator, "site1-shared", "site2-shared"}); err != nil {
+		t.Errorf("the vaults the notary works in were refused: %v", err)
+	}
+	if err := CheckNotary([]string{"site1-shared"}); err == nil || !strings.Contains(err.Error(), "cannot see") {
+		t.Errorf("a token that cannot see the operator's vault was accepted: %v", err)
+	}
+	for _, other := range []string{Estate, EstateShared, "site1"} {
+		err := CheckNotary([]string{Operator, "site1-shared", other})
+		if err == nil || !strings.Contains(err.Error(), "reaches 1 vault(s)") {
+			t.Errorf("a token that also reaches %s was accepted: %v", other, err)
+		}
+		if err != nil && strings.Contains(err.Error(), other+" ") {
+			t.Errorf("the refusal names the vault it refused")
+		}
+	}
+}

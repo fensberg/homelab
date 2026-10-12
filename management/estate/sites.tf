@@ -21,6 +21,16 @@ data "cloudflare_account_api_token_permission_groups_list" "r2_bucket_read" {
 # A name becomes a slug the same way every time: lower case, runs of anything
 # but a letter or digit made one hyphen, none at either end.
 locals {
+  # What the estate calls a site, made a label: what its buckets are named
+  # by, and what sets its names apart from another site's once there is one.
+  site_label = {
+    for k, s in local.sites : k => trim(replace(lower(s.name), "/[^a-z0-9]+/", "-"), "-")
+  }
+  # Nothing, while the estate has one site: a name then carries nothing of
+  # the site, and every certificate's names are published.
+  served_under = {
+    for k in keys(local.sites) : k => length(local.sites) == 1 ? "" : local.site_label[k]
+  }
   estate_slug = trim(replace(lower(local.organization), "/[^a-z0-9]+/", "-"), "-")
   bucket_prefix = {
     for k, s in local.sites : k => "${local.estate_slug}-${local.site_label[k]}"
@@ -37,7 +47,7 @@ module "site" {
   site            = each.key
   name            = each.value.name
   tunnel_routes   = local.site_routes[each.key]
-  served_names    = local.served_names[each.key]
+  served_under    = local.served_under[each.key]
   r2_bucket_write = one(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_write.result).id
   r2_bucket_read  = one(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_read.result).id
 }

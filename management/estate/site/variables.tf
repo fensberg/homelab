@@ -38,7 +38,7 @@ variable "r2_bucket_read" {
   description = "The id of Cloudflare's permission group for listing and reading objects in one bucket, and changing none."
 }
 
-variable "served_names" {
-  type        = map(string)
-  description = "The name each thing a device reaches in this site is served under, by route. Made and published by the estate; the site is granted them."
+variable "served_under" {
+  type        = string
+  description = "The label that sets this site's names apart from another site's, or nothing while the estate has one site."
 }

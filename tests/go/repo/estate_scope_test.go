@@ -39,10 +39,6 @@ var estateTypes = map[string]bool{
 	"cloudflare_zero_trust_tunnel_cloudflared":        true,
 	"cloudflare_zero_trust_tunnel_cloudflared_config": true,
 	"cloudflare_zero_trust_tunnel_cloudflared_route":  true,
-	// The name each thing a device reaches is served under. The estate's
-	// because whoever changes a record under the domain can be issued a
-	// certificate for it, which no site may be able to do for itself.
-	"cloudflare_dns_record": true,
 	// The watchman, which says when a site has gone quiet. The estate's
 	// because it has to outlive whatever it watches: one in a site's state
 	// is destroyed with the site.

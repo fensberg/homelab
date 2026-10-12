@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 	"time"
@@ -17,61 +18,108 @@ import (
 // grants it: an item each in the site's -shared vault.
 const (
 	servedItem      = "served"
-	namesField      = "names"
+	routesField     = "routes"
+	underField      = "under"
 	certificateItem = "certificate"
 	chainField      = "chain"
 	keyField        = "key"
 	expiresField    = "expires"
+	namesField      = "names"
 )
 
-// accountKey is the key the issuer knows the operator by. Whoever holds it
-// can be issued a certificate for any name the domain's records let them
-// prove, so it is the estate's own and no site's.
-var accountKey = onepassword.Ref{Vault: vaults.Estate, Item: "issuer", Field: "account_key"}
-
-// Where the two things the notary is given are kept: the domain, and the
-// operator's own credential for its records. Neither is the estate's. They
-// are in a vault the estate reads only while this is a proof, and the
-// estate's own token is not what changes the domain.
+// What is the operator's, in the operator's vault: the domain every name is
+// under, the credential that changes its records, and the key the issuer
+// knows the operator by. Whoever holds the last two can be issued a
+// certificate for any name under the domain, so no estate and no site holds
+// either.
 var (
-	recordsToken = onepassword.Ref{Vault: vaults.EstateShared, Item: "poc", Field: "api_token"}
-	servedDomain = onepassword.Ref{Vault: vaults.EstateShared, Item: "poc", Field: "domain"}
+	servedDomain = onepassword.Ref{Vault: vaults.Operator, Item: certificateItem, Field: "domain"}
+	recordsToken = onepassword.Ref{Vault: vaults.Operator, Item: certificateItem, Field: "api_token"}
+	accountKey   = onepassword.Ref{Vault: vaults.Operator, Item: certificateItem, Field: "account_key"}
 )
 
-// issue is the verb: every site the estate has granted names to holds a
-// current certificate for exactly those names when it returns.
+// served is what one site serves: each name, and the address it resolves to.
+type served map[string]string
+
+func (s served) names() []string {
+	names := make([]string, 0, len(s))
+	for name := range s {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// named turns what the estate granted a site into names. The estate says
+// what is reached and where, and the label that sets the site apart when
+// there is more than one; the domain is the operator's, so a name is made
+// here and nowhere in an estate: <route>.<domain>, or
+// <route>.<label>.<domain>.
+func named(routes, under, domain string) (served, error) {
+	out := served{}
+	for _, each := range strings.Fields(routes) {
+		route, address, ok := strings.Cut(each, "=")
+		if !ok || route == "" || net.ParseIP(address) == nil {
+			return nil, errors.New("what it is granted to serve is not a list of routes and their addresses")
+		}
+		name := route + "." + domain
+		if under != "" {
+			name = route + "." + under + "." + domain
+		}
+		out[name] = address
+	}
+	if len(out) == 0 {
+		return nil, errors.New("it is granted routes to serve and the list is empty")
+	}
+	return out, nil
+}
+
+// issue is the verb: every site the estate has granted routes to has a name
+// for each that resolves to it, and holds a current certificate for exactly
+// those names, when it returns.
 func issue(ctx context.Context, rehearse bool) error {
-	console.Phase("Read", "What each site serves under, and what the operator is known by.")
+	console.Phase("Read", "What each site serves, and what is the operator's.")
 	if !onepassword.Available() {
 		return onepassword.ErrNoCLI
 	}
 	if !onepassword.SignedIn() {
-		return errors.New("1Password is not signed in. The notary runs on the estate's service account: export " + onepassword.TokenVariable + " from the estate token")
+		return errors.New("1Password is not signed in. The notary runs on a service account of its own: export " + onepassword.TokenVariable + " from the notary's token")
 	}
 	held, err := onepassword.Vaults()
 	if err != nil {
 		return err
 	}
-	if err := vaults.CheckLawyer(held); err != nil {
+	if err := vaults.CheckNotary(held); err != nil {
 		return err
 	}
-	// Which sites are owed one, before anything is asked of anybody: a run
-	// that finds every certificate current reaches neither the issuer nor
-	// the domain.
+	domain, err := onepassword.Read(servedDomain.String())
+	if err != nil {
+		return err
+	}
+
 	now := time.Now()
-	owed := map[string][]string{}
+	serves, owed := map[string]served{}, map[string]bool{}
 	for _, site := range vaults.SitesAmong(held) {
 		shared := vaults.SiteShared(site)
-		names := onepassword.Ref{Vault: shared, Item: servedItem, Field: namesField}
-		if onepassword.Probe(names.String()) != onepassword.StatusOK {
-			console.Info(site + " is granted no names, so it serves nothing a certificate is for")
+		routes := onepassword.Ref{Vault: shared, Item: servedItem, Field: routesField}
+		if onepassword.Probe(routes.String()) != onepassword.StatusOK {
+			console.Info(site + " is granted nothing to serve, so there is nothing a certificate is for")
 			continue
 		}
-		granted, err := onepassword.Read(names.String())
+		granted, err := onepassword.Read(routes.String())
 		if err != nil {
 			return err
 		}
-		want := strings.Fields(granted)
+		under := ""
+		if label := (onepassword.Ref{Vault: shared, Item: servedItem, Field: underField}); onepassword.Probe(label.String()) == onepassword.StatusOK {
+			if under, err = onepassword.Read(label.String()); err != nil {
+				return err
+			}
+		}
+		if serves[site], err = named(granted, under, domain); err != nil {
+			return fmt.Errorf("%s: %w", site, err)
+		}
+
 		chain := onepassword.Ref{Vault: shared, Item: certificateItem, Field: chainField}
 		have := ""
 		if onepassword.Probe(chain.String()) == onepassword.StatusOK {
@@ -79,7 +127,7 @@ func issue(ctx context.Context, rehearse bool) error {
 				return err
 			}
 		}
-		why, err := due(have, want, now)
+		why, err := due(have, serves[site].names(), now)
 		if err != nil {
 			return fmt.Errorf("%s: %w", site, err)
 		}
@@ -87,19 +135,20 @@ func issue(ctx context.Context, rehearse bool) error {
 			console.Ok(site + "'s certificate is current")
 			continue
 		}
-		console.Info(fmt.Sprintf("%s is owed a certificate for %d name(s): %s", site, len(want), why))
-		owed[site] = want
+		console.Info(fmt.Sprintf("%s is owed a certificate for %d name(s): %s", site, len(serves[site]), why))
+		owed[site] = true
 	}
-	if len(owed) == 0 {
+	if len(serves) == 0 {
 		return nil
 	}
-
-	console.Phase("Issue", "Ask the issuer, proving each name by a record under the domain.")
-	token, err := onepassword.Read(recordsToken.String())
-	if err != nil {
-		return err
+	sites := make([]string, 0, len(serves))
+	for site := range serves {
+		sites = append(sites, site)
 	}
-	domain, err := onepassword.Read(servedDomain.String())
+	sort.Strings(sites)
+
+	console.Phase("Name", "Make each name resolve to what it names.")
+	token, err := onepassword.Read(recordsToken.String())
 	if err != nil {
 		return err
 	}
@@ -107,6 +156,18 @@ func issue(ctx context.Context, rehearse bool) error {
 	if err != nil {
 		return err
 	}
+	for _, site := range sites {
+		made, removed, err := zone.publish(site, serves[site])
+		if err != nil {
+			return fmt.Errorf("%s: %w", site, err)
+		}
+		console.Ok(fmt.Sprintf("%s has a name for each of %d route(s): %d made or moved, %d of routes it no longer has removed", site, len(serves[site]), made, removed))
+	}
+	if len(owed) == 0 {
+		return nil
+	}
+
+	console.Phase("Issue", "Ask the issuer, proving each name by a record under the domain.")
 	who, err := operator(ctx, rehearse)
 	if err != nil {
 		return err
@@ -121,26 +182,25 @@ func issue(ctx context.Context, rehearse bool) error {
 			console.Warn(fmt.Sprintf("%d other record(s) on the domain still let another party be issued one. They were not made here and are left alone: remove them by hand", others))
 		}
 	}
-
-	sites := make([]string, 0, len(owed))
-	for site := range owed {
-		sites = append(sites, site)
-	}
-	sort.Strings(sites)
 	for _, site := range sites {
-		got, err := who.certificate(ctx, zone, owed[site])
+		if !owed[site] {
+			continue
+		}
+		names := serves[site].names()
+		got, err := who.certificate(ctx, zone, names)
 		if err != nil {
 			return fmt.Errorf("%s: %w", site, err)
 		}
 		days := int(got.expires.Sub(now).Hours() / 24)
 		if rehearse {
-			console.Ok(fmt.Sprintf("%s was issued a rehearsal certificate good for %d days. Nothing was written", site, days))
+			console.Ok(fmt.Sprintf("%s was issued a rehearsal certificate good for %d days. It was not granted", site, days))
 			continue
 		}
 		changed, err := onepassword.WriteItem(vaults.SiteShared(site), certificateItem, map[string]string{
 			chainField:   got.chain,
 			keyField:     got.key,
 			expiresField: got.expires.UTC().Format(time.RFC3339),
+			namesField:   strings.Join(names, " "),
 		})
 		if err != nil {
 			return fmt.Errorf("granting %s its certificate: %w", site, err)

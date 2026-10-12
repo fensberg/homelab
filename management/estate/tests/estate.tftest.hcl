@@ -9,11 +9,6 @@ mock_provider "cloudflare" {
   }
 }
 
-# The operator's account, which holds the domain names are served under.
-mock_provider "cloudflare" {
-  alias = "operator"
-}
-
 variables {
   config_path = "./tests/fixtures/valid.json"
   sites_path  = "./tests/fixtures/sites.json"
@@ -287,9 +282,10 @@ run "an_accounts_name_written_as_an_address_is_refused" {
   expect_failures = [output.grants]
 }
 
-# Each thing a device reaches has a name, which is what its certificate is
-# for. An estate with one site puts nothing of the site in it.
-run "one_site_serves_under_the_domain_alone" {
+# What a device reaches in a site is granted to the party that names it:
+# each route and its address. An estate with one site says nothing of the
+# site, so that a name carries nothing of it.
+run "one_site_is_granted_its_routes_and_no_label" {
   command = plan
 
   variables {
@@ -298,23 +294,14 @@ run "one_site_serves_under_the_domain_alone" {
   }
 
   assert {
-    condition = { for at, record in module.served.records : at => "${record.name} ${record.type} ${record.content} ${record.proxied}" } == {
-      "site0/back-door"  = "back-door.served.example A 10.196.40.9 false"
-      "site0/front-door" = "front-door.served.example A 10.196.40.7 false"
-      "site0/side-door"  = "side-door.served.example A 10.196.40.8 false"
-      "site0/the-yard"   = "the-yard.served.example A 10.196.40.5 false"
-    }
-    error_message = "a route's name is the route under the domain, resolving to the route's own address and not proxied"
-  }
-  assert {
-    condition     = nonsensitive(output.grants["site0"].served.names) == "back-door.served.example front-door.served.example side-door.served.example the-yard.served.example"
-    error_message = "the site is not granted the names it serves under, sorted and in one field"
+    condition     = nonsensitive(output.grants["site0"].served) == { routes = "back-door=10.196.40.9 front-door=10.196.40.7 side-door=10.196.40.8 the-yard=10.196.40.5" }
+    error_message = "a single site is granted each route and its address, sorted and in one field, and nothing else"
   }
 }
 
-# With a second site, each name says whose it is, by the label the estate
-# makes of the site's name.
-run "more_than_one_site_serves_under_a_label_of_its_own" {
+# With a second site, each is also granted the label its names are set
+# apart by, which the estate makes of the site's name.
+run "more_than_one_site_is_each_granted_a_label_of_its_own" {
   command = plan
 
   variables {
@@ -324,20 +311,18 @@ run "more_than_one_site_serves_under_a_label_of_its_own" {
   }
 
   assert {
-    condition     = length(distinct([for record in module.served.records : record.name])) == 8
-    error_message = "two sites share a name, so one certificate would be for both"
+    condition     = alltrue([for key, granted in nonsensitive(output.grants) : granted.served.under == local.site_label[key]])
+    error_message = "with more than one site, each is granted the label the estate makes of its name"
   }
   assert {
-    condition = alltrue([
-      for at, record in module.served.records : record.name == "${split("/", at)[1]}.${local.site_label[split("/", at)[0]]}.served.example"
-    ])
-    error_message = "with more than one site, a route's name is the route, the site's label and the domain"
+    condition     = length(distinct([for granted in nonsensitive(output.grants) : granted.served.under])) == 2
+    error_message = "two sites share a label, so their names would be the same names"
   }
 }
 
-# A site that serves nothing is granted no names, and not an empty field
-# the lawyer would refuse to write.
-run "a_site_with_no_route_is_granted_no_names" {
+# A site that serves nothing is granted nothing to name, and not an empty
+# field the lawyer would refuse to write.
+run "a_site_with_no_route_is_granted_nothing_to_name" {
   command = plan
 
   variables {
@@ -347,6 +332,6 @@ run "a_site_with_no_route_is_granted_no_names" {
 
   assert {
     condition     = !contains(keys(nonsensitive(output.grants["site0"])), "served")
-    error_message = "a site with no route was granted names to serve under"
+    error_message = "a site with no route was granted something to name"
   }
 }

@@ -8,10 +8,12 @@
 // own, with a program of its own, and not a step of building a site: no site
 // holds the means to be issued one, and no site's program is given them.
 //
-// What it holds is the key the issuer knows the operator by, and the
-// credential that changes the domain's records. While there is one estate
-// both are the estate's, as a proof. The real ones are kept above every
-// estate.
+// What it holds is the operator's: the domain every name is under, the
+// credential that changes its records, and the key the issuer knows the
+// operator by. They are kept in a vault of the operator's own, which no
+// estate's token and no site's sees, and the notary's token sees nothing of
+// an estate's. An estate says what a site serves; only here is that given a
+// name.
 package main
 
 import (
@@ -29,18 +31,20 @@ const usage = `notary issues each site the certificate it serves under.
 
 usage: notary issue [-rehearse]
 
-  issue  For each site the estate has granted names to: issue a certificate
-         for exactly those names when the site holds none, holds one for
-         other names, or holds one with less than twenty days left. Write it
-         into the site's -shared vault. A site whose certificate is current
-         is left alone.
+  issue  For each site the estate has granted routes to: make a name for
+         each route that resolves to it, and issue a certificate for exactly
+         those names when the site holds none, holds one for other names, or
+         holds one with less than twenty days left. Write it into the site's
+         -shared vault. A site whose certificate is current is issued nothing.
 
   -rehearse  Ask the issuer's rehearsal service, whose certificates no
-             browser trusts and whose limits are generous. Nothing is
-             written to a vault, and the domain is not bound to an account.
+             browser trusts and whose limits are generous. The names are
+             made as they would be; no certificate is granted and the
+             domain is not bound to an account.
 
-Runs on the estate's 1Password service account, as the lawyer does, after the
-lawyer has granted each site its names.
+Runs on a 1Password service account of its own, which sees the operator's
+vault and each site's -shared vault and nothing of the estate's, after the
+lawyer has granted each site what it serves.
 `
 
 func main() {

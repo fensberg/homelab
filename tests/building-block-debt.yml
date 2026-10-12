@@ -150,3 +150,10 @@ debt:
   # vocabulary rather than a fact this repository decides, and each reader
   # needs only the pins, so neither takes the other's parser.
   - "OCIRepository"
+
+  # --- Two vendors' words for two things (1)
+  # A DNS record's value, in the one reading of that vendor's API
+  # (scripts/details), and the body of a message to a model, in the clerk.
+  # Neither is the other's fact and no change to one touches the other; what
+  # they share is that two vendors both chose the word.
+  - 'json:"content"'

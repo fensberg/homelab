@@ -61,7 +61,7 @@ const (
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	w := &world{t: t, records: map[string]map[string]any{}, life: 45 * 24 * time.Hour}
-	w.Vaults = standin.New(t, vaults.Estate, vaults.EstateShared, vaults.SiteShared(site))
+	w.Vaults = standin.New(t, vaults.Operator, vaults.SiteShared(site))
 	w.Keep(recordsToken.Vault, recordsToken.Item, recordsToken.Field, "a-token")
 	w.Keep(servedDomain.Vault, servedDomain.Item, servedDomain.Field, domain)
 
@@ -227,7 +227,8 @@ func (w *world) dns(rw http.ResponseWriter, r *http.Request, path string) {
 	case path == "/zones/zone1/dns_records" && r.Method == http.MethodGet:
 		out := []map[string]any{}
 		for _, rec := range w.records {
-			if rec["type"] == r.URL.Query().Get("type") && rec["name"] == r.URL.Query().Get("name") {
+			q := r.URL.Query()
+			if rec["type"] == q.Get("type") && (!q.Has("name") || rec["name"] == q.Get("name")) && (!q.Has("comment.exact") || rec["comment"] == q.Get("comment.exact")) {
 				out = append(out, rec)
 			}
 		}
@@ -263,7 +264,7 @@ func certificateFor(t *testing.T, left time.Duration, names ...string) string {
 
 func TestASiteIsIssuedACertificateForExactlyTheNamesItWasGranted(t *testing.T) {
 	w := newWorld(t)
-	w.Keep(vaults.SiteShared(site), servedItem, namesField, "front-door."+domain+" side-door."+domain)
+	w.Keep(vaults.SiteShared(site), servedItem, routesField, "front-door=10.0.0.7 side-door=10.0.0.8")
 
 	if err := issue(context.Background(), false); err != nil {
 		t.Fatal(err)
@@ -297,8 +298,14 @@ func TestASiteIsIssuedACertificateForExactlyTheNamesItWasGranted(t *testing.T) {
 	if bound := w.recordsOf("CAA"); len(bound) != 1 || !strings.HasPrefix(bound[0], domain+" issue "+issuerName+"; accounturi=http") || !strings.HasSuffix(bound[0], "/real/account/1") {
 		t.Errorf("the domain does not say that the operator's account alone may be issued to: %v", bound)
 	}
-	if w.Kept(vaults.Estate, accountKey.Item, accountKey.Field) == "" {
-		t.Error("the key the issuer knows the operator by was not kept in the estate vault")
+	if w.Kept(accountKey.Vault, accountKey.Item, accountKey.Field) == "" {
+		t.Error("the key the issuer knows the operator by was not kept in the operator's vault")
+	}
+	if got := w.Kept(vaults.SiteShared(site), certificateItem, namesField); got != "front-door."+domain+" side-door."+domain {
+		t.Errorf("the site is told it serves under %q", got)
+	}
+	if got := fmt.Sprint(w.recordsOf("A")); got != "[front-door."+domain+" 10.0.0.7 side-door."+domain+" 10.0.0.8]" {
+		t.Errorf("each name does not resolve to its route's address: %s", got)
 	}
 
 	// And a second run finds it current, and asks nothing of the issuer.
@@ -313,7 +320,7 @@ func TestASiteIsIssuedACertificateForExactlyTheNamesItWasGranted(t *testing.T) {
 
 func TestARehearsalWritesNothingAndBindsNothing(t *testing.T) {
 	w := newWorld(t)
-	w.Keep(vaults.SiteShared(site), servedItem, namesField, "front-door."+domain)
+	w.Keep(vaults.SiteShared(site), servedItem, routesField, "front-door=10.0.0.7")
 
 	if err := issue(context.Background(), true); err != nil {
 		t.Fatal(err)
@@ -321,18 +328,21 @@ func TestARehearsalWritesNothingAndBindsNothing(t *testing.T) {
 	if w.orders != 1 {
 		t.Fatalf("a rehearsal made %d order(s) of the issuer", w.orders)
 	}
-	if w.Kept(vaults.SiteShared(site), certificateItem, chainField) != "" || w.Kept(vaults.Estate, accountKey.Item, accountKey.Field) != "" {
+	if w.Kept(vaults.SiteShared(site), certificateItem, chainField) != "" || w.Kept(accountKey.Vault, accountKey.Item, accountKey.Field) != "" {
 		t.Error("a rehearsal wrote to a vault")
 	}
 	if len(w.recordsOf("CAA")) != 0 || len(w.recordsOf("TXT")) != 0 {
-		t.Error("a rehearsal left a record on the domain")
+		t.Error("a rehearsal bound the domain or left a record that proves a name")
+	}
+	if got := fmt.Sprint(w.recordsOf("A")); got != "[front-door."+domain+" 10.0.0.7]" {
+		t.Errorf("a rehearsal makes the names as a real run would, and the domain holds %s", got)
 	}
 }
 
 func TestACertificateGoodForLongerThanTheOperatorChoseIsNotGranted(t *testing.T) {
 	w := newWorld(t)
 	w.life = 90 * 24 * time.Hour
-	w.Keep(vaults.SiteShared(site), servedItem, namesField, "front-door."+domain)
+	w.Keep(vaults.SiteShared(site), servedItem, routesField, "front-door=10.0.0.7")
 
 	err := issue(context.Background(), false)
 	if err == nil || !strings.Contains(err.Error(), "good for 90 days where at most 46") {
@@ -426,7 +436,7 @@ func TestTheProgramEndsWithAStatusThatSaysWhatHappened(t *testing.T) {
 	}
 
 	// Started as a program, with a site that is owed a certificate.
-	w.Keep(vaults.SiteShared(site), servedItem, namesField, "front-door."+domain)
+	w.Keep(vaults.SiteShared(site), servedItem, routesField, "front-door=10.0.0.7")
 	was := os.Args
 	os.Args = []string{"notary", "issue", "-rehearse"}
 	t.Cleanup(func() { os.Args = was })
@@ -439,5 +449,64 @@ func TestTheProgramEndsWithAStatusThatSaysWhatHappened(t *testing.T) {
 	w.life = 90 * 24 * time.Hour
 	if got := run([]string{"issue"}); got != 1 {
 		t.Errorf("a certificate that was refused ended the program with %d", got)
+	}
+}
+
+func TestANameIsTheRouteTheLabelWhenThereIsOneAndTheDomain(t *testing.T) {
+	one, err := named("front-door=10.0.0.7 side-door=10.0.0.8", "", "served.example")
+	if err != nil || fmt.Sprint(one) != "map[front-door.served.example:10.0.0.7 side-door.served.example:10.0.0.8]" {
+		t.Errorf("with no label: %v, %v", one, err)
+	}
+	two, err := named("front-door=10.0.0.7", "north-street-office", "served.example")
+	if err != nil || fmt.Sprint(two.names()) != "[front-door.north-street-office.served.example]" {
+		t.Errorf("with a label: %v, %v", two, err)
+	}
+	for _, wrong := range []string{"", "front-door", "front-door=", "=10.0.0.7", "front-door=somewhere"} {
+		if got, err := named(wrong, "", "served.example"); err == nil {
+			t.Errorf("%q was read as something to serve: %v", wrong, got)
+		}
+	}
+}
+
+func TestPublishingMovesAndRemovesOnlyTheNamesTheNotaryMadeForThatSite(t *testing.T) {
+	w := newWorld(t)
+	a := func(name, address, comment string) map[string]any {
+		return map[string]any{"type": "A", "name": name, "content": address, "comment": comment}
+	}
+	w.records["kept"] = a("front-door."+domain, "10.0.0.7", "served by "+site)
+	w.records["moved"] = a("side-door."+domain, "10.0.0.99", "served by "+site)
+	w.records["gone"] = a("old-door."+domain, "10.0.0.5", "served by "+site)
+	w.records["anothers"] = a("front-door.other."+domain, "10.1.0.7", "served by another")
+	w.records["by-hand"] = a("www."+domain, "192.0.2.1", "")
+	w.records["by-hand"]["id"] = "by-hand"
+	for id, r := range w.records {
+		r["id"] = id
+	}
+	z, err := zoneOf("a-token", domain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wants := served{"front-door." + domain: "10.0.0.7", "side-door." + domain: "10.0.0.8", "back-door." + domain: "10.0.0.9"}
+	made, removed, err := z.publish(site, wants)
+	if err != nil || made != 2 || removed != 1 {
+		t.Fatalf("made or moved %d and removed %d, %v; one moved, one new, one gone", made, removed, err)
+	}
+	want := "[back-door." + domain + " 10.0.0.9 front-door.other." + domain + " 10.1.0.7 front-door." + domain + " 10.0.0.7 side-door." + domain + " 10.0.0.8 www." + domain + " 192.0.2.1]"
+	if got := fmt.Sprint(w.recordsOf("A")); got != want {
+		t.Errorf("the domain holds\n%s\nand should hold\n%s", got, want)
+	}
+	if _, kept := w.records["kept"]; !kept {
+		t.Error("a name that was already right was made again")
+	}
+	if made, removed, err := z.publish(site, wants); err != nil || made != 0 || removed != 0 {
+		t.Errorf("a second run changed something: %d, %d, %v", made, removed, err)
+	}
+}
+
+func TestATokenThatSeesAnEstatesVaultIsRefused(t *testing.T) {
+	newWorld(t)
+	standin.New(t, vaults.Operator, vaults.Estate)
+	if err := issue(context.Background(), true); err == nil || !strings.Contains(err.Error(), "must not be granted") {
+		t.Errorf("the notary ran on a token that reaches an estate's vault: %v", err)
 	}
 }

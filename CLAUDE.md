@@ -423,23 +423,28 @@ so an empty field does not fail Render at all — it surfaces much later inside 
 provider as something like "credentials are empty", naming no field.
 
 **Issuing each site its certificate is `notary issue`**
-(`task issue-certificates`, and the last step of `task converge-estate`).
-Everything a device reaches is served under a name with a certificate any
-browser trusts, and the notary is the one party that can get one: it holds
-the key the issuer knows the operator by and the credential that changes
-the domain's records, and no site is given either. For each site the
-lawyer has granted names to, it issues a certificate for exactly those
-names when the site holds none, holds one for other names, or holds one
-with under twenty days left, and writes it into the site's `-shared`
-vault; a site whose certificate is current is left alone and the issuer is
-asked nothing. It refuses to grant one good for longer than forty-six
-days, because the length is the subscription
+(`task issue-certificates`). Everything a device reaches is served under a
+name with a certificate any browser trusts, and the notary is the one party
+that can get one. What it holds is the operator's and no estate's: the
+domain every name is under, the credential that changes its records, and
+the key the issuer knows the operator by, in a vault of the operator's own.
+The lawyer refuses a token that sees that vault and the notary refuses one
+that sees an estate's, so it runs on a service account of its own, after
+`converge-estate` and never as part of it.
+
+The estate grants each site what it serves - each route and its address,
+and a label once there is more than one site - and knows no domain. The
+notary makes the names (`<route>.<domain>`, or `<route>.<label>.<domain>`),
+makes each resolve to its route's private address, and issues one
+certificate for exactly those names when the site holds none, holds one for
+other names, or holds one with under twenty days left. It writes that into
+the site's `-shared` vault with the names. A site whose certificate is
+current is issued nothing. It refuses to grant one good for longer than
+forty-six days, because the length is the subscription
 (`docs/epochs/11-black-box-white-glove.md`). `-rehearse` asks the issuer's
-rehearsal service and writes nothing. It takes one dependency beyond the
+rehearsal service and grants nothing. It takes one dependency beyond the
 standard library, the Go team's reading of the protocol, which is signed
-request by request and not something to write a second time. That is why
-it is a program of its own and not a verb of the lawyer's, which takes
-none.
+request by request and not something to write a second time.
 
 **Agent commits are published with `task push`** (`scripts/signedpush`), which
 is beside build-site and never inside it — different job, different blast radius,
