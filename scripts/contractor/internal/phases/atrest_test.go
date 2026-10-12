@@ -1,6 +1,8 @@
 package phases
 
 import (
+	"errors"
+	"fmt"
 	"homelab/details/capacity"
 	"os"
 	"os/exec"
@@ -119,5 +121,24 @@ func TestOnlyAConvergeWaitsForItsStateDatabaseToBeAtRest(t *testing.T) {
 	flux, database := strings.Index(said, "get kustomizations"), strings.Index(said, "get clusters")
 	if flux < 0 || database < flux {
 		t.Errorf("an unattended converge did not ask whether Flux had applied its commit before looking at the database:\n%s", said)
+	}
+}
+
+// A converge that gave up waiting says what the wait said, and is still
+// known for what it is by whoever is handed it: the status a converge ends
+// with is decided from it (#713).
+func TestAConvergeThatGaveUpWaitingSaysWhyAndIsKnownForWhatItIs(t *testing.T) {
+	gaveUp := errors.New("Flux to have applied this commit did not become healthy within 10m0s")
+	var handed error = fmt.Errorf("at rest: %w", &NotAtRestError{Err: gaveUp})
+
+	var waiting *NotAtRestError
+	if !errors.As(handed, &waiting) {
+		t.Fatal("a converge that gave up waiting is not known for it once a phase has wrapped it")
+	}
+	if waiting.Error() != gaveUp.Error() {
+		t.Errorf("it says %q, and what the wait said was %q", waiting.Error(), gaveUp.Error())
+	}
+	if !errors.Is(handed, gaveUp) {
+		t.Error("what the wait said cannot be reached through it")
 	}
 }

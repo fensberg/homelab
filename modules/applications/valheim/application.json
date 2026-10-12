@@ -4,9 +4,7 @@
     "README.md beside this file says what each part is for."
   ],
   "requires": [],
-  "routes": {
-    "game-server": 46
-  },
+  "routes": {},
   "secrets": {
     "valheim-server": {
       "server-name": { "vault": "server_name" },

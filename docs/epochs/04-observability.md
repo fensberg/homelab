@@ -1619,6 +1619,30 @@ does not have it), each application's listener and certificate are
 written on the platform's Gateway and not in the application's own
 directory. Each such line says so, and is moved the day a release has it.
 
+**Reached, 2026-10-12.** Grafana loads at its name over HTTPS from the
+operator's enrolled device, with a certificate of about six days that the
+site got for itself, and does not exist for a device that is not
+enrolled. Four things were found only on the running site on the way,
+each fixed where it was found: a variable named in a layer Flux does not
+give it to, which stopped the whole layer and is now refused before a
+merge; the Gateway API's definitions too large to install as a release,
+and so committed as rendered (#716 has their replacement); a setting of
+the vendor's that has to be declared whole; and a route by name that the
+vendor would not answer for (#708). The game server's route through the
+tunnel, which nobody used, went the same day, and with it the tunnel's
+way into any application: the connector reaches the front door and
+nothing else.
+
+**And what the failed converge taught.** The converge that followed gave
+up waiting for Flux and applied nothing, and the job that tidies up after
+one opened a revert that could not have helped and told the operator to
+merge it. "This is not a good scenario for 2 am - I would have merged 712
+right away." A converge now says by its own status that it was the
+cluster that stopped it; the job answers that with an issue naming what
+to look at and no revert, reverts only what a site's converge applies,
+and leads any revert with the converge's own account of what failed
+(#713).
+
 **Not yet answered: what is reached by the public.** Nothing is. A
 website can be given a public name on the same tunnel, handed to the same
 front door, and the third guard is then changed on purpose to allow that

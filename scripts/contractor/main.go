@@ -416,7 +416,7 @@ Nothing has been touched. Re-run without -whatif to do it.
 		run.Fail("HALTED: " + runErr.Error())
 
 		if ctx.PreexistingEstate {
-			os.Exit(reportPreexistingFailure(ctx, verb))
+			os.Exit(whyUntouched(reportPreexistingFailure(ctx, verb), runErr))
 		}
 
 		if ctx.KeepOnFailure {
@@ -519,11 +519,25 @@ func runDestroy(ctx *run.Context, confirm string) int {
 //	exitMayHaveChanged  something was written, or it could not be determined
 //	exitSuperseded  main moved on before this ran; nothing was applied and
 //	                nothing failed, so there is nothing to revert or report
+//	exitNotAtRest  nothing was written, and what stopped it was the cluster
+//	               and not the change: reverting is exact and cannot help
 const (
 	exitMayHaveChanged = 1
 	exitUntouched      = 2
 	exitSuperseded     = 3
+	exitNotAtRest      = 4
 )
+
+// whyUntouched says which kind of "nothing was written" a failed converge
+// was. Only a run that is known to have written nothing is asked: one that
+// may have changed the estate says that whatever it stopped at.
+func whyUntouched(code int, runErr error) int {
+	var waiting *phases.NotAtRestError
+	if code == exitUntouched && errors.As(runErr, &waiting) {
+		return exitNotAtRest
+	}
+	return code
+}
 
 // beforeAnyPhase is the exit code for a run that stopped before its first
 // phase: the vault could not be reached, or the state passphrase could not be
