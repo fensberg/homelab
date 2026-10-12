@@ -290,6 +290,17 @@ spec:
                 channel: "#alerts"
                 send_resolved: true
                 title: "{{ .Status | toUpper }}: {{ .CommonLabels.alertname }}"
+                # No link on the title. Left to itself it is Alertmanager's
+                # own address inside the cluster, which nothing a person
+                # holds can open, and a link that leads nowhere is worse than
+                # none. It is to be Grafana's, by the name a site serves it
+                # under, once this layer is given that name: the site's
+                # build writes it into this layer's own secret as GRAFANA_URL
+                # (modules/infrastructure/platform/monitoring.tf), and a
+                # site has it when it runs a release with that in. Naming it
+                # here before then stops the whole layer from applying,
+                # which is what a variable did on 2026-10-12.
+                title_link: ""
                 # What it means, what it is, and the first thing to try, which
                 # each alert of the estate's own says of itself
                 # (tests/go/repo holds every one to saying it). An alert the

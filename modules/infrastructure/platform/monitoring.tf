@@ -104,6 +104,11 @@ resource "kubernetes_secret" "monitoring_vars" {
 
   data = {
     ETCD_ENDPOINTS = jsonencode(local.node_ips)
+    # Where a person opens Grafana, for what the monitoring stack writes out
+    # as a link: the name the site serves it under, which is in the secret
+    # the layer after this one reads and not in this one's. Nothing, where a
+    # site serves no such name.
+    GRAFANA_URL = try("https://${local.net.served["grafana"].hostname}", "")
   }
 }
 
