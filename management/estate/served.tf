@@ -60,8 +60,20 @@ locals {
 # Account-wide, and so the estate's. It changes what the vendor does with the
 # addresses a device already sends through the tunnel and with no others: a
 # device sends only what the estate lists (zero-trust.tf).
+#
+# DECLARED WHOLE. The vendor keeps these settings as one object and refuses
+# a write that leaves any of them out. The first write here made the object;
+# the next one found three settings the vendor had filled in, planned to
+# take them away, and was refused (2026-10-12). So each is written down as
+# the account holds it, and a setting the estate has no opinion on is still
+# said: an enrolled device may be paused by its user for no time at all,
+# is given the vendor's certificate, and has no address of the vendor's own.
 resource "cloudflare_zero_trust_device_settings" "estate" {
   account_id                = local.access.account_id
   gateway_proxy_enabled     = true
   gateway_udp_proxy_enabled = true
+
+  disable_for_time                      = 0
+  root_certificate_installation_enabled = true
+  use_zt_virtual_ip                     = false
 }
