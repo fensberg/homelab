@@ -1,0 +1,33 @@
+diff --git a/.github/workflows/mobilize/action.yml b/.github/workflows/mobilize/action.yml
+index 4b1b097..e062efe 100644
+--- a/.github/workflows/mobilize/action.yml
++++ b/.github/workflows/mobilize/action.yml
+@@ -66,7 +66,7 @@ runs:
+   using: composite
+   steps:
+     - name: Harden the runner
+-      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
++      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+       with:
+         egress-policy: ${{ inputs.egress-policy }}
+         allowed-endpoints: ${{ inputs.allowed-endpoints }}
+@@ -102,6 +102,19 @@ runs:
+       shell: bash
+       run: |
+         if sudo -n true 2>/dev/null; then
++          # Why, before stopping. The agent says of itself that it could not
++          # take the port its resolver listens on, because something on the
++          # runner already had it (#725), and does not say what. Sudo still
++          # works here, which is the fault, and is what lets this look.
++          # Process names and the agent's own log: nothing of the estate's.
++          echo "::group::What holds the port the agent's resolver listens on"
++          sudo ss -H -lunp 'sport = :53' || true
++          sudo ss -H -ltnp 'sport = :53' || true
++          echo "::endgroup::"
++          echo "::group::The agent's own account of itself"
++          sudo systemctl status agent --no-pager 2>&1 | head -20 || true
++          sudo journalctl -u agent --no-pager -n 40 2>&1 || true
++          echo "::endgroup::"
+           echo "::error::sudo still works on this runner after it was to be removed, so what hardens the runner did not start here: nothing blocks what this job reaches, and a later step could switch enforcement off. Run the job again; it gets another runner."
+           exit 1
+         fi
