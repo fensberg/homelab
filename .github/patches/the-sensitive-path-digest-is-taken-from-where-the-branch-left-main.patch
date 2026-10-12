@@ -1,0 +1,29 @@
+diff --git a/.github/workflows/sensitive-paths.yml b/.github/workflows/sensitive-paths.yml
+index 7d8d2c7..07eeb4b 100644
+--- a/.github/workflows/sensitive-paths.yml
++++ b/.github/workflows/sensitive-paths.yml
+@@ -125,7 +125,10 @@ jobs:
+           BASE: ${{ github.event.pull_request.base.sha }}
+           HEAD: ${{ github.event.pull_request.head.sha }}
+         run: |
+-          git diff --name-only "$BASE" "$HEAD" \
++          # From where the branch left main, and not from main's tip: three
++          # dots. Two counted everything main gained since as the pull
++          # request's own (#693).
++          git diff --name-only "$BASE...$HEAD" \
+             | .github/scripts/sensitive-paths.sh >>"$GITHUB_OUTPUT"
+ 
+       # The digest is what binds an acknowledgement to content rather than to a
+@@ -141,7 +144,11 @@ jobs:
+           FILES: ${{ steps.sensor.outputs.files }}
+         run: |
+           mapfile -t paths <<<"$FILES"
+-          d=$(git diff "$BASE" "$HEAD" -- "${paths[@]}" | sha256sum | cut -c1-12)
++          # Three dots, for the reason the listing above has them: an
++          # acknowledgement is bound to what the pull request changed in
++          # these files, and a merge to main it has nothing to do with must
++          # not undo it (#693).
++          d=$(git diff "$BASE...$HEAD" -- "${paths[@]}" | sha256sum | cut -c1-12)
+           echo "digest=$d" >>"$GITHUB_OUTPUT"
+           echo "anchor=${paths[0]}" >>"$GITHUB_OUTPUT"
+ 
