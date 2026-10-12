@@ -38,11 +38,3 @@ output "served" {
   description = "The rule that answers for the names this site serves, by the address they are reached at."
   value       = cloudflare_zero_trust_gateway_policy.served
 }
-
-output "tunnel_serves" {
-  description = "What the tunnel does with a request that arrives by a public name: one rule for each, and the last for everything else."
-  value = [
-    for rule in cloudflare_zero_trust_tunnel_cloudflared_config.this.config.ingress :
-    { for k, v in rule : k => v if v != null && k != "origin_request" }
-  ]
-}
