@@ -31,9 +31,10 @@ import (
 // variable that was renamed or removed, which reads as coverage that is not
 // there.
 //
-// This does NOT check that the secret really carries the variable. That is
-// OpenTofu's side and a different tier's question; this one is about the two
-// files in git agreeing.
+// This does NOT check that a layer is given the variable it names. Stand-ins
+// are one list for every layer, so a variable used in a layer whose secrets
+// do not carry it has a stand-in and passes here. That is held by
+// TestEveryLayerIsGivenEachVariableItNames, beside this file.
 //
 // Two exclusions, both about what Flux never touches. `clusters/bootstrap` is
 // applied by OpenTofu with kubectl rather than reconciled, and the Cilium

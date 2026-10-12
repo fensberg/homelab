@@ -329,13 +329,18 @@ spec:
       # machines can route to - IS the authentication, and that has to be
       # true before it is reachable rather than after.
       grafana.ini:
-        # What Grafana is called from outside, so that a link it writes is
-        # one a person can follow. It serves plainly: the front door holds
-        # its certificate and is what a device speaks to
-        # (traefik.yaml, and configs/grafana.yaml for the route).
-        server:
-          domain: ${NAME_GRAFANA}
-          root_url: https://${NAME_GRAFANA}/
+        # It serves plainly: the front door holds its certificate and is
+        # what a device speaks to (traefik.yaml, and configs/grafana.yaml
+        # for the route).
+        #
+        # NOT TOLD ITS OWN NAME, and that is a known lack. A link Grafana
+        # writes out whole, such as one in a message it sends, says
+        # localhost. Telling it means the name a site serves it by, which
+        # this layer is not given: Flux substitutes into the controllers
+        # from the monitoring and storage secrets, and a site's names are
+        # in the one the layer after this reads. Naming a variable here
+        # that the layer is not given stops the whole layer from applying,
+        # which is what it did on 2026-10-12.
         auth:
           disable_login_form: true
         # And basic auth off with it. The chart ships an admin secret holding a
