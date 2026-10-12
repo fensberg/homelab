@@ -135,6 +135,10 @@ locals {
   # that check to pass on a value nobody attested.
   tunnel = local.config.tunnel
 
+  # --- certificates --------------------------------------------------------
+  # Required for the tunnel's reason, and held to the same attestation.
+  certificates = local.config.certificates
+
   # --- alerting ------------------------------------------------------------
   #
   # Where the estate speaks when something it monitors goes wrong. Fleet-level

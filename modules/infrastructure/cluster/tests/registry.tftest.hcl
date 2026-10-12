@@ -90,6 +90,20 @@ run "tunnel_vendor_mismatch_fails_its_precondition" {
   expect_failures = [terraform_data.invariants]
 }
 
+run "certificates_vendor_mismatch_fails_its_precondition" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/certificates-vendor-mismatch.json"
+  }
+
+  plan_options {
+    target = [terraform_data.invariants]
+  }
+
+  expect_failures = [terraform_data.invariants]
+}
+
 run "missing_vault_provider_fails_its_precondition" {
   command = plan
 

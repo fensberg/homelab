@@ -54,6 +54,14 @@
       "because": "The tunnel token decides who may enroll and what they reach; another vendor's credentials must not arrive under its name."
     },
     {
+      "name": "certificates_vendor_mismatch_fails_its_precondition",
+      "fixture": "certificates-vendor-mismatch.json",
+      "site": "site0",
+      "valid": false,
+      "go_error_contains": "certificates.vault_provider",
+      "because": "The credential that gets a site its certificates can change every record under the estate's domain; another vendor's must not arrive under its name."
+    },
+    {
       "name": "missing_vault_provider_fails_its_precondition",
       "fixture": "missing-vault-provider.json",
       "site": "site0",

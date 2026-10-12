@@ -37,7 +37,7 @@ func TestEstateRangesAreEachSitesOwn(t *testing.T) {
 // The nodes' vnet is the plan's, and reaches the resolved network the Render
 // phase writes for the playbook.
 func TestTheNodesVNetIsThePlans(t *testing.T) {
-	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": validSite()}}
+	cfg := &Config{Tunnel: validTunnel(), Certificates: validCertificates(), Sites: map[string]Site{"site0": validSite()}}
 	net, err := ResolveSiteNetwork(cfg, "site0")
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestTheNodesVNetIsThePlans(t *testing.T) {
 // counted as somebody else's would be taken off the site twice.
 func TestEveryPlannedMachineHasAHypervisorAndASizeAndTheSitesIdsAreKnown(t *testing.T) {
 	site := validSite()
-	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Certificates: validCertificates(), Sites: map[string]Site{"site0": site}}
 	net, err := ResolveSiteNetwork(cfg, "site0")
 	if err != nil {
 		t.Fatal(err)

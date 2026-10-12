@@ -97,6 +97,8 @@ type (
 	Config  = config.Config
 	Site_   = config.Site
 	Tunnel_ = config.Tunnel
+	// Certificates_ is what a site gets its certificates with.
+	Certificates_ = config.Certificates
 )
 
 // RenderedConfigPath is where the Render phase writes, overridable for a test
@@ -195,6 +197,13 @@ func Alerting(t *testing.T) config.Alerting {
 func Tunnel(t *testing.T) Tunnel_ {
 	t.Helper()
 	return LoadConfig(t).Tunnel
+}
+
+// Certificates is the fleet-level certificates block: the vendor of the
+// domain's records and the credential the estate granted for them.
+func Certificates(t *testing.T) Certificates_ {
+	t.Helper()
+	return LoadConfig(t).Certificates
 }
 
 func SiteConfig(t *testing.T) Site_ {

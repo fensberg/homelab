@@ -95,5 +95,10 @@
     "provider": "cloudflare",
     "vault_provider": "cloudflare",
     "token": "fixture-run-token"
+  },
+  "certificates": {
+    "provider": "cloudflare",
+    "vault_provider": "cloudflare",
+    "dns_token": "fixture-dns-token"
   }
 }

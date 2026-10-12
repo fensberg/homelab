@@ -27,6 +27,12 @@
     "token": "{{ op://site0-shared/tunnel/token }}"
   },
 
+  "certificates": {
+    "provider": "cloudflare",
+    "vault_provider": "{{ op://site0-shared/certificates/provider }}",
+    "dns_token": "{{ op://site0-shared/certificates/dns_token }}"
+  },
+
   "alerting": {
     "provider": "slack",
     "webhook_url": "{{ op://estate-shared/alerting/webhook_url }}"
