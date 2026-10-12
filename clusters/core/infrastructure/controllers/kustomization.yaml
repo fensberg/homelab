@@ -21,4 +21,7 @@ resources:
   # Needs its namespace and the credential for the domain's records from
   # modules/infrastructure/platform/certificates.tf.
   - cert-manager.yaml
+  # The definitions a Gateway and a route are written in, ahead of the proxy
+  # that reads them.
+  - gateway-api.yaml
   - traefik.yaml

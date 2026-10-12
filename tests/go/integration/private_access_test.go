@@ -42,8 +42,6 @@ func condition(t *testing.T, namespace, kind, name, of string) string {
 
 // The definitions a Gateway and a route are written in are the cluster's,
 // and the site's own Gateway is one the front door has taken up.
-//
-// covers: integration:gateway-api
 func TestTheSitesGatewayIsTakenUpByTheFrontDoor(t *testing.T) {
 	assert.Equal(t, "True", condition(t, privateAccessNamespace, "gateways.gateway.networking.k8s.io", "private-access", "Accepted"),
 		"the site's Gateway is not accepted, so nothing reads the listeners on it and no name is served")

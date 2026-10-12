@@ -152,6 +152,8 @@ tools:
 # its own to silence.
 judges_nothing:
   CILIUM_VERSION: the CNI's own manifests are rendered from it
+  GATEWAY_API_VERSION: the version the rendered Gateway API definitions say they are
+  TRAEFIK_CRDS_VERSION: the Gateway API's definitions are rendered from it
   CLERK_MODEL_VERSION: a model the clerk asks; it can stop nothing
   CLERK_SWEEP_MODEL_VERSION: a model the clerk asks; it can stop nothing
   INSPECTOR_MODEL_VERSION: a model the inspector asks to explain; the gate does not call it

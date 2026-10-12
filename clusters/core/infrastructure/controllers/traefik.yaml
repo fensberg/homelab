@@ -18,6 +18,8 @@
 # say who may use the door. Nothing of this proxy is written in an
 # application, and its own ways of being told - its custom objects, and the
 # older Ingress - are switched off so that there is one.
+# The definitions a Gateway and a route are written in are beside this file
+# (gateway-api.yaml), rendered from this proxy's publisher's own chart.
 #
 # IT GETS NO CERTIFICATES. It can, and is not let to: that is cert-manager's
 # (cert-manager.yaml). Nothing below names a way of getting one and it is
@@ -38,43 +40,6 @@ spec:
   interval: 24h
   url: https://traefik.github.io/charts
 ---
-# The Gateway API's definitions, from the proxy's own publisher so that the
-# proxy and what it reads move together. Its own custom definitions are not
-# taken: nothing here is written in them.
-apiVersion: helm.toolkit.fluxcd.io/v2
-kind: HelmRelease
-metadata:
-  name: gateway-api
-  namespace: traefik
-spec:
-  interval: 30m
-  chart:
-    spec:
-      chart: traefik-crds
-      # renovate: datasource=helm depName=traefik-crds registryUrl=https://traefik.github.io/charts
-      version: "1.18.0"
-      sourceRef:
-        kind: HelmRepository
-        name: traefik
-        namespace: flux-system
-      interval: 12h
-  install:
-    crds: Create
-    strategy:
-      name: RetryOnFailure
-      retryInterval: 5m
-  upgrade:
-    crds: CreateReplace
-    strategy:
-      name: RetryOnFailure
-      retryInterval: 5m
-  values:
-    traefik: false
-    gatewayAPI: true
-    # Kept when the release is removed: taking a definition away takes every
-    # object written in it away with it.
-    deleteOnUninstall: false
----
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -82,8 +47,6 @@ metadata:
   namespace: traefik
 spec:
   interval: 30m
-  dependsOn:
-    - name: gateway-api
   chart:
     spec:
       chart: traefik
