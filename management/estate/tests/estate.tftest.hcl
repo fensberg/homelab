@@ -364,3 +364,14 @@ run "a_route_is_shown_under_the_sites_own_name" {
     error_message = "a name's route is not shown under the site's own name"
   }
 }
+
+# A private name has an address only while the vendor is set to carry what a
+# device sends to one.
+run "the_vendor_is_set_to_carry_what_a_device_sends_to_a_private_name" {
+  command = plan
+
+  assert {
+    condition     = cloudflare_zero_trust_device_settings.estate.gateway_proxy_enabled && cloudflare_zero_trust_device_settings.estate.gateway_udp_proxy_enabled
+    error_message = "the vendor is not set to carry an enrolled device's traffic to a private name, so a name would be known and have no address"
+  }
+}
