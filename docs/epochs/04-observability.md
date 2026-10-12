@@ -1526,6 +1526,16 @@ each job, and no job done twice.
 | Web routing           | Take a hostname to the application, and hold HTTPS | Traefik           |
 | Certificates          | Get one for each name, and renew it                | cert-manager      |
 
+That is the way in for a person's device, and it is one of two ways into
+an estate. The other carries no person and no application: the overlay
+(Tailscale), by which the machines themselves are reached - a converge
+reaching the hypervisor, Prometheus reading the host. The operator's rule
+for it: "Nothing touches it besides actual workers doing work." A device
+is never on it and an application is never served over it, so it is in no
+row above and no row above is its job. Whether the vendor of the first
+way could also carry site to site, and the overlay go, is weighed in
+[09](09-access.md).
+
 Three of these can do a neighbour's job, and none is let to. **Chose** a
 guard for each, with a refusal underneath it where there is one: Cilium's
 own routing of web traffic stays switched off; Traefik is given no
