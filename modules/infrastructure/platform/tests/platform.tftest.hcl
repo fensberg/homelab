@@ -181,3 +181,23 @@ run "the_sites_alerting_is_given_where_to_ring_and_what_with" {
     error_message = "the Secret Alertmanager mounts does not carry the site's own address at the watchman and the secret it rings with"
   }
 }
+
+# What a person types is handed to Flux beside the address it is reached at:
+# each name for its certificate and its route, and every name at one address
+# together for the tunnel's connector.
+run "each_name_served_is_handed_to_flux_with_every_name_at_its_address" {
+  command = plan
+
+  variables {
+    core_routes_path = "../applications/tests/fixtures/core/named.json"
+  }
+
+  assert {
+    condition     = kubernetes_secret.cluster_vars.data.NAME_GATE == "gate.site0.${local.config.organization.domain}" && kubernetes_secret.cluster_vars.data.NAME_PORCH == "porch.site0.${local.config.organization.domain}"
+    error_message = "a name a site serves is not handed to Flux as the hostname it is served by"
+  }
+  assert {
+    condition     = kubernetes_secret.cluster_vars.data.NAMES_AT_THE_YARD == "gate.site0.${local.config.organization.domain}" && kubernetes_secret.cluster_vars.data.NAMES_AT_FRONT_DOOR == "porch.site0.${local.config.organization.domain}"
+    error_message = "the names reached at one address are not handed to Flux together, by that address"
+  }
+}

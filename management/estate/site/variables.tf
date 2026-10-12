@@ -37,3 +37,27 @@ variable "r2_bucket_read" {
   type        = string
   description = "The id of Cloudflare's permission group for listing and reading objects in one bucket, and changing none."
 }
+
+variable "served" {
+  type = map(object({
+    hostname = string
+    at       = string
+    address  = string
+  }))
+  description = "What this site serves by name: the name a person types, and the address it is reached at."
+}
+
+variable "zone" {
+  type        = string
+  description = "The vendor's id for the estate's domain, which a site's certificates are proved under."
+}
+
+variable "zone_read" {
+  type        = string
+  description = "The id of the vendor's permission group for reading a domain."
+}
+
+variable "dns_write" {
+  type        = string
+  description = "The id of the vendor's permission group for changing a domain's records."
+}

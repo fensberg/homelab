@@ -47,13 +47,22 @@ locals {
   # grants a plot to. A site's key is positional and in git; its name is a
   # vault value, owned by the estate because the estate names what it grants.
   organization = local.config.organization.name
-  sites        = local.config.plots
+  # The estate's own domain, which every name a person types is under. The
+  # estate's, and in the vault every site reads, because it is the same fact
+  # for all of them.
+  domain = local.config.organization.domain
+  sites  = local.config.plots
 
   # Each site's routes as addresses, by the site key the estate grants a plot
   # to. A plot the sites' template does not declare has none, and the grants
   # output refuses it rather than leaving its tunnel routing nothing.
   site_routes = {
     for k in keys(local.sites) : k => try(module.address_plan.sites[k].fixed_addresses, {})
+  }
+  # And what each serves by name: the name a person types and the address it
+  # is reached at.
+  site_served = {
+    for k in keys(local.sites) : k => try(module.address_plan.sites[k].served, {})
   }
   unplanned_plots = [for k in keys(local.sites) : k if !contains(keys(module.address_plan.sites), k)]
 }
@@ -63,7 +72,10 @@ locals {
 module "address_plan" {
   source          = "../../modules/infrastructure/address-plan"
   sites           = jsondecode(file(var.sites_path)).sites
+  domain          = local.domain
+  aliases         = try(jsondecode(file(var.sites_path)).organization.aliases, {})
   fixed_addresses = module.applications.routes
+  served          = module.applications.served
 }
 
 # What each application declares about itself. The routes are a host number

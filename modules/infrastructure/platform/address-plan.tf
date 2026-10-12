@@ -11,6 +11,7 @@ module "address_plan" {
   domain          = local.config.organization.domain
   aliases         = local.config.organization.aliases
   fixed_addresses = module.applications.routes
+  served          = module.applications.served
 }
 
 # What each application declares about itself, read from the applications

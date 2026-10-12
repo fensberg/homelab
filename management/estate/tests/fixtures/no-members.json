@@ -1,6 +1,7 @@
 {
   "organization": {
-    "name": "Example"
+    "name": "Example",
+    "domain": "example.org"
   },
   "access": {
     "provider": "cloudflare",

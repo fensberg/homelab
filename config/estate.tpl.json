@@ -1,6 +1,7 @@
 {
   "organization": {
-    "name": "{{ op://estate-shared/organization/name }}"
+    "name": "{{ op://estate-shared/organization/name }}",
+    "domain": "{{ op://estate-shared/organization/domain }}"
   },
 
   "access": {

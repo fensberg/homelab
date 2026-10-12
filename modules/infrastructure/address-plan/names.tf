@@ -12,6 +12,7 @@ locals {
       { for k, m in local.control_planes[key] : "cp-${k}.${key}.${var.domain}" => m.ip },
       { for k, m in local.workers[key] : "wk-${k}.${key}.${var.domain}" => m.ip },
       { for k, m in local.dmz[key] : "${k}.${key}.${var.domain}" => m.ip },
+      { for name, at in var.served : "${name}.${key}.${var.domain}" => cidrhost(local.ranges[key].service_cidr, var.fixed_addresses[at]) },
       length(local.hypervisors[key]) > 0 ? { "proxmox.${key}.${var.domain}" = var.sites[key].hypervisor.nodes[local.hypervisors[key][0]].ip } : {},
     )
   ]...)
@@ -23,6 +24,20 @@ locals {
     for alias, site in var.aliases : "${alias}.${var.domain}" => local.records["${alias}.${site}.${var.domain}"]
     if contains(keys(local.records), "${alias}.${site}.${var.domain}")
   }
+  # What each site serves by name: the name a person types, the fixed address
+  # it is reached at, and that address. The name is the short one where an
+  # alias points it at this site, since an alias is declared to be what
+  # people use, and the one with the site in it otherwise.
+  served = {
+    for key in keys(var.sites) : key => var.domain == "" ? {} : {
+      for name, at in var.served : name => {
+        hostname = try(var.aliases[name], "") == key ? "${name}.${var.domain}" : "${name}.${key}.${var.domain}"
+        at       = at
+        address  = cidrhost(local.ranges[key].service_cidr, var.fixed_addresses[at])
+      }
+    }
+  }
+
   unresolved_aliases = var.domain == "" ? [] : sort([
     for alias, site in var.aliases : "${alias} -> ${site}"
     if !contains(keys(local.records), "${alias}.${site}.${var.domain}")

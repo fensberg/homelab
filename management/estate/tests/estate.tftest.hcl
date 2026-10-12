@@ -281,3 +281,65 @@ run "an_accounts_name_written_as_an_address_is_refused" {
 
   expect_failures = [output.grants]
 }
+
+# What a person types reaches a site through that site's tunnel and has a
+# route there by its name, at each site that serves it. Against names
+# written for the test: two, at one address the core declares.
+run "each_name_a_site_serves_is_a_route_through_its_own_tunnel" {
+  command = plan
+
+  variables {
+    config_path       = "./tests/fixtures/two-plots.json"
+    applications_path = "../../modules/infrastructure/applications/tests/fixtures/declared"
+    core_routes_path  = "../../modules/infrastructure/applications/tests/fixtures/core/named.json"
+  }
+
+  assert {
+    condition = jsonencode({ for site, m in module.site : site => sort([for route in m.served : route.hostname]) }) == jsonencode({
+      site0 = ["gate.site0.example.org", "porch.site0.example.org"]
+      site1 = ["gate.site1.example.org", "porch.site1.example.org"]
+    })
+    error_message = "a site does not have a route for each name it serves, under the estate's domain and with the site in it"
+  }
+  assert {
+    condition     = length(setsubtract(var.resolved_through, [for t in cloudflare_zero_trust_device_default_profile.estate.include : t.address])) == 0
+    error_message = "a device is not sent where the vendor answers a private name from, so a name would resolve and lead nowhere"
+  }
+}
+
+# A site that serves something by name is granted what its certificates are
+# got with: one credential, for the estate's domain and nothing else of the
+# account.
+run "a_site_that_serves_a_name_is_granted_a_credential_for_the_domain" {
+  command = plan
+
+  variables {
+    applications_path = "../../modules/infrastructure/applications/tests/fixtures/declared"
+    core_routes_path  = "../../modules/infrastructure/applications/tests/fixtures/core/named.json"
+  }
+
+  assert {
+    condition     = length(module.site["site0"].served) == 2 && nonsensitive(output.grants["site0"].certificates.provider) == "cloudflare"
+    error_message = "a site that serves a name is not granted what gets it a certificate"
+  }
+}
+
+# And one that serves nothing by name is granted none, has no such route,
+# and sends a device nowhere it did not before.
+run "a_site_that_serves_no_name_is_granted_no_credential_for_the_domain" {
+  command = plan
+
+  variables {
+    applications_path = "../../modules/infrastructure/applications/tests/fixtures/declared"
+    core_routes_path  = "../../modules/infrastructure/applications/tests/fixtures/core/one.json"
+  }
+
+  assert {
+    condition     = !contains(keys(nonsensitive(output.grants["site0"])), "certificates") && length(module.site["site0"].served) == 0
+    error_message = "a site that serves nothing by name was granted a credential for the domain, or a route for a name"
+  }
+  assert {
+    condition     = length(setintersection(var.resolved_through, [for t in cloudflare_zero_trust_device_default_profile.estate.include : t.address])) == 0
+    error_message = "a device is sent to where private names are answered from when no site serves one"
+  }
+}

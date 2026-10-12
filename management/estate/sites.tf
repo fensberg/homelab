@@ -37,6 +37,10 @@ module "site" {
   site            = each.key
   name            = each.value.name
   tunnel_routes   = local.site_routes[each.key]
+  served          = local.site_served[each.key]
+  zone            = data.cloudflare_zone.estate.zone_id
+  zone_read       = one(data.cloudflare_account_api_token_permission_groups_list.zone_read.result).id
+  dns_write       = one(data.cloudflare_account_api_token_permission_groups_list.dns_write.result).id
   r2_bucket_write = one(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_write.result).id
   r2_bucket_read  = one(data.cloudflare_account_api_token_permission_groups_list.r2_bucket_read.result).id
 }
