@@ -149,7 +149,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "kube_pod_status_phase{phase=~\"Pending|Failed|Unknown\"} == 1",
+          "expr": "kube_pod_status_phase{phase=~\"Pending|Failed|Unknown\"} > 0",
           "format": "table",
           "instant": true
         }
@@ -203,7 +203,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "kube_pod_container_status_waiting_reason == 1",
+          "expr": "kube_pod_container_status_waiting_reason > 0",
           "format": "table",
           "instant": true
         }
@@ -408,7 +408,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "certmanager_certificate_ready_status{condition!=\"True\"} == 1",
+          "expr": "certmanager_certificate_ready_status{condition!=\"True\"} > 0",
           "format": "table",
           "instant": true
         }
