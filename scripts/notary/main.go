@@ -44,7 +44,8 @@ lawyer has granted each site its names.
 `
 
 func main() {
-	if status := run(os.Args[1:]); status != 0 {
+	status := run(os.Args[1:])
+	if status != 0 {
 		os.Exit(status)
 	}
 }
