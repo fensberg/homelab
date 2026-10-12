@@ -36,23 +36,6 @@ provider "cloudflare" {
   api_token = local.served.api_token
 }
 
-# Looked up by its name: the zone's id is the vendor's, and the name is what
-# the vault holds. A domain the operator's token cannot see fails here.
-data "cloudflare_zone" "served" {
-  provider = cloudflare.operator
-
-  filter = {
-    name = local.served.domain
-  }
-}
-
-# The name of each thing a device reaches, resolving to its own address. One
-# record for each route of each site, so a name exists exactly where a route
-# does and goes when the route does.
-#
-# Not proxied: the address is private, and what answers on it is reached
-# through the tunnel by an enrolled device and by nothing at the vendor's
-# edge.
 locals {
   served_names = {
     for k in keys(local.sites) : k => { for route, address in local.site_routes[k] : route => "${route}.${local.served_under[k]}" }
@@ -64,15 +47,11 @@ locals {
   ]...)
 }
 
-resource "cloudflare_dns_record" "served" {
-  provider = cloudflare.operator
-  for_each = local.served_records
+# The records themselves, made in the operator's account and nowhere else.
+module "served" {
+  source    = "./served"
+  providers = { cloudflare = cloudflare.operator }
 
-  zone_id = data.cloudflare_zone.served.zone_id
-  name    = each.value.name
-  type    = "A"
-  content = each.value.address
-  ttl     = 300
-  proxied = false
-  comment = "what an enrolled device reaches ${each.value.route} by"
+  domain  = local.served.domain
+  records = local.served_records
 }

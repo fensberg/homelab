@@ -298,7 +298,7 @@ run "one_site_serves_under_the_domain_alone" {
   }
 
   assert {
-    condition = { for at, record in cloudflare_dns_record.served : at => "${record.name} ${record.type} ${record.content} ${record.proxied}" } == {
+    condition = { for at, record in module.served.records : at => "${record.name} ${record.type} ${record.content} ${record.proxied}" } == {
       "site0/back-door"  = "back-door.served.example A 10.196.40.9 false"
       "site0/front-door" = "front-door.served.example A 10.196.40.7 false"
       "site0/side-door"  = "side-door.served.example A 10.196.40.8 false"
@@ -324,12 +324,12 @@ run "more_than_one_site_serves_under_a_label_of_its_own" {
   }
 
   assert {
-    condition     = length(distinct([for record in cloudflare_dns_record.served : record.name])) == 8
+    condition     = length(distinct([for record in module.served.records : record.name])) == 8
     error_message = "two sites share a name, so one certificate would be for both"
   }
   assert {
     condition = alltrue([
-      for at, record in cloudflare_dns_record.served : record.name == "${split("/", at)[1]}.${local.site_label[split("/", at)[0]]}.served.example"
+      for at, record in module.served.records : record.name == "${split("/", at)[1]}.${local.site_label[split("/", at)[0]]}.served.example"
     ])
     error_message = "with more than one site, a route's name is the route, the site's label and the domain"
   }
