@@ -1,7 +1,7 @@
 guard: TestEveryAlertSaysWhatToTryFirst
 file: clusters/core/infrastructure/configs/host-metrics.yaml
 find: "            first_step: >-\n              Check that the fans turn and the vents are clear.\n"
-replace: ""
+replace: "            first_step: \"\"\n"
 mentions: "does not say the first thing to try"
 why: >
   An alert is written by somebody who knows what it means, at a desk, and
