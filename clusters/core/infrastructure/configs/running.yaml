@@ -35,6 +35,9 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Run `kubectl -n flux-system get kustomization {{ $labels.name
+              }}` and read its message, which says what was refused.
             summary: Flux has not been able to apply the layer {{ $labels.name }}.
             description: >-
               The layer {{ $labels.name }} has not been ready for ten minutes,
@@ -53,6 +56,10 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Run `kubectl -n {{ $labels.exported_namespace }} get helmrelease
+              {{ $labels.name }}` and read its message, which says what was
+              refused.
             summary: The release {{ $labels.name }} in {{ $labels.exported_namespace }} is not installed.
             description: >-
               Flux has not been able to install or upgrade the release
@@ -71,6 +78,10 @@ spec:
           labels:
             severity: critical
           annotations:
+            first_step: >-
+              Run `kubectl -n {{ $labels.exported_namespace }} describe
+              certificate {{ $labels.name }}` and read why the last request
+              for it failed.
             summary: The certificate {{ $labels.name }} runs out within a day and has not been renewed.
             description: >-
               The certificate {{ $labels.name }} in
@@ -91,6 +102,10 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Run `kubectl -n {{ $labels.exported_namespace }} describe
+              certificate {{ $labels.name }}` and read why the last request
+              for it failed.
             summary: The certificate {{ $labels.name }} has not been issued.
             description: >-
               cert-manager has not been able to issue or renew the

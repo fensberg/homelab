@@ -261,6 +261,9 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Open the workflow's latest scheduled run on GitHub and read
+              which step failed.
             summary: "{{ $labels.workflow }} is failing on its schedule."
             description: >-
               The latest scheduled run of {{ $labels.workflow }} failed, and
@@ -305,6 +308,9 @@ spec:
             severity: warning
             asked_for: hourly
           annotations:
+            first_step: >-
+              Open the workflow's page on GitHub. Enable it if it is disabled;
+              otherwise start a run by hand.
             summary: "{{ $labels.instance }} has not run on its schedule for twelve hours."
             description: >-
               {{ $labels.instance }} is asked for every hour and no scheduled
@@ -322,6 +328,10 @@ spec:
             severity: warning
             asked_for: daily
           annotations:
+            first_step: >-
+              Open the workflow's page on GitHub. Enable it if it is disabled;
+              if it waits for a runner, look at the estate's runner; otherwise
+              start a run by hand.
             summary: "{{ $labels.instance }} has not run on its schedule for thirty hours."
             description: >-
               {{ $labels.instance }} is asked for every day and no scheduled
@@ -339,6 +349,9 @@ spec:
             severity: warning
             asked_for: weekly
           annotations:
+            first_step: >-
+              Open the workflow's page on GitHub. Enable it if it is disabled;
+              otherwise start a run by hand.
             summary: "{{ $labels.instance }} has not run on its schedule for nine days."
             description: >-
               {{ $labels.instance }} is asked for every week and no scheduled
@@ -354,6 +367,9 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Check that the site can reach api.github.com, and whether
+              something else at the site is using the hour's allowance.
             summary: "Nobody can say whether {{ $labels.instance }} is failing on its schedule."
             description: >-
               GitHub has not answered for {{ $labels.instance }}'s latest
