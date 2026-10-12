@@ -89,11 +89,6 @@ type workloadPod struct {
 	// placement fields: the path from spec.values to the mapping that holds
 	// it. Nil means beside them, which is where most charts read it.
 	PriorityAt []string
-	// NoPod is why a release makes no pod at all, for one that only carries
-	// definitions. Nothing else about it is asserted, because there is no
-	// pod to size, place or harden; what is held is that the release is
-	// there and that somebody said this of it.
-	NoPod string
 
 	// Where this workload's security properties are declared. Charts disagree
 	// about both the path and the key names - one chart's container-level key
@@ -343,13 +338,6 @@ var workloadPods = []workloadPod{
 		PodSecurityKey:       "podSecurityContext",
 		ContainerSecurityKey: "securityContext",
 	},
-	{
-		What:         "the Gateway API's definitions",
-		Release:      "gateway-api",
-		ChartVersion: "1.18.0",
-		NoPod: "traefik-crds carries custom resource definitions and nothing that runs: " +
-			"its templates are the definitions themselves and it has no workload of any kind",
-	},
 }
 
 // helmRelease is the part of a HelmRelease this file has an opinion about.
@@ -453,10 +441,6 @@ configured and is not. So a version bump is exactly when they need re-checking.
 Read the new chart's values.yaml and the template that consumes each key,
 correct the paths if they moved, and set ChartVersion to %s.`,
 					w.file(t), got, w.What, w.ChartVersion, got)
-			}
-
-			if w.NoPod != "" {
-				return
 			}
 
 			podSpec, err := descend(hr.Spec.Values, w.Values)
@@ -808,9 +792,6 @@ func sortedKeys[V any](m map[string]V) []string {
 func TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem(t *testing.T) {
 	for _, w := range workloadPods {
 		t.Run(w.What, func(t *testing.T) {
-			if w.NoPod != "" {
-				return
-			}
 			if w.PodSecurityKey == "" && w.ContainerSecurityKey == "" {
 				if strings.TrimSpace(w.Unasserted) == "" {
 					t.Fatalf(`%s asserts no security properties and says why nowhere.

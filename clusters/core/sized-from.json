@@ -79,12 +79,6 @@
         "kind": "estimate",
         "basis": "A single proxy with one route behind it, chosen when it was added on 2026-10-12. Not yet looked at on a running site, and not under load."
       }
-    },
-    "HelmRelease/gateway-api": {
-      "*": {
-        "kind": "estimate",
-        "basis": "Reserves nothing: the release carries definitions and makes no pod. Said here because it is a release, and a release nobody sized is what this file exists to refuse."
-      }
     }
   }
 }
