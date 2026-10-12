@@ -385,4 +385,10 @@ run "the_vendor_is_set_to_carry_what_a_device_sends_to_a_private_name" {
     condition     = cloudflare_zero_trust_device_settings.estate.gateway_proxy_enabled && cloudflare_zero_trust_device_settings.estate.gateway_udp_proxy_enabled
     error_message = "the vendor is not set to carry an enrolled device's traffic to a private name, so a name would be known and have no address"
   }
+  # Every setting of the object is said. One left out is one the next plan
+  # takes away, and the vendor refuses the write.
+  assert {
+    condition     = cloudflare_zero_trust_device_settings.estate.disable_for_time == 0 && cloudflare_zero_trust_device_settings.estate.root_certificate_installation_enabled == true && cloudflare_zero_trust_device_settings.estate.use_zt_virtual_ip == false
+    error_message = "a device setting of the account's is left unsaid, so a plan would take it away and the vendor would refuse the write"
+  }
 }
