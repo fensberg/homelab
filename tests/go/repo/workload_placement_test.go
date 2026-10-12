@@ -85,6 +85,15 @@ type workloadPod struct {
 	// The priority class it belongs in, per the table in
 	// docs/epochs/02-abstraction.md.
 	Priority string
+	// PriorityAt is for a chart that takes the priority class away from the
+	// placement fields: the path from spec.values to the mapping that holds
+	// it. Nil means beside them, which is where most charts read it.
+	PriorityAt []string
+	// NoPod is why a release makes no pod at all, for one that only carries
+	// definitions. Nothing else about it is asserted, because there is no
+	// pod to size, place or harden; what is held is that the release is
+	// there and that somebody said this of it.
+	NoPod string
 
 	// Where this workload's security properties are declared. Charts disagree
 	// about both the path and the key names - one chart's container-level key
@@ -287,6 +296,60 @@ var workloadPods = []workloadPod{
 			"subchart's `localpv.securityContext` is read by no template in it, " +
 			"so the only container-level path available does nothing (#315)",
 	},
+	{
+		What:         "cert-manager",
+		Release:      "cert-manager",
+		ChartVersion: "v1.21.2",
+		// cert-manager/values.yaml: three pods from one release, the first at
+		// the root and the other two under their own keys. The priority
+		// class is one value for all three, under `global`, and is read by
+		// each deployment's template from there and nowhere else.
+		Values:               nil,
+		Priority:             "interactive",
+		PriorityAt:           []string{"global"},
+		PodSecurityKey:       "securityContext",
+		ContainerSecurityKey: "containerSecurityContext",
+	},
+	{
+		What:                 "cert-manager's webhook",
+		Release:              "cert-manager",
+		ChartVersion:         "v1.21.2",
+		Values:               []string{"webhook"},
+		Priority:             "interactive",
+		PriorityAt:           []string{"global"},
+		PodSecurityKey:       "securityContext",
+		ContainerSecurityKey: "containerSecurityContext",
+	},
+	{
+		What:                 "cert-manager's injector of authorities",
+		Release:              "cert-manager",
+		ChartVersion:         "v1.21.2",
+		Values:               []string{"cainjector"},
+		Priority:             "interactive",
+		PriorityAt:           []string{"global"},
+		PodSecurityKey:       "securityContext",
+		ContainerSecurityKey: "containerSecurityContext",
+	},
+	{
+		What:         "the front door",
+		Release:      "traefik",
+		ChartVersion: "41.7.1",
+		// traefik/values.yaml: one pod, everything at the root, read by
+		// templates/_podtemplate.tpl. The pod-level context is
+		// `podSecurityContext` and the container's is plain
+		// `securityContext`, the other way about from cert-manager above.
+		Values:               nil,
+		Priority:             "interactive",
+		PodSecurityKey:       "podSecurityContext",
+		ContainerSecurityKey: "securityContext",
+	},
+	{
+		What:         "the Gateway API's definitions",
+		Release:      "gateway-api",
+		ChartVersion: "1.18.0",
+		NoPod: "traefik-crds carries custom resource definitions and nothing that runs: " +
+			"its templates are the definitions themselves and it has no workload of any kind",
+	},
 }
 
 // helmRelease is the part of a HelmRelease this file has an opinion about.
@@ -392,6 +455,10 @@ correct the paths if they moved, and set ChartVersion to %s.`,
 					w.file(t), got, w.What, w.ChartVersion, got)
 			}
 
+			if w.NoPod != "" {
+				return
+			}
+
 			podSpec, err := descend(hr.Spec.Values, w.Values)
 			if err != nil {
 				t.Fatalf("%s: %v.\n\nThe table says the pod spec for %s lives at spec.values%s in %s. Either it moved, or it was never written there - and if it was never written there, the cluster has been running without it and nothing said so.",
@@ -399,7 +466,13 @@ correct the paths if they moved, and set ChartVersion to %s.`,
 			}
 
 			// Priority.
-			priority, _ := podSpec[capacity.PriorityClassKey].(string)
+			prioritised := podSpec
+			if w.PriorityAt != nil {
+				if prioritised, err = descend(hr.Spec.Values, w.PriorityAt); err != nil {
+					t.Fatalf("%s: %v.\n\nThe table says the priority class for %s is at spec.values%s.", w.file(t), err, w.What, pathString(w.PriorityAt))
+				}
+			}
+			priority, _ := prioritised[capacity.PriorityClassKey].(string)
 			switch {
 			case priority == "":
 				t.Errorf(`%s has no priority class.
@@ -735,6 +808,9 @@ func sortedKeys[V any](m map[string]V) []string {
 func TestEveryWorkloadRequiresItsSecurityPropertiesRatherThanInheritingThem(t *testing.T) {
 	for _, w := range workloadPods {
 		t.Run(w.What, func(t *testing.T) {
+			if w.NoPod != "" {
+				return
+			}
 			if w.PodSecurityKey == "" && w.ContainerSecurityKey == "" {
 				if strings.TrimSpace(w.Unasserted) == "" {
 					t.Fatalf(`%s asserts no security properties and says why nowhere.

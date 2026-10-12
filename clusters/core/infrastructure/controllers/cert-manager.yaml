@@ -1,0 +1,152 @@
+# Certificates: one for each name a person types, got and renewed by the site
+# itself.
+#
+# WHAT IT DOES. A Certificate object says "this name, in this Secret", and
+# cert-manager asks the issuer for it, proves the name is the estate's by a
+# record under the estate's domain, puts what comes back in the Secret, and
+# does it again before it runs out. Nobody runs anything.
+#
+# WHAT IT HOLDS. The credential that can change the records of the estate's
+# domain (the Secret `dns-token`, made with this namespace by
+# modules/infrastructure/platform/certificates.tf from what the estate
+# granted). That is every record under the domain and not only the proofs:
+# the vendor scopes one no narrower. So it is in this namespace and no other,
+# and nothing that routes or serves is given it.
+#
+# CERTIFICATES ARE THIS TOOL'S AND NO OTHER'S. The front door can get them
+# for itself and is not let to: it holds no such credential and has no way
+# out of the cluster to anything that issues one, and tests/go/repo holds its
+# settings to that. Which tool owns which layer is in
+# docs/epochs/04-observability.md.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jetstack
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://charts.jetstack.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: cert-manager
+      # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
+      version: "v1.21.2"
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+        namespace: flux-system
+      interval: 12h
+  # Retried and not remediated, for the reason every release here is
+  # (cloudnative-pg.yaml).
+  install:
+    crds: Create
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  upgrade:
+    crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  values:
+    # The definitions a Certificate and an issuer are written in, with the
+    # tool that reads them, so the two move together.
+    crds:
+      enabled: true
+      keep: true
+
+    # A check the chart runs once after an install, as a Job with no
+    # reservation of its own. Whether cert-manager works is asked of a
+    # running site nightly, where the answer is a certificate.
+    startupapicheck:
+      enabled: false
+
+    global:
+      priorityClassName: interactive
+
+    # Three small programs, one of each. A certificate is renewed days before
+    # it runs out, so one of these being away for a restart delays nothing
+    # anybody waits on.
+    #
+    # Each reservation is an estimate from the project's own guidance for a
+    # small cluster and not yet a measurement here.
+    replicaCount: 1
+    image:
+      repository: quay.io/jetstack/cert-manager-controller
+      digest: sha256:70f532fd9cfde0b09d55687200942399d89838bc2d5d5b45152eb799a15912b8
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+    # Written here, as the chart has them, and not left to the chart: what a
+    # pod may do is a thing this estate says of every pod, so that a chart
+    # changing its mind is a diff and not a surprise.
+    securityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+    affinity: &offControlPlane
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+    # Asks the vendor's own resolvers whether a proof has been published
+    # before telling the issuer to look, and not the cluster's: the cluster's
+    # resolver is asked by way of the house, which may hold an old answer.
+    dns01RecursiveNameserversOnly: true
+    dns01RecursiveNameservers: "1.1.1.1:53,1.0.0.1:53"
+
+    webhook:
+      replicaCount: 1
+      image:
+        repository: quay.io/jetstack/cert-manager-webhook
+        digest: sha256:a60e2dac46dbb8a7f3df95c54ce941012f54c2fe022f0ee55aaa1ab40ed957ae
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      affinity: *offControlPlane
+
+    cainjector:
+      replicaCount: 1
+      image:
+        repository: quay.io/jetstack/cert-manager-cainjector
+        digest: sha256:c85268c64f2e0e76684bf5fe8906caff34b82523561c6affe0fae3546bd87562
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      affinity: *offControlPlane

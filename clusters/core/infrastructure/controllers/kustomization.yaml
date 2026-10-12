@@ -18,3 +18,7 @@ resources:
   - kube-prometheus-stack.yaml
   # Needs its namespace and token from modules/infrastructure/platform/tunnel.tf.
   - cloudflared.yaml
+  # Needs its namespace and the credential for the domain's records from
+  # modules/infrastructure/platform/certificates.tf.
+  - cert-manager.yaml
+  - traefik.yaml

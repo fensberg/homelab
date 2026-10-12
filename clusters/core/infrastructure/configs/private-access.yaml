@@ -1,0 +1,118 @@
+# A site's private access: the one address everything over the web is
+# reached at, and who is served there by which name.
+#
+# Four things, in the order a request meets them.
+---
+# WHERE CERTIFICATES COME FROM. Let's Encrypt, proving each name by a record
+# under the estate's domain, with the credential the estate granted
+# (controllers/cert-manager.yaml).
+#
+# The shortest-lived kind the issuer gives, about six days. A certificate's
+# key is in a Secret in this cluster, and one taken from it is good for days
+# and for one name. cert-manager renews each long before it runs out and
+# nobody is asked to.
+#
+# No address is given for the issuer to write to. It writes to say a
+# certificate is running out, and one that renews itself is not a thing to be
+# told about by post: what watches for that is this site's own alerting.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: estate-domain
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    profile: shortlived
+    privateKeySecretRef:
+      name: estate-domain-account
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: dns-token
+              key: token
+---
+# THE ADDRESS. A Service at an address known before it exists, because the
+# estate routes an enrolled device to it through the tunnel and answers a
+# device that asks for a name with it: declared beside the core
+# (routes.json), turned into this site's own by the address plan, and handed
+# to Flux as the variable below. tests/go/repo holds the route and this
+# Service to each other, and holds its port to being HTTPS.
+#
+# A Service of its own and not the proxy's chart's, so that it is a manifest
+# those tests can read.
+apiVersion: v1
+kind: Service
+metadata:
+  name: private-access
+  namespace: traefik
+spec:
+  type: ClusterIP
+  clusterIP: ${ADDRESS_PRIVATE_ACCESS}
+  selector:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: traefik-traefik
+  ports:
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: 8443
+---
+# THE DOOR. One Gateway for the site, and a listener on it for each name: the
+# name, its certificate, and the one namespace whose routes may attach. An
+# application cannot be served by a name it was not given, because the
+# listener for a name admits its own namespace and no other.
+#
+# EVERY LISTENER BELOW IS HERE ONLY UNTIL IT CAN BE THE APPLICATION'S OWN.
+# The Gateway API lets an application add a listener to a Gateway from its
+# own directory (a ListenerSet). The proxy's support for that was merged
+# upstream on 2026-09-28 and is in no release: 3.7, which this site runs,
+# does not have it. Until a release does, a name's listener and certificate
+# are written here, outside the directory of what they are for, which this
+# estate otherwise refuses (docs/epochs/04-observability.md). When one does,
+# each listener and its Certificate move beside the route they serve and
+# this Gateway is left with none.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: private-access
+  namespace: traefik
+spec:
+  gatewayClassName: traefik
+  listeners:
+    # TO MOVE: Grafana's, to beside its route (grafana.yaml).
+    - name: grafana
+      hostname: ${NAME_GRAFANA}
+      port: 8443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: grafana-certificate
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+---
+# TO MOVE with the listener above: Grafana's certificate. In this namespace
+# because a listener reads its certificate from the Gateway's own.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana
+  namespace: traefik
+spec:
+  secretName: grafana-certificate
+  dnsNames:
+    - ${NAME_GRAFANA}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    # A new key with each renewal, so one taken is good until the next and
+    # not for as long as the name is served.
+    rotationPolicy: Always
+  issuerRef:
+    kind: ClusterIssuer
+    name: estate-domain

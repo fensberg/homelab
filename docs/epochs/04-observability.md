@@ -1538,11 +1538,23 @@ way could also carry site to site, and the overlay go, is weighed in
 
 Three of these can do a neighbour's job, and none is let to. **Chose** a
 guard for each, with a refusal underneath it where there is one: Cilium's
-own routing of web traffic stays switched off; Traefik is given no
-credential that gets a certificate and no path to anything that issues
-one; and the tunnel has no public name, so the vendor's edge ends no
-HTTPS of this estate's. The operator: "I don't want us to accidentally
+own routing of web traffic stays switched off; Traefik is told no way of
+getting a certificate and given no credential that gets one; and the
+tunnel has no public name, so the vendor's edge ends no HTTPS of this
+estate's. The operator: "I don't want us to accidentally
 break our convention."
+
+**What is not held yet, found while building it.** Traefik was also to
+have no path to anything that issues a certificate, and it has one. It
+reads its routes from the Kubernetes API, which is on the machines
+themselves, and a standard policy that names addresses does not reach a
+machine on this network: listing what Traefik may speak to would cut it
+off from the API with no rule able to let it back. The network's own kind
+of policy can say it, and this repository has none of that kind. Two more
+things of the same sort: the chart gives Traefik a read of every Secret
+in the cluster, which is wider than the certificates it serves; and
+cert-manager is under no policy at all. Each is a refusal that would sit
+under a guard, and none is what the guard rests on.
 
 **Traefik, over Cilium's own gateway.** Cilium can route web traffic and
 is already on every machine, and it was the first proposal. Checked
