@@ -3,7 +3,6 @@
     "name": "{{ op://estate-shared/organization/name }}",
     "domain": "{{ op://estate-shared/organization/domain }}",
     "aliases": {
-      "grafana": "site0",
       "proxmox": "site0"
     }
   },
