@@ -91,6 +91,9 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Find what is growing: on the host, `zfs list -o space` says
+              which dataset.
             summary: "The pool {{ $labels.pool }} will be full within a month at the rate it is filling."
             description: >-
               At the rate of the last seven days, {{ $labels.pool }} has
@@ -108,6 +111,9 @@ spec:
           labels:
             severity: critical
           annotations:
+            first_step: >-
+              On the host, run `zpool status` to name the disk. Replace it
+              before doing anything else to the site.
             summary: "The pool {{ $labels.zpool }} is {{ $labels.state }}."
             description: >-
               The host reports {{ $labels.zpool }} as {{ $labels.state }},
@@ -124,6 +130,9 @@ spec:
           labels:
             severity: critical
           annotations:
+            first_step: >-
+              Read the host's kernel log for the slot (`dmesg | grep -i edac`)
+              and replace that module.
             summary: "The host's memory has returned an error it could not correct."
             description: >-
               Something on the host was handed a wrong value from memory in
@@ -135,6 +144,9 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Read the host's kernel log for the slot (`dmesg | grep -i edac`)
+              and plan to replace that module.
             summary: "The host's memory is correcting errors."
             description: >-
               The host corrected at least one memory error in the last day.
@@ -154,6 +166,8 @@ spec:
           labels:
             severity: critical
           annotations:
+            first_step: >-
+              Check that the fans turn and the vents are clear.
             summary: "A part of the host is at the temperature its maker calls critical."
             description: >-
               The sensor {{ $labels.sensor }} on {{ $labels.chip }} reads
@@ -171,6 +185,9 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              On the host, run `chronyc tracking` or `timedatectl` to see
+              whether the time service is running and what it can reach.
             summary: "Nothing is keeping the host's clock right."
             description: >-
               The host has not been synchronised to a time source for half
@@ -183,6 +200,9 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              On the host, run `chronyc tracking` or `timedatectl` to see
+              whether the time service is running and what it can reach.
             summary: "The host's clock is more than a twentieth of a second out."
             description: >-
               The host's clock is {{ $value }} seconds from its time source
