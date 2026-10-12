@@ -336,10 +336,6 @@ spec:
         # spare. The certificate is one any browser already trusts, for the
         # name the estate gives this site's dashboards, and it is read again
         # as it is renewed, so a renewal restarts nothing.
-        #
-        # It is the operator's to issue and nobody else's
-        # (docs/epochs/11-black-box-white-glove.md). The site is handed it as
-        # a Secret and holds nothing that could get it another.
         server:
           protocol: https
           domain: ${NAME_DASHBOARDS}

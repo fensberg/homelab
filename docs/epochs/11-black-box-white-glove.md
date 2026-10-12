@@ -255,6 +255,106 @@ of their own and the estate can route an enrolled device to it. The
 Service that would answer there over plain HTTP was written and is held
 back for this.
 
+### The licence is the operator's own, and a client's domain is the client's (2026-10-12)
+
+A day of building the section above, and then of taking it apart. What
+follows turns over parts of it, each named where it does. None of it is
+built, and by the operator's decision none of it is built in epoch 04.
+
+**What was built, and set aside.** A program that asked Let's Encrypt for a
+forty-five day certificate for a site's names under the operator's domain,
+proved each by a record there, bound the domain to one account at the
+issuer, and wrote the certificate into the site's vault (closed and not
+merged, as pull request #703). It worked against stand-ins for everything
+it reached. What it showed was how much had to be held to make it work.
+
+**The operator holds nothing of a client's.** Handing a certificate over
+through a client's vault means reading and writing that vault, and naming
+what a client serves means a list of it. The operator: "Me as a business
+has no reason to ever read a client's vault or see client's data. I set up
+the structure and then hand it off - if they ever need tech support they
+let me know and can one-off share." And of the list: "Ideally I don't have
+one giant JSON of every client and all of their devices sitting in a repo.
+That sounds like a bad infosec setup." So what the operator keeps for a
+subscription is the least that renews one: a public key and the day it
+runs to. No routes, no addresses, no machines, no vault.
+
+**How a certificate reaches a box.** Five ways were set out: through the
+client's vault and a converge; through the vault and a controller that
+copies it in; published where the box already fetches its releases;
+pushed into the cluster through the tunnel; or the box asking for itself
+and the operator answering for it. **Chose** the third. The box makes its
+own key and the key never leaves it; the box is enrolled once, by its
+request for a certificate, which is not a secret; what the operator
+publishes after that is public too, and arrives the way every other
+update does. The operator: "It makes it so that the client can't bring in
+their own hardware and must go through me as well." **Over** the vault,
+which is the reading this decision refuses; **over** a push, which is a
+credential into every client's cluster; and **over** the box asking for
+itself, which needs a service of the operator's that is always up and
+stops every client's renewal when it is not.
+
+**Where the operator's side runs.** A private repository of the
+operator's: the signing key as a secret there, a step only the operator
+approves that enrols a box, and a schedule that renews. It is the place
+above every estate that was open below. A client needs no repository:
+"I'm happy to have a private repo but I don't necessarily want to force a
+client to have a repo themselves."
+
+**A client's domain is the client's, and everything they see is under
+it.** The names were first to be under the operator's domain, since
+whoever controls a domain can be issued a certificate for it. That made
+the client's own domain useless to them, and the operator turned it over:
+"A client's personal domain is important because that gives them a
+significant number of options to add into their black box. They can get
+their own mail server or website or whatever. Domain is important and
+it's the client's identity - we should brick the box on the business side
+but support everything openly on the client side." So there are two
+things, and they answer to two parties. What a client's box serves is
+under the client's domain, with certificates the box gets for itself,
+with the client's own credential, and the operator has no part in it.
+What the operator issues is the licence and nothing else.
+
+**So the licence is not a certificate anybody's browser reads.** Once
+nothing is served under the operator's domain, a publicly trusted
+certificate has nothing to do. **Chose** a certificate signed by a key of
+the operator's own: the box is built knowing the operator's public key,
+checks that it holds a certificate from it that has not run out, and
+stops itself when it does not. **Over** Let's Encrypt, because of what
+that needed and this does not: a credential for a domain's records, a
+record binding the domain to an account, an issuer's choice of how long a
+certificate lasts, and two vendors between the operator and every
+renewal. And because "only the operator can renew" is then one fact about
+one key. Its costs, said with it: the key is the most valuable thing the
+operator has, since losing it renews nobody and leaking it renews
+anybody; and the operator's domain, which would have been in every
+client's names, is in none, so changing it costs nothing.
+
+**What this turns over in the section above.** That every site's names
+are under the operator's domain; that the certificate a site serves is
+the licence; that the issuer is Let's Encrypt and the length is the
+issuer's to offer; and the proof described on a second domain. What
+stands: the renewal is the subscription, forty-five days and a shorter
+one for a trial, only the operator renews, a lapse stops an estate and
+hands back what is the client's, and the sealed box is the lock - without
+it a client who holds the machine takes the check out.
+
+**Looked at and not taken:** the vendor holding every certificate at its
+own edge, with each thing a client reaches given a name on a tunnel in
+the operator's account. It is the least to build and has no hand-off at
+all. It also lets the vendor read every client's traffic, puts a public
+name on what has no login of its own, and rests the business on one
+vendor's free plan.
+
+**And none of it belongs to the epoch it was being built in.** The
+question it began as was why the dashboards were about to be served in
+the clear. The operator, ending it: "We were trying to fit a square peg
+into a round hole when we should have just used a simple dedicated tool."
+Epoch 04 serves what a device reaches over HTTPS under the estate's own
+domain, with the tool made for that, and holds no licence and nothing of
+an operator's. This estate is then the first client in the one way that
+matters here: its names are under its own domain.
+
 ## Open
 
 Left open on purpose by the operator, 2026-10-10: "Leave those two
@@ -281,10 +381,16 @@ Raised and not yet answered:
   designed.
 - **What a client is told** when their own site is unwell, and what only the
   operator is.
-- **Where the operator's own things are kept:** the domain's credential and
-  the account certificates are issued to. A place above every estate, which
-  no estate's or site's token reads. Needed before the first real
-  certificate, and not for the proof.
+- **Where the operator's own things are kept.** _Answered 2026-10-12:_ a
+  private repository of the operator's, which holds the signing key and
+  runs the renewals. How the key is kept there, and whether a copy is kept
+  off it, is not designed.
+- **How a box is enrolled:** how its request reaches the operator at the
+  bench, and what a rebuilt box does about its key.
+- **What checks the licence,** and what it stops. It binds nobody until
+  the box is sealed.
+- **What a box needs of a client's domain** to serve under it: which
+  credential, kept where, and what a client with no domain is given.
 - **What a stopped estate still does.** Whether it can be reached at all,
   what it says to whoever opens it, and how the operator takes it up again.
 - **What happens if the operator is gone.** A sealed box nobody else can
