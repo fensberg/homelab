@@ -141,8 +141,9 @@ func TestAClaimOnTheKeptClassIsAttachedToAWorkerAndRemoved(t *testing.T) {
 
 // A claim on the class, and a pod that holds it and does nothing else. Off
 // the control planes, because the driver may attach a volume only to a
-// machine in the worker pool; and held to the restricted profile, so the
-// trial asks the cluster for nothing a real workload would not get.
+// machine in the worker pool; held to the restricted profile, so the trial
+// asks the cluster for nothing a real workload would not get; and with a
+// reservation and a priority class, which the cluster asks of every pod.
 const trialClaim = `
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -160,6 +161,10 @@ kind: Pod
 metadata:
   name: trial
 spec:
+  # The class of work that can wait and is not counted against what a site
+  # must hold: the cluster refuses a pod that names none, and a trial is the
+  # first thing to give way.
+  priorityClassName: batch
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
