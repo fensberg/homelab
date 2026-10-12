@@ -1,0 +1,237 @@
+# The front door: where everything a device reaches over the web comes in.
+#
+# WHAT IT DOES. It takes a request for a name, serves it over HTTPS with that
+# name's certificate, and hands it to the application that declared the name.
+# An application behind it serves plainly and holds no certificate; nothing
+# in front of it is served in the clear, because it listens for HTTPS and for
+# nothing else. There is no port here for plain HTTP to arrive on.
+#
+# WHERE IT IS REACHED. At the site's one address for private access, which the
+# estate routes an enrolled device to through the tunnel and names for the
+# site (clusters/core/routes.json). The Service that takes the address is
+# with the Gateway, in configs/private-access.yaml, because a Service at an
+# address something outside routes to is held to its route by a test that
+# reads manifests and not a chart's settings.
+#
+# HOW AN APPLICATION IS FOUND. By the Gateway API, the Kubernetes project's
+# own way for an application to say which name is its and for the platform to
+# say who may use the door. Nothing of this proxy is written in an
+# application, and its own ways of being told - its custom objects, and the
+# older Ingress - are switched off so that there is one.
+#
+# IT GETS NO CERTIFICATES. It can, and is not let to: that is cert-manager's
+# (cert-manager.yaml). Nothing below names a way of getting one and it is
+# given no credential for the domain, and tests/go/repo holds both. What it
+# is not yet held from is reaching an issuer, which the foot of this file
+# says plainly.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: traefik
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: traefik
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://traefik.github.io/charts
+---
+# The Gateway API's definitions, from the proxy's own publisher so that the
+# proxy and what it reads move together. Its own custom definitions are not
+# taken: nothing here is written in them.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gateway-api
+  namespace: traefik
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: traefik-crds
+      # renovate: datasource=helm depName=traefik-crds registryUrl=https://traefik.github.io/charts
+      version: "1.18.0"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+        namespace: flux-system
+      interval: 12h
+  install:
+    crds: Create
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  upgrade:
+    crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  values:
+    traefik: false
+    gatewayAPI: true
+    # Kept when the release is removed: taking a definition away takes every
+    # object written in it away with it.
+    deleteOnUninstall: false
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: traefik
+  namespace: traefik
+spec:
+  interval: 30m
+  dependsOn:
+    - name: gateway-api
+  chart:
+    spec:
+      chart: traefik
+      # renovate: datasource=helm depName=traefik registryUrl=https://traefik.github.io/charts
+      version: "41.7.1"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+        namespace: flux-system
+      interval: 12h
+  install:
+    crds: Skip
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  upgrade:
+    crds: Skip
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  values:
+    image:
+      registry: ghcr.io
+      repository: traefik/traefik
+      digest: sha256:e849695bc5c317da0cec22bfee4794fd9e15871fe554f864d31b625983e883ff
+    # The chart cannot read a version out of a digest and asks to be told.
+    versionOverride: v3.7.14
+
+    # One, for now. Everything over the web stops while it restarts, which is
+    # seconds, and a second one is a second reservation on workers that have
+    # little to spare. It keeps nothing: two of them is a number to change
+    # and not a design.
+    deployment:
+      replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 96Mi
+    priorityClassName: interactive
+    # Written here, as the chart has them, for the reason every pod's are.
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      runAsGroup: 65532
+      seccompProfile:
+        type: RuntimeDefault
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+
+    # One way of being told what to route, the Gateway API, and the class a
+    # Gateway names to be this proxy's.
+    providers:
+      kubernetesGateway:
+        enabled: true
+      kubernetesCRD:
+        enabled: false
+      kubernetesIngress:
+        enabled: false
+    gatewayClass:
+      enabled: true
+      name: traefik
+    ingressClass:
+      enabled: false
+    # The chart's own Gateway is not made. The site's is declared in git,
+    # with the listeners on it (configs/private-access.yaml).
+    gateway:
+      enabled: false
+
+    # HTTPS and nothing else. The chart's port for plain HTTP is taken away
+    # and not merely left unexposed, so there is nothing listening for it.
+    ports:
+      web: null
+      websecure:
+        expose:
+          default: false
+    # The chart's Service is not made either, for the reason at the top.
+    service:
+      enabled: false
+
+    # Its own pages, for looking at what it routes, are off: they are one more
+    # thing served, and what it routes is in git.
+    api:
+      dashboard: false
+    ingressRoute:
+      dashboard:
+        enabled: false
+
+    # No certificates of its own getting. Left as the chart has it, and said
+    # here because tests/go/repo reads this file for it: nothing to resolve
+    # one with, and no disk to keep one on.
+    certificatesResolvers: {}
+    persistence:
+      enabled: false
+
+    global:
+      checkNewVersion: false
+      sendAnonymousUsage: false
+---
+# What may speak to the front door: the tunnel's connector, on the one port
+# it serves, and Prometheus for its measurements. Nothing else in the
+# cluster reaches it, so nothing in the cluster is served by going round the
+# tunnel.
+#
+# WHAT IT MAY SPEAK TO IS NOT HELD HERE, AND THAT IS A GAP. It reads its
+# routes from the Kubernetes API, which is on the machines themselves, and
+# this cluster's network does not take a rule that names addresses as
+# reaching a machine: a policy of this kind that listed what the proxy may
+# speak to would cut it off from the API with no rule able to let it back.
+# The network's own kind of policy can say it, and there is none of that
+# kind here yet. Until there is, what stops this proxy getting a
+# certificate is that it is told no way to and given nothing to do it with,
+# which tests/go/repo holds, and not that it cannot reach an issuer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: traefik
+  namespace: traefik
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tunnel
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudflared
+      ports:
+        - protocol: TCP
+          port: 8443
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9100

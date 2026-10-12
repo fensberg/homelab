@@ -386,3 +386,22 @@ run "the_vendor_is_set_to_carry_what_a_device_sends_to_a_private_name" {
     error_message = "the vendor is not set to carry an enrolled device's traffic to a private name, so a name would be known and have no address"
   }
 }
+
+# A site's tunnel serves no public name. Its one rule refuses whatever
+# arrives by one, so the vendor's edge ends no HTTPS of the estate's and
+# holds no certificate for anything in a site: what a device reaches is
+# served by the site's own front door, with the site's own certificate
+# (docs/epochs/04-observability.md). A public name on a tunnel is a
+# decision, made here on purpose and for that name alone.
+run "a_sites_tunnel_serves_no_public_name" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/two-plots.json"
+  }
+
+  assert {
+    condition     = alltrue([for m in module.site : jsonencode(m.tunnel_serves) == jsonencode([{ service = "http_status:404" }])])
+    error_message = "a site's tunnel has a rule besides the one that refuses a public name, so the vendor's edge would end HTTPS for something of the estate's"
+  }
+}

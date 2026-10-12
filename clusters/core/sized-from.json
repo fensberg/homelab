@@ -67,6 +67,24 @@
         "kind": "estimate",
         "basis": "Little, on purpose: work that can wait is owed almost no reservation and runs in what is free. The memory ceiling is a guess at what a nightly test run needs, and has not been seen under load."
       }
+    },
+    "HelmRelease/cert-manager": {
+      "*": {
+        "kind": "estimate",
+        "basis": "The project's own guidance for a small cluster, chosen when it was added on 2026-10-12. Not yet looked at on a running site."
+      }
+    },
+    "HelmRelease/traefik": {
+      "*": {
+        "kind": "estimate",
+        "basis": "A single proxy with one route behind it, chosen when it was added on 2026-10-12. Not yet looked at on a running site, and not under load."
+      }
+    },
+    "HelmRelease/gateway-api": {
+      "*": {
+        "kind": "estimate",
+        "basis": "Reserves nothing: the release carries definitions and makes no pod. Said here because it is a release, and a release nobody sized is what this file exists to refuse."
+      }
     }
   }
 }

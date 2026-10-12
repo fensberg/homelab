@@ -5,7 +5,9 @@
 # application, both from a secret OpenTofu writes: where releases are
 # published (RELEASE_REPOSITORY, read by each release source in a site's
 # applications file), and the address of each route an application declares
-# (ADDRESS_<NAME>, set as the clusterIP of the Service of that name).
+# (ADDRESS_<NAME>, set as the clusterIP of the Service of that name), and
+# what a person types for each thing served by name (NAME_<NAME>, which its
+# certificate is for and its route answers to).
 # Validation has no cluster and no secret, so it substitutes stand-ins.
 #
 # These are derived here rather than listed beside the others in
@@ -17,11 +19,15 @@
 # behind.
 #
 # One line each, NAME=value, for a shell to read. A route's address is the
-# host number it declares, in 192.0.2.0/24, which is the documentation range.
+# host number it declares, in 192.0.2.0/24, which is the documentation range,
+# and a name is under a domain kept for documentation too.
 set -euo pipefail
 
 echo "RELEASE_REPOSITORY=ghcr.io/example/homelab"
-for declaration in modules/applications/*/application.json; do
+# What of the core is reached from away is declared beside the core, in the
+# shape an application declares its own.
+for declaration in clusters/core/routes.json modules/applications/*/application.json; do
 	[ -e "$declaration" ] || continue
+	jq -r '(.names // {}) | keys[] | "NAME_\(. | ascii_upcase | gsub("-"; "_"))=\(.).site.example"' "$declaration"
 	jq -r '(.routes // {}) | to_entries[] | "ADDRESS_\(.key | ascii_upcase | gsub("-"; "_"))=192.0.2.\(.value)"' "$declaration"
 done

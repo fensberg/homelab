@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,6 +50,27 @@ func TestEveryTunnelRouteIsAServiceAddressAndTheReverse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// What of the core is reached from away is declared beside the core, as a
+	// route like an application's, and is held to the same: answered by a
+	// Service of its name, among the core's own manifests. Found by what it
+	// is, a file of routes in what Flux applies.
+	for _, rel := range tracked(t, func(rel string) bool {
+		return strings.HasPrefix(rel, fluxTree+"/") && filepath.Base(rel) == "routes.json"
+	}) {
+		data, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var declared struct {
+			Routes map[string]int `json:"routes"`
+		}
+		if err := json.Unmarshal(data, &declared); err != nil {
+			t.Fatalf("%s is not a declaration of routes that can be read: %v", rel, err)
+		}
+		dir := filepath.ToSlash(filepath.Dir(rel))
+		apps = append(apps, applications.Application{Name: dir, Root: dir, Path: rel, Routes: declared.Routes})
+	}
+
 	var services []fixedService
 	for _, rel := range tracked(t, func(rel string) bool {
 		return (strings.HasPrefix(rel, fluxTree+"/") || strings.HasPrefix(rel, "modules/")) &&

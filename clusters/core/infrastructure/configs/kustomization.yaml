@@ -10,6 +10,12 @@ resources:
   # Asks GitHub whether each scheduled workflow is failing. Needs the
   # ScrapeConfig and PrometheusRule kinds from the monitoring stack.
   - scheduled-workflows.yaml
+  # A site's private access: the issuer, the address, the Gateway and each
+  # name's listener. Needs the kinds cert-manager and the Gateway API bring,
+  # and the address and names from the site's cluster-vars.
+  - private-access.yaml
+  # Grafana's route by its name, through the Gateway above.
+  - grafana.yaml
 # The dashboards, one for each question epoch 04 asks of a site (criterion
 # 19). Each is a file under dashboards/, kept here so that what a person
 # looks at is reviewed like everything else, and handed to Grafana by the

@@ -179,6 +179,19 @@ spec:
         - protocol: TCP
           port: 443
 
+    # The front door, on the one port it serves: where everything over the
+    # web comes in, whoever serves it (traefik.yaml).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 8443
+
     # Whatever applications this site runs (#446). Which of an application's
     # pods a tunnelled device may reach, and on which ports, is the
     # application's own ingress policy to say: the core names no application,
