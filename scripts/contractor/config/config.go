@@ -59,6 +59,7 @@ type Config struct {
 	StateBackup   StateBackup     `json:"state_backup"`
 	Alerting      Alerting        `json:"alerting"`
 	Tunnel        Tunnel          `json:"tunnel"`
+	Certificates  Certificates    `json:"certificates"`
 	Sites         map[string]Site `json:"sites"`
 }
 
@@ -157,6 +158,28 @@ type Tunnel struct {
 
 // TunnelProvider is the one tunnel vendor this code implements.
 const TunnelProvider = "cloudflare"
+
+// Certificates is what a site gets a certificate with, for each name a
+// person types to reach something in it.
+//
+// The issuer wants proof that a name is the estate's, and the proof is a
+// record under the estate's domain. The estate grants a site a credential
+// that can change that domain's records, and the site's cluster proves its
+// own names with it. It carries the three-way vendor attestation for the
+// reason the tunnel's token does, and more: it reaches every record under
+// the domain, since the vendor scopes one no narrower.
+type Certificates struct {
+	// The vendor the domain's records are kept at, in git. Must be "cloudflare".
+	Provider string `json:"provider"`
+	// The vendor, as attested by the grant carrying the credential.
+	VaultProvider string `json:"vault_provider"`
+	// The credential for the domain's records, granted by the estate.
+	DNSToken string `json:"dns_token"`
+}
+
+// CertificatesProvider is the one vendor of a domain's records this code
+// implements.
+const CertificatesProvider = "cloudflare"
 
 type Site struct {
 	Name              string `json:"name"`
@@ -600,6 +623,15 @@ func ResolveSiteNetwork(cfg *Config, name string) (*SiteNetwork, error) {
 	}
 	if strings.TrimSpace(cfg.Tunnel.VaultProvider) != TunnelProvider {
 		return nil, fmt.Errorf("tunnel.vault_provider is '%s', not '%s'. The 1Password item must attest which vendor its credentials belong to", cfg.Tunnel.VaultProvider, TunnelProvider)
+	}
+
+	// And what gets the site its certificates, which reaches every record
+	// under the estate's domain.
+	if cfg.Certificates.Provider != CertificatesProvider {
+		return nil, fmt.Errorf("provider mismatch in certificates - the config declares '%s' but this code implements '%s'. Change the code before changing the declaration", cfg.Certificates.Provider, CertificatesProvider)
+	}
+	if strings.TrimSpace(cfg.Certificates.VaultProvider) != CertificatesProvider {
+		return nil, fmt.Errorf("certificates.vault_provider is '%s', not '%s'. The 1Password item must attest which vendor its credentials belong to", cfg.Certificates.VaultProvider, CertificatesProvider)
 	}
 
 	// Sorted so a config with several concerns wrong always reports the

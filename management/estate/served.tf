@@ -51,3 +51,18 @@ locals {
   # nothing more through the vendor than it did.
   names_are_served = anytrue([for served in values(local.site_served) : length(served) > 0])
 }
+
+# The vendor carries what an enrolled device sends to a private name, and
+# answers the device's question about one, only with this on. Without it a
+# name is known and has no address: found on 2026-10-12, when the route for a
+# name existed, an enrolled device asked for it, and was told the name and
+# nothing else. The vendor's page on private hostnames asks for both.
+#
+# Account-wide, and so the estate's. It changes what the vendor does with the
+# addresses a device already sends through the tunnel and with no others: a
+# device sends only what the estate lists (zero-trust.tf).
+resource "cloudflare_zero_trust_device_settings" "estate" {
+  account_id                = local.access.account_id
+  gateway_proxy_enabled     = true
+  gateway_udp_proxy_enabled = true
+}

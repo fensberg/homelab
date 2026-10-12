@@ -1526,6 +1526,16 @@ each job, and no job done twice.
 | Web routing           | Take a hostname to the application, and hold HTTPS | Traefik           |
 | Certificates          | Get one for each name, and renew it                | cert-manager      |
 
+That is the way in for a person's device, and it is one of two ways into
+an estate. The other carries no person and no application: the overlay
+(Tailscale), by which the machines themselves are reached - a converge
+reaching the hypervisor, Prometheus reading the host. The operator's rule
+for it: "Nothing touches it besides actual workers doing work." A device
+is never on it and an application is never served over it, so it is in no
+row above and no row above is its job. Whether the vendor of the first
+way could also carry site to site, and the overlay go, is weighed in
+[09](09-access.md).
+
 Three of these can do a neighbour's job, and none is let to. **Chose** a
 guard for each, with a refusal underneath it where there is one: Cilium's
 own routing of web traffic stays switched off; Traefik is given no
@@ -1564,6 +1574,15 @@ easily." So it is `grafana.<domain>`, by the scheme epoch 09 already
 chose: `<name>.<site>.<domain>`, and the short one where the config
 declares the alias. A name resolves for an enrolled device and has no
 public record ([09](09-access.md)).
+
+**And a site's one address for all of it is called for the site.** Asked
+what to call the address everything over the web is reached at, the
+operator: "Who cares about traefik?" It is to carry the site's name and
+the words "private access", with "public access" to come beside it down
+the line. So it is
+`private-access` in git, where a site's name is not written, and the
+vendor's list shows each route under the site's own name, which the
+estate holds.
 
 **The Gateway API, now.** It is how an application says which hostname is
 its own and how the platform says who may attach to the front door, and

@@ -39,6 +39,11 @@ opentofu:
     reason: >-
       The default device profile is the account's single one. The estate owns
       it, and a site has no profile of its own to build from a shared block.
+  - resource: cloudflare_zero_trust_device_settings.estate
+    reason: >-
+      Whether the vendor carries an enrolled device's traffic is one setting
+      for the account. The estate owns the account, and there is no second
+      one of it for a module to be called for.
 
 # Go functions whose bodies are identical in more than one package. One entry
 # per group: every function in it, as "<package directory>.<name>".

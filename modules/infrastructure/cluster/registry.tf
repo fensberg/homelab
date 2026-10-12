@@ -210,6 +210,14 @@ resource "terraform_data" "invariants" {
       error_message = "Tunnel vendor mismatch: tunnel.provider and the 1Password item's tunnel.vault_provider must both be 'cloudflare', which is what this root implements. Either the wrong item is referenced, or its credentials were replaced without updating its provider field."
     }
 
+    # And what gets a site its certificates, for the tunnel's reason: the
+    # credential changes the records of the estate's domain, and arrives by
+    # a grant like the tunnel's token does.
+    precondition {
+      condition     = local.config.certificates.provider == "cloudflare" && trimspace(local.config.certificates.vault_provider) == "cloudflare"
+      error_message = "Certificates vendor mismatch: certificates.provider and the 1Password item's certificates.vault_provider must both be 'cloudflare', which is what this root implements. Either the wrong item is referenced, or its credentials were replaced without updating the declaration."
+    }
+
     # A declaration only catches someone who updates the declaration. This
     # catches the careless case: credentials pasted in without touching the
     # provider field at all.

@@ -201,3 +201,18 @@ run "each_name_served_is_handed_to_flux_with_every_name_at_its_address" {
     error_message = "the names reached at one address are not handed to Flux together, by that address"
   }
 }
+
+# What gets the site its certificates is put where cert-manager reads it,
+# and nowhere else: one Secret, in cert-manager's own namespace.
+run "the_credential_for_the_domains_records_is_put_where_certificates_are_got" {
+  command = plan
+
+  assert {
+    condition     = kubernetes_secret.dns_token.metadata[0].namespace == "cert-manager" && kubernetes_namespace.certificates.metadata[0].name == "cert-manager"
+    error_message = "the credential is not in the namespace that gets certificates"
+  }
+  assert {
+    condition     = nonsensitive(kubernetes_secret.dns_token.data.token) == local.config.certificates.dns_token && length(nonsensitive(kubernetes_secret.dns_token.data)) == 1
+    error_message = "the Secret does not hold the granted credential, and that alone"
+  }
+}

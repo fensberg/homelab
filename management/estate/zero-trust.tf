@@ -61,7 +61,7 @@ resource "cloudflare_zero_trust_device_default_profile" "estate" {
       for site in sort(keys(local.site_routes)) : [
         for name in sort(keys(local.site_routes[site])) : {
           address     = "${local.site_routes[site][name]}/32"
-          description = "${name} (${site})"
+          description = "${local.sites[site].name} ${replace(name, "-", " ")}"
         }
       ]
     ]),

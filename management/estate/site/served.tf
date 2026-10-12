@@ -7,7 +7,7 @@ resource "cloudflare_zero_trust_network_hostname_route" "served" {
   account_id = var.account_id
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.this.id
   hostname   = each.value.hostname
-  comment    = "${each.key} (${var.site})"
+  comment    = "${var.name} ${each.key}"
 }
 
 # None, for a site that serves nothing by name: a credential that changes a

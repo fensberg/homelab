@@ -25,7 +25,10 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_route" "this" {
   account_id = var.account_id
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.this.id
   network    = "${each.value}/32"
-  comment    = each.key
+  # What the vendor's list shows: the site by its own name, which is the
+  # estate's to know, and what of it this is. "private-access" reads there
+  # as "<the site's name> private access".
+  comment = "${var.name} ${replace(each.key, "-", " ")}"
 }
 
 data "cloudflare_zero_trust_tunnel_cloudflared_token" "this" {

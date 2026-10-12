@@ -63,7 +63,7 @@ func TestConfigRefusesOneKeyInTwoFields(t *testing.T) {
 		case "production":
 			site.ObjectStorage.Production.AccessKeyID = src.AccessKeyID
 		}
-		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
+		cfg := &Config{Tunnel: validTunnel(), Certificates: validCertificates(), Sites: map[string]Site{"site0": site}}
 
 		_, err := ResolveSiteNetwork(cfg, "site0")
 		if err == nil {
@@ -87,7 +87,7 @@ func TestTwoDistinctCredentialsAreAccepted(t *testing.T) {
 	if site.ObjectStorage.Database.AccessKeyID == site.ObjectStorage.State.AccessKeyID {
 		t.Fatal("validSite() carries the same key in both fields, so this proves nothing")
 	}
-	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Certificates: validCertificates(), Sites: map[string]Site{"site0": site}}
 	if _, err := ResolveSiteNetwork(cfg, "site0"); err != nil {
 		t.Errorf("two distinct credentials were refused: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestTwoSitesCannotCollapseToOneSlug(t *testing.T) {
 	} {
 		a, b := validSite(), validSite()
 		a.Name, b.Name, b.Octet = tc.a, tc.b, a.Octet+10
-		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": a, "site1": b}}
+		cfg := &Config{Tunnel: validTunnel(), Certificates: validCertificates(), Sites: map[string]Site{"site0": a, "site1": b}}
 		_, err := ResolveSiteNetwork(cfg, "site0")
 		if err == nil {
 			t.Errorf("two sites named %q and %q were accepted; they share one slug, "+
@@ -221,7 +221,7 @@ func TestSlugHasNoFallback(t *testing.T) {
 // had its own copy.
 func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
 	site := validSite()
-	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": site}}
+	cfg := &Config{Tunnel: validTunnel(), Certificates: validCertificates(), Sites: map[string]Site{"site0": site}}
 
 	loc, err := StateBackupLocation(cfg, "site0", ClusterRoot)
 	if err != nil {
@@ -248,7 +248,7 @@ func TestStateBackupLocationUsesTheStateBucketAndCredential(t *testing.T) {
 		default:
 			broken.ObjectStorage.State.Bucket = ""
 		}
-		cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": broken}}
+		cfg := &Config{Tunnel: validTunnel(), Certificates: validCertificates(), Sites: map[string]Site{"site0": broken}}
 		if _, err := StateBackupLocation(cfg, "site0", ClusterRoot); err == nil {
 			t.Errorf("an empty state %s was accepted", half)
 		}
@@ -279,7 +279,7 @@ func TestTheStateBackupPathIsWhereExistingBackupsAre(t *testing.T) {
 	}
 	// Each root has a folder of its own, and a root nobody declared has none:
 	// a backup filed under a name Restore never reads is a backup lost.
-	cfg := &Config{Tunnel: validTunnel(), Sites: map[string]Site{"site0": validSite()}}
+	cfg := &Config{Tunnel: validTunnel(), Certificates: validCertificates(), Sites: map[string]Site{"site0": validSite()}}
 	if _, err := StateBackupLocation(cfg, "site0", "elsewhere"); err == nil {
 		t.Error("a root that is not one of the site's was given somewhere to keep backups")
 	}
