@@ -343,3 +343,24 @@ run "a_site_that_serves_no_name_is_granted_no_credential_for_the_domain" {
     error_message = "a device is sent to where private names are answered from when no site serves one"
   }
 }
+
+# What the vendor's list shows for a route is the site by its own name and
+# what of it the route is, so nobody reading that list has to know which key
+# is which site or what a word in git meant.
+run "a_route_is_shown_under_the_sites_own_name" {
+  command = plan
+
+  variables {
+    applications_path = "../../modules/infrastructure/applications/tests/fixtures/declared"
+    core_routes_path  = "../../modules/infrastructure/applications/tests/fixtures/core/named.json"
+  }
+
+  assert {
+    condition     = contains([for t in cloudflare_zero_trust_device_default_profile.estate.include : t.description], "North Street Office front door") && contains([for t in cloudflare_zero_trust_device_default_profile.estate.include : t.description], "North Street Office the yard")
+    error_message = "what a device is sent through the tunnel is not described by the site's own name and what of it that is"
+  }
+  assert {
+    condition     = module.site["site0"].served["gate"].comment == "North Street Office gate"
+    error_message = "a name's route is not shown under the site's own name"
+  }
+}

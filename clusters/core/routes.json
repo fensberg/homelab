@@ -9,8 +9,10 @@
     "name and a host number in each site's service range. The number is in",
     "the band of a service range that Kubernetes never hands out by itself,",
     "and no two routes on a site may share one, the core's or an",
-    "application's. The front door is where everything served over the web",
-    "is reached, whoever serves it.",
+    "application's. private-access is a site's one address for everything",
+    "an enrolled device reaches over the web, whoever serves it. The vendor's",
+    "list shows it under the site's own name, which the estate holds and git",
+    "does not: '<the site's name> private access'.",
     "",
     "names: what a person types, and the route it is reached at. A name is",
     "the thing itself and not what it is for: it is what is written in a",
@@ -18,9 +20,9 @@
     "the config declares the alias."
   ],
   "routes": {
-    "front-door": 45
+    "private-access": 45
   },
   "names": {
-    "grafana": "front-door"
+    "grafana": "private-access"
   }
 }

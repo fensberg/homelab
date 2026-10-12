@@ -1575,6 +1575,15 @@ chose: `<name>.<site>.<domain>`, and the short one where the config
 declares the alias. A name resolves for an enrolled device and has no
 public record ([09](09-access.md)).
 
+**And a site's one address for all of it is called for the site.** Asked
+what to call the address everything over the web is reached at, the
+operator: "Who cares about traefik?" It is to carry the site's name and
+the words "private access", with "public access" to come beside it down
+the line. So it is
+`private-access` in git, where a site's name is not written, and the
+vendor's list shows each route under the site's own name, which the
+estate holds.
+
 **The Gateway API, now.** It is how an application says which hostname is
 its own and how the platform says who may attach to the front door, and
 neither Traefik nor anything else is named in an application for it.
