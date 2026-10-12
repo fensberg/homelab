@@ -314,6 +314,58 @@ charts:
       spent hours off the overlay with every signal green. Images come from
       quay.io, registry.k8s.io and docker.io, each already approved, and are
       pinned by digest at their point of use.
+  - url: https://traefik.github.io/charts
+    reason: >-
+      Traefik: the one front door for everything a device reaches over the
+      web. It takes a hostname, sends it to the application that declared
+      it, and serves it over HTTPS and nothing else. Published by Traefik
+      Labs, the project's own maintainers; the proxy is open source and the
+      chart is the one they publish for it. The image is the project's own,
+      from ghcr.io, pinned by digest at its point of use.
+
+      Its second chart here, traefik-crds, carries the definitions of the
+      Gateway API: the Kubernetes project's standard for how an application
+      says which hostname is its own, published by SIG Network and taken
+      through this chart so that the proxy and the definitions it reads move
+      together. Approved by the operator on 2026-10-12 with the proxy.
+
+      What it runs with. Every request to a web application passes through
+      it in the clear after it has ended the HTTPS, so it reads everything
+      a person sends an application. It holds each application's
+      certificate and key. It reads Gateway API objects and Services across
+      the cluster. It is one pod, not one on every machine, and it is given
+      no credential that could get a certificate and no path to anything
+      that issues one: certificates are cert-manager's, below.
+
+      Taken because nothing here routes by hostname or holds HTTPS for an
+      application. Each thing reached from away had an address and a tunnel
+      route of its own, and an application was to serve its own certificate.
+      Cilium can do this work and was looked at and left to the network: it
+      wanted every machine's agent restarted, a new band of addresses and
+      policy in a second language (docs/epochs/04-observability.md).
+  - url: https://charts.jetstack.io
+    reason: >-
+      cert-manager: gets each application a certificate any browser trusts
+      and renews it, with nobody running anything. A CNCF graduated project,
+      published by its maintainers, and what a Kubernetes cluster ordinarily
+      uses for this. Its images are the project's own, from quay.io, pinned
+      by digest at their point of use. Approved by the operator on
+      2026-10-12.
+
+      What it runs with. A credential that can change the records of the
+      estate's own domain, which is how it proves to the issuer that a name
+      is the estate's. That is more than it needs: the vendor scopes such a
+      credential to a whole domain and no narrower, so whoever took it
+      could repoint any name under the domain. It is the site's own and can
+      be withdrawn by the estate. It writes Secrets, each holding one
+      certificate and its key, into the namespace that asked. It reaches
+      the issuer and the domain's vendor from inside the cluster.
+
+      Taken over the proxy's own way of getting certificates, which keeps
+      them in a file on one disk and so in one pod on one machine; and over
+      a client wrapped in a schedule of this estate's own, which is code
+      this estate would then keep. An application that is not a web
+      application needs a certificate too, and this issues to anything.
   - url: https://helm.cilium.io
     reason: >-
       The pod network, replacing the Flannel that Talos ships and the kube-proxy
