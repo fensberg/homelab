@@ -1,12 +1,21 @@
 # What a person types to reach something, and what gets it a certificate.
 #
-# A NAME RESOLVES ONLY FOR AN ENROLLED DEVICE. Each name is a hostname route
-# on its site's tunnel and has no public record: the vendor answers an
-# enrolled device's question with an address of its own, carries what is
-# sent there into the tunnel, and the site's connector takes it to the name's
-# real address. Anybody else asking is told there is no such name. A private
-# name with a public record could be pointed elsewhere by whoever changed
-# that record, which is why docs/epochs/09-access.md refuses one.
+# A NAME RESOLVES ONLY FOR AN ENROLLED DEVICE. An enrolled device sends its
+# questions to the vendor, and the vendor is given a rule: asked for one of
+# a site's names, answer with the address it is reached at. That address is
+# the site's own private one, which the device is already sent to through
+# the site's tunnel (zero-trust.tf). Anybody else asking is told there is no
+# such name, because there is no public record of one. A private name with a
+# public record could be pointed elsewhere by whoever changed that record,
+# which is why docs/epochs/09-access.md refuses one.
+#
+# NOT A ROUTE BY NAME THROUGH THE TUNNEL, which is what that record chose
+# and what was built first. The route existed, every requirement on the
+# vendor's page for one was met, and an enrolled device was still given no
+# address (#708). A rule gives up one thing a route has, which nothing here
+# uses: telling apart, by name, two things that are not the web and share
+# an address. Going back is a change to this file and the one beside the
+# tunnel, and to nothing a site runs.
 #
 # A CERTIFICATE IS GOT BY THE SITE, FOR ITSELF. The issuer wants proof that
 # a name is the estate's, and the proof is a record under the estate's
@@ -35,28 +44,18 @@ data "cloudflare_account_api_token_permission_groups_list" "dns_write" {
   name       = "DNS Write"
 }
 
-variable "resolved_through" {
-  type        = list(string)
-  default     = ["172.64.128.0/20", "2606:4700:cf1:4000::/64"]
-  description = <<-EOT
-    The addresses the vendor answers an enrolled device with when it asks for
-    a private name, from the vendor's own page on private hostnames, read
-    2026-10-12. A device sends only what the estate lists through the tunnel,
-    so these are listed, or a name would resolve and lead nowhere.
-  EOT
-}
-
 locals {
-  # Only when something is served by a name: an estate with none sends
-  # nothing more through the vendor than it did.
-  names_are_served = anytrue([for served in values(local.site_served) : length(served) > 0])
+  # A rule is consulted in order, and this account holds rules the estate
+  # did not make, the first of them at 10000. A site's rules go ahead of
+  # every one of those, each site in a hundred of its own, so that no rule
+  # made by hand answers for a name before the estate's does.
+  rules_from = { for i, k in sort(keys(local.sites)) : k => 1000 + 100 * i }
 }
 
-# The vendor carries what an enrolled device sends to a private name, and
-# answers the device's question about one, only with this on. Without it a
-# name is known and has no address: found on 2026-10-12, when the route for a
-# name existed, an enrolled device asked for it, and was told the name and
-# nothing else. The vendor's page on private hostnames asks for both.
+# The vendor carries what an enrolled device sends to a private address
+# with this on, which its pages on private networks ask for. Turned on
+# 2026-10-12 while a name that would not resolve was being run down. It was
+# not the cause of that (#708) and is kept as what the vendor documents.
 #
 # Account-wide, and so the estate's. It changes what the vendor does with the
 # addresses a device already sends through the tunnel and with no others: a

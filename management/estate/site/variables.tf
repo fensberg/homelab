@@ -47,6 +47,11 @@ variable "served" {
   description = "What this site serves by name: the name a person types, and the address it is reached at."
 }
 
+variable "rules_from" {
+  type        = number
+  description = "Where in the vendor's order of rules this site's begin. Ahead of every rule the estate did not make."
+}
+
 variable "zone" {
   type        = string
   description = "The vendor's id for the estate's domain, which a site's certificates are proved under."

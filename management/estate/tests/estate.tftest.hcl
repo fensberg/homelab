@@ -282,10 +282,10 @@ run "an_accounts_name_written_as_an_address_is_refused" {
   expect_failures = [output.grants]
 }
 
-# What a person types reaches a site through that site's tunnel and has a
-# route there by its name, at each site that serves it. Against names
-# written for the test: two, at one address the core declares.
-run "each_name_a_site_serves_is_a_route_through_its_own_tunnel" {
+# What a person types is answered for an enrolled device by a rule at the
+# vendor: the names reached at one address, and that address, which is the
+# site's own. Against names written for the test: two, at two addresses.
+run "the_names_a_site_serves_are_answered_with_where_each_is_reached" {
   command = plan
 
   variables {
@@ -295,15 +295,31 @@ run "each_name_a_site_serves_is_a_route_through_its_own_tunnel" {
   }
 
   assert {
-    condition = jsonencode({ for site, m in module.site : site => sort([for route in m.served : route.hostname]) }) == jsonencode({
-      site0 = ["gate.site0.example.org", "porch.site0.example.org"]
-      site1 = ["gate.site1.example.org", "porch.site1.example.org"]
+    condition = jsonencode({ for site, m in module.site : site => { for at, rule in m.served : at => "${rule.traffic} -> ${join(",", rule.rule_settings.override_ips)}" } }) == jsonencode({
+      site0 = {
+        "front-door" = "dns.fqdn in {\"porch.site0.example.org\"} -> 10.196.40.7"
+        "the-yard"   = "dns.fqdn in {\"gate.site0.example.org\"} -> 10.196.40.5"
+      }
+      site1 = {
+        "front-door" = "dns.fqdn in {\"porch.site1.example.org\"} -> 10.196.80.7"
+        "the-yard"   = "dns.fqdn in {\"gate.site1.example.org\"} -> 10.196.80.5"
+      }
     })
-    error_message = "a site does not have a route for each name it serves, under the estate's domain and with the site in it"
+    error_message = "a site's names are not answered with the address each is reached at, in that site's own range"
   }
   assert {
-    condition     = length(setsubtract(var.resolved_through, [for t in cloudflare_zero_trust_device_default_profile.estate.include : t.address])) == 0
-    error_message = "a device is not sent where the vendor answers a private name from, so a name would resolve and lead nowhere"
+    condition     = alltrue(flatten([for m in module.site : [for rule in m.served : rule.action == "override" && rule.enabled && rule.filters == tolist(["dns"])]]))
+    error_message = "a rule for a site's names is not one that answers a question about a name, or is not on"
+  }
+  # The account holds rules the estate did not make, from 10000 on. A rule
+  # of the estate's that came after one of those would never be asked.
+  assert {
+    condition     = alltrue(flatten([for m in module.site : [for rule in m.served : rule.precedence >= 1000 && rule.precedence < 10000]]))
+    error_message = "a rule for a site's names is not ahead of the rules the estate did not make"
+  }
+  assert {
+    condition     = length(distinct(flatten([for m in module.site : [for rule in m.served : rule.precedence]]))) == 4
+    error_message = "two rules were given one place in the order"
   }
 }
 
@@ -324,8 +340,7 @@ run "a_site_that_serves_a_name_is_granted_a_credential_for_the_domain" {
   }
 }
 
-# And one that serves nothing by name is granted none, has no such route,
-# and sends a device nowhere it did not before.
+# And one that serves nothing by name is granted none and has no rule.
 run "a_site_that_serves_no_name_is_granted_no_credential_for_the_domain" {
   command = plan
 
@@ -336,11 +351,7 @@ run "a_site_that_serves_no_name_is_granted_no_credential_for_the_domain" {
 
   assert {
     condition     = !contains(keys(nonsensitive(output.grants["site0"])), "certificates") && length(module.site["site0"].served) == 0
-    error_message = "a site that serves nothing by name was granted a credential for the domain, or a route for a name"
-  }
-  assert {
-    condition     = length(setintersection(var.resolved_through, [for t in cloudflare_zero_trust_device_default_profile.estate.include : t.address])) == 0
-    error_message = "a device is sent to where private names are answered from when no site serves one"
+    error_message = "a site that serves nothing by name was granted a credential for the domain, or a rule for a name"
   }
 }
 
@@ -360,8 +371,8 @@ run "a_route_is_shown_under_the_sites_own_name" {
     error_message = "what a device is sent through the tunnel is not described by the site's own name and what of it that is"
   }
   assert {
-    condition     = module.site["site0"].served["gate"].comment == "North Street Office gate"
-    error_message = "a name's route is not shown under the site's own name"
+    condition     = module.site["site0"].served["the-yard"].name == "North Street Office names at the yard"
+    error_message = "the rule for a site's names is not shown under the site's own name"
   }
 }
 

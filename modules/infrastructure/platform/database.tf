@@ -73,16 +73,11 @@ resource "kubernetes_secret" "cluster_vars" {
   # one that answers come from the same plan.
   #
   # And what a person types for each thing served by name, as NAME_<NAME>,
-  # which is what its certificate is for and what its route answers to; and
-  # every such name reached at one address, as NAMES_AT_<ADDRESS>, for the
-  # tunnel's connector, which has to be told where a name it is asked for is.
+  # which is what its certificate is for and what its route answers to.
   data = merge({
     for name, addr in local.net.fixed_addresses : "ADDRESS_${upper(replace(name, "-", "_"))}" => addr
     }, {
     for name, s in local.net.served : "NAME_${upper(replace(name, "-", "_"))}" => s.hostname
-    }, {
-    for at in distinct([for s in values(local.net.served) : s.at]) :
-    "NAMES_AT_${upper(replace(at, "-", "_"))}" => join(", ", sort([for s in values(local.net.served) : s.hostname if s.at == at]))
     }, {
     # Which site this is, by its key, and which directory its Flux
     # reconciles. The shared core is written once for every site, so anything

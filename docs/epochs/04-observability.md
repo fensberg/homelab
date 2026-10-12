@@ -1521,7 +1521,7 @@ each job, and no job done twice.
 | --------------------- | -------------------------------------------------- | ----------------- |
 | Who may come in       | Enrol a device, know whose it is                   | the vendor's edge |
 | Getting in            | Carry an enrolled device to a private address      | the tunnel        |
-| Private names         | A name that means something to an enrolled device  | the tunnel        |
+| Private names         | A name that means something to an enrolled device  | the vendor's edge |
 | The cluster's network | Connect pods, and say which may speak to which     | Cilium            |
 | Web routing           | Take a hostname to the application, and hold HTTPS | Traefik           |
 | Certificates          | Get one for each name, and renew it                | cert-manager      |
@@ -1574,6 +1574,19 @@ easily." So it is `grafana.<domain>`, by the scheme epoch 09 already
 chose: `<name>.<site>.<domain>`, and the short one where the config
 declares the alias. A name resolves for an enrolled device and has no
 public record ([09](09-access.md)).
+
+**And a name is answered by a rule, not carried by a route.** Epoch 09
+chose a route by name through the tunnel, and it was built first. The
+route existed, every requirement on the vendor's page for one was met,
+and an enrolled device was still given no address; a morning of reading
+the account found no cause (#708). **Chose**, with the operator, a rule at
+the vendor that answers an enrolled device with the name's own private
+address, which the tunnel already carries a device to. It keeps both
+things epoch 09 asked of a name. What it gives up is telling apart, by
+name, two things that are not the web and share an address, and nothing
+here does that: what is the web shares one address and is told apart by
+the proxy, and what is not has an address of its own. Going back is a
+change to the estate and to nothing a site runs.
 
 **And a site's one address for all of it is called for the site.** Asked
 what to call the address everything over the web is reached at, the
