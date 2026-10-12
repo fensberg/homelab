@@ -422,6 +422,24 @@ test. `op inject` treats a blank field as success and writes an empty string,
 so an empty field does not fail Render at all — it surfaces much later inside a
 provider as something like "credentials are empty", naming no field.
 
+**Issuing each site its certificate is `notary issue`**
+(`task issue-certificates`, and the last step of `task converge-estate`).
+Everything a device reaches is served under a name with a certificate any
+browser trusts, and the notary is the one party that can get one: it holds
+the key the issuer knows the operator by and the credential that changes
+the domain's records, and no site is given either. For each site the
+lawyer has granted names to, it issues a certificate for exactly those
+names when the site holds none, holds one for other names, or holds one
+with under twenty days left, and writes it into the site's `-shared`
+vault; a site whose certificate is current is left alone and the issuer is
+asked nothing. It refuses to grant one good for longer than forty-six
+days, because the length is the subscription
+(`docs/epochs/11-black-box-white-glove.md`). `-rehearse` asks the issuer's
+rehearsal service and writes nothing. It is the only program here with a
+dependency that is not the standard library's: the Go team's reading of
+the protocol, which is signed request by request and not something to
+write a second time.
+
 **Agent commits are published with `task push`** (`scripts/signedpush`), which
 is beside build-site and never inside it — different job, different blast radius,
 and a bug in a push tool has no business living in the binary that can destroy

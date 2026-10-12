@@ -19,6 +19,7 @@ package vaults
 import (
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 )
 
@@ -34,6 +35,20 @@ const sharedSuffix = "-shared"
 // SiteShared is the vault the lawyer writes for one site alone: what the
 // estate grants that site.
 func SiteShared(site string) string { return site + sharedSuffix }
+
+// SitesAmong is every site that has a vault of what the estate grants it,
+// among the vaults a token sees, sorted. The estate's own shared vault is
+// not a site's.
+func SitesAmong(names []string) []string {
+	var sites []string
+	for _, n := range names {
+		if site, is := strings.CutSuffix(n, sharedSuffix); is && n != EstateShared && site != "" {
+			sites = append(sites, site)
+		}
+	}
+	sort.Strings(sites)
+	return sites
+}
 
 // CheckLawyer holds the lawyer's token to the estate vault and the vaults it
 // writes for others. A site's own vault is refused: what a site generates for

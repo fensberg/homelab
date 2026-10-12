@@ -154,6 +154,20 @@ tasks:
     desc: "Apply management/estate/ to the estate that stands"
     cmds:
       - go run -C scripts/lawyer . converge-estate
+      # And then each site is issued the certificate it serves under, when
+      # it is owed one. After the lawyer, because the lawyer is what grants a
+      # site the names a certificate is for.
+      - task: issue-certificates
+
+  # The notary: the party that issues each site its certificate, with the
+  # same service account the lawyer runs on. Safe to run at any time: a site
+  # whose certificate is current is left alone and nothing is asked of the
+  # issuer. `-- -rehearse` asks the issuer's rehearsal service and writes
+  # nothing.
+  issue-certificates:
+    desc: "Issue each site the certificate it serves under, when it is owed one"
+    cmds:
+      - go run -C scripts/notary . issue {{.CLI_ARGS}}
 
   demolish-estate:
     desc: "Print the command that tears the estate down, once no site stands"

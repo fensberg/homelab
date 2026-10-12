@@ -6,8 +6,10 @@
 package cloudflare
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -60,16 +62,33 @@ type Answer[T any] struct {
 // an error naming Cloudflare's own reason, never an empty result: an empty
 // list read out of a 403 is an answer somebody will act on.
 func Get[T any](base, token, path string, q url.Values) (T, error) {
-	var zero T
-	u := base + path
 	if len(q) > 0 {
-		u += "?" + q.Encode()
+		path += "?" + q.Encode()
 	}
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+	return Send[T](http.MethodGet, base, token, path, nil)
+}
+
+// Send makes one request of base+path with a bearer token, with body as its
+// JSON when there is one, and returns the result. Held to what Get is: a
+// refusal is an error naming Cloudflare's own reason.
+func Send[T any](method, base, token, path string, body any) (T, error) {
+	var zero T
+	var sent io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return zero, err
+		}
+		sent = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequest(method, base+path, sent)
 	if err != nil {
 		return zero, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
 		return zero, fmt.Errorf("asking Cloudflare for %s: %w", path, err)

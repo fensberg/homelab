@@ -19,6 +19,10 @@
     "access_key_id": "fixture",
     "secret_access_key": "fixture"
   },
+  "served": {
+    "provider": "cloudflare",
+    "domain": "served.example"
+  },
   "plots": {
     "site0": {
       "name": "a-site-name-long-enough-that-its-production-bucket-overflows"

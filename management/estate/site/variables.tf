@@ -37,3 +37,13 @@ variable "r2_bucket_read" {
   type        = string
   description = "The id of Cloudflare's permission group for listing and reading objects in one bucket, and changing none."
 }
+
+variable "served_zone" {
+  type        = string
+  description = "The zone that holds the name of each thing a device reaches."
+}
+
+variable "served_under" {
+  type        = string
+  description = "What every such name of this site's ends in: the domain, or this site's label and the domain when the estate has more than one site."
+}

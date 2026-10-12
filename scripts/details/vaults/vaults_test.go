@@ -54,3 +54,10 @@ func TestASiteSeesItsOwnAndWhatTheEstateSharesNothingMore(t *testing.T) {
 		}
 	}
 }
+
+func TestSitesAmongAreTheVaultsOfWhatASiteIsGranted(t *testing.T) {
+	got := SitesAmong([]string{"site2-shared", Estate, EstateShared, "site1-shared", "site3", "-shared"})
+	if len(got) != 2 || got[0] != "site1" || got[1] != "site2" {
+		t.Errorf("the sites are %v; the estate's own shared vault, a site's own vault and a vault with no site in its name are not one", got)
+	}
+}

@@ -281,3 +281,67 @@ run "an_accounts_name_written_as_an_address_is_refused" {
 
   expect_failures = [output.grants]
 }
+
+# Each thing a device reaches has a name, which is what its certificate is
+# for. An estate with one site puts nothing of the site in it.
+run "one_site_serves_under_the_domain_alone" {
+  command = plan
+
+  variables {
+    applications_path = "../../modules/infrastructure/applications/tests/fixtures/declared"
+    core_routes_path  = "../../modules/infrastructure/applications/tests/fixtures/core/one.json"
+  }
+
+  assert {
+    condition = { for route, record in module.site["site0"].served : route => "${record.name} ${record.type} ${record.content} ${record.proxied}" } == {
+      "back-door"  = "back-door.served.example A 10.196.40.9 false"
+      "front-door" = "front-door.served.example A 10.196.40.7 false"
+      "side-door"  = "side-door.served.example A 10.196.40.8 false"
+      "the-yard"   = "the-yard.served.example A 10.196.40.5 false"
+    }
+    error_message = "a route's name is the route under the domain, resolving to the route's own address and not proxied"
+  }
+  assert {
+    condition     = nonsensitive(output.grants["site0"].served.names) == "back-door.served.example front-door.served.example side-door.served.example the-yard.served.example"
+    error_message = "the site is not granted the names it serves under, sorted and in one field"
+  }
+}
+
+# With a second site, each name says whose it is, by the label the estate
+# makes of the site's name.
+run "more_than_one_site_serves_under_a_label_of_its_own" {
+  command = plan
+
+  variables {
+    config_path       = "./tests/fixtures/two-plots.json"
+    applications_path = "../../modules/infrastructure/applications/tests/fixtures/declared"
+    core_routes_path  = "../../modules/infrastructure/applications/tests/fixtures/core/one.json"
+  }
+
+  assert {
+    condition     = length(distinct(flatten([for site in module.site : [for record in site.served : record.name]]))) == 8
+    error_message = "two sites share a name, so one certificate would be for both"
+  }
+  assert {
+    condition = alltrue(flatten([
+      for key, site in module.site : [for route, record in site.served : record.name == "${route}.${local.site_label[key]}.served.example"]
+    ]))
+    error_message = "with more than one site, a route's name is the route, the site's label and the domain"
+  }
+}
+
+# A site that serves nothing is granted no names, and not an empty field
+# the lawyer would refuse to write.
+run "a_site_with_no_route_is_granted_no_names" {
+  command = plan
+
+  variables {
+    applications_path = "../../modules/infrastructure/applications/tests/fixtures/other"
+    core_routes_path  = "../../modules/infrastructure/applications/tests/fixtures/core/none.json"
+  }
+
+  assert {
+    condition     = !contains(keys(nonsensitive(output.grants["site0"])), "served")
+    error_message = "a site with no route was granted names to serve under"
+  }
+}

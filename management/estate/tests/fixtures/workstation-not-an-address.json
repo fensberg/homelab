@@ -19,6 +19,10 @@
     "access_key_id": "fixture",
     "secret_access_key": "fixture"
   },
+  "served": {
+    "provider": "cloudflare",
+    "domain": "served.example"
+  },
   "workstation": {
     "address": "192.0.2.0/24"
   },

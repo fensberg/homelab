@@ -1,6 +1,7 @@
 package cloudflare
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -72,5 +73,28 @@ func TestRcloneIsConfiguredForOneRemoteThroughItsEnvironment(t *testing.T) {
 	}
 	if strings.Contains(env, "OTHER") || !strings.HasSuffix(RcloneVar("OTHER", "TYPE"), "_OTHER_TYPE") {
 		t.Errorf("a setting is not named for the remote it belongs to:\n%s", env)
+	}
+}
+
+func TestSendCarriesTheMethodTheTokenAndTheBodyAsJSON(t *testing.T) {
+	var method, token, kind, sent string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		method, token, kind, sent = r.Method, r.Header.Get("Authorization"), r.Header.Get("Content-Type"), string(body)
+		_, _ = io.WriteString(w, `{"success":true,"result":{"id":"made"}}`)
+	}))
+	defer srv.Close()
+
+	got, err := Send[struct {
+		ID string `json:"id"`
+	}](http.MethodPost, srv.URL, "fixture", "/things", map[string]string{"name": "a thing"})
+	if err != nil || got.ID != "made" {
+		t.Fatalf("a request that was answered returned %+v, %v", got, err)
+	}
+	if method != http.MethodPost || token != "Bearer fixture" || kind != "application/json" || sent != `{"name":"a thing"}` {
+		t.Errorf("sent %s with %q as %q carrying %s", method, token, kind, sent)
+	}
+	if _, err := Send[any](http.MethodDelete, srv.URL, "fixture", "/things/made", nil); err != nil || sent != "" {
+		t.Errorf("a request with no body sent %q and returned %v", sent, err)
 	}
 }

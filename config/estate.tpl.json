@@ -23,6 +23,11 @@
     "secret_access_key": "{{ op://estate/state/secret_access_key }}"
   },
 
+  "served": {
+    "provider": "cloudflare",
+    "domain": "{{ op://estate-shared/poc/domain }}"
+  },
+
   "workstation": {
     "address": "198.18.0.1"
   },
