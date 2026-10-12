@@ -411,6 +411,67 @@ spec:
       affinity: *offControlPlane
 
     kube-state-metrics:
+      # WHAT FLUX SAYS OF WHAT IT APPLIES, as something Prometheus holds.
+      #
+      # Whether a layer of the site has been applied, and whether a release
+      # is installed, is a condition on an object of Flux's and nowhere
+      # else. Nothing collected it: on 2026-10-12 a layer stood refused for
+      # ten minutes and what found out was a converge that happened to be
+      # waiting on it. This has the exporter read those objects and say, for
+      # each, whether it is ready, why not, and what it last applied
+      # (`flux_object_info`). The dashboard and the alerts on it are in
+      # configs/running.yaml.
+      #
+      # Flux's own controllers report how long they take and not what state
+      # anything is in, which is why this is read from the objects.
+      rbac:
+        extraRules:
+          - apiGroups:
+              - kustomize.toolkit.fluxcd.io
+              - helm.toolkit.fluxcd.io
+            resources: [kustomizations, helmreleases]
+            verbs: [list, watch]
+      customResourceState:
+        enabled: true
+        config:
+          spec:
+            resources:
+              - groupVersionKind:
+                  group: kustomize.toolkit.fluxcd.io
+                  version: v1
+                  kind: Kustomization
+                metricNamePrefix: flux
+                metrics:
+                  - name: object_info
+                    help: What Flux says of one Kustomization.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      why: [status, conditions, "[type=Ready]", reason]
+                      revision: [status, lastAppliedRevision]
+              - groupVersionKind:
+                  group: helm.toolkit.fluxcd.io
+                  version: v2
+                  kind: HelmRelease
+                metricNamePrefix: flux
+                metrics:
+                  - name: object_info
+                    help: What Flux says of one HelmRelease.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      why: [status, conditions, "[type=Ready]", reason]
+                      revision: [status, lastAttemptedRevision]
       image:
         registry: registry.k8s.io
         repository: kube-state-metrics/kube-state-metrics

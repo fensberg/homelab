@@ -1633,6 +1633,19 @@ tunnel, which nobody used, went the same day, and with it the tunnel's
 way into any application: the connector reaches the front door and
 nothing else.
 
+**What should be running is seen to be (2026-10-12).** Getting there took
+asking the cluster by hand five times in a day for what a site should
+show of itself. The operator: "shouldn't we be able to check the current
+status of the pods on the cluster in grafana?" So there is a dashboard
+for it - each layer Flux applies and the commit it is at, each release,
+every pod and container that is not well and why, and the days each
+certificate has left - and alerts on the same: a layer not applied in ten
+minutes, a release not installed, a certificate within a day of running
+out, which is criterion 22's first real case, and one that cannot be
+issued. Flux's verdict on its own objects was collected by nothing until
+now, which is why a refused layer was found by a converge that happened
+to be waiting.
+
 **And what the failed converge taught.** The converge that followed gave
 up waiting for Flux and applied nothing, and the job that tidies up after
 one opened a revert that could not have helped and told the operator to

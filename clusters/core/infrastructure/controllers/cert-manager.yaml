@@ -72,6 +72,16 @@ spec:
     global:
       priorityClassName: interactive
 
+    # What it says of each certificate, read by the site's own Prometheus:
+    # when it runs out and whether it is ready. A certificate here lasts
+    # days and renews itself, so one that has stopped renewing is a thing
+    # that stops working on a date nobody was told, unless this is watched
+    # (configs/running.yaml).
+    prometheus:
+      enabled: true
+      servicemonitor:
+        enabled: true
+
     # Three small programs, one of each. A certificate is renewed days before
     # it runs out, so one of these being away for a restart delays nothing
     # anybody waits on.
