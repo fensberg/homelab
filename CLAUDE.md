@@ -435,10 +435,11 @@ vault; a site whose certificate is current is left alone and the issuer is
 asked nothing. It refuses to grant one good for longer than forty-six
 days, because the length is the subscription
 (`docs/epochs/11-black-box-white-glove.md`). `-rehearse` asks the issuer's
-rehearsal service and writes nothing. It is the only program here with a
-dependency that is not the standard library's: the Go team's reading of
-the protocol, which is signed request by request and not something to
-write a second time.
+rehearsal service and writes nothing. It takes one dependency beyond the
+standard library, the Go team's reading of the protocol, which is signed
+request by request and not something to write a second time. That is why
+it is a program of its own and not a verb of the lawyer's, which takes
+none.
 
 **Agent commits are published with `task push`** (`scripts/signedpush`), which
 is beside build-site and never inside it — different job, different blast radius,
