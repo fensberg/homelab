@@ -35,6 +35,6 @@ output "grants" {
 }
 
 output "served" {
-  description = "The hostname route for each name this site serves."
-  value       = cloudflare_zero_trust_network_hostname_route.served
+  description = "The rule that answers for the names this site serves, by the address they are reached at."
+  value       = cloudflare_zero_trust_gateway_policy.served
 }

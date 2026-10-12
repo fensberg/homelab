@@ -39,9 +39,9 @@ var estateTypes = map[string]bool{
 	"cloudflare_zero_trust_tunnel_cloudflared":        true,
 	"cloudflare_zero_trust_tunnel_cloudflared_config": true,
 	"cloudflare_zero_trust_tunnel_cloudflared_route":  true,
-	// The name a person types for something in a site, which resolves for
-	// an enrolled device and nobody else. With the tunnel it is a route on.
-	"cloudflare_zero_trust_network_hostname_route": true,
+	// The rule that answers an enrolled device, and nobody else, with where
+	// a name a site serves is reached.
+	"cloudflare_zero_trust_gateway_policy": true,
 	// Whether the vendor carries what a device sends to a private name at
 	// all: one setting for the account.
 	"cloudflare_zero_trust_device_settings": true,
