@@ -436,3 +436,32 @@ func TestASupersededConvergeIsNotAFailure(t *testing.T) {
 		t.Error("superseded shares a code with another outcome, so the aftermath cannot tell them apart")
 	}
 }
+
+// A converge that gave up waiting for the cluster says so by its own status,
+// apart from one the change itself stopped: a revert is exact for both and
+// can help only the second (#713).
+func TestAConvergeTheClusterStoppedIsToldApartFromOneTheChangeStopped(t *testing.T) {
+	waiting := &phases.NotAtRestError{Err: errors.New("Flux to have applied this commit did not become healthy within 10m0s")}
+	for name, c := range map[string]struct {
+		code int
+		err  error
+		want int
+	}{
+		"gave up waiting, nothing written":        {exitUntouched, waiting, exitNotAtRest},
+		"gave up waiting, wrapped by its phase":   {exitUntouched, fmt.Errorf("at rest: %w", waiting), exitNotAtRest},
+		"the change was refused, nothing written": {exitUntouched, errors.New("the cluster root: a precondition failed"), exitUntouched},
+		"gave up waiting, and something written":  {exitMayHaveChanged, waiting, exitMayHaveChanged},
+	} {
+		if got := whyUntouched(c.code, c.err); got != c.want {
+			t.Errorf("%s: got %d, want %d", name, got, c.want)
+		}
+	}
+	if waiting.Error() != waiting.Err.Error() || !errors.Is(waiting, waiting.Err) {
+		t.Error("the reason a converge gave up is not what it says, or cannot be reached through it")
+	}
+	for _, other := range []int{exitMayHaveChanged, exitUntouched, exitSuperseded} {
+		if exitNotAtRest == other {
+			t.Errorf("exitNotAtRest shares the status %d, so a workflow cannot tell them apart", other)
+		}
+	}
+}

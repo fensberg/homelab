@@ -6,10 +6,12 @@ needs from [`application.json`](application.json).
 
 ## What it declares, and why
 
-**`routes`.** `game-server` is the Service enrolled devices reach on UDP 2456
-and 2457 (#446). It is named for what it is rather than for the application:
-the namespace already says which application, so a Service called the same
-would read `valheim.valheim` and tell a reader nothing.
+**`routes`.** None. The game server was a route through the tunnel for
+enrolled devices (#446) until 2026-10-12, when it was taken away because
+nobody reached it that way: players join through the game's own relay. Its
+Service is `game-server`, named for what it is rather than for the
+application: the namespace already says which application, so a Service
+called the same would read `valheim.valheim` and tell a reader nothing.
 
 **`secrets`.** Two, both read from the vault item `<site>/valheim`:
 

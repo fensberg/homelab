@@ -69,7 +69,7 @@ func awaitRest(ctx *run.Context) error {
 			return fluxBehind(out, strings.TrimSpace(head))
 		}
 		if err := waitUntil(ctx, kubeconfig, "Flux to have applied this commit", 10*time.Minute, applied, nothingApplied); err != nil {
-			return err
+			return &NotAtRestError{Err: err}
 		}
 	}
 	rest := func(ctx *run.Context, kubeconfig string) error {
@@ -87,8 +87,27 @@ func awaitRest(ctx *run.Context) error {
 		}
 		return nil
 	}
-	return waitUntil(ctx, kubeconfig, "the state database to be at rest", 15*time.Minute, rest, nothingApplied)
+	if err := waitUntil(ctx, kubeconfig, "the state database to be at rest", 15*time.Minute, rest, nothingApplied); err != nil {
+		return &NotAtRestError{Err: err}
+	}
+	return nil
 }
+
+// NotAtRestError is a converge that gave up waiting for the cluster to be at
+// rest, having applied nothing.
+//
+// It is a failure of its own kind because of what it does not say. A
+// converge that stops before its first change usually stopped at something
+// the change did, and returning the repository to the commit before is then
+// exact. This one stopped at the cluster: Flux had not applied the commit,
+// or the state database was being rolled. Nothing under management/ is
+// known to be at fault and returning it cannot bring a cluster to rest. On
+// 2026-10-12 a revert was opened for one of these, of two files the
+// converge does not apply, and told the operator to merge it (#713).
+type NotAtRestError struct{ Err error }
+
+func (e *NotAtRestError) Error() string { return e.Err.Error() }
+func (e *NotAtRestError) Unwrap() error { return e.Err }
 
 // fluxBehind says which of the Kustomizations that follow the repository have
 // not applied a commit, and is nil when all have.

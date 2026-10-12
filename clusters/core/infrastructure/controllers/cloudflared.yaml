@@ -191,13 +191,3 @@ spec:
       ports:
         - protocol: TCP
           port: 8443
-
-    # Whatever applications this site runs (#446). Which of an application's
-    # pods a tunnelled device may reach, and on which ports, is the
-    # application's own ingress policy to say: the core names no application,
-    # so this reaches any namespace marked as one and no other.
-    - to:
-        - namespaceSelector:
-            matchExpressions:
-              - key: homelab/workload
-                operator: Exists
