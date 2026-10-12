@@ -39,8 +39,8 @@ spec:
   # rather than falling back to anonymous access (flux_source_secret_test.go).
   url: oci://${RELEASE_REPOSITORY}-valheim-release
   ref:
-    tag: "1.0.17-1"
-    digest: "sha256:2b5f20aa9b7e54d1da7d9e94f36d2a1c18a9286994a941a8f7f6e92edbd94e03"
+    tag: "1.0.17-2"
+    digest: "sha256:5b46f3a3e9e64d69ae124902a9a5555ffcb730bd51e2bb3b3a8fcba2c2c1dd44"
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
