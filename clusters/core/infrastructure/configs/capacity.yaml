@@ -125,6 +125,10 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Open the dashboard of what the site holds and find what reserves
+              the most among work that cannot wait. Lower a reservation that
+              is not being used, or plan a worker.
             summary: Work that cannot wait would not fit if a worker were lost.
             description: >-
               Everything on the workers that is not batch reserves
@@ -156,6 +160,10 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Run `kubectl -n {{ $labels.namespace }} describe pod {{
+              $labels.pod }}` and read the last event. It says whether the
+              reason is memory or a volume.
             summary: Work that cannot wait has been without a machine for ten minutes.
             description: >-
               The scheduler has found no machine for {{ $labels.pod }} in
@@ -187,6 +195,9 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Look at what was merged just before, for a reservation raised on
+              something that runs on every machine.
             summary: The scheduler put running work off its machine to place work that outranks it.
             description: >-
               {{ $value | printf "%.0f" }} pod(s) were put off their machines
@@ -228,6 +239,9 @@ spec:
           labels:
             severity: warning
           annotations:
+            first_step: >-
+              Find what is writing heavily to the pool etcd shares: on the
+              host, `zpool iostat -v 5`. Move it or slow it.
             summary: etcd's writes to its log are slower than this site's disk has ever made them.
             description: >-
               The slowest hundredth of etcd's log writes on
@@ -255,6 +269,9 @@ spec:
           labels:
             severity: info
           annotations:
+            first_step: >-
+              Nothing, unless it keeps happening to the same work. Then give
+              that work a quieter time to run in.
             summary: Work that can wait was stopped to give resources back, and is being run again.
             description: >-
               {{ $labels.pod }} in {{ $labels.namespace }} was stopped by its
@@ -310,6 +327,9 @@ spec:
             # this is what says a decision put off is now due.
             severity: warning
           annotations:
+            first_step: >-
+              Read the comment on this rule in the repository, and decide
+              whether to reopen the choice it records.
             summary: Work that can wait is being stopped for resources more than occasionally.
             description: >-
               More than three batch pods were evicted in a day. Lending idle

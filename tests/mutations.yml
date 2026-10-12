@@ -215,6 +215,8 @@ unprovable:
     reason: table
   - test: TestALayerIsHeldToWhatItsSecretsCarry
     reason: table
+  - test: TestAnAlertIsHeldToSayingAllThreeThings
+    reason: table
   - test: TestPathsIntoTheEstateNamesEachWayOneIsOpened
     reason: table
   - test: TestUnpinnedReleasesNamesEachWayAReleaseIsNotPinned

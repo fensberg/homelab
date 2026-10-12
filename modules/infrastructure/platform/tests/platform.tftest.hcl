@@ -211,3 +211,29 @@ run "the_credential_for_the_domains_records_is_put_where_certificates_are_got" {
     error_message = "the Secret does not hold the granted credential, and that alone"
   }
 }
+
+# The monitoring stack is given where Grafana is opened, in the secret its
+# own layer reads, so that a link it writes is one a person can follow. A
+# site that serves no such name is given nothing, and not an address made
+# up.
+run "the_monitoring_layer_is_given_where_grafana_is_opened" {
+  command = plan
+
+  variables {
+    core_routes_path = "../applications/tests/fixtures/core/grafana.json"
+  }
+
+  assert {
+    condition     = nonsensitive(kubernetes_secret.monitoring_vars.data.GRAFANA_URL) == "https://grafana.site0.${local.config.organization.domain}"
+    error_message = "the monitoring layer is not given the address Grafana is served at"
+  }
+}
+
+run "a_site_that_serves_no_grafana_is_given_no_address_for_one" {
+  command = plan
+
+  assert {
+    condition     = nonsensitive(kubernetes_secret.monitoring_vars.data.GRAFANA_URL) == ""
+    error_message = "an address for Grafana was made up for a site that does not serve it by name"
+  }
+}

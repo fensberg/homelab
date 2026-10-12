@@ -1646,6 +1646,15 @@ issued. Flux's verdict on its own objects was collected by nothing until
 now, which is why a refused layer was found by a converge that happened
 to be waiting.
 
+**Every alert says what to try first (2026-10-12), which is the first half
+of criterion 26.** Each alert the estate declares carries what it is, what
+it means and the first thing to try, the last in an annotation of its own
+so that the channel shows it on a line by itself and a guard can see it
+left out. Most already said what to do, somewhere in a paragraph; four
+said only that something was wrong. Whether a step is a good one is not
+something a guard can hold. The second half, quieting the alerts a
+converge is known to cause for as long as it runs, is not built.
+
 **And what the failed converge taught.** The converge that followed gave
 up waiting for Flux and applied nothing, and the job that tidies up after
 one opened a revert that could not have helped and told the operator to
