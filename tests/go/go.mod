@@ -28,10 +28,10 @@ go 1.26.0
 
 require (
 	github.com/gruntwork-io/terratest v1.0.1
-	github.com/hashicorp/hcl/v2 v2.22.0
+	github.com/hashicorp/hcl/v2 v2.25.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/stretchr/testify v1.12.1
-	github.com/zclconf/go-cty v1.15.0
+	github.com/zclconf/go-cty v1.19.0
 	gopkg.in/yaml.v3 v3.0.1
 	homelab/contractor v0.0.0-00010101000000-000000000000
 	homelab/details v0.0.0
@@ -43,6 +43,7 @@ require (
 	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
+	github.com/apparentlymart/go-textseg/v17 v17.0.1 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.42.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.9 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.32.16 // indirect
