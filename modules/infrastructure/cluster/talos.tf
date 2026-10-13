@@ -24,6 +24,16 @@ locals {
   #
   # Its own gateway, because it is in its own subnet rather than a band of the
   # node one.
+  # How a zone's machine is kept for its zone: the taint that keeps other
+  # work off it, and the label the work meant for it selects. Said once,
+  # under one key, so the two cannot name different zones.
+  dmz_dedication = {
+    for k, v in local.dmz : k => {
+      taint  = "untrusted-zone=${v.zone}:NoSchedule"
+      labels = { "untrusted-zone" = v.zone }
+    }
+  }
+
   dmz_patches = {
     for k, v in local.dmz : k => [
       yamlencode({
@@ -72,9 +82,25 @@ locals {
         machine = {
           kubelet = {
             extraArgs = {
-              "register-with-taints" = "untrusted-zone=${v.zone}:NoSchedule"
+              "register-with-taints" = local.dmz_dedication[k].taint
             }
           }
+        }
+      }),
+
+      # And a label saying the same thing, because the taint only keeps work
+      # off. Work meant for the zone tolerates the taint, and a toleration
+      # lets a pod onto this machine without sending it there: with nothing
+      # to select on it could as well land on a machine the estate trusts,
+      # which is the one place untrusted work must not run. The label is
+      # what such work selects, so it is held here and nowhere else.
+      #
+      # A label a machine gives itself is safe to select on in this
+      # direction. A machine that lied and claimed the zone would attract
+      # only work that was already meant for an untrusted machine.
+      yamlencode({
+        machine = {
+          nodeLabels = local.dmz_dedication[k].labels
         }
       }),
     ]

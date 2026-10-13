@@ -532,21 +532,19 @@ resource "proxmox_virtual_environment_vm" "dmz" {
     # a node deflated afterwards keeps scheduling against memory that is gone.
     # That makes this a hard allocation and the estate's scarcest resource.
     #
-    # EIGHT, AND THE REASONING IS IN docs/epochs/03-workload.md.
+    # FOUR, AND IT IS WHAT THE HYPERVISOR HAS LEFT.
     #
-    # The workload this zone was built for wants 4 GiB on a fresh install and
-    # 6-8 GiB once it has accumulated state, at the player count it is intended
-    # for. This VM also runs Talos, the kubelet, the Cilium agent and the
-    # OpenEBS provisioner - roughly a gigabyte before the workload starts - so
-    # eight here is about seven for it.
+    # This was eight, sized for the game server the zone was first built
+    # for, which has not run in a zone since [03] moved it out. What a zone
+    # hosts now is a pull request's jobs, and the size is not chosen from
+    # what they need: the site's hypervisor has four to give and no more
+    # (docs/epochs/08-agent-roles.md). About three of it is left for work
+    # once Talos, the kubelet and the network's agent have theirs.
     #
-    # The top of the band rather than the middle, deliberately. The failure
-    # mode of being short is a service that degrades once it has accumulated
-    # state people care about - which is the moment it is hardest to take away
-    # for a resize, and the moment anyone would mind most. The hypervisor was
-    # measured rather than estimated and has room: raising this later would buy
-    # nothing that taking it now does not, and would cost an outage to do it.
-    dedicated = 8192
+    # An estimate in the plainest sense. Nothing has run here at this size,
+    # and what a pull request's jobs use is to be read off the machine once
+    # they do.
+    dedicated = 4096
   }
 
   network_device {
