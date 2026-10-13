@@ -2,6 +2,7 @@ package phases
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"homelab/contractor/config"
+	"homelab/contractor/internal/run"
 	"homelab/details/asbuilt"
 	"homelab/details/platform"
 	"homelab/details/repopath"
@@ -238,7 +240,7 @@ func TestAPlanIsHandedTheHardwareTheRecordHolds(t *testing.T) {
 		recorded string
 		want     bool
 	}{
-		"a record that holds the hardware":       {`{"nodes": {"node0": {"memory_bytes": 1}}}`, true},
+		"a record that holds the hardware":       {`{"nodes": {"node0": {"memory_bytes": 68719476736}}}`, true},
 		"a record taken before it was ever read": {"", false},
 	} {
 		ctx := recordContext(t)
@@ -247,6 +249,7 @@ func TestAPlanIsHandedTheHardwareTheRecordHolds(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		aSiteAsking(t, ctx, 3, 1)
 		record := savedRecord(t)
 		if c.recorded != "" {
 			state, cfg, meta, err := asbuilt.Read(filepath.Join(record, config.ClusterRoot))
@@ -265,7 +268,7 @@ func TestAPlanIsHandedTheHardwareTheRecordHolds(t *testing.T) {
 		handed := false
 		tofu := func(_ string, env []string, args ...string) ([]byte, []byte, error) {
 			for _, e := range env {
-				if strings.HasPrefix(e, "TF_VAR_"+hardwareInput+"=") && strings.Contains(e, `"memory_bytes":1`) {
+				if strings.HasPrefix(e, "TF_VAR_"+hardwareInput+"=") && strings.Contains(e, `"memory_bytes":68719476736`) {
 					handed = true
 				}
 			}
@@ -281,5 +284,146 @@ func TestAPlanIsHandedTheHardwareTheRecordHolds(t *testing.T) {
 		if handed != c.want {
 			t.Errorf("%s: the plan was handed the recorded hardware = %v", name, handed)
 		}
+	}
+}
+
+// aSiteAsking is a config for a site of one hypervisor with the machines
+// given: the contract corpus's valid config, with how many machines it has
+// changed. What a site asks comes from that alone.
+func aSiteAsking(t *testing.T, ctx *run.Context, controlPlanes, workers int, zones ...string) {
+	t.Helper()
+	root, err := repopath.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := os.ReadFile(filepath.Join(root, "modules", "infrastructure", "cluster", "tests", "fixtures", "valid.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg config.Config
+	if err := json.Unmarshal(valid, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	site := cfg.Sites["site0"]
+	site.ControlPlaneCount, site.WorkerCount = controlPlanes, workers
+	site.DMZZones = map[string]config.DMZZone{}
+	for _, zone := range zones {
+		site.DMZZones[zone] = config.DMZZone{}
+	}
+	cfg.Sites["site0"] = site
+	tpl, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ctx.ConfigTpl, tpl, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// recordHolding is a saved record whose cluster root holds the hardware
+// given.
+func recordHolding(t *testing.T, hardware string) string {
+	t.Helper()
+	record := savedRecord(t)
+	state, cfg, meta, err := asbuilt.Read(filepath.Join(record, config.ClusterRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var facts any
+	if err := json.Unmarshal([]byte(hardware), &facts); err != nil {
+		t.Fatal(err)
+	}
+	state["outputs"].(map[string]any)[hardwareInput] = map[string]any{"value": facts}
+	if err := asbuilt.Write(filepath.Join(record, config.ClusterRoot), &asbuilt.Result{Quiet: true, State: state, Config: cfg}, meta); err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+// A change that asks its hypervisor for more memory than the record says it
+// has is refused by the plan, in the converge's own words, and the comment
+// leads with it: it is not left for the converge to find after the merge.
+// A change that fits is planned and says nothing of it.
+func TestAPlanRefusesAChangeItsHypervisorCannotHold(t *testing.T) {
+	const gib = int64(1) << 30
+	// A host of 64 GiB on which the site's four machines already stand:
+	// three control planes and a worker, 22 GiB of the 64.
+	standing := fmt.Sprintf(`{"nodes": {"node0": {"memory_bytes": %d, "machines": [
+	  {"id": 10100, "memory_bytes": %d}, {"id": 10101, "memory_bytes": %d},
+	  {"id": 10102, "memory_bytes": %d}, {"id": 10200, "memory_bytes": %d}]}}}`,
+		64*gib, 4*gib, 4*gib, 4*gib, 10*gib)
+
+	for name, c := range map[string]struct {
+		workers int
+		zones   []string
+		refused bool
+	}{
+		"what stands":                   {1, nil, false},
+		"one more worker, which fits":   {2, nil, false},
+		"more than the host can give":   {6, nil, true},
+		"a zone's machine that tips it": {4, []string{"example"}, true},
+	} {
+		ctx := recordContext(t)
+		ctx.CommentOut = filepath.Join(t.TempDir(), "comment.md")
+		for _, root := range ctx.Roots() {
+			if err := os.MkdirAll(root.Dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		aSiteAsking(t, ctx, 3, c.workers, c.zones...)
+		tofu := func(_ string, _ []string, args ...string) ([]byte, []byte, error) {
+			if args[0] != "show" {
+				return nil, nil, nil
+			}
+			return nothingPlanned(), nil, nil
+		}
+		t.Setenv("TF_VAR_"+hardwareInput, "")
+		err := planAsBuilt(ctx, recordHolding(t, standing), tofu, noModulesOfItsOwn)
+		comment, _ := os.ReadFile(ctx.CommentOut)
+		if c.refused {
+			if err == nil || !strings.Contains(err.Error(), "more memory than it can give") {
+				t.Errorf("%s: was not refused: %v", name, err)
+			}
+			if !strings.Contains(string(comment), "REFUSED: the site asks its hypervisor for more memory than it can give") || !strings.Contains(string(comment), "OVER BY") {
+				t.Errorf("%s: the comment does not lead with the refusal and its sum:\n%s", name, comment)
+			}
+			continue
+		}
+		if err != nil || strings.Contains(string(comment), "REFUSED") {
+			t.Errorf("%s: a change that fits was refused: %v\n%s", name, err, comment)
+		}
+	}
+}
+
+// A record whose hardware cannot be read, or a config no site can be read
+// from, stops the plan: a sum that could not be done is not a sum that
+// came out even.
+func TestAPlanThatCannotDoTheSumSaysSo(t *testing.T) {
+	ctx := recordContext(t)
+	for _, root := range ctx.Roots() {
+		if err := os.MkdirAll(root.Dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tofu := func(_ string, _ []string, args ...string) ([]byte, []byte, error) { return nothingPlanned(), nil, nil }
+
+	aSiteAsking(t, ctx, 3, 1)
+	if err := planAsBuilt(ctx, recordHolding(t, `{"nodes": "not hosts"}`), tofu, noModulesOfItsOwn); err == nil || !strings.Contains(err.Error(), "record's hardware cannot be read") {
+		t.Errorf("hardware that cannot be read: %v", err)
+	}
+	if err := planAsBuilt(ctx, recordHolding(t, `{"nodes": {}}`), tofu, noModulesOfItsOwn); err == nil || !strings.Contains(err.Error(), "nothing read what that hypervisor has") {
+		t.Errorf("a hypervisor the record does not hold: %v", err)
+	}
+	if err := os.WriteFile(ctx.ConfigTpl, []byte(`not a config`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := planAsBuilt(ctx, recordHolding(t, `{"nodes": {}}`), tofu, noModulesOfItsOwn); err == nil || !strings.Contains(err.Error(), "not JSON") {
+		t.Errorf("a config that is not one: %v", err)
+	}
+	if err := os.WriteFile(ctx.ConfigTpl, []byte(`{"sites": "not sites"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := planAsBuilt(ctx, recordHolding(t, `{"nodes": {}}`), tofu, noModulesOfItsOwn); err == nil || !strings.Contains(err.Error(), "cannot be read as a site's") {
+		t.Errorf("a config of the wrong shape: %v", err)
 	}
 }
