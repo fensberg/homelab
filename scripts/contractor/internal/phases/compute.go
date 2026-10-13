@@ -134,7 +134,7 @@ Nothing has been changed. (%w)`, hypervisorapi.AuthorityRef(ctx.Site), ctx.Site,
 
 	// The applies are declared in homelab/contractor/steps, which the plans
 	// walk as well, so what a plan checks is what this does (#497).
-	if err := applySteps(ctx, "compute", len(net.WorkerIPs) > 0); err != nil {
+	if err := applySteps(ctx, "compute", siteHas{workers: len(net.WorkerIPs) > 0, zones: len(net.DMZIPs) > 0}); err != nil {
 		return err
 	}
 	run.Ok("VMs created")

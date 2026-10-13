@@ -1,0 +1,9 @@
+guard: TestAnUntrustedZoneCanJoinTheClusterAndReachNothingElse
+file: management/hypervisor/hypervisor-prep.yml
+find: "--dport 50001 -j ACCEPT\n"
+replace: "--dport 50001 -j ACCEPT\n          ensure FORWARD -s {{ item.subnet }} -d {{ sdn_subnet }} -p tcp --dport 50000 -j ACCEPT\n"
+mentions: "not one of the three membership ports"
+why: >
+  The Talos API on the control planes is the one port that can reset or
+  reboot a machine. A zone exists for node-level compromise, so opening it
+  "while we are here" hands that to whatever escaped a container.
