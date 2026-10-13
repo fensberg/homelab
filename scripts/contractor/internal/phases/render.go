@@ -104,9 +104,10 @@ sdn_vrf_vni: %d
 sdn_vnet_vni: %d
 sdn_vnet: %q
 worker_pool: %q
+untrusted_pool: %q
 volume_storage: %q
 `, net.NodeCIDR, net.Gateway, net.SiteCIDR, net.ASN, net.VRFVNI, net.VNetVNI, net.VNet,
-		net.WorkerPool(), config.VolumeStorage(ctx.Site)) + zoneBlock
+		net.WorkerPool(), net.UntrustedPool(), config.VolumeStorage(ctx.Site)) + zoneBlock
 	if err := os.WriteFile(ctx.SiteVars, []byte(siteVars), 0o644); err != nil {
 		return err
 	}

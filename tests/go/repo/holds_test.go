@@ -347,6 +347,12 @@ func TestTheStorageDriversNamesAreTheSameWhereverTheyAreWritten(t *testing.T) {
 	if _, body := tofuDeclaring(t, `resource "proxmox_virtual_environment_pool" "workers"`); !strings.Contains(body, `"`+workers+`"`) {
 		t.Errorf("the pool a site's workers are put in is not %q, which is the pool the hypervisor confines the storage driver's token to", workers)
 	}
+	// The sweeper's token is confined the same way, to the pool of the
+	// machines it gives back as they were built.
+	untrusted := (&config.SiteNetwork{Name: "${local.site_name}"}).UntrustedPool()
+	if _, body := tofuDeclaring(t, `resource "proxmox_virtual_environment_pool" "untrusted"`); !strings.Contains(body, `"`+untrusted+`"`) {
+		t.Errorf("the pool a site's untrusted machines are put in is not %q, which is the pool the hypervisor confines the sweeper's token to", untrusted)
+	}
 	volumes := config.VolumeStorage("${var.site}")
 	if _, body := tofuDeclaring(t, `resource "kubernetes_secret" "storage_vars"`); !strings.Contains(body, `"`+volumes+`"`) {
 		t.Errorf("the storage the driver is told to keep volumes in is not %q, which is the one the hypervisor makes for it and grants it", volumes)
