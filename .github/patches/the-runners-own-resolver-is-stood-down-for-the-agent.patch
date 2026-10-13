@@ -1,0 +1,37 @@
+diff --git a/.github/workflows/mobilize/action.yml b/.github/workflows/mobilize/action.yml
+index af5ef34..d11a6d2 100644
+--- a/.github/workflows/mobilize/action.yml
++++ b/.github/workflows/mobilize/action.yml
+@@ -101,6 +101,32 @@ runs:
+       if: inputs.disable-sudo-and-containers == 'true'
+       shell: bash
+       run: |
++        # THE ONE CAUSE THAT IS KNOWN, PUT RIGHT HERE. Some of GitHub's
++        # runners now start a resolver of GitHub's own before the job
++        # (egress-dns-resolver.service, "Actions egress proxy DNS resolver")
++        # on the address and port the agent's resolver needs. The agent
++        # cannot take the port, gives up, and puts sudo back (#725). The
++        # runner does not resolve by GitHub's resolver - it is told to use
++        # the system's stub, which GitHub's only reads from - so standing it
++        # down takes nothing the job uses, and the agent is started again
++        # with the port free.
++        #
++        # Only where that is true. A runner told to resolve by that address
++        # depends on it, and is left as it is for the check below to stop.
++        # And after the agent, never before it: nothing runs on a runner
++        # ahead of what hardens it.
++        if sudo -n true 2>/dev/null &&
++          systemctl is-active --quiet egress-dns-resolver.service &&
++          ! grep -Eq '^nameserver[[:space:]]+127\.0\.0\.1([[:space:]]|$)' /etc/resolv.conf; then
++          echo "The runner's own resolver holds the port the agent needs. Standing it down and starting the agent again."
++          sudo systemctl stop egress-dns-resolver.service
++          sudo systemctl restart agent || true
++          for _ in $(seq 1 30); do
++            sudo -n true 2>/dev/null || break
++            sleep 1
++          done
++        fi
++
+         if sudo -n true 2>/dev/null; then
+           # Why, before stopping. The agent says of itself that it could not
+           # take the port its resolver listens on, because something on the
