@@ -1,0 +1,218 @@
+{
+  "uid": "what-a-pull-requests-jobs-use",
+  "title": "What a pull request's jobs use",
+  "description": "The pools a pull request's jobs run in, on the untrusted zone's machine: how many runners are at work in each, whether any is waiting for room, what a runner really uses against what it asks for, and what the machine has left. A runner asks for a guess; this is where the guess is replaced with what was seen.",
+  "tags": ["estate"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "editable": false,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "What changed",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "enable": true,
+        "iconColor": "orange",
+        "expr": "changes(kube_daemonset_metadata_generation[2m]) > 0 or changes(kube_deployment_metadata_generation[2m]) > 0 or changes(kube_statefulset_metadata_generation[2m]) > 0",
+        "step": "2m",
+        "titleFormat": "changed: {{namespace}}/{{daemonset}}{{deployment}}{{statefulset}}"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Runners at work, in each pool",
+      "description": "How many runners are running a job in each pool, as often as it is looked at. A job that is over in less than the time between two looks is not seen here at all, so a quiet picture is not proof that nothing ran: the job's own page says that.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (pool) (label_replace(kube_pod_status_phase{namespace=\"pull-request-runners\",phase=\"Running\"} == 1, \"pool\", \"$1\", \"pod\", \"pr-([a-z]+)-.*\")) or vector(0)",
+          "legendFormat": "{{pool}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Runners waiting for room",
+      "description": "Runners that have been asked for and cannot be placed yet, because the machine is full. Each is a job somebody is waiting on. Anything above nothing for more than a moment says the machine is smaller than the work.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (pool) (label_replace(kube_pod_status_phase{namespace=\"pull-request-runners\",phase=\"Pending\"} == 1, \"pool\", \"$1\", \"pod\", \"pr-([a-z]+)-.*\")) or vector(0)",
+          "legendFormat": "{{pool}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "What a runner used at its most, and what it asks for",
+      "description": "The most memory any runner in each pool has held over five minutes, beside what a runner in that pool asks for. What it asks for is how many fit on the machine; what it uses is what it needs. A pool whose runners use far less than they ask is holding room another could have.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (pool) (label_replace(max_over_time(container_memory_working_set_bytes{namespace=\"pull-request-runners\",container=\"runner\"}[5m]), \"pool\", \"$1\", \"pod\", \"pr-([a-z]+)-.*\")) or vector(0)",
+          "legendFormat": "{{pool}} used"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (pool) (label_replace(kube_pod_container_resource_requests{namespace=\"pull-request-runners\",resource=\"memory\",container=\"runner\"}, \"pool\", \"$1\", \"pod\", \"pr-([a-z]+)-.*\")) or vector(0)",
+          "legendFormat": "{{pool}} asks"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "The zone's machine: in use, of what it holds",
+      "description": "What everything on the untrusted zone's machine is using, against what the machine has for work. The gap is what a runner could still be given.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(container_memory_working_set_bytes{container!=\"\",container!=\"POD\"} and on (node) kube_node_spec_taint{key=\"untrusted-zone\"}) or vector(0)",
+          "legendFormat": "in use"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(kube_node_status_allocatable{resource=\"memory\"} and on (node) kube_node_spec_taint{key=\"untrusted-zone\"}) or vector(0)",
+          "legendFormat": "the machine holds"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ]
+}
