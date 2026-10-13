@@ -52,6 +52,8 @@ func validConfig() config {
 	c.SourceControl.AppID = "42"
 	c.SourceControl.InstallationID = "77"
 	c.SourceControl.PrivateKey = "Zml4dHVyZQ=="
+	c.SourceControl.BillingEmail = "billing@example.com"
+	c.SourceControl.ProcurementAppID = "2"
 	c.Plots = map[string]struct {
 		Name string `json:"name"`
 	}{"site0": {Name: "Placeholder Site"}}

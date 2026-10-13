@@ -67,6 +67,31 @@ func (s sourceControl) rulesets(repository string) (map[string]int64, error) {
 	return out, nil
 }
 
+// organisation is the platform's number for the estate's organisation.
+func (s sourceControl) organisation() (int64, error) {
+	token, err := s.app.Token(time.Now())
+	if err != nil {
+		return 0, fmt.Errorf("signing in as the estate's App: %w", err)
+	}
+	org, err := ghapi.Get[struct {
+		ID int64 `json:"id"`
+	}](sourceControlBase, token, "/orgs/"+s.owner)
+	if err != nil {
+		return 0, fmt.Errorf("asking after the estate's organisation: %w", err)
+	}
+	if org.ID == 0 {
+		return 0, errors.New("the source control answered for the estate's organisation without its number")
+	}
+	return org.ID, nil
+}
+
+// standing is what the estate asks its source control about what already
+// stands there.
+type standing interface {
+	rulesets(repository string) (map[string]int64, error)
+	organisation() (int64, error)
+}
+
 // wantedRuleset is one ruleset a plan would make.
 type wantedRuleset struct {
 	address, repository, name string
@@ -94,8 +119,31 @@ func plannedRulesets(showJSON []byte) ([]wantedRuleset, error) {
 	return out, nil
 }
 
-// adoptRulesets has the estate take as its own every ruleset it declares
-// that the repository already holds under the same name.
+// plannedOrganisations is the address of every set of organisation settings
+// the plan would create.
+func plannedOrganisations(showJSON []byte) ([]string, error) {
+	p, err := tofustate.ParsePlan(showJSON)
+	if err != nil {
+		return nil, fmt.Errorf("reading the plan: %w", err)
+	}
+	var out []string
+	for _, rc := range p.ResourceChanges {
+		if rc.Type == ghapi.OrganisationSettingsType && rc.Creates() {
+			out = append(out, rc.Address)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// adoptSourceControl has the estate take as its own what it declares at its
+// source control that already stands there: every ruleset the repository
+// holds under the same name, and the organisation's settings.
+//
+// THE ORGANISATION'S SETTINGS ARE ALWAYS ADOPTED AND NEVER MADE. They exist
+// for as long as the organisation does, and making them writes every field
+// the resource has - the ones nobody declared as empty. Adopted, the estate
+// starts from what stands and changes what it declares.
 //
 // The rules on a repository's branches outlive the estate's machinery, as
 // its buckets do: they were there before any of it and a demolish releases
@@ -108,7 +156,7 @@ func plannedRulesets(showJSON []byte) ([]wantedRuleset, error) {
 // apply records it. They are written here and not in git because which
 // ruleset is which is the platform's number for it, found by asking; and
 // because the estate's own tests cannot run with an import in the root.
-func (e *estate) adoptRulesets(listed func(repository string) (map[string]int64, error)) error {
+func (e *estate) adoptSourceControl(there standing) error {
 	file := filepath.Join(e.dir, adoptionsFile)
 	if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -121,20 +169,32 @@ func (e *estate) adoptRulesets(listed func(repository string) (map[string]int64,
 	if err != nil {
 		return err
 	}
-	standing := map[string]map[string]int64{}
+	organisations, err := plannedOrganisations([]byte(shown))
+	if err != nil {
+		return err
+	}
+	held := map[string]map[string]int64{}
 	var blocks strings.Builder
 	for _, w := range wanted {
-		if _, asked := standing[w.repository]; !asked {
-			if standing[w.repository], err = listed(w.repository); err != nil {
+		if _, asked := held[w.repository]; !asked {
+			if held[w.repository], err = there.rulesets(w.repository); err != nil {
 				return err
 			}
 		}
-		id, stands := standing[w.repository][w.name]
+		id, stands := held[w.repository][w.name]
 		if !stands {
 			continue
 		}
 		console.Info("adopting a ruleset that already stands: " + w.address)
 		fmt.Fprintf(&blocks, "import {\n  to = %s\n  id = %s\n}\n", w.address, strconv.Quote(w.repository+":"+strconv.FormatInt(id, 10)))
+	}
+	for _, address := range organisations {
+		id, err := there.organisation()
+		if err != nil {
+			return err
+		}
+		console.Info("adopting the organisation's settings as they stand: " + address)
+		fmt.Fprintf(&blocks, "import {\n  to = %s\n  id = %s\n}\n", address, strconv.Quote(strconv.FormatInt(id, 10)))
 	}
 	if blocks.Len() == 0 {
 		return nil

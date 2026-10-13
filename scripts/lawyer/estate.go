@@ -52,6 +52,8 @@ type config struct {
 	SourceControl struct {
 		URL string `json:"url"`
 		ghapi.AppCredential
+		BillingEmail     string `json:"billing_email"`
+		ProcurementAppID string `json:"procurement_app_id"`
 	} `json:"source_control"`
 	State struct {
 		Bucket          string `json:"bucket"`
@@ -80,6 +82,9 @@ func (c config) validate() error {
 		"source-control/app_id":          c.SourceControl.AppID,
 		"source-control/installation_id": c.SourceControl.InstallationID,
 		"source-control/private_key":     c.SourceControl.PrivateKey,
+
+		"source-control/billing_email":      c.SourceControl.BillingEmail,
+		"source-control/procurement_app_id": c.SourceControl.ProcurementAppID,
 	} {
 		if strings.TrimSpace(v) == "" {
 			return fmt.Errorf("%s in the estate vault is empty", field)
@@ -191,7 +196,7 @@ func execute(verb string) error {
 	}
 	if verb == "plan-estate" {
 		console.Phase("Plan", "Show what a converge would change, and change nothing.")
-		if err := e.adoptRulesets(source.rulesets); err != nil {
+		if err := e.adoptSourceControl(source); err != nil {
 			return err
 		}
 		return e.plan()
@@ -204,7 +209,7 @@ func execute(verb string) error {
 	if err := e.adoptBuckets(api); err != nil {
 		return err
 	}
-	if err := e.adoptRulesets(source.rulesets); err != nil {
+	if err := e.adoptSourceControl(source); err != nil {
 		return err
 	}
 	if err := e.run("apply", "-input=false", "-auto-approve"); err != nil {

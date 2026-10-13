@@ -63,6 +63,8 @@ var estateTypes = map[string]bool{
 	"github_workflow_repository_permissions": true,
 	// What may be pushed to a repository's branches and tags.
 	ghapi.RulesetType: true,
+	// What a member of the organisation may do for being one.
+	ghapi.OrganisationSettingsType: true,
 }
 
 const estateRoot = "management/estate"

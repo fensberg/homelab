@@ -9,7 +9,9 @@
     "url": "{{ op://estate-shared/source-control/url }}",
     "app_id": "{{ op://estate/source-control/app_id }}",
     "installation_id": "{{ op://estate/source-control/installation_id }}",
-    "private_key": "{{ op://estate/source-control/private_key }}"
+    "private_key": "{{ op://estate/source-control/private_key }}",
+    "billing_email": "{{ op://estate/source-control/billing_email }}",
+    "procurement_app_id": "{{ op://estate/source-control/procurement_app_id }}"
   },
 
   "access": {

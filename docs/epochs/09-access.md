@@ -144,10 +144,17 @@ or not an estate does. So they are treated as the buckets are:
 - **Nobody passes the required checks by.** One person could, always. A
   check that is broken is mended.
 
-Not yet set from here: the rule that a change is reviewed. One App may pass
-it by, which is how a pin or a delivery merges, and the estate's config does
-not yet say which App; and one switch of that rule has no word in the
-provider.
+- **One party passes the review by:** the App that brings a pin or a
+  delivery. It passes the review and not the checks.
+- **A member of the organisation is given nothing but reading.** Making a
+  repository or a site of pages no longer comes with membership.
+- **The organisation's settings are always adopted and never made.** The
+  provider's resource writes every field it has, and making it would have
+  written the organisation's name and description empty.
+
+One switch of the review rule has no word in the provider: an extra
+approval for a change nobody is attributed with. It is on, set by hand, and
+stays on while a plan shows no change to that rule.
 
 ### The estate's Apps are declared, and made by one click (decided 2026-10-13, not built)
 

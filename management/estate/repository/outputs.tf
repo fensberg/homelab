@@ -18,6 +18,7 @@ output "rules" {
       all_branches   = github_repository_ruleset.all_branches
       default_branch = github_repository_ruleset.default_branch
       checks         = github_repository_ruleset.checks
+      review         = github_repository_ruleset.review
     } : name => length(rule.bypass_actors)
   }
 }

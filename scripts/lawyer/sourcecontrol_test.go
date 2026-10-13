@@ -48,6 +48,8 @@ func TestTheSourceControlIsReadOutOfTheAddressAndRefusedWhenMisshapen(t *testing
 		"a key that was pasted as PEM":  {func(c *config) { c.SourceControl.PrivateKey = "-----BEGIN-----" }, "source-control/private_key"},
 		"no App":                        {func(c *config) { c.SourceControl.AppID = "" }, "source-control/app_id"},
 		"no installation":               {func(c *config) { c.SourceControl.InstallationID = " " }, "source-control/installation_id"},
+		"nobody to bill":                {func(c *config) { c.SourceControl.BillingEmail = "" }, "source-control/billing_email"},
+		"no App that delivers":          {func(c *config) { c.SourceControl.ProcurementAppID = "" }, "source-control/procurement_app_id"},
 	} {
 		cfg := validConfig()
 		c.mutate(&cfg)
@@ -84,6 +86,25 @@ func TestRulesetsAreReadByNameAndARefusalIsNeverNone(t *testing.T) {
 	}
 }
 
+// whatStands answers for the source control from what a test gives it, and
+// counts how often it was asked.
+type whatStands struct {
+	held    map[string]int64
+	org     int64
+	err     error
+	lookups int
+}
+
+func (w *whatStands) rulesets(string) (map[string]int64, error) {
+	w.lookups++
+	return w.held, w.err
+}
+
+func (w *whatStands) organisation() (int64, error) {
+	w.lookups++
+	return w.org, w.err
+}
+
 const aPlanThatMakesRulesets = `{"format_version":"1.2","resource_changes":[
   {"address":"module.repository[\"homelab\"].github_repository_ruleset.stands","mode":"managed","type":"github_repository_ruleset",
    "change":{"actions":["create"],"after":{"name":"one","repository":"homelab"}}},
@@ -91,6 +112,7 @@ const aPlanThatMakesRulesets = `{"format_version":"1.2","resource_changes":[
    "change":{"actions":["create"],"after":{"name":"not there yet","repository":"homelab"}}},
   {"address":"module.repository[\"homelab\"].github_repository_ruleset.kept","mode":"managed","type":"github_repository_ruleset",
    "change":{"actions":["update"],"after":{"name":"two","repository":"homelab"}}},
+  {"address":"github_organization_settings.estate","mode":"managed","type":"github_organization_settings","change":{"actions":["create"],"after":{}}},
   {"address":"thing.new","mode":"managed","type":"thing","change":{"actions":["create"],"after":{"name":"one","repository":"homelab"}}}
 ]}`
 
@@ -103,28 +125,22 @@ func TestAStandingRulesetIsAdoptedByAnImportWrittenForThisRun(t *testing.T) {
 	e, calls := fakeEstate(t)
 	e.dir = t.TempDir()
 	file := filepath.Join(e.dir, adoptionsFile)
-	lookups := 0
-	listed := func(repository string) (map[string]int64, error) {
-		lookups++
-		if repository != "homelab" {
-			t.Errorf("asked about %s", repository)
-		}
-		return map[string]int64{"one": 11, "two": 22}, nil
-	}
+	there := &whatStands{held: map[string]int64{"one": 11, "two": 22}, org: 9001}
 
-	if err := e.adoptRulesets(listed); err != nil {
+	if err := e.adoptSourceControl(there); err != nil {
 		t.Fatal(err)
 	}
 	written, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "import {\n  to = module.repository[\"homelab\"].github_repository_ruleset.stands\n  id = \"homelab:11\"\n}\n"
+	want := "import {\n  to = module.repository[\"homelab\"].github_repository_ruleset.stands\n  id = \"homelab:11\"\n}\n" +
+		"import {\n  to = github_organization_settings.estate\n  id = \"9001\"\n}\n"
 	if string(written) != want {
 		t.Errorf("the adoptions were written as\n%s\nand are\n%s", written, want)
 	}
-	if lookups != 1 {
-		t.Errorf("the repository was asked %d times for one plan", lookups)
+	if there.lookups != 2 {
+		t.Errorf("the source control was asked %d times for one repository and one organisation", there.lookups)
 	}
 	if len(*calls) != 0 || strings.Contains(asked(), "import") {
 		t.Errorf("something was imported by command: %v\n%s", *calls, asked())
@@ -133,19 +149,14 @@ func TestAStandingRulesetIsAdoptedByAnImportWrittenForThisRun(t *testing.T) {
 		t.Errorf("a saved plan was left behind: %v", left)
 	}
 
-	// A repository that holds none of them: nothing to adopt, and what an
-	// earlier run wrote does not outlive it.
-	if err := e.adoptRulesets(func(string) (map[string]int64, error) { return nil, nil }); err != nil {
-		t.Fatal(err)
+	// A source control that cannot be asked stops the run: the apply would
+	// otherwise make a second of every rule, and write the organisation's
+	// settings over. And what an earlier run wrote does not outlive it.
+	if err := e.adoptSourceControl(&whatStands{err: errors.New("refused")}); err == nil {
+		t.Error("a source control that could not be asked was read as holding nothing")
 	}
 	if _, err := os.Stat(file); !errors.Is(err, os.ErrNotExist) {
 		t.Error("adoptions an earlier run wrote were left for this one to apply")
-	}
-
-	// A repository that cannot be asked stops the run: the apply would
-	// otherwise make a second of everything.
-	if err := e.adoptRulesets(func(string) (map[string]int64, error) { return nil, errors.New("refused") }); err == nil {
-		t.Error("a repository that could not be asked was read as holding nothing")
 	}
 }
 
@@ -155,11 +166,9 @@ func TestOnlyAPlanThatMakesRulesetsAsksTheSourceControl(t *testing.T) {
 	tofuStandIn(t, aPlanThatChangesNothing)
 	e, _ := fakeEstate(t)
 	e.dir = t.TempDir()
-	if err := e.adoptRulesets(func(string) (map[string]int64, error) {
-		t.Error("the source control was asked when the plan makes no ruleset")
-		return nil, nil
-	}); err != nil {
-		t.Fatal(err)
+	there := &whatStands{}
+	if err := e.adoptSourceControl(there); err != nil || there.lookups != 0 {
+		t.Fatalf("the source control was asked %d times when the plan makes nothing there: %v", there.lookups, err)
 	}
 
 	if _, err := plannedRulesets([]byte(`{"format_version":"1.2","resource_changes":[
@@ -191,5 +200,41 @@ func TestADemolishReleasesWhatOutlivesTheEstateAndNothingElse(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("released\n%s\nand should release\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// The organisation is asked after by the name in the address, as the
+// estate's App, and an answer without its number is not one.
+func TestTheOrganisationIsKnownByThePlatformsNumberForIt(t *testing.T) {
+	for name, c := range map[string]struct {
+		status int
+		body   string
+		want   int64
+		says   string
+	}{
+		"an organisation":          {200, `{"id":9001,"login":"example"}`, 9001, ""},
+		"a refusal":                {404, `{"message":"Not Found"}`, 0, "asking after the estate's organisation"},
+		"an answer with no number": {200, `{"login":"example"}`, 0, "without its number"},
+	} {
+		base, credential := ghapitest.Server(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/orgs/example" {
+				t.Errorf("%s: asked %s", name, r.URL.Path)
+			}
+			w.WriteHeader(c.status)
+			_, _ = w.Write([]byte(c.body))
+		})
+		old := sourceControlBase
+		sourceControlBase = base
+		cfg := validConfig()
+		cfg.SourceControl.AppCredential = credential
+		s, err := cfg.sourceControl()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.organisation()
+		sourceControlBase = old
+		if got != c.want || (c.says == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.says)) {
+			t.Errorf("%s: got %d, %v", name, got, err)
+		}
 	}
 }

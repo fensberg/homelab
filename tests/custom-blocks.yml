@@ -39,6 +39,11 @@ opentofu:
     reason: >-
       The default device profile is the account's single one. The estate owns
       it, and a site has no profile of its own to build from a shared block.
+  - resource: github_organization_settings.estate
+    reason: >-
+      An organisation has one set of settings and the estate is one
+      organisation. There is no second one of it for a module to be called
+      for.
   - resource: cloudflare_zero_trust_device_settings.estate
     reason: >-
       Whether the vendor carries an enrolled device's traffic is one setting

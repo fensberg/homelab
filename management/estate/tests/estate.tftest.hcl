@@ -448,13 +448,30 @@ run "a_workflows_token_reads_and_approves_nothing" {
 }
 
 # No rule the estate sets on a repository's branches and tags has anybody
-# who may pass it by.
+# who may pass it by, but the review, which the App that delivers passes.
 run "nobody_passes_a_rule_on_the_repository_by" {
   command = plan
 
   assert {
-    condition     = length(module.repository["homelab"].rules) == 4 && alltrue([for name, passers in module.repository["homelab"].rules : passers == 0])
+    condition     = length(module.repository["homelab"].rules) == 5 && alltrue([for name, passers in module.repository["homelab"].rules : passers == (name == "review" ? 1 : 0)])
     error_message = "somebody may pass a rule on the repository's branches by"
+  }
+}
+
+# Being a member of the organisation gives nothing but reading.
+run "a_member_is_given_nothing_but_reading" {
+  command = plan
+
+  assert {
+    condition = (
+      github_organization_settings.estate.default_repository_permission == "read" &&
+      !github_organization_settings.estate.members_can_create_repositories &&
+      !github_organization_settings.estate.members_can_create_public_repositories &&
+      !github_organization_settings.estate.members_can_create_private_repositories &&
+      !github_organization_settings.estate.members_can_create_pages &&
+      !github_organization_settings.estate.members_can_fork_private_repositories
+    )
+    error_message = "a member of the organisation may make a repository or pages, or do more than read"
   }
 }
 

@@ -6,9 +6,6 @@
 # that stand as its own and does not make them again: the lawyer finds each
 # by its name and adopts it, so their names are the ones they were given.
 #
-# NOT HERE YET, and still as it was made by hand: that a change is reviewed.
-# One App may pass that by, and the estate's config does not yet say which;
-# and one switch of that rule that is on today has no word in this provider.
 
 # A release, once tagged, is that commit for good: the tag cannot be moved,
 # rewritten or taken away, by anybody.
@@ -115,6 +112,50 @@ resource "github_repository_ruleset" "checks" {
           integration_id = local.the_platforms_workflow_runner
         }
       }
+    }
+  }
+}
+
+# On the same branches: a change is read and approved by somebody who owns
+# what it touches, an approval does not outlive a later push, and every
+# thread on it is settled first.
+#
+# ONE PARTY PASSES THIS BY: the App that brings a pin or a delivery, which
+# nobody wrote and whose content was reviewed where it was made. It passes
+# the review and not the checks.
+#
+# ONE SWITCH OF THIS RULE IS NOT WRITTEN HERE, because this provider has no
+# word for it: an extra approval for a change nobody is attributed with. It
+# is on, set by hand. While a plan shows no change to this rule nothing is
+# sent and it stays on; a change to anything here sends the whole rule, and
+# that switch has to be looked at afterwards.
+resource "github_repository_ruleset" "review" {
+  repository  = var.name
+  name        = "protected branches - review"
+  target      = "branch"
+  enforcement = "active"
+
+  conditions {
+    ref_name {
+      include = ["~DEFAULT_BRANCH", "refs/heads/epoch/**"]
+      exclude = []
+    }
+  }
+
+  bypass_actors {
+    actor_type  = "Integration"
+    actor_id    = var.delivers_unreviewed
+    bypass_mode = "always"
+  }
+
+  rules {
+    pull_request {
+      required_approving_review_count   = 1
+      dismiss_stale_reviews_on_push     = true
+      require_code_owner_review         = true
+      require_last_push_approval        = false
+      required_review_thread_resolution = true
+      allowed_merge_methods             = ["squash", "rebase"]
     }
   }
 }
