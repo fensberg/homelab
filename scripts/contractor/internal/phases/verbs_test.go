@@ -89,7 +89,10 @@ func newVerbFixture(t *testing.T) *verbFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture, err := os.ReadFile(config.CorpusFixture(repo, "valid.json"))
+	// The corpus's site with an untrusted zone: every step a converge has is
+	// one this site needs, so a step for a zone's machines is run here and
+	// not only declared (#733, where it was neither).
+	fixture, err := os.ReadFile(config.CorpusFixture(repo, "a-zone.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,5 +514,46 @@ func TestTheRegistryCredentialIsWrittenForTheRunAndRemovedWithIt(t *testing.T) {
 	// there, it says so on every command, into output a phase reads.
 	if got, set := os.LookupEnv(platform.CLIConfigVariable); set {
 		t.Errorf("after Sterilize tofu is still pointed at %q, which is gone", got)
+	}
+}
+
+// A step for a zone's machines is applied for a site that has a zone and
+// not for one that has none, and it comes before the phase's end, where
+// every machine the site has is waited for.
+func TestAZonesMachinesAreBuiltWithTheOthersAndOnlyWhereThereIsAZone(t *testing.T) {
+	for name, c := range map[string]struct {
+		has  siteHas
+		want bool
+	}{
+		"a site with a zone":    {siteHas{workers: true, zones: true}, true},
+		"a site with no zone":   {siteHas{workers: true}, false},
+		"a zone and no workers": {siteHas{zones: true}, true},
+	} {
+		f := newVerbFixture(t)
+		if err := applySteps(f.ctx, "compute", c.has); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		tofu, _ := f.calls(t)
+		built := slices.ContainsFunc(tofu, func(call call) bool {
+			return strings.HasPrefix(call.args, "apply ") && strings.Contains(call.args, "-target="+steps.ZoneMachines)
+		})
+		if built != c.want {
+			t.Errorf("%s: the zone's machines were built = %v", name, built)
+		}
+	}
+	// And the same for its configuration, in the phase that configures.
+	f := newVerbFixture(t)
+	if err := applySteps(f.ctx, "compute", siteHas{workers: true, zones: true}); err != nil {
+		t.Fatal(err)
+	}
+	var last string
+	for _, st := range steps.Of("compute") {
+		last = st.Label
+	}
+	if last != "compute: zones" {
+		t.Errorf("the last machines a site builds are %q; a zone's are to be built before the phase waits for every machine to answer", last)
+	}
+	if !slices.ContainsFunc(steps.Of("cluster"), func(st steps.Step) bool { return st.WhenZones && slices.Contains(st.Targets, steps.ZoneConfig) }) {
+		t.Error("no step configures a zone's machines")
 	}
 }

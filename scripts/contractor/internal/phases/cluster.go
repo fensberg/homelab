@@ -23,18 +23,22 @@ func Cluster(ctx *run.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := applySteps(ctx, "cluster", len(net.WorkerIPs) > 0); err != nil {
+	if err := applySteps(ctx, "cluster", siteHas{workers: len(net.WorkerIPs) > 0, zones: len(net.DMZIPs) > 0}); err != nil {
 		return err
 	}
 	run.Ok("cluster is up and Flux is reconciling")
 	return nil
 }
 
+// siteHas is what a site has that some steps are only for.
+type siteHas struct{ workers, zones bool }
+
 // applySteps applies one phase's declared steps, in order, each in the root
-// it names. A step for workers is skipped when the site has none.
-func applySteps(ctx *run.Context, phase string, workers bool) error {
+// it names. A step for workers is skipped when the site has none, and one
+// for untrusted zones when it has none of those.
+func applySteps(ctx *run.Context, phase string, has siteHas) error {
 	for _, st := range steps.Of(phase) {
-		if st.WhenWorkers && !workers {
+		if (st.WhenWorkers && !has.workers) || (st.WhenZones && !has.zones) {
 			continue
 		}
 		in, err := rootFor(ctx, st.Root, asbuilt.Exec)

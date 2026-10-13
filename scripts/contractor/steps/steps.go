@@ -45,6 +45,10 @@ const (
 	Template           = inCluster + "proxmox_virtual_environment_vm.talos_template"
 	ControlPlanes      = inCluster + "proxmox_virtual_environment_vm.talos_cp"
 	Workers            = inCluster + "proxmox_virtual_environment_vm.talos_worker"
+	ZoneDiskImage      = inCluster + "proxmox_download_file.dmz_disk_image"
+	ZoneTemplate       = inCluster + "proxmox_virtual_environment_vm.dmz_template"
+	ZoneMachines       = inCluster + "proxmox_virtual_environment_vm.dmz"
+	ZoneConfig         = inCluster + "talos_machine_configuration_apply.dmz"
 	ControlPlaneConfig = inCluster + "talos_machine_configuration_apply.control_plane"
 	WorkerConfig       = inCluster + "talos_machine_configuration_apply.worker"
 	Bootstrap          = inCluster + "talos_machine_bootstrap.this"
@@ -67,6 +71,9 @@ type Step struct {
 	// WhenWorkers is a step applied only when the site has workers. A plan
 	// includes it regardless: a targeted plan of nothing plans nothing.
 	WhenWorkers bool
+	// WhenZones is a step applied only when the site has an untrusted zone,
+	// and planned regardless, as a step for workers is.
+	WhenZones bool
 }
 
 // Converge is every apply a converge makes, in order. The last step in each
@@ -84,12 +91,22 @@ var Converge = []Step{
 	// capacity problem, a control plane failing to clone stops the cluster
 	// existing, and the two should not look alike.
 	{Root: config.ClusterRoot, Phase: "compute", Label: "compute: workers", Say: "cloning the worker VMs", Targets: []string{Workers}, WhenWorkers: true},
+	// An untrusted zone's machines, from an image and a template of their
+	// own. Here, with the other machines, because the phase ends by waiting
+	// for every machine the site has to answer: a zone's machine was left to
+	// the untargeted apply at the end of the next phase, so the first site to
+	// declare a zone waited five minutes for a machine nothing had built yet
+	// and stopped (#733).
+	{Root: config.ClusterRoot, Phase: "compute", Label: "compute: zones", Say: "building the untrusted zones' machines", Targets: []string{ZoneDiskImage, ZoneTemplate, ZoneMachines}, WhenZones: true},
 
 	{Root: config.ClusterRoot, Phase: "cluster", Label: "talos config", Say: "applying the Talos machine configuration", Targets: []string{ControlPlaneConfig}},
 	// Targeted rather than left to the untargeted apply below, which once
 	// swept it up by accident; after the control plane and before bootstrap is
 	// safe, because a worker retries joining until the API server answers.
 	{Root: config.ClusterRoot, Phase: "cluster", Label: "worker config", Say: "applying the worker machine configuration", Targets: []string{WorkerConfig}},
+	// A zone's machine is a worker and joins as one, so it is configured
+	// where they are and for the same reason.
+	{Root: config.ClusterRoot, Phase: "cluster", Label: "zone config", Say: "applying the zones' machine configuration", Targets: []string{ZoneConfig}, WhenZones: true},
 	{Root: config.ClusterRoot, Phase: "cluster", Label: "bootstrap", Say: "bootstrapping etcd", Targets: []string{Bootstrap}},
 	// The rest of the cluster root: the cluster's access, Cilium, and the
 	// health read that waits for every node to be Ready. That is this root's

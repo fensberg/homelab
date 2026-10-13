@@ -1,0 +1,11 @@
+guard: TestAnUntrustedZoneCanJoinTheClusterAndReachNothingElse
+file: management/hypervisor/hypervisor-prep.yml
+find: "-p tcp --dport 6443 -j ACCEPT"
+replace: "-p tcp --dport 6444 -j ACCEPT"
+mentions: "no rule"
+why: >
+  Moved to the wrong port rather than deleted, which is the likelier
+  mistake and the one a reader skims past. Without the API server opening
+  a zone's machine boots and never joins the cluster, and nothing reports
+  why - which is the state the zone sat in, unnoticed, until the first
+  machine was built in one.
