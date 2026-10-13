@@ -68,6 +68,7 @@ func verbs() []verb {
 		{"expedite-check", "ask whether a supplier has published anything worth collecting", expediteCheck},
 		{"expedite-release-due", "say whether now is the hour an expedited delivery may disturb the site", expediteReleaseDue},
 		{"deliver", "move an application's pin in one site's file to the release just published", deliver},
+		{"deliver-platform", "move every site's line to the release of the platform just published", deliverPlatform},
 	}
 }
 
