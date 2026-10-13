@@ -249,6 +249,69 @@ the repository's and not something in it.
   fourth is the clerk's reading, the one pull-request job that holds a
   secret worth taking.
 
+**What the isolation is and is not (looked at 2026-10-13, with the pools
+built and no job yet moved).** The zone's machine is closed to the estate
+at the hypervisor, and it is still a member of the cluster: to join, it
+speaks to the API server and carries the pod network. So the walls hold a
+job inside its container. A job that got out of its container would hold
+that machine's credential in the cluster and sit on the pod network for as
+long as it ran, and the machine outlives the job. Enough for who can run a
+pull request's code today - the operator, the estate's Apps, and a fork the
+operator lets - and not for code nobody has vouched for. Not verified here:
+whether a machine that has been taken can pass for another pod to the
+network's policy.
+
+**The target: a hot tool, used once and thrown away (concept, 2026-10-13,
+not built).** The operator's, in three parts that fit together:
+
+- **Everything a job needs is already in the runner.** Most of a pull
+  request's jobs begin by fetching their tools, which is the only reason
+  two of the three pools reach a package registry at all. Built into the
+  runner's image, a job starts at once and needs the source control and
+  little else: the lists shrink, and the pools with them.
+- **A runner is waiting before the job arrives**, not started when it does.
+- **The machine is thrown away after every run**, not only the runner. A
+  runner is already made new for each job; the machine under it is not.
+  The operating system here is read-only, so everything a job could leave
+  is on one partition, and wiping that and starting again gives the machine
+  back as it was built. That closes a job lying in wait for the next one.
+  It does not close what a job that got out can do while it is still
+  running.
+
+To work out before building: a wiped machine has lost its copy of the
+runner's image and would fetch it again before the next runner is hot. The
+operating system can carry images in its own boot image, where a wipe does
+not reach; whether that suits this version and how the zone's template is
+built has not been looked at.
+
+**A swarm for a moment (concept, 2026-10-13, not built).** The operator:
+"you open the draft PR within 2 minutes of an expected draft elevation.
+elevation happens and BAM 20 jobs are picked up ASAP and finish in 30
+seconds. Then the extra capacity can go right back to Valheim or whatever."
+So: something says a pull request's checks are about to be wanted; enough
+runners for all of them are made ready, on capacity borrowed from work that
+can spare it; the checks run at once and together; the capacity goes back.
+
+What stands in the way, to be designed and not assumed away:
+
+- **The memory has to come from somewhere real.** The hypervisor has none
+  unspoken for, a machine's memory is fixed while it runs, and the kubelet
+  counts what it has once, at boot. Lending is therefore a machine stopped
+  or made smaller so that others can be made, and given back the same way:
+  minutes, not seconds, which is what the two minutes of warning are for.
+- **A pull request's code cannot borrow a machine the estate trusts.** The
+  borrowed capacity has to become zone machines, not room on a worker.
+- **Machines made for the swarm and unmade after it are the thrown-away
+  machine above**, made from the template and never used twice. The two
+  ideas are one design: this is where they meet.
+- **What says "soon".** Today a pull request's checks run on every push,
+  draft or not, so there is no moment of elevation they wait for. Either
+  the warning is its own signal, or the checks move to elevation.
+- **What makes and unmakes machines.** Epoch 05 adopts a tool that does
+  exactly this for the cluster's machines; a pool that grows from nothing
+  when work is waiting and shrinks to nothing after is its ordinary use.
+  That, before anything written here.
+
 ### Rejected: three zero-context personas on every pull request
 
 **Chose:** two narrow jobs where the absence of context is an advantage.

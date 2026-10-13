@@ -1,0 +1,9 @@
+guard: TestEveryMachineIsBuiltByAStepBeforeItIsWaitedFor
+file: scripts/contractor/steps/steps.go
+find: "Targets: []string{ZoneDiskImage, ZoneTemplate, ZoneMachines}"
+replace: "Targets: []string{ZoneDiskImage, ZoneTemplate}"
+mentions: "built by no step"
+why: >
+  A machine no step names is left to the catch-all apply of the next
+  phase, and the phase that builds machines waits for it first. That is
+  what stopped the first converge of a site with a zone.
