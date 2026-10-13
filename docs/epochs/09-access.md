@@ -87,6 +87,74 @@ to learn site names in the meantime.
 with a declared public one, so an internal service cannot shadow the public
 site.
 
+### The estate's settings at its source control are set from git (decided 2026-10-13)
+
+Who may send work to the estate, and what that work may do, is decided by
+settings of the organisation and the repository: who may open a pull
+request, whose workflows run without being let, who is a collaborator,
+which repositories and workflows may use the estate's runners, which
+actions may run, what a workflow's token may do, and the rules on main.
+Every one was made by hand and read by nothing. They became the estate's
+outermost wall the day a pull request's jobs were to run on the estate's
+own hardware ([08](08-agent-roles.md), #559). The operator, of the design
+that came first, which held a hostile job once it was running: "This repo
+should be a walled garden. You're focusing on the garden and not the
+walls."
+
+**Chose** to declare them in the estate's own root and set them from
+there, **over** a check that reads them and stops everything when one is
+wrong. The operator: "We don't need to check 1-6. We just set it." And
+over a nightly comparison: "Just force this on every run. Why check when
+constantly validate and override?" So they are applied on every merge to
+main and on a timer between, from the estate's own runner and never from
+a pull request's job, since what applies them can take every wall down.
+An apply that had to change something says so: a setting found otherwise
+was changed by somebody.
+
+**Built so far:** the estate reads its organisation and repository with a
+credential of its own (the lawyer's, in the estate vault), and sets
+nothing. Each wall is declared next as it stands, so the first apply moves
+nothing, and tightened after that one at a time.
+
+**It carries the estate's converge with it.** Nothing converged the estate
+when a change to it merged (#535); it is converged on the same merge and
+the same timer. The estate's credentials are then used by a job on the
+estate's runner where they had only been in the operator's shell, which
+the operator agreed to knowingly.
+
+### The estate's Apps are declared, and made by one click (decided 2026-10-13, not built)
+
+The estate acts at its source control as five parties, each an App or a
+token: the agent that writes changes, the one that opens deliveries and
+reverts, the one that reads a pull request and says what it found, the one
+that registers runners, and now the lawyer's. What each may do was set in
+a browser when it was made and is written nowhere. Asked how many there
+were, the answer had to be worked out from which secrets the workflows
+name.
+
+The operator: "I'm starting to think the Apps themselves should be built
+in code."
+
+**What the vendor allows.** An App cannot be made by a call alone: an
+owner confirms it in a browser. What is confirmed can be a file, a
+manifest that says the App's name and exactly what it may do. And an App
+can read what it was granted.
+
+**Chose**, for when it is built:
+
+- each App's manifest is in git, so what it may do is declared and
+  reviewed like anything else;
+- making one is the one click the vendor insists on, which is the floor
+  this estate already accepts for a credential a vendor's console issues;
+- each converge has every App read what it was granted and compares that
+  with its manifest, and stops on a difference. This is checked and not
+  set, because it cannot be set from outside: here a check is all there
+  is.
+
+**Found on the way, and to be cleared:** two client secrets on the
+agent's App that nothing has ever used, since it proves itself with a key;
+and two personal tokens of the operator's, one never used.
+
 ### The workstation has a tunnel of its own, locked on the workstation
 
 Built 2026-10-02, ahead of the rest of this epoch, because the operator was
