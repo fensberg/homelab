@@ -202,6 +202,65 @@ func TestTakeDeliveryInstallsOnlyTheFileTheLockWasOrderedWith(t *testing.T) {
 	})
 }
 
+// A delivery that is already here, from the lock lines it would be taken from
+// now, is not fetched again: that is what lets a machine be built with its
+// tools in it and still run the step that installs them. A lock that has
+// moved since is a different delivery and is fetched; and a run that was
+// refused records nothing, so what it did not install is not taken as here.
+func TestTakeDeliveryDoesNotFetchWhatIsAlreadyHereAsTheLockOrdersIt(t *testing.T) {
+	binary := []byte("#!/bin/sh\necho the first tool\n")
+	lockFor := func(version string, body []byte) string {
+		return "# [fetch: tool TOOL_VERSION=" + version + "]\n" +
+			"https://example.com/v" + version + "/tool-linux-x86_64 --hash=sha256:" + sha256Hex(body) + "\n# [end]\n"
+	}
+	f := newDeliveryFixture(t, lockFor("1.0", binary))
+	f.serveFile(t, "tool-linux-x86_64", binary)
+	if out, err := f.run(t, "tool"); err != nil {
+		t.Fatalf("the first delivery failed: %v\n%s", err, out)
+	}
+
+	// Nothing is served any more, so a second fetch could only fail.
+	if err := os.Remove(filepath.Join(f.serve, "tool-linux-x86_64")); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.run(t, "tool")
+	if err != nil {
+		t.Fatalf("a delivery that is already here was fetched again: %v\n%s", err, out)
+	}
+	if body, _ := f.installed(t, "tool"); string(body) != string(binary) {
+		t.Errorf("the tool that was here is now %q", body)
+	}
+	ghPath, _ := os.ReadFile(f.ghPath)
+	if strings.Count(string(ghPath), filepath.Join(f.home, ".local", "bin")) != 2 {
+		t.Errorf("a run that fetched nothing did not put ~/.local/bin on GITHUB_PATH, so a later step cannot find what is here:\n%s", ghPath)
+	}
+
+	moved := []byte("#!/bin/sh\necho the second tool\n")
+	if err := os.WriteFile(filepath.Join(f.root, "scripts", "deliveries.lock"), []byte(lockFor("2.0", moved)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := f.run(t, "tool"); err == nil {
+		t.Fatalf("the lock moved and the old tool was kept as the new one:\n%s", out)
+	}
+	f.serveFile(t, "tool-linux-x86_64", moved)
+	if out, err := f.run(t, "tool"); err != nil {
+		t.Fatalf("the moved delivery failed: %v\n%s", err, out)
+	}
+	if body, _ := f.installed(t, "tool"); string(body) != string(moved) {
+		t.Errorf("the lock moved and ~/.local/bin/tool is still %q", body)
+	}
+
+	// A refused delivery is not on record: asked for again, it is fetched
+	// again, and refused again.
+	refused := newDeliveryFixture(t, lockFor("1.0", binary))
+	refused.serveFile(t, "tool-linux-x86_64", []byte("#!/bin/sh\necho something else\n"))
+	for attempt := 1; attempt <= 2; attempt++ {
+		if out, err := refused.run(t, "tool"); err == nil {
+			t.Fatalf("attempt %d: a file the lock does not list was accepted:\n%s", attempt, out)
+		}
+	}
+}
+
 func TestTakeDeliveryTakesTheNamedFileOutOfAnArchive(t *testing.T) {
 	archive := tarGz(t, map[string]string{"LICENSE": "text", "tool": "#!/bin/sh\necho from the archive\n"})
 	lock := "# [fetch: tool TOOL_VERSION=2.0]\n" +

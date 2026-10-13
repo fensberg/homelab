@@ -1,0 +1,10 @@
+guard: TestTakeDeliveryDoesNotFetchWhatIsAlreadyHereAsTheLockOrdersIt
+file: scripts/take-delivery.sh
+find: '[ "$(cat "$taken/$name")" = "$(printf ''%s\n'' "$lines" | sha256sum)" ]; then'
+replace: "true; then"
+mentions: "the lock moved and the old tool was kept as the new one"
+why: >
+  A record that only says a tool was once delivered keeps that tool for good.
+  The lock would move to a patched version, every machine that already had
+  the old one would report it as here, and the pin would be true of the
+  repository and of nothing that runs.

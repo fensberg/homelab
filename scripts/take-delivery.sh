@@ -73,8 +73,17 @@ section() {
 	awk -v h="$1" '$0 == h { on = 1; next } $0 == "# [end]" { on = 0 } on' "$lock"
 }
 
+# What has been taken, and as what: one file per delivery, holding the hash of
+# the lock lines it was installed from. A delivery whose lines are the ones on
+# record is already here and is not fetched again - which is what lets an
+# image be built with its tools in it and a job in that image start at once,
+# by the same step that installs them anywhere else. A lock that has moved
+# since has different lines, and that delivery is taken afresh.
+taken="${HOME}/.local/share/deliveries/taken"
+
 pypi=""
 fetches=()
+took=()
 for name in "$@"; do
 	# The name is matched literally against a header, but checking its shape
 	# first means a typo reads as a typo rather than as a missing delivery.
@@ -100,6 +109,11 @@ for name in "$@"; do
 		printf '%s\n' "$lines"
 		continue
 	fi
+	if [ -f "$taken/$name" ] && [ "$(cat "$taken/$name")" = "$(printf '%s\n' "$lines" | sha256sum)" ]; then
+		echo "$name is already here, as the lock orders it"
+		continue
+	fi
+	took+=("$name")
 	case "$h" in
 	"# [pypi: "*) pypi="${pypi}${lines}"$'\n' ;;
 	"# [fetch: "*) fetches+=("$name") ;;
@@ -138,7 +152,7 @@ if [ -n "$pypi" ]; then
 	# on PATH that nobody asked for. Read from the files the package itself
 	# installed into bin/, because a command is not always an entry point -
 	# checkov ships a plain script and zizmor a compiled binary.
-	for name in "$@"; do
+	for name in "${took[@]}"; do
 		case "$(header "$name")" in "# [pypi: "*) ;; *) continue ;; esac
 		commands="$("$venv/bin/python" -c 'import sys, os
 from importlib.metadata import distribution
@@ -207,6 +221,13 @@ for name in "${fetches[@]}"; do
 		;;
 	esac
 	echo "took delivery of $name $version"
+done
+
+# Recorded last, and only once everything asked for is in place: a run that
+# failed part-way records nothing, and takes all of it again.
+mkdir -p "$taken"
+for name in "${took[@]}"; do
+	section "$(header "$name")" | sha256sum >"$taken/$name"
 done
 
 if [ -n "${GITHUB_PATH:-}" ]; then

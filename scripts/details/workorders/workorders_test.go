@@ -94,3 +94,28 @@ func TestTheRepositorysWorkOrdersRead(t *testing.T) {
 		t.Fatal("the repository reads as having no orders")
 	}
 }
+
+// An order's build reads files of this repository from outside its own
+// context only when the order names them, each the one way there is to: a
+// path that climbs out of the repository, starts at the machine's root or
+// is written two ways is refused, and so is a package that claims to read.
+func TestParseTakesTheFilesABuildReadsAndRefusesAPathThatIsNotOne(t *testing.T) {
+	orders, err := Parse([]byte(`{"orders":[{"name":"gadget","context":"tools/gadget","reads":["tools/shared/fetch.sh"]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) != 1 || len(orders[0].Reads) != 1 || orders[0].Reads[0] != "tools/shared/fetch.sh" {
+		t.Fatalf("the order was read as %+v", orders)
+	}
+	for _, bad := range []string{
+		`{"orders":[{"name":"gadget","context":"tools/gadget","reads":["../outside"]}]}`,
+		`{"orders":[{"name":"gadget","context":"tools/gadget","reads":["/etc/passwd"]}]}`,
+		`{"orders":[{"name":"gadget","context":"tools/gadget","reads":["tools/./shared"]}]}`,
+		`{"orders":[{"name":"gadget","context":"tools/gadget","reads":[""]}]}`,
+		`{"orders":[{"name":"gadget","package":"tools/gadget.json","reads":["tools/shared/fetch.sh"]}]}`,
+	} {
+		if _, err := Parse([]byte(bad)); err == nil {
+			t.Errorf("%s was read", bad)
+		}
+	}
+}

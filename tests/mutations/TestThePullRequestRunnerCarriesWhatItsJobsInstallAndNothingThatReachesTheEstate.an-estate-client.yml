@@ -1,0 +1,10 @@
+guard: TestThePullRequestRunnerCarriesWhatItsJobsInstallAndNothingThatReachesTheEstate
+file: .github/pull-request-runner-image/Dockerfile
+find: "ca-certificates curl git gnupg jq python3 python3-venv unzip xz-utils"
+replace: "ca-certificates curl git gnupg jq python3 python3-venv unzip xz-utils rclone"
+mentions: "which reaches the estate"
+why: >
+  The quickest way to make a job work on a pool is to put in the image what
+  the converge's image has. That hands every pull request the programs that
+  talk to the vault, the backups and the cluster, on a machine built to run
+  what a stranger wrote.
