@@ -3,6 +3,13 @@
     "name": "Example",
     "domain": "example.org"
   },
+  "source_control": {
+    "provider": "github",
+    "url": "https://github.com/example/homelab",
+    "app_id": "1",
+    "installation_id": "1",
+    "private_key": "Zml4dHVyZQ=="
+  },
   "access": {
     "provider": "cloudflare",
     "vault_provider": "cloudflare",

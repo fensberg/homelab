@@ -9,6 +9,10 @@ mock_provider "cloudflare" {
   }
 }
 
+# The estate's source control, mocked for the same reason: no organisation
+# is asked and no credential is needed.
+mock_provider "github" {}
+
 variables {
   config_path = "./tests/fixtures/valid.json"
   sites_path  = "./tests/fixtures/sites.json"
@@ -410,4 +414,30 @@ run "a_sites_tunnel_serves_no_public_name" {
     condition     = alltrue([for m in module.site : jsonencode(m.tunnel_serves) == jsonencode([{ service = "http_status:404" }])])
     error_message = "a site's tunnel has a rule besides the one that refuses a public name, so the vendor's edge would end HTTPS for something of the estate's"
   }
+}
+
+# The estate reads its own organisation and repository with a credential of
+# its own, finds both in the address every site reconciles from, and says
+# what it read as counts and switches.
+run "the_estate_reads_its_own_organisation_and_repository" {
+  command = plan
+
+  assert {
+    condition     = local.source_control_owner == "example" && local.source_control_repository == "homelab"
+    error_message = "the organisation and the repository were not read out of the address the sites reconcile from"
+  }
+  assert {
+    condition     = data.github_collaborators.estate.repository == "homelab" && data.github_organization.estate.name == "example"
+    error_message = "the estate did not ask about its own repository and its own organisation"
+  }
+}
+
+run "a_source_control_this_does_not_implement_is_refused" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/another-source-control.json"
+  }
+
+  expect_failures = [output.source_control]
 }

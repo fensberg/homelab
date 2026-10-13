@@ -4,6 +4,14 @@
     "domain": "{{ op://estate-shared/organization/domain }}"
   },
 
+  "source_control": {
+    "provider": "github",
+    "url": "{{ op://estate-shared/source-control/url }}",
+    "app_id": "{{ op://estate/source-control/app_id }}",
+    "installation_id": "{{ op://estate/source-control/installation_id }}",
+    "private_key": "{{ op://estate/source-control/private_key }}"
+  },
+
   "access": {
     "provider": "cloudflare",
     "vault_provider": "{{ op://estate/access/provider }}",
