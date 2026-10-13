@@ -45,6 +45,20 @@ func applySteps(ctx *run.Context, phase string, has siteHas) error {
 		if err != nil {
 			return err
 		}
+		// The step that finishes the cluster root asks the operating system
+		// whether every node is Ready, and stops the converge if one is not.
+		// A machine renamed by the steps before it has joined again under
+		// its new name and left the node it was behind, which is never Ready
+		// again. So what a rename left is cleared before that question, on a
+		// converge: a build has renamed nothing. Cleared in the health gate
+		// alone, it was cleared too late - the question came first, waited
+		// ten minutes on a node that no longer had a machine, and failed
+		// (#747).
+		if ctx.TakenOverOK && st.Root == config.ClusterRoot && len(st.Targets) == 0 {
+			if err := clearFormerNodes(ctx); err != nil {
+				return err
+			}
+		}
 		run.Info(st.Say)
 		if err := run.TofuApply(in, "tofu apply ("+st.Label+")", st.Targets...); err != nil {
 			return err

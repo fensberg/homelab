@@ -334,6 +334,96 @@ func checkNodes(ctx *run.Context, kubeconfig string) error {
 	return nodeVerdict(out, want)
 }
 
+// formerNodesPause is how long apart the looks for a renamed machine's new
+// node are, and formerNodesLooks how many are taken.
+var (
+	formerNodesPause = 10 * time.Second
+	formerNodesLooks = 18
+)
+
+// clearFormerNodes removes the node a renamed machine left behind, before
+// anything asks whether every node is Ready.
+//
+// A machine given a new name joins again under it a little after it is
+// told, so there is a while in which the cluster has the old node and not
+// yet the new. This waits that while out, and only when there is something
+// to wait for: every name the config gives being already there is a
+// converge that renamed nothing, and returns at once. If the new node never
+// comes, nothing is removed and the question that follows fails as it would
+// have, saying which node is not Ready.
+func clearFormerNodes(ctx *run.Context) error {
+	cfg, err := config.LoadRendered(ctx.ConfigRendered)
+	if err != nil {
+		return err
+	}
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return err
+	}
+	kubeconfig, cleanup, err := writeKubeconfig(ctx.In(ctx.Cluster))
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	names := net.AllMachineNames()
+	for look := 0; look < formerNodesLooks; look++ {
+		if look > 0 {
+			time.Sleep(formerNodesPause)
+		}
+		out, err := kubectl(ctx, kubeconfig, "get", "nodes", "-o", "json")
+		if err != nil {
+			return err
+		}
+		left, missing, err := afterARename(out, names)
+		if err != nil {
+			return err
+		}
+		if len(left) > 0 {
+			run.Info(fmt.Sprintf("removing %d node(s) a renamed machine left behind", len(left)))
+			for _, node := range left {
+				if _, err := kubectl(ctx, kubeconfig, "delete", "node", node); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if missing == 0 {
+			return nil
+		}
+	}
+	return nil
+}
+
+// afterARename reads a node list for what a rename leaves: the nodes that
+// are a machine's old name, and how many of the names the config gives have
+// no node yet. A name with no node is a machine that has not joined, or has
+// not joined again yet.
+func afterARename(nodes []byte, names []string) (left []string, missing int, err error) {
+	left, err = formerNames(nodes, names)
+	if err != nil {
+		return nil, 0, err
+	}
+	var list map[string]any
+	if err := json.Unmarshal(nodes, &list); err != nil {
+		return nil, 0, err
+	}
+	there := map[string]bool{}
+	items, _ := list["items"].([]any)
+	for _, item := range items {
+		node, _ := item.(map[string]any)
+		metadata, _ := node["metadata"].(map[string]any)
+		if name, _ := metadata["name"].(string); name != "" {
+			there[name] = true
+		}
+	}
+	for _, n := range names {
+		if !there[n] {
+			missing++
+		}
+	}
+	return left, missing, nil
+}
+
 // formerNames is every node that is a machine's old name: a node the config
 // does not name, at an address where a node the config does name also
 // stands.

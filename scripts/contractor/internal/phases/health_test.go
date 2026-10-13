@@ -458,4 +458,24 @@ func TestOnlyANodeARenameLeftBehindIsTakenForOne(t *testing.T) {
 	if _, err := formerNames([]byte("not a list"), names); err == nil {
 		t.Error("something that is not a node list was read as leaving nothing behind")
 	}
+
+	// A name the config gives that has no node yet is what a converge waits
+	// on before it decides a rename has left nothing.
+	for name, c := range map[string]struct {
+		nodes   []node
+		left    int
+		missing int
+	}{
+		"renamed, and the new node not there yet": {[]node{{"one-machine", "192.0.2.10"}, {"another-machine", "192.0.2.20"}, {"its-old-name", "192.0.2.30"}}, 0, 1},
+		"renamed, and the new node has joined":    {[]node{{"one-machine", "192.0.2.10"}, {"another-machine", "192.0.2.20"}, {"its-old-name", "192.0.2.30"}, {"its-new-name", "192.0.2.30"}}, 1, 0},
+		"nothing renamed":                         {[]node{{"one-machine", "192.0.2.10"}, {"another-machine", "192.0.2.20"}, {"its-new-name", "192.0.2.30"}}, 0, 0},
+	} {
+		left, missing, err := afterARename(listOf(c.nodes...), names)
+		if err != nil || len(left) != c.left || missing != c.missing {
+			t.Errorf("%s: got %v left and %d missing, %v", name, left, missing, err)
+		}
+	}
+	if _, _, err := afterARename([]byte("not a list"), names); err == nil {
+		t.Error("something that is not a node list was read as a rename with nothing left")
+	}
 }
