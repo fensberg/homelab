@@ -16,6 +16,10 @@ const aPlan = `{"format_version":"1.2","resource_changes":[
   {"address":"data.thing.read","mode":"data","type":"thing","change":{"actions":["read"]}}
 ]}`
 
+const aPlanThatChangesNothing = `{"format_version":"1.2","resource_changes":[
+  {"address":"thing.stays","mode":"managed","type":"thing","change":{"actions":["no-op"]}}
+]}`
+
 // What a plan would change is said by address and by what would be done,
 // and by nothing a plan holds besides: a value never reaches the line.
 func TestAPlanIsSaidByAddressAndWhatWouldBeDoneAndNeverAValue(t *testing.T) {
@@ -30,7 +34,7 @@ func TestAPlanIsSaidByAddressAndWhatWouldBeDoneAndNeverAValue(t *testing.T) {
 	if said := strings.Join(got, "\n"); strings.Contains(said, "do-not-print") || strings.Contains(said, "nor-this") {
 		t.Error("a value from the plan reached what is printed")
 	}
-	if none, err := plannedChanges([]byte(`{"resource_changes":[{"address":"thing.stays","mode":"managed","change":{"actions":["no-op"]}}]}`)); err != nil || len(none) != 0 {
+	if none, err := plannedChanges([]byte(aPlanThatChangesNothing)); err != nil || len(none) != 0 {
 		t.Errorf("a plan that changes nothing was read as changing %v, %v", none, err)
 	}
 	if _, err := plannedChanges([]byte("not a plan")); err == nil {
@@ -67,7 +71,7 @@ func tofuStandIn(t *testing.T, shown string) (asked func() string) {
 // and for nothing that changes anything; and the plan it saved, which holds
 // every value, is gone when it returns.
 func TestPlanningTheEstateChangesNothingAndLeavesNoPlanBehind(t *testing.T) {
-	for name, shown := range map[string]string{"a plan that changes things": aPlan, "a plan that changes nothing": `{"resource_changes":[]}`} {
+	for name, shown := range map[string]string{"a plan that changes things": aPlan, "a plan that changes nothing": aPlanThatChangesNothing} {
 		asked := tofuStandIn(t, shown)
 		e, calls := fakeEstate(t)
 		e.dir = t.TempDir()
