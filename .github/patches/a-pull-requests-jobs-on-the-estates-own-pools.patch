@@ -1,0 +1,2542 @@
+diff --git a/.github/workflows/inspector.yml b/.github/workflows/inspector.yml
+index 8eeb7bb..d49039d 100644
+--- a/.github/workflows/inspector.yml
++++ b/.github/workflows/inspector.yml
+@@ -51,7 +51,11 @@ defaults:
+ jobs:
+   tally:
+     name: What this change takes away
+-    runs-on: ubuntu-latest
++    # One of the estate's own pools for a pull request's jobs, on the
++    # untrusted zone's machine, held to its pool's hosts by the cluster's
++    # network (clusters/core, pull-requests-builds.yaml). The site is the
++    # estate's to say (management/estate, the repository's variable).
++    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 5
+     steps:
+       # Full history: the tally compares two commits, and a shallow clone has
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index bf40c6d..fcf1d24 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -923,7 +923,11 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Test (vitest)"
+-    runs-on: ubuntu-latest
++    # One of the estate's own pools for a pull request's jobs, on the
++    # untrusted zone's machine, held to its pool's hosts by the cluster's
++    # network (clusters/core, pull-requests-packages.yaml). The site is the
++    # estate's to say (management/estate, the repository's variable).
++    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 15
+@@ -1485,7 +1489,11 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Egress Proof (block holds, sudo is gone)"
+-    runs-on: ubuntu-latest
++    # One of the estate's own pools for a pull request's jobs, on the
++    # untrusted zone's machine, held to its pool's hosts by the cluster's
++    # network (clusters/core, pull-requests-source.yaml). The site is the
++    # estate's to say (management/estate, the repository's variable).
++    runs-on: pr-source-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 5
+     permissions:
+       contents: read
+diff --git a/clusters/core/infrastructure/configs/kustomization.yaml b/clusters/core/infrastructure/configs/kustomization.yaml
+index a668b61..c3ef5c5 100644
+--- a/clusters/core/infrastructure/configs/kustomization.yaml
++++ b/clusters/core/infrastructure/configs/kustomization.yaml
+@@ -5,6 +5,12 @@ resources:
+   - state-database.yaml
+   - runner-scale-set.yaml
+   - runner-scale-set-batch.yaml
++  # A pull request's jobs: three pools on the untrusted zone's machine, each
++  # held to the hosts its jobs are declared to need.
++  - pull-request-runners.yaml
++  - pull-requests-source.yaml
++  - pull-requests-builds.yaml
++  - pull-requests-packages.yaml
+   - host-metrics.yaml
+   - capacity.yaml
+   # Asks GitHub whether each scheduled workflow is failing. Needs the
+diff --git a/clusters/core/infrastructure/configs/pull-request-runners.yaml b/clusters/core/infrastructure/configs/pull-request-runners.yaml
+new file mode 100644
+index 0000000..5320ef1
+--- /dev/null
++++ b/clusters/core/infrastructure/configs/pull-request-runners.yaml
+@@ -0,0 +1,42 @@
++# The estate's pools of pull-request runners: what holds every one of them.
++#
++# A pull request's jobs run in these pools and not on a machine somebody
++# else images (docs/epochs/08-agent-roles.md, #559). What a pull request
++# wrote is run by these pods, so everything about them begins from nothing:
++#
++#   - THEIR OWN MACHINE. Every runner is sent to the site's untrusted zone
++#     and tolerates its taint, and can land nowhere else. A pull request's
++#     code shares a kernel with other pull requests' jobs and with nothing
++#     of the estate's.
++#   - THEIR OWN NAMESPACE, apart from the runners that converge the estate.
++#   - NOTHING OF THE CLUSTER'S. No account's token is mounted in a runner.
++#   - NO ADDRESS AT ALL, which is this file, and then the hosts its pool is
++#     declared to need, by name, on 443, and the cluster's resolver for
++#     those names and no others: each pool's own file, beside this one.
++#
++# THREE POOLS, by what a job needs beyond the source control itself:
++# nothing, what a build downloads, and the package registries. Which job is
++# of which pool, and so what each pool reaches, is declared once, in
++# scripts/approved-suppliers.yml. Each pool's policy is that, written out,
++# and TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore fails
++# when the two part.
++#
++# A POOL IS NOT A WALL AGAINST THE PULL REQUEST ITSELF, which says which
++# pool its job asks for. It holds a tool gone wrong inside a job. The
++# machine is what holds the pull request.
++#
++# THE LISTENERS are not here: the controller runs each beside itself, on a
++# machine the estate trusts, because a listener holds the App's credential.
++---
++# Nothing in the namespace reaches or is reached by anything, until a pool's
++# policy says otherwise. A runner of no pool is a runner of nothing.
++apiVersion: networking.k8s.io/v1
++kind: NetworkPolicy
++metadata:
++  name: nothing-unless-said
++  namespace: pull-request-runners
++spec:
++  podSelector: {}
++  policyTypes:
++    - Ingress
++    - Egress
+diff --git a/clusters/core/infrastructure/configs/pull-requests-builds.yaml b/clusters/core/infrastructure/configs/pull-requests-builds.yaml
+new file mode 100644
+index 0000000..a77ebea
+--- /dev/null
++++ b/clusters/core/infrastructure/configs/pull-requests-builds.yaml
+@@ -0,0 +1,170 @@
++# The pool for jobs that download what a build needs.
++# What holds every pool is said once, in pull-request-runners.yaml.
++---
++apiVersion: helm.toolkit.fluxcd.io/v2
++kind: HelmRelease
++metadata:
++  name: pull-requests-builds
++  namespace: pull-request-runners
++spec:
++  interval: 30m
++  chart:
++    spec:
++      chart: gha-runner-scale-set
++      version: "0.14.2"
++      sourceRef:
++        kind: HelmRepository
++        name: actions-runner-controller
++        namespace: flux-system
++      interval: 12h
++  install:
++    strategy:
++      name: RetryOnFailure
++      retryInterval: 5m
++  upgrade:
++    strategy:
++      name: RetryOnFailure
++      retryInterval: 5m
++  values:
++    githubConfigUrl: ${RUNNER_GITHUB_CONFIG_URL}
++    githubConfigSecret: ${RUNNER_SECRET_NAME}
++    # A group of its own. The estate's other runners are in one that takes
++    # only named workflows from the default branch, which a pull request
++    # never runs from.
++    runnerGroup: pull-requests
++
++    runnerScaleSetName: pr-builds-${SITE}
++
++    minRunners: 0
++    # More than the zone's machine holds at once wait for one to finish.
++    maxRunners: 3
++
++    listenerTemplate:
++      spec:
++        terminationGracePeriodSeconds: 60
++        securityContext:
++          runAsNonRoot: true
++          seccompProfile:
++            type: RuntimeDefault
++        priorityClassName: critical
++        affinity:
++          nodeAffinity:
++            requiredDuringSchedulingIgnoredDuringExecution:
++              nodeSelectorTerms:
++                - matchExpressions:
++                    - key: node-role.kubernetes.io/control-plane
++                      operator: DoesNotExist
++        containers:
++          - name: listener
++            securityContext:
++              allowPrivilegeEscalation: false
++              capabilities:
++                drop: ["ALL"]
++            resources:
++              requests:
++                cpu: 25m
++                memory: 64Mi
++
++    template:
++      spec:
++        priorityClassName: interactive
++        automountServiceAccountToken: false
++        # The untrusted zone's machine and no other: the label sends a
++        # runner there, and the toleration is what lets it stay.
++        nodeSelector:
++          untrusted-zone: zone0
++        tolerations:
++          - key: untrusted-zone
++            operator: Equal
++            value: zone0
++            effect: NoSchedule
++        affinity:
++          nodeAffinity:
++            requiredDuringSchedulingIgnoredDuringExecution:
++              nodeSelectorTerms:
++                - matchExpressions:
++                    - key: node-role.kubernetes.io/control-plane
++                      operator: DoesNotExist
++        securityContext:
++          runAsNonRoot: true
++          runAsUser: 1001
++          runAsGroup: 1001
++          fsGroup: 1001
++          seccompProfile:
++            type: RuntimeDefault
++        containers:
++          - name: runner
++            image: ghcr.io/fensberg/homelab-runner@sha256:15ade7051773012d42e85727198d0a3cc08495a0137dfe97b9bfe6ca30c1cdd2
++            command: ["/home/runner/run.sh"]
++            securityContext:
++              allowPrivilegeEscalation: false
++              capabilities:
++                drop: ["ALL"]
++            resources:
++              requests:
++                cpu: 250m
++                memory: 1Gi
++---
++apiVersion: cilium.io/v2
++kind: CiliumNetworkPolicy
++metadata:
++  name: pull-requests-builds
++  namespace: pull-request-runners
++spec:
++  endpointSelector:
++    matchLabels:
++      actions.github.com/scale-set-name: pr-builds-${SITE}
++  egress:
++    # The cluster's resolver, and only for the names below: a name that is
++    # not asked for is a name nothing can be sent to inside a question.
++    - toEndpoints:
++        - matchLabels:
++            k8s:io.kubernetes.pod.namespace: kube-system
++            k8s-app: kube-dns
++      toPorts:
++        - ports:
++            - port: "53"
++              protocol: UDP
++            - port: "53"
++              protocol: TCP
++          rules:
++            dns:
++              - matchPattern: "*.actions.githubusercontent.com"
++              - matchPattern: "*.blob.core.windows.net"
++              - matchName: api.github.com
++              - matchName: codeload.github.com
++              - matchName: dl.k8s.io
++              - matchName: get.opentofu.org
++              - matchName: ghcr.io
++              - matchName: github.com
++              - matchName: go.dev
++              - matchName: objects.githubusercontent.com
++              - matchName: pkg-containers.githubusercontent.com
++              - matchName: proxy.golang.org
++              - matchName: raw.githubusercontent.com
++              - matchName: registry.opentofu.org
++              - matchName: release-assets.githubusercontent.com
++              - matchName: storage.googleapis.com
++              - matchName: sum.golang.org
++    - toFQDNs:
++        - matchPattern: "*.actions.githubusercontent.com"
++        - matchPattern: "*.blob.core.windows.net"
++        - matchName: api.github.com
++        - matchName: codeload.github.com
++        - matchName: dl.k8s.io
++        - matchName: get.opentofu.org
++        - matchName: ghcr.io
++        - matchName: github.com
++        - matchName: go.dev
++        - matchName: objects.githubusercontent.com
++        - matchName: pkg-containers.githubusercontent.com
++        - matchName: proxy.golang.org
++        - matchName: raw.githubusercontent.com
++        - matchName: registry.opentofu.org
++        - matchName: release-assets.githubusercontent.com
++        - matchName: storage.googleapis.com
++        - matchName: sum.golang.org
++      toPorts:
++        - ports:
++            - port: "443"
++              protocol: TCP
+diff --git a/clusters/core/infrastructure/configs/pull-requests-packages.yaml b/clusters/core/infrastructure/configs/pull-requests-packages.yaml
+new file mode 100644
+index 0000000..d3fece3
+--- /dev/null
++++ b/clusters/core/infrastructure/configs/pull-requests-packages.yaml
+@@ -0,0 +1,180 @@
++# The pool for jobs that reach the package registries.
++# What holds every pool is said once, in pull-request-runners.yaml.
++---
++apiVersion: helm.toolkit.fluxcd.io/v2
++kind: HelmRelease
++metadata:
++  name: pull-requests-packages
++  namespace: pull-request-runners
++spec:
++  interval: 30m
++  chart:
++    spec:
++      chart: gha-runner-scale-set
++      version: "0.14.2"
++      sourceRef:
++        kind: HelmRepository
++        name: actions-runner-controller
++        namespace: flux-system
++      interval: 12h
++  install:
++    strategy:
++      name: RetryOnFailure
++      retryInterval: 5m
++  upgrade:
++    strategy:
++      name: RetryOnFailure
++      retryInterval: 5m
++  values:
++    githubConfigUrl: ${RUNNER_GITHUB_CONFIG_URL}
++    githubConfigSecret: ${RUNNER_SECRET_NAME}
++    # A group of its own. The estate's other runners are in one that takes
++    # only named workflows from the default branch, which a pull request
++    # never runs from.
++    runnerGroup: pull-requests
++
++    runnerScaleSetName: pr-packages-${SITE}
++
++    minRunners: 0
++    # More than the zone's machine holds at once wait for one to finish.
++    maxRunners: 3
++
++    listenerTemplate:
++      spec:
++        terminationGracePeriodSeconds: 60
++        securityContext:
++          runAsNonRoot: true
++          seccompProfile:
++            type: RuntimeDefault
++        priorityClassName: critical
++        affinity:
++          nodeAffinity:
++            requiredDuringSchedulingIgnoredDuringExecution:
++              nodeSelectorTerms:
++                - matchExpressions:
++                    - key: node-role.kubernetes.io/control-plane
++                      operator: DoesNotExist
++        containers:
++          - name: listener
++            securityContext:
++              allowPrivilegeEscalation: false
++              capabilities:
++                drop: ["ALL"]
++            resources:
++              requests:
++                cpu: 25m
++                memory: 64Mi
++
++    template:
++      spec:
++        priorityClassName: interactive
++        automountServiceAccountToken: false
++        # The untrusted zone's machine and no other: the label sends a
++        # runner there, and the toleration is what lets it stay.
++        nodeSelector:
++          untrusted-zone: zone0
++        tolerations:
++          - key: untrusted-zone
++            operator: Equal
++            value: zone0
++            effect: NoSchedule
++        affinity:
++          nodeAffinity:
++            requiredDuringSchedulingIgnoredDuringExecution:
++              nodeSelectorTerms:
++                - matchExpressions:
++                    - key: node-role.kubernetes.io/control-plane
++                      operator: DoesNotExist
++        securityContext:
++          runAsNonRoot: true
++          runAsUser: 1001
++          runAsGroup: 1001
++          fsGroup: 1001
++          seccompProfile:
++            type: RuntimeDefault
++        containers:
++          - name: runner
++            image: ghcr.io/fensberg/homelab-runner@sha256:15ade7051773012d42e85727198d0a3cc08495a0137dfe97b9bfe6ca30c1cdd2
++            command: ["/home/runner/run.sh"]
++            securityContext:
++              allowPrivilegeEscalation: false
++              capabilities:
++                drop: ["ALL"]
++            resources:
++              requests:
++                cpu: 250m
++                memory: 1Gi
++---
++apiVersion: cilium.io/v2
++kind: CiliumNetworkPolicy
++metadata:
++  name: pull-requests-packages
++  namespace: pull-request-runners
++spec:
++  endpointSelector:
++    matchLabels:
++      actions.github.com/scale-set-name: pr-packages-${SITE}
++  egress:
++    # The cluster's resolver, and only for the names below: a name that is
++    # not asked for is a name nothing can be sent to inside a question.
++    - toEndpoints:
++        - matchLabels:
++            k8s:io.kubernetes.pod.namespace: kube-system
++            k8s-app: kube-dns
++      toPorts:
++        - ports:
++            - port: "53"
++              protocol: UDP
++            - port: "53"
++              protocol: TCP
++          rules:
++            dns:
++              - matchPattern: "*.actions.githubusercontent.com"
++              - matchPattern: "*.blob.core.windows.net"
++              - matchName: api.deps.dev
++              - matchName: api.github.com
++              - matchName: api.securityscorecards.dev
++              - matchName: codeload.github.com
++              - matchName: dl.google.com
++              - matchName: files.pythonhosted.org
++              - matchName: ghcr.io
++              - matchName: github.com
++              - matchName: go.dev
++              - matchName: mirror.gcr.io
++              - matchName: nodejs.org
++              - matchName: objects.githubusercontent.com
++              - matchName: pkg-containers.githubusercontent.com
++              - matchName: proxy.golang.org
++              - matchName: pypi.org
++              - matchName: raw.githubusercontent.com
++              - matchName: registry.npmjs.org
++              - matchName: release-assets.githubusercontent.com
++              - matchName: storage.googleapis.com
++              - matchName: sum.golang.org
++    - toFQDNs:
++        - matchPattern: "*.actions.githubusercontent.com"
++        - matchPattern: "*.blob.core.windows.net"
++        - matchName: api.deps.dev
++        - matchName: api.github.com
++        - matchName: api.securityscorecards.dev
++        - matchName: codeload.github.com
++        - matchName: dl.google.com
++        - matchName: files.pythonhosted.org
++        - matchName: ghcr.io
++        - matchName: github.com
++        - matchName: go.dev
++        - matchName: mirror.gcr.io
++        - matchName: nodejs.org
++        - matchName: objects.githubusercontent.com
++        - matchName: pkg-containers.githubusercontent.com
++        - matchName: proxy.golang.org
++        - matchName: pypi.org
++        - matchName: raw.githubusercontent.com
++        - matchName: registry.npmjs.org
++        - matchName: release-assets.githubusercontent.com
++        - matchName: storage.googleapis.com
++        - matchName: sum.golang.org
++      toPorts:
++        - ports:
++            - port: "443"
++              protocol: TCP
+diff --git a/clusters/core/infrastructure/configs/pull-requests-source.yaml b/clusters/core/infrastructure/configs/pull-requests-source.yaml
+new file mode 100644
+index 0000000..50b1cdd
+--- /dev/null
++++ b/clusters/core/infrastructure/configs/pull-requests-source.yaml
+@@ -0,0 +1,152 @@
++# The pool for jobs that need nothing beyond the source control itself.
++# What holds every pool is said once, in pull-request-runners.yaml.
++---
++apiVersion: helm.toolkit.fluxcd.io/v2
++kind: HelmRelease
++metadata:
++  name: pull-requests-source
++  namespace: pull-request-runners
++spec:
++  interval: 30m
++  chart:
++    spec:
++      chart: gha-runner-scale-set
++      version: "0.14.2"
++      sourceRef:
++        kind: HelmRepository
++        name: actions-runner-controller
++        namespace: flux-system
++      interval: 12h
++  install:
++    strategy:
++      name: RetryOnFailure
++      retryInterval: 5m
++  upgrade:
++    strategy:
++      name: RetryOnFailure
++      retryInterval: 5m
++  values:
++    githubConfigUrl: ${RUNNER_GITHUB_CONFIG_URL}
++    githubConfigSecret: ${RUNNER_SECRET_NAME}
++    # A group of its own. The estate's other runners are in one that takes
++    # only named workflows from the default branch, which a pull request
++    # never runs from.
++    runnerGroup: pull-requests
++
++    runnerScaleSetName: pr-source-${SITE}
++
++    minRunners: 0
++    # More than the zone's machine holds at once wait for one to finish.
++    maxRunners: 3
++
++    listenerTemplate:
++      spec:
++        terminationGracePeriodSeconds: 60
++        securityContext:
++          runAsNonRoot: true
++          seccompProfile:
++            type: RuntimeDefault
++        priorityClassName: critical
++        affinity:
++          nodeAffinity:
++            requiredDuringSchedulingIgnoredDuringExecution:
++              nodeSelectorTerms:
++                - matchExpressions:
++                    - key: node-role.kubernetes.io/control-plane
++                      operator: DoesNotExist
++        containers:
++          - name: listener
++            securityContext:
++              allowPrivilegeEscalation: false
++              capabilities:
++                drop: ["ALL"]
++            resources:
++              requests:
++                cpu: 25m
++                memory: 64Mi
++
++    template:
++      spec:
++        priorityClassName: interactive
++        automountServiceAccountToken: false
++        # The untrusted zone's machine and no other: the label sends a
++        # runner there, and the toleration is what lets it stay.
++        nodeSelector:
++          untrusted-zone: zone0
++        tolerations:
++          - key: untrusted-zone
++            operator: Equal
++            value: zone0
++            effect: NoSchedule
++        affinity:
++          nodeAffinity:
++            requiredDuringSchedulingIgnoredDuringExecution:
++              nodeSelectorTerms:
++                - matchExpressions:
++                    - key: node-role.kubernetes.io/control-plane
++                      operator: DoesNotExist
++        securityContext:
++          runAsNonRoot: true
++          runAsUser: 1001
++          runAsGroup: 1001
++          fsGroup: 1001
++          seccompProfile:
++            type: RuntimeDefault
++        containers:
++          - name: runner
++            image: ghcr.io/fensberg/homelab-runner@sha256:15ade7051773012d42e85727198d0a3cc08495a0137dfe97b9bfe6ca30c1cdd2
++            command: ["/home/runner/run.sh"]
++            securityContext:
++              allowPrivilegeEscalation: false
++              capabilities:
++                drop: ["ALL"]
++            resources:
++              requests:
++                cpu: 250m
++                memory: 1Gi
++---
++apiVersion: cilium.io/v2
++kind: CiliumNetworkPolicy
++metadata:
++  name: pull-requests-source
++  namespace: pull-request-runners
++spec:
++  endpointSelector:
++    matchLabels:
++      actions.github.com/scale-set-name: pr-source-${SITE}
++  egress:
++    # The cluster's resolver, and only for the names below: a name that is
++    # not asked for is a name nothing can be sent to inside a question.
++    - toEndpoints:
++        - matchLabels:
++            k8s:io.kubernetes.pod.namespace: kube-system
++            k8s-app: kube-dns
++      toPorts:
++        - ports:
++            - port: "53"
++              protocol: UDP
++            - port: "53"
++              protocol: TCP
++          rules:
++            dns:
++              - matchPattern: "*.actions.githubusercontent.com"
++              - matchPattern: "*.blob.core.windows.net"
++              - matchName: api.github.com
++              - matchName: codeload.github.com
++              - matchName: github.com
++              - matchName: objects.githubusercontent.com
++              - matchName: release-assets.githubusercontent.com
++              - matchName: uploads.github.com
++    - toFQDNs:
++        - matchPattern: "*.actions.githubusercontent.com"
++        - matchPattern: "*.blob.core.windows.net"
++        - matchName: api.github.com
++        - matchName: codeload.github.com
++        - matchName: github.com
++        - matchName: objects.githubusercontent.com
++        - matchName: release-assets.githubusercontent.com
++        - matchName: uploads.github.com
++      toPorts:
++        - ports:
++            - port: "443"
++              protocol: TCP
+diff --git a/clusters/core/sized-from.json b/clusters/core/sized-from.json
+index e64eb7d..7f1b87b 100644
+--- a/clusters/core/sized-from.json
++++ b/clusters/core/sized-from.json
+@@ -79,6 +79,24 @@
+         "kind": "estimate",
+         "basis": "A single proxy with one route behind it, chosen when it was added on 2026-10-12. Not yet looked at on a running site, and not under load."
+       }
++    },
++    "HelmRelease/pull-requests-source": {
++      "*": {
++        "kind": "estimate",
++        "basis": "A guess, and a low one on purpose: the zone's machine has about 3 GiB for work, and at what the estate's other runners ask it would hold one runner. For jobs that need nothing beyond the source control; nothing has run in this pool yet, and what its jobs use is to be read off the machine once the first of them does."
++      }
++    },
++    "HelmRelease/pull-requests-builds": {
++      "*": {
++        "kind": "estimate",
++        "basis": "A guess, and a low one on purpose: the zone's machine has about 3 GiB for work, and at what the estate's other runners ask it would hold one runner. For jobs that build; nothing has run in this pool yet, and what its jobs use is to be read off the machine once the first of them does."
++      }
++    },
++    "HelmRelease/pull-requests-packages": {
++      "*": {
++        "kind": "estimate",
++        "basis": "A guess, and a low one on purpose: the zone's machine has about 3 GiB for work, and at what the estate's other runners ask it would hold one runner. For jobs that reach the package registries; nothing has run in this pool yet, and what its jobs use is to be read off the machine once the first of them does."
++      }
+     }
+   }
+ }
+diff --git a/config/estate.tpl.json b/config/estate.tpl.json
+index 24d578b..09292a2 100644
+--- a/config/estate.tpl.json
++++ b/config/estate.tpl.json
+@@ -11,7 +11,8 @@
+     "installation_id": "{{ op://estate/source-control/installation_id }}",
+     "private_key": "{{ op://estate/source-control/private_key }}",
+     "billing_email": "{{ op://estate/source-control/billing_email }}",
+-    "procurement_app_id": "{{ op://estate-shared/source-control/procurement-bot/app_id }}"
++    "procurement_app_id": "{{ op://estate-shared/source-control/procurement-bot/app_id }}",
++    "pull_request_runners_site": "site0"
+   },
+ 
+   "access": {
+diff --git a/docs/epochs/08-agent-roles.md b/docs/epochs/08-agent-roles.md
+index edb683d..2a6c6a9 100644
+--- a/docs/epochs/08-agent-roles.md
++++ b/docs/epochs/08-agent-roles.md
+@@ -216,6 +216,30 @@ the repository's and not something in it.
+ - **A zone's machine is not a worker to the capacity rule.** Its room is
+   not room the site's own work can use, so it is left out of what the
+   workers hold.
++- **A job names its pool and the estate names the site.** A job on the
++  estate's runners says which site it runs for, and a pull request's job
++  has none: it is the repository's work. So the estate sets a variable on
++  the repository saying which site hosts the pools, and a job asks for
++  `pr-<pool>-` and that. Moving the pools to another site is that value.
++  Work that is a site's own - a converge, a test against it - still names
++  its site and can run nowhere else.
++- **No overflow between sites, and how there could be.** A job asks for one
++  named set, and each site registers its own, so one site's pull-request
++  work cannot spill into another's spare room. A job can ask for a group
++  of runners and not a set, and both sites' pools could join one; how the
++  platform spreads work across sets in a group has not been looked at, and
++  the guard on pull-request jobs refuses a group today because a group
++  cannot be identified as a pool can. The route for a second site, not
++  built toward now.
++- **The pools' group takes any workflow**, because a pull request runs
++  its own copy of a workflow from its own ref and no list of workflows at
++  a branch can admit it. It is held to the estate's repository, and
++  allowed only while nothing but the pools joins it.
++- **Three jobs go first, none of them a check a merge is held to**: the
++  proof that a refused host cannot be reached, what a change takes away,
++  and the JavaScript tests. A pool that does not work then holds nothing
++  up. The rest follow once these have been seen to run and what they use
++  has been read off the machine.
+ - **Four jobs stay on GitHub's runners.** Three reach anything by design,
+   each with its reason written down, and could run under no list. The
+   fourth is the clerk's reading, the one pull-request job that holds a
+diff --git a/management/estate/pull-request-runners/group.tf b/management/estate/pull-request-runners/group.tf
+new file mode 100644
+index 0000000..4183c96
+--- /dev/null
++++ b/management/estate/pull-request-runners/group.tf
+@@ -0,0 +1,7 @@
++resource "github_actions_runner_group" "this" {
++  name                       = "pull-requests"
++  visibility                 = "selected"
++  selected_repository_ids    = var.repositories
++  allows_public_repositories = true
++  restricted_to_workflows    = false
++}
+diff --git a/management/estate/pull-request-runners/outputs.tf b/management/estate/pull-request-runners/outputs.tf
+new file mode 100644
+index 0000000..1c15ae9
+--- /dev/null
++++ b/management/estate/pull-request-runners/outputs.tf
+@@ -0,0 +1,8 @@
++output "admits" {
++  description = "Whom the group admits, for the root's tests."
++  value = {
++    name         = github_actions_runner_group.this.name
++    visibility   = github_actions_runner_group.this.visibility
++    repositories = github_actions_runner_group.this.selected_repository_ids
++  }
++}
+diff --git a/management/estate/pull-request-runners/variables.tf b/management/estate/pull-request-runners/variables.tf
+new file mode 100644
+index 0000000..953af4a
+--- /dev/null
++++ b/management/estate/pull-request-runners/variables.tf
+@@ -0,0 +1,4 @@
++variable "repositories" {
++  description = "The repositories that may use the group, as the platform numbers them."
++  type        = set(number)
++}
+diff --git a/management/estate/pull-request-runners/versions.tf b/management/estate/pull-request-runners/versions.tf
+new file mode 100644
+index 0000000..3a3f269
+--- /dev/null
++++ b/management/estate/pull-request-runners/versions.tf
+@@ -0,0 +1,17 @@
++# The group the pools of pull-request runners join.
++#
++# A group of its own, because the estate's other runners are in one that
++# takes only named workflows as they are on the default branch, and a pull
++# request never runs from the default branch: its workflow is its own copy.
++# So this group cannot be held to workflows at all. It is held to the
++# estate's repositories, and what holds a pull request's job is not the
++# group: it is the machine the pools run on, which is closed to the rest of
++# the estate, and each pool's own policy (clusters/core).
++#
++# tests/go/repo allows a group that takes any workflow only when it is the
++# one the pull-request pools join, and nothing else joins it.
++terraform {
++  required_providers {
++    github = { source = "integrations/github" }
++  }
++}
+diff --git a/management/estate/repository/outputs.tf b/management/estate/repository/outputs.tf
+index 35d1ffc..93b6302 100644
+--- a/management/estate/repository/outputs.tf
++++ b/management/estate/repository/outputs.tf
+@@ -20,6 +20,11 @@ output "the_estates_credential_is_handed_to" {
+   }
+ }
+ 
++output "pull_request_runners_site" {
++  description = "The site a pull request's jobs are sent to, as workflows read it: for the root's tests."
++  value       = github_actions_variable.pull_request_runners_site.value
++}
++
+ output "rules" {
+   description = "Who may pass each rule on the repository's branches and tags by, as a count per rule: for the root's tests."
+   value = {
+diff --git a/management/estate/repository/variables-set.tf b/management/estate/repository/variables-set.tf
+new file mode 100644
+index 0000000..0bd8e3c
+--- /dev/null
++++ b/management/estate/repository/variables-set.tf
+@@ -0,0 +1,13 @@
++# What a workflow reads that is the estate's to say and not a secret.
++#
++# Which site hosts the pools a pull request's jobs run in. A job on the
++# estate's runners names the site it runs for, and a pull request's job has
++# no site of its own: it is the repository's work and runs wherever the
++# pools are. So the estate says where, here, and a job asks for
++# `pr-<pool>-${{ vars.pull_request_runners_site }}`. Moving the pools to
++# another site is this value.
++resource "github_actions_variable" "pull_request_runners_site" {
++  repository    = var.name
++  variable_name = "PULL_REQUEST_RUNNERS_SITE"
++  value         = var.pull_request_runners_site
++}
+diff --git a/management/estate/repository/variables.tf b/management/estate/repository/variables.tf
+index 6a42773..cbe0cb0 100644
+--- a/management/estate/repository/variables.tf
++++ b/management/estate/repository/variables.tf
+@@ -8,6 +8,11 @@ variable "default_branch" {
+   type        = string
+ }
+ 
++variable "pull_request_runners_site" {
++  description = "The site whose pools a pull request's jobs run in, by its key."
++  type        = string
++}
++
+ variable "delivers_unreviewed" {
+   description = "The App that brings a pin or a delivery to the branch, as the platform numbers it: the one party that may pass the review by."
+   type        = number
+diff --git a/management/estate/runners/outputs.tf b/management/estate/runners/outputs.tf
+index 34a9ff2..068c9bd 100644
+--- a/management/estate/runners/outputs.tf
++++ b/management/estate/runners/outputs.tf
+@@ -1,6 +1,7 @@
+ output "admits" {
+   description = "Whom the group admits, for the root's tests."
+   value = {
++    name         = github_actions_runner_group.this.name
+     visibility   = github_actions_runner_group.this.visibility
+     repositories = github_actions_runner_group.this.selected_repository_ids
+     restricted   = github_actions_runner_group.this.restricted_to_workflows
+diff --git a/management/estate/source-control.tf b/management/estate/source-control.tf
+index e0b0d9b..a768584 100644
+--- a/management/estate/source-control.tf
++++ b/management/estate/source-control.tf
+@@ -52,9 +52,11 @@ module "repository" {
+   source   = "./repository"
+   for_each = toset([local.source_control_repository])
+ 
+-  name                = each.key
+-  default_branch      = data.github_repository.estate.default_branch
+-  delivers_unreviewed = tonumber(local.source_control.procurement_app_id)
++  name           = each.key
++  default_branch = data.github_repository.estate.default_branch
++
++  pull_request_runners_site = local.source_control.pull_request_runners_site
++  delivers_unreviewed       = tonumber(local.source_control.procurement_app_id)
+ }
+ 
+ data "github_repository" "estate" {
+@@ -78,6 +80,14 @@ module "runners" {
+   ]
+ }
+ 
++# The pools a pull request's jobs run in, which cannot be held to workflows
++# and are held to this repository.
++module "pull_request_runners" {
++  source = "./pull-request-runners"
++
++  repositories = [data.github_repository.estate.repo_id]
++}
++
+ # The organisation's own settings: what a member may do for being one.
+ #
+ # A MEMBER IS GIVEN NOTHING. Reading the estate's repositories comes with
+diff --git a/management/estate/tests/estate.tftest.hcl b/management/estate/tests/estate.tftest.hcl
+index 16ce192..7c89935 100644
+--- a/management/estate/tests/estate.tftest.hcl
++++ b/management/estate/tests/estate.tftest.hcl
+@@ -509,6 +509,29 @@ run "the_estates_credential_is_handed_out_on_the_default_branch_only" {
+   }
+ }
+ 
++# A pull request's jobs are sent to the site the config names, and the group
++# their pools join takes the estate's own repository and no other.
++run "a_pull_requests_jobs_go_to_the_site_the_config_names" {
++  command = plan
++
++  override_data {
++    target = data.github_repository.estate
++    values = {
++      repo_id        = 7
++      default_branch = "trunk"
++    }
++  }
++
++  assert {
++    condition     = module.repository["homelab"].pull_request_runners_site == "site0"
++    error_message = "workflows are told a site for a pull request's jobs that is not the one the config names"
++  }
++  assert {
++    condition     = module.pull_request_runners.admits.visibility == "selected" && module.pull_request_runners.admits.repositories == toset([7]) && module.pull_request_runners.admits.name != module.runners.admits.name
++    error_message = "the pull-request pools' group admits a repository that is not the estate's, or is the group the estate's own runners join"
++  }
++}
++
+ # Being a member of the organisation gives nothing but reading.
+ run "a_member_is_given_nothing_but_reading" {
+   command = plan
+diff --git a/management/estate/tests/fixtures/another-source-control.json b/management/estate/tests/fixtures/another-source-control.json
+index 3058729..333c01f 100644
+--- a/management/estate/tests/fixtures/another-source-control.json
++++ b/management/estate/tests/fixtures/another-source-control.json
+@@ -10,7 +10,8 @@
+     "installation_id": "1",
+     "private_key": "Zml4dHVyZQ==",
+     "billing_email": "billing@example.com",
+-    "procurement_app_id": "2"
++    "procurement_app_id": "2",
++    "pull_request_runners_site": "site0"
+   },
+   "access": {
+     "provider": "cloudflare",
+diff --git a/management/estate/tests/fixtures/long-site-name.json b/management/estate/tests/fixtures/long-site-name.json
+index 3bcec3b..e65aab6 100644
+--- a/management/estate/tests/fixtures/long-site-name.json
++++ b/management/estate/tests/fixtures/long-site-name.json
+@@ -10,7 +10,8 @@
+     "installation_id": "1",
+     "private_key": "Zml4dHVyZQ==",
+     "billing_email": "billing@example.com",
+-    "procurement_app_id": "2"
++    "procurement_app_id": "2",
++    "pull_request_runners_site": "site0"
+   },
+   "access": {
+     "provider": "cloudflare",
+diff --git a/management/estate/tests/fixtures/no-members.json b/management/estate/tests/fixtures/no-members.json
+index ef69fce..fb8d9cf 100644
+--- a/management/estate/tests/fixtures/no-members.json
++++ b/management/estate/tests/fixtures/no-members.json
+@@ -10,7 +10,8 @@
+     "installation_id": "1",
+     "private_key": "Zml4dHVyZQ==",
+     "billing_email": "billing@example.com",
+-    "procurement_app_id": "2"
++    "procurement_app_id": "2",
++    "pull_request_runners_site": "site0"
+   },
+   "access": {
+     "provider": "cloudflare",
+diff --git a/management/estate/tests/fixtures/two-plots.json b/management/estate/tests/fixtures/two-plots.json
+index 5f3fde3..f5b123e 100644
+--- a/management/estate/tests/fixtures/two-plots.json
++++ b/management/estate/tests/fixtures/two-plots.json
+@@ -10,7 +10,8 @@
+     "installation_id": "1",
+     "private_key": "Zml4dHVyZQ==",
+     "billing_email": "billing@example.com",
+-    "procurement_app_id": "2"
++    "procurement_app_id": "2",
++    "pull_request_runners_site": "site0"
+   },
+   "access": {
+     "provider": "cloudflare",
+diff --git a/management/estate/tests/fixtures/unnameable-site.json b/management/estate/tests/fixtures/unnameable-site.json
+index b2ea541..7f296f4 100644
+--- a/management/estate/tests/fixtures/unnameable-site.json
++++ b/management/estate/tests/fixtures/unnameable-site.json
+@@ -10,7 +10,8 @@
+     "installation_id": "1",
+     "private_key": "Zml4dHVyZQ==",
+     "billing_email": "billing@example.com",
+-    "procurement_app_id": "2"
++    "procurement_app_id": "2",
++    "pull_request_runners_site": "site0"
+   },
+   "access": {
+     "provider": "cloudflare",
+diff --git a/management/estate/tests/fixtures/valid.json b/management/estate/tests/fixtures/valid.json
+index 221287e..151cab4 100644
+--- a/management/estate/tests/fixtures/valid.json
++++ b/management/estate/tests/fixtures/valid.json
+@@ -10,7 +10,8 @@
+     "installation_id": "1",
+     "private_key": "Zml4dHVyZQ==",
+     "billing_email": "billing@example.com",
+-    "procurement_app_id": "2"
++    "procurement_app_id": "2",
++    "pull_request_runners_site": "site0"
+   },
+   "access": {
+     "provider": "cloudflare",
+diff --git a/management/estate/tests/fixtures/workers-name-is-an-address.json b/management/estate/tests/fixtures/workers-name-is-an-address.json
+index dc0c84e..d13ab4a 100644
+--- a/management/estate/tests/fixtures/workers-name-is-an-address.json
++++ b/management/estate/tests/fixtures/workers-name-is-an-address.json
+@@ -10,7 +10,8 @@
+     "installation_id": "1",
+     "private_key": "Zml4dHVyZQ==",
+     "billing_email": "billing@example.com",
+-    "procurement_app_id": "2"
++    "procurement_app_id": "2",
++    "pull_request_runners_site": "site0"
+   },
+   "access": {
+     "provider": "cloudflare",
+diff --git a/management/estate/tests/fixtures/workstation-not-an-address.json b/management/estate/tests/fixtures/workstation-not-an-address.json
+index e8fa8c0..4012e46 100644
+--- a/management/estate/tests/fixtures/workstation-not-an-address.json
++++ b/management/estate/tests/fixtures/workstation-not-an-address.json
+@@ -10,7 +10,8 @@
+     "installation_id": "1",
+     "private_key": "Zml4dHVyZQ==",
+     "billing_email": "billing@example.com",
+-    "procurement_app_id": "2"
++    "procurement_app_id": "2",
++    "pull_request_runners_site": "site0"
+   },
+   "access": {
+     "provider": "cloudflare",
+diff --git a/modules/infrastructure/address-plan/machines.tf b/modules/infrastructure/address-plan/machines.tf
+index ed07e87..16dbe80 100644
+--- a/modules/infrastructure/address-plan/machines.tf
++++ b/modules/infrastructure/address-plan/machines.tf
+@@ -68,7 +68,11 @@ locals {
+           zone       = zone
+           host_octet = local.dmz_band + j
+           ip         = cidrhost(z.cidr, local.dmz_band + j)
+-          name       = "${local.slugs[key]}-${zone}-${local.dmz_band + j}"
++          # Named for what it is, as a control plane is cp and a worker wk,
++          # and numbered by the end of its address as they are. A second
++          # zone's machines have the same addresses on another subnet, so
++          # from the second zone on the zone's number is in the name too.
++          name       = "${local.slugs[key]}-dmz${z.index == 0 ? "" : z.index}-${local.dmz_band + j}"
+           vm_id      = s.octet * 1000 + 300 + z.index * 10 + j
+           hypervisor = length(local.hypervisors[key]) > 0 ? local.hypervisors[key][(z.index + j) % length(local.hypervisors[key])] : ""
+         }
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 4a075ec..dc4638b 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -620,6 +620,30 @@ endpoints:
+ #                   it cannot be a list is written here rather than in a comment
+ #                   somebody has to go and find
+ 
++# The estate's pools of pull-request runners, and what a runner in any of
++# them reaches to be a runner at all: to be handed a job, fetch the actions
++# it names, and send back its log and what it made.
++#
++# A pull request's job on the estate's own runners is held by the cluster's
++# network and not by an agent in the runner. A pool is held to what the jobs
++# declared for it below reach between them, and to this, and to nothing
++# else; tests/go/repo holds each pool's policy to exactly that. Each job
++# says which pool it is of with `pool:` beside its entry under egress:.
++#
++# The last of these is wide and cannot be narrowed: the platform keeps logs
++# and artifacts in storage accounts it names as it goes.
++pull_request_pools:
++  names:
++    - source
++    - builds
++    - packages
++  every_runner_reaches:
++    - github.com:443
++    - api.github.com:443
++    - codeload.github.com:443
++    - "*.actions.githubusercontent.com:443"
++    - "*.blob.core.windows.net:443"
++
+ egress:
+   - job: clerk.yml/read
+     policy: block
+@@ -634,6 +658,7 @@ egress:
+       - sum.golang.org:443
+ 
+   - job: codeql.yml/analyze
++    pool: source
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -643,6 +668,7 @@ egress:
+       - uploads.github.com:443
+ 
+   - job: dependency-review.yml/dependency-review
++    pool: packages
+     policy: block
+     hosts:
+       - api.deps.dev:443
+@@ -712,12 +738,14 @@ egress:
+       - release-assets.githubusercontent.com:443
+ 
+   - job: plan-infrastructure.yml/sites
++    pool: source
+     policy: block
+     hosts:
+       - api.github.com:443
+       - github.com:443
+ 
+   - job: plan-infrastructure.yml/plan
++    pool: builds
+     policy: block
+     reason: >-
+       Plans a pull request's change against the as-built record (#554), on
+@@ -747,6 +775,7 @@ egress:
+       - sum.golang.org:443
+ 
+   - job: plan-infrastructure.yml/held
++    pool: source
+     policy: block
+     reason: >-
+       Says, once for the whole change, whether its plan lets it land. It
+@@ -756,6 +785,7 @@ egress:
+       - github.com:443
+ 
+   - job: plan-infrastructure.yml/report
++    pool: source
+     policy: block
+     reason: >-
+       Writes each site's plan, or that there was none, on the pull request.
+@@ -851,6 +881,7 @@ egress:
+       - sum.golang.org:443
+ 
+   - job: inspector.yml/tally
++    pool: builds
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -898,12 +929,14 @@ egress:
+       cluster's network layer instead (#411); until then it is uncontrolled
+       and unrecorded, and this entry says so rather than implying otherwise.
+   - job: pr-validation.yml/already-tested
++    pool: source
+     policy: block
+     hosts:
+       - api.github.com:443
+       - github.com:443
+ 
+   - job: pr-validation.yml/format
++    pool: packages
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -923,6 +956,7 @@ egress:
+       - sum.golang.org:443
+ 
+   - job: pr-validation.yml/shellcheck
++    pool: source
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -931,6 +965,7 @@ egress:
+       - release-assets.githubusercontent.com:443
+ 
+   - job: pr-validation.yml/validate
++    pool: builds
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -944,6 +979,7 @@ egress:
+       - storage.googleapis.com:443
+ 
+   - job: pr-validation.yml/test-go
++    pool: builds
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -959,6 +995,7 @@ egress:
+       - sum.golang.org:443
+ 
+   - job: pr-validation.yml/vet
++    pool: builds
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -971,6 +1008,7 @@ egress:
+       - sum.golang.org:443
+ 
+   - job: pr-validation.yml/invariants
++    pool: builds
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -985,6 +1023,7 @@ egress:
+       - sum.golang.org:443
+ 
+   - job: pr-validation.yml/meta
++    pool: builds
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -999,6 +1038,7 @@ egress:
+       - sum.golang.org:443
+ 
+   - job: pr-validation.yml/test-js
++    pool: packages
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -1009,12 +1049,14 @@ egress:
+       - release-assets.githubusercontent.com:443
+ 
+   - job: pr-validation.yml/test
++    pool: source
+     policy: block
+     hosts:
+       - api.github.com:443
+       - github.com:443
+ 
+   - job: pr-validation.yml/dockerfiles
++    pool: source
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -1023,6 +1065,7 @@ egress:
+       - release-assets.githubusercontent.com:443
+ 
+   - job: pr-validation.yml/policy
++    pool: packages
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -1033,6 +1076,7 @@ egress:
+       - release-assets.githubusercontent.com:443
+ 
+   - job: pr-validation.yml/spelling
++    pool: packages
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -1043,6 +1087,7 @@ egress:
+       - release-assets.githubusercontent.com:443
+ 
+   - job: pr-validation.yml/workflowscan
++    pool: packages
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -1061,6 +1106,7 @@ egress:
+       first, then transcribe what it logged.
+ 
+   - job: pr-validation.yml/trivy
++    pool: packages
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -1090,6 +1136,7 @@ egress:
+       else.
+ 
+   - job: pr-validation.yml/egress-blocked
++    pool: source
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -1152,6 +1199,7 @@ egress:
+       - storage.googleapis.com:443
+ 
+   - job: sensitive-paths.yml/tripwire
++    pool: builds
+     policy: block
+     hosts:
+       - api.github.com:443
+@@ -1481,3 +1529,18 @@ work:
+   - job: integration-tests.yml/test
+     kind: can-wait
+     takes: 5m
++
++  # A pull request's jobs, in the pools on the untrusted zone's machine.
++  # Somebody is waiting on each. They share nothing with the priority set
++  # above: their runners are on a machine of their own.
++  - job: pr-validation.yml/egress-blocked
++    kind: cannot-wait
++    takes: 1m
++
++  - job: pr-validation.yml/test-js
++    kind: cannot-wait
++    takes: 2m
++
++  - job: inspector.yml/tally
++    kind: cannot-wait
++    takes: 1m
+diff --git a/scripts/contractor/internal/phases/health.go b/scripts/contractor/internal/phases/health.go
+index 4f342fa..666557e 100644
+--- a/scripts/contractor/internal/phases/health.go
++++ b/scripts/contractor/internal/phases/health.go
+@@ -9,6 +9,7 @@ import (
+ 	"os/signal"
+ 	"path/filepath"
+ 	"regexp"
++	"sort"
+ 	"strings"
+ 	"syscall"
+ 	"time"
+@@ -301,9 +302,92 @@ func checkNodes(ctx *run.Context, kubeconfig string) error {
+ 	if err != nil {
+ 		return err
+ 	}
++	// A machine that was renamed joins again under its new name and leaves
++	// the node it was behind it: nothing takes a node out of the cluster
++	// but being asked to. That one extra node would fail the count below
++	// for a cluster with every machine it should have. So what a rename
++	// left is removed first - and only that, by the narrowest reading
++	// there is of "left by a rename" (formerNames).
++	cfg, err := config.LoadRendered(ctx.ConfigRendered)
++	if err != nil {
++		return err
++	}
++	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
++	if err != nil {
++		return err
++	}
++	left, err := formerNames(out, net.AllMachineNames())
++	if err != nil {
++		return err
++	}
++	if len(left) > 0 {
++		run.Info(fmt.Sprintf("removing %d node(s) a renamed machine left behind", len(left)))
++		for _, node := range left {
++			if _, err := kubectl(ctx, kubeconfig, "delete", "node", node); err != nil {
++				return err
++			}
++		}
++		if out, err = kubectl(ctx, kubeconfig, "get", "nodes", "-o", "json"); err != nil {
++			return err
++		}
++	}
+ 	return nodeVerdict(out, want)
+ }
+ 
++// formerNames is every node that is a machine's old name: a node the config
++// does not name, at an address where a node the config does name also
++// stands.
++//
++// Both halves are required, and that is what keeps this from being a way to
++// delete nodes. A node the config does not name and that shares its address
++// with nothing is a machine nobody declared, or one being taken away in
++// order, and is not touched: the count that follows says so and stops. Two
++// nodes at one address, one of them the name the config gives the machine
++// there, can only be that machine before and after it was renamed, and the
++// one it no longer answers to is the one that goes.
++func formerNames(nodes []byte, names []string) ([]string, error) {
++	var list map[string]any
++	if err := json.Unmarshal(nodes, &list); err != nil {
++		return nil, fmt.Errorf("the node list is not what was asked for: %w", err)
++	}
++	named := map[string]bool{}
++	for _, n := range names {
++		named[n] = true
++	}
++	at := map[string][]string{}
++	items, _ := list["items"].([]any)
++	for _, item := range items {
++		node, _ := item.(map[string]any)
++		metadata, _ := node["metadata"].(map[string]any)
++		status, _ := node["status"].(map[string]any)
++		name, _ := metadata["name"].(string)
++		addresses, _ := status["addresses"].([]any)
++		for _, a := range addresses {
++			address, _ := a.(map[string]any)
++			if ip, _ := address["address"].(string); address["type"] == "InternalIP" && name != "" {
++				at[ip] = append(at[ip], name)
++			}
++		}
++	}
++	var out []string
++	for _, here := range at {
++		current := false
++		for _, n := range here {
++			current = current || named[n]
++		}
++		if !current {
++			continue
++		}
++		for _, n := range here {
++			if !named[n] {
++				out = append(out, n)
++			}
++		}
++	}
++	sort.Strings(out)
++	return out, nil
++}
++
+ // nodeVerdict is every question this phase asks of the node list, in one pure
+ // function.
+ //
+diff --git a/scripts/contractor/internal/phases/health_test.go b/scripts/contractor/internal/phases/health_test.go
+index 3506e70..041e184 100644
+--- a/scripts/contractor/internal/phases/health_test.go
++++ b/scripts/contractor/internal/phases/health_test.go
+@@ -1,6 +1,7 @@
+ package phases
+ 
+ import (
++	"encoding/json"
+ 	"homelab/details/capacity"
+ 	"homelab/details/repopath"
+ 	"os"
+@@ -415,3 +416,46 @@ func TestHealthRefusesASiteFileItCannotRead(t *testing.T) {
+ 		t.Error("output that is not a list was split into core and work")
+ 	}
+ }
++
++// A node is a machine's old name only when the config does not name it AND
++// a node the config does name stands at the same address. Anything else the
++// config does not name is left for the count to refuse.
++func TestOnlyANodeARenameLeftBehindIsTakenForOne(t *testing.T) {
++	type node struct{ name, ip string }
++	listOf := func(nodes ...node) []byte {
++		var items []any
++		for _, n := range nodes {
++			items = append(items, map[string]any{
++				"metadata": map[string]any{"name": n.name},
++				"status": map[string]any{"addresses": []any{
++					map[string]any{"type": "Hostname", "address": n.name},
++					map[string]any{"type": "InternalIP", "address": n.ip},
++				}},
++			})
++		}
++		raw, err := json.Marshal(map[string]any{"items": items})
++		if err != nil {
++			t.Fatal(err)
++		}
++		return raw
++	}
++	names := []string{"one-machine", "another-machine", "its-new-name"}
++	for name, c := range map[string]struct {
++		nodes []node
++		want  string
++	}{
++		"every machine under its own name":     {[]node{{"one-machine", "192.0.2.10"}, {"another-machine", "192.0.2.20"}}, ""},
++		"a machine renamed":                    {[]node{{"its-new-name", "192.0.2.30"}, {"its-old-name", "192.0.2.30"}}, "its-old-name"},
++		"a machine nobody declared":            {[]node{{"one-machine", "192.0.2.10"}, {"a-stranger", "192.0.2.99"}}, ""},
++		"an old name whose new one never came": {[]node{{"its-old-name", "192.0.2.30"}}, ""},
++		"two strangers at one address":         {[]node{{"a-stranger", "192.0.2.99"}, {"another-stranger", "192.0.2.99"}}, ""},
++	} {
++		got, err := formerNames(listOf(c.nodes...), names)
++		if err != nil || strings.Join(got, " ") != c.want {
++			t.Errorf("%s: got %v, %v", name, got, err)
++		}
++	}
++	if _, err := formerNames([]byte("not a list"), names); err == nil {
++		t.Error("something that is not a node list was read as leaving nothing behind")
++	}
++}
+diff --git a/scripts/details/suppliers/suppliers.go b/scripts/details/suppliers/suppliers.go
+index f181cbf..4a2c719 100644
+--- a/scripts/details/suppliers/suppliers.go
++++ b/scripts/details/suppliers/suppliers.go
+@@ -36,6 +36,46 @@ type Egress struct {
+ 	Policy string
+ 	Reason string
+ 	Hosts  []string
++	// Pool is the pool of the estate's pull-request runners the job is of,
++	// and empty for a job that is of none.
++	Pool string
++}
++
++// Pools is the estate's pools of pull-request runners: their names, and
++// what a runner in any of them reaches to be a runner at all.
++type Pools struct {
++	Names  []string
++	Runner []string
++}
++
++// PoolsOf is what the list declares under pull_request_pools:. A list that
++// declares none has none; one that names a pool twice, or none at all while
++// saying what a runner reaches, is refused.
++func PoolsOf(body []byte) (Pools, error) {
++	doc, err := list(body)
++	if err != nil {
++		return Pools{}, err
++	}
++	declared, _ := doc["pull_request_pools"].(map[string]any)
++	var out Pools
++	seen := map[string]bool{}
++	names, _ := declared["names"].([]any)
++	for _, n := range names {
++		name := fmt.Sprint(n)
++		if seen[name] {
++			return Pools{}, fmt.Errorf("%s: pull_request_pools names the pool %q twice", Path, name)
++		}
++		seen[name] = true
++		out.Names = append(out.Names, name)
++	}
++	reaches, _ := declared["every_runner_reaches"].([]any)
++	for _, h := range reaches {
++		out.Runner = append(out.Runner, fmt.Sprint(h))
++	}
++	if len(out.Names) == 0 && len(out.Runner) > 0 {
++		return Pools{}, fmt.Errorf("%s: pull_request_pools says what a runner reaches and names no pool", Path)
++	}
++	return out, nil
+ }
+ 
+ // list is the one document the file holds.
+@@ -98,6 +138,7 @@ func EgressOf(body []byte) ([]Egress, error) {
+ 		one.Job, _ = entry["job"].(string)
+ 		one.Policy, _ = entry["policy"].(string)
+ 		one.Reason, _ = entry["reason"].(string)
++		one.Pool, _ = entry["pool"].(string)
+ 		hosts, _ := entry["hosts"].([]any)
+ 		for _, h := range hosts {
+ 			one.Hosts = append(one.Hosts, fmt.Sprint(h))
+diff --git a/scripts/details/suppliers/suppliers_test.go b/scripts/details/suppliers/suppliers_test.go
+index f757d08..7d59181 100644
+--- a/scripts/details/suppliers/suppliers_test.go
++++ b/scripts/details/suppliers/suppliers_test.go
+@@ -79,3 +79,43 @@ func TestWhatIsNotTheListIsRefused(t *testing.T) {
+ 		}
+ 	}
+ }
++
++// A job says which pool of pull-request runners it is of, and the list says
++// which pools there are and what a runner in any of them reaches.
++func TestAJobIsOfAPoolAndThePoolsAreDeclared(t *testing.T) {
++	const withPools = `
++pull_request_pools:
++  names: [one, two]
++  every_runner_reaches:
++    - example.invalid:443
++    - "*.example.invalid:443"
++egress:
++  - job: a-workflow.yml/in-a-pool
++    pool: one
++    policy: block
++    hosts: [example.invalid:443]
++  - job: a-workflow.yml/in-none
++    policy: block
++`
++	pools, err := PoolsOf([]byte(withPools))
++	if err != nil || strings.Join(pools.Names, " ") != "one two" || strings.Join(pools.Runner, " ") != "example.invalid:443 *.example.invalid:443" {
++		t.Errorf("the pools were read as %+v, %v", pools, err)
++	}
++	egress, err := EgressOf([]byte(withPools))
++	if err != nil || len(egress) != 2 || egress[0].Pool != "one" || egress[1].Pool != "" {
++		t.Errorf("the jobs were read as %+v, %v", egress, err)
++	}
++
++	if none, err := PoolsOf([]byte("egress: []\n")); err != nil || len(none.Names) != 0 {
++		t.Errorf("a list that declares no pools was read as %+v, %v", none, err)
++	}
++	for name, body := range map[string]string{
++		"a pool named twice":   "pull_request_pools:\n  names: [one, one]\n",
++		"reaches, and no pool": "pull_request_pools:\n  every_runner_reaches: [example.invalid:443]\n",
++		"not the list":         "pull_request_pools: [unclosed",
++	} {
++		if _, err := PoolsOf([]byte(body)); err == nil {
++			t.Errorf("%s was read as pools", name)
++		}
++	}
++}
+diff --git a/tests/go/integration/runners_test.go b/tests/go/integration/runners_test.go
+index 3a45737..2503681 100644
+--- a/tests/go/integration/runners_test.go
++++ b/tests/go/integration/runners_test.go
+@@ -15,55 +15,65 @@ import (
+ 
+ // Each set of runners is listening for work.
+ //
+-// The estate's runners are two sets, split by the priority of their work: one
+-// for work that cannot wait, which is a converge, and one for work that can.
+-// A set makes no runner until a job asks for one, so between jobs the only
+-// sign that a set exists at all is its listener - the small pod that holds
+-// the connection to GitHub and asks for a runner when a job arrives. A set
++// The estate's own runners are two sets, split by the priority of their
++// work: one for work that cannot wait, which is a converge, and one for work
++// that can. A pull request's are three more, in a namespace of their own,
++// one for each list of hosts a pull request's jobs are held to. A set makes
++// no runner until a job asks for one, so between jobs the only sign that a
++// set exists at all is its listener - the small pod that holds the
++// connection to GitHub and asks for a runner when a job arrives. A set
+ // whose listener is not running takes no work, and a job that asks for it
+ // waits for a day and then fails, having said nothing.
+ //
+ // covers: integration:self-hosted
+ // covers: integration:self-hosted-batch
++// covers: integration:pull-requests-source
++// covers: integration:pull-requests-builds
++// covers: integration:pull-requests-packages
+ func TestEverySetOfRunnersIsListeningForWork(t *testing.T) {
+ 	t.Parallel()
+-	const runners, controller = "arc-runners", "arc-systems"
++	const controller = "arc-systems"
+ 
+-	// A release is named for the estate and its set for the site, so the
+-	// cluster is asked which set each release made. Helm writes the release
+-	// on everything it installs.
+-	made, err := k8s.RunKubectlAndGetOutputE(t, k8s.NewKubectlOptions("", kubeconfig(t), runners),
+-		"get", "autoscalingrunnersets", "-o",
+-		`jsonpath={range .items[*]}{.metadata.annotations.meta\.helm\.sh/release-name}={.metadata.name}{"\n"}{end}`)
+-	require.NoError(t, err, "listing the sets of runners the releases made")
+-	setOf := map[string]string{}
+-	for _, line := range strings.Split(strings.TrimSpace(made), "\n") {
+-		if release, set, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
+-			setOf[release] = set
++	for runners, releases := range map[string][]string{
++		"arc-runners":          {"self-hosted", "self-hosted-batch"},
++		"pull-request-runners": {"pull-requests-source", "pull-requests-builds", "pull-requests-packages"},
++	} {
++		// A release is named for the estate and its set for the site, so the
++		// cluster is asked which set each release made. Helm writes the
++		// release on everything it installs.
++		made, err := k8s.RunKubectlAndGetOutputE(t, k8s.NewKubectlOptions("", kubeconfig(t), runners),
++			"get", "autoscalingrunnersets", "-o",
++			`jsonpath={range .items[*]}{.metadata.annotations.meta\.helm\.sh/release-name}={.metadata.name}{"\n"}{end}`)
++		require.NoError(t, err, "listing the sets of runners the releases made in %s", runners)
++		setOf := map[string]string{}
++		for _, line := range strings.Split(strings.TrimSpace(made), "\n") {
++			if release, set, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
++				setOf[release] = set
++			}
+ 		}
+-	}
+ 
+-	// A listener runs beside the controller and is labelled with the set it
+-	// listens for.
+-	pods, err := k8s.ListPodsE(t, k8s.NewKubectlOptions("", kubeconfig(t), controller),
+-		metav1.ListOptions{LabelSelector: "actions.github.com/scale-set-namespace=" + runners})
+-	require.NoError(t, err, "listing the listeners beside the runner controller")
+-	listening := map[string]bool{}
+-	for _, pod := range pods {
+-		if pod.Status.Phase == corev1.PodRunning {
+-			listening[pod.Labels["actions.github.com/scale-set-name"]] = true
++		// A listener runs beside the controller and is labelled with the set
++		// it listens for and the namespace that set is in.
++		pods, err := k8s.ListPodsE(t, k8s.NewKubectlOptions("", kubeconfig(t), controller),
++			metav1.ListOptions{LabelSelector: "actions.github.com/scale-set-namespace=" + runners})
++		require.NoError(t, err, "listing the listeners beside the runner controller")
++		listening := map[string]bool{}
++		for _, pod := range pods {
++			if pod.Status.Phase == corev1.PodRunning {
++				listening[pod.Labels["actions.github.com/scale-set-name"]] = true
++			}
+ 		}
+-	}
+ 
+-	for _, release := range []string{"self-hosted", "self-hosted-batch"} {
+-		set, ok := setOf[release]
+-		if !assert.True(t, ok,
+-			"the release %s has made no set of runners in the %s namespace, so there is nothing for a job to ask for. "+
+-				"The release's own status says why", release, runners) {
+-			continue
++		for _, release := range releases {
++			set, ok := setOf[release]
++			if !assert.True(t, ok,
++				"the release %s has made no set of runners in the %s namespace, so there is nothing for a job to ask for. "+
++					"The release's own status says why", release, runners) {
++				continue
++			}
++			assert.True(t, listening[set],
++				"the set of runners the release %s made has no listener running in the %s namespace, so no job that asks "+
++					"for it will be given a runner. The controller's log says why it made no listener", release, controller)
+ 		}
+-		assert.True(t, listening[set],
+-			"the set of runners the release %s made has no listener running in the %s namespace, so no job that asks "+
+-				"for it will be given a runner. The controller's log says why it made no listener", release, controller)
+ 	}
+ }
+diff --git a/tests/go/repo/estate_scope_test.go b/tests/go/repo/estate_scope_test.go
+index a23d48b..a7b145b 100644
+--- a/tests/go/repo/estate_scope_test.go
++++ b/tests/go/repo/estate_scope_test.go
+@@ -67,6 +67,9 @@ var estateTypes = map[string]bool{
+ 	ghapi.OrganisationSettingsType: true,
+ 	// Which repositories and workflows may use the estate's own runners.
+ 	ghapi.RunnerGroupType: true,
++	// What a workflow reads that is the estate's to say: which site a pull
++	// request's jobs are sent to.
++	"github_actions_variable": true,
+ 	// Where a job is handed the estate's own credential, and on which
+ 	// branch it may be.
+ 	"github_repository_environment":                   true,
+diff --git a/tests/go/repo/pull_request_pools_test.go b/tests/go/repo/pull_request_pools_test.go
+new file mode 100644
+index 0000000..bddab7c
+--- /dev/null
++++ b/tests/go/repo/pull_request_pools_test.go
+@@ -0,0 +1,378 @@
++package repo
++
++import (
++	"bytes"
++	"errors"
++	"io"
++	"os"
++	"path/filepath"
++	"sort"
++	"strings"
++	"testing"
++
++	"gopkg.in/yaml.v3"
++
++	"homelab/details/capacity"
++	supplierslist "homelab/details/suppliers"
++)
++
++// Each pool of pull-request runners reaches what its jobs are declared to
++// reach, and what any runner needs to be a runner, and nothing else.
++//
++// WHY. A pull request's job on the estate's own runners is held by the
++// cluster's network and by nothing in the runner. Which job may reach what
++// is declared once, in the suppliers list, with the pool each job is of. A
++// pool's policy is that list written out as the network reads it, so the
++// two are one fact in two places, and this is what stops them parting: a
++// host added to a policy that no job declared, or a job given a host its
++// pool's policy never got, which then fails a long way from here.
++//
++// IT ALSO HOLDS EACH POOL TO BEGINNING FROM NOTHING: a policy for every
++// pool, on 443 and nothing else, with the resolver held to the same names;
++// nothing let in; everything in the namespace refused until a policy says
++// otherwise; no token of the cluster's in a runner; and every runner sent
++// to an untrusted zone's machine and able to stay there.
++//
++// FOUND BY WHAT IT IS. The policies are whatever policies select a pool's
++// runners, wherever they are declared.
++
++// poolLabel is the label the controller puts on a runner, which is the name
++// of the set it is of and the only thing that tells one pool's from another.
++const poolLabel = "actions.github.com/scale-set-name"
++
++// poolSet is the name a pool's runners register under, as a manifest every
++// site reconciles writes it.
++func poolSet(pool string) string { return "pr-" + pool + "-${SITE}" }
++
++// reaches is what one pool is declared to reach: every runner's hosts and
++// its own jobs', without the port.
++func reaches(pools supplierslist.Pools, egress []supplierslist.Egress, pool string) []string {
++	set := map[string]bool{}
++	for _, h := range pools.Runner {
++		set[strings.TrimSuffix(h, ":443")] = true
++	}
++	for _, e := range egress {
++		if e.Pool != pool {
++			continue
++		}
++		for _, h := range e.Hosts {
++			set[strings.TrimSuffix(h, ":443")] = true
++		}
++	}
++	out := make([]string, 0, len(set))
++	for h := range set {
++		out = append(out, h)
++	}
++	sort.Strings(out)
++	return out
++}
++
++// documents is every YAML document in a body that is a mapping.
++func documents(body []byte) ([]map[string]any, error) {
++	var out []map[string]any
++	dec := yaml.NewDecoder(bytes.NewReader(body))
++	for {
++		var doc map[string]any
++		err := dec.Decode(&doc)
++		if errors.Is(err, io.EOF) {
++			return out, nil
++		}
++		if err != nil {
++			return nil, err
++		}
++		if doc != nil {
++			out = append(out, doc)
++		}
++	}
++}
++
++// at walks a decoded document by keys.
++func walk(v any, keys ...string) any {
++	for _, k := range keys {
++		m, _ := v.(map[string]any)
++		v = m[k]
++	}
++	return v
++}
++
++// named is the hosts a list of name rules names: matchName, or
++// matchPattern for a name with a wildcard in it.
++func namedBy(rules any) []string {
++	var out []string
++	list, _ := rules.([]any)
++	for _, r := range list {
++		rule, _ := r.(map[string]any)
++		for _, key := range []string{"matchName", "matchPattern"} {
++			if v, ok := rule[key].(string); ok {
++				out = append(out, v)
++			}
++		}
++	}
++	sort.Strings(out)
++	return out
++}
++
++// poolPolicyProblems is everything wrong with the policy that holds one
++// pool, given what the pool is declared to reach.
++func poolPolicyProblems(policy map[string]any, want []string) []string {
++	var out []string
++	if in := walk(policy, "spec", "ingress"); in != nil {
++		out = append(out, "it lets something in: a runner is reached by nothing")
++	}
++	egress, _ := walk(policy, "spec", "egress").([]any)
++	var toNames, asked []string
++	sawNames, sawResolver := false, false
++	for _, e := range egress {
++		rule, _ := e.(map[string]any)
++		ports, _ := walk(rule, "toPorts").([]any)
++		switch {
++		case rule["toFQDNs"] != nil:
++			sawNames = true
++			toNames = append(toNames, namedBy(rule["toFQDNs"])...)
++			for _, p := range ports {
++				each, _ := walk(p, "ports").([]any)
++				for _, one := range each {
++					port, _ := one.(map[string]any)
++					if port["port"] != "443" || port["protocol"] != "TCP" {
++						out = append(out, "it opens a port that is not 443/TCP to the hosts it names")
++					}
++				}
++			}
++			if len(ports) == 0 {
++				out = append(out, "it names hosts and no port, which is every port")
++			}
++		case rule["toEndpoints"] != nil:
++			sawResolver = true
++			for _, p := range ports {
++				asked = append(asked, namedBy(walk(p, "rules", "dns"))...)
++			}
++		default:
++			out = append(out, "it has a rule that is neither the resolver nor hosts by name: addresses, or everything")
++		}
++	}
++	if !sawNames || !sawResolver {
++		out = append(out, "it does not have both a rule for the resolver and a rule for hosts by name")
++	}
++	sort.Strings(toNames)
++	sort.Strings(asked)
++	if strings.Join(toNames, " ") != strings.Join(want, " ") {
++		out = append(out, "it reaches\n      "+strings.Join(toNames, " ")+"\n    and its jobs and every runner are declared to reach\n      "+strings.Join(want, " "))
++	}
++	if strings.Join(asked, " ") != strings.Join(want, " ") {
++		out = append(out, "its runners may ask the resolver for\n      "+strings.Join(asked, " ")+"\n    which is not the hosts they may reach: a name that can be asked for and not reached is a way to send something out inside a question")
++	}
++	return out
++}
++
++// runnerProblems is everything about a pool's own runners that lets them be
++// more than a pull request's: a token of the cluster's, or anywhere to run
++// but an untrusted zone's machine.
++func runnerProblems(release map[string]any) []string {
++	var out []string
++	spec := walk(release, "spec", "values", "template", "spec")
++	if walk(spec, "automountServiceAccountToken") != false {
++		out = append(out, "its runners are given an account's token: automountServiceAccountToken is not false")
++	}
++	selector, _ := walk(spec, capacity.NodeSelectorKey).(map[string]any)
++	zone, sent := selector["untrusted-zone"].(string)
++	if !sent || zone == "" {
++		out = append(out, "its runners are not sent to an untrusted zone's machine: no nodeSelector for untrusted-zone, so they may land on a machine the estate trusts")
++	}
++	tolerated := false
++	tolerations, _ := walk(spec, "tolerations").([]any)
++	for _, tol := range tolerations {
++		each, _ := tol.(map[string]any)
++		tolerated = tolerated || (each["key"] == "untrusted-zone" && each["value"] == zone && sent)
++	}
++	if !tolerated {
++		out = append(out, "its runners do not tolerate the zone's taint, so none can be placed and every job waits")
++	}
++	return out
++}
++
++func TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore(t *testing.T) {
++	root := repoRoot(t)
++	list, err := os.ReadFile(filepath.Join(root, supplierslist.Path))
++	if err != nil {
++		t.Fatal(err)
++	}
++	pools, err := supplierslist.PoolsOf(list)
++	if err != nil {
++		t.Fatal(err)
++	}
++	egress, err := supplierslist.EgressOf(list)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(pools.Names) == 0 {
++		t.Fatal("the suppliers list declares no pool of pull-request runners, so this checked nothing")
++	}
++
++	// The pools there are, said three times: in the list, to the guard that
++	// lets a pull request's job use one, and by the jobs that are of one.
++	declared := map[string]bool{}
++	for _, name := range pools.Names {
++		declared[name] = true
++		if !pullRequestPools[pullRequestPool(name)] {
++			t.Errorf("the suppliers list declares the pool %q, and it is not one a pull request's job may use (pullRequestPools)", name)
++		}
++	}
++	if len(pullRequestPools) != len(pools.Names) {
++		t.Errorf("a pull request's job may use %d pool(s) and the suppliers list declares %d", len(pullRequestPools), len(pools.Names))
++	}
++	for _, e := range egress {
++		if e.Pool != "" && !declared[e.Pool] {
++			t.Errorf("%s says it is of the pool %q, which the suppliers list does not declare", e.Job, e.Pool)
++		}
++	}
++
++	// Every policy that selects a pool's runners, every release that makes
++	// a pool, and every namespace that refuses everything, wherever each is.
++	policies := map[string][]map[string]any{}
++	releases := map[string]map[string]any{}
++	namespaceOf := map[string]string{}
++	closed := map[string]bool{}
++	for _, rel := range trackedFilesIn(t, root) {
++		if !authoredHere(rel) || !strings.HasPrefix(rel, "clusters/") || !strings.HasSuffix(rel, ".yaml") {
++			continue
++		}
++		body, err := os.ReadFile(filepath.Join(root, rel))
++		if err != nil {
++			t.Fatal(err)
++		}
++		if !bytes.Contains(body, []byte("pull-request")) {
++			continue
++		}
++		docs, err := documents(body)
++		if err != nil {
++			t.Fatalf("%s speaks of the pull-request runners and does not parse: %v", rel, err)
++		}
++		for _, doc := range docs {
++			namespace, _ := walk(doc, "metadata", "namespace").(string)
++			switch doc["kind"] {
++			case "CiliumNetworkPolicy":
++				if set, ok := walk(doc, "spec", "endpointSelector", "matchLabels", poolLabel).(string); ok {
++					policies[set] = append(policies[set], doc)
++				}
++			case "HelmRelease":
++				if set, ok := walk(doc, "spec", "values", "runnerScaleSetName").(string); ok {
++					releases[set] = doc
++					namespaceOf[set] = namespace
++				}
++			case "NetworkPolicy":
++				selector, isMap := walk(doc, "spec", "podSelector").(map[string]any)
++				types, _ := walk(doc, "spec", "policyTypes").([]any)
++				if isMap && len(selector) == 0 && len(types) == 2 && walk(doc, "spec", "ingress") == nil && walk(doc, "spec", "egress") == nil {
++					closed[namespace] = true
++				}
++			}
++		}
++	}
++
++	for _, pool := range pools.Names {
++		set := poolSet(pool)
++		release, made := releases[set]
++		if !made {
++			t.Errorf("the pool %q is declared and no release makes a set of runners named %s", pool, set)
++			continue
++		}
++		for _, problem := range runnerProblems(release) {
++			t.Errorf("the pool %q: %s", pool, problem)
++		}
++		if !closed[namespaceOf[set]] {
++			t.Errorf("the pool %q is in the namespace %q, where nothing refuses everything first: a runner no policy selects reaches whatever it likes", pool, namespaceOf[set])
++		}
++		if len(policies[set]) != 1 {
++			t.Errorf("the pool %q has %d policies selecting its runners, and is held by exactly one", pool, len(policies[set]))
++			continue
++		}
++		for _, problem := range poolPolicyProblems(policies[set][0], reaches(pools, egress, pool)) {
++			t.Errorf("the pool %q: %s", pool, problem)
++		}
++	}
++}
++
++// The judging, on policies and runners made up here.
++func TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters(t *testing.T) {
++	const good = `
++spec:
++  egress:
++    - toEndpoints: [{matchLabels: {app: resolver}}]
++      toPorts:
++        - ports: [{port: "53", protocol: UDP}]
++          rules: {dns: [{matchName: a.example.invalid}, {matchPattern: "*.b.example.invalid"}]}
++    - toFQDNs: [{matchName: a.example.invalid}, {matchPattern: "*.b.example.invalid"}]
++      toPorts: [{ports: [{port: "443", protocol: TCP}]}]
++`
++	want := reaches(supplierslist.Pools{Runner: []string{"*.b.example.invalid:443"}},
++		[]supplierslist.Egress{{Pool: "one", Hosts: []string{"a.example.invalid:443"}}, {Pool: "other", Hosts: []string{"c.example.invalid:443"}}}, "one")
++	if strings.Join(want, " ") != "*.b.example.invalid a.example.invalid" {
++		t.Fatalf("what the pool reaches was worked out as %v", want)
++	}
++	for name, c := range map[string]struct {
++		change func(string) string
++		says   string
++	}{
++		"its list and no more": {func(s string) string { return s }, ""},
++		"a host nobody declared": {func(s string) string {
++			return strings.Replace(s, "toFQDNs: [", "toFQDNs: [{matchName: extra.example.invalid}, ", 1)
++		}, "are declared to reach"},
++		"a declared host left out": {func(s string) string {
++			return strings.Replace(s, "toFQDNs: [{matchName: a.example.invalid}, ", "toFQDNs: [", 1)
++		}, "are declared to reach"},
++		"any name asked for": {func(s string) string {
++			return strings.Replace(s, "dns: [{matchName: a.example.invalid}, ", "dns: [{matchPattern: \"*\"}, ", 1)
++		}, "inside a question"},
++		"another port": {func(s string) string { return strings.Replace(s, `port: "443"`, `port: "80"`, 1) }, "not 443/TCP"},
++		"every port": {func(s string) string {
++			return strings.Replace(s, "\n      toPorts: [{ports: [{port: \"443\", protocol: TCP}]}]", "", 1)
++		}, "which is every port"},
++		"something let in":       {func(s string) string { return s + "  ingress: [{}]\n" }, "lets something in"},
++		"an address, not a name": {func(s string) string { return s + "    - toCIDR: [\"192.0.2.0/24\"]\n" }, "neither the resolver nor hosts by name"},
++	} {
++		docs, err := documents([]byte(c.change(good)))
++		if err != nil || len(docs) != 1 {
++			t.Fatalf("%s: %v", name, err)
++		}
++		said := strings.Join(poolPolicyProblems(docs[0], want), "\n")
++		if (c.says == "") != (said == "") || !strings.Contains(said, c.says) {
++			t.Errorf("%s: want %q, got\n%s", name, c.says, said)
++		}
++	}
++
++	const runner = `
++spec:
++  values:
++    template:
++      spec:
++        automountServiceAccountToken: false
++        nodeSelector: {untrusted-zone: somewhere}
++        tolerations: [{key: untrusted-zone, value: somewhere, effect: NoSchedule}]
++`
++	for name, c := range map[string]struct {
++		change func(string) string
++		says   string
++	}{
++		"held":    {func(s string) string { return s }, ""},
++		"a token": {func(s string) string { return strings.Replace(s, "Token: false", "Token: true", 1) }, "given an account's token"},
++		"a token by default": {func(s string) string {
++			return strings.Replace(s, "        automountServiceAccountToken: false\n", "", 1)
++		}, "given an account's token"},
++		"sent nowhere": {func(s string) string {
++			return strings.Replace(s, "        nodeSelector: {untrusted-zone: somewhere}\n", "", 1)
++		}, "may land on a machine the estate trusts"},
++		"tolerating another zone": {func(s string) string { return strings.Replace(s, "value: somewhere", "value: elsewhere", 1) }, "do not tolerate the zone's taint"},
++	} {
++		docs, err := documents([]byte(c.change(runner)))
++		if err != nil || len(docs) != 1 {
++			t.Fatalf("%s: %v", name, err)
++		}
++		said := strings.Join(runnerProblems(docs[0]), "\n")
++		if (c.says == "") != (said == "") || !strings.Contains(said, c.says) {
++			t.Errorf("%s: want %q, got\n%s", name, c.says, said)
++		}
++	}
++	if _, err := documents([]byte("a: [unclosed")); err == nil {
++		t.Error("YAML that does not parse was read as holding nothing")
++	}
++}
+diff --git a/tests/go/repo/runner_group_test.go b/tests/go/repo/runner_group_test.go
+index 3c12ec2..84c9819 100644
+--- a/tests/go/repo/runner_group_test.go
++++ b/tests/go/repo/runner_group_test.go
+@@ -29,51 +29,87 @@ import (
+ // IT ALSO HOLDS THE GROUP TO BEING A WALL: one that admits chosen
+ // repositories and chosen workflows, written as such.
+ //
++// ONE GROUP MAY TAKE ANY WORKFLOW, and only one kind: the group the pools
++// of pull-request runners join. A pull request runs its own copy of a
++// workflow, from its own ref, so no list of workflows at a branch can
++// admit it. That group is held another way - its runners are on a machine
++// closed to the rest of the estate - and it is allowed here only while
++// every set of runners that joins it is a pull-request pool, and none of
++// the estate's own does.
++//
+ // FOUND BY WHAT IT IS. The group is whatever resource of that type is
+ // declared anywhere, and the names are whatever workflow files are written
+ // out where a group's workflows are given. Neither found is a failure.
+ 
+-// asksForTheEstatesRunner reports whether a job's runs-on names anything
+-// but a runner the platform hosts.
+-func asksForTheEstatesRunner(n *yaml.Node) bool {
++// whose is which kind of runner a job asks for: one the platform hosts,
++// one of the pools for a pull request's jobs, or one of the estate's own.
++type whose int
++
++const (
++	thePlatforms whose = iota
++	aPullRequestPools
++	theEstatesOwn
++)
++
++// asksFor reads a job's runs-on. Anything that cannot be read as a label -
++// a group, or nothing - is the estate's own: nothing here can say it is not.
++func asksFor(n *yaml.Node) whose {
++	of := func(label string) whose {
++		switch {
++		case hostedLabel.MatchString(label):
++			return thePlatforms
++		case pullRequestPools[label]:
++			return aPullRequestPools
++		}
++		return theEstatesOwn
++	}
+ 	switch n.Kind {
+ 	case yaml.ScalarNode:
+-		return !hostedLabel.MatchString(n.Value)
++		return of(n.Value)
+ 	case yaml.SequenceNode:
++		most := thePlatforms
+ 		for _, c := range n.Content {
+-			if !hostedLabel.MatchString(c.Value) {
+-				return true
+-			}
++			most = max(most, of(c.Value))
++		}
++		if len(n.Content) == 0 {
++			return theEstatesOwn
+ 		}
+-		return len(n.Content) == 0
++		return most
++	case 0:
++		return thePlatforms
+ 	}
+-	// A group, or nothing a label can be read from.
+-	return n.Kind != 0
++	return theEstatesOwn
+ }
+ 
+-// onTheEstatesRunners is whether any job of a workflow asks for one.
+-func onTheEstatesRunners(body []byte) (bool, error) {
++// onTheEstatesRunners is whether any job of a workflow asks for one of the
++// estate's own runners, and whether any asks for a pull-request pool.
++func onTheEstatesRunners(body []byte) (own, pools bool, err error) {
+ 	var wf workflowFile
+ 	if err := yaml.Unmarshal(body, &wf); err != nil {
+-		return false, err
++		return false, false, err
+ 	}
+ 	for _, job := range wf.Jobs {
+-		if asksForTheEstatesRunner(&job.RunsOn) {
+-			return true, nil
++		switch asksFor(&job.RunsOn) {
++		case theEstatesOwn:
++			own = true
++		case aPullRequestPools:
++			pools = true
+ 		}
+ 	}
+-	return false, nil
++	return own, pools, nil
+ }
+ 
+ // admittedBy reads the OpenTofu given for every group of runners and every
+ // workflow file named where a group's workflows are given. It returns the
+-// names, sorted, and what stops any group being a wall.
+-func admittedBy(sources map[string]string) (names []string, wrong []string, groups int, err error) {
++// names, sorted; what stops any group being a wall; and the name of every
++// group that takes any workflow, which the caller holds to being the
++// pull-request pools'.
++func admittedBy(sources map[string]string) (names []string, wrong []string, open []string, groups int, err error) {
+ 	seen := map[string]bool{}
+ 	for path, body := range sources {
+ 		file, diags := hclsyntax.ParseConfig([]byte(body), path, hcl.InitialPos)
+ 		if diags.HasErrors() {
+-			return nil, nil, 0, fmt.Errorf("%s does not parse: %s", path, diags.Error())
++			return nil, nil, nil, 0, fmt.Errorf("%s does not parse: %s", path, diags.Error())
+ 		}
+ 		for _, block := range file.Body.(*hclsyntax.Body).Blocks {
+ 			for _, given := range []string{"workflows", "selected_workflows"} {
+@@ -98,6 +134,16 @@ func admittedBy(sources map[string]string) (names []string, wrong []string, grou
+ 			if written(block.Body, "visibility") != cty.StringVal("selected") {
+ 				wrong = append(wrong, where+" admits repositories nobody chose: visibility is not \"selected\"")
+ 			}
++			// A group written as taking any workflow says which it is, by a
++			// name written out, so that who joins it can be looked at.
++			if written(block.Body, "restricted_to_workflows") == cty.False {
++				if name := written(block.Body, "name"); name.Type() == cty.String && !name.IsNull() {
++					open = append(open, name.AsString())
++				} else {
++					wrong = append(wrong, where+" admits any workflow, and its name is worked out, so nothing can say it is the group the pull-request pools join")
++				}
++				continue
++			}
+ 			if written(block.Body, "restricted_to_workflows") != cty.True {
+ 				wrong = append(wrong, where+" admits any workflow: restricted_to_workflows is not true")
+ 			}
+@@ -111,7 +157,40 @@ func admittedBy(sources map[string]string) (names []string, wrong []string, grou
+ 	}
+ 	sort.Strings(names)
+ 	sort.Strings(wrong)
+-	return names, wrong, groups, nil
++	sort.Strings(open)
++	return names, wrong, open, groups, nil
++}
++
++// heldAsPullRequestGroups is what is wrong with the groups that take any
++// workflow, given which sets of runners join each group and whether each
++// set is a pull-request pool.
++func heldAsPullRequestGroups(open []string, joined map[string][]bool, usesAPool bool) []string {
++	var out []string
++	isOpen := map[string]bool{}
++	for _, name := range open {
++		isOpen[name] = true
++		sets := joined[name]
++		if len(sets) == 0 {
++			out = append(out, "the group "+name+" takes any workflow and no set of runners joins it: a group for nothing")
++		}
++		for _, isPool := range sets {
++			if !isPool {
++				out = append(out, "the group "+name+" takes any workflow, and a set of the estate's own runners joins it. Only the pull-request pools, on a machine of their own, may be in a group no list of workflows holds")
++			}
++		}
++	}
++	for group, sets := range joined {
++		for _, isPool := range sets {
++			if isPool && !isOpen[group] {
++				out = append(out, "a pull-request pool joins the group "+group+", which takes only named workflows from a branch. A pull request runs from neither, so its jobs would wait for a runner for ever")
++			}
++		}
++	}
++	if usesAPool && len(open) == 0 {
++		out = append(out, "a workflow asks for a pull-request pool and no group is declared for the pools to join")
++	}
++	sort.Strings(out)
++	return out
+ }
+ 
+ // notTheSame is what one sorted list of workflows holds that the other
+@@ -140,7 +219,7 @@ func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
+ 
+ 	sources := map[string]string{}
+ 	var asking []string
+-	workflows := 0
++	workflows, usesAPool := 0, false
+ 	for _, rel := range trackedFilesIn(t, root) {
+ 		if !authoredHere(rel) {
+ 			continue
+@@ -159,13 +238,14 @@ func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
+ 			continue
+ 		}
+ 		workflows++
+-		on, err := onTheEstatesRunners(body)
++		own, pools, err := onTheEstatesRunners(body)
+ 		if err != nil {
+ 			t.Fatalf("%s does not parse: %v", rel, err)
+ 		}
+-		if on {
++		if own {
+ 			asking = append(asking, filepath.Base(rel))
+ 		}
++		usesAPool = usesAPool || pools
+ 	}
+ 	sort.Strings(asking)
+ 
+@@ -176,13 +256,29 @@ func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
+ 	if len(asking) == 0 {
+ 		t.Fatal("no workflow asks for the estate's runner, and a converge runs on one: the read is wrong")
+ 	}
+-	admitted, wrong, groups, err := admittedBy(sources)
++	admitted, wrong, open, groups, err := admittedBy(sources)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+ 	if groups == 0 {
+ 		t.Fatalf("no %s is declared anywhere, so nothing here says which work the estate's runners take", ghapi.RunnerGroupType)
+ 	}
++
++	// Which group each set of runners joins, and whether the set is one of
++	// the pull-request pools: by the name a job asks for it by.
++	joined := map[string][]bool{}
++	for _, release := range runnerSets(t) {
++		_, manifest := fluxObject(t, kindHelmRelease, release)
++		set := yamlScalar(t, manifest, "runnerScaleSetName")
++		isPool := false
++		for pool := range pullRequestPools {
++			prefix, _, _ := strings.Cut(pool, "${{")
++			isPool = isPool || strings.HasPrefix(set, prefix)
++		}
++		group := yamlScalar(t, manifest, "runnerGroup")
++		joined[group] = append(joined[group], isPool)
++	}
++	wrong = append(wrong, heldAsPullRequestGroups(open, joined, usesAPool)...)
+ 	for _, w := range append(wrong, notTheSame(asking, admitted)...) {
+ 		t.Error(w)
+ 	}
+@@ -209,11 +305,11 @@ resource "something_else" "ignored" { visibility = "all" }
+ 	}{
+ 		"a wall":                  {func(s string) string { return s }, ""},
+ 		"every repository":        {func(s string) string { return strings.Replace(s, `"selected"`, `"all"`, 1) }, "repositories nobody chose"},
+-		"any workflow":            {func(s string) string { return strings.Replace(s, "= true", "= false", 1) }, "admits any workflow"},
++		"any workflow":            {func(s string) string { return strings.Replace(s, "= true", "= false", 1) }, "its name is worked out"},
+ 		"restriction left unsaid": {func(s string) string { return strings.Replace(s, "  restricted_to_workflows = true\n", "", 1) }, "admits any workflow"},
+ 		"no workflows given":      {func(s string) string { return strings.Replace(s, "  selected_workflows      = var.workflows\n", "", 1) }, "names no workflow"},
+ 	} {
+-		names, wrong, groups, err := admittedBy(map[string]string{"made-up.tf": c.change(group)})
++		names, wrong, _, groups, err := admittedBy(map[string]string{"made-up.tf": c.change(group)})
+ 		if err != nil || groups != 1 {
+ 			t.Fatalf("%s: read %d group(s), %v", name, groups, err)
+ 		}
+@@ -225,26 +321,64 @@ resource "something_else" "ignored" { visibility = "all" }
+ 			t.Errorf("%s: want %q, got\n%s", name, c.says, said)
+ 		}
+ 	}
+-	if _, _, _, err := admittedBy(map[string]string{"broken.tf": `resource "x" {`}); err == nil {
++	if _, _, _, _, err := admittedBy(map[string]string{"broken.tf": `resource "x" {`}); err == nil {
+ 		t.Error("OpenTofu that does not parse was read as declaring nothing")
+ 	}
+ 
++	// A group written as taking any workflow is not judged as a wall here;
++	// it is named, for the caller to hold to being the pull-request pools'.
++	_, wrong, open, _, err := admittedBy(map[string]string{"made-up.tf": `
++resource "github_actions_runner_group" "any" {
++  name                    = "for-pull-requests"
++  visibility              = "selected"
++  restricted_to_workflows = false
++}
++resource "github_actions_runner_group" "unnamed" {
++  name                    = var.name
++  visibility              = "selected"
++  restricted_to_workflows = false
++}
++`})
++	if err != nil || len(open) != 1 || open[0] != "for-pull-requests" || len(wrong) != 1 || !strings.Contains(wrong[0], "its name is worked out") {
++		t.Errorf("the groups that take any workflow were read as %v, with %v, %v", open, wrong, err)
++	}
++	for name, c := range map[string]struct {
++		open      []string
++		joined    map[string][]bool
++		usesAPool bool
++		says      string
++	}{
++		"the pools' own group":           {[]string{"g"}, map[string][]bool{"g": {true, true}, "walled": {false}}, true, ""},
++		"a group nothing joins":          {[]string{"g"}, map[string][]bool{}, false, "no set of runners joins it"},
++		"the estate's own runners in it": {[]string{"g"}, map[string][]bool{"g": {true, false}}, true, "a set of the estate's own runners joins it"},
++		"a pool in the walled group":     {nil, map[string][]bool{"walled": {false, true}}, true, "would wait for a runner for ever"},
++		"pools asked for and no group":   {nil, map[string][]bool{"walled": {false}}, true, "no group is declared for the pools to join"},
++	} {
++		said := strings.Join(heldAsPullRequestGroups(c.open, c.joined, c.usesAPool), "\n")
++		if (c.says == "") != (said == "") || !strings.Contains(said, c.says) {
++			t.Errorf("%s: want %q, got\n%s", name, c.says, said)
++		}
++	}
++
++	pool := pullRequestPool("source")
+ 	for name, c := range map[string]struct {
+-		yaml string
+-		want bool
++		yaml       string
++		own, pools bool
+ 	}{
+-		"hosted only":         {"jobs:\n  a:\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: [ubuntu-latest]\n", false},
+-		"a named pool":        {"jobs:\n  a:\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: some-pool\n", true},
+-		"a pool worked out":   {"jobs:\n  a:\n    runs-on: some-${{ matrix.site }}\n", true},
+-		"a group":             {"jobs:\n  a:\n    runs-on:\n      group: some-group\n", true},
+-		"a list with one own": {"jobs:\n  a:\n    runs-on: [ubuntu-latest, some-pool]\n", true},
++		"hosted only":         {"jobs:\n  a:\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: [ubuntu-latest]\n", false, false},
++		"a named set":         {"jobs:\n  a:\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: some-set\n", true, false},
++		"a set worked out":    {"jobs:\n  a:\n    runs-on: some-${{ matrix.site }}\n", true, false},
++		"a group":             {"jobs:\n  a:\n    runs-on:\n      group: some-group\n", true, false},
++		"a list with one own": {"jobs:\n  a:\n    runs-on: [ubuntu-latest, some-set]\n", true, false},
++		"a pull-request pool": {"jobs:\n  a:\n    runs-on: " + pool + "\n", false, true},
++		"a pool and its own":  {"jobs:\n  a:\n    runs-on: " + pool + "\n  b:\n    runs-on: some-set\n", true, true},
+ 	} {
+-		got, err := onTheEstatesRunners([]byte(c.yaml))
+-		if err != nil || got != c.want {
+-			t.Errorf("%s: got %v, %v", name, got, err)
++		own, pools, err := onTheEstatesRunners([]byte(c.yaml))
++		if err != nil || own != c.own || pools != c.pools {
++			t.Errorf("%s: got %v, %v, %v", name, own, pools, err)
+ 		}
+ 	}
+-	if _, err := onTheEstatesRunners([]byte("jobs: [")); err == nil {
++	if _, _, err := onTheEstatesRunners([]byte("jobs: [")); err == nil {
+ 		t.Error("a workflow that does not parse was read as asking for nothing")
+ 	}
+ 
+diff --git a/tests/go/repo/selfhosted_test.go b/tests/go/repo/selfhosted_test.go
+index 27d5e1a..881ef51 100644
+--- a/tests/go/repo/selfhosted_test.go
++++ b/tests/go/repo/selfhosted_test.go
+@@ -37,10 +37,24 @@ import (
+ // default, because a label nobody declared is a runner nobody vetted.
+ 
+ // pullRequestPools are self-hosted pools built for pull-request work: no
+-// secret, and egress that cannot reach the estate. None exists yet; the pool
+-// that brings PR Validation onto the estate's compute is declared here when
+-// it does, and not before its network policy is.
+-var pullRequestPools = map[string]bool{}
++// secret, a machine of their own in an untrusted zone, and egress that
++// cannot reach the estate. Each is declared here by the name a job asks for
++// it by, and not before its network policy is:
++// TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore holds every
++// pool to having one, and to these being the pools there are.
++//
++// The site is the estate's to say and is read from the repository's
++// variable, so a pool's name ends in that and never in a site written out.
++var pullRequestPools = map[string]bool{
++	pullRequestPool("source"):   true,
++	pullRequestPool("builds"):   true,
++	pullRequestPool("packages"): true,
++}
++
++// pullRequestPool is the name a job asks for one of the pools by.
++func pullRequestPool(pool string) string {
++	return "pr-" + pool + "-${{ vars.pull_request_runners_site }}"
++}
+ 
+ // hostedLabel is a runner GitHub provides.
+ var hostedLabel = regexp.MustCompile(`^(ubuntu|windows|macos)-[a-z0-9.-]+$`)
+diff --git a/tests/go/repo/workload_placement_test.go b/tests/go/repo/workload_placement_test.go
+index c580117..e46bc15 100644
+--- a/tests/go/repo/workload_placement_test.go
++++ b/tests/go/repo/workload_placement_test.go
+@@ -180,6 +180,66 @@ var workloadPods = []workloadPod{
+ 		PodSecurityKey:        "securityContext",
+ 		ContainerSecurityKey:  "securityContext",
+ 	},
++	{
++		What:                  "the listener for a pull request's jobs that need nothing beyond the source control",
++		Release:               "pull-requests-source",
++		ChartVersion:          "0.14.2",
++		Values:                []string{"listenerTemplate", "spec"},
++		ResourcesInContainers: true,
++		Priority:              "critical",
++		PodSecurityKey:        "securityContext",
++		ContainerSecurityKey:  "securityContext",
++	},
++	{
++		What:                  "a runner for a pull request's jobs that need nothing beyond the source control",
++		Release:               "pull-requests-source",
++		ChartVersion:          "0.14.2",
++		Values:                []string{"template", "spec"},
++		ResourcesInContainers: true,
++		Priority:              "interactive",
++		PodSecurityKey:        "securityContext",
++		ContainerSecurityKey:  "securityContext",
++	},
++	{
++		What:                  "the listener for a pull request's jobs that build",
++		Release:               "pull-requests-builds",
++		ChartVersion:          "0.14.2",
++		Values:                []string{"listenerTemplate", "spec"},
++		ResourcesInContainers: true,
++		Priority:              "critical",
++		PodSecurityKey:        "securityContext",
++		ContainerSecurityKey:  "securityContext",
++	},
++	{
++		What:                  "a runner for a pull request's jobs that build",
++		Release:               "pull-requests-builds",
++		ChartVersion:          "0.14.2",
++		Values:                []string{"template", "spec"},
++		ResourcesInContainers: true,
++		Priority:              "interactive",
++		PodSecurityKey:        "securityContext",
++		ContainerSecurityKey:  "securityContext",
++	},
++	{
++		What:                  "the listener for a pull request's jobs that reach the package registries",
++		Release:               "pull-requests-packages",
++		ChartVersion:          "0.14.2",
++		Values:                []string{"listenerTemplate", "spec"},
++		ResourcesInContainers: true,
++		Priority:              "critical",
++		PodSecurityKey:        "securityContext",
++		ContainerSecurityKey:  "securityContext",
++	},
++	{
++		What:                  "a runner for a pull request's jobs that reach the package registries",
++		Release:               "pull-requests-packages",
++		ChartVersion:          "0.14.2",
++		Values:                []string{"template", "spec"},
++		ResourcesInContainers: true,
++		Priority:              "interactive",
++		PodSecurityKey:        "securityContext",
++		ContainerSecurityKey:  "securityContext",
++	},
+ 	{
+ 		What:         "the CloudNativePG operator",
+ 		Release:      "cloudnative-pg",
+diff --git a/tests/mutations.yml b/tests/mutations.yml
+index c10c611..f69ab2c 100644
+--- a/tests/mutations.yml
++++ b/tests/mutations.yml
+@@ -260,6 +260,8 @@ unprovable:
+     reason: table
+   - test: TestASettingIsAWallOnlyWhileItHoldsWorkflowsToAListAtACommit
+     reason: table
++  - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters
++    reason: table
+   - test: TestARequiredCheckIsReadAndAJobIsKnownByItsNameOrItsKey
+     reason: table
+   - test: TestAMachineWithNoAddressIsSeenAndATemplateIsNotAMachine
+diff --git a/tests/mutations/TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore.062d8a9d.yml b/tests/mutations/TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore.062d8a9d.yml
+new file mode 100644
+index 0000000..e94d721
+--- /dev/null
++++ b/tests/mutations/TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore.062d8a9d.yml
+@@ -0,0 +1,8 @@
++guard: TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore
++file: clusters/core/infrastructure/configs/pull-requests-source.yaml
++find: "            - port: \"443\"\n"
++replace: "            - port: \"80\"\n"
++mentions: "not 443/TCP"
++why: >
++  A pool is held to its hosts on one port. Another port to the same hosts
++  is a way out nobody declared, and it reads as a detail.
+diff --git a/tests/mutations/TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore.86dd1cf4.yml b/tests/mutations/TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore.86dd1cf4.yml
+new file mode 100644
+index 0000000..51a208e
+--- /dev/null
++++ b/tests/mutations/TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore.86dd1cf4.yml
+@@ -0,0 +1,9 @@
++guard: TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore
++file: clusters/core/infrastructure/configs/pull-requests-packages.yaml
++find: "    - toFQDNs:\n"
++replace: "    - toFQDNs:\n        - matchName: somewhere-nobody-declared.example\n"
++mentions: "are declared to reach"
++why: >
++  A host added to a pool's policy and to no job's entry in the suppliers
++  list is a host a pull request's job may reach that nobody decided it
++  should. The list is where that is decided.
+diff --git a/tests/mutations/TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore.ee977806.yml b/tests/mutations/TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore.ee977806.yml
+new file mode 100644
+index 0000000..7a8ab6e
+--- /dev/null
++++ b/tests/mutations/TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore.ee977806.yml
+@@ -0,0 +1,8 @@
++guard: TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore
++file: clusters/core/infrastructure/configs/pull-requests-builds.yaml
++find: "        automountServiceAccountToken: false\n"
++replace: "        automountServiceAccountToken: true\n"
++mentions: "given an account's token"
++why: >
++  A runner runs what a pull request wrote. With an account's token mounted
++  it holds a credential of the cluster's, and the default is to mount one.
+diff --git a/tests/mutations/TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.aae32ea1.yml b/tests/mutations/TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.aae32ea1.yml
+new file mode 100644
+index 0000000..1520bbb
+--- /dev/null
++++ b/tests/mutations/TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits.aae32ea1.yml
+@@ -0,0 +1,9 @@
++guard: TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits
++file: clusters/core/infrastructure/configs/pull-requests-source.yaml
++find: "    runnerGroup: pull-requests\n"
++replace: "    runnerGroup: homelab\n"
++mentions: "would wait for a runner for ever"
++why: >
++  The estate's own group takes only named workflows as they are on the
++  default branch. A pull-request pool put in it is given no job at all,
++  and says so only by every pull request's job never starting.
