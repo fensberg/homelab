@@ -180,7 +180,8 @@ jobs:
           echo "args=${args# }" >> "$GITHUB_OUTPUT"
 
       # Whether this exact image already exists (#514). The fingerprint is
-      # every tracked file in the build context and every pin passed to it -
+      # every tracked file in the build context, every file the order says
+      # the build reads from outside it, and every pin passed to it -
       # the whole of what the image is made from - and a build of the same
       # fingerprint is reused rather than repeated. Rebuilding is not free
       # here even when it succeeds: a game server's build downloads the game
@@ -193,9 +194,13 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           PACKAGE: ${{ github.event.repository.name }}-${{ matrix.order.name }}
           CONTEXT: ${{ matrix.order.context }}
+          READS: ${{ toJSON(matrix.order.reads) }}
           PINS: ${{ steps.pins.outputs.args }}
         run: |
-          fingerprint="fp-$( { git ls-tree -r HEAD -- "$CONTEXT"; printf '%s\n' "$PINS"; } | sha256sum | cut -c1-16)"
+          # An order that reads nothing adds nothing here, so its fingerprint
+          # is what it was before an order could read anything.
+          mapfile -t reads < <(jq -r '.[]?' <<<"${READS:-null}")
+          fingerprint="fp-$( { git ls-tree -r HEAD -- "$CONTEXT" "${reads[@]}"; printf '%s\n' "$PINS"; } | sha256sum | cut -c1-16)"
           echo "fingerprint=${fingerprint}" >> "$GITHUB_OUTPUT"
           case "$(gh api "users/${OWNER}" --jq .type)" in
             Organization) base="orgs/${OWNER}" ;;
@@ -220,6 +225,31 @@ jobs:
             echo "reusing ${digest}: an image built from these exact inputs exists" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # A build sees its own directory. What else of the repository it reads
+      # is what its order names (scripts/work-orders.json), and those files
+      # are laid out here by their paths, alone, as a second context the
+      # Dockerfile knows as `reads`. Tracked files only, as they are at this
+      # commit: the fingerprint above is taken from the same names, so what
+      # is handed to the build and what the image is said to be made from are
+      # one list. An order that reads nothing is handed an empty directory.
+      - name: Lay out what the build reads
+        id: reads
+        env:
+          READS: ${{ toJSON(matrix.order.reads) }}
+        run: |
+          dir="${RUNNER_TEMP}/reads"
+          rm -rf "$dir"
+          mkdir -p "$dir"
+          while IFS= read -r file; do
+            if [ -L "$file" ] || ! git ls-files --error-unmatch -- "$file" >/dev/null 2>&1 || [ ! -f "$file" ]; then
+              echo "::error::the order reads ${file}, which is not a file this repository tracks"
+              exit 1
+            fi
+            mkdir -p "${dir}/$(dirname "$file")"
+            cp "$file" "${dir}/${file}"
+          done < <(jq -r '.[]?' <<<"${READS:-null}")
+          echo "dir=${dir}" >> "$GITHUB_OUTPUT"
+
       - name: Log in to the registry
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -239,6 +269,7 @@ jobs:
           SOURCE: ${{ github.server_url }}/${{ github.repository }}
           FINGERPRINT: ${{ steps.reuse.outputs.fingerprint }}
           REUSED: ${{ steps.reuse.outputs.digest }}
+          READS_DIR: ${{ steps.reads.outputs.dir }}
         run: |
           if [ -n "$REUSED" ]; then
             echo "digest=${REUSED}" >> "$GITHUB_OUTPUT"
@@ -247,6 +278,7 @@ jobs:
           # A list of flags, built above as one line; split into words here.
           read -ra pins <<< "$PINS"
           docker build "${pins[@]}" \
+            --build-context "reads=${READS_DIR}" \
             --label "org.opencontainers.image.revision=${SHA}" \
             --label "org.opencontainers.image.source=${SOURCE}" \
             -t "${IMAGE}:${SHA}" \

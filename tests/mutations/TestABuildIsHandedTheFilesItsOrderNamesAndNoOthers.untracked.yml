@@ -1,0 +1,10 @@
+guard: TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers
+file: .github/workflows/fabricator.yml
+find: 'if [ -L "$file" ] || ! git ls-files --error-unmatch -- "$file" >/dev/null 2>&1 || [ ! -f "$file" ]; then'
+replace: 'if [ ! -f "$file" ]; then'
+mentions: "a file left on disk that is not tracked"
+why: >
+  The images are public. A file that is merely on the runner's disk when the
+  build starts - something an earlier step rendered, or whatever a link
+  points at - is not one a review ever saw, and handing it to a build is how
+  it gets into a layer.
