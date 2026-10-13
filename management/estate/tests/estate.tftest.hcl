@@ -477,6 +477,7 @@ run "the_estates_runners_take_only_named_workflows_from_the_default_branch" {
   }
   assert {
     condition = module.runners.admits.workflows == tolist([
+      "example/homelab/.github/workflows/converge-estate.yml@refs/heads/trunk",
       "example/homelab/.github/workflows/deploy-infrastructure.yml@refs/heads/trunk",
       "example/homelab/.github/workflows/integration-tests.yml@refs/heads/trunk",
     ])

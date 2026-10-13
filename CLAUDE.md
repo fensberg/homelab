@@ -80,7 +80,7 @@ wrong the moment a production workload lands on the same cluster - a job
 labelled `staging` would be the one restarting a control plane that production
 depends on.
 
-### The four GitHub environments
+### The five GitHub environments
 
 Each holds the credential for one thing, and none overlaps another:
 
@@ -90,6 +90,7 @@ Each holds the credential for one thing, and none overlaps another:
 | `staging`     | workload deploys                                 | merge to `main`              |
 | `production`  | workload infrastructure (dormant, #561)          | nothing                      |
 | `integration` | the test tiers that need a real estate           | nightly, or dispatch         |
+| `estate`      | the estate itself - `lawyer converge-estate`     | merge touching the estate    |
 
 `management` is a fourth environment rather than a reuse of `staging`
 deliberately. Reusing one would look leaner and would mislabel the job with the
@@ -634,7 +635,7 @@ depends on it and uses them.
   from a converge, and nothing then took a record: the site's capacity,
   which a pull request's change is held against, stayed as it was before
   the merge. A change only under `management/estate/` starts nothing here;
-  the estate is the lawyer's, and is converged by hand.
+  the estate is the lawyer's, and `converge-estate.yml` converges it.
 
   So a change under `management/` **does** trigger it, which is what
   `converge` is for. This entry used to say the opposite - that Ignition
@@ -644,6 +645,13 @@ depends on it and uses them.
   the CNI manifest rather than Flux, so a change to it is delivered by a
   converge and by nothing else. This entry named that path as a filter for
   as long as the workflow did not have it; it has it now.
+
+- `converge-estate.yml` — applies the estate when what declares it is
+  merged: `management/estate/**`, `config/estate.tpl.json` and the lawyer
+  itself. It is the one job handed the estate's own credential, from the
+  `estate` environment, which the estate holds to the default branch. The
+  lawyer shows nothing tofu prints there, because the log is public: each
+  thing by its address and what is done to it. Not on a timer yet (#535).
 
 - `fabricator.yml` — builds every image the repository defines, and
   publishes the platform: the modules a site runs and the files they read, as
