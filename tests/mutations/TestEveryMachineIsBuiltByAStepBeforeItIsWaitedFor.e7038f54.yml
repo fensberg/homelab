@@ -1,0 +1,12 @@
+guard: TestEveryMachineIsBuiltByAStepBeforeItIsWaitedFor
+file: modules/infrastructure/cluster/compute.tf
+find: 'resource "proxmox_virtual_environment_vm" "dmz" {'
+replace: 'resource "proxmox_virtual_environment_vm" "another_kind" {'
+mentions: "built by no step"
+why: >
+  A kind of machine added to the module and named in no step is left to
+  the catch-all apply of the next phase, and the phase that builds
+  machines waits for it first. That is what stopped the first converge of
+  a site with a zone. The machine is what is changed here and not the
+  steps: the steps are compiled into the guard, and the ledger can only
+  judge what a guard reads.

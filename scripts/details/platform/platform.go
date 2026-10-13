@@ -315,3 +315,39 @@ func PlaceUnreleased(repoRoot string, tracked []string) (string, error) {
 	}
 	return target, nil
 }
+
+// pinLine is one site's line as it is written in the file, so that a pin
+// can be moved by changing that line and nothing around it.
+var pinLine = regexp.MustCompile(`(?m)^(\s*"platform":\s*")([^"]*)(".*)$`)
+
+// MovePins moves every site's line in the file's text to the release given
+// and returns the new text with how many lines moved. A line already there
+// is left; a file with no line at all, or a line that is not a release, is
+// refused, since either means this is not reading what it thinks it is.
+//
+// Text in and text out, and only the lines that say a release: the change a
+// person is shown is the release and nothing else.
+func MovePins(body string, to Pin) (string, int, error) {
+	if !Version.MatchString(to.Version) || !pinned.MatchString(to.Version+"@"+to.Digest) {
+		return "", 0, fmt.Errorf("%q at %q is not a release of the platform: a version and the digest it was published as", to.Version, to.Digest)
+	}
+	lines := pinLine.FindAllStringSubmatch(body, -1)
+	if len(lines) == 0 {
+		return "", 0, fmt.Errorf("%s names no site's release, so there is no line to move", VersionsFile)
+	}
+	for _, m := range lines {
+		if _, err := ParsePin(m[2]); err != nil {
+			return "", 0, err
+		}
+	}
+	moved := 0
+	out := pinLine.ReplaceAllStringFunc(body, func(line string) string {
+		m := pinLine.FindStringSubmatch(line)
+		next := m[1] + to.Version + "@" + to.Digest + m[3]
+		if next != line {
+			moved++
+		}
+		return next
+	})
+	return out, moved, nil
+}

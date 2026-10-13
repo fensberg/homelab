@@ -51,6 +51,9 @@ configMapGenerator:
   - name: dashboard-is-what-should-run-running
     namespace: monitoring
     files: [dashboards/is-what-should-run-running.json]
+  - name: dashboard-what-a-pull-requests-jobs-use
+    namespace: monitoring
+    files: [dashboards/what-a-pull-requests-jobs-use.json]
 generatorOptions:
   # Named as written: nothing mounts these by name, and a name that changes
   # with every edit leaves the old dashboard behind until it is pruned.

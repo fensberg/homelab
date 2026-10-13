@@ -339,3 +339,38 @@ func TestPlaceUnreleasedHoldsOnlyWhatTheManifestNames(t *testing.T) {
 		t.Error("a tree was placed with no manifest to say what it holds")
 	}
 }
+
+// A release moves every site's line to itself and changes nothing else in
+// the file: not its order, its spacing or anything a line does not say.
+func TestMovingThePinsChangesOnlyTheLinesThatSayARelease(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("c", 64)
+	newer := "sha256:" + strings.Repeat("d", 64)
+	file := "{\n  \"site0\": {\n    \"platform\": \"v2026.10.1@" + digest + "\"\n  },\n  \"site1\": {\n    \"platform\": \"v2026.10.2@" + newer + "\"\n  }\n}\n"
+	to := Pin{Version: "v2026.10.2", Digest: newer}
+
+	got, moved, err := MovePins(file, to)
+	if err != nil || moved != 1 {
+		t.Fatalf("moved %d line(s), %v", moved, err)
+	}
+	want := strings.Replace(file, "v2026.10.1@"+digest, "v2026.10.2@"+newer, 1)
+	if got != want {
+		t.Errorf("the file came back as\n%s\nand should be\n%s", got, want)
+	}
+	if again, moved, err := MovePins(got, to); err != nil || moved != 0 || again != got {
+		t.Errorf("a file already there moved %d line(s), %v", moved, err)
+	}
+
+	for name, c := range map[string]struct {
+		body string
+		to   Pin
+	}{
+		"a file that names no release": {"{}\n", to},
+		"a line that is not a release": {"{\n  \"site0\": {\n    \"platform\": \"latest\"\n  }\n}\n", to},
+		"a version that is not one":    {file, Pin{Version: "latest", Digest: newer}},
+		"half a digest":                {file, Pin{Version: "v2026.10.2", Digest: "sha256:short"}},
+	} {
+		if _, _, err := MovePins(c.body, c.to); err == nil {
+			t.Errorf("%s was moved", name)
+		}
+	}
+}
