@@ -237,3 +237,19 @@ run "a_site_that_serves_no_grafana_is_given_no_address_for_one" {
     error_message = "an address for Grafana was made up for a site that does not serve it by name"
   }
 }
+
+# A pull request's runners have a namespace of their own, apart from the
+# runners that converge the estate, and the one thing put in it is what the
+# controller registers the pool with.
+run "pull_request_runners_have_a_namespace_of_their_own" {
+  command = plan
+
+  assert {
+    condition     = kubernetes_namespace.pull_request_runners.metadata[0].name != kubernetes_namespace.runners.metadata[0].name && kubernetes_namespace.pull_request_runners.metadata[0].name != kubernetes_namespace.runner_system.metadata[0].name
+    error_message = "a pull request's runners share a namespace with runners that hold the estate's credentials"
+  }
+  assert {
+    condition     = kubernetes_secret.runner_app_credentials_pull_requests.metadata[0].namespace == kubernetes_namespace.pull_request_runners.metadata[0].name && kubernetes_secret.runner_app_credentials_pull_requests.metadata[0].name == kubernetes_secret.runner_app_credentials_runners.metadata[0].name
+    error_message = "the pool's registration is not where the controller looks for it: in the pool's own namespace, under the name the other pools use"
+  }
+}

@@ -111,6 +111,70 @@ Explicitly out of scope:
 
 ## Decisions
 
+### A pull request's jobs run on the estate's own runners (decided 2026-10-13, #559)
+
+Not this epoch's subject, and written here because the issue it answers is
+filed under it and nothing else owns the workflows.
+
+**What happened.** A pull request's jobs ran on GitHub's machines, held
+there by an agent a third party installs: it blocks what a job reaches and
+takes sudo away so a later step cannot undo that. On 2026-10-12 the agent
+failed to start on about one machine in eight. Read from a job stopped for
+it, the cause was GitHub's own: its image had begun to start a resolver for
+an egress proxy of GitHub's (`egress-dns-resolver.service`) on the address
+the agent listens on. A job on such a machine ran with nothing held and
+nothing saying so, and had for as long as that had been true (#725).
+
+**Chose** to stop depending on a machine somebody else images. The
+operator: "Sounds like we should move this to a self-hosted runner and not
+rely on GitHub's." And of a step that stood GitHub's resolver down and
+started the agent again: "we're not putting in a 'try again' protocol.
+We're immutable. If it failed then it will fail again."
+
+**What holds a pull request's job there.** Not an agent in the runner. The
+cluster's network, which a job cannot reach to switch off, and a runner
+made new for each job. So the agent has nothing to do on these runners and
+is not what is relied on; the repository's own tests already say it does
+nothing there.
+
+**How it is walled off, since the repository is public** and a pull
+request's job runs what the pull request wrote:
+
+- a namespace of its own, apart from the runners that converge the estate
+  and hold a vault token while they do;
+- no token of the cluster's mounted in a runner, and no Secret;
+- a policy that lets a runner reach the internet and nothing private: not
+  a machine, not the Kubernetes API, not another pod, not the hypervisor,
+  not the house.
+
+**Chose** that policy in the standard form the tunnel's connector already
+has: everything but the private ranges. **Over** a list of hostnames for
+each job, which is what the agent enforced. A list of hostnames needs the
+network's own kind of policy, which this repository has none of, and a
+pool of runners for each list. What a list of hostnames stops is a job
+sending what it holds somewhere else, and a pull request's job holds
+nothing: no vault token, and a GitHub token that can read. So that is
+left for when the network's own policy is taken up, and said here as a
+thing given up for now and not as a thing done.
+
+**What a pool costs.** A run starts about seventeen jobs at once. They are
+work that can wait, in the class that gives way first, and whether a pool
+of a given size fits is the capacity check's to say and not a guess.
+
+**Its order, which is forced.** A converge waits for Flux to have applied
+the commit before it writes anything, so nothing Flux applies may need
+what only that converge writes:
+
+1. the namespace, and the pool's registration in it, from the site's
+   build; then a release, and the site moved to it;
+2. the pool and its policy, and only then the pool named as one a pull
+   request may use;
+3. the workflows moved onto it, which is a patch the operator applies.
+
+**To settle with the operator:** that a pull request from somebody outside
+the organisation waits for a person to let it run, which is a setting of
+the repository's and not something in it.
+
 ### Rejected: three zero-context personas on every pull request
 
 **Chose:** two narrow jobs where the absence of context is an advantage.
