@@ -83,8 +83,7 @@ func (c config) validate() error {
 		"source-control/installation_id": c.SourceControl.InstallationID,
 		"source-control/private_key":     c.SourceControl.PrivateKey,
 
-		"source-control/billing_email":      c.SourceControl.BillingEmail,
-		"source-control/procurement_app_id": c.SourceControl.ProcurementAppID,
+		"source-control/billing_email": c.SourceControl.BillingEmail,
 	} {
 		if strings.TrimSpace(v) == "" {
 			return fmt.Errorf("%s in the estate vault is empty", field)
@@ -92,6 +91,9 @@ func (c config) validate() error {
 	}
 	if _, err := c.sourceControl(); err != nil {
 		return err
+	}
+	if strings.TrimSpace(c.SourceControl.ProcurementAppID) == "" {
+		return errors.New("source-control/procurement-bot/app_id in the estate-shared vault is empty, and it is the one party that passes the review by")
 	}
 	if strings.TrimSpace(c.Organization.Name) == "" {
 		return errors.New("organization/name in the estate-shared vault is empty, and it names every bucket the estate creates")

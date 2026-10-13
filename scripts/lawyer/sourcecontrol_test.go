@@ -49,7 +49,7 @@ func TestTheSourceControlIsReadOutOfTheAddressAndRefusedWhenMisshapen(t *testing
 		"no App":                        {func(c *config) { c.SourceControl.AppID = "" }, "source-control/app_id"},
 		"no installation":               {func(c *config) { c.SourceControl.InstallationID = " " }, "source-control/installation_id"},
 		"nobody to bill":                {func(c *config) { c.SourceControl.BillingEmail = "" }, "source-control/billing_email"},
-		"no App that delivers":          {func(c *config) { c.SourceControl.ProcurementAppID = "" }, "source-control/procurement_app_id"},
+		"no App that delivers":          {func(c *config) { c.SourceControl.ProcurementAppID = "" }, "source-control/procurement-bot/app_id"},
 	} {
 		cfg := validConfig()
 		c.mutate(&cfg)
