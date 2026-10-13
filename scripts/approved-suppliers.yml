@@ -438,6 +438,31 @@ providers:
       more code holding the value for no less exposure. Published by
       HashiCorp, whose providers every OpenTofu root here already depends on
       through the registry.
+  - source: integrations/github
+    reason: >-
+      Sets the settings of the estate's GitHub organisation and repository
+      from what is declared in git, and sets them again whenever they are
+      found otherwise: who may open a pull request and whose run without
+      being let, who is a collaborator, which repositories and workflows may
+      use the estate's runners, which actions may run, what a workflow's
+      token may do, and the rules on main. Published by GitHub, under the
+      organisation it keeps its own integrations in. Approved by the
+      operator on 2026-10-13.
+
+      What it runs with. A credential that can administer the repository
+      and the organisation's runners: whoever held it could take every one
+      of those walls down, and could let anything run on the estate's own
+      hardware. It is the estate's alone, in the estate vault, used by the
+      lawyer and by nothing a pull request can reach, and never by a site.
+
+      Taken because every one of those settings was made by hand, is read by
+      nothing here, and can be changed by hand with nothing saying so. A pull
+      request's jobs are to run on the estate's own runners (#559), and from
+      then the settings that decide whose code reaches those runners are the
+      estate's outermost wall. The alternative was a check that reads them
+      and stops everything when one is wrong; the operator chose setting
+      them over checking them, since a setting put right is better than one
+      reported.
 
 # Network destinations a CI job may reach.
 #

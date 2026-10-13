@@ -121,7 +121,10 @@ locals {
   # say so.
   runner_system_namespace = "arc-systems"
   runners_namespace       = "arc-runners"
-  runner_secret_name      = "github-app-credentials"
+  # Runners for a pull request's own code, apart from every other runner:
+  # see runner.tf.
+  pull_request_runners_namespace = "pull-request-runners"
+  runner_secret_name             = "github-app-credentials"
 
   # The scale set is registered against the organization, not the repository,
   # because that is the scope the App was granted. Derived from the repository

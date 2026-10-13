@@ -96,6 +96,55 @@ resource "kubernetes_secret" "runner_app_credentials_runners" {
 # what the runner manifests need and database.tf owns what the database
 # manifests need, so neither file has to be edited to change the other's
 # variables. infra-configs.yaml lists both.
+# -----------------------------------------------------------------------------
+# Runners for a pull request's own code.
+#
+# A pull request's jobs run what the pull request wrote, and this repository
+# is public: that code is nobody's until it is reviewed. It ran on GitHub's
+# machines so that it could reach nothing of the estate, held there by an
+# agent a third party installs on a machine GitHub builds. On 2026-10-12 that
+# agent failed to start on one such machine in eight - GitHub's image had
+# begun to carry something on the port it listens on - and a job on one ran
+# with nothing held and nothing saying so (#725). What a machine somebody
+# else images will carry tomorrow is not the estate's to know.
+#
+# So they run here, on runners that are the estate's and are made new for
+# each job, and what holds them is the cluster's network and not anything
+# inside the runner: a job cannot switch off a policy it cannot reach. The
+# pool and its policy are declared in git under clusters/core/ (#559).
+#
+# A NAMESPACE OF ITS OWN, so that what is said of a pull request's runners
+# is said of a namespace and holds for every pod in it: nothing of the
+# estate's is mounted there, and nothing there reaches the estate. The
+# runners that converge the estate are in another, and hold a vault token
+# while they work.
+#
+# WHAT IS PUT HERE, AND WHY IT HAS TO BE. The credential the controller
+# registers a pool with has to be in the pool's own namespace. No runner
+# mounts it and a runner's own account can read nothing, which
+# tests/go/repo holds the pool to; it is the one thing of the estate's in
+# this namespace and is here because the controller will look nowhere else.
+# -----------------------------------------------------------------------------
+resource "kubernetes_namespace" "pull_request_runners" {
+  metadata {
+    name = local.pull_request_runners_namespace
+  }
+}
+
+resource "kubernetes_secret" "runner_app_credentials_pull_requests" {
+  metadata {
+    name      = local.runner_secret_name
+    namespace = kubernetes_namespace.pull_request_runners.metadata[0].name
+  }
+  data = {
+    github_app_id              = local.runner.app_id
+    github_app_installation_id = local.runner.installation_id
+  }
+  binary_data = {
+    github_app_private_key = local.runner.private_key
+  }
+}
+
 resource "kubernetes_secret" "runner_vars" {
   metadata {
     name = "runner-vars"

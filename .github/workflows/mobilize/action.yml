@@ -62,11 +62,19 @@ inputs:
     required: false
     default: "1"
 
+outputs:
+  held:
+    description: >-
+      "true" where sudo was to be removed and is, "false" where it was to be
+      and is not, and nothing for a job that keeps it. For a lane that proves
+      the block, which has nothing to prove on a runner that is not held.
+    value: ${{ steps.held.outputs.held }}
+
 runs:
   using: composite
   steps:
     - name: Harden the runner
-      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
       with:
         egress-policy: ${{ inputs.egress-policy }}
         allowed-endpoints: ${{ inputs.allowed-endpoints }}
@@ -80,6 +88,73 @@ runs:
     #
     # This runs after harden-runner rather than before it, because harden-runner
     # is what makes every later step watched - including this one.
+    # ON THIS RUNNER, AND NOT ON SOME OTHER. Every job has a runner of its
+    # own and its own copy of what hardens it, so a proof on one says nothing
+    # of the next. On 2026-10-12 the agent failed to start on about one
+    # runner in seven - it could not take the port its resolver listens on -
+    # and a job on such a runner has no block on what it reaches and still
+    # has sudo, with nothing saying so. It was noticed twice, because it
+    # twice fell on the one lane that looks.
+    #
+    # So every job that asks for sudo to be gone looks for itself, before
+    # anything else it does: sudo that still works is a runner where
+    # enforcement is not in place, and the job stops there. It costs nothing.
+    # The lane that proves a refused address is refused is still its own
+    # (pr-validation.yml), since that one needs somewhere to be refused by.
+    #
+    # Only where sudo was to be removed. A job that keeps it says why beside
+    # its entry in scripts/approved-suppliers.yml, and a runner on the estate
+    # is not hardened by this at all.
+    # SAID, AND NOT YET STOPPED FOR. This stopped the job, and about one of
+    # GitHub's runners in eight is not held (#725), so most runs had a job
+    # stopped and nothing could be merged without running jobs again -
+    # the changes that move these jobs onto the estate's own runners among
+    # them (#559). The operator loosened it for as long as that takes: a
+    # runner that is not held is said, loudly and with why, and the job
+    # goes on as it did before anything looked. It is not safer than it
+    # was; it is no longer silent. When a pull request's jobs run on the
+    # estate's runners this step has nothing left to look at there, and
+    # for whatever still runs on GitHub's it goes back to stopping.
+    - name: Whether this runner is held
+      id: held
+      if: inputs.disable-sudo-and-containers == 'true'
+      shell: bash
+      run: |
+        if sudo -n true 2>/dev/null; then
+          # Why, before stopping. The agent says of itself that it could not
+          # take the port its resolver listens on, because something on the
+          # runner already had it (#725), and does not say what. Sudo still
+          # works here, which is the fault, and is what lets this look.
+          # Process names and the agent's own log: nothing of the estate's.
+          echo "::group::What holds the port the agent's resolver listens on"
+          sudo ss -H -lunp 'sport = :53' || true
+          sudo ss -H -ltnp 'sport = :53' || true
+          echo "::endgroup::"
+          # What that is. On 2026-10-12 the holder was a process named
+          # dns-resolver, started before the job's own worker, so it is the
+          # runner's and not the agent's or anything of this repository's.
+          # Its command, what started it, the unit it belongs to and what
+          # the runner is told to resolve by say whether it can be stood
+          # down before the agent starts.
+          echo "::group::What the holder of the port is"
+          for pid in $(sudo ss -H -lunp 'sport = :53' | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); do
+            sudo ps -o pid,ppid,user,lstart,args -p "$pid" || true
+            sudo readlink "/proc/$pid/exe" || true
+            sudo systemctl status "$pid" --no-pager 2>&1 | head -8 || true
+          done
+          echo "--- /etc/resolv.conf"
+          cat /etc/resolv.conf || true
+          echo "::endgroup::"
+          echo "::group::The agent's own account of itself"
+          sudo systemctl status agent --no-pager 2>&1 | head -20 || true
+          sudo journalctl -u agent --no-pager -n 40 2>&1 || true
+          echo "::endgroup::"
+          echo "::warning::THIS JOB RAN WITH NOTHING HELD. Sudo still works on this runner after it was to be removed, so what hardens the runner did not start here: nothing blocked what this job reached. The cause is known (#725) and the job was let go on by the operator's decision, until pull requests run on the estate's own runners (#559)."
+          echo "held=false" >>"$GITHUB_OUTPUT"
+        else
+          echo "held=true" >>"$GITHUB_OUTPUT"
+        fi
+
     - name: Refuse an unrecognised value
       if: >-
         (inputs.checkout != 'true' && inputs.checkout != 'false') ||
