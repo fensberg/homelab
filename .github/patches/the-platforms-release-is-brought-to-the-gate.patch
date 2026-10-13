@@ -1,0 +1,285 @@
+diff --git a/.github/workflows/fabricator.yml b/.github/workflows/fabricator.yml
+index 362cb3c..7245883 100644
+--- a/.github/workflows/fabricator.yml
++++ b/.github/workflows/fabricator.yml
+@@ -871,3 +871,123 @@ jobs:
+                   gh pr close "$old" --repo "$REPO" --delete-branch --comment "Superseded by ${url##*/}, which delivers a newer release." >/dev/null
+                 done
+           done < <(jq -r '.[] | select(.release) | .name' <<<"$ORDERS")
++
++  # ---------------------------------------------------------------------
++  # THE PLATFORM'S RELEASE, BROUGHT TO THE GATE.
++  #
++  # Publishing a release of the platform deploys nothing: a site runs the
++  # release its own line names (management/versions.json). Moving that line
++  # was done by hand, by whoever remembered a release had been published.
++  # It is delivered now as an application's release is: when the newest
++  # release is not the one every site's line names, procurement opens a pull
++  # request that moves the lines and changes nothing else.
++  #
++  # Opened, and not merged. The pull request's plan says what the release
++  # would do to each site, and letting it in is a person's, as every
++  # delivery is.
++  #
++  # A job of its own, behind the packaging and not behind the builds: a
++  # merge that changed only the platform builds nothing, and a job that
++  # waited on the builds would be passed over with them.
++  # ---------------------------------------------------------------------
++  deliver-platform:
++    name: Bring the platform's release to the gate
++    needs: [orders, package]
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # Owned by scripts/approved-suppliers.yml under `egress:`.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++            go.dev:443
++            objects.githubusercontent.com:443
++            proxy.golang.org:443
++            release-assets.githubusercontent.com:443
++            storage.googleapis.com:443
++            sum.golang.org:443
++
++      - name: Read pinned versions
++        uses: $/.github/actions/versions
++
++      - name: Setup Go
++        uses: $/.github/workflows/setup-go
++
++      # Procurement's token, not the job's own: a pull request opened with
++      # the job's token starts no workflow, so its plan would never be made.
++      - name: Mint the procurement token
++        id: token
++        uses: $/.github/workflows/app-token
++        with:
++          client-id: ${{ secrets.PROCUREMENT_BOT_CLIENT_ID }}
++          private-key: ${{ secrets.PROCUREMENT_BOT_PRIVATE_KEY }}
++          permission-contents: write
++          permission-pull-requests: write
++          owner: ${{ github.repository_owner }}
++          repositories: ${{ github.event.repository.name }}
++
++      - name: Deliver
++        env:
++          GH_TOKEN: ${{ steps.token.outputs.token }}
++          READ_TOKEN: ${{ github.token }}
++          REPO: ${{ github.repository }}
++          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
++        run: |
++          set -euo pipefail
++          # The newest release, as the packaging job described it: its
++          # version is the tag and what it was published as is in its notes.
++          version="$(GH_TOKEN="$READ_TOKEN" gh api "repos/${REPO}/releases/latest" --jq .tag_name)"
++          digest="$(GH_TOKEN="$READ_TOKEN" gh api "repos/${REPO}/releases/latest" --jq .body | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1 || true)"
++          if [[ ! "$version" =~ ^v20[0-9]{2}\.[0-9]+\.[0-9]+$ ]] || [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
++            echo "::error::the newest release does not say a version of the platform and what it was published as, so there is nothing to deliver"
++            exit 1
++          fi
++
++          main="$(gh api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)"
++          base_tree="$(gh api "repos/${REPO}/git/commits/${main}" --jq .tree.sha)"
++          pins="management/versions.json"
++          moved="$RUNNER_TEMP/versions.json"
++          gh api "repos/${REPO}/contents/${pins}?ref=${main}" --jq .content | base64 -d > "$moved"
++          before="$(sha256sum < "$moved")"
++          go run -C scripts/procurement . deliver-platform -pins "$moved" -version "$version" -digest "$digest"
++          if [ "$(sha256sum < "$moved")" = "$before" ]; then
++            echo "the platform: every site already runs ${version}" >> "$GITHUB_STEP_SUMMARY"
++            exit 0
++          fi
++
++          branch="deliver/platform-${version}"
++          if [ -n "$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq '.[0].number // empty')" ]; then
++            echo "the platform: ${version} is already at the gate" >> "$GITHUB_STEP_SUMMARY"
++            exit 0
++          fi
++
++          blob="$(gh api "repos/${REPO}/git/blobs" -f content="$(base64 -w0 "$moved")" -f encoding=base64 --jq .sha)"
++          tree="$(gh api "repos/${REPO}/git/trees" -f base_tree="$base_tree" \
++            -f "tree[][path]=${pins}" -f "tree[][mode]=100644" -f "tree[][type]=blob" -f "tree[][sha]=${blob}" --jq .sha)"
++          commit="$(gh api "repos/${REPO}/git/commits" -f tree="$tree" -f "parents[]=${main}" \
++            -f message="feat(platform): release ${version}" --jq .sha)"
++          gh api "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="$commit" >/dev/null
++          url="$(gh pr create --repo "$REPO" --base main --head "$branch" --title "feat(platform): release ${version}" \
++            --body "$(printf '%s\n' \
++              "## Actions for you" "" \
++              "Read the plan below before merging: it says what this release would do to each site. Merging converges every site onto it." "" \
++              "## What this is" "" \
++              "The fabricator published the platform as \`${version}\` (\`${digest}\`). This moves each site's line in \`${pins}\` to it, and changes nothing else." "" \
++              "Procurement opened this; it is never merged without review." "" \
++              "Delivered by: ${RUN_URL}")")"
++          echo "the platform: ${version} delivered as ${url##*/}" >> "$GITHUB_STEP_SUMMARY"
++
++          # An older release still at the gate is behind this one, and
++          # merging it would move the sites backwards.
++          gh pr list --repo "$REPO" --state open --json number,headRefName \
++            --jq ".[] | select(.headRefName | startswith(\"deliver/platform-\")) | select(.headRefName != \"${branch}\") | .number" \
++            | while IFS= read -r old; do
++                gh pr close "$old" --repo "$REPO" --delete-branch --comment "Superseded by ${url##*/}, which delivers a newer release." >/dev/null
++              done
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 5b27f35..9a82171 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -840,6 +840,18 @@ egress:
+       - storage.googleapis.com:443
+       - sum.golang.org:443
+ 
++  - job: fabricator.yml/deliver-platform
++    policy: block
++    hosts:
++      - api.github.com:443
++      - github.com:443
++      - go.dev:443
++      - objects.githubusercontent.com:443
++      - proxy.golang.org:443
++      - release-assets.githubusercontent.com:443
++      - storage.googleapis.com:443
++      - sum.golang.org:443
++
+   - job: expedite.yml/check
+     policy: block
+     hosts:
+diff --git a/scripts/superintendent/enforce-standing-order.go b/scripts/superintendent/enforce-standing-order.go
+index 45b9bf7..c4ecc12 100644
+--- a/scripts/superintendent/enforce-standing-order.go
++++ b/scripts/superintendent/enforce-standing-order.go
+@@ -12,6 +12,7 @@ import (
+ 	"strings"
+ 
+ 	"homelab/details/applications"
++	"homelab/details/platform"
+ 	"homelab/details/workorders"
+ )
+ 
+@@ -135,6 +136,20 @@ func enforceStandingOrder(args []string) int {
+ 		return 0
+ 	}
+ 
++	// A release of the platform, brought to the gate the same way: every
++	// site's line moved to it, and nothing else. For a person to merge, it
++	// passes. It is never merged without a review, whatever it changes:
++	// the platform is what every site is built from, and the order was
++	// given for a supplier's build of one application.
++	if isPlatformDelivery(changedFiles, asItWasAndIs) {
++		if !*bypass {
++			fmt.Printf("%s delivered a release of the platform. It waits for a review: the standing order does not cover the platform\n", *author)
++			return 0
++		}
++		fmt.Printf("REFUSED: %s delivered a release of the platform, which is never merged without a review.\n", *author)
++		return 1
++	}
++
+ 	// Each application's declaration as the base has it: the pull request
+ 	// cannot have written what it is judged by.
+ 	declared, err := j.declaredAt(*base)
+@@ -156,6 +171,36 @@ func enforceStandingOrder(args []string) int {
+ 	return 0
+ }
+ 
++// isPlatformDelivery reports whether a pull request is a release of the
++// platform brought to the gate: it changes the one file that names each
++// site's release, and what it changes there is the release and nothing
++// else. Held the way a delivery is: putting the old release back in the
++// file as it is has to give the file as it was, to the byte.
++func isPlatformDelivery(files []string, texts func(file string) (was, is string, err error)) bool {
++	if len(files) != 1 || files[0] != platform.VersionsFile {
++		return false
++	}
++	was, is, err := texts(files[0])
++	if err != nil || was == is {
++		return false
++	}
++	// Every site's line in the file as it is names one release, and moving
++	// the file as it was to that release gives the file as it is.
++	lines := platformLine.FindAllStringSubmatch(is, -1)
++	if len(lines) == 0 {
++		return false
++	}
++	to, err := platform.ParsePin(lines[0][1])
++	if err != nil {
++		return false
++	}
++	redone, moved, err := platform.MovePins(was, to)
++	return err == nil && moved > 0 && redone == is
++}
++
++// platformLine is a site's line in the file that names each site's release.
++var platformLine = regexp.MustCompile(`(?m)^\s*"platform":\s*"([^"]*)"`)
++
+ // pinLine is the one line of an application's pins file the order covers:
+ // the pin its declaration names, set to a number.
+ func pinLine(pin string) *regexp.Regexp {
+diff --git a/scripts/superintendent/enforce-standing-order_test.go b/scripts/superintendent/enforce-standing-order_test.go
+index 71486d8..76a8077 100644
+--- a/scripts/superintendent/enforce-standing-order_test.go
++++ b/scripts/superintendent/enforce-standing-order_test.go
+@@ -8,6 +8,7 @@ import (
+ 
+ 	"homelab/details/applications"
+ 	"homelab/details/files"
++	"homelab/details/platform"
+ )
+ 
+ // An application as the tests declare one: kept on its supplier's build,
+@@ -272,3 +273,38 @@ func TestIsDeliveryAcceptsOnlyPinLines(t *testing.T) {
+ 		t.Error("a file that could not be read was taken for a delivery")
+ 	}
+ }
++
++// A release of the platform passes on the pull request, so a person can
++// merge it, and is refused for a merge without review whatever it changes.
++// One that changes anything but the sites' lines is not a delivery at all.
++func TestAReleaseOfThePlatformPassesForAPersonAndIsNeverMergedWithoutOne(t *testing.T) {
++	git := gitRepo(t)
++	write := func(version string, d byte, extra string) {
++		writeFile(t, platform.VersionsFile, "{\n  \"north\": {\n    \"platform\": \""+version+"@sha256:"+digest(d)+"\""+extra+"\n  }\n}\n")
++	}
++	write("v2026.1.1", 'a', "")
++	git("add", "-A")
++	git("commit", "-qm", "base")
++	base := git("rev-parse", "HEAD")
++
++	write("v2026.1.2", 'b', "")
++	git("commit", "-qam", "a release of the platform")
++	delivery := git("rev-parse", "HEAD")
++
++	write("v2026.1.2", 'b', ",\n    \"something\": \"else\"")
++	git("commit", "-qam", "a release that also changes something else")
++	overreach := git("rev-parse", "HEAD")
++
++	args := func(head string, more ...string) []string {
++		return append([]string{"-author", "procurement[bot]", "-holder", "procurement[bot]", "-base", base, "-head", head}, more...)
++	}
++	if code := enforceStandingOrder(args(delivery)); code != 0 {
++		t.Errorf("a release of the platform was refused on the pull request (exit %d), so a person could never merge it", code)
++	}
++	if code := enforceStandingOrder(args(delivery, "-bypass")); code != 1 {
++		t.Errorf("a release of the platform passed for a merge without review (exit %d)", code)
++	}
++	if code := enforceStandingOrder(args(overreach)); code == 0 {
++		t.Error("a release that also changed something else in the file passed as a delivery")
++	}
++}
+diff --git a/tests/go/repo/deliveries_test.go b/tests/go/repo/deliveries_test.go
+index 892c20b..a78612f 100644
+--- a/tests/go/repo/deliveries_test.go
++++ b/tests/go/repo/deliveries_test.go
+@@ -134,7 +134,7 @@ func TestOnlyTheExpediteDutyRunsUnderItsCredential(t *testing.T) {
+ 					"workstation installs. It is run by a person and committed through review; "+
+ 					"no workflow orders, and above all not one that could hold the expedite "+
+ 					"credential.", name)
+-			case verb == "deliver":
++			case verb == "deliver" || strings.HasPrefix(verb, "deliver-"):
+ 				// Delivering holds the credential too, to open the pull request
+ 				// that moves a release pin - and nothing it opens is merged
+ 				// without review unless the release differs from the one
