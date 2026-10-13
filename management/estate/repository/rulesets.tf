@@ -179,5 +179,12 @@ locals {
     "Spelling (codespell)",
     "Format (pre-commit)",
     "dependency-review",
+    # The plan: whether the site's hypervisor has room for what a change
+    # asks and whether the site can hold it. It answers for every change,
+    # passing one that touches nothing a site is built from, which is what
+    # lets it be required. Before it was, a change the plan would have
+    # refused was planned, approved and merged, and refused by the converge
+    # with main left declaring what could not be built.
+    "Plan",
   ]
 }
