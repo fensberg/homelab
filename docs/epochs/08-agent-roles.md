@@ -292,7 +292,34 @@ operating system can carry images in its own boot image, where a wipe does
 not reach; whether that suits this version and how the zone's template is
 built has not been looked at.
 
-**The tools are in the runner (built 2026-10-13).** The pools run an image
+**The hot tool is not built.** The operator's meaning, said again
+2026-10-14 because the record had begun to blur it: "a pod READY to go with
+everything installed and which can INSTANTLY take work." A runner that has
+its tools and is made when the job arrives is not one. Measured after a
+machine was put back: the pools' proofs waited about seventy seconds to be
+picked up, with their tools already in the image. What has to be true, and
+is not yet:
+
+- **A runner is waiting before the job arrives.** Every pool makes its
+  runners on demand today. A waiting runner reserves its memory while idle,
+  and the zone's machine holds about three at what a runner asks for now, so
+  this is sized from what the jobs are measured to use under load.
+- **There is a waiting runner for every job of a push**, or the ones past
+  the first few wait as they do now. That is the swarm, below.
+- **The image is on the machine before anything asks for it**, which once
+  machines are put back means it is in the snapshot they are put back to.
+- **A machine that was just put back has its runners waiting again before
+  work is sent to it.** Starting cold and registering takes time, and a job
+  that arrives in it waits.
+- **Everything a job fetches is in the image.** Still fetched: the Go
+  modules the tests compile against, the hooks `pre-commit` installs for
+  itself, and `pnpm` with what it installs.
+- **It is measured.** The time from a job being queued to its first step
+  running, per pool, where the operator can see it. Until that is on a
+  dashboard, "instantly" is a claim.
+
+**The tools are in the runner (built 2026-10-13); this is one part of the
+above and not the whole.** The pools run an image
 of their own, `.github/pull-request-runner-image`, and not the converge's.
 It holds Go and Node where the setup actions look before they download, and
 every locked tool a pull request's job takes, installed by
