@@ -29,51 +29,87 @@ import (
 // IT ALSO HOLDS THE GROUP TO BEING A WALL: one that admits chosen
 // repositories and chosen workflows, written as such.
 //
+// ONE GROUP MAY TAKE ANY WORKFLOW, and only one kind: the group the pools
+// of pull-request runners join. A pull request runs its own copy of a
+// workflow, from its own ref, so no list of workflows at a branch can
+// admit it. That group is held another way - its runners are on a machine
+// closed to the rest of the estate - and it is allowed here only while
+// every set of runners that joins it is a pull-request pool, and none of
+// the estate's own does.
+//
 // FOUND BY WHAT IT IS. The group is whatever resource of that type is
 // declared anywhere, and the names are whatever workflow files are written
 // out where a group's workflows are given. Neither found is a failure.
 
-// asksForTheEstatesRunner reports whether a job's runs-on names anything
-// but a runner the platform hosts.
-func asksForTheEstatesRunner(n *yaml.Node) bool {
+// whose is which kind of runner a job asks for: one the platform hosts,
+// one of the pools for a pull request's jobs, or one of the estate's own.
+type whose int
+
+const (
+	thePlatforms whose = iota
+	aPullRequestPools
+	theEstatesOwn
+)
+
+// asksFor reads a job's runs-on. Anything that cannot be read as a label -
+// a group, or nothing - is the estate's own: nothing here can say it is not.
+func asksFor(n *yaml.Node) whose {
+	of := func(label string) whose {
+		switch {
+		case hostedLabel.MatchString(label):
+			return thePlatforms
+		case pullRequestPools[label]:
+			return aPullRequestPools
+		}
+		return theEstatesOwn
+	}
 	switch n.Kind {
 	case yaml.ScalarNode:
-		return !hostedLabel.MatchString(n.Value)
+		return of(n.Value)
 	case yaml.SequenceNode:
+		most := thePlatforms
 		for _, c := range n.Content {
-			if !hostedLabel.MatchString(c.Value) {
-				return true
-			}
+			most = max(most, of(c.Value))
 		}
-		return len(n.Content) == 0
+		if len(n.Content) == 0 {
+			return theEstatesOwn
+		}
+		return most
+	case 0:
+		return thePlatforms
 	}
-	// A group, or nothing a label can be read from.
-	return n.Kind != 0
+	return theEstatesOwn
 }
 
-// onTheEstatesRunners is whether any job of a workflow asks for one.
-func onTheEstatesRunners(body []byte) (bool, error) {
+// onTheEstatesRunners is whether any job of a workflow asks for one of the
+// estate's own runners, and whether any asks for a pull-request pool.
+func onTheEstatesRunners(body []byte) (own, pools bool, err error) {
 	var wf workflowFile
 	if err := yaml.Unmarshal(body, &wf); err != nil {
-		return false, err
+		return false, false, err
 	}
 	for _, job := range wf.Jobs {
-		if asksForTheEstatesRunner(&job.RunsOn) {
-			return true, nil
+		switch asksFor(&job.RunsOn) {
+		case theEstatesOwn:
+			own = true
+		case aPullRequestPools:
+			pools = true
 		}
 	}
-	return false, nil
+	return own, pools, nil
 }
 
 // admittedBy reads the OpenTofu given for every group of runners and every
 // workflow file named where a group's workflows are given. It returns the
-// names, sorted, and what stops any group being a wall.
-func admittedBy(sources map[string]string) (names []string, wrong []string, groups int, err error) {
+// names, sorted; what stops any group being a wall; and the name of every
+// group that takes any workflow, which the caller holds to being the
+// pull-request pools'.
+func admittedBy(sources map[string]string) (names []string, wrong []string, open []string, groups int, err error) {
 	seen := map[string]bool{}
 	for path, body := range sources {
 		file, diags := hclsyntax.ParseConfig([]byte(body), path, hcl.InitialPos)
 		if diags.HasErrors() {
-			return nil, nil, 0, fmt.Errorf("%s does not parse: %s", path, diags.Error())
+			return nil, nil, nil, 0, fmt.Errorf("%s does not parse: %s", path, diags.Error())
 		}
 		for _, block := range file.Body.(*hclsyntax.Body).Blocks {
 			for _, given := range []string{"workflows", "selected_workflows"} {
@@ -98,6 +134,16 @@ func admittedBy(sources map[string]string) (names []string, wrong []string, grou
 			if written(block.Body, "visibility") != cty.StringVal("selected") {
 				wrong = append(wrong, where+" admits repositories nobody chose: visibility is not \"selected\"")
 			}
+			// A group written as taking any workflow says which it is, by a
+			// name written out, so that who joins it can be looked at.
+			if written(block.Body, "restricted_to_workflows") == cty.False {
+				if name := written(block.Body, "name"); name.Type() == cty.String && !name.IsNull() {
+					open = append(open, name.AsString())
+				} else {
+					wrong = append(wrong, where+" admits any workflow, and its name is worked out, so nothing can say it is the group the pull-request pools join")
+				}
+				continue
+			}
 			if written(block.Body, "restricted_to_workflows") != cty.True {
 				wrong = append(wrong, where+" admits any workflow: restricted_to_workflows is not true")
 			}
@@ -111,7 +157,40 @@ func admittedBy(sources map[string]string) (names []string, wrong []string, grou
 	}
 	sort.Strings(names)
 	sort.Strings(wrong)
-	return names, wrong, groups, nil
+	sort.Strings(open)
+	return names, wrong, open, groups, nil
+}
+
+// heldAsPullRequestGroups is what is wrong with the groups that take any
+// workflow, given which sets of runners join each group and whether each
+// set is a pull-request pool.
+func heldAsPullRequestGroups(open []string, joined map[string][]bool, usesAPool bool) []string {
+	var out []string
+	isOpen := map[string]bool{}
+	for _, name := range open {
+		isOpen[name] = true
+		sets := joined[name]
+		if len(sets) == 0 {
+			out = append(out, "the group "+name+" takes any workflow and no set of runners joins it: a group for nothing")
+		}
+		for _, isPool := range sets {
+			if !isPool {
+				out = append(out, "the group "+name+" takes any workflow, and a set of the estate's own runners joins it. Only the pull-request pools, on a machine of their own, may be in a group no list of workflows holds")
+			}
+		}
+	}
+	for group, sets := range joined {
+		for _, isPool := range sets {
+			if isPool && !isOpen[group] {
+				out = append(out, "a pull-request pool joins the group "+group+", which takes only named workflows from a branch. A pull request runs from neither, so its jobs would wait for a runner for ever")
+			}
+		}
+	}
+	if usesAPool && len(open) == 0 {
+		out = append(out, "a workflow asks for a pull-request pool and no group is declared for the pools to join")
+	}
+	sort.Strings(out)
+	return out
 }
 
 // notTheSame is what one sorted list of workflows holds that the other
@@ -140,7 +219,7 @@ func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
 
 	sources := map[string]string{}
 	var asking []string
-	workflows := 0
+	workflows, usesAPool := 0, false
 	for _, rel := range trackedFilesIn(t, root) {
 		if !authoredHere(rel) {
 			continue
@@ -159,13 +238,14 @@ func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
 			continue
 		}
 		workflows++
-		on, err := onTheEstatesRunners(body)
+		own, pools, err := onTheEstatesRunners(body)
 		if err != nil {
 			t.Fatalf("%s does not parse: %v", rel, err)
 		}
-		if on {
+		if own {
 			asking = append(asking, filepath.Base(rel))
 		}
+		usesAPool = usesAPool || pools
 	}
 	sort.Strings(asking)
 
@@ -176,13 +256,29 @@ func TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits(t *testing.T) {
 	if len(asking) == 0 {
 		t.Fatal("no workflow asks for the estate's runner, and a converge runs on one: the read is wrong")
 	}
-	admitted, wrong, groups, err := admittedBy(sources)
+	admitted, wrong, open, groups, err := admittedBy(sources)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if groups == 0 {
 		t.Fatalf("no %s is declared anywhere, so nothing here says which work the estate's runners take", ghapi.RunnerGroupType)
 	}
+
+	// Which group each set of runners joins, and whether the set is one of
+	// the pull-request pools: by the name a job asks for it by.
+	joined := map[string][]bool{}
+	for _, release := range runnerSets(t) {
+		_, manifest := fluxObject(t, kindHelmRelease, release)
+		set := yamlScalar(t, manifest, "runnerScaleSetName")
+		isPool := false
+		for pool := range pullRequestPools {
+			prefix, _, _ := strings.Cut(pool, "${{")
+			isPool = isPool || strings.HasPrefix(set, prefix)
+		}
+		group := yamlScalar(t, manifest, "runnerGroup")
+		joined[group] = append(joined[group], isPool)
+	}
+	wrong = append(wrong, heldAsPullRequestGroups(open, joined, usesAPool)...)
 	for _, w := range append(wrong, notTheSame(asking, admitted)...) {
 		t.Error(w)
 	}
@@ -209,11 +305,11 @@ resource "something_else" "ignored" { visibility = "all" }
 	}{
 		"a wall":                  {func(s string) string { return s }, ""},
 		"every repository":        {func(s string) string { return strings.Replace(s, `"selected"`, `"all"`, 1) }, "repositories nobody chose"},
-		"any workflow":            {func(s string) string { return strings.Replace(s, "= true", "= false", 1) }, "admits any workflow"},
+		"any workflow":            {func(s string) string { return strings.Replace(s, "= true", "= false", 1) }, "its name is worked out"},
 		"restriction left unsaid": {func(s string) string { return strings.Replace(s, "  restricted_to_workflows = true\n", "", 1) }, "admits any workflow"},
 		"no workflows given":      {func(s string) string { return strings.Replace(s, "  selected_workflows      = var.workflows\n", "", 1) }, "names no workflow"},
 	} {
-		names, wrong, groups, err := admittedBy(map[string]string{"made-up.tf": c.change(group)})
+		names, wrong, _, groups, err := admittedBy(map[string]string{"made-up.tf": c.change(group)})
 		if err != nil || groups != 1 {
 			t.Fatalf("%s: read %d group(s), %v", name, groups, err)
 		}
@@ -225,26 +321,64 @@ resource "something_else" "ignored" { visibility = "all" }
 			t.Errorf("%s: want %q, got\n%s", name, c.says, said)
 		}
 	}
-	if _, _, _, err := admittedBy(map[string]string{"broken.tf": `resource "x" {`}); err == nil {
+	if _, _, _, _, err := admittedBy(map[string]string{"broken.tf": `resource "x" {`}); err == nil {
 		t.Error("OpenTofu that does not parse was read as declaring nothing")
 	}
 
+	// A group written as taking any workflow is not judged as a wall here;
+	// it is named, for the caller to hold to being the pull-request pools'.
+	_, wrong, open, _, err := admittedBy(map[string]string{"made-up.tf": `
+resource "github_actions_runner_group" "any" {
+  name                    = "for-pull-requests"
+  visibility              = "selected"
+  restricted_to_workflows = false
+}
+resource "github_actions_runner_group" "unnamed" {
+  name                    = var.name
+  visibility              = "selected"
+  restricted_to_workflows = false
+}
+`})
+	if err != nil || len(open) != 1 || open[0] != "for-pull-requests" || len(wrong) != 1 || !strings.Contains(wrong[0], "its name is worked out") {
+		t.Errorf("the groups that take any workflow were read as %v, with %v, %v", open, wrong, err)
+	}
 	for name, c := range map[string]struct {
-		yaml string
-		want bool
+		open      []string
+		joined    map[string][]bool
+		usesAPool bool
+		says      string
 	}{
-		"hosted only":         {"jobs:\n  a:\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: [ubuntu-latest]\n", false},
-		"a named pool":        {"jobs:\n  a:\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: some-pool\n", true},
-		"a pool worked out":   {"jobs:\n  a:\n    runs-on: some-${{ matrix.site }}\n", true},
-		"a group":             {"jobs:\n  a:\n    runs-on:\n      group: some-group\n", true},
-		"a list with one own": {"jobs:\n  a:\n    runs-on: [ubuntu-latest, some-pool]\n", true},
+		"the pools' own group":           {[]string{"g"}, map[string][]bool{"g": {true, true}, "walled": {false}}, true, ""},
+		"a group nothing joins":          {[]string{"g"}, map[string][]bool{}, false, "no set of runners joins it"},
+		"the estate's own runners in it": {[]string{"g"}, map[string][]bool{"g": {true, false}}, true, "a set of the estate's own runners joins it"},
+		"a pool in the walled group":     {nil, map[string][]bool{"walled": {false, true}}, true, "would wait for a runner for ever"},
+		"pools asked for and no group":   {nil, map[string][]bool{"walled": {false}}, true, "no group is declared for the pools to join"},
 	} {
-		got, err := onTheEstatesRunners([]byte(c.yaml))
-		if err != nil || got != c.want {
-			t.Errorf("%s: got %v, %v", name, got, err)
+		said := strings.Join(heldAsPullRequestGroups(c.open, c.joined, c.usesAPool), "\n")
+		if (c.says == "") != (said == "") || !strings.Contains(said, c.says) {
+			t.Errorf("%s: want %q, got\n%s", name, c.says, said)
 		}
 	}
-	if _, err := onTheEstatesRunners([]byte("jobs: [")); err == nil {
+
+	pool := pullRequestPool("source")
+	for name, c := range map[string]struct {
+		yaml       string
+		own, pools bool
+	}{
+		"hosted only":         {"jobs:\n  a:\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: [ubuntu-latest]\n", false, false},
+		"a named set":         {"jobs:\n  a:\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: some-set\n", true, false},
+		"a set worked out":    {"jobs:\n  a:\n    runs-on: some-${{ matrix.site }}\n", true, false},
+		"a group":             {"jobs:\n  a:\n    runs-on:\n      group: some-group\n", true, false},
+		"a list with one own": {"jobs:\n  a:\n    runs-on: [ubuntu-latest, some-set]\n", true, false},
+		"a pull-request pool": {"jobs:\n  a:\n    runs-on: " + pool + "\n", false, true},
+		"a pool and its own":  {"jobs:\n  a:\n    runs-on: " + pool + "\n  b:\n    runs-on: some-set\n", true, true},
+	} {
+		own, pools, err := onTheEstatesRunners([]byte(c.yaml))
+		if err != nil || own != c.own || pools != c.pools {
+			t.Errorf("%s: got %v, %v, %v", name, own, pools, err)
+		}
+	}
+	if _, _, err := onTheEstatesRunners([]byte("jobs: [")); err == nil {
 		t.Error("a workflow that does not parse was read as asking for nothing")
 	}
 

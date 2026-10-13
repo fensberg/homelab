@@ -5,6 +5,12 @@ resources:
   - state-database.yaml
   - runner-scale-set.yaml
   - runner-scale-set-batch.yaml
+  # A pull request's jobs: three pools on the untrusted zone's machine, each
+  # held to the hosts its jobs are declared to need.
+  - pull-request-runners.yaml
+  - pull-requests-source.yaml
+  - pull-requests-builds.yaml
+  - pull-requests-packages.yaml
   - host-metrics.yaml
   - capacity.yaml
   # Asks GitHub whether each scheduled workflow is failing. Needs the

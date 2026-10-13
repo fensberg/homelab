@@ -11,7 +11,8 @@
     "installation_id": "{{ op://estate/source-control/installation_id }}",
     "private_key": "{{ op://estate/source-control/private_key }}",
     "billing_email": "{{ op://estate/source-control/billing_email }}",
-    "procurement_app_id": "{{ op://estate-shared/source-control/procurement-bot/app_id }}"
+    "procurement_app_id": "{{ op://estate-shared/source-control/procurement-bot/app_id }}",
+    "pull_request_runners_site": "site0"
   },
 
   "access": {

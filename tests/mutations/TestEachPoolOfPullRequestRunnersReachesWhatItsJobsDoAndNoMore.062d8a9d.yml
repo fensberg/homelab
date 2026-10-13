@@ -1,0 +1,8 @@
+guard: TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore
+file: clusters/core/infrastructure/configs/pull-requests-source.yaml
+find: "            - port: \"443\"\n"
+replace: "            - port: \"80\"\n"
+mentions: "not 443/TCP"
+why: >
+  A pool is held to its hosts on one port. Another port to the same hosts
+  is a way out nobody declared, and it reads as a detail.

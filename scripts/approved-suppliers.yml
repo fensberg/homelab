@@ -620,6 +620,30 @@ endpoints:
 #                   it cannot be a list is written here rather than in a comment
 #                   somebody has to go and find
 
+# The estate's pools of pull-request runners, and what a runner in any of
+# them reaches to be a runner at all: to be handed a job, fetch the actions
+# it names, and send back its log and what it made.
+#
+# A pull request's job on the estate's own runners is held by the cluster's
+# network and not by an agent in the runner. A pool is held to what the jobs
+# declared for it below reach between them, and to this, and to nothing
+# else; tests/go/repo holds each pool's policy to exactly that. Each job
+# says which pool it is of with `pool:` beside its entry under egress:.
+#
+# The last of these is wide and cannot be narrowed: the platform keeps logs
+# and artifacts in storage accounts it names as it goes.
+pull_request_pools:
+  names:
+    - source
+    - builds
+    - packages
+  every_runner_reaches:
+    - github.com:443
+    - api.github.com:443
+    - codeload.github.com:443
+    - "*.actions.githubusercontent.com:443"
+    - "*.blob.core.windows.net:443"
+
 egress:
   - job: clerk.yml/read
     policy: block
@@ -634,6 +658,7 @@ egress:
       - sum.golang.org:443
 
   - job: codeql.yml/analyze
+    pool: source
     policy: block
     hosts:
       - api.github.com:443
@@ -643,6 +668,7 @@ egress:
       - uploads.github.com:443
 
   - job: dependency-review.yml/dependency-review
+    pool: packages
     policy: block
     hosts:
       - api.deps.dev:443
@@ -712,12 +738,14 @@ egress:
       - release-assets.githubusercontent.com:443
 
   - job: plan-infrastructure.yml/sites
+    pool: source
     policy: block
     hosts:
       - api.github.com:443
       - github.com:443
 
   - job: plan-infrastructure.yml/plan
+    pool: builds
     policy: block
     reason: >-
       Plans a pull request's change against the as-built record (#554), on
@@ -747,6 +775,7 @@ egress:
       - sum.golang.org:443
 
   - job: plan-infrastructure.yml/held
+    pool: source
     policy: block
     reason: >-
       Says, once for the whole change, whether its plan lets it land. It
@@ -756,6 +785,7 @@ egress:
       - github.com:443
 
   - job: plan-infrastructure.yml/report
+    pool: source
     policy: block
     reason: >-
       Writes each site's plan, or that there was none, on the pull request.
@@ -851,6 +881,7 @@ egress:
       - sum.golang.org:443
 
   - job: inspector.yml/tally
+    pool: builds
     policy: block
     hosts:
       - api.github.com:443
@@ -897,13 +928,48 @@ egress:
       list to transcribe. Egress for these pods has to be controlled at the
       cluster's network layer instead (#411); until then it is uncontrolled
       and unrecorded, and this entry says so rather than implying otherwise.
+  - job: pr-validation.yml/pool-source
+    pool: source
+    policy: block
+    reason: >-
+      Tries the pool from inside: that it takes work, reaches what is
+      declared for it, and is refused a host nobody declared, the cluster's
+      own API and any token of the cluster's.
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
+  - job: pr-validation.yml/pool-builds
+    pool: builds
+    policy: block
+    reason: >-
+      Tries the pool from inside: that it takes work, reaches what is
+      declared for it, and is refused a host nobody declared, the cluster's
+      own API and any token of the cluster's.
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
+  - job: pr-validation.yml/pool-packages
+    pool: packages
+    policy: block
+    reason: >-
+      Tries the pool from inside: that it takes work, reaches what is
+      declared for it, and is refused a host nobody declared, the cluster's
+      own API and any token of the cluster's.
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
   - job: pr-validation.yml/already-tested
+    pool: source
     policy: block
     hosts:
       - api.github.com:443
       - github.com:443
 
   - job: pr-validation.yml/format
+    pool: packages
     policy: block
     hosts:
       - api.github.com:443
@@ -923,6 +989,7 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/shellcheck
+    pool: source
     policy: block
     hosts:
       - api.github.com:443
@@ -931,6 +998,7 @@ egress:
       - release-assets.githubusercontent.com:443
 
   - job: pr-validation.yml/validate
+    pool: builds
     policy: block
     hosts:
       - api.github.com:443
@@ -944,6 +1012,7 @@ egress:
       - storage.googleapis.com:443
 
   - job: pr-validation.yml/test-go
+    pool: builds
     policy: block
     hosts:
       - api.github.com:443
@@ -959,6 +1028,7 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/vet
+    pool: builds
     policy: block
     hosts:
       - api.github.com:443
@@ -971,6 +1041,7 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/invariants
+    pool: builds
     policy: block
     hosts:
       - api.github.com:443
@@ -985,6 +1056,7 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/meta
+    pool: builds
     policy: block
     hosts:
       - api.github.com:443
@@ -999,6 +1071,7 @@ egress:
       - sum.golang.org:443
 
   - job: pr-validation.yml/test-js
+    pool: packages
     policy: block
     hosts:
       - api.github.com:443
@@ -1009,12 +1082,14 @@ egress:
       - release-assets.githubusercontent.com:443
 
   - job: pr-validation.yml/test
+    pool: source
     policy: block
     hosts:
       - api.github.com:443
       - github.com:443
 
   - job: pr-validation.yml/dockerfiles
+    pool: source
     policy: block
     hosts:
       - api.github.com:443
@@ -1023,6 +1098,7 @@ egress:
       - release-assets.githubusercontent.com:443
 
   - job: pr-validation.yml/policy
+    pool: packages
     policy: block
     hosts:
       - api.github.com:443
@@ -1033,6 +1109,7 @@ egress:
       - release-assets.githubusercontent.com:443
 
   - job: pr-validation.yml/spelling
+    pool: packages
     policy: block
     hosts:
       - api.github.com:443
@@ -1043,6 +1120,7 @@ egress:
       - release-assets.githubusercontent.com:443
 
   - job: pr-validation.yml/workflowscan
+    pool: packages
     policy: block
     hosts:
       - api.github.com:443
@@ -1061,6 +1139,7 @@ egress:
       first, then transcribe what it logged.
 
   - job: pr-validation.yml/trivy
+    pool: packages
     policy: block
     hosts:
       - api.github.com:443
@@ -1090,6 +1169,7 @@ egress:
       else.
 
   - job: pr-validation.yml/egress-blocked
+    pool: source
     policy: block
     hosts:
       - api.github.com:443
@@ -1152,6 +1232,7 @@ egress:
       - storage.googleapis.com:443
 
   - job: sensitive-paths.yml/tripwire
+    pool: builds
     policy: block
     hosts:
       - api.github.com:443
@@ -1481,3 +1562,18 @@ work:
   - job: integration-tests.yml/test
     kind: can-wait
     takes: 5m
+
+  # A pull request's jobs, in the pools on the untrusted zone's machine.
+  # Somebody is waiting on each. They share nothing with the priority set
+  # above: their runners are on a machine of their own.
+  - job: pr-validation.yml/pool-source
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/pool-builds
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/pool-packages
+    kind: cannot-wait
+    takes: 1m

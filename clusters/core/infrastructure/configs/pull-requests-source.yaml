@@ -1,0 +1,152 @@
+# The pool for jobs that need nothing beyond the source control itself.
+# What holds every pool is said once, in pull-request-runners.yaml.
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: pull-requests-source
+  namespace: pull-request-runners
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: gha-runner-scale-set
+      version: "0.14.2"
+      sourceRef:
+        kind: HelmRepository
+        name: actions-runner-controller
+        namespace: flux-system
+      interval: 12h
+  install:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 5m
+  values:
+    githubConfigUrl: ${RUNNER_GITHUB_CONFIG_URL}
+    githubConfigSecret: ${RUNNER_SECRET_NAME}
+    # A group of its own. The estate's other runners are in one that takes
+    # only named workflows from the default branch, which a pull request
+    # never runs from.
+    runnerGroup: pull-requests
+
+    runnerScaleSetName: pr-source-${SITE}
+
+    minRunners: 0
+    # More than the zone's machine holds at once wait for one to finish.
+    maxRunners: 3
+
+    listenerTemplate:
+      spec:
+        terminationGracePeriodSeconds: 60
+        securityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        priorityClassName: critical
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        containers:
+          - name: listener
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+
+    template:
+      spec:
+        priorityClassName: interactive
+        automountServiceAccountToken: false
+        # The untrusted zone's machine and no other: the label sends a
+        # runner there, and the toleration is what lets it stay.
+        nodeSelector:
+          untrusted-zone: zone0
+        tolerations:
+          - key: untrusted-zone
+            operator: Equal
+            value: zone0
+            effect: NoSchedule
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          fsGroup: 1001
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+          - name: runner
+            image: ghcr.io/fensberg/homelab-runner@sha256:15ade7051773012d42e85727198d0a3cc08495a0137dfe97b9bfe6ca30c1cdd2
+            command: ["/home/runner/run.sh"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+            resources:
+              requests:
+                cpu: 250m
+                memory: 1Gi
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: pull-requests-source
+  namespace: pull-request-runners
+spec:
+  endpointSelector:
+    matchLabels:
+      actions.github.com/scale-set-name: pr-source-${SITE}
+  egress:
+    # The cluster's resolver, and only for the names below: a name that is
+    # not asked for is a name nothing can be sent to inside a question.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*.actions.githubusercontent.com"
+              - matchPattern: "*.blob.core.windows.net"
+              - matchName: api.github.com
+              - matchName: codeload.github.com
+              - matchName: github.com
+              - matchName: objects.githubusercontent.com
+              - matchName: release-assets.githubusercontent.com
+              - matchName: uploads.github.com
+    - toFQDNs:
+        - matchPattern: "*.actions.githubusercontent.com"
+        - matchPattern: "*.blob.core.windows.net"
+        - matchName: api.github.com
+        - matchName: codeload.github.com
+        - matchName: github.com
+        - matchName: objects.githubusercontent.com
+        - matchName: release-assets.githubusercontent.com
+        - matchName: uploads.github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

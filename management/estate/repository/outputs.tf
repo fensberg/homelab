@@ -20,6 +20,11 @@ output "the_estates_credential_is_handed_to" {
   }
 }
 
+output "pull_request_runners_site" {
+  description = "The site a pull request's jobs are sent to, as workflows read it: for the root's tests."
+  value       = github_actions_variable.pull_request_runners_site.value
+}
+
 output "rules" {
   description = "Who may pass each rule on the repository's branches and tags by, as a count per rule: for the root's tests."
   value = {

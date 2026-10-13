@@ -1,0 +1,9 @@
+guard: TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore
+file: clusters/core/infrastructure/configs/pull-requests-packages.yaml
+find: "    - toFQDNs:\n"
+replace: "    - toFQDNs:\n        - matchName: somewhere-nobody-declared.example\n"
+mentions: "are declared to reach"
+why: >
+  A host added to a pool's policy and to no job's entry in the suppliers
+  list is a host a pull request's job may reach that nobody decided it
+  should. The list is where that is decided.

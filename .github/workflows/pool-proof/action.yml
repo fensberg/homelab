@@ -1,0 +1,62 @@
+name: Pool proof
+description: >-
+  Proves, from inside one of the estate's pools of pull-request runners,
+  that the pool takes work and that what holds it holds.
+
+# A pull request's job in a pool is held by the cluster's network and by
+# where its runner is put, and by nothing in the runner itself. So the only
+# honest proof is one made from inside: this runs as a job in the pool and
+# tries each thing a runner must not be able to do.
+#
+# It is also what says a pool works at all, before any job a merge is held
+# to is moved onto it. Nothing waits on these jobs.
+runs:
+  using: composite
+  steps:
+    - name: The repository was checked out
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ ! -f CLAUDE.md ]; then
+          echo "::error::the job started in the pool and the workspace holds no checkout"
+          exit 1
+        fi
+
+    - name: A host the pool is declared to reach answers
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! curl --silent --show-error --max-time 20 --output /dev/null https://github.com; then
+          echo "::error::github.com is declared for every pool and did not answer. The pool is refusing everything, so the refusals below would prove nothing."
+          exit 1
+        fi
+
+    - name: A host nobody declared is refused
+      shell: bash
+      run: |
+        set -euo pipefail
+        if curl --silent --show-error --max-time 20 --output /dev/null https://example.com; then
+          echo "::error::example.com answered. No job declares it, so the pool's policy is not holding its runners to the hosts declared for it."
+          exit 1
+        fi
+        echo "example.com was refused"
+
+    - name: The cluster's own API is refused
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -n "${KUBERNETES_SERVICE_HOST:-}" ] && curl --insecure --silent --max-time 10 --output /dev/null "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT:-443}/version"; then
+          echo "::error::the cluster's API answered a runner in a pull-request pool. A pull request's job can speak to the cluster it runs in."
+          exit 1
+        fi
+        echo "the cluster's API was refused"
+
+    - name: No token of the cluster's is in the runner
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -e /var/run/secrets/kubernetes.io/serviceaccount/token ]; then
+          echo "::error::a service account's token is mounted in this runner. A pull request's job holds a credential of the cluster's."
+          exit 1
+        fi
+        echo "no token is mounted"

@@ -1,0 +1,42 @@
+# The estate's pools of pull-request runners: what holds every one of them.
+#
+# A pull request's jobs run in these pools and not on a machine somebody
+# else images (docs/epochs/08-agent-roles.md, #559). What a pull request
+# wrote is run by these pods, so everything about them begins from nothing:
+#
+#   - THEIR OWN MACHINE. Every runner is sent to the site's untrusted zone
+#     and tolerates its taint, and can land nowhere else. A pull request's
+#     code shares a kernel with other pull requests' jobs and with nothing
+#     of the estate's.
+#   - THEIR OWN NAMESPACE, apart from the runners that converge the estate.
+#   - NOTHING OF THE CLUSTER'S. No account's token is mounted in a runner.
+#   - NO ADDRESS AT ALL, which is this file, and then the hosts its pool is
+#     declared to need, by name, on 443, and the cluster's resolver for
+#     those names and no others: each pool's own file, beside this one.
+#
+# THREE POOLS, by what a job needs beyond the source control itself:
+# nothing, what a build downloads, and the package registries. Which job is
+# of which pool, and so what each pool reaches, is declared once, in
+# scripts/approved-suppliers.yml. Each pool's policy is that, written out,
+# and TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore fails
+# when the two part.
+#
+# A POOL IS NOT A WALL AGAINST THE PULL REQUEST ITSELF, which says which
+# pool its job asks for. It holds a tool gone wrong inside a job. The
+# machine is what holds the pull request.
+#
+# THE LISTENERS are not here: the controller runs each beside itself, on a
+# machine the estate trusts, because a listener holds the App's credential.
+---
+# Nothing in the namespace reaches or is reached by anything, until a pool's
+# policy says otherwise. A runner of no pool is a runner of nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nothing-unless-said
+  namespace: pull-request-runners
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

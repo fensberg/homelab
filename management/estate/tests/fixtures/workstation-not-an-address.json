@@ -10,7 +10,8 @@
     "installation_id": "1",
     "private_key": "Zml4dHVyZQ==",
     "billing_email": "billing@example.com",
-    "procurement_app_id": "2"
+    "procurement_app_id": "2",
+    "pull_request_runners_site": "site0"
   },
   "access": {
     "provider": "cloudflare",

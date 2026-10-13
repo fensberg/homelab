@@ -260,6 +260,8 @@ unprovable:
     reason: table
   - test: TestASettingIsAWallOnlyWhileItHoldsWorkflowsToAListAtACommit
     reason: table
+  - test: TestAPoolsPolicyIsHeldToItsListAndItsRunnersToNothingOfTheClusters
+    reason: table
   - test: TestARequiredCheckIsReadAndAJobIsKnownByItsNameOrItsKey
     reason: table
   - test: TestAMachineWithNoAddressIsSeenAndATemplateIsNotAMachine

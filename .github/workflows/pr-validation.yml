@@ -1562,3 +1562,105 @@ jobs:
           PROOF: reached
         with:
           name: env-reaches-script
+
+  # ---------------------------------------------------------------------
+  # POOL PROOF (source) - one of the estate's own pools for a pull request's
+  # jobs, tried from inside. The pool for jobs that need nothing beyond the source control.
+  #
+  # On the untrusted zone's machine, held to its pool's hosts by the
+  # cluster's network (clusters/core, pull-requests-source.yaml). The site
+  # is the estate's to say (management/estate, the repository's variable).
+  #
+  # NOTHING WAITS ON THIS, on purpose: it is what shows a pool works before
+  # any job a merge is held to is moved onto it. A pool that is not taking
+  # work leaves this queued and holds nothing up.
+  # ---------------------------------------------------------------------
+  pool-source:
+    name: "Pool Proof (source)"
+    runs-on: pr-source-${{ vars.pull_request_runners_site }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # harden-runner does nothing in the estate's pools. What is
+          # declared here is what the pool's own policy is held to, in
+          # scripts/approved-suppliers.yml under `egress:`.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Prove the pool holds
+        uses: $/.github/workflows/pool-proof
+
+  # ---------------------------------------------------------------------
+  # POOL PROOF (builds) - one of the estate's own pools for a pull request's
+  # jobs, tried from inside. The pool for jobs that download what a build needs.
+  #
+  # On the untrusted zone's machine, held to its pool's hosts by the
+  # cluster's network (clusters/core, pull-requests-builds.yaml). The site
+  # is the estate's to say (management/estate, the repository's variable).
+  #
+  # NOTHING WAITS ON THIS, on purpose: it is what shows a pool works before
+  # any job a merge is held to is moved onto it. A pool that is not taking
+  # work leaves this queued and holds nothing up.
+  # ---------------------------------------------------------------------
+  pool-builds:
+    name: "Pool Proof (builds)"
+    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # harden-runner does nothing in the estate's pools. What is
+          # declared here is what the pool's own policy is held to, in
+          # scripts/approved-suppliers.yml under `egress:`.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Prove the pool holds
+        uses: $/.github/workflows/pool-proof
+
+  # ---------------------------------------------------------------------
+  # POOL PROOF (packages) - one of the estate's own pools for a pull request's
+  # jobs, tried from inside. The pool for jobs that reach the package registries.
+  #
+  # On the untrusted zone's machine, held to its pool's hosts by the
+  # cluster's network (clusters/core, pull-requests-packages.yaml). The site
+  # is the estate's to say (management/estate, the repository's variable).
+  #
+  # NOTHING WAITS ON THIS, on purpose: it is what shows a pool works before
+  # any job a merge is held to is moved onto it. A pool that is not taking
+  # work leaves this queued and holds nothing up.
+  # ---------------------------------------------------------------------
+  pool-packages:
+    name: "Pool Proof (packages)"
+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # harden-runner does nothing in the estate's pools. What is
+          # declared here is what the pool's own policy is held to, in
+          # scripts/approved-suppliers.yml under `egress:`.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Prove the pool holds
+        uses: $/.github/workflows/pool-proof

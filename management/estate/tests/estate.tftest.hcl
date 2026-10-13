@@ -509,6 +509,29 @@ run "the_estates_credential_is_handed_out_on_the_default_branch_only" {
   }
 }
 
+# A pull request's jobs are sent to the site the config names, and the group
+# their pools join takes the estate's own repository and no other.
+run "a_pull_requests_jobs_go_to_the_site_the_config_names" {
+  command = plan
+
+  override_data {
+    target = data.github_repository.estate
+    values = {
+      repo_id        = 7
+      default_branch = "trunk"
+    }
+  }
+
+  assert {
+    condition     = module.repository["homelab"].pull_request_runners_site == "site0"
+    error_message = "workflows are told a site for a pull request's jobs that is not the one the config names"
+  }
+  assert {
+    condition     = module.pull_request_runners.admits.visibility == "selected" && module.pull_request_runners.admits.repositories == toset([7]) && module.pull_request_runners.admits.name != module.runners.admits.name
+    error_message = "the pull-request pools' group admits a repository that is not the estate's, or is the group the estate's own runners join"
+  }
+}
+
 # Being a member of the organisation gives nothing but reading.
 run "a_member_is_given_nothing_but_reading" {
   command = plan
