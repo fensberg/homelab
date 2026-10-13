@@ -1,0 +1,10 @@
+guard: TestEveryActionAWorkflowUsesIsOneTheRepositoryAllows
+file: management/estate/repository/workflows.tf
+find: "sha_pinning_required = true"
+replace: "sha_pinning_required = false"
+mentions: "from a tag or a branch"
+why: >
+  The list of actions is only a wall while each runs at a full commit: a
+  tag can be moved by whoever holds the action's repository, to code
+  nobody here read. One word turns that off, and the platform says
+  nothing when it is.

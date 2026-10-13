@@ -258,6 +258,8 @@ unprovable:
   # its own ledger entry proves. Its table holds each way to share a group.
   - test: TestAuditConcurrencyCatchesEachWayToShareAGroup
     reason: table
+  - test: TestASettingIsAWallOnlyWhileItHoldsWorkflowsToAListAtACommit
+    reason: table
   #
   # Already a mutation proof in the stronger form: it extracts the task's own
   # cmd from the playbook and runs it against a stub, so it tests what ships
