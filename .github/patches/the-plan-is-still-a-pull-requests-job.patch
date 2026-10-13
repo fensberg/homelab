@@ -1,0 +1,20 @@
+diff --git a/.github/workflows/plan-infrastructure.yml b/.github/workflows/plan-infrastructure.yml
+index e312cbe..35743e1 100644
+--- a/.github/workflows/plan-infrastructure.yml
++++ b/.github/workflows/plan-infrastructure.yml
+@@ -130,9 +130,14 @@ jobs:
+     # A fork's branch plans nothing: the record and the comment are this
+     # repository's. Nor does a change that touches nothing a site is built
+     # from. In the queue there is no pull request to be a fork's.
++    #
++    # The queue is told by its own commit and NOT by the event's name. A
++    # test of the event's name here reads, to the guard that keeps a pull
++    # request's code off the estate's runner, as this job being some other
++    # event's and none of a pull request's; and it stopped looking at it.
+     if: >-
+       needs.sites.outputs.touched == 'true'
+-      && (github.event_name == 'merge_group'
++      && (github.event.merge_group.head_sha != ''
+           || github.event.pull_request.head.repo.full_name == github.repository)
+     # A pull request's code never runs on the estate's runner.
+     runs-on: ubuntu-latest
