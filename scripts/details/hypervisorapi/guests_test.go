@@ -22,8 +22,7 @@ func (h *hypervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	_ = r.ParseForm()
-	h.asked = append(h.asked, strings.TrimSpace(r.Method+" "+r.URL.RequestURI()+" "+r.PostForm.Encode()))
+	h.asked = append(h.asked, r.Method+" "+r.URL.RequestURI())
 	switch {
 	case r.URL.Path == "/cluster/resources":
 		fmt.Fprint(w, `{"data":[{"vmid":7300,"name":"plot-dmz-100","node":"host-a","status":"running","type":"qemu"}]}`)
@@ -53,7 +52,7 @@ func session(t *testing.T, h *hypervisor) Guests {
 	TaskPause = 0
 	server := httptest.NewServer(h)
 	t.Cleanup(server.Close)
-	return Guests{Client: server.Client(), Base: server.URL, Auth: "PVEAPIToken=who!what=value"}
+	return Guests{Client: server.Client(), Base: server.URL, TokenID: "who!what", TokenSecret: "value"}
 }
 
 // What is done to a machine is done on the node that holds it, to that
@@ -76,7 +75,7 @@ func TestAMachineIsStoppedPutBackStartedAndDeletedByTasksThatAreWaitedFor(t *tes
 	want := []string{
 		"GET /cluster/resources?type=vm",
 		"POST /nodes/host-a/qemu/7300/status/stop",
-		"POST /nodes/host-a/qemu/7300/snapshot/" + CleanSnapshot + "/rollback start=0",
+		"POST /nodes/host-a/qemu/7300/snapshot/" + CleanSnapshot + "/rollback",
 		"POST /nodes/host-a/qemu/7300/status/start",
 		"DELETE /nodes/host-a/qemu/7300?purge=1&destroy-unreferenced-disks=1",
 	}
@@ -114,7 +113,7 @@ func TestATaskThatEndsBadlyOrNeverEndsIsNotDone(t *testing.T) {
 		t.Errorf("a task still running when the looking stopped was taken as done: %v", err)
 	}
 
-	g.Auth = "PVEAPIToken=somebody=else"
+	g.TokenSecret = "another"
 	if _, err := g.List(); err == nil {
 		t.Error("a refusal was read as a hypervisor with no machines")
 	}

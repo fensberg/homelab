@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"homelab/details/capacity"
 	"testing"
 
 	"github.com/hashicorp/hcl/v2"
@@ -42,7 +43,7 @@ func TestAZonesMachineIsKeptForItsZoneAndCanBeSentTo(t *testing.T) {
 			if kept.taint != "untrusted-zone=somewhere:NoSchedule" {
 				t.Errorf("%s: a machine in the zone \"somewhere\" is tainted %q, so other work is not kept off it", path, kept.taint)
 			}
-			if len(kept.labels) != 1 || kept.labels["untrusted-zone"] != "somewhere" {
+			if len(kept.labels) != 1 || kept.labels[capacity.UntrustedZone] != "somewhere" {
 				t.Errorf("%s: a machine in the zone \"somewhere\" is labelled %v, so the work meant for it cannot be sent there", path, kept.labels)
 			}
 		}

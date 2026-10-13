@@ -147,7 +147,7 @@ func Take(l Listings, open []string, taken string) (Snapshot, error) {
 	for _, node := range lists["nodes"] {
 		s.Objects = append(s.Objects, kept("v1", "Node",
 			Object{"name": n.of(str(at(node, "metadata", "name"))), "labels": n.values(at(node, "metadata", "labels"))},
-			pruned(Object{"taints": n.taints(at(node, "spec", "taints")), "unschedulable": at(node, "spec", "unschedulable")}),
+			pruned(Object{"taints": n.taints(at(node, "spec", "taints")), Unschedulable: at(node, "spec", Unschedulable)}),
 			"status", pruned(Object{"allocatable": at(node, "status", "allocatable"), "capacity": at(node, "status", "capacity")})))
 	}
 	for _, v := range lists["volumes"] {
@@ -512,3 +512,12 @@ func Unmarshal(raw []byte) (Snapshot, error) {
 	}
 	return s, nil
 }
+
+// Unschedulable is the field of a node that says it takes no new work, and
+// UntrustedZone the label and taint every machine in an untrusted zone
+// carries, whose value is the zone. Both are the cluster's words, read here
+// and by whatever marks or finds such a machine.
+const (
+	Unschedulable = "unschedulable"
+	UntrustedZone = "untrusted-zone"
+)

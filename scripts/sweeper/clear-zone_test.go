@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"homelab/details/capacity"
 	"homelab/details/hypervisorapi"
 )
 
@@ -129,28 +130,28 @@ func did(t *testing.T, e *estate, want ...string) {
 // as a machine started since is it given work again, as clean. A machine
 // beside it that is busy is not touched.
 func TestAQuietUsedMachineIsPutBackAndOnlyThenGivenWork(t *testing.T) {
-	e := &estate{guestNames: []string{"plot-dmz-100", "plot-dmz-101"}, machines: []machine{
-		{Name: "plot-dmz-100", Since: noon.Add(-time.Minute), Boot: "a", Ready: true},
-		{Name: "plot-dmz-101", Since: noon.Add(-time.Minute), Boot: "b", Ready: true, Jobs: 1},
+	e := &estate{guestNames: []string{"yard-dmz-100", "yard-dmz-101"}, machines: []machine{
+		{Name: "yard-dmz-100", Since: noon.Add(-time.Minute), Boot: "a", Ready: true},
+		{Name: "yard-dmz-101", Since: noon.Add(-time.Minute), Boot: "b", Ready: true, Jobs: 1},
 	}}
 	if err := sweeping(e).once(); err != nil {
 		t.Fatal(err)
 	}
-	did(t, e, "mark plot-dmz-100 in use held=true", "stop 7300", "put back 7300", "start 7300", "mark plot-dmz-100 clean held=false")
+	did(t, e, "mark yard-dmz-100 in use held=true", "stop 7300", "put back 7300", "start 7300", "mark yard-dmz-100 clean held=false")
 }
 
 // The two marks before any put back: a machine given its first job is said
 // to be in use, and one in use for its whole time is held back from new
 // work with its job left running.
 func TestAMachineIsMarkedInUseAndHeldBackWhenItsTimeIsUp(t *testing.T) {
-	e := &estate{guestNames: []string{"plot-dmz-100", "plot-dmz-101"}, machines: []machine{
-		{Name: "plot-dmz-100", Jobs: 1, Ready: true},
-		{Name: "plot-dmz-101", Since: noon.Add(-31 * time.Minute), Jobs: 1, Ready: true},
+	e := &estate{guestNames: []string{"yard-dmz-100", "yard-dmz-101"}, machines: []machine{
+		{Name: "yard-dmz-100", Jobs: 1, Ready: true},
+		{Name: "yard-dmz-101", Since: noon.Add(-31 * time.Minute), Jobs: 1, Ready: true},
 	}}
 	if err := sweeping(e).once(); err != nil {
 		t.Fatal(err)
 	}
-	did(t, e, "mark plot-dmz-100 in use held=false", "mark plot-dmz-101 in use held=true")
+	did(t, e, "mark yard-dmz-100 in use held=false", "mark yard-dmz-101 in use held=true")
 	if !e.machines[0].Since.Equal(noon) {
 		t.Errorf("the machine is in use since %v, not since it was seen with a job", e.machines[0].Since)
 	}
@@ -160,13 +161,13 @@ func TestAMachineIsMarkedInUseAndHeldBackWhenItsTimeIsUp(t *testing.T) {
 // to finish: the machine keeps its power, stays held back and in use, and
 // is put back by a later look.
 func TestAJobThatArrivesAsAMachineIsHeldBackIsNotCutOff(t *testing.T) {
-	e := &estate{arrives: true, guestNames: []string{"plot-dmz-100"}, machines: []machine{
-		{Name: "plot-dmz-100", Since: noon.Add(-time.Minute), Boot: "a", Ready: true},
+	e := &estate{arrives: true, guestNames: []string{"yard-dmz-100"}, machines: []machine{
+		{Name: "yard-dmz-100", Since: noon.Add(-time.Minute), Boot: "a", Ready: true},
 	}}
 	if err := sweeping(e).once(); err != nil {
 		t.Fatal(err)
 	}
-	did(t, e, "mark plot-dmz-100 in use held=true")
+	did(t, e, "mark yard-dmz-100 in use held=true")
 }
 
 // A machine that cannot be put back is deleted, and its node with it, by
@@ -175,16 +176,16 @@ func TestAJobThatArrivesAsAMachineIsHeldBackIsNotCutOff(t *testing.T) {
 // and it is never given work.
 func TestAMachineThatCannotBePutBackIsDeleted(t *testing.T) {
 	for name, e := range map[string]*estate{
-		"the rollback fails":    {fail: map[string]error{"put back": errors.New("dataset is busy")}},
+		"the rollback fails":    {fail: map[string]error{"put back": errors.New("the disk would not go back")}},
 		"it does not come back": {staysAway: true},
 	} {
-		e.guestNames = []string{"plot-dmz-100"}
-		e.machines = []machine{{Name: "plot-dmz-100", Since: noon.Add(-time.Minute), Boot: "a", Ready: true}}
+		e.guestNames = []string{"yard-dmz-100"}
+		e.machines = []machine{{Name: "yard-dmz-100", Since: noon.Add(-time.Minute), Boot: "a", Ready: true}}
 		if err := sweeping(e).once(); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		all := strings.Join(e.did, "\n")
-		if !strings.HasSuffix(all, "stop 7300\ndelete 7300\nforget plot-dmz-100") {
+		if !strings.HasSuffix(all, "stop 7300\ndelete 7300\nforget yard-dmz-100") {
 			t.Errorf("%s: the machine was not deleted and forgotten:\n%s", name, all)
 		}
 		if strings.Contains(all, "clean") || strings.Count(all, "put back") > 1 {
@@ -194,12 +195,12 @@ func TestAMachineThatCannotBePutBackIsDeleted(t *testing.T) {
 
 	// A machine the token cannot see is not this program's to delete, and
 	// one that could be neither put back nor deleted is said, held back.
-	unseen := &estate{machines: []machine{{Name: "plot-dmz-100", Since: noon.Add(-time.Minute)}}}
+	unseen := &estate{machines: []machine{{Name: "yard-dmz-100", Since: noon.Add(-time.Minute)}}}
 	if err := sweeping(unseen).once(); err == nil || strings.Contains(strings.Join(unseen.did, " "), "delete") {
 		t.Errorf("a machine the hypervisor does not show was acted on, or passed over in silence: %v %v", err, unseen.did)
 	}
-	stuck := &estate{guestNames: []string{"plot-dmz-100"}, fail: map[string]error{"put back": errors.New("no"), "delete": errors.New("nor this")},
-		machines: []machine{{Name: "plot-dmz-100", Since: noon.Add(-time.Minute)}}}
+	stuck := &estate{guestNames: []string{"yard-dmz-100"}, fail: map[string]error{"put back": errors.New("no"), "delete": errors.New("nor this")},
+		machines: []machine{{Name: "yard-dmz-100", Since: noon.Add(-time.Minute)}}}
 	if err := sweeping(stuck).once(); err == nil || strings.Contains(strings.Join(stuck.did, " "), "clean") || !stuck.machines[0].HeldBack {
 		t.Errorf("a machine that could be neither put back nor deleted was let go: %v %v", err, stuck.did)
 	}
@@ -219,9 +220,9 @@ func TestTheClusterIsReadAndMarkedByItsNodes(t *testing.T) {
 		asked = append(asked, strings.TrimSpace(r.Method+" "+r.URL.RequestURI()+" "+string(body)))
 		switch {
 		case r.URL.Path == "/api/v1/nodes":
-			fmt.Fprintf(w, `{"items":[{"metadata":{"name":"plot-dmz-100","annotations":{%q:"2026-03-04T11:40:00Z"}},
-				"spec":{"unschedulable":true},
-				"status":{"nodeInfo":{"bootID":"b-1"},"conditions":[{"type":"MemoryPressure","status":"False"},{"type":"Ready","status":"True"}]}}]}`, inUseSince)
+			fmt.Fprintf(w, `{"items":[{"metadata":{"name":"yard-dmz-100","annotations":{%q:"2026-03-04T11:40:00Z"}},
+				"spec":{%q:true},
+				"status":{"nodeInfo":{"bootID":"b-1"},"conditions":[{"type":"MemoryPressure","status":"False"},{"type":"Ready","status":"True"}]}}]}`, inUseSince, capacity.Unschedulable)
 		case strings.HasSuffix(r.URL.Path, "/pods"):
 			fmt.Fprint(w, `{"items":[{"status":{"phase":"Running"}},{"status":{"phase":"Pending"}},{"status":{"phase":"Succeeded"}},{"status":{"phase":"Failed"}}]}`)
 		default:
@@ -235,27 +236,27 @@ func TestTheClusterIsReadAndMarkedByItsNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := machine{Name: "plot-dmz-100", Since: noon.Add(-20 * time.Minute), HeldBack: true, Jobs: 2, Boot: "b-1", Ready: true}
+	want := machine{Name: "yard-dmz-100", Since: noon.Add(-20 * time.Minute), HeldBack: true, Jobs: 2, Boot: "b-1", Ready: true}
 	if len(machines) != 1 || machines[0] != want {
 		t.Fatalf("the machines were read as %+v, want %+v", machines, want)
 	}
-	if err := k.Mark("plot-dmz-100", nil, false); err != nil {
+	if err := k.Mark("yard-dmz-100", nil, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := k.Mark("plot-dmz-100", &noon, true); err != nil {
+	if err := k.Mark("yard-dmz-100", &noon, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := k.Forget("plot-dmz-100"); err != nil {
+	if err := k.Forget("yard-dmz-100"); err != nil {
 		t.Fatal(err)
 	}
-	clean, _ := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{inUseSince: nil}}, "spec": map[string]any{"unschedulable": false}})
-	used, _ := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{inUseSince: "2026-03-04T12:00:00Z"}}, "spec": map[string]any{"unschedulable": true}})
+	clean, _ := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{inUseSince: nil}}, "spec": map[string]any{capacity.Unschedulable: false}})
+	used, _ := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{inUseSince: "2026-03-04T12:00:00Z"}}, "spec": map[string]any{capacity.Unschedulable: true}})
 	wantAsked := []string{
 		"GET /api/v1/nodes?labelSelector=" + zoneLabel,
-		"GET /api/v1/namespaces/runners/pods?fieldSelector=spec.nodeName%3Dplot-dmz-100",
-		"PATCH /api/v1/nodes/plot-dmz-100 " + string(clean),
-		"PATCH /api/v1/nodes/plot-dmz-100 " + string(used),
-		"DELETE /api/v1/nodes/plot-dmz-100",
+		"GET /api/v1/namespaces/runners/pods?fieldSelector=spec.nodeName%3Dyard-dmz-100",
+		"PATCH /api/v1/nodes/yard-dmz-100 " + string(clean),
+		"PATCH /api/v1/nodes/yard-dmz-100 " + string(used),
+		"DELETE /api/v1/nodes/yard-dmz-100",
 	}
 	if strings.Join(asked, "\n") != strings.Join(wantAsked, "\n") {
 		t.Errorf("the cluster was asked:\n%s\nwant:\n%s", strings.Join(asked, "\n"), strings.Join(wantAsked, "\n"))

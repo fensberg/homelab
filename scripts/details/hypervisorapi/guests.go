@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 )
 
@@ -39,27 +38,21 @@ var (
 )
 
 // Guests is a session with a hypervisor's API for acting on its machines.
-// Base is the API's address up to and including /api2/json, and Auth the
-// whole Authorization header.
+// Base is the API's address up to and including /api2/json, and the token
+// is the one whose machines these are.
 type Guests struct {
-	Client *http.Client
-	Base   string
-	Auth   string
+	Client      *http.Client
+	Base        string
+	TokenID     string
+	TokenSecret string
 }
 
-func (g Guests) call(method, path string, form url.Values) (json.RawMessage, error) {
-	var body io.Reader
-	if form != nil {
-		body = strings.NewReader(form.Encode())
-	}
-	req, err := http.NewRequest(method, g.Base+path, body)
+func (g Guests) call(method, path string) (json.RawMessage, error) {
+	req, err := http.NewRequest(method, g.Base+path, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", g.Auth)
-	if form != nil {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", g.TokenID, g.TokenSecret))
 	resp, err := g.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%s %s: %w", method, path, err)
@@ -83,7 +76,7 @@ func (g Guests) call(method, path string, form url.Values) (json.RawMessage, err
 
 // List is every machine the token may see.
 func (g Guests) List() ([]Guest, error) {
-	data, err := g.call(http.MethodGet, "/cluster/resources?type=vm", nil)
+	data, err := g.call(http.MethodGet, "/cluster/resources?type=vm")
 	if err != nil {
 		return nil, err
 	}
@@ -97,8 +90,8 @@ func (g Guests) List() ([]Guest, error) {
 // done starts a task and waits for the hypervisor to say it finished well.
 // A task that was accepted is not a task that worked: the hypervisor
 // answers at once with the task's name and does the work afterwards.
-func (g Guests) done(what string, m Guest, method, path string, form url.Values) error {
-	data, err := g.call(method, fmt.Sprintf("/nodes/%s/qemu/%d%s", m.Node, m.ID, path), form)
+func (g Guests) done(what string, m Guest, method, path string) error {
+	data, err := g.call(method, fmt.Sprintf("/nodes/%s/qemu/%d%s", m.Node, m.ID, path))
 	if err != nil {
 		return fmt.Errorf("%s machine %d: %w", what, m.ID, err)
 	}
@@ -107,7 +100,7 @@ func (g Guests) done(what string, m Guest, method, path string, form url.Values)
 		return fmt.Errorf("%s machine %d: the hypervisor named no task to wait for", what, m.ID)
 	}
 	for look := 0; look < TaskLooks; look++ {
-		data, err := g.call(http.MethodGet, fmt.Sprintf("/nodes/%s/tasks/%s/status", m.Node, url.PathEscape(task)), nil)
+		data, err := g.call(http.MethodGet, fmt.Sprintf("/nodes/%s/tasks/%s/status", m.Node, url.PathEscape(task)))
 		if err != nil {
 			return fmt.Errorf("%s machine %d: %w", what, m.ID, err)
 		}
@@ -132,20 +125,21 @@ func (g Guests) done(what string, m Guest, method, path string, form url.Values)
 // Stop cuts a machine's power. Not a shutdown: nothing the machine is
 // running is asked, because what it is running is not trusted to answer.
 func (g Guests) Stop(m Guest) error {
-	return g.done("stopping", m, http.MethodPost, "/status/stop", url.Values{})
+	return g.done("stopping", m, http.MethodPost, "/status/stop")
 }
 
 // Start powers a machine on.
 func (g Guests) Start(m Guest) error {
-	return g.done("starting", m, http.MethodPost, "/status/start", url.Values{})
+	return g.done("starting", m, http.MethodPost, "/status/start")
 }
 
-// PutBack returns a stopped machine's disk to the clean snapshot.
+// PutBack returns a stopped machine's disk to the clean snapshot. The
+// hypervisor leaves the machine stopped unless it is asked to start it.
 func (g Guests) PutBack(m Guest) error {
-	return g.done("putting back", m, http.MethodPost, "/snapshot/"+CleanSnapshot+"/rollback", url.Values{"start": {"0"}})
+	return g.done("putting back", m, http.MethodPost, "/snapshot/"+CleanSnapshot+"/rollback")
 }
 
 // Delete removes a stopped machine and its disks.
 func (g Guests) Delete(m Guest) error {
-	return g.done("deleting", m, http.MethodDelete, "?purge=1&destroy-unreferenced-disks=1", nil)
+	return g.done("deleting", m, http.MethodDelete, "?purge=1&destroy-unreferenced-disks=1")
 }

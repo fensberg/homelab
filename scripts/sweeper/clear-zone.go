@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"homelab/details/capacity"
 	"homelab/details/hypervisorapi"
 )
 
@@ -54,10 +55,10 @@ import (
 // a sweeper that starts again knows what the last one knew, and so that it
 // outlives the machine being put back: the node is the cluster's record,
 // and is not on the machine's disk.
-const inUseSince = "untrusted-zone/in-use-since"
+const inUseSince = capacity.UntrustedZone + "/in-use-since"
 
 // zoneLabel is the label every machine in an untrusted zone carries.
-const zoneLabel = "untrusted-zone"
+const zoneLabel = capacity.UntrustedZone
 
 // machine is one untrusted machine as the cluster sees it at one moment.
 type machine struct {
@@ -281,56 +282,52 @@ func (k kube) call(method, path, contentType string, body []byte, into any) erro
 	return nil
 }
 
-func (k kube) Machines() ([]machine, error) {
-	var nodes struct {
-		Items []struct {
-			Metadata struct {
-				Name        string            `json:"name"`
-				Annotations map[string]string `json:"annotations"`
-			} `json:"metadata"`
-			Spec struct {
-				Unschedulable bool `json:"unschedulable"`
-			} `json:"spec"`
-			Status struct {
-				NodeInfo struct {
-					BootID string `json:"bootID"`
-				} `json:"nodeInfo"`
-				Conditions []struct {
-					Type   string `json:"type"`
-					Status string `json:"status"`
-				} `json:"conditions"`
-			} `json:"status"`
-		} `json:"items"`
+// at walks an answer by its keys, and is nil where the path is not there.
+func at(v any, keys ...string) any {
+	for _, key := range keys {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return nil
+		}
+		v = m[key]
 	}
+	return v
+}
+
+func (k kube) Machines() ([]machine, error) {
+	var nodes map[string]any
 	if err := k.call(http.MethodGet, "/api/v1/nodes?labelSelector="+url.QueryEscape(zoneLabel), "", nil, &nodes); err != nil {
 		return nil, err
 	}
+	list, _ := at(nodes, "items").([]any)
 	var out []machine
-	for _, n := range nodes.Items {
-		m := machine{Name: n.Metadata.Name, HeldBack: n.Spec.Unschedulable, Boot: n.Status.NodeInfo.BootID}
-		for _, c := range n.Status.Conditions {
-			m.Ready = m.Ready || (c.Type == "Ready" && c.Status == "True")
+	for _, n := range list {
+		m := machine{}
+		m.Name, _ = at(n, "metadata", "name").(string)
+		m.HeldBack, _ = at(n, "spec", capacity.Unschedulable).(bool)
+		m.Boot, _ = at(n, "status", "nodeInfo", "bootID").(string)
+		if m.Name == "" {
+			return nil, errors.New("the cluster listed a node with no name")
 		}
-		if at := n.Metadata.Annotations[inUseSince]; at != "" {
-			since, err := time.Parse(time.RFC3339, at)
+		conditions, _ := at(n, "status", "conditions").([]any)
+		for _, c := range conditions {
+			m.Ready = m.Ready || (at(c, "type") == "Ready" && at(c, "status") == "True")
+		}
+		if stamp, _ := at(n, "metadata", "annotations", inUseSince).(string); stamp != "" {
+			since, err := time.Parse(time.RFC3339, stamp)
 			if err != nil {
-				return nil, fmt.Errorf("%s says it has been in use since %q, which is not a time; it is not this program that wrote that", m.Name, at)
+				return nil, fmt.Errorf("%s says it has been in use since %q, which is not a time; it is not this program that wrote that", m.Name, stamp)
 			}
 			m.Since = since
 		}
-		var pods struct {
-			Items []struct {
-				Status struct {
-					Phase string `json:"phase"`
-				} `json:"status"`
-			} `json:"items"`
-		}
+		var pods map[string]any
 		path := "/api/v1/namespaces/" + k.namespace + "/pods?fieldSelector=" + url.QueryEscape("spec.nodeName="+m.Name)
 		if err := k.call(http.MethodGet, path, "", nil, &pods); err != nil {
 			return nil, err
 		}
-		for _, p := range pods.Items {
-			if p.Status.Phase != "Succeeded" && p.Status.Phase != "Failed" {
+		running, _ := at(pods, "items").([]any)
+		for _, p := range running {
+			if state := at(p, "status", "phase"); state != "Succeeded" && state != "Failed" {
 				m.Jobs++
 			}
 		}
@@ -346,7 +343,7 @@ func (k kube) Mark(name string, since *time.Time, heldBack bool) error {
 	}
 	patch, err := json.Marshal(map[string]any{
 		"metadata": map[string]any{"annotations": map[string]any{inUseSince: at}},
-		"spec":     map[string]any{"unschedulable": heldBack},
+		"spec":     map[string]any{capacity.Unschedulable: heldBack},
 	})
 	if err != nil {
 		return err
@@ -410,7 +407,7 @@ func clearZone(args []string) int {
 	}
 	s := sweep{
 		cluster:    k,
-		hypervisor: hypervisorapi.Guests{Client: client, Base: address, Auth: "PVEAPIToken=" + id + "=" + secret},
+		hypervisor: hypervisorapi.Guests{Client: client, Base: address, TokenID: id, TokenSecret: secret},
 		most:       *most,
 		now:        time.Now,
 		back:       5 * time.Minute,
