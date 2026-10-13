@@ -447,6 +447,17 @@ run "a_workflows_token_reads_and_approves_nothing" {
   }
 }
 
+# No rule the estate sets on a repository's branches and tags has anybody
+# who may pass it by.
+run "nobody_passes_a_rule_on_the_repository_by" {
+  command = plan
+
+  assert {
+    condition     = length(module.repository["homelab"].rules) == 4 && alltrue([for name, passers in module.repository["homelab"].rules : passers == 0])
+    error_message = "somebody may pass a rule on the repository's branches by"
+  }
+}
+
 run "a_source_control_this_does_not_implement_is_refused" {
   command = plan
 

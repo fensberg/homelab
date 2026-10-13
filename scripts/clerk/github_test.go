@@ -2,13 +2,10 @@ package main
 
 import (
 	"crypto"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -18,16 +15,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"homelab/details/ghapi/ghapitest"
 )
 
 func testKeyPair(t *testing.T) (*rsa.PrivateKey, string) {
 	t.Helper()
-	k, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("generating a key: %v", err)
-	}
-	der := x509.MarshalPKCS1PrivateKey(k)
-	block := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
+	k, block := ghapitest.Key(t)
 	return k, base64.StdEncoding.EncodeToString(block)
 }
 

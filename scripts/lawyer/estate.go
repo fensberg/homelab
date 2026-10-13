@@ -13,6 +13,7 @@ import (
 
 	cf "homelab/details/cloudflare"
 	"homelab/details/console"
+	"homelab/details/ghapi"
 	"homelab/details/onepassword"
 	"homelab/details/procenv"
 	"homelab/details/repopath"
@@ -46,6 +47,12 @@ type config struct {
 		APIToken      string `json:"api_token"`
 		Members       string `json:"members"`
 	} `json:"access"`
+	// The estate's organisation at its source control, and the App that
+	// administers it.
+	SourceControl struct {
+		URL string `json:"url"`
+		ghapi.AppCredential
+	} `json:"source_control"`
 	State struct {
 		Bucket          string `json:"bucket"`
 		AccessKeyID     string `json:"access_key_id"`
@@ -69,10 +76,17 @@ func (c config) validate() error {
 		"state/bucket":            c.State.Bucket,
 		"state/access_key_id":     c.State.AccessKeyID,
 		"state/secret_access_key": c.State.SecretAccessKey,
+
+		"source-control/app_id":          c.SourceControl.AppID,
+		"source-control/installation_id": c.SourceControl.InstallationID,
+		"source-control/private_key":     c.SourceControl.PrivateKey,
 	} {
 		if strings.TrimSpace(v) == "" {
 			return fmt.Errorf("%s in the estate vault is empty", field)
 		}
+	}
+	if _, err := c.sourceControl(); err != nil {
+		return err
 	}
 	if strings.TrimSpace(c.Organization.Name) == "" {
 		return errors.New("organization/name in the estate-shared vault is empty, and it names every bucket the estate creates")
@@ -165,14 +179,21 @@ func execute(verb string) error {
 		if connected > 0 {
 			return fmt.Errorf("%d site tunnel(s) have a connector serving them, so a site stands on the estate. Demolish each with `contractor demolish-site` first", connected)
 		}
-		if err := e.releaseBuckets(); err != nil {
+		if err := e.releaseWhatOutlives(); err != nil {
 			return err
 		}
 		return e.run("destroy", "-input=false", "-auto-approve")
 	}
 
+	source, err := e.cfg.sourceControl()
+	if err != nil {
+		return err
+	}
 	if verb == "plan-estate" {
 		console.Phase("Plan", "Show what a converge would change, and change nothing.")
+		if err := e.adoptRulesets(source.rulesets); err != nil {
+			return err
+		}
 		return e.plan()
 	}
 
@@ -181,6 +202,9 @@ func execute(verb string) error {
 		return err
 	}
 	if err := e.adoptBuckets(api); err != nil {
+		return err
+	}
+	if err := e.adoptRulesets(source.rulesets); err != nil {
 		return err
 	}
 	if err := e.run("apply", "-input=false", "-auto-approve"); err != nil {
@@ -365,7 +389,7 @@ func (e *estate) tofuOutput(args ...string) (string, error) {
 // sterilize removes what the run wrote that holds or points at a secret: the
 // rendered config, and the backend record tofu init keeps beside the root.
 func (e *estate) sterilize() {
-	for _, path := range []string{e.rendered, filepath.Join(e.dir, ".terraform", "terraform.tfstate"), filepath.Join(e.dir, "estate.tfplan")} {
+	for _, path := range []string{e.rendered, filepath.Join(e.dir, ".terraform", "terraform.tfstate"), filepath.Join(e.dir, "estate.tfplan"), filepath.Join(e.dir, adoptionsFile)} {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			console.Warn(fmt.Sprintf("could not remove %s: %v", filepath.Base(path), err))
 		}

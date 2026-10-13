@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"homelab/details/ghapi"
 )
 
 // The estate's objects are declared in the estate's root and nowhere else.
@@ -59,6 +61,8 @@ var estateTypes = map[string]bool{
 	// organisation, and a site has none.
 	"github_actions_repository_permissions":  true,
 	"github_workflow_repository_permissions": true,
+	// What may be pushed to a repository's branches and tags.
+	ghapi.RulesetType: true,
 }
 
 const estateRoot = "management/estate"

@@ -122,6 +122,33 @@ the same timer. The estate's credentials are then used by a job on the
 estate's runner where they had only been in the operator's shell, which
 the operator agreed to knowingly.
 
+### What is set at the source control outlives the estate (decided 2026-10-13)
+
+The repository is where the estate is declared, and its walls stand whether
+or not an estate does. So they are treated as the buckets are:
+
+- **A demolish releases them.** Everything the estate set at its source
+  control is taken out of the estate's record before the destroy, so the
+  destroy cannot reach it. Before this, demolishing the estate would have
+  taken the repository's walls down with it.
+- **A build adopts them.** The rules on the repository's branches were made
+  by hand before any of this. The lawyer asks the source control which
+  stand, by name, with the estate's own App, and the estate takes those as
+  its own. One that does not stand is made.
+- **The adoption is written for one run.** The lawyer writes import blocks
+  beside the root and removes them when the run ends. An import in git was
+  the standard way and was not open: OpenTofu refuses an import under the
+  mocked providers the estate's own tests run with. And an import by
+  command changes the estate's record, which a plan must not. Written this
+  way `plan-estate` shows what a converge would alter in what it adopts.
+- **Nobody passes the required checks by.** One person could, always. A
+  check that is broken is mended.
+
+Not yet set from here: the rule that a change is reviewed. One App may pass
+it by, which is how a pin or a delivery merges, and the estate's config does
+not yet say which App; and one switch of that rule has no word in the
+provider.
+
 ### The estate's Apps are declared, and made by one click (decided 2026-10-13, not built)
 
 The estate acts at its source control as five parties, each an App or a
