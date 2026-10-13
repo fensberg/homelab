@@ -432,6 +432,21 @@ run "the_estate_reads_its_own_organisation_and_repository" {
   }
 }
 
+# What the estate sets, it sets on its own repository; and the token a
+# workflow is handed for asking nothing can read and cannot approve.
+run "a_workflows_token_reads_and_approves_nothing" {
+  command = plan
+
+  assert {
+    condition     = module.repository["homelab"].walls.a_workflows_token == "read" && module.repository["homelab"].walls.a_workflow_may_approve == false
+    error_message = "a workflow that asks for nothing is handed a token that can write, or one that can approve a pull request"
+  }
+  assert {
+    condition     = keys(module.repository) == ["homelab"] && module.repository["homelab"].walls.repository == "homelab" && module.repository["homelab"].walls.actions_set_on == "homelab"
+    error_message = "the estate set what workflows may do on a repository that is not its own"
+  }
+}
+
 run "a_source_control_this_does_not_implement_is_refused" {
   command = plan
 

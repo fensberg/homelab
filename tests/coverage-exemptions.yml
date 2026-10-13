@@ -155,7 +155,7 @@ files:
     uncovered: 4
     covered_by: nothing
   - path: lawyer/estate.go
-    uncovered: 7
+    uncovered: 6
     covered_by: nothing
 
   # --- covered_by: not-worth-testing -----------------------------------

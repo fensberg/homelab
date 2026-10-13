@@ -24,6 +24,8 @@ func TestEachVerbRefusesTheEstateItWasNotMeantFor(t *testing.T) {
 		{"converge-estate", nil, "Use build-estate"},
 		{"demolish-estate", standing, ""},
 		{"demolish-estate", nil, "Use build-estate"},
+		{"plan-estate", standing, ""},
+		{"plan-estate", nil, "Use build-estate"},
 	} {
 		err := admit(c.verb, c.resources)
 		switch {
