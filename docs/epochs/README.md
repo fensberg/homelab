@@ -78,6 +78,7 @@ earlier epoch whose decisions you are about to touch.
 | 08  | Agent Roles            | `.github/`, `scripts/`                | In progress | [08-agent-roles.md](08-agent-roles.md)                     |
 | 09  | Access                 | `management/estate/`                  | Not started | [09-access.md](09-access.md)                               |
 | 11  | Black Box, White Glove | an estate for each client             | Not started | [11-black-box-white-glove.md](11-black-box-white-glove.md) |
+| 12  | Vendor Account         | `management/estate/`                  | Not started | [12-vendor-account.md](12-vendor-account.md)               |
 
 ## Working an epoch
 
