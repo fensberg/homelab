@@ -150,6 +150,11 @@ tasks:
     cmds:
       - go run -C scripts/lawyer . build-estate
 
+  plan-estate:
+    desc: "Show what converge-estate would change, and change nothing"
+    cmds:
+      - go run -C scripts/lawyer . plan-estate
+
   converge-estate:
     desc: "Apply management/estate/ to the estate that stands"
     cmds:

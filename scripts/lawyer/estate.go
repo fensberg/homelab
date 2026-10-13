@@ -98,7 +98,7 @@ func admit(verb string, resources []string) error {
 		if len(resources) > 0 {
 			return fmt.Errorf("the estate stands: its state holds %d resource(s). Use converge-estate", len(resources))
 		}
-	case "converge-estate", "demolish-estate":
+	case "plan-estate", "converge-estate", "demolish-estate":
 		if len(resources) == 0 {
 			return errors.New("there is no estate: its state is empty. Use build-estate")
 		}
@@ -169,6 +169,11 @@ func execute(verb string) error {
 			return err
 		}
 		return e.run("destroy", "-input=false", "-auto-approve")
+	}
+
+	if verb == "plan-estate" {
+		console.Phase("Plan", "Show what a converge would change, and change nothing.")
+		return e.plan()
 	}
 
 	console.Phase("Apply", "Bring the estate to what management/estate/ declares.")
@@ -360,7 +365,7 @@ func (e *estate) tofuOutput(args ...string) (string, error) {
 // sterilize removes what the run wrote that holds or points at a secret: the
 // rendered config, and the backend record tofu init keeps beside the root.
 func (e *estate) sterilize() {
-	for _, path := range []string{e.rendered, filepath.Join(e.dir, ".terraform", "terraform.tfstate")} {
+	for _, path := range []string{e.rendered, filepath.Join(e.dir, ".terraform", "terraform.tfstate"), filepath.Join(e.dir, "estate.tfplan")} {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			console.Warn(fmt.Sprintf("could not remove %s: %v", filepath.Base(path), err))
 		}

@@ -26,7 +26,7 @@ import (
 	"homelab/details/console"
 )
 
-var knownVerbs = []string{"build-estate", "converge-estate", "demolish-estate"}
+var knownVerbs = []string{"build-estate", "plan-estate", "converge-estate", "demolish-estate"}
 
 const usage = `lawyer holds the estate every site stands on.
 
@@ -35,6 +35,9 @@ usage: lawyer <verb> [flags]
 verbs:
   build-estate     Establish an estate that does not exist yet. Refuses when
                    the estate's state already holds anything.
+  plan-estate      Show what converge-estate would change, and change
+                   nothing: each thing by its address and what would be done
+                   to it, and never a value. Refuses when there is no estate.
   converge-estate  Apply the estate's declarations to the estate that stands.
                    Refuses when there is no estate to converge.
   demolish-estate  Tear the estate down. Refuses while any site stands, and
