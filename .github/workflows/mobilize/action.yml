@@ -62,6 +62,14 @@ inputs:
     required: false
     default: "1"
 
+outputs:
+  held:
+    description: >-
+      "true" where sudo was to be removed and is, "false" where it was to be
+      and is not, and nothing for a job that keeps it. For a lane that proves
+      the block, which has nothing to prove on a runner that is not held.
+    value: ${{ steps.held.outputs.held }}
+
 runs:
   using: composite
   steps:
@@ -97,7 +105,18 @@ runs:
     # Only where sudo was to be removed. A job that keeps it says why beside
     # its entry in scripts/approved-suppliers.yml, and a runner on the estate
     # is not hardened by this at all.
-    - name: This runner is held, or the job stops
+    # SAID, AND NOT YET STOPPED FOR. This stopped the job, and about one of
+    # GitHub's runners in eight is not held (#725), so most runs had a job
+    # stopped and nothing could be merged without running jobs again -
+    # the changes that move these jobs onto the estate's own runners among
+    # them (#559). The operator loosened it for as long as that takes: a
+    # runner that is not held is said, loudly and with why, and the job
+    # goes on as it did before anything looked. It is not safer than it
+    # was; it is no longer silent. When a pull request's jobs run on the
+    # estate's runners this step has nothing left to look at there, and
+    # for whatever still runs on GitHub's it goes back to stopping.
+    - name: Whether this runner is held
+      id: held
       if: inputs.disable-sudo-and-containers == 'true'
       shell: bash
       run: |
@@ -130,8 +149,10 @@ runs:
           sudo systemctl status agent --no-pager 2>&1 | head -20 || true
           sudo journalctl -u agent --no-pager -n 40 2>&1 || true
           echo "::endgroup::"
-          echo "::error::sudo still works on this runner after it was to be removed, so what hardens the runner did not start here: nothing blocks what this job reaches, and a later step could switch enforcement off. Run the job again; it gets another runner."
-          exit 1
+          echo "::warning::THIS JOB RAN WITH NOTHING HELD. Sudo still works on this runner after it was to be removed, so what hardens the runner did not start here: nothing blocked what this job reached. The cause is known (#725) and the job was let go on by the operator's decision, until pull requests run on the estate's own runners (#559)."
+          echo "held=false" >>"$GITHUB_OUTPUT"
+        else
+          echo "held=true" >>"$GITHUB_OUTPUT"
         fi
 
     - name: Refuse an unrecognised value

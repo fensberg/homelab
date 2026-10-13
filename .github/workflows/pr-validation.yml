@@ -1494,6 +1494,7 @@ jobs:
       ALLOWED: https://github.com
     steps:
       - name: Mobilize
+        id: mobilize
         uses: $/.github/workflows/mobilize
         with:
           # Owned by scripts/approved-suppliers.yml under `egress:`, which says
@@ -1514,7 +1515,19 @@ jobs:
       # The protection that makes a block stay a block. With sudo, any later
       # step in a job can stop harden-runner's agent or flush its rules and
       # then call out (#410).
+      # Nothing to prove on a runner that is not held. About one of GitHub's
+      # in eight is not (#725), mobilize says so, and this lane's three
+      # proofs would each fail there for that one reason and not for
+      # anything a pull request did. So they are asked of a runner that is
+      # held, and one that is not says it proved nothing. Loosened with the
+      # check in mobilize, and for as long.
+      - name: Nothing is proved on a runner that is not held
+        if: steps.mobilize.outputs.held != 'true'
+        run: |
+          echo "::warning::The egress proof proved nothing on this run: its runner was not held (#725)."
+
       - name: Sudo is gone
+        if: steps.mobilize.outputs.held == 'true'
         run: |
           if sudo -n true 2>/dev/null; then
             echo "::error::sudo still works after mobilize with disable-sudo-and-containers: \"true\". Any step in a blocking job could switch egress enforcement off."
@@ -1523,6 +1536,7 @@ jobs:
           echo "sudo is refused, so no later step can dismantle enforcement."
 
       - name: An allowed host answers
+        if: steps.mobilize.outputs.held == 'true'
         run: |
           if ! curl --silent --show-error --max-time 20 --output /dev/null "$ALLOWED"; then
             echo "::error::$ALLOWED is on this job's allowlist and did not answer. The block is refusing everything, so a refused probe below would not show that it refuses selectively."
@@ -1530,6 +1544,7 @@ jobs:
           fi
 
       - name: The probe host is refused
+        if: steps.mobilize.outputs.held == 'true'
         run: |
           if curl --silent --show-error --max-time 20 --output /dev/null "$PROBE"; then
             echo "::error::$PROBE answered under egress-policy: block through mobilize. harden-runner's policy was not installed, so every job in this repository is unwatched while reporting green."
