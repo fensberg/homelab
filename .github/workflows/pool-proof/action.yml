@@ -67,6 +67,25 @@ runs:
         fi
         echo "the cluster's API was refused"
 
+    # The resolver is the one thing in the cluster a runner speaks to, and
+    # only to ask it names. Its other port answers whoever can reach it, so
+    # reaching it would mean a runner reaches what is in the cluster on a
+    # port nobody declared.
+    - name: Nothing else in the cluster is reached
+      shell: bash
+      run: |
+        set -euo pipefail
+        resolver="$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf)"
+        if [ -z "${resolver}" ]; then
+          echo "::error::the runner has no resolver to try, so this proved nothing"
+          exit 1
+        fi
+        if curl --silent --max-time 10 --output /dev/null "http://${resolver}:9153/metrics"; then
+          echo "::error::the cluster's resolver answered on a port that is not the one names are asked on. A runner reaches something inside the cluster that nobody declared."
+          exit 1
+        fi
+        echo "the resolver's other port was refused"
+
     - name: No token of the cluster's is in the runner
       shell: bash
       run: |
