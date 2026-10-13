@@ -1,6 +1,8 @@
 package phases
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,9 +10,11 @@ import (
 	"strings"
 
 	"homelab/contractor/config"
+	"homelab/contractor/internal/budget"
 	"homelab/contractor/internal/run"
 	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
+	"homelab/details/hypervisorapi"
 	"homelab/details/platform"
 )
 
@@ -77,6 +81,10 @@ func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu, unreleas
 	if err != nil {
 		return err
 	}
+	refused, err := heldToTheRecordedHardware(ctx.Site, recordDir, tpl)
+	if err != nil {
+		return err
+	}
 	merging, err := planRoots(ctx, recordDir, tpl, tofu, "")
 	if err != nil {
 		return err
@@ -95,6 +103,12 @@ func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu, unreleas
 	if adopted != merging {
 		summary = fmt.Sprintf("%s\n\n%s\n\n%s", strings.TrimRight(merging, "\n"), onceAdopted(ctx.Site), adopted)
 	}
+	// A change its hypervisor cannot hold leads with that, above the plan:
+	// the plan below is of a converge that would be refused before it
+	// built anything.
+	if refused != "" {
+		summary = fmt.Sprintf("REFUSED: %s.\n\nA converge of this change stops here, before it builds anything.\n\n%s", refused, summary)
+	}
 	fmt.Println()
 	fmt.Println(summary)
 	if ctx.CommentOut != "" {
@@ -103,7 +117,76 @@ func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu, unreleas
 			return fmt.Errorf("writing the comment body: %w", err)
 		}
 	}
+	if refused != "" {
+		return errors.New(refused)
+	}
 	return nil
+}
+
+// heldToTheRecordedHardware holds the site's machines, as this change plans
+// them, against what the record says its hypervisors have, and returns the
+// refusal a converge would give.
+//
+// A converge asks the hypervisor and refuses a site that asks for more
+// memory than it can give. A pull request's plan can ask no hypervisor
+// anything, and said nothing: a change that added a machine the hypervisor
+// had no room for was planned, approved and merged, and refused only by the
+// converge that followed, with main left declaring a machine that could not
+// be built. But the record carries what the hypervisor had at the last
+// converge, which is everything the sum needs. So the same sum is done
+// here, with the same words.
+//
+// The site is read as the plan itself reads it: this change's template,
+// with the record's stand-in for everything the vault holds. What a machine
+// asks comes from how many there are and of what kind, which the template
+// says in the open; nothing the sum needs is in the vault.
+//
+// A record taken before the hardware was ever read holds none, and nothing
+// is held against it: the root's own default stands, as it does for a plan.
+func heldToTheRecordedHardware(site, recordDir string, tpl []byte) (refused string, err error) {
+	state, recordedConfig, _, err := asbuilt.Read(filepath.Join(recordDir, config.ClusterRoot))
+	if err != nil {
+		return "", err
+	}
+	facts, err := asbuilt.OutputVars(state, hardwareInput)
+	if err != nil || facts[hardwareInput] == "" {
+		return "", nil
+	}
+	var recorded struct {
+		Nodes map[string]hypervisorapi.Host `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(facts[hardwareInput]), &recorded); err != nil {
+		return "", fmt.Errorf("the record's hardware cannot be read, so the site cannot be held against it: %w", err)
+	}
+	// The config the plan itself is made with: this change's template,
+	// and the record's stand-in for everything the vault holds.
+	_, filled, err := asbuilt.ConfigAgainst(tpl, recordedConfig)
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(filled)
+	if err != nil {
+		return "", err
+	}
+	var cfg config.Config
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return "", fmt.Errorf("the config cannot be read as a site's, so it cannot be held against its hardware: %w", err)
+	}
+	planned, err := config.ResolveSiteNetwork(&cfg, site)
+	if err != nil {
+		return "", err
+	}
+	lines, err := budget.Of(recorded.Nodes, planned)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range lines {
+		run.Info(line.String())
+	}
+	if refusal := budget.Refusal(lines); refusal != nil {
+		return refusal.Error(), nil
+	}
+	return "", nil
 }
 
 // onceAdopted is the line between the two plans. Said only when they differ:

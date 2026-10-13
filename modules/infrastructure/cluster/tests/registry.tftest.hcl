@@ -229,3 +229,18 @@ run "negative_zone_node_count_fails_its_precondition" {
 
   expect_failures = [terraform_data.invariants]
 }
+
+# A site with an untrusted zone is a valid site. What its machine is given
+# to keep it for the zone is held by tests/go/repo, which can evaluate it; a
+# plan narrowed to the invariants leaves it unknown.
+run "a_zones_machine_is_kept_for_its_zone_and_can_be_sent_to" {
+  command = plan
+
+  variables {
+    config_path = "./tests/fixtures/a-zone.json"
+  }
+
+  plan_options {
+    target = [terraform_data.invariants]
+  }
+}

@@ -116,6 +116,16 @@ Nothing has been changed. (%w)`, hypervisorapi.AuthorityRef(ctx.Site), ctx.Site,
 	//
 	// Gated on TakenOverOK so it runs on a converge and not on an ignition,
 	// which starts from an empty state where there is nothing to rename.
+	//
+	// And the hardware is held against the site BEFORE it: settling writes
+	// state, and a site its hypervisor cannot hold is refused having changed
+	// nothing. Asked after, the refusal was true and the converge's own
+	// verdict said otherwise - "it had already written to the estate's
+	// state" - because the settling had moved the state's serial. So no
+	// revert was offered for a merge that could never be built.
+	if err := handOverHardware(ctx); err != nil {
+		return err
+	}
 	if ctx.TakenOverOK {
 		if err := run.SettleMoves(ctx); err != nil {
 			return err
