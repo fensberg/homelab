@@ -156,6 +156,23 @@ One switch of the review rule has no word in the provider: an extra
 approval for a change nobody is attributed with. It is on, set by hand, and
 stays on while a plan shows no change to that rule.
 
+### The estate's runners take only named workflows, from the default branch (decided 2026-10-13)
+
+A runner of the estate's is a machine inside it. Which work may reach one
+was whatever a workflow file asked for, held back by a guard in this
+repository and by review. It is now also the platform's to refuse: the
+runners' group admits the estate's own repository, and of it only the
+workflows that converge a site and that test against one, each as it is on
+the default branch. A workflow changed on another branch, or started by hand
+from one, is given no runner.
+
+The group existed and is adopted by name, as the rulesets are.
+
+**Applying on a timer is deferred.** The settings at the source control are
+to be applied on every merge; applying them again on a timer, and the alert
+for an apply that had to change something, are put off (#535, #549). Until
+the merge-time apply is built a converge of the estate is run by hand.
+
 ### The estate's Apps are declared, and made by one click (decided 2026-10-13, not built)
 
 The estate acts at its source control as five parties, each an App or a

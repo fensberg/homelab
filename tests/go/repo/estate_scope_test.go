@@ -65,6 +65,8 @@ var estateTypes = map[string]bool{
 	ghapi.RulesetType: true,
 	// What a member of the organisation may do for being one.
 	ghapi.OrganisationSettingsType: true,
+	// Which repositories and workflows may use the estate's own runners.
+	ghapi.RunnerGroupType: true,
 }
 
 const estateRoot = "management/estate"

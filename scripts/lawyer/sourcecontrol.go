@@ -67,6 +67,29 @@ func (s sourceControl) rulesets(repository string) (map[string]int64, error) {
 	return out, nil
 }
 
+// runnerGroups is the number of every group of self-hosted runners the
+// organisation holds, by its name.
+func (s sourceControl) runnerGroups() (map[string]int64, error) {
+	token, err := s.app.Token(time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("signing in as the estate's App: %w", err)
+	}
+	answer, err := ghapi.Get[struct {
+		Groups []struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+		} `json:"runner_groups"`
+	}](sourceControlBase, token, "/orgs/"+s.owner+"/actions/runner-groups?per_page=100")
+	if err != nil {
+		return nil, fmt.Errorf("listing the organisation's runner groups: %w. The estate's App may lack the permission to administer the organisation's self-hosted runners", err)
+	}
+	out := map[string]int64{}
+	for _, g := range answer.Groups {
+		out[g.Name] = g.ID
+	}
+	return out, nil
+}
+
 // organisation is the platform's number for the estate's organisation.
 func (s sourceControl) organisation() (int64, error) {
 	token, err := s.app.Token(time.Now())
@@ -89,6 +112,7 @@ func (s sourceControl) organisation() (int64, error) {
 // stands there.
 type standing interface {
 	rulesets(repository string) (map[string]int64, error)
+	runnerGroups() (map[string]int64, error)
 	organisation() (int64, error)
 }
 
@@ -138,7 +162,8 @@ func plannedOrganisations(showJSON []byte) ([]string, error) {
 
 // adoptSourceControl has the estate take as its own what it declares at its
 // source control that already stands there: every ruleset the repository
-// holds under the same name, and the organisation's settings.
+// holds under the same name, every group of runners the organisation holds
+// under the same name, and the organisation's settings.
 //
 // THE ORGANISATION'S SETTINGS ARE ALWAYS ADOPTED AND NEVER MADE. They exist
 // for as long as the organisation does, and making them writes every field
@@ -187,6 +212,24 @@ func (e *estate) adoptSourceControl(there standing) error {
 		}
 		console.Info("adopting a ruleset that already stands: " + w.address)
 		fmt.Fprintf(&blocks, "import {\n  to = %s\n  id = %s\n}\n", w.address, strconv.Quote(w.repository+":"+strconv.FormatInt(id, 10)))
+	}
+	groups, err := plannedCreates([]byte(shown), ghapi.RunnerGroupType)
+	if err != nil {
+		return err
+	}
+	if len(groups) > 0 {
+		standing, err := there.runnerGroups()
+		if err != nil {
+			return err
+		}
+		for _, name := range sortedKeys(groups) {
+			id, stands := standing[name]
+			if !stands {
+				continue
+			}
+			console.Info("adopting a group of runners that already stands: " + groups[name])
+			fmt.Fprintf(&blocks, "import {\n  to = %s\n  id = %s\n}\n", groups[name], strconv.Quote(strconv.FormatInt(id, 10)))
+		}
 	}
 	for _, address := range organisations {
 		id, err := there.organisation()

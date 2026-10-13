@@ -152,7 +152,7 @@ files:
   # which planned bucket already exists, which addresses are buckets, how the
   # grants output reads - is extracted and unit-tested in grants_test.go.
   - path: lawyer/grants.go
-    uncovered: 4
+    uncovered: 3
     covered_by: nothing
   - path: lawyer/estate.go
     uncovered: 6

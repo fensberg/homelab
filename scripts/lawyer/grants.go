@@ -68,7 +68,7 @@ func plannedCreates(showJSON []byte, resourceType string) (map[string]string, er
 		}
 		name, ok := rc.AfterString("name")
 		if !ok || name == "" {
-			return nil, fmt.Errorf("the plan creates %s without a known name, so it cannot be matched to a bucket that already exists", rc.Address)
+			return nil, fmt.Errorf("the plan creates %s without a known name, so it cannot be matched to one that already exists", rc.Address)
 		}
 		out[name] = rc.Address
 	}
