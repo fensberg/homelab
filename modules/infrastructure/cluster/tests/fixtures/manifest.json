@@ -132,6 +132,13 @@
       "valid": false,
       "go_error_contains": "node_count",
       "because": "A zone with no node_count means one machine, so the count cannot be required to be positive. Negative is the meaningless value and would otherwise reach range() in variables.tf, exactly as a negative worker count would."
+    },
+    {
+      "name": "a_zones_machine_is_kept_for_its_zone_and_can_be_sent_to",
+      "fixture": "a-zone.json",
+      "site": "site0",
+      "valid": true,
+      "because": "A site with an untrusted zone is a valid site, and its machine has to be both closed to other work and findable by the work meant for it."
     }
   ]
 }
