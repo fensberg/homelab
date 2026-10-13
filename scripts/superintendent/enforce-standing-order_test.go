@@ -8,6 +8,7 @@ import (
 
 	"homelab/details/applications"
 	"homelab/details/files"
+	"homelab/details/platform"
 )
 
 // An application as the tests declare one: kept on its supplier's build,
@@ -270,5 +271,40 @@ func TestIsDeliveryAcceptsOnlyPinLines(t *testing.T) {
 	// A file that cannot be read at either end is not a delivery.
 	if isDelivery([]string{f}, pattern, func(string) (string, string, error) { return "", "", errors.New("the commit is not there") }) {
 		t.Error("a file that could not be read was taken for a delivery")
+	}
+}
+
+// A release of the platform passes on the pull request, so a person can
+// merge it, and is refused for a merge without review whatever it changes.
+// One that changes anything but the sites' lines is not a delivery at all.
+func TestAReleaseOfThePlatformPassesForAPersonAndIsNeverMergedWithoutOne(t *testing.T) {
+	git := gitRepo(t)
+	write := func(version string, d byte, extra string) {
+		writeFile(t, platform.VersionsFile, "{\n  \"north\": {\n    \"platform\": \""+version+"@sha256:"+digest(d)+"\""+extra+"\n  }\n}\n")
+	}
+	write("v2026.1.1", 'a', "")
+	git("add", "-A")
+	git("commit", "-qm", "base")
+	base := git("rev-parse", "HEAD")
+
+	write("v2026.1.2", 'b', "")
+	git("commit", "-qam", "a release of the platform")
+	delivery := git("rev-parse", "HEAD")
+
+	write("v2026.1.2", 'b', ",\n    \"something\": \"else\"")
+	git("commit", "-qam", "a release that also changes something else")
+	overreach := git("rev-parse", "HEAD")
+
+	args := func(head string, more ...string) []string {
+		return append([]string{"-author", "procurement[bot]", "-holder", "procurement[bot]", "-base", base, "-head", head}, more...)
+	}
+	if code := enforceStandingOrder(args(delivery)); code != 0 {
+		t.Errorf("a release of the platform was refused on the pull request (exit %d), so a person could never merge it", code)
+	}
+	if code := enforceStandingOrder(args(delivery, "-bypass")); code != 1 {
+		t.Errorf("a release of the platform passed for a merge without review (exit %d)", code)
+	}
+	if code := enforceStandingOrder(args(overreach)); code == 0 {
+		t.Error("a release that also changed something else in the file passed as a delivery")
 	}
 }

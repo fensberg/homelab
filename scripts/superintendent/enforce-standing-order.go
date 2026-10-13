@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"homelab/details/applications"
+	"homelab/details/platform"
 	"homelab/details/workorders"
 )
 
@@ -135,6 +136,20 @@ func enforceStandingOrder(args []string) int {
 		return 0
 	}
 
+	// A release of the platform, brought to the gate the same way: every
+	// site's line moved to it, and nothing else. For a person to merge, it
+	// passes. It is never merged without a review, whatever it changes:
+	// the platform is what every site is built from, and the order was
+	// given for a supplier's build of one application.
+	if isPlatformDelivery(changedFiles, asItWasAndIs) {
+		if !*bypass {
+			fmt.Printf("%s delivered a release of the platform. It waits for a review: the standing order does not cover the platform\n", *author)
+			return 0
+		}
+		fmt.Printf("REFUSED: %s delivered a release of the platform, which is never merged without a review.\n", *author)
+		return 1
+	}
+
 	// Each application's declaration as the base has it: the pull request
 	// cannot have written what it is judged by.
 	declared, err := j.declaredAt(*base)
@@ -155,6 +170,36 @@ func enforceStandingOrder(args []string) int {
 	fmt.Printf("%s changed only the pin it holds a standing order for\n", *author)
 	return 0
 }
+
+// isPlatformDelivery reports whether a pull request is a release of the
+// platform brought to the gate: it changes the one file that names each
+// site's release, and what it changes there is the release and nothing
+// else. Held the way a delivery is: putting the old release back in the
+// file as it is has to give the file as it was, to the byte.
+func isPlatformDelivery(files []string, texts func(file string) (was, is string, err error)) bool {
+	if len(files) != 1 || files[0] != platform.VersionsFile {
+		return false
+	}
+	was, is, err := texts(files[0])
+	if err != nil || was == is {
+		return false
+	}
+	// Every site's line in the file as it is names one release, and moving
+	// the file as it was to that release gives the file as it is.
+	lines := platformLine.FindAllStringSubmatch(is, -1)
+	if len(lines) == 0 {
+		return false
+	}
+	to, err := platform.ParsePin(lines[0][1])
+	if err != nil {
+		return false
+	}
+	redone, moved, err := platform.MovePins(was, to)
+	return err == nil && moved > 0 && redone == is
+}
+
+// platformLine is a site's line in the file that names each site's release.
+var platformLine = regexp.MustCompile(`(?m)^\s*"platform":\s*"([^"]*)"`)
 
 // pinLine is the one line of an application's pins file the order covers:
 // the pin its declaration names, set to a number.

@@ -134,7 +134,7 @@ func TestOnlyTheExpediteDutyRunsUnderItsCredential(t *testing.T) {
 					"workstation installs. It is run by a person and committed through review; "+
 					"no workflow orders, and above all not one that could hold the expedite "+
 					"credential.", name)
-			case verb == "deliver":
+			case verb == "deliver" || strings.HasPrefix(verb, "deliver-"):
 				// Delivering holds the credential too, to open the pull request
 				// that moves a release pin - and nothing it opens is merged
 				// without review unless the release differs from the one
