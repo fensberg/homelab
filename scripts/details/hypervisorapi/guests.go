@@ -104,16 +104,24 @@ func (g Guests) done(what string, m Guest, method, path string) error {
 		if err != nil {
 			return fmt.Errorf("%s machine %d: %w", what, m.ID, err)
 		}
-		var status struct {
-			Status string `json:"status"`
-			Exit   string `json:"exitstatus"`
-		}
+		var status map[string]string
 		if err := json.Unmarshal(data, &status); err != nil {
-			return fmt.Errorf("%s machine %d: the task's status is not the shape this reads: %w", what, m.ID, err)
+			// A task's status carries numbers beside its words; only the
+			// words are read here.
+			var loose map[string]any
+			if err := json.Unmarshal(data, &loose); err != nil {
+				return fmt.Errorf("%s machine %d: the task's status is not the shape this reads: %w", what, m.ID, err)
+			}
+			status = map[string]string{}
+			for k, v := range loose {
+				if word, ok := v.(string); ok {
+					status[k] = word
+				}
+			}
 		}
-		if status.Status == "stopped" {
-			if status.Exit != "OK" {
-				return fmt.Errorf("%s machine %d: the hypervisor's task ended %q", what, m.ID, status.Exit)
+		if status["status"] == "stopped" {
+			if ending := status["exitstatus"]; ending != "OK" {
+				return fmt.Errorf("%s machine %d: the hypervisor's task ended %q", what, m.ID, ending)
 			}
 			return nil
 		}
