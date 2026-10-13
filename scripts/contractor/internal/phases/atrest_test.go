@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"homelab/details/capacity"
+	"homelab/details/console"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -113,7 +114,7 @@ func TestOnlyAConvergeWaitsForItsStateDatabaseToBeAtRest(t *testing.T) {
 
 	// Unattended, it is racing the merge that started it, and waits for Flux
 	// to have applied that commit first.
-	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv(console.ActionsVariable, "true")
 	if err := Run(f.ctx, "take-over"); err != nil {
 		t.Fatal(err)
 	}

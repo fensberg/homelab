@@ -14,6 +14,7 @@ import (
 	"homelab/details/tofustate"
 
 	"homelab/contractor/steps"
+	"homelab/details/console"
 	"homelab/details/procenv"
 )
 
@@ -281,13 +282,6 @@ type tofuEvent struct {
 	} `json:"changes"`
 }
 
-// publicLog reports whether this run's output is world-readable. A converge in
-// Actions lands in a public repository's log; the same command on a workstation
-// does not, and the two want different amounts of detail.
-func publicLog() bool {
-	return os.Getenv("GITHUB_ACTIONS") == "true" || os.Getenv("CI") == "true"
-}
-
 // summariseApply reduces tofu's -json stream to addresses and verbs. It is
 // separated from the process handling so it can be tested against a recorded
 // stream: the property that matters is that no attribute value survives, and
@@ -437,7 +431,7 @@ func summariseStream(r io.Reader, emit func(string), tick <-chan time.Time) (lin
 				// nothing - which is exactly what happened the first time this
 				// fired: "Failed to create key", with the reason stripped, on a
 				// terminal nobody but the operator could see.
-				if !publicLog() && ev.Diagnostic.Detail != "" {
+				if !console.Published() && ev.Diagnostic.Detail != "" {
 					msg += ": " + ev.Diagnostic.Detail
 				}
 				failed = append(failed, msg)
@@ -684,7 +678,7 @@ func CmdBytes(dir string, extraEnv []string, stdin []byte, name string, args ...
 
 // detailNote explains a missing detail, and only when one is actually missing.
 func detailNote() string {
-	if publicLog() {
+	if console.Published() {
 		return "\n\nSummaries only - tofu's detail can quote the value that caused the error, and this runs in a public log. Re-run on a workstation for the full diagnostic"
 	}
 	return ""

@@ -67,6 +67,10 @@ var estateTypes = map[string]bool{
 	ghapi.OrganisationSettingsType: true,
 	// Which repositories and workflows may use the estate's own runners.
 	ghapi.RunnerGroupType: true,
+	// Where a job is handed the estate's own credential, and on which
+	// branch it may be.
+	"github_repository_environment":                   true,
+	"github_repository_environment_deployment_policy": true,
 }
 
 const estateRoot = "management/estate"

@@ -136,6 +136,10 @@ type estate struct {
 	// run executes tofu in the estate root. A field so the tests can see
 	// what the lawyer would have asked tofu to do.
 	run func(args ...string) error
+
+	// published is whether this run's log is world-readable, where nothing
+	// tofu prints may reach it.
+	published bool
 }
 
 func execute(verb string) error {
@@ -149,6 +153,10 @@ func execute(verb string) error {
 		rendered: filepath.Join(root, "config", "estate.rendered.json"),
 	}
 	e.run = e.tofu
+	// Where the log is public, nothing tofu prints reaches it.
+	if e.published = console.Published(); e.published {
+		e.run = e.tofuUnseen
+	}
 	// Always, however the run ends: the rendered file holds the estate's
 	// token and the bucket's credential.
 	defer e.sterilize()
@@ -214,7 +222,7 @@ func execute(verb string) error {
 	if err := e.adoptSourceControl(source); err != nil {
 		return err
 	}
-	if err := e.run("apply", "-input=false", "-auto-approve"); err != nil {
+	if err := e.apply(); err != nil {
 		return err
 	}
 
@@ -387,6 +395,9 @@ func (e *estate) tofuOutput(args ...string) (string, error) {
 	var stderr bytes.Buffer
 	c.Stderr = &stderr
 	out, err := c.Output()
+	if err != nil && e.published {
+		return "", fmt.Errorf("tofu %s: %w%s", args[0], err, withheld)
+	}
 	if err != nil {
 		return "", fmt.Errorf("tofu %s: %w\n%s", args[0], err, stderr.String())
 	}

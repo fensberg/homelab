@@ -53,6 +53,7 @@ module "repository" {
   for_each = toset([local.source_control_repository])
 
   name                = each.key
+  default_branch      = data.github_repository.estate.default_branch
   delivers_unreviewed = tonumber(local.source_control.procurement_app_id)
 }
 

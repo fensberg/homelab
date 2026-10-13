@@ -2,6 +2,7 @@ package phases
 
 import (
 	"fmt"
+	"homelab/details/console"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,7 +153,7 @@ esac
 	// A verb here is run as somebody at a workstation runs it, wherever
 	// these tests themselves are run: unattended, a converge also waits for
 	// Flux to have applied the commit it is of.
-	t.Setenv("GITHUB_ACTIONS", "")
+	t.Setenv(console.ActionsVariable, "")
 	was := restPause
 	restPause = time.Millisecond
 	t.Cleanup(func() { restPause = was })

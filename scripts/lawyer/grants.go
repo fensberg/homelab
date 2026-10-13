@@ -80,6 +80,12 @@ func plannedCreates(showJSON []byte, resourceType string) (map[string]string, er
 func (e *estate) shownPlan(name string) (string, error) {
 	saved := filepath.Join(e.dir, name)
 	defer os.Remove(saved)
+	return e.planTo(saved)
+}
+
+// planTo plans the estate into a file and returns the plan as tofu shows
+// it. The file holds every value and is the caller's to remove.
+func (e *estate) planTo(saved string) (string, error) {
 	if _, err := e.tofuOutput("plan", "-input=false", "-out="+saved); err != nil {
 		return "", err
 	}

@@ -3,7 +3,7 @@ package phases
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+	"homelab/details/console"
 	"strings"
 	"time"
 
@@ -55,7 +55,7 @@ func awaitRest(ctx *run.Context) error {
 	}
 	defer cleanup()
 
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
+	if console.InActions() {
 		head, err := run.CmdOutputQuiet(".", "git", "rev-parse", "HEAD")
 		if err != nil {
 			return fmt.Errorf("could not read this checkout's commit, so Flux cannot be shown to have applied it: %w", err)
