@@ -30,5 +30,7 @@ func TestMain(m *testing.M) {
 	// plausible shape, and the tests of the asking itself put the real
 	// reader back (hardware_test.go).
 	surveySite = aSiteWithOneHost
+	// No test here waits on the clock for a machine to join.
+	formerNodesPause = 0
 	os.Exit(m.Run())
 }

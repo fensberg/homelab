@@ -92,7 +92,7 @@ files:
     uncovered: 4
     covered_by: e2e
   - path: contractor/internal/run/exec.go
-    uncovered: 15
+    uncovered: 13
     covered_by: e2e
   - path: contractor/internal/run/net.go
     uncovered: 1
