@@ -179,3 +179,41 @@ func TestASiteItsHypervisorCannotHoldIsRefusedWithTheSum(t *testing.T) {
 		t.Error("the root was handed the hardware of a host the site does not fit on")
 	}
 }
+
+// A converge of a site its hypervisor cannot hold is refused before
+// anything is written. The refusal used to come after the converge had
+// settled its state, which writes; so "nothing has been changed" was said
+// beside a verdict that something had been, and no revert was offered for a
+// merge that could never be built.
+func TestASiteItsHypervisorCannotHoldIsRefusedBeforeAnythingIsWritten(t *testing.T) {
+	f := newVerbFixture(t)
+	f.ctx.Converge = true
+	asked(t, func(*run.Context) (map[string]hypervisorapi.Host, *config.SiteNetwork, error) {
+		return map[string]hypervisorapi.Host{"node0": {MemoryBytes: 16 << 30}},
+			&config.SiteNetwork{Machines: []config.PlannedMachine{
+				{Role: config.Worker, VMID: 10200, Hypervisor: "node0", MemoryBytes: 10 << 30},
+				{Role: config.Worker, VMID: 10201, Hypervisor: "node0", MemoryBytes: 10 << 30},
+			}, Reserved: []int{10200, 10201}}, nil
+	})
+
+	f.run(t, "take-over")
+	before, _ := f.calls(t)
+	err := Run(f.ctx, "compute")
+	if err == nil || !strings.Contains(err.Error(), "more memory than it can give") || !strings.Contains(err.Error(), "Nothing has been changed") {
+		t.Fatalf("the converge was not refused for its hardware: %v", err)
+	}
+	// Settling the state is what used to come first, and it writes. It
+	// begins by listing the whole state, so that listing is the mark of
+	// its having begun; nothing that changes anything may come before the
+	// refusal either.
+	after, _ := f.calls(t)
+	for _, c := range after[len(before):] {
+		settling := c.args == "state list"
+		for _, writes := range []string{"apply", "state rm", "state mv", "import", "destroy"} {
+			settling = settling || strings.HasPrefix(c.args, writes)
+		}
+		if settling {
+			t.Errorf("tofu was asked %q in the %s root before the site was held against its hardware", c.args, c.root)
+		}
+	}
+}
