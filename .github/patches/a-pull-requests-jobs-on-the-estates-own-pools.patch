@@ -1,50 +1,181 @@
-diff --git a/.github/workflows/inspector.yml b/.github/workflows/inspector.yml
-index 8eeb7bb..d49039d 100644
---- a/.github/workflows/inspector.yml
-+++ b/.github/workflows/inspector.yml
-@@ -51,7 +51,11 @@ defaults:
- jobs:
-   tally:
-     name: What this change takes away
--    runs-on: ubuntu-latest
-+    # One of the estate's own pools for a pull request's jobs, on the
-+    # untrusted zone's machine, held to its pool's hosts by the cluster's
-+    # network (clusters/core, pull-requests-builds.yaml). The site is the
-+    # estate's to say (management/estate, the repository's variable).
-+    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
-     timeout-minutes: 5
-     steps:
-       # Full history: the tally compares two commits, and a shallow clone has
+diff --git a/.github/workflows/pool-proof/action.yml b/.github/workflows/pool-proof/action.yml
+new file mode 100644
+index 0000000..c984146
+--- /dev/null
++++ b/.github/workflows/pool-proof/action.yml
+@@ -0,0 +1,62 @@
++name: Pool proof
++description: >-
++  Proves, from inside one of the estate's pools of pull-request runners,
++  that the pool takes work and that what holds it holds.
++
++# A pull request's job in a pool is held by the cluster's network and by
++# where its runner is put, and by nothing in the runner itself. So the only
++# honest proof is one made from inside: this runs as a job in the pool and
++# tries each thing a runner must not be able to do.
++#
++# It is also what says a pool works at all, before any job a merge is held
++# to is moved onto it. Nothing waits on these jobs.
++runs:
++  using: composite
++  steps:
++    - name: The repository was checked out
++      shell: bash
++      run: |
++        set -euo pipefail
++        if [ ! -f CLAUDE.md ]; then
++          echo "::error::the job started in the pool and the workspace holds no checkout"
++          exit 1
++        fi
++
++    - name: A host the pool is declared to reach answers
++      shell: bash
++      run: |
++        set -euo pipefail
++        if ! curl --silent --show-error --max-time 20 --output /dev/null https://github.com; then
++          echo "::error::github.com is declared for every pool and did not answer. The pool is refusing everything, so the refusals below would prove nothing."
++          exit 1
++        fi
++
++    - name: A host nobody declared is refused
++      shell: bash
++      run: |
++        set -euo pipefail
++        if curl --silent --show-error --max-time 20 --output /dev/null https://example.com; then
++          echo "::error::example.com answered. No job declares it, so the pool's policy is not holding its runners to the hosts declared for it."
++          exit 1
++        fi
++        echo "example.com was refused"
++
++    - name: The cluster's own API is refused
++      shell: bash
++      run: |
++        set -euo pipefail
++        if [ -n "${KUBERNETES_SERVICE_HOST:-}" ] && curl --insecure --silent --max-time 10 --output /dev/null "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT:-443}/version"; then
++          echo "::error::the cluster's API answered a runner in a pull-request pool. A pull request's job can speak to the cluster it runs in."
++          exit 1
++        fi
++        echo "the cluster's API was refused"
++
++    - name: No token of the cluster's is in the runner
++      shell: bash
++      run: |
++        set -euo pipefail
++        if [ -e /var/run/secrets/kubernetes.io/serviceaccount/token ]; then
++          echo "::error::a service account's token is mounted in this runner. A pull request's job holds a credential of the cluster's."
++          exit 1
++        fi
++        echo "no token is mounted"
 diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
-index bf40c6d..fcf1d24 100644
+index bf40c6d..727097a 100644
 --- a/.github/workflows/pr-validation.yml
 +++ b/.github/workflows/pr-validation.yml
-@@ -923,7 +923,11 @@ jobs:
-     needs: already-tested
-     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-     name: "Test (vitest)"
--    runs-on: ubuntu-latest
-+    # One of the estate's own pools for a pull request's jobs, on the
-+    # untrusted zone's machine, held to its pool's hosts by the cluster's
-+    # network (clusters/core, pull-requests-packages.yaml). The site is the
-+    # estate's to say (management/estate, the repository's variable).
-+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
-     # Bounded so a stuck job cannot bill a metered vendor for six hours,
-     # which is what GitHub's default timeout allows.
-     timeout-minutes: 15
-@@ -1485,7 +1489,11 @@ jobs:
-     needs: already-tested
-     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
-     name: "Egress Proof (block holds, sudo is gone)"
--    runs-on: ubuntu-latest
-+    # One of the estate's own pools for a pull request's jobs, on the
-+    # untrusted zone's machine, held to its pool's hosts by the cluster's
-+    # network (clusters/core, pull-requests-source.yaml). The site is the
-+    # estate's to say (management/estate, the repository's variable).
+@@ -1562,3 +1562,105 @@ jobs:
+           PROOF: reached
+         with:
+           name: env-reaches-script
++
++  # ---------------------------------------------------------------------
++  # POOL PROOF (source) - one of the estate's own pools for a pull request's
++  # jobs, tried from inside. The pool for jobs that need nothing beyond the source control.
++  #
++  # On the untrusted zone's machine, held to its pool's hosts by the
++  # cluster's network (clusters/core, pull-requests-source.yaml). The site
++  # is the estate's to say (management/estate, the repository's variable).
++  #
++  # NOTHING WAITS ON THIS, on purpose: it is what shows a pool works before
++  # any job a merge is held to is moved onto it. A pool that is not taking
++  # work leaves this queued and holds nothing up.
++  # ---------------------------------------------------------------------
++  pool-source:
++    name: "Pool Proof (source)"
 +    runs-on: pr-source-${{ vars.pull_request_runners_site }}
-     timeout-minutes: 5
-     permissions:
-       contents: read
++    timeout-minutes: 5
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # harden-runner does nothing in the estate's pools. What is
++          # declared here is what the pool's own policy is held to, in
++          # scripts/approved-suppliers.yml under `egress:`.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++
++      - name: Prove the pool holds
++        uses: $/.github/workflows/pool-proof
++
++  # ---------------------------------------------------------------------
++  # POOL PROOF (builds) - one of the estate's own pools for a pull request's
++  # jobs, tried from inside. The pool for jobs that download what a build needs.
++  #
++  # On the untrusted zone's machine, held to its pool's hosts by the
++  # cluster's network (clusters/core, pull-requests-builds.yaml). The site
++  # is the estate's to say (management/estate, the repository's variable).
++  #
++  # NOTHING WAITS ON THIS, on purpose: it is what shows a pool works before
++  # any job a merge is held to is moved onto it. A pool that is not taking
++  # work leaves this queued and holds nothing up.
++  # ---------------------------------------------------------------------
++  pool-builds:
++    name: "Pool Proof (builds)"
++    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
++    timeout-minutes: 5
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # harden-runner does nothing in the estate's pools. What is
++          # declared here is what the pool's own policy is held to, in
++          # scripts/approved-suppliers.yml under `egress:`.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++
++      - name: Prove the pool holds
++        uses: $/.github/workflows/pool-proof
++
++  # ---------------------------------------------------------------------
++  # POOL PROOF (packages) - one of the estate's own pools for a pull request's
++  # jobs, tried from inside. The pool for jobs that reach the package registries.
++  #
++  # On the untrusted zone's machine, held to its pool's hosts by the
++  # cluster's network (clusters/core, pull-requests-packages.yaml). The site
++  # is the estate's to say (management/estate, the repository's variable).
++  #
++  # NOTHING WAITS ON THIS, on purpose: it is what shows a pool works before
++  # any job a merge is held to is moved onto it. A pool that is not taking
++  # work leaves this queued and holds nothing up.
++  # ---------------------------------------------------------------------
++  pool-packages:
++    name: "Pool Proof (packages)"
++    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
++    timeout-minutes: 5
++    permissions:
++      contents: read
++    steps:
++      - name: Mobilize
++        uses: $/.github/workflows/mobilize
++        with:
++          # harden-runner does nothing in the estate's pools. What is
++          # declared here is what the pool's own policy is held to, in
++          # scripts/approved-suppliers.yml under `egress:`.
++          egress-policy: block
++          disable-sudo-and-containers: "true"
++          allowed-endpoints: >
++            api.github.com:443
++            github.com:443
++
++      - name: Prove the pool holds
++        uses: $/.github/workflows/pool-proof
 diff --git a/clusters/core/infrastructure/configs/kustomization.yaml b/clusters/core/infrastructure/configs/kustomization.yaml
 index a668b61..c3ef5c5 100644
 --- a/clusters/core/infrastructure/configs/kustomization.yaml
@@ -674,10 +805,10 @@ index 24d578b..09292a2 100644
  
    "access": {
 diff --git a/docs/epochs/08-agent-roles.md b/docs/epochs/08-agent-roles.md
-index edb683d..2a6c6a9 100644
+index edb683d..cea5542 100644
 --- a/docs/epochs/08-agent-roles.md
 +++ b/docs/epochs/08-agent-roles.md
-@@ -216,6 +216,30 @@ the repository's and not something in it.
+@@ -216,6 +216,34 @@ the repository's and not something in it.
  - **A zone's machine is not a worker to the capacity rule.** Its room is
    not room the site's own work can use, so it is left out of what the
    workers hold.
@@ -700,11 +831,15 @@ index edb683d..2a6c6a9 100644
 +  its own copy of a workflow from its own ref and no list of workflows at
 +  a branch can admit it. It is held to the estate's repository, and
 +  allowed only while nothing but the pools joins it.
-+- **Three jobs go first, none of them a check a merge is held to**: the
-+  proof that a refused host cannot be reached, what a change takes away,
-+  and the JavaScript tests. A pool that does not work then holds nothing
-+  up. The rest follow once these have been seen to run and what they use
-+  has been read off the machine.
++- **A proof of each pool goes first, and nothing waits on it.** One small
++  job in each pool, made for this, that tries the pool from inside: that
++  it takes work, reaches a host declared for it, and is refused a host
++  nobody declared, the cluster's own API and any token of the cluster's.
++  No job that existed is moved yet. The first choice of three existing
++  jobs was wrong: one of them feeds a check a merge is held to, so a pool
++  that did not work would have held every merge, with nobody able to pass
++  the checks by. The rest follow once the proofs have been seen to run and
++  what a runner uses has been read off the machine.
  - **Four jobs stay on GitHub's runners.** Three reach anything by design,
    each with its reason written down, and could run under no list. The
    fourth is the clerk's reading, the one pull-request job that holds a
@@ -1029,7 +1164,7 @@ index ed07e87..16dbe80 100644
            hypervisor = length(local.hypervisors[key]) > 0 ? local.hypervisors[key][(z.index + j) % length(local.hypervisors[key])] : ""
          }
 diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
-index 4a075ec..dc4638b 100644
+index 4a075ec..5c187a2 100644
 --- a/scripts/approved-suppliers.yml
 +++ b/scripts/approved-suppliers.yml
 @@ -620,6 +620,30 @@ endpoints:
@@ -1118,9 +1253,43 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -898,12 +929,14 @@ egress:
+@@ -897,13 +928,48 @@ egress:
+       list to transcribe. Egress for these pods has to be controlled at the
        cluster's network layer instead (#411); until then it is uncontrolled
        and unrecorded, and this entry says so rather than implying otherwise.
++  - job: pr-validation.yml/pool-source
++    pool: source
++    policy: block
++    reason: >-
++      Tries the pool from inside: that it takes work, reaches what is
++      declared for it, and is refused a host nobody declared, the cluster's
++      own API and any token of the cluster's.
++    hosts:
++      - api.github.com:443
++      - github.com:443
++
++  - job: pr-validation.yml/pool-builds
++    pool: builds
++    policy: block
++    reason: >-
++      Tries the pool from inside: that it takes work, reaches what is
++      declared for it, and is refused a host nobody declared, the cluster's
++      own API and any token of the cluster's.
++    hosts:
++      - api.github.com:443
++      - github.com:443
++
++  - job: pr-validation.yml/pool-packages
++    pool: packages
++    policy: block
++    reason: >-
++      Tries the pool from inside: that it takes work, reaches what is
++      declared for it, and is refused a host nobody declared, the cluster's
++      own API and any token of the cluster's.
++    hosts:
++      - api.github.com:443
++      - github.com:443
++
    - job: pr-validation.yml/already-tested
 +    pool: source
      policy: block
@@ -1133,7 +1302,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -923,6 +956,7 @@ egress:
+@@ -923,6 +989,7 @@ egress:
        - sum.golang.org:443
  
    - job: pr-validation.yml/shellcheck
@@ -1141,7 +1310,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -931,6 +965,7 @@ egress:
+@@ -931,6 +998,7 @@ egress:
        - release-assets.githubusercontent.com:443
  
    - job: pr-validation.yml/validate
@@ -1149,7 +1318,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -944,6 +979,7 @@ egress:
+@@ -944,6 +1012,7 @@ egress:
        - storage.googleapis.com:443
  
    - job: pr-validation.yml/test-go
@@ -1157,7 +1326,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -959,6 +995,7 @@ egress:
+@@ -959,6 +1028,7 @@ egress:
        - sum.golang.org:443
  
    - job: pr-validation.yml/vet
@@ -1165,7 +1334,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -971,6 +1008,7 @@ egress:
+@@ -971,6 +1041,7 @@ egress:
        - sum.golang.org:443
  
    - job: pr-validation.yml/invariants
@@ -1173,7 +1342,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -985,6 +1023,7 @@ egress:
+@@ -985,6 +1056,7 @@ egress:
        - sum.golang.org:443
  
    - job: pr-validation.yml/meta
@@ -1181,7 +1350,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -999,6 +1038,7 @@ egress:
+@@ -999,6 +1071,7 @@ egress:
        - sum.golang.org:443
  
    - job: pr-validation.yml/test-js
@@ -1189,7 +1358,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -1009,12 +1049,14 @@ egress:
+@@ -1009,12 +1082,14 @@ egress:
        - release-assets.githubusercontent.com:443
  
    - job: pr-validation.yml/test
@@ -1204,7 +1373,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -1023,6 +1065,7 @@ egress:
+@@ -1023,6 +1098,7 @@ egress:
        - release-assets.githubusercontent.com:443
  
    - job: pr-validation.yml/policy
@@ -1212,7 +1381,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -1033,6 +1076,7 @@ egress:
+@@ -1033,6 +1109,7 @@ egress:
        - release-assets.githubusercontent.com:443
  
    - job: pr-validation.yml/spelling
@@ -1220,7 +1389,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -1043,6 +1087,7 @@ egress:
+@@ -1043,6 +1120,7 @@ egress:
        - release-assets.githubusercontent.com:443
  
    - job: pr-validation.yml/workflowscan
@@ -1228,7 +1397,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -1061,6 +1106,7 @@ egress:
+@@ -1061,6 +1139,7 @@ egress:
        first, then transcribe what it logged.
  
    - job: pr-validation.yml/trivy
@@ -1236,7 +1405,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -1090,6 +1136,7 @@ egress:
+@@ -1090,6 +1169,7 @@ egress:
        else.
  
    - job: pr-validation.yml/egress-blocked
@@ -1244,7 +1413,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -1152,6 +1199,7 @@ egress:
+@@ -1152,6 +1232,7 @@ egress:
        - storage.googleapis.com:443
  
    - job: sensitive-paths.yml/tripwire
@@ -1252,7 +1421,7 @@ index 4a075ec..dc4638b 100644
      policy: block
      hosts:
        - api.github.com:443
-@@ -1481,3 +1529,18 @@ work:
+@@ -1481,3 +1562,18 @@ work:
    - job: integration-tests.yml/test
      kind: can-wait
      takes: 5m
@@ -1260,15 +1429,15 @@ index 4a075ec..dc4638b 100644
 +  # A pull request's jobs, in the pools on the untrusted zone's machine.
 +  # Somebody is waiting on each. They share nothing with the priority set
 +  # above: their runners are on a machine of their own.
-+  - job: pr-validation.yml/egress-blocked
++  - job: pr-validation.yml/pool-source
 +    kind: cannot-wait
 +    takes: 1m
 +
-+  - job: pr-validation.yml/test-js
++  - job: pr-validation.yml/pool-builds
 +    kind: cannot-wait
-+    takes: 2m
++    takes: 1m
 +
-+  - job: inspector.yml/tally
++  - job: pr-validation.yml/pool-packages
 +    kind: cannot-wait
 +    takes: 1m
 diff --git a/scripts/contractor/internal/phases/health.go b/scripts/contractor/internal/phases/health.go
