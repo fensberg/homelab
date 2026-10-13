@@ -59,19 +59,10 @@ func PlanAgainst(in PlanInputs, tofu Tofu) ([]byte, Meta, error) {
 	if meta.Site != "" && meta.Site != in.Site {
 		return nil, meta, fmt.Errorf("the record is of %s, not %s", meta.Site, in.Site)
 	}
-	var tpl any
-	if tpl, err = decodeAny(in.Template); err != nil {
-		return nil, meta, fmt.Errorf("the config template is not JSON: %w", err)
-	}
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, meta, err
-	}
-	f, err := NewFingerprinter(key)
+	tpl, config, err := ConfigAgainst(in.Template, recorded)
 	if err != nil {
 		return nil, meta, err
 	}
-	config := Reconcile(f, "", tpl, recorded)
 
 	dir := filepath.Join(in.Work, "plan")
 	if err := copyRoot(in.Root, dir); err != nil {
@@ -103,6 +94,26 @@ func PlanAgainst(in PlanInputs, tofu Tofu) ([]byte, Meta, error) {
 		return nil, meta, &VaultKeyError{Keyed: keyed}
 	}
 	return plan, meta, nil
+}
+
+// ConfigAgainst is the config a change is planned with: its template filled
+// in from a record's config. The change's own literals stay, since they are
+// what it proposes, and every vault value is the record's stand-in for it,
+// or a new one where the record has none. It is returned with the template
+// as it was read.
+func ConfigAgainst(template []byte, recorded any) (tpl, config any, err error) {
+	if tpl, err = decodeAny(template); err != nil {
+		return nil, nil, fmt.Errorf("the config template is not JSON: %w", err)
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, nil, err
+	}
+	f, err := NewFingerprinter(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	return tpl, Reconcile(f, "", tpl, recorded), nil
 }
 
 // WriteUnbuilt writes the record of a root nothing has been built from: no
