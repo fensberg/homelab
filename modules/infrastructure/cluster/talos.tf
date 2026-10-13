@@ -13,8 +13,23 @@ locals {
   # letting one silently win here.
   all_machines = merge(local.control_plane, local.workers)
 
-  # The untrusted zone's machines get their own patches, and the differences
-  # are the point.
+  # Every machine the site has, a zone's among them, with the two things
+  # that differ for a zone's: the gateway of the subnet it is on, and that
+  # it is kept off the overlay.
+  #
+  # A zone's machine was configured from a list of its own, written beside
+  # this one, and the two parted: it was given no hostname, no place for
+  # volumes and none of the labels that say where it is, because each was
+  # added to the other list after the zone's was written. It is one list
+  # now, so that what a machine needs to be a machine is given to every
+  # kind there is and to the next kind too.
+  every_machine = merge(
+    { for k, v in local.all_machines : k => { name = v.name, ip = v.ip, hypervisor = v.hypervisor, gateway = local.node_gateway, on_overlay = true } },
+    { for k, v in local.dmz : k => { name = v.name, ip = v.ip, hypervisor = v.hypervisor, gateway = local.dmz_zones[v.zone].gateway, on_overlay = false } },
+  )
+
+  # An untrusted zone's machine differs from every other in two ways, and
+  # they are the point.
   #
   # No overlay patch. The extension is absent from the image, so configuring it
   # would fail anyway - but the reason it is absent is that the tailnet policy
@@ -34,31 +49,11 @@ locals {
     }
   }
 
-  dmz_patches = {
+  # What a zone's machine is given on top of what every machine is: the
+  # taint and the label, and nothing else. Everything else about it is
+  # machine_patches below, the one list every machine is configured from.
+  dmz_dedication_patches = {
     for k, v in local.dmz : k => [
-      yamlencode({
-        apiVersion = "v1alpha1"
-        kind       = "LinkConfig"
-        name       = "eth0"
-        addresses  = [{ address = "${v.ip}/24" }]
-        routes     = [{ gateway = local.dmz_zones[v.zone].gateway }]
-      }),
-      yamlencode({
-        apiVersion  = "v1alpha1"
-        kind        = "ResolverConfig"
-        nameservers = [for server in local.dns_resolvers : { address = server }]
-      }),
-      yamlencode({
-        machine = {
-          features = {
-            kubePrism = {
-              enabled = true
-              port    = 7445
-            }
-          }
-        }
-      }),
-
       # The taint, and why it is a kubelet argument rather than machine.nodeTaints.
       #
       # A worker cannot taint itself. NodeRestriction refuses a kubelet
@@ -107,7 +102,7 @@ locals {
   }
 
   machine_patches = {
-    for k, v in local.all_machines : k => [
+    for k, v in local.every_machine : k => concat([
       # Where the machine is, said the way Kubernetes says it: the site as
       # its region and the hypervisor it runs on as its zone. The storage
       # driver reads both to know which hypervisor to ask for a volume and
@@ -129,7 +124,7 @@ locals {
         # destination omitted: a default route is created for the gateway's
         # address family when none is specified (RouteConfig's own doc
         # comment, same source file as LinkConfig).
-        routes = [{ gateway = local.node_gateway }]
+        routes = [{ gateway = v.gateway }]
       }),
       yamlencode({
         apiVersion  = "v1alpha1"
@@ -175,7 +170,7 @@ locals {
       # The extension comes from the schematic; this only configures it. Both
       # halves have to move together, which is why the schematic id and this
       # patch are in the same change.
-      yamlencode({
+      ], v.on_overlay ? [yamlencode({
         apiVersion = "v1alpha1"
         kind       = "ExtensionServiceConfig"
         name       = "tailscale"
@@ -189,7 +184,7 @@ locals {
           # would put two advertisers on one prefix.
           "TS_ROUTES=",
         ]
-      }),
+      })] : [], [
       # The generator already emits a HostnameConfig document itself, with
       # `auto: stable` set, and config_patches merge field-by-field rather
       # than replacing the whole document - so adding `hostname` alone left
@@ -234,7 +229,7 @@ locals {
           type = "xfs"
         }
       })
-    ]
+    ], try(local.dmz_dedication_patches[k], []))
   }
 }
 
@@ -426,10 +421,10 @@ data "talos_machine_configuration" "dmz" {
   machine_secrets    = talos_machine_secrets.this.machine_secrets
   kubernetes_version = local.kubernetes_version
 
-  # dmz_patches, not machine_patches: the difference between them is the
-  # overlay, and it is the whole reason this zone exists. The cluster's network
-  # as every machine's kubelet needs it (#578).
-  config_patches = concat([local.cluster_network_patch], local.dmz_patches[each.key])
+  # The one list every machine is configured from, which for a zone's
+  # machine leaves the overlay out and adds its taint and its label. The
+  # cluster's network as every machine's kubelet needs it (#578).
+  config_patches = concat([local.cluster_network_patch], local.machine_patches[each.key])
 }
 
 resource "talos_machine_configuration_apply" "dmz" {

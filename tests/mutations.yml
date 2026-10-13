@@ -262,6 +262,8 @@ unprovable:
     reason: table
   - test: TestAMachineWithNoAddressIsSeenAndATemplateIsNotAMachine
     reason: table
+  - test: TestAConfigurationThatDrawsOnTheListIsToldFromOneThatDoesNot
+    reason: table
   - test: TestADedicationIsWorkedOutAndAHalfOfOneIsSeen
     reason: table
   - test: TestAGroupOfRunnersIsAWallOnlyWhileItNamesWhatItAdmits
