@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"homelab/details/ghapi"
 )
 
 // ForemanBot is the identity the cluster uses to register and retire its own
@@ -25,17 +27,11 @@ import (
 // else, so the worst use of a stolen copy is registering or deleting runners.
 // They live in the vault anyway, because the config template is meant to show
 // the shape of the estate without naming it.
-type ForemanBot struct {
-	AppID          string `json:"app_id"`
-	InstallationID string `json:"installation_id"`
-
-	// Base64 of the PEM, not the PEM. `op inject` substitutes values into a
-	// JSON template, and a PEM's newlines would produce a file that does not
-	// parse - so the encoding is a property of how the value travels, not a
-	// security measure. ValidateRunner is what stops somebody discovering
-	// that the hard way.
-	PrivateKey string `json:"private_key"`
-}
+//
+// The three fields and their keys are the estate's one shape for an App's
+// credential; ValidateRunner is what stops somebody discovering the hard way
+// that the key travels encoded.
+type ForemanBot = ghapi.AppCredential
 
 // ValidateRunner checks the runner credential as early as it can be checked.
 //

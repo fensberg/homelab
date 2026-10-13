@@ -52,7 +52,49 @@ module "repository" {
   source   = "./repository"
   for_each = toset([local.source_control_repository])
 
-  name = each.key
+  name                = each.key
+  delivers_unreviewed = tonumber(local.source_control.procurement_app_id)
+}
+
+# The organisation's own settings: what a member may do for being one.
+#
+# A MEMBER IS GIVEN NOTHING. Reading the estate's repositories comes with
+# membership; making a repository or a site of pages does not, and every
+# repository the estate has is one somebody with the estate's keys made.
+#
+# Adopted, and never made: the lawyer takes the organisation's settings as
+# they stand into the estate's record before anything is applied, because
+# this resource writes every field it has and the ones nobody wrote here
+# would be written empty. Who the organisation says it is - its name, its
+# description, where it is - is left as it was set by hand.
+#
+# What a new repository starts with is as it stood, and to tighten when
+# there is a second repository to start.
+resource "github_organization_settings" "estate" {
+  billing_email = local.source_control.billing_email
+
+  default_repository_permission           = "read"
+  members_can_create_repositories         = false
+  members_can_create_public_repositories  = false
+  members_can_create_private_repositories = false
+  members_can_create_pages                = false
+  members_can_create_public_pages         = false
+  members_can_create_private_pages        = false
+  members_can_fork_private_repositories   = false
+  web_commit_signoff_required             = false
+  has_organization_projects               = true
+  has_repository_projects                 = true
+
+  advanced_security_enabled_for_new_repositories               = false
+  dependabot_alerts_enabled_for_new_repositories               = false
+  dependabot_security_updates_enabled_for_new_repositories     = false
+  dependency_graph_enabled_for_new_repositories                = false
+  secret_scanning_enabled_for_new_repositories                 = false
+  secret_scanning_push_protection_enabled_for_new_repositories = false
+
+  lifecycle {
+    ignore_changes = [name, company, blog, email, description, location, twitter_username]
+  }
 }
 
 output "source_control" {

@@ -27,12 +27,7 @@ const bucketType = "cloudflare_r2_bucket"
 // which addresses, which keeps the naming in the HCL alone rather than worked
 // out again here.
 func (e *estate) adoptBuckets(api cloudflare) error {
-	plan := filepath.Join(e.dir, "adopt.tfplan")
-	defer os.Remove(plan)
-	if _, err := e.tofuOutput("plan", "-input=false", "-out="+plan); err != nil {
-		return err
-	}
-	shown, err := e.tofuOutput("show", "-json", plan)
+	shown, err := e.shownPlan("adopt.tfplan")
 	if err != nil {
 		return err
 	}
@@ -80,15 +75,27 @@ func plannedCreates(showJSON []byte, resourceType string) (map[string]string, er
 	return out, nil
 }
 
-// releaseBuckets takes every bucket out of state before a demolish, so the
-// destroy that follows cannot reach them. The next build adopts them back.
-func (e *estate) releaseBuckets() error {
+// shownPlan plans the estate and returns the plan as tofu shows it. The plan
+// it saves on the way holds every value, and is gone when this returns.
+func (e *estate) shownPlan(name string) (string, error) {
+	saved := filepath.Join(e.dir, name)
+	defer os.Remove(saved)
+	if _, err := e.tofuOutput("plan", "-input=false", "-out="+saved); err != nil {
+		return "", err
+	}
+	return e.tofuOutput("show", "-json", saved)
+}
+
+// releaseWhatOutlives takes out of state, before a demolish, everything that
+// outlives the estate, so the destroy that follows cannot reach it. The next
+// build adopts it back.
+func (e *estate) releaseWhatOutlives() error {
 	listed, err := e.tofuOutput("state", "list")
 	if err != nil {
 		return err
 	}
-	for _, addr := range bucketAddresses(strings.Fields(listed)) {
-		console.Info("releasing " + addr + ": buckets outlive the estate")
+	for _, addr := range outlivingTheEstate(strings.Fields(listed)) {
+		console.Info("releasing " + addr + ": it outlives the estate")
 		if err := e.run("state", "rm", addr); err != nil {
 			return err
 		}

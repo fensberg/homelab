@@ -48,6 +48,12 @@ func validConfig() config {
 	c.State.AccessKeyID = "fixture-key"
 	c.State.SecretAccessKey = "fixture-secret"
 	c.Organization.Name = "Example"
+	c.SourceControl.URL = "https://example.test/example/homelab"
+	c.SourceControl.AppID = "42"
+	c.SourceControl.InstallationID = "77"
+	c.SourceControl.PrivateKey = "Zml4dHVyZQ=="
+	c.SourceControl.BillingEmail = "billing@example.com"
+	c.SourceControl.ProcurementAppID = "2"
 	c.Plots = map[string]struct {
 		Name string `json:"name"`
 	}{"site0": {Name: "Placeholder Site"}}
@@ -222,13 +228,14 @@ func TestSterilizeRemovesWhatTheRunWrote(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(record), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{e.rendered, record} {
+	adopted := filepath.Join(dir, adoptionsFile)
+	for _, p := range []string{e.rendered, record, adopted} {
 		if err := os.WriteFile(p, []byte("secret"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	e.sterilize()
-	for _, p := range []string{e.rendered, record} {
+	for _, p := range []string{e.rendered, record, adopted} {
 		if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s survived sterilize", filepath.Base(p))
 		}

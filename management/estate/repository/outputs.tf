@@ -9,3 +9,16 @@ output "walls" {
     actions_set_on           = github_actions_repository_permissions.this.repository
   }
 }
+
+output "rules" {
+  description = "Who may pass each rule on the repository's branches and tags by, as a count per rule: for the root's tests."
+  value = {
+    for name, rule in {
+      releases       = github_repository_ruleset.releases
+      all_branches   = github_repository_ruleset.all_branches
+      default_branch = github_repository_ruleset.default_branch
+      checks         = github_repository_ruleset.checks
+      review         = github_repository_ruleset.review
+    } : name => length(rule.bypass_actors)
+  }
+}

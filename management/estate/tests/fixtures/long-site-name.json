@@ -8,7 +8,9 @@
     "url": "https://github.com/example/homelab",
     "app_id": "1",
     "installation_id": "1",
-    "private_key": "Zml4dHVyZQ=="
+    "private_key": "Zml4dHVyZQ==",
+    "billing_email": "billing@example.com",
+    "procurement_app_id": "2"
   },
   "access": {
     "provider": "cloudflare",

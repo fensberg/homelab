@@ -19,6 +19,16 @@ func URL(base, format string, args ...any) string {
 	return base + fmt.Sprintf(format, args...)
 }
 
+// RulesetType is the OpenTofu resource every rule on a repository's branches
+// and tags is. The lawyer adopts the ones that stand by it, and the guard on
+// what belongs to the estate names it.
+const RulesetType = "github_repository_ruleset"
+
+// OrganisationSettingsType is the OpenTofu resource an organisation's own
+// settings are: one for the organisation, adopted by the lawyer and named by
+// the guard on what belongs to the estate.
+const OrganisationSettingsType = "github_organization_settings"
+
 // ConvergeWorkflow is the workflow file whose runs on main are the converge
 // of a merge. The contractor asks whether one is queued before it breaks
 // ground, and security's patrol asks whether the last one failed; both ask

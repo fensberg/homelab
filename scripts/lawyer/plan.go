@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -26,12 +24,7 @@ import (
 // this prints is what somebody pastes into a pull request. The same line a
 // site's plan draws, for the same reason.
 func (e *estate) plan() error {
-	saved := filepath.Join(e.dir, "estate.tfplan")
-	defer os.Remove(saved)
-	if _, err := e.tofuOutput("plan", "-input=false", "-out="+saved); err != nil {
-		return err
-	}
-	shown, err := e.tofuOutput("show", "-json", saved)
+	shown, err := e.shownPlan("estate.tfplan")
 	if err != nil {
 		return err
 	}
