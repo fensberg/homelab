@@ -3,6 +3,19 @@ name: Plan Infrastructure
 # A pull request that touches what a site is built from gets a plan, per site,
 # posted back to it. The merge's converge is Deploy Infrastructure's.
 #
+# THE PLAN HOLDS A MERGE. Its last job, "Plan", is one of the checks a
+# change has to pass (management/estate/repository/rulesets.tf). A plan
+# knows whether a site's hypervisor has room for what a change asks, and
+# whether the site can hold it; a change that breaches either was once
+# planned, approved and merged all the same, and refused only by the
+# converge, with main left declaring what could not be built (#732).
+#
+# So this runs on every pull request and in the merge queue, and not only
+# when the paths below are touched: a check a change has to pass has to
+# answer for every change, and one that only answered for some would leave
+# every other pull request waiting on it for ever. A change that touches
+# none of those paths is passed at once, with nothing planned.
+#
 # Two workflows rather than one with each job gated on the event. As one file,
 # every pull request listed the converge's jobs - Apply, Converge, Aftermath -
 # as skipped checks, and the plan's jobs were skipped on every merge: noise a
@@ -16,17 +29,9 @@ on:
     # starts joins the same concurrency group, cancels whatever of that pull
     # request is still queued, and does nothing itself.
     types: [opened, synchronize, reopened, closed]
-    paths:
-      - "environments/**/infrastructure/**"
-      - "modules/infrastructure/**"
-      - "management/**"
-      - "config/management.tpl.json"
-      # What Flux deploys, and the applications it deploys from. A change
-      # here plans as no change to any root, and is planned all the same:
-      # the plan is where a change is held to what the site can hold, and
-      # these are the changes that add to it.
-      - "clusters/**"
-      - "modules/applications/**"
+  # A change is planned again as it will land: behind whatever is ahead of
+  # it in the queue, which may have taken the room it was planned into.
+  merge_group:
 
 permissions:
   contents: read
@@ -35,8 +40,11 @@ permissions:
 # closing, replaces it rather than queueing behind it. Keyed by the pull
 # request's number: a merged pull request reports its base branch as
 # github.ref (#573).
+# In the queue there is no pull request, and each entry is its own commit.
+# The event's name is in the key so that a pull request's run and a queue's
+# never share a group and cancel each other.
 concurrency:
-  group: plan-infrastructure-${{ github.event.pull_request.number }}
+  group: plan-infrastructure-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}
   cancel-in-progress: true
 
 # GitHub's default shell for `run:` is `bash -e {0}`, which has no pipefail.
@@ -57,6 +65,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       sites: ${{ steps.sites.outputs.sites }}
+      touched: ${{ steps.touched.outputs.touched }}
     steps:
       - name: Mobilize
         uses: $/.github/workflows/mobilize
@@ -70,6 +79,10 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             github.com:443
+          # The change and what it is a change to: the commit under test is
+          # a merge on a pull request and the queue's own on a merge group,
+          # and either way its first parent is what it would land on.
+          fetch-depth: "2"
 
       - name: List the sites the config declares
         id: sites
@@ -77,6 +90,26 @@ jobs:
           set -euo pipefail
           sites="$(jq -c '.sites | keys' config/management.tpl.json)"
           echo "sites=${sites}" >> "$GITHUB_OUTPUT"
+
+      # Whether the change touches what a site is built from. These were the
+      # workflow's own path filter; they are asked here so that the workflow
+      # can answer for a change that touches none of them.
+      #
+      # clusters/ and modules/applications/ are what Flux deploys. A change
+      # there plans as no change to any root and is planned all the same:
+      # the plan is where a change is held to what the site can hold, and
+      # these are the changes that add to it.
+      - name: Whether the change touches what a site is built from
+        id: touched
+        run: |
+          set -euo pipefail
+          files="$(git diff --name-only 'HEAD^1' HEAD)"
+          touched=false
+          if grep -qE '^(environments/[^/]+/infrastructure/|modules/infrastructure/|management/|config/management\.tpl\.json$|clusters/|modules/applications/)' <<<"${files}"; then
+            touched=true
+          fi
+          echo "touched=${touched}" >> "$GITHUB_OUTPUT"
+          echo "touches what a site is built from: ${touched}"
 
   # ---------------------------------------------------------------------
   # PLAN EACH SITE - on a pull request touching what a site is built from.
@@ -95,8 +128,12 @@ jobs:
     name: Plan ${{ matrix.site }}
     needs: sites
     # A fork's branch plans nothing: the record and the comment are this
-    # repository's.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # repository's. Nor does a change that touches nothing a site is built
+    # from. In the queue there is no pull request to be a fork's.
+    if: >-
+      needs.sites.outputs.touched == 'true'
+      && (github.event_name == 'merge_group'
+          || github.event.pull_request.head.repo.full_name == github.repository)
     # A pull request's code never runs on the estate's runner.
     runs-on: ubuntu-latest
     permissions:
@@ -190,9 +227,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SITE: ${{ matrix.site }}
+        # A plan that is refused has still written its comment, which
+        # leads with why. So the refusal is kept for the last step and the
+        # comment is handed on first: failing here left the pull request
+        # told only that no plan was produced.
         run: |
           go build -C scripts/contractor -o ../../toolshed/contractor .
-          ./toolshed/contractor plan-as-built -site "$SITE" -record as-built-record -comment-out plan-comment.md
+          code=0
+          ./toolshed/contractor plan-as-built -site "$SITE" -record as-built-record -comment-out plan-comment.md || code=$?
+          echo "${code}" > plan.code
+          if [ "${code}" != "0" ] && [ ! -s plan-comment.md ]; then
+            echo "::error::the plan failed before it had anything to report"
+            exit "${code}"
+          fi
 
       # What the change adds to what the site must hold, against what the
       # site can hold: the engineer's, and its answer joins the plan's in the
@@ -240,6 +287,11 @@ jobs:
 
       - name: Refuse a change the site cannot hold
         run: |
+          code="$(cat plan.code)"
+          if [ "${code}" != "0" ]; then
+            echo "::error::the plan refused this change; its reasons lead the plan's comment and are in the Plan step above"
+            exit "${code}"
+          fi
           code="$(cat stamp.code)"
           if [ "${code}" != "0" ]; then
             echo "::error::the engineer did not stamp this change; its reasons are in the plan's comment and in the step above"
@@ -264,8 +316,12 @@ jobs:
     needs: [sites, plan]
     # Whatever the plan did - that is the point of saying so - but not for a
     # pull request with no sites to plan, or a fork's, which planned nothing.
+    # Nor in the queue, where there is no pull request to write on, nor for
+    # a change that touched nothing a site is built from.
     if: >-
       always() && needs.sites.result == 'success'
+      && needs.sites.outputs.touched == 'true'
+      && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
@@ -327,3 +383,62 @@ jobs:
           RESULT: ${{ needs.plan.result }}
         with:
           name: plan-absence-comment
+
+  # ---------------------------------------------------------------------
+  # PLAN - the one answer for the whole change, and the check a merge is
+  # held to.
+  #
+  # The jobs above are one per site and are skipped for a change that needs
+  # no plan, and a check that is skipped or absent cannot be required: the
+  # platform waits on it for ever. This job always runs and always answers.
+  #
+  #   - A change that touches nothing a site is built from passes, with
+  #     nothing planned.
+  #   - A change that was planned passes when every site's plan did, and
+  #     fails when any was refused or could not be made.
+  #   - A change that should have been planned and was not - a fork's, which
+  #     has no record to plan against - fails. A plan that could not be made
+  #     is not a plan that came out well.
+  #
+  # It checks nothing out and holds no token.
+  # ---------------------------------------------------------------------
+  held:
+    name: Plan
+    needs: [sites, plan]
+    if: always() && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 5
+    steps:
+      - name: Mobilize
+        uses: $/.github/workflows/mobilize
+        with:
+          # Owned by scripts/approved-suppliers.yml under `egress:`.
+          egress-policy: block
+          disable-sudo-and-containers: "true"
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+          checkout: "false"
+
+      - name: Whether this change may land
+        env:
+          SITES: ${{ needs.sites.result }}
+          TOUCHED: ${{ needs.sites.outputs.touched }}
+          PLAN: ${{ needs.plan.result }}
+        run: |
+          set -euo pipefail
+          if [ "${SITES}" != "success" ]; then
+            echo "::error::it could not be worked out whether this change needs a plan (${SITES}), so it is not passed"
+            exit 1
+          fi
+          if [ "${TOUCHED}" != "true" ]; then
+            echo "this change touches nothing a site is built from: nothing to plan"
+            exit 0
+          fi
+          if [ "${PLAN}" = "success" ]; then
+            echo "every site's plan was made and none refused the change"
+            exit 0
+          fi
+          echo "::error::this change touches what a site is built from and its plan was ${PLAN}. The plan's comment on the pull request leads with why"
+          exit 1

@@ -746,6 +746,15 @@ egress:
       - storage.googleapis.com:443
       - sum.golang.org:443
 
+  - job: plan-infrastructure.yml/held
+    policy: block
+    reason: >-
+      Says, once for the whole change, whether its plan lets it land. It
+      checks nothing out and holds no token.
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
   - job: plan-infrastructure.yml/report
     policy: block
     reason: >-
