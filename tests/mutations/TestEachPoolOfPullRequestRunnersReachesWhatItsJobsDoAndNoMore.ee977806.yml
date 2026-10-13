@@ -1,0 +1,8 @@
+guard: TestEachPoolOfPullRequestRunnersReachesWhatItsJobsDoAndNoMore
+file: clusters/core/infrastructure/configs/pull-requests-builds.yaml
+find: "        automountServiceAccountToken: false\n"
+replace: "        automountServiceAccountToken: true\n"
+mentions: "given an account's token"
+why: >
+  A runner runs what a pull request wrote. With an account's token mounted
+  it holds a credential of the cluster's, and the default is to mount one.

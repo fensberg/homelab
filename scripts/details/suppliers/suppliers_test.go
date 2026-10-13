@@ -79,3 +79,43 @@ func TestWhatIsNotTheListIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A job says which pool of pull-request runners it is of, and the list says
+// which pools there are and what a runner in any of them reaches.
+func TestAJobIsOfAPoolAndThePoolsAreDeclared(t *testing.T) {
+	const withPools = `
+pull_request_pools:
+  names: [one, two]
+  every_runner_reaches:
+    - example.invalid:443
+    - "*.example.invalid:443"
+egress:
+  - job: a-workflow.yml/in-a-pool
+    pool: one
+    policy: block
+    hosts: [example.invalid:443]
+  - job: a-workflow.yml/in-none
+    policy: block
+`
+	pools, err := PoolsOf([]byte(withPools))
+	if err != nil || strings.Join(pools.Names, " ") != "one two" || strings.Join(pools.Runner, " ") != "example.invalid:443 *.example.invalid:443" {
+		t.Errorf("the pools were read as %+v, %v", pools, err)
+	}
+	egress, err := EgressOf([]byte(withPools))
+	if err != nil || len(egress) != 2 || egress[0].Pool != "one" || egress[1].Pool != "" {
+		t.Errorf("the jobs were read as %+v, %v", egress, err)
+	}
+
+	if none, err := PoolsOf([]byte("egress: []\n")); err != nil || len(none.Names) != 0 {
+		t.Errorf("a list that declares no pools was read as %+v, %v", none, err)
+	}
+	for name, body := range map[string]string{
+		"a pool named twice":   "pull_request_pools:\n  names: [one, one]\n",
+		"reaches, and no pool": "pull_request_pools:\n  every_runner_reaches: [example.invalid:443]\n",
+		"not the list":         "pull_request_pools: [unclosed",
+	} {
+		if _, err := PoolsOf([]byte(body)); err == nil {
+			t.Errorf("%s was read as pools", name)
+		}
+	}
+}

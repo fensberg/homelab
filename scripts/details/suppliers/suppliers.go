@@ -36,6 +36,46 @@ type Egress struct {
 	Policy string
 	Reason string
 	Hosts  []string
+	// Pool is the pool of the estate's pull-request runners the job is of,
+	// and empty for a job that is of none.
+	Pool string
+}
+
+// Pools is the estate's pools of pull-request runners: their names, and
+// what a runner in any of them reaches to be a runner at all.
+type Pools struct {
+	Names  []string
+	Runner []string
+}
+
+// PoolsOf is what the list declares under pull_request_pools:. A list that
+// declares none has none; one that names a pool twice, or none at all while
+// saying what a runner reaches, is refused.
+func PoolsOf(body []byte) (Pools, error) {
+	doc, err := list(body)
+	if err != nil {
+		return Pools{}, err
+	}
+	declared, _ := doc["pull_request_pools"].(map[string]any)
+	var out Pools
+	seen := map[string]bool{}
+	names, _ := declared["names"].([]any)
+	for _, n := range names {
+		name := fmt.Sprint(n)
+		if seen[name] {
+			return Pools{}, fmt.Errorf("%s: pull_request_pools names the pool %q twice", Path, name)
+		}
+		seen[name] = true
+		out.Names = append(out.Names, name)
+	}
+	reaches, _ := declared["every_runner_reaches"].([]any)
+	for _, h := range reaches {
+		out.Runner = append(out.Runner, fmt.Sprint(h))
+	}
+	if len(out.Names) == 0 && len(out.Runner) > 0 {
+		return Pools{}, fmt.Errorf("%s: pull_request_pools says what a runner reaches and names no pool", Path)
+	}
+	return out, nil
 }
 
 // list is the one document the file holds.
@@ -98,6 +138,7 @@ func EgressOf(body []byte) ([]Egress, error) {
 		one.Job, _ = entry["job"].(string)
 		one.Policy, _ = entry["policy"].(string)
 		one.Reason, _ = entry["reason"].(string)
+		one.Pool, _ = entry["pool"].(string)
 		hosts, _ := entry["hosts"].([]any)
 		for _, h := range hosts {
 			one.Hosts = append(one.Hosts, fmt.Sprint(h))

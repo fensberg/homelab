@@ -52,9 +52,11 @@ module "repository" {
   source   = "./repository"
   for_each = toset([local.source_control_repository])
 
-  name                = each.key
-  default_branch      = data.github_repository.estate.default_branch
-  delivers_unreviewed = tonumber(local.source_control.procurement_app_id)
+  name           = each.key
+  default_branch = data.github_repository.estate.default_branch
+
+  pull_request_runners_site = local.source_control.pull_request_runners_site
+  delivers_unreviewed       = tonumber(local.source_control.procurement_app_id)
 }
 
 data "github_repository" "estate" {
@@ -76,6 +78,14 @@ module "runners" {
     for workflow in ["converge-estate.yml", "deploy-infrastructure.yml", "integration-tests.yml"] :
     "${local.source_control_owner}/${local.source_control_repository}/.github/workflows/${workflow}@refs/heads/${data.github_repository.estate.default_branch}"
   ]
+}
+
+# The pools a pull request's jobs run in, which cannot be held to workflows
+# and are held to this repository.
+module "pull_request_runners" {
+  source = "./pull-request-runners"
+
+  repositories = [data.github_repository.estate.repo_id]
 }
 
 # The organisation's own settings: what a member may do for being one.

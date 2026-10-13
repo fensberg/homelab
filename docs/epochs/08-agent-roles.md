@@ -216,6 +216,34 @@ the repository's and not something in it.
 - **A zone's machine is not a worker to the capacity rule.** Its room is
   not room the site's own work can use, so it is left out of what the
   workers hold.
+- **A job names its pool and the estate names the site.** A job on the
+  estate's runners says which site it runs for, and a pull request's job
+  has none: it is the repository's work. So the estate sets a variable on
+  the repository saying which site hosts the pools, and a job asks for
+  `pr-<pool>-` and that. Moving the pools to another site is that value.
+  Work that is a site's own - a converge, a test against it - still names
+  its site and can run nowhere else.
+- **No overflow between sites, and how there could be.** A job asks for one
+  named set, and each site registers its own, so one site's pull-request
+  work cannot spill into another's spare room. A job can ask for a group
+  of runners and not a set, and both sites' pools could join one; how the
+  platform spreads work across sets in a group has not been looked at, and
+  the guard on pull-request jobs refuses a group today because a group
+  cannot be identified as a pool can. The route for a second site, not
+  built toward now.
+- **The pools' group takes any workflow**, because a pull request runs
+  its own copy of a workflow from its own ref and no list of workflows at
+  a branch can admit it. It is held to the estate's repository, and
+  allowed only while nothing but the pools joins it.
+- **A proof of each pool goes first, and nothing waits on it.** One small
+  job in each pool, made for this, that tries the pool from inside: that
+  it takes work, reaches a host declared for it, and is refused a host
+  nobody declared, the cluster's own API and any token of the cluster's.
+  No job that existed is moved yet. The first choice of three existing
+  jobs was wrong: one of them feeds a check a merge is held to, so a pool
+  that did not work would have held every merge, with nobody able to pass
+  the checks by. The rest follow once the proofs have been seen to run and
+  what a runner uses has been read off the machine.
 - **Four jobs stay on GitHub's runners.** Three reach anything by design,
   each with its reason written down, and could run under no list. The
   fourth is the clerk's reading, the one pull-request job that holds a

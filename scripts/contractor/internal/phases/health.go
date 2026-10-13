@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -301,7 +302,90 @@ func checkNodes(ctx *run.Context, kubeconfig string) error {
 	if err != nil {
 		return err
 	}
+	// A machine that was renamed joins again under its new name and leaves
+	// the node it was behind it: nothing takes a node out of the cluster
+	// but being asked to. That one extra node would fail the count below
+	// for a cluster with every machine it should have. So what a rename
+	// left is removed first - and only that, by the narrowest reading
+	// there is of "left by a rename" (formerNames).
+	cfg, err := config.LoadRendered(ctx.ConfigRendered)
+	if err != nil {
+		return err
+	}
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return err
+	}
+	left, err := formerNames(out, net.AllMachineNames())
+	if err != nil {
+		return err
+	}
+	if len(left) > 0 {
+		run.Info(fmt.Sprintf("removing %d node(s) a renamed machine left behind", len(left)))
+		for _, node := range left {
+			if _, err := kubectl(ctx, kubeconfig, "delete", "node", node); err != nil {
+				return err
+			}
+		}
+		if out, err = kubectl(ctx, kubeconfig, "get", "nodes", "-o", "json"); err != nil {
+			return err
+		}
+	}
 	return nodeVerdict(out, want)
+}
+
+// formerNames is every node that is a machine's old name: a node the config
+// does not name, at an address where a node the config does name also
+// stands.
+//
+// Both halves are required, and that is what keeps this from being a way to
+// delete nodes. A node the config does not name and that shares its address
+// with nothing is a machine nobody declared, or one being taken away in
+// order, and is not touched: the count that follows says so and stops. Two
+// nodes at one address, one of them the name the config gives the machine
+// there, can only be that machine before and after it was renamed, and the
+// one it no longer answers to is the one that goes.
+func formerNames(nodes []byte, names []string) ([]string, error) {
+	var list map[string]any
+	if err := json.Unmarshal(nodes, &list); err != nil {
+		return nil, fmt.Errorf("the node list is not what was asked for: %w", err)
+	}
+	named := map[string]bool{}
+	for _, n := range names {
+		named[n] = true
+	}
+	at := map[string][]string{}
+	items, _ := list["items"].([]any)
+	for _, item := range items {
+		node, _ := item.(map[string]any)
+		metadata, _ := node["metadata"].(map[string]any)
+		status, _ := node["status"].(map[string]any)
+		name, _ := metadata["name"].(string)
+		addresses, _ := status["addresses"].([]any)
+		for _, a := range addresses {
+			address, _ := a.(map[string]any)
+			if ip, _ := address["address"].(string); address["type"] == "InternalIP" && name != "" {
+				at[ip] = append(at[ip], name)
+			}
+		}
+	}
+	var out []string
+	for _, here := range at {
+		current := false
+		for _, n := range here {
+			current = current || named[n]
+		}
+		if !current {
+			continue
+		}
+		for _, n := range here {
+			if !named[n] {
+				out = append(out, n)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // nodeVerdict is every question this phase asks of the node list, in one pure

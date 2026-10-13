@@ -67,6 +67,9 @@ var estateTypes = map[string]bool{
 	ghapi.OrganisationSettingsType: true,
 	// Which repositories and workflows may use the estate's own runners.
 	ghapi.RunnerGroupType: true,
+	// What a workflow reads that is the estate's to say: which site a pull
+	// request's jobs are sent to.
+	"github_actions_variable": true,
 	// Where a job is handed the estate's own credential, and on which
 	// branch it may be.
 	"github_repository_environment":                   true,

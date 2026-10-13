@@ -68,7 +68,11 @@ locals {
           zone       = zone
           host_octet = local.dmz_band + j
           ip         = cidrhost(z.cidr, local.dmz_band + j)
-          name       = "${local.slugs[key]}-${zone}-${local.dmz_band + j}"
+          # Named for what it is, as a control plane is cp and a worker wk,
+          # and numbered by the end of its address as they are. A second
+          # zone's machines have the same addresses on another subnet, so
+          # from the second zone on the zone's number is in the name too.
+          name       = "${local.slugs[key]}-dmz${z.index == 0 ? "" : z.index}-${local.dmz_band + j}"
           vm_id      = s.octet * 1000 + 300 + z.index * 10 + j
           hypervisor = length(local.hypervisors[key]) > 0 ? local.hypervisors[key][(z.index + j) % length(local.hypervisors[key])] : ""
         }

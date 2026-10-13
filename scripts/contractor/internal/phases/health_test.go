@@ -1,6 +1,7 @@
 package phases
 
 import (
+	"encoding/json"
 	"homelab/details/capacity"
 	"homelab/details/repopath"
 	"os"
@@ -413,5 +414,48 @@ func TestHealthRefusesASiteFileItCannotRead(t *testing.T) {
 	reportWork(ctx, filepath.Join(dir, "kubeconfig"))
 	if _, _, err := coreAndWork(ctx, []byte("not json")); err == nil {
 		t.Error("output that is not a list was split into core and work")
+	}
+}
+
+// A node is a machine's old name only when the config does not name it AND
+// a node the config does name stands at the same address. Anything else the
+// config does not name is left for the count to refuse.
+func TestOnlyANodeARenameLeftBehindIsTakenForOne(t *testing.T) {
+	type node struct{ name, ip string }
+	listOf := func(nodes ...node) []byte {
+		var items []any
+		for _, n := range nodes {
+			items = append(items, map[string]any{
+				"metadata": map[string]any{"name": n.name},
+				"status": map[string]any{"addresses": []any{
+					map[string]any{"type": "Hostname", "address": n.name},
+					map[string]any{"type": "InternalIP", "address": n.ip},
+				}},
+			})
+		}
+		raw, err := json.Marshal(map[string]any{"items": items})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	names := []string{"one-machine", "another-machine", "its-new-name"}
+	for name, c := range map[string]struct {
+		nodes []node
+		want  string
+	}{
+		"every machine under its own name":     {[]node{{"one-machine", "192.0.2.10"}, {"another-machine", "192.0.2.20"}}, ""},
+		"a machine renamed":                    {[]node{{"its-new-name", "192.0.2.30"}, {"its-old-name", "192.0.2.30"}}, "its-old-name"},
+		"a machine nobody declared":            {[]node{{"one-machine", "192.0.2.10"}, {"a-stranger", "192.0.2.99"}}, ""},
+		"an old name whose new one never came": {[]node{{"its-old-name", "192.0.2.30"}}, ""},
+		"two strangers at one address":         {[]node{{"a-stranger", "192.0.2.99"}, {"another-stranger", "192.0.2.99"}}, ""},
+	} {
+		got, err := formerNames(listOf(c.nodes...), names)
+		if err != nil || strings.Join(got, " ") != c.want {
+			t.Errorf("%s: got %v, %v", name, got, err)
+		}
+	}
+	if _, err := formerNames([]byte("not a list"), names); err == nil {
+		t.Error("something that is not a node list was read as leaving nothing behind")
 	}
 }

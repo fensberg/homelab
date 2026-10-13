@@ -79,6 +79,24 @@
         "kind": "estimate",
         "basis": "A single proxy with one route behind it, chosen when it was added on 2026-10-12. Not yet looked at on a running site, and not under load."
       }
+    },
+    "HelmRelease/pull-requests-source": {
+      "*": {
+        "kind": "estimate",
+        "basis": "A guess, and a low one on purpose: the zone's machine has about 3 GiB for work, and at what the estate's other runners ask it would hold one runner. For jobs that need nothing beyond the source control; nothing has run in this pool yet, and what its jobs use is to be read off the machine once the first of them does."
+      }
+    },
+    "HelmRelease/pull-requests-builds": {
+      "*": {
+        "kind": "estimate",
+        "basis": "A guess, and a low one on purpose: the zone's machine has about 3 GiB for work, and at what the estate's other runners ask it would hold one runner. For jobs that build; nothing has run in this pool yet, and what its jobs use is to be read off the machine once the first of them does."
+      }
+    },
+    "HelmRelease/pull-requests-packages": {
+      "*": {
+        "kind": "estimate",
+        "basis": "A guess, and a low one on purpose: the zone's machine has about 3 GiB for work, and at what the estate's other runners ask it would hold one runner. For jobs that reach the package registries; nothing has run in this pool yet, and what its jobs use is to be read off the machine once the first of them does."
+      }
     }
   }
 }
