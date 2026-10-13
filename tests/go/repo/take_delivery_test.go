@@ -254,10 +254,11 @@ func TestTakeDeliveryDoesNotFetchWhatIsAlreadyHereAsTheLockOrdersIt(t *testing.T
 	// again, and refused again.
 	refused := newDeliveryFixture(t, lockFor("1.0", binary))
 	refused.serveFile(t, "tool-linux-x86_64", []byte("#!/bin/sh\necho something else\n"))
-	for attempt := 1; attempt <= 2; attempt++ {
-		if out, err := refused.run(t, "tool"); err == nil {
-			t.Fatalf("attempt %d: a file the lock does not list was accepted:\n%s", attempt, out)
-		}
+	if out, err := refused.run(t, "tool"); err == nil {
+		t.Fatalf("a file the lock does not list was accepted:\n%s", out)
+	}
+	if out, err := refused.run(t, "tool"); err == nil {
+		t.Fatalf("a file the lock does not list was refused, then taken as already here:\n%s", out)
 	}
 }
 
