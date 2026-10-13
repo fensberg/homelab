@@ -8,10 +8,9 @@
 # estate's own hardware once a pull request's jobs run there (#559). Every
 # one of them was made by hand and read by nothing here.
 #
-# They are to be declared here and set from here, and set again whenever
-# they are found otherwise. This file is the first of that and changes
-# nothing: it reads, so that what is declared next is declared as it stands
-# and the first time anything is set, nothing moves by accident.
+# They are declared and set from here, and set again whenever they are found
+# otherwise: a repository's in ./repository, the organisation's here. What
+# is not yet declared is read, below, until it is.
 #
 # THE CREDENTIAL is the estate's alone, as the vendor's token for the
 # account is and for the same reason: it can administer the repository and
@@ -46,6 +45,14 @@ data "github_organization" "estate" {
 data "github_collaborators" "estate" {
   owner      = local.source_control_owner
   repository = local.source_control_repository
+}
+
+# Every repository of the estate's, each behind the same walls. One, today.
+module "repository" {
+  source   = "./repository"
+  for_each = toset([local.source_control_repository])
+
+  name = each.key
 }
 
 output "source_control" {

@@ -54,6 +54,11 @@ var estateTypes = map[string]bool{
 	"cloudflare_workers_kv_namespace":     true,
 	// What each site rings the watchman with.
 	"random_password": true,
+	// What a workflow in a repository of the estate's may run, and what the
+	// token it is handed may do: the estate is every repository under its
+	// organisation, and a site has none.
+	"github_actions_repository_permissions":  true,
+	"github_workflow_repository_permissions": true,
 }
 
 const estateRoot = "management/estate"
