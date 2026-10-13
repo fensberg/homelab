@@ -41,6 +41,11 @@ var placeholderSites = map[string]bool{
 // information about a real place, so examples may use them freely.
 var positionalSite = regexp.MustCompile(`^site\d+$`)
 
+// A zone's key is positional for the reason a site's is: zone0 says which
+// zone and nothing about who is in it. It is what the real config uses, where
+// a placeholder would be a lie and a tenant's name is what this refuses.
+var positionalZone = regexp.MustCompile(`^zone\d+$`)
+
 func isPlaceholderSite(name string) bool {
 	return placeholderSites[name] || positionalSite.MatchString(name)
 }
@@ -215,7 +220,7 @@ func TestZoneNamesUseAPlaceholder(t *testing.T) {
 		for _, pattern := range []*regexp.Regexp{inJSON, inGo} {
 			for _, m := range pattern.FindAllStringSubmatch(string(body), -1) {
 				checked++
-				if !isPlaceholderSite(m[1]) {
+				if !isPlaceholderSite(m[1]) && !positionalZone.MatchString(m[1]) {
 					t.Errorf("%s names an untrusted zone %q.\n\n"+
 						"A zone is named after the workload it hosts, and naming a real one here "+
 						"makes the plumbing read as that workload's rather than as a general "+

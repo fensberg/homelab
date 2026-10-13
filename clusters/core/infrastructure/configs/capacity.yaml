@@ -30,17 +30,26 @@ spec:
       interval: 1m
       rules:
         # What the workers hold, and what they hold with the largest gone.
+        #
+        # A WORKER HERE IS ONE WORK THAT CANNOT WAIT MAY LAND ON. A machine in
+        # an untrusted zone is kept for what is sent to it by name and takes
+        # nothing else, so its room is not room the site's own work has: it
+        # is left out of what the workers hold, and what runs on it is left
+        # out of what they are asked for.
         - record: site:workers_allocatable_memory_bytes
           expr: >-
             sum(kube_node_status_allocatable{resource="memory"}
-            unless on (node) kube_node_role{role="control-plane"})
+            unless on (node) kube_node_role{role="control-plane"}
+            unless on (node) kube_node_spec_taint{key="untrusted-zone"})
         - record: site:workers_allocatable_memory_bytes:one_gone
           expr: >-
             sum(kube_node_status_allocatable{resource="memory"}
-            unless on (node) kube_node_role{role="control-plane"})
+            unless on (node) kube_node_role{role="control-plane"}
+            unless on (node) kube_node_spec_taint{key="untrusted-zone"})
             -
             max(kube_node_status_allocatable{resource="memory"}
-            unless on (node) kube_node_role{role="control-plane"})
+            unless on (node) kube_node_role{role="control-plane"}
+            unless on (node) kube_node_spec_taint{key="untrusted-zone"})
 
         # What work that cannot wait reserves on the workers: every running
         # pod there whose priority is not batch.
@@ -48,7 +57,8 @@ spec:
           expr: >-
             sum(
               (kube_pod_container_resource_requests{resource="memory"}
-               unless on (node) kube_node_role{role="control-plane"})
+               unless on (node) kube_node_role{role="control-plane"}
+               unless on (node) kube_node_spec_taint{key="untrusted-zone"})
               * on (namespace, pod) group_left ()
               max by (namespace, pod) (kube_pod_info{priority_class!="batch"})
               * on (namespace, pod) group_left ()

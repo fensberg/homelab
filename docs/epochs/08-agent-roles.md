@@ -191,6 +191,36 @@ what only that converge writes:
 the organisation waits for a person to let it run, which is a setting of
 the repository's and not something in it.
 
+**Amended the same day: three pools, on a machine of their own.**
+
+- **Three pools and not ten.** The lists overlap. Sorted by what a job
+  needs beyond the source control itself, there are three kinds: nothing;
+  the downloads a build wants; and the package registries. The operator:
+  "10 listeners is stupid and we can do better." A job in a pool is held
+  to that pool's list, which is a little more than its own. That is the
+  price of three, and it was taken knowingly.
+- **A pool is not a wall against the pull request itself.** A pull
+  request runs its own copy of the workflow, so it says which pool its
+  job asks for. A pool holds a tool that has gone wrong inside a job; it
+  does not hold a pull request that means harm, which can reach whatever
+  the three lists hold between them. A design that labelled each runner
+  by its job's name was dropped for the same reason: the name is the
+  pull request's to write.
+- **So the runners get a machine of their own**, in an untrusted zone,
+  as [03](03-workload.md) built them: its own subnet, closed to the rest
+  of the estate at the hypervisor, an image without the overlay, and a
+  taint. A pull request's code shares a kernel with other pull requests'
+  jobs and with nothing of the estate's. It is a fourth machine, 8 GiB;
+  the three trusted workers are left as they are, because the third is
+  the spare the site's capacity rule requires and not surplus.
+- **A zone's machine is not a worker to the capacity rule.** Its room is
+  not room the site's own work can use, so it is left out of what the
+  workers hold.
+- **Four jobs stay on GitHub's runners.** Three reach anything by design,
+  each with its reason written down, and could run under no list. The
+  fourth is the clerk's reading, the one pull-request job that holds a
+  secret worth taking.
+
 ### Rejected: three zero-context personas on every pull request
 
 **Chose:** two narrow jobs where the absence of context is an advantage.
