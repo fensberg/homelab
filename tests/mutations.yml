@@ -260,6 +260,8 @@ unprovable:
     reason: table
   - test: TestASettingIsAWallOnlyWhileItHoldsWorkflowsToAListAtACommit
     reason: table
+  - test: TestAMachineWithNoAddressIsSeenAndATemplateIsNotAMachine
+    reason: table
   - test: TestADedicationIsWorkedOutAndAHalfOfOneIsSeen
     reason: table
   - test: TestAGroupOfRunnersIsAWallOnlyWhileItNamesWhatItAdmits
