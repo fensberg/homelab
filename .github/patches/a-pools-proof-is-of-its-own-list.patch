@@ -1,0 +1,111 @@
+diff --git a/.github/workflows/pool-proof/action.yml b/.github/workflows/pool-proof/action.yml
+index c984146..65dd871 100644
+--- a/.github/workflows/pool-proof/action.yml
++++ b/.github/workflows/pool-proof/action.yml
+@@ -10,6 +10,17 @@ description: >-
+ #
+ # It is also what says a pool works at all, before any job a merge is held
+ # to is moved onto it. Nothing waits on these jobs.
++inputs:
++  reaches:
++    description: >-
++      A host declared for this pool, which must answer: one this pool has
++      and a narrower pool does not, so the proof is of this pool's own list.
++    required: true
++  refused:
++    description: A host no job declares, which must not answer.
++    required: false
++    default: https://example.com
++
+ runs:
+   using: composite
+   steps:
+@@ -24,22 +35,27 @@ runs:
+ 
+     - name: A host the pool is declared to reach answers
+       shell: bash
++      env:
++        REACHES: ${{ inputs.reaches }}
+       run: |
+         set -euo pipefail
+-        if ! curl --silent --show-error --max-time 20 --output /dev/null https://github.com; then
+-          echo "::error::github.com is declared for every pool and did not answer. The pool is refusing everything, so the refusals below would prove nothing."
++        if ! curl --silent --show-error --max-time 20 --output /dev/null "${REACHES}"; then
++          echo "::error::${REACHES} is declared for this pool and did not answer. Either the pool's policy does not carry its list, or it is refusing everything and the refusals below would prove nothing."
+           exit 1
+         fi
++        echo "${REACHES} answered"
+ 
+     - name: A host nobody declared is refused
+       shell: bash
++      env:
++        REFUSED: ${{ inputs.refused }}
+       run: |
+         set -euo pipefail
+-        if curl --silent --show-error --max-time 20 --output /dev/null https://example.com; then
+-          echo "::error::example.com answered. No job declares it, so the pool's policy is not holding its runners to the hosts declared for it."
++        if curl --silent --show-error --max-time 20 --output /dev/null "${REFUSED}"; then
++          echo "::error::${REFUSED} answered. No job declares it, so the pool's policy is not holding its runners to the hosts declared for it."
+           exit 1
+         fi
+-        echo "example.com was refused"
++        echo "${REFUSED} was refused"
+ 
+     - name: The cluster's own API is refused
+       shell: bash
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index 727097a..4a850f6 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -1596,6 +1596,8 @@ jobs:
+ 
+       - name: Prove the pool holds
+         uses: $/.github/workflows/pool-proof
++        with:
++          reaches: https://github.com
+ 
+   # ---------------------------------------------------------------------
+   # POOL PROOF (builds) - one of the estate's own pools for a pull request's
+@@ -1627,9 +1629,12 @@ jobs:
+           allowed-endpoints: >
+             api.github.com:443
+             github.com:443
++            proxy.golang.org:443
+ 
+       - name: Prove the pool holds
+         uses: $/.github/workflows/pool-proof
++        with:
++          reaches: https://proxy.golang.org
+ 
+   # ---------------------------------------------------------------------
+   # POOL PROOF (packages) - one of the estate's own pools for a pull request's
+@@ -1661,6 +1666,9 @@ jobs:
+           allowed-endpoints: >
+             api.github.com:443
+             github.com:443
++            registry.npmjs.org:443
+ 
+       - name: Prove the pool holds
+         uses: $/.github/workflows/pool-proof
++        with:
++          reaches: https://registry.npmjs.org
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 5c187a2..5b27f35 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -949,6 +949,7 @@ egress:
+     hosts:
+       - api.github.com:443
+       - github.com:443
++      - proxy.golang.org:443
+ 
+   - job: pr-validation.yml/pool-packages
+     pool: packages
+@@ -960,6 +961,7 @@ egress:
+     hosts:
+       - api.github.com:443
+       - github.com:443
++      - registry.npmjs.org:443
+ 
+   - job: pr-validation.yml/already-tested
+     pool: source
