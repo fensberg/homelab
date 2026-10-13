@@ -260,6 +260,8 @@ unprovable:
     reason: table
   - test: TestASettingIsAWallOnlyWhileItHoldsWorkflowsToAListAtACommit
     reason: table
+  - test: TestAGroupOfRunnersIsAWallOnlyWhileItNamesWhatItAdmits
+    reason: table
   #
   # Already a mutation proof in the stronger form: it extracts the task's own
   # cmd from the playbook and runs it against a stub, so it tests what ships

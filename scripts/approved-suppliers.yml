@@ -850,6 +850,23 @@ egress:
       - release-assets.githubusercontent.com:443
       - storage.googleapis.com:443
 
+  - job: converge-estate.yml/runner
+    policy: block
+    hosts:
+      - api.github.com:443
+      - github.com:443
+
+  - job: converge-estate.yml/converge
+    policy: audit
+    reason: >-
+      Talks to 1Password, Cloudflare, GitHub's API, object storage and the
+      OpenTofu registry, as the estate's own account.
+
+      HARDEN-RUNNER DOES NOTHING ON THIS RUNNER, as the site's converge
+      says of itself above: the scale set's pods are ARC, so `audit` here
+      audits nothing and `block` would block nothing. Egress for these pods
+      has to be controlled at the cluster's network layer (#411).
+
   - job: integration-tests.yml/sites
     policy: block
     hosts:
@@ -1445,6 +1462,10 @@ work:
     takes: 5m
 
   - job: deploy-infrastructure.yml/converge
+    kind: cannot-wait
+    takes: 5m
+
+  - job: converge-estate.yml/converge
     kind: cannot-wait
     takes: 5m
 

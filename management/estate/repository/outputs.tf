@@ -10,6 +10,16 @@ output "walls" {
   }
 }
 
+output "the_estates_credential_is_handed_to" {
+  description = "The only branch a job may be handed the estate's credential on, and whether it is held to it: for the root's tests."
+  value = {
+    branch         = github_repository_environment_deployment_policy.estate.branch_pattern
+    environment    = github_repository_environment_deployment_policy.estate.environment
+    held_to_it     = one(github_repository_environment.estate.deployment_branch_policy).custom_branch_policies && !one(github_repository_environment.estate.deployment_branch_policy).protected_branches
+    admins_pass_by = github_repository_environment.estate.can_admins_bypass
+  }
+}
+
 output "rules" {
   description = "Who may pass each rule on the repository's branches and tags by, as a count per rule: for the root's tests."
   value = {

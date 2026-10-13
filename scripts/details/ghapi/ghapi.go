@@ -29,6 +29,11 @@ const RulesetType = "github_repository_ruleset"
 // the guard on what belongs to the estate.
 const OrganisationSettingsType = "github_organization_settings"
 
+// RunnerGroupType is the OpenTofu resource a group of self-hosted runners
+// is: adopted by the lawyer, named by the guard on what belongs to the
+// estate, and read by the guard on which workflows a group admits.
+const RunnerGroupType = "github_actions_runner_group"
+
 // ConvergeWorkflow is the workflow file whose runs on main are the converge
 // of a merge. The contractor asks whether one is queued before it breaks
 // ground, and security's patrol asks whether the last one failed; both ask

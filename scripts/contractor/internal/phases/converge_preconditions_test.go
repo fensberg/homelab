@@ -1,6 +1,7 @@
 package phases
 
 import (
+	"homelab/details/console"
 	"homelab/details/onepassword"
 	"strings"
 	"testing"
@@ -40,7 +41,7 @@ func TestAConvergeChecksItIsTheTipOfMain(t *testing.T) {
 // deliberate act by somebody present and watching. The failure being guarded
 // against is specifically the unattended one.
 func TestPreconditionsDoNotBlockALocalConverge(t *testing.T) {
-	t.Setenv("GITHUB_ACTIONS", "")
+	t.Setenv(console.ActionsVariable, "")
 	if err := CheckConvergePreconditions(); err != nil {
 		t.Fatalf("a local converge was refused: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestPreconditionsDoNotBlockALocalConverge(t *testing.T) {
 // being current. "I could not tell" and "yes" must not behave alike, which is
 // this estate's standing rule about checks that can be off.
 func TestAnUndeterminableTipFailsClosed(t *testing.T) {
-	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv(console.ActionsVariable, "true")
 	// No git remote reachable from a scratch directory with no repository.
 	t.Chdir(t.TempDir())
 

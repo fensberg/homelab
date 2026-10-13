@@ -53,7 +53,29 @@ module "repository" {
   for_each = toset([local.source_control_repository])
 
   name                = each.key
+  default_branch      = data.github_repository.estate.default_branch
   delivers_unreviewed = tonumber(local.source_control.procurement_app_id)
+}
+
+data "github_repository" "estate" {
+  full_name = "${local.source_control_owner}/${local.source_control_repository}"
+}
+
+# The estate's own runners, and the only work that may reach them: the
+# workflows that converge the estate, that converge a site and that test
+# against one, as each is on the branch the estate is built from.
+#
+# TestEveryWorkflowOnTheEstatesRunnersIsOneTheirGroupAdmits holds this list
+# and the workflows to each other.
+module "runners" {
+  source = "./runners"
+
+  name         = "homelab"
+  repositories = [data.github_repository.estate.repo_id]
+  workflows = [
+    for workflow in ["converge-estate.yml", "deploy-infrastructure.yml", "integration-tests.yml"] :
+    "${local.source_control_owner}/${local.source_control_repository}/.github/workflows/${workflow}@refs/heads/${data.github_repository.estate.default_branch}"
+  ]
 }
 
 # The organisation's own settings: what a member may do for being one.

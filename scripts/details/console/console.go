@@ -74,6 +74,23 @@ func Elapsed(d time.Duration) {
 	fmt.Printf("  %s\n", paint(colorGray, fmt.Sprintf("(%s)", d.Round(time.Second))))
 }
 
+// Published reports whether what this run prints is world-readable. A run in
+// Actions lands in a public repository's log; the same command on a
+// workstation does not, and the two are owed different amounts of detail.
+func Published() bool {
+	return InActions() || os.Getenv("CI") == "true"
+}
+
+// InActions reports whether this run is a job in GitHub Actions, by the
+// variable the platform sets on every one.
+func InActions() bool {
+	return os.Getenv(ActionsVariable) == "true"
+}
+
+// ActionsVariable is the variable the platform sets to "true" on every job,
+// named once so a test that sets it and the code that reads it cannot part.
+const ActionsVariable = "GITHUB_ACTIONS"
+
 func Info(msg string) { fmt.Printf("  -> %s\n", msg) }
 func Ok(msg string)   { fmt.Printf("  %s %s\n", paint(colorGreen, "[ok]"), msg) }
 func Warn(msg string) { fmt.Printf("  %s %s\n", paint(colorYellow, "[!!]"), msg) }

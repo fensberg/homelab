@@ -38,3 +38,23 @@ func TestNothingPrintedToAPipeCarriesAnEscapeCode(t *testing.T) {
 		}
 	}
 }
+
+// A run in Actions, or anywhere that says it is CI, prints where anybody
+// can read; a run that says neither does not.
+func TestARunIsPublishedOnlyWhereItSaysItIsInCI(t *testing.T) {
+	for name, c := range map[string]struct {
+		actions, ci string
+		want        bool
+	}{
+		"a workstation":      {"", "", false},
+		"Actions":            {"true", "", true},
+		"some other CI":      {"", "true", true},
+		"a variable set off": {"false", "false", false},
+	} {
+		t.Setenv(ActionsVariable, c.actions)
+		t.Setenv("CI", c.ci)
+		if got := Published(); got != c.want {
+			t.Errorf("%s: got %v", name, got)
+		}
+	}
+}

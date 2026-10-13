@@ -1,6 +1,7 @@
 package run
 
 import (
+	"homelab/details/console"
 	"io"
 	"strings"
 	"testing"
@@ -66,13 +67,13 @@ is published. Report the address and the verb; never the value.`, joined)
 func TestApplySummaryWithholdsDiagnosticDetailOnlyInPublicLogs(t *testing.T) {
 	stream := `{"@level":"error","type":"diagnostic","diagnostic":{"severity":"error","summary":"Failed to create key","detail":"the OAuth client is not permitted to mint NORTHVALE keys"}}
 `
-	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv(console.ActionsVariable, "true")
 	_, failed := summariseApply(strings.NewReader(stream), nil)
 	if len(failed) != 1 || strings.Contains(failed[0], standInSiteName) {
 		t.Errorf("in a public log the detail must not appear: %v", failed)
 	}
 
-	t.Setenv("GITHUB_ACTIONS", "")
+	t.Setenv(console.ActionsVariable, "")
 	t.Setenv("CI", "")
 	_, failed = summariseApply(strings.NewReader(stream), nil)
 	if len(failed) != 1 || !strings.Contains(failed[0], "OAuth client is not permitted") {
@@ -81,7 +82,7 @@ func TestApplySummaryWithholdsDiagnosticDetailOnlyInPublicLogs(t *testing.T) {
 }
 
 func TestApplySummaryReportsDiagnosticsWithoutTheirDetail(t *testing.T) {
-	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv(console.ActionsVariable, "true")
 	stream := `{"@level":"error","type":"diagnostic","diagnostic":{"severity":"error","summary":"Invalid value for variable","detail":"the site NORTHVALE is not reachable at 10.0.0.1"}}
 `
 	lines, failed := summariseApply(strings.NewReader(stream), nil)

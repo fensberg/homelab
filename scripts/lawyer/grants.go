@@ -68,7 +68,7 @@ func plannedCreates(showJSON []byte, resourceType string) (map[string]string, er
 		}
 		name, ok := rc.AfterString("name")
 		if !ok || name == "" {
-			return nil, fmt.Errorf("the plan creates %s without a known name, so it cannot be matched to a bucket that already exists", rc.Address)
+			return nil, fmt.Errorf("the plan creates %s without a known name, so it cannot be matched to one that already exists", rc.Address)
 		}
 		out[name] = rc.Address
 	}
@@ -80,6 +80,12 @@ func plannedCreates(showJSON []byte, resourceType string) (map[string]string, er
 func (e *estate) shownPlan(name string) (string, error) {
 	saved := filepath.Join(e.dir, name)
 	defer os.Remove(saved)
+	return e.planTo(saved)
+}
+
+// planTo plans the estate into a file and returns the plan as tofu shows
+// it. The file holds every value and is the caller's to remove.
+func (e *estate) planTo(saved string) (string, error) {
 	if _, err := e.tofuOutput("plan", "-input=false", "-out="+saved); err != nil {
 		return "", err
 	}

@@ -90,6 +90,7 @@ func TestRulesetsAreReadByNameAndARefusalIsNeverNone(t *testing.T) {
 // counts how often it was asked.
 type whatStands struct {
 	held    map[string]int64
+	groups  map[string]int64
 	org     int64
 	err     error
 	lookups int
@@ -98,6 +99,11 @@ type whatStands struct {
 func (w *whatStands) rulesets(string) (map[string]int64, error) {
 	w.lookups++
 	return w.held, w.err
+}
+
+func (w *whatStands) runnerGroups() (map[string]int64, error) {
+	w.lookups++
+	return w.groups, w.err
 }
 
 func (w *whatStands) organisation() (int64, error) {
@@ -112,6 +118,10 @@ const aPlanThatMakesRulesets = `{"format_version":"1.2","resource_changes":[
    "change":{"actions":["create"],"after":{"name":"not there yet","repository":"homelab"}}},
   {"address":"module.repository[\"homelab\"].github_repository_ruleset.kept","mode":"managed","type":"github_repository_ruleset",
    "change":{"actions":["update"],"after":{"name":"two","repository":"homelab"}}},
+  {"address":"module.runners.github_actions_runner_group.this","mode":"managed","type":"github_actions_runner_group",
+   "change":{"actions":["create"],"after":{"name":"the estate's"}}},
+  {"address":"module.more.github_actions_runner_group.this","mode":"managed","type":"github_actions_runner_group",
+   "change":{"actions":["create"],"after":{"name":"not there yet"}}},
   {"address":"github_organization_settings.estate","mode":"managed","type":"github_organization_settings","change":{"actions":["create"],"after":{}}},
   {"address":"thing.new","mode":"managed","type":"thing","change":{"actions":["create"],"after":{"name":"one","repository":"homelab"}}}
 ]}`
@@ -125,7 +135,7 @@ func TestAStandingRulesetIsAdoptedByAnImportWrittenForThisRun(t *testing.T) {
 	e, calls := fakeEstate(t)
 	e.dir = t.TempDir()
 	file := filepath.Join(e.dir, adoptionsFile)
-	there := &whatStands{held: map[string]int64{"one": 11, "two": 22}, org: 9001}
+	there := &whatStands{held: map[string]int64{"one": 11, "two": 22}, groups: map[string]int64{"the estate's": 3}, org: 9001}
 
 	if err := e.adoptSourceControl(there); err != nil {
 		t.Fatal(err)
@@ -135,12 +145,13 @@ func TestAStandingRulesetIsAdoptedByAnImportWrittenForThisRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "import {\n  to = module.repository[\"homelab\"].github_repository_ruleset.stands\n  id = \"homelab:11\"\n}\n" +
+		"import {\n  to = module.runners.github_actions_runner_group.this\n  id = \"3\"\n}\n" +
 		"import {\n  to = github_organization_settings.estate\n  id = \"9001\"\n}\n"
 	if string(written) != want {
 		t.Errorf("the adoptions were written as\n%s\nand are\n%s", written, want)
 	}
-	if there.lookups != 2 {
-		t.Errorf("the source control was asked %d times for one repository and one organisation", there.lookups)
+	if there.lookups != 3 {
+		t.Errorf("the source control was asked %d times for one repository, its groups and one organisation", there.lookups)
 	}
 	if len(*calls) != 0 || strings.Contains(asked(), "import") {
 		t.Errorf("something was imported by command: %v\n%s", *calls, asked())
@@ -235,6 +246,41 @@ func TestTheOrganisationIsKnownByThePlatformsNumberForIt(t *testing.T) {
 		sourceControlBase = old
 		if got != c.want || (c.says == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.says)) {
 			t.Errorf("%s: got %d, %v", name, got, err)
+		}
+	}
+}
+
+// The organisation's groups of runners are read by name, and a refusal is
+// an error that says which permission is most likely missing.
+func TestRunnerGroupsAreReadByNameAndARefusalIsNeverNone(t *testing.T) {
+	for name, c := range map[string]struct {
+		status int
+		body   string
+		want   int64
+		says   string
+	}{
+		"two groups": {200, `{"total_count":2,"runner_groups":[{"id":1,"name":"Default"},{"id":3,"name":"the estate's"}]}`, 3, ""},
+		"a refusal":  {403, `{"message":"Resource not accessible by integration"}`, 0, "self-hosted runners"},
+	} {
+		base, credential := ghapitest.Server(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/orgs/example/actions/runner-groups" {
+				t.Errorf("%s: asked %s", name, r.URL.Path)
+			}
+			w.WriteHeader(c.status)
+			_, _ = w.Write([]byte(c.body))
+		})
+		old := sourceControlBase
+		sourceControlBase = base
+		cfg := validConfig()
+		cfg.SourceControl.AppCredential = credential
+		s, err := cfg.sourceControl()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.runnerGroups()
+		sourceControlBase = old
+		if got["the estate's"] != c.want || (c.says == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.says)) {
+			t.Errorf("%s: got %v, %v", name, got, err)
 		}
 	}
 }

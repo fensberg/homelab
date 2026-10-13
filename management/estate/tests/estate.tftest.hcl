@@ -458,6 +458,57 @@ run "nobody_passes_a_rule_on_the_repository_by" {
   }
 }
 
+# The estate's runners take work from the estate's own repository, and from
+# it only the workflows named, as they are on its default branch.
+run "the_estates_runners_take_only_named_workflows_from_the_default_branch" {
+  command = plan
+
+  override_data {
+    target = data.github_repository.estate
+    values = {
+      repo_id        = 7
+      default_branch = "trunk"
+    }
+  }
+
+  assert {
+    condition     = module.runners.admits.visibility == "selected" && module.runners.admits.repositories == toset([7]) && module.runners.admits.restricted
+    error_message = "the estate's runners admit a repository that is not the estate's, or any workflow at all"
+  }
+  assert {
+    condition = module.runners.admits.workflows == tolist([
+      "example/homelab/.github/workflows/converge-estate.yml@refs/heads/trunk",
+      "example/homelab/.github/workflows/deploy-infrastructure.yml@refs/heads/trunk",
+      "example/homelab/.github/workflows/integration-tests.yml@refs/heads/trunk",
+    ])
+    error_message = "the workflows the estate's runners admit are not the named ones on the default branch"
+  }
+}
+
+# The estate's own credential is handed to a job on the default branch and
+# on no other, and nobody passes that by.
+run "the_estates_credential_is_handed_out_on_the_default_branch_only" {
+  command = plan
+
+  override_data {
+    target = data.github_repository.estate
+    values = {
+      repo_id        = 7
+      default_branch = "trunk"
+    }
+  }
+
+  assert {
+    condition = (
+      module.repository["homelab"].the_estates_credential_is_handed_to.branch == "trunk" &&
+      module.repository["homelab"].the_estates_credential_is_handed_to.environment == "estate" &&
+      module.repository["homelab"].the_estates_credential_is_handed_to.held_to_it &&
+      !module.repository["homelab"].the_estates_credential_is_handed_to.admins_pass_by
+    )
+    error_message = "the estate's credential may be handed to a job on a branch that is not the default one, or somebody may pass that by"
+  }
+}
+
 # Being a member of the organisation gives nothing but reading.
 run "a_member_is_given_nothing_but_reading" {
   command = plan

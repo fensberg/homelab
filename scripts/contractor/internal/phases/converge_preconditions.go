@@ -2,7 +2,7 @@ package phases
 
 import (
 	"fmt"
-	"os"
+	"homelab/details/console"
 	"strings"
 
 	"homelab/contractor/internal/run"
@@ -56,7 +56,7 @@ func ConvergePreconditions() []ConvergePrecondition {
 // unattended one: a job queued hours ago, firing when a runner returns, with
 // no human in the loop at all.
 func CheckConvergePreconditions() error {
-	if os.Getenv("GITHUB_ACTIONS") != "true" {
+	if !console.InActions() {
 		return nil
 	}
 	for _, p := range ConvergePreconditions() {
