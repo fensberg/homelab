@@ -173,6 +173,45 @@ run "the_storage_driver_verifies_the_hypervisor_and_keeps_to_its_own_storage" {
 # The site's alerting is given where to ring and what to ring with, in the
 # Secret Alertmanager already mounts - and never in one of their own, which
 # a site whose release lacked it could not start Alertmanager without.
+# The sweeper is handed its own token and the hypervisor by the name its
+# certificate carries, with the authority to verify it against - in a site
+# that has an untrusted zone. A site with none is given nothing.
+run "the_sweeper_is_handed_its_token_where_there_is_an_untrusted_zone" {
+  command = plan
+
+  variables {
+    config_path = "../cluster/tests/fixtures/a-zone.json"
+  }
+
+  assert {
+    condition     = kubernetes_namespace.zone_sweeper[0].metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
+    error_message = "the sweeper's namespace does not hold its pod to the restricted profile"
+  }
+  assert {
+    condition = (
+      kubernetes_secret.zone_sweeper[0].data.HYPERVISOR_TOKEN_ID == "fixture-sweeper@pve!fixture" &&
+      kubernetes_secret.zone_sweeper[0].data.HYPERVISOR_TOKEN_SECRET == "00000000-0000-0000-0000-000000000002"
+    )
+    error_message = "the sweeper is not handed its own token: the storage driver's or the provisioner's reaches machines it has no business with"
+  }
+  assert {
+    condition = (
+      kubernetes_secret.zone_sweeper[0].data.HYPERVISOR_URL == "https://${kubernetes_secret.zone_sweeper[0].data.HYPERVISOR_NODE}:8006/api2/json" &&
+      kubernetes_secret.zone_sweeper[0].data.HYPERVISOR_AUTHORITY == "fixture+authority+++"
+    )
+    error_message = "the sweeper is not sent to the hypervisor by the name its certificate carries, or has no authority to verify it against"
+  }
+}
+
+run "a_site_with_no_untrusted_zone_has_no_sweeper" {
+  command = plan
+
+  assert {
+    condition     = length(kubernetes_namespace.zone_sweeper) == 0 && length(kubernetes_secret.zone_sweeper) == 0
+    error_message = "a site whose config names no sweeper's token was given a namespace or a secret for one"
+  }
+}
+
 run "the_sites_alerting_is_given_where_to_ring_and_what_with" {
   command = plan
 
