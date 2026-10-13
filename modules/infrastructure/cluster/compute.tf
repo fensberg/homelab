@@ -586,4 +586,24 @@ resource "proxmox_virtual_environment_vm" "dmz" {
     manufacturer = "Sidero Labs"
     product      = "Talos Linux"
   }
+
+  # The machine's address before it has a configuration, which is how the
+  # configuration reaches it. Every other machine had this and a zone's did
+  # not: the first one built came up with no address on a network that
+  # hands none out, and the converge waited for an API nothing could reach.
+  # On the zone's own subnet, through the zone's own gateway.
+  initialization {
+    datastore_id = local.datastores[each.value.hypervisor].disks
+
+    dns {
+      servers = local.dns_resolvers
+    }
+
+    ip_config {
+      ipv4 {
+        address = "${each.value.ip}/24"
+        gateway = local.dmz_zones[each.value.zone].gateway
+      }
+    }
+  }
 }

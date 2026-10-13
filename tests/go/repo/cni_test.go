@@ -135,20 +135,32 @@ func TestTheClusterDeclaresNoBuiltInCNIAndNoKubeProxy(t *testing.T) {
 func TestKubePrismIsDeclaredRatherThanAssumed(t *testing.T) {
 	talosFile, body := tofuDeclaring(t, declMachineConfig)
 
-	// Every collection of machine patches, so a machine class added later
-	// cannot quietly skip it. This used to assert that the file mentioned
-	// KubePrism somewhere, which was true and insufficient the moment a second
-	// patch set existed: the untrusted zone's agents need the endpoint exactly
-	// as much as a worker's do, and a check satisfied by somebody else's
-	// declaration would not have noticed theirs missing.
-	sets := regexp.MustCompile(`(?m)^  ([a-z_]*patches) = \{`).FindAllStringSubmatch(body, -1)
-	if len(sets) < 2 {
-		t.Fatalf("found %d machine-patch collection(s) in %s; with fewer than two this "+
-			"cannot detect one being left out.", len(sets), talosFile)
+	// Every collection of machine patches that is a machine's whole list, so
+	// a machine class added later cannot quietly skip it. There were two
+	// such lists, a zone's and everybody else's, and this judged each. There
+	// is one now, which every kind of machine is configured from
+	// (TestEveryKindOfMachineIsConfiguredFromTheOneList holds that), and a
+	// second collection is a fragment added to it: what makes a zone's
+	// machine the zone's. A fragment declares nothing of its own and is told
+	// from a list by being one the whole list draws on.
+	all := regexp.MustCompile(`(?m)^  ([a-z_]*patches) = \{`).FindAllStringSubmatch(body, -1)
+	allBlocks := regexp.MustCompile(`(?m)^  [a-z_]*patches = \{`).Split(body, -1)[1:]
+	var sets [][]string
+	var blocks []string
+	for i, name := range all {
+		fragment := false
+		for j, other := range allBlocks {
+			fragment = fragment || (j != i && strings.Contains(other, "local."+name[1]+"["))
+		}
+		if !fragment {
+			sets, blocks = append(sets, name), append(blocks, allBlocks[i])
+		}
+	}
+	if len(sets) == 0 {
+		t.Fatalf("found no machine-patch collection in %s, so this checked nothing", talosFile)
 	}
 
-	// Split on the collection headers so each is judged on its own contents.
-	blocks := regexp.MustCompile(`(?m)^  [a-z_]*patches = \{`).Split(body, -1)[1:]
+	// Each is judged on its own contents.
 	for i, name := range sets {
 		block := blocks[i]
 		if !strings.Contains(block, "kubePrism") {
