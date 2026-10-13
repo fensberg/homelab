@@ -458,4 +458,29 @@ func TestOnlyANodeARenameLeftBehindIsTakenForOne(t *testing.T) {
 	if _, err := formerNames([]byte("not a list"), names); err == nil {
 		t.Error("something that is not a node list was read as leaving nothing behind")
 	}
+
+	// A machine part-way through a rename is what a converge waits on: its
+	// old node is there, at one of the site's addresses, and its new one is
+	// not yet. A machine that is only new, or a stranger, is not waited for.
+	addresses := []string{"192.0.2.10", "192.0.2.20", "192.0.2.30"}
+	for name, c := range map[string]struct {
+		nodes    []node
+		left     int
+		renaming int
+	}{
+		"renamed, and the new node not there yet": {[]node{{"one-machine", "192.0.2.10"}, {"another-machine", "192.0.2.20"}, {"its-old-name", "192.0.2.30"}}, 0, 1},
+		"renamed, and the new node has joined":    {[]node{{"one-machine", "192.0.2.10"}, {"another-machine", "192.0.2.20"}, {"its-old-name", "192.0.2.30"}, {"its-new-name", "192.0.2.30"}}, 1, 0},
+		"nothing renamed":                         {[]node{{"one-machine", "192.0.2.10"}, {"another-machine", "192.0.2.20"}, {"its-new-name", "192.0.2.30"}}, 0, 0},
+		"a new machine that has not joined":       {[]node{{"one-machine", "192.0.2.10"}, {"another-machine", "192.0.2.20"}}, 0, 0},
+		"a stranger somewhere else":               {[]node{{"one-machine", "192.0.2.10"}, {"a-stranger", "192.0.2.99"}}, 0, 0},
+		"no node at all":                          {nil, 0, 0},
+	} {
+		left, renaming, err := afterARename(listOf(c.nodes...), names, addresses)
+		if err != nil || len(left) != c.left || renaming != c.renaming {
+			t.Errorf("%s: got %v left and %d part-way, %v", name, left, renaming, err)
+		}
+	}
+	if _, _, err := afterARename([]byte("not a list"), names, addresses); err == nil {
+		t.Error("something that is not a node list was read as a rename with nothing left")
+	}
 }

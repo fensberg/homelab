@@ -103,6 +103,11 @@ func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu, unreleas
 	if adopted != merging {
 		summary = fmt.Sprintf("%s\n\n%s\n\n%s", strings.TrimRight(merging, "\n"), onceAdopted(ctx.Site), adopted)
 	}
+	// A change that has a template to build says who has to converge it,
+	// above the plan. Not a refusal: nothing is wrong with the change.
+	if notice := forTheWorkstation(ctx.Site, summary); notice != "" {
+		summary = notice + "\n\n" + summary
+	}
 	// A change its hypervisor cannot hold leads with that, above the plan:
 	// the plan below is of a converge that would be refused before it
 	// built anything.
@@ -121,6 +126,41 @@ func planAsBuilt(ctx *run.Context, recordDir string, tofu asbuilt.Tofu, unreleas
 		return errors.New(refused)
 	}
 	return nil
+}
+
+// forTheWorkstation is what a plan says above itself when the change has a
+// template to build, and nothing when it has none.
+//
+// Building a template needs SSH to the hypervisor, which a converge started
+// by a merge does not have (NotFromHereError). The plan can see a template
+// being made, so it says so before the merge: that merging will start a
+// converge that stops having changed nothing, and that the converge is then
+// run from the workstation. The first change that needed this said nothing,
+// and the converge found out by failing part-way (#741).
+func forTheWorkstation(site, summary string) string {
+	templates := []string{resourceOf(steps.Template), resourceOf(steps.ZoneTemplate)}
+	for _, line := range strings.Split(summary, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || (fields[0] != "add" && fields[0] != "replace") {
+			continue
+		}
+		for _, template := range templates {
+			if strings.HasPrefix(fields[1], template) {
+				return fmt.Sprintf("NEEDS THE WORKSTATION: this change builds a template, which needs SSH to the hypervisor.\n\nA converge started by merging runs inside the cluster and cannot reach it: it will stop, having changed nothing, and say so. After merging, run this from the workstation:\n\n    task converge SITE=%s", site)
+			}
+		}
+	}
+	return ""
+}
+
+// resourceOf is a resource's own address, without the module it is in: how
+// a plan's summary names it.
+func resourceOf(address string) string {
+	parts := strings.Split(address, ".")
+	if len(parts) < 2 {
+		return address
+	}
+	return strings.Join(parts[len(parts)-2:], ".")
 }
 
 // heldToTheRecordedHardware holds the site's machines, as this change plans

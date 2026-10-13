@@ -12,6 +12,7 @@ import (
 
 	"homelab/contractor/config"
 	"homelab/contractor/internal/run"
+	"homelab/contractor/steps"
 	"homelab/details/asbuilt"
 	"homelab/details/platform"
 	"homelab/details/repopath"
@@ -425,5 +426,31 @@ func TestAPlanThatCannotDoTheSumSaysSo(t *testing.T) {
 	}
 	if err := planAsBuilt(ctx, recordHolding(t, `{"nodes": {}}`), tofu, noModulesOfItsOwn); err == nil || !strings.Contains(err.Error(), "cannot be read as a site's") {
 		t.Errorf("a config of the wrong shape: %v", err)
+	}
+}
+
+// A plan that builds a template says, above itself, that the converge is
+// the workstation's; one that builds none says nothing of it.
+func TestAPlanThatBuildsATemplateSaysItIsForTheWorkstation(t *testing.T) {
+	for name, c := range map[string]struct {
+		summary string
+		says    bool
+	}{
+		"a zone's template made":      {"  add     " + resourceOf(steps.ZoneTemplate) + `["<redacted>"]` + "\n  add     something.else\n", true},
+		"the site's template rebuilt": {"  replace " + resourceOf(steps.Template) + `["<redacted>"]` + "\n", true},
+		"a template only changed":     {"  change  " + resourceOf(steps.Template) + `["<redacted>"]  (name)` + "\n", false},
+		"machines and no template":    {"  add     " + resourceOf(steps.ZoneMachines) + `["<redacted>"]` + "\n", false},
+		"nothing at all":              {"", false},
+	} {
+		got := forTheWorkstation("site0", c.summary)
+		if (got != "") != c.says {
+			t.Errorf("%s: said %q", name, got)
+		}
+		if c.says && (!strings.Contains(got, "task converge SITE=site0") || !strings.Contains(got, "NEEDS THE WORKSTATION")) {
+			t.Errorf("%s: the notice does not say what to run:\n%s", name, got)
+		}
+	}
+	if resourceOf("module.somewhere.a_type.a_name") != "a_type.a_name" || resourceOf("alone") != "alone" {
+		t.Error("a resource's own address was not read out of its full one")
 	}
 }

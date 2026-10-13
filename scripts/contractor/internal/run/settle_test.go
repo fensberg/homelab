@@ -24,7 +24,7 @@ func TestAConvergeForgetsCachedReadsFirst(t *testing.T) {
 	if err := os.MkdirAll(ctx.Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := SettleMoves(ctx); err != nil {
+	if err := ForgetCachedReads(ctx); err != nil {
 		t.Fatal(err)
 	}
 	calls, _ := os.ReadFile(filepath.Join(ctx.Dir, "calls"))
@@ -55,5 +55,39 @@ func TestASiteHasTwoRootsAndInRunsInOne(t *testing.T) {
 	}
 	if ctx.Dir != ctx.Cluster.Dir {
 		t.Error("In changed the context it was asked on")
+	}
+}
+
+// A rename the configuration declares is settled by an apply that can make
+// and destroy nothing, aimed at the two addresses of the rename; a
+// configuration with no rename asks tofu for nothing at all.
+func TestARenameIsSettledByAnApplyThatCanBuildNothing(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\necho \"$*\" >> calls\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "tofu"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx := NewContext(t.TempDir(), "site0")
+	if err := os.MkdirAll(ctx.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := SettleMoves(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if calls, _ := os.ReadFile(filepath.Join(ctx.Dir, "calls")); len(calls) != 0 {
+		t.Errorf("a configuration with no rename asked tofu:\n%s", calls)
+	}
+
+	if err := os.WriteFile(filepath.Join(ctx.Dir, "renamed.tf"), []byte("moved {\n  from = thing.old\n  to   = thing.new\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SettleMoves(ctx); err != nil {
+		t.Fatal(err)
+	}
+	calls, _ := os.ReadFile(filepath.Join(ctx.Dir, "calls"))
+	if want := "apply -refresh-only -auto-approve -input=false -json -target=thing.new -target=thing.old\n"; string(calls) != want {
+		t.Errorf("the rename was settled with:\n%s\nwant:\n%s", calls, want)
 	}
 }

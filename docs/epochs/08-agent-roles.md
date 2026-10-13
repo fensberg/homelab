@@ -278,6 +278,14 @@ not built).** The operator's, in three parts that fit together:
   It does not close what a job that got out can do while it is still
   running.
 
+**Decided 2026-10-13:** a job that gets out of its container is a threat
+to be covered before a pull request's own jobs move, so this is built
+first. Every job gets a clean machine: the wipe is after every run. The
+tools are built into the runner's image. And the throwing away is the
+sweeper's. The estate already has a role that collects what is finished
+with; the operator: "we have the garbage / refuse collector / sweeper. we
+don't need a new role."
+
 To work out before building: a wiped machine has lost its copy of the
 runner's image and would fetch it again before the next runner is hot. The
 operating system can carry images in its own boot image, where a wipe does

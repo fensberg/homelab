@@ -334,6 +334,118 @@ func checkNodes(ctx *run.Context, kubeconfig string) error {
 	return nodeVerdict(out, want)
 }
 
+// formerNodesPause is how long apart the looks for a renamed machine's new
+// node are, and formerNodesLooks how many are taken.
+var (
+	formerNodesPause = 10 * time.Second
+	formerNodesLooks = 18
+)
+
+// clearFormerNodes removes the node a renamed machine left behind, before
+// anything asks whether every node is Ready.
+//
+// A machine given a new name joins again under it a little after it is
+// told, so there is a while in which the cluster has the old node and not
+// yet the new. This waits that while out, and only when there is something
+// to wait for: a node the config does not name standing at one of the
+// site's own addresses. A converge that renamed nothing returns at once. If the new node never
+// comes, nothing is removed and the question that follows fails as it would
+// have, saying which node is not Ready.
+func clearFormerNodes(ctx *run.Context) error {
+	cfg, err := config.LoadRendered(ctx.ConfigRendered)
+	if err != nil {
+		return err
+	}
+	net, err := config.ResolveSiteNetwork(cfg, ctx.Site)
+	if err != nil {
+		return err
+	}
+	kubeconfig, cleanup, err := writeKubeconfig(ctx.In(ctx.Cluster))
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	names := net.AllMachineNames()
+	for look := 0; look < formerNodesLooks; look++ {
+		if look > 0 {
+			time.Sleep(formerNodesPause)
+		}
+		out, err := kubectl(ctx, kubeconfig, "get", "nodes", "-o", "json")
+		if err != nil {
+			return err
+		}
+		left, renaming, err := afterARename(out, names, net.AllMachineIPs())
+		if err != nil {
+			return err
+		}
+		if len(left) > 0 {
+			run.Info(fmt.Sprintf("removing %d node(s) a renamed machine left behind", len(left)))
+			for _, node := range left {
+				if _, err := kubectl(ctx, kubeconfig, "delete", "node", node); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if renaming == 0 {
+			return nil
+		}
+	}
+	return nil
+}
+
+// afterARename reads a node list for what a rename leaves: the nodes that
+// are a machine's old name, and how many machines are part-way through one -
+// a node the config does not name, at one of the site's own addresses, where
+// the node the config does name has not joined yet. Only that is waited for.
+// A machine that is simply new has no old node, and waiting on it here would
+// hold every converge that adds a machine for nothing: whether it is Ready
+// is the next question's to ask.
+func afterARename(nodes []byte, names, addresses []string) (left []string, renaming int, err error) {
+	left, err = formerNames(nodes, names)
+	if err != nil {
+		return nil, 0, err
+	}
+	var list map[string]any
+	if err := json.Unmarshal(nodes, &list); err != nil {
+		return nil, 0, err
+	}
+	named, ours := map[string]bool{}, map[string]bool{}
+	for _, n := range names {
+		named[n] = true
+	}
+	for _, a := range addresses {
+		ours[a] = true
+	}
+	current, unnamed := map[string]bool{}, map[string]bool{}
+	items, _ := list["items"].([]any)
+	for _, item := range items {
+		node, _ := item.(map[string]any)
+		metadata, _ := node["metadata"].(map[string]any)
+		status, _ := node["status"].(map[string]any)
+		name, _ := metadata["name"].(string)
+		found, _ := status["addresses"].([]any)
+		for _, a := range found {
+			address, _ := a.(map[string]any)
+			ip, _ := address["address"].(string)
+			if address["type"] != "InternalIP" || !ours[ip] {
+				continue
+			}
+			if named[name] {
+				current[ip] = true
+			} else {
+				unnamed[ip] = true
+			}
+		}
+	}
+	for ip := range unnamed {
+		if !current[ip] {
+			renaming++
+		}
+	}
+	return left, renaming, nil
+}
+
 // formerNames is every node that is a machine's old name: a node the config
 // does not name, at an address where a node the config does name also
 // stands.

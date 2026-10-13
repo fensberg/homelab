@@ -470,6 +470,7 @@ jobs:
           exact=true
           superseded=false
           waiting=false
+          elsewhere=false
           detail=""
           for site in $(echo "$SITES" | tr -d '[]"' | tr ',' ' '); do
             f="verdicts/$site"
@@ -495,6 +496,13 @@ jobs:
               # (#713). So it is neither a revert nor "not known".
               4) waiting=true
                  detail="${detail}- ${site}: the cluster was not ready, and nothing was applied\n" ;;
+              # A converge for the workstation: it has a template to build,
+              # which needs SSH to the hypervisor, and that does not answer
+              # from inside the cluster. Nothing was applied and the change
+              # is not at fault, so it is neither a revert nor "not known"
+              # (#741).
+              5) elsewhere=true
+                 detail="${detail}- ${site}: a converge for the workstation, and nothing was applied\n" ;;
               *) exact=false
                  detail="${detail}- ${site}: failed with exit ${code} - something may have been written\n" ;;
             esac
@@ -509,6 +517,11 @@ jobs:
           # others did, the cluster is the first thing to look at.
           if [ "$exact" = true ] && [ "$waiting" = true ]; then
             exact=waiting
+          fi
+          # And one site whose converge is the workstation's holds a revert
+          # back the same way: the change is good and is waiting for a person.
+          if [ "$exact" = true ] && [ "$elsewhere" = true ]; then
+            exact=workstation
           fi
           why=""
           for f in verdicts/*.why; do
@@ -719,6 +732,33 @@ jobs:
       # An issue, like the alarm below, because it does not clear itself: the
       # merge is on main and has not been converged. Lower than that alarm,
       # because here what the estate holds is known - it is as it was.
+      - name: Say that the converge is the workstation's
+        if: steps.verdict.outputs.exact == 'workstation'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DETAIL: ${{ steps.verdict.outputs.detail }}
+          WHY: ${{ steps.verdict.outputs.why }}
+        run: |
+          gh issue create \
+            --title "A converge is waiting to be run from the workstation (${SHA::8})" \
+            --label "priority:P2,type:correctness,epoch:05" \
+            --body "$(printf '%s\n' \
+              "The converge for \`${SHA::8}\` stopped before its first change: it has a template to build, which needs SSH to the hypervisor, and that does not answer from inside the cluster. **Nothing was reverted, deliberately**: nothing is wrong with the change, and \`main\` says what the site is about to be." \
+              "" \
+              "The converge's own words, from where it halted:" \
+              "" \
+              '```' \
+              "${WHY:-The converge left no account of why it halted. Read the failed run.}" \
+              '```' \
+              "" \
+              "Per site:" \
+              "$DETAIL" \
+              "**What to do:** run the converge from the workstation, as the words above say, and close this when it has finished." \
+              "" \
+              "Run: ${RUN_URL}")"
+
       - name: Say that the cluster was not ready
         if: steps.verdict.outputs.exact == 'waiting'
         env:

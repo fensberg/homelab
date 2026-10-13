@@ -521,11 +521,15 @@ func runDestroy(ctx *run.Context, confirm string) int {
 //	                nothing failed, so there is nothing to revert or report
 //	exitNotAtRest  nothing was written, and what stopped it was the cluster
 //	               and not the change: reverting is exact and cannot help
+//	exitNotFromHere  nothing was written, and it cannot be done from where
+//	                 it ran: it is a converge for the workstation, and
+//	                 reverting would undo a change nothing is wrong with
 const (
 	exitMayHaveChanged = 1
 	exitUntouched      = 2
 	exitSuperseded     = 3
 	exitNotAtRest      = 4
+	exitNotFromHere    = 5
 )
 
 // whyUntouched says which kind of "nothing was written" a failed converge
@@ -535,6 +539,10 @@ func whyUntouched(code int, runErr error) int {
 	var waiting *phases.NotAtRestError
 	if code == exitUntouched && errors.As(runErr, &waiting) {
 		return exitNotAtRest
+	}
+	var elsewhere *phases.NotFromHereError
+	if code == exitUntouched && errors.As(runErr, &elsewhere) {
+		return exitNotFromHere
 	}
 	return code
 }

@@ -79,14 +79,19 @@ func PendingMoves(dir string) ([]string, error) {
 	return out, nil
 }
 
-// SettleMoves records any pending rename, so the targeted applies that follow
-// are not refused. It is a no-op when there is nothing to settle.
-func SettleMoves(ctx *Context) error {
-	// Cached data-source reads first: a read left at an address the
-	// configuration no longer uses is an implicit move, which refuses every
-	// targeted apply exactly as a `moved` block does. The plans do the same
-	// in their copies (details/asbuilt.ForgetReads), so they refuse what this
-	// would and pass what it would.
+// ForgetCachedReads drops what the state remembers of data sources it has
+// read, before the targeted applies. A read left at an address the
+// configuration no longer uses is an implicit move, which refuses every
+// targeted apply exactly as a `moved` block does. The plans do the same in
+// their copies (details/asbuilt.ForgetReads), so they refuse what this
+// would and pass what it would.
+//
+// HOUSEKEEPING, AND NOT A CHANGE TO THE ESTATE. It writes the state, and
+// what it writes is that nothing is remembered: the next plan reads each
+// again, whichever commit it is a plan of. A converge that stops after this
+// and before anything else has changed nothing a revert would have to undo,
+// and its caller says so (Compute).
+func ForgetCachedReads(ctx *Context) error {
 	n, err := asbuilt.ForgetReads(ctx.Dir, nil, asbuilt.Exec, true)
 	if err != nil {
 		return err
@@ -94,7 +99,14 @@ func SettleMoves(ctx *Context) error {
 	if n > 0 {
 		Info(fmt.Sprintf("forgot %d cached data-source read(s); the plan below reads them again", n))
 	}
+	return nil
+}
 
+// SettleMoves records any pending rename, so the targeted applies that follow
+// are not refused. It is a no-op when there is nothing to settle. Unlike
+// forgetting a read, a rename settled is a change: the state then names
+// things as this commit does, and the commit before it did not.
+func SettleMoves(ctx *Context) error {
 	addrs, err := PendingMoves(ctx.Dir)
 	if err != nil {
 		return fmt.Errorf("looking for renamed resources: %w", err)

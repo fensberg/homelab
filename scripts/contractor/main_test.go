@@ -451,6 +451,8 @@ func TestAConvergeTheClusterStoppedIsToldApartFromOneTheChangeStopped(t *testing
 		"gave up waiting, wrapped by its phase":   {exitUntouched, fmt.Errorf("at rest: %w", waiting), exitNotAtRest},
 		"the change was refused, nothing written": {exitUntouched, errors.New("the cluster root: a precondition failed"), exitUntouched},
 		"gave up waiting, and something written":  {exitMayHaveChanged, waiting, exitMayHaveChanged},
+		"a converge for the workstation":          {exitUntouched, fmt.Errorf("compute: %w", &phases.NotFromHereError{Site: "site0", Templates: []string{"the site's"}}), exitNotFromHere},
+		"for the workstation, something written":  {exitMayHaveChanged, &phases.NotFromHereError{Site: "site0"}, exitMayHaveChanged},
 	} {
 		if got := whyUntouched(c.code, c.err); got != c.want {
 			t.Errorf("%s: got %d, want %d", name, got, c.want)
@@ -458,6 +460,11 @@ func TestAConvergeTheClusterStoppedIsToldApartFromOneTheChangeStopped(t *testing
 	}
 	if waiting.Error() != waiting.Err.Error() || !errors.Is(waiting, waiting.Err) {
 		t.Error("the reason a converge gave up is not what it says, or cannot be reached through it")
+	}
+	for _, other := range []int{exitMayHaveChanged, exitUntouched, exitSuperseded, exitNotAtRest} {
+		if exitNotFromHere == other {
+			t.Errorf("exitNotFromHere shares the status %d, so a workflow cannot tell them apart", other)
+		}
 	}
 	for _, other := range []int{exitMayHaveChanged, exitUntouched, exitSuperseded} {
 		if exitNotAtRest == other {
