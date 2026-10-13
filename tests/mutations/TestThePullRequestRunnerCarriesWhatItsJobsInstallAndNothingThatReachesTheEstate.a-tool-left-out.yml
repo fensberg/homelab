@@ -1,0 +1,9 @@
+guard: TestThePullRequestRunnerCarriesWhatItsJobsInstallAndNothingThatReachesTheEstate
+file: .github/pull-request-runner-image/Dockerfile
+find: "opentofu pre-commit pre-commit-hooks shellcheck trufflehog zizmor"
+replace: "opentofu pre-commit pre-commit-hooks shellcheck trufflehog"
+mentions: "take delivery of zizmor"
+why: >
+  An image that falls behind its jobs fails nothing. The job installs what
+  is missing, as it always could, on every run and on the pool's network -
+  and the image goes on being called the one with the tools in it.

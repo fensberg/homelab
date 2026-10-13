@@ -382,8 +382,6 @@ unprovable:
     owed: true
   - test: TestReachableFromPullRequest
     owed: true
-  - test: TestRunnerImageCannotReceiveASecret
-    owed: true
   - test: TestRunnerImageCarriesEveryBinaryTheContractorInvokes
     owed: true
   - test: TestRunnerManifestsAgreeWithOpenTofu

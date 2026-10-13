@@ -1,0 +1,9 @@
+guard: TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers
+file: .github/workflows/fabricator.yml
+find: '--build-context "reads=${READS_DIR}" \'
+replace: '--label "org.opencontainers.image.title=${IMAGE}" \'
+mentions: "is not run with what was laid out"
+why: >
+  Laid out and not handed over, the files are fingerprinted, staged and
+  never seen by the build, which then fails on the first line that mounts
+  them - after the merge, on main, for every image that reads anything.

@@ -1,0 +1,10 @@
+guard: TestAnImageIsMadeAgainWhenAFileItsBuildReadsChanges
+file: .github/workflows/fabricator.yml
+find: 'git ls-tree -r HEAD -- "$CONTEXT" "${reads[@]}";'
+replace: 'git ls-tree -r HEAD -- "$CONTEXT";'
+mentions: "a file the build reads changed and kept the old fingerprint"
+why: >
+  The lock moves to a patched tool and the image's own directory does not
+  change by a byte. Fingerprinted by that directory alone, the image with
+  the old tool in it is found, reused, and goes on being what every pull
+  request runs in.

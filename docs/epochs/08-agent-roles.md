@@ -292,6 +292,25 @@ operating system can carry images in its own boot image, where a wipe does
 not reach; whether that suits this version and how the zone's template is
 built has not been looked at.
 
+**The tools are in the runner (built 2026-10-13).** The pools run an image
+of their own, `.github/pull-request-runner-image`, and not the converge's.
+It holds Go and Node where the setup actions look before they download, and
+every locked tool a pull request's job takes, installed by
+`scripts/take-delivery.sh` from the lock like anywhere else. It holds none
+of what reaches the estate. No job changed to use it: the steps that
+install stay where they are, and `take-delivery.sh` now records what it
+delivered and does not fetch it twice, so on this image they find their
+tools and on any other runner they install them as before. A build may
+read files from outside its own directory when its work order names them
+(`reads`), which is how the installer and its lock reach this one without
+being copied into a layer.
+
+Not in it yet, and still fetched by the jobs that use them: the Go modules
+the tests compile against, the hooks `pre-commit` installs for itself, and
+`pnpm` with what it installs. Each needs a file of the repository in the
+build, which `reads` now allows. Not done either: taking the package
+registries off the pools' lists, which waits on those three.
+
 **A swarm for a moment (concept, 2026-10-13, not built).** The operator:
 "you open the draft PR within 2 minutes of an expected draft elevation.
 elevation happens and BAM 20 jobs are picked up ASAP and finish in 30

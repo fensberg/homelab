@@ -14,13 +14,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"homelab/details/applications"
 )
 
 // Path is where the estate's own work orders live, from the repository root.
 const Path = "scripts/work-orders.json"
+
+// ReadsContext is the name a build knows an order's Reads by: a Dockerfile
+// mounts or copies from it, and from nowhere else outside its own context.
+const ReadsContext = "reads"
 
 // Order is one thing the fabricator builds.
 type Order struct {
@@ -34,7 +40,12 @@ type Order struct {
 	Package string `json:"package,omitempty"`
 	// The order's own pins file, beside the estate's. Empty for an order
 	// pinned by the estate's alone.
-	Pins    string   `json:"pins,omitempty"`
+	Pins string `json:"pins,omitempty"`
+	// The repository's own files the build reads from outside its context,
+	// by their paths from the repository root. The build is handed them as
+	// the named context ReadsContext, laid out by those paths, and they are
+	// part of what the image is made from: a change to one is a new image.
+	Reads   []string `json:"reads,omitempty"`
 	Release *Release `json:"release,omitempty"`
 }
 
@@ -69,6 +80,17 @@ func Parse(body []byte) ([]Order, error) {
 		// that what it is for is never a guess.
 		if o.Name == "" || (o.Context == "") == (o.Package == "") {
 			return nil, fmt.Errorf("%s: the order %q must have a name and exactly one of a context, to build an image from, and a package, to publish", Path, o.Name)
+		}
+		if len(o.Reads) > 0 && o.Context == "" {
+			return nil, fmt.Errorf("%s: the order %q reads files and builds no image to read them into", Path, o.Name)
+		}
+		for _, r := range o.Reads {
+			// A file of this repository, named the one way there is to name
+			// it: the build is handed exactly these and a path that climbs
+			// out, or is written two ways, is not one of them.
+			if r == "" || path.IsAbs(r) || path.Clean(r) != r || r == ".." || strings.HasPrefix(r, "../") {
+				return nil, fmt.Errorf("%s: the order %q reads %q, which is not a path from the repository root to a file in it", Path, o.Name, r)
+			}
 		}
 	}
 	return f.Orders, nil

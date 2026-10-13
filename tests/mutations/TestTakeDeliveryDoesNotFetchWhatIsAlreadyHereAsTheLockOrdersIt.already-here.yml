@@ -1,0 +1,10 @@
+guard: TestTakeDeliveryDoesNotFetchWhatIsAlreadyHereAsTheLockOrdersIt
+file: scripts/take-delivery.sh
+find: 'if [ -f "$taken/$name" ] && ['
+replace: "if false && ["
+mentions: "a delivery that is already here was fetched again"
+why: >
+  A runner built with its tools in it is only ready at once if the step that
+  installs them finds them there. Without the record every job downloads
+  what its machine already holds, and the image is the same wait as before
+  with a larger pull in front of it.

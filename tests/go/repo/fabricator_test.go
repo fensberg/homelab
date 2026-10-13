@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -808,6 +809,166 @@ func TestAnImageOfTheSameInputsIsReused(t *testing.T) {
 		[]string{"OWNER=example", "PACKAGE=homelab-thing", "CONTEXT=img", "PINS=x", "GH_TOKEN=x"})
 	if ok {
 		t.Errorf("a registry that could not be read was taken to hold no build:\n%s", logs)
+	}
+}
+
+// committed is a repository of its own holding the given files, and a way
+// to change them: each call commits everything it is handed.
+func committed(t *testing.T) (repo string, commit func(files map[string]string)) {
+	t.Helper()
+	repo = t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo, "-c", "user.email=a@example.com", "-c", "user.name=t"}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	return repo, func(files map[string]string) {
+		t.Helper()
+		for rel, body := range files {
+			path := filepath.Join(repo, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		run("add", "-A")
+		run("commit", "-qm", "files")
+	}
+}
+
+// What an order says its build reads is part of what the image is made
+// from. A change to one of those files is a new image; a change to a file
+// beside it that the order does not name is not; and an order that reads
+// nothing is fingerprinted as it was before an order could read anything,
+// so that teaching the fabricator this rebuilt no image that had not moved.
+func TestAnImageIsMadeAgainWhenAFileItsBuildReadsChanges(t *testing.T) {
+	repo, commit := committed(t)
+	none := `echo "gh: Not Found (HTTP 404)" >&2; exit 1`
+	fingerprint := func(reads string) string {
+		t.Helper()
+		env := []string{"OWNER=example", "PACKAGE=homelab-thing", "CONTEXT=img", "PINS=", "GH_TOKEN=x"}
+		if reads != "" {
+			env = append(env, "READS="+reads)
+		}
+		ok, output, logs := runReleaseStep(t, "Reuse a build of the same inputs", repo, fakeRegistryListing(t, none), env)
+		if !ok {
+			t.Fatalf("the reuse step failed:\n%s", logs)
+		}
+		for _, l := range strings.Split(output, "\n") {
+			if v, found := strings.CutPrefix(l, "fingerprint="); found && v != "" {
+				return v
+			}
+		}
+		t.Fatalf("the step wrote no fingerprint:\n%s", output)
+		return ""
+	}
+
+	commit(map[string]string{"img/Dockerfile": "FROM scratch\n", "shared/fetch.sh": "one\n", "shared/other.sh": "one\n"})
+	const reads = `["shared/fetch.sh"]`
+	alone, first := fingerprint(""), fingerprint(reads)
+	if fingerprint("null") != alone {
+		t.Error("an order that reads nothing is fingerprinted differently when the workflow says so as null")
+	}
+	if first == alone {
+		t.Error("an order that reads a file has the fingerprint of one that reads none")
+	}
+
+	commit(map[string]string{"shared/other.sh": "two\n"})
+	if fingerprint(reads) != first {
+		t.Error("a file the order does not name changed, and the image would be built again for it")
+	}
+	if fingerprint("") != alone {
+		t.Error("a file outside the context changed the fingerprint of an order that reads nothing")
+	}
+	commit(map[string]string{"shared/fetch.sh": "two\n"})
+	if fingerprint(reads) == first {
+		t.Error("a file the build reads changed and kept the old fingerprint, so the image with the old one in it is reused for good")
+	}
+}
+
+// A build is handed the files its order names, by their paths, and nothing
+// else of the repository: not a file beside one of them, not one that is on
+// disk and untracked, and not whatever a link points at. And the build is
+// run with them, as the context a Dockerfile knows as reads.
+func TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers(t *testing.T) {
+	repo, commit := committed(t)
+	commit(map[string]string{"img/Dockerfile": "FROM scratch\n", "shared/fetch.sh": "fetches\n", "shared/other.sh": "other\n"})
+	if err := os.WriteFile(filepath.Join(repo, "shared", "left-behind.json"), []byte("left by a step\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc/hostname", filepath.Join(repo, "shared", "link")); err != nil {
+		t.Fatal(err)
+	}
+
+	layOut := func(reads string) (dir string, ok bool, logs string) {
+		t.Helper()
+		ok, output, logs := runReleaseStep(t, "Lay out what the build reads", repo, os.Getenv("PATH"), []string{"READS=" + reads})
+		for _, l := range strings.Split(output, "\n") {
+			if v, found := strings.CutPrefix(l, "dir="); found {
+				dir = v
+			}
+		}
+		return dir, ok, logs
+	}
+	holds := func(dir string) []string {
+		t.Helper()
+		var out []string
+		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() {
+				rel, _ := filepath.Rel(dir, path)
+				out = append(out, filepath.ToSlash(rel))
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	dir, ok, logs := layOut(`["shared/fetch.sh"]`)
+	if !ok || dir == "" {
+		t.Fatalf("the step failed, or said nowhere:\n%s", logs)
+	}
+	if got := holds(dir); len(got) != 1 || got[0] != "shared/fetch.sh" {
+		t.Errorf("the build was handed %v, and its order names shared/fetch.sh alone", got)
+	}
+	dir, ok, logs = layOut("null")
+	if !ok || dir == "" {
+		t.Fatalf("an order that reads nothing failed the step:\n%s", logs)
+	}
+	if got := holds(dir); len(got) != 0 {
+		t.Errorf("an order that reads nothing was handed %v", got)
+	}
+	for name, reads := range map[string]string{
+		"a file left on disk that is not tracked": `["shared/left-behind.json"]`,
+		"a link":                           `["shared/link"]`,
+		"a directory":                      `["shared"]`,
+		"a file nowhere in the repository": `["shared/missing.sh"]`,
+	} {
+		if _, ok, logs := layOut(reads); ok || !strings.Contains(logs, "is not a file this repository tracks") {
+			t.Errorf("%s was handed to the build, or refused without saying why:\n%s", name, logs)
+		}
+	}
+
+	build, found := dockerBuildCommand(workflowText(t, fabricatorWorkflow))
+	if !found {
+		t.Fatal("could not find the docker build invocation in the fabricator")
+	}
+	if !strings.Contains(build, `--build-context "`+workorders.ReadsContext+`=${READS_DIR}"`) {
+		t.Errorf("the build is not run with what was laid out, as the context %q:\n%s", workorders.ReadsContext, build)
+	}
+	if !strings.Contains(workflowText(t, fabricatorWorkflow), "READS_DIR: ${{ steps.reads.outputs.dir }}") {
+		t.Error("the build's READS_DIR is not the directory the laying-out step wrote")
 	}
 }
 

@@ -19,12 +19,24 @@
     "ghcr.io/<repository>-<name>-release. The platform is one - the modules a site",
     "runs and what they read - and a site runs the version its own config pins,",
     "so merging a change to it does nothing to production. The version is the",
-    "year and month it was published in and its number within that month."
+    "year and month it was published in and its number within that month.",
+    "",
+    "An image's build sees its own directory and nothing else of the repository,",
+    "unless the order says what else it reads. Those files are handed to the",
+    "build as a second context named reads, laid out by their paths here, and",
+    "they are part of the image's fingerprint: a change to one is a new image.",
+    "The pull-request runner reads the locked installer and its lock, so that",
+    "what it carries arrived by the same hashes as on every other machine."
   ],
   "orders": [
     {
       "name": "runner",
       "context": ".github/runner-image"
+    },
+    {
+      "name": "pull-request-runner",
+      "context": ".github/pull-request-runner-image",
+      "reads": ["scripts/take-delivery.sh", "scripts/deliveries.lock"]
     },
     {
       "name": "platform",
