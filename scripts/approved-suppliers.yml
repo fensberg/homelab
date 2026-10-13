@@ -949,6 +949,7 @@ egress:
     hosts:
       - api.github.com:443
       - github.com:443
+      - proxy.golang.org:443
 
   - job: pr-validation.yml/pool-packages
     pool: packages
@@ -960,6 +961,7 @@ egress:
     hosts:
       - api.github.com:443
       - github.com:443
+      - registry.npmjs.org:443
 
   - job: pr-validation.yml/already-tested
     pool: source

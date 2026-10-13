@@ -1596,6 +1596,8 @@ jobs:
 
       - name: Prove the pool holds
         uses: $/.github/workflows/pool-proof
+        with:
+          reaches: https://github.com
 
   # ---------------------------------------------------------------------
   # POOL PROOF (builds) - one of the estate's own pools for a pull request's
@@ -1627,9 +1629,12 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             github.com:443
+            proxy.golang.org:443
 
       - name: Prove the pool holds
         uses: $/.github/workflows/pool-proof
+        with:
+          reaches: https://proxy.golang.org
 
   # ---------------------------------------------------------------------
   # POOL PROOF (packages) - one of the estate's own pools for a pull request's
@@ -1661,6 +1666,9 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             github.com:443
+            registry.npmjs.org:443
 
       - name: Prove the pool holds
         uses: $/.github/workflows/pool-proof
+        with:
+          reaches: https://registry.npmjs.org
