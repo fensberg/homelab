@@ -24,7 +24,7 @@ func TestAConvergeForgetsCachedReadsFirst(t *testing.T) {
 	if err := os.MkdirAll(ctx.Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := SettleMoves(ctx); err != nil {
+	if err := ForgetCachedReads(ctx); err != nil {
 		t.Fatal(err)
 	}
 	calls, _ := os.ReadFile(filepath.Join(ctx.Dir, "calls"))

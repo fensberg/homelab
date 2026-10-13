@@ -126,7 +126,17 @@ Nothing has been changed. (%w)`, hypervisorapi.AuthorityRef(ctx.Site), ctx.Site,
 	if err := handOverHardware(ctx); err != nil {
 		return err
 	}
+	// And whether this converge can be done from here at all, asked before
+	// anything is written for the same reason.
 	if ctx.TakenOverOK {
+		if err := templatesCanBeBuiltFromHere(ctx, cfg, len(net.DMZIPs) > 0); err != nil {
+			return err
+		}
+	}
+	if ctx.TakenOverOK {
+		if err := forgetReadsAndMeasureFromHere(ctx); err != nil {
+			return err
+		}
 		if err := run.SettleMoves(ctx); err != nil {
 			return err
 		}

@@ -148,6 +148,25 @@ func EstateChanged(ctx *run.Context) (changed, certain bool) {
 	return serial != ctx.StateSerialAtTakeover, true
 }
 
+// forgetReadsAndMeasureFromHere forgets the cached reads a converge must
+// before its targeted applies, and then takes where the state stands as what
+// a failure is measured from.
+//
+// Forgetting writes the state and changes nothing of the estate: what was
+// forgotten is read again by the next plan of any commit. Measured from
+// before it, every converge that stopped later said it had "already written
+// to the estate's state" whatever it had done, and no revert was offered
+// for a merge that had built nothing - twice in one day (#732, #733).
+func forgetReadsAndMeasureFromHere(ctx *run.Context) error {
+	if err := run.ForgetCachedReads(ctx); err != nil {
+		return err
+	}
+	if serial, ok := estateSerial(ctx); ok {
+		ctx.StateSerialAtTakeover = serial
+	}
+	return nil
+}
+
 // estateSerial is the serials of both roots' state, added. Each only ever
 // rises, so the sum moves exactly when either root was written, which is the
 // question. Not ok unless both could be read.
