@@ -86,9 +86,10 @@ func TestEveryJobOnTheEstatesRunnersIsOnTheRunnersItsKindAllows(t *testing.T) {
 		for name, job := range workflow.Jobs {
 			var on *set
 			for i := range sets {
-				if job.RunsOn.Kind == yaml.ScalarNode && strings.HasPrefix(job.RunsOn.Value, sets[i].prefix) {
-					on = &sets[i]
-					break
+				for _, label := range runnersOf(&job.RunsOn) {
+					if on == nil && strings.HasPrefix(label, sets[i].prefix) {
+						on = &sets[i]
+					}
 				}
 			}
 			if on == nil {
