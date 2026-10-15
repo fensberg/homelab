@@ -1,6 +1,8 @@
 package phases
 
 import (
+	"homelab/contractor/internal/run"
+	"homelab/details/hypervisorapi"
 	"os"
 	"testing"
 
@@ -32,5 +34,18 @@ func TestMain(m *testing.M) {
 	surveySite = aSiteWithOneHost
 	// No test here waits on the clock for a machine to join.
 	formerNodesPause = 0
+	// No test reaches a hypervisor. A whole verb is run against a site whose
+	// untrusted workers all have their clean snapshot, so the step that gives
+	// a new one its snapshot finds nothing to do; what it does when there is
+	// one is untrustedclean_test.go's.
+	untrustedHypervisor = func(*run.Context) (untrustedGuests, []string, error) {
+		return everyWorkerSnapshotted{}, nil, nil
+	}
 	os.Exit(m.Run())
 }
+
+// everyWorkerSnapshotted is a hypervisor with no machine that lacks its
+// clean snapshot.
+type everyWorkerSnapshotted struct{ untrustedGuests }
+
+func (everyWorkerSnapshotted) List() ([]hypervisorapi.Guest, error) { return nil, nil }
