@@ -61,7 +61,7 @@ jobs:
     # Nothing to plan for a pull request that has closed; that run exists only
     # to cancel the plan before it.
     if: github.event.action != 'closed'
-    runs-on: ubuntu-latest
+    runs-on: pr-source-${{ vars.pull_request_runners_site }}
     timeout-minutes: 5
     outputs:
       sites: ${{ steps.sites.outputs.sites }}
@@ -140,7 +140,7 @@ jobs:
       && (github.event.merge_group.head_sha != ''
           || github.event.pull_request.head.repo.full_name == github.repository)
     # A pull request's code never runs on the estate's runner.
-    runs-on: ubuntu-latest
+    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
     permissions:
       contents: read
       # To find and download the record another run published.
@@ -328,7 +328,7 @@ jobs:
       && needs.sites.outputs.touched == 'true'
       && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: pr-source-${{ vars.pull_request_runners_site }}
     permissions:
       pull-requests: write
     timeout-minutes: 5
@@ -411,7 +411,7 @@ jobs:
     name: Plan
     needs: [sites, plan]
     if: always() && github.event.action != 'closed'
-    runs-on: ubuntu-latest
+    runs-on: pr-source-${{ vars.pull_request_runners_site }}
     permissions: {}
     timeout-minutes: 5
     steps:

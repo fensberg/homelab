@@ -1591,3 +1591,51 @@ work:
   - job: pr-validation.yml/pool-packages
     kind: cannot-wait
     takes: 1m
+
+  # The light checks: scans, lint, spelling and the plan, moved off GitHub's
+  # runners so that what holds them is the pool's network and not an agent
+  # that fails to start on one runner in eight (#725). Each takes what it
+  # took on GitHub's on 2026-10-15, rounded up.
+  - job: plan-infrastructure.yml/sites
+    kind: cannot-wait
+    takes: 1m
+
+  - job: plan-infrastructure.yml/plan
+    kind: cannot-wait
+    takes: 3m
+
+  - job: plan-infrastructure.yml/report
+    kind: cannot-wait
+    takes: 1m
+
+  - job: plan-infrastructure.yml/held
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/format
+    kind: cannot-wait
+    takes: 2m
+
+  - job: pr-validation.yml/shellcheck
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/dockerfiles
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/policy
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/spelling
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/workflowscan
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/trivy
+    kind: cannot-wait
+    takes: 1m
