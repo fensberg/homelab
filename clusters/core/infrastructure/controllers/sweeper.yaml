@@ -1,0 +1,174 @@
+# The sweeper, scrubbing untrusted workers: a used one is put back as it was
+# built once what ran on it has finished (scripts/sweeper/scrub-untrusted.go,
+# docs/epochs/08-agent-roles.md).
+#
+# Its namespace and the secret holding its hypervisor token are the platform
+# module's (modules/infrastructure/platform/sweeper.tf), because Flux cannot
+# read the vault. What is here is what it may do in the cluster, which is
+# little: read the untrusted workers' nodes, mark them, delete one it could
+# not put back, and see whether the pull-request runners' pods are on them.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sweeper
+  namespace: sweeper
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sweeper
+rules:
+  # Nodes are not namespaced, so this is the whole cluster's nodes. The
+  # program asks only for those labelled as untrusted workers, and marks or
+  # deletes only one it has just found there.
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sweeper
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sweeper
+subjects:
+  - kind: ServiceAccount
+    name: sweeper
+    namespace: sweeper
+---
+# The runners' pods, in their own namespace and nowhere else: whether a
+# worker is running a job is whether one of these is on it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sweeper
+  namespace: pull-request-runners
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sweeper
+  namespace: pull-request-runners
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sweeper
+subjects:
+  - kind: ServiceAccount
+    name: sweeper
+    namespace: sweeper
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sweeper
+  namespace: sweeper
+  labels:
+    app.kubernetes.io/name: sweeper
+spec:
+  # One. Two would each put the same worker back.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sweeper
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sweeper
+    spec:
+      serviceAccountName: sweeper
+      # Its own account's token is how it reaches the cluster at all.
+      automountServiceAccountToken: true
+      # Not first to make room for: while it is gone, the untrusted workers
+      # go on being used without being put back.
+      priorityClassName: critical
+
+      # Never on an untrusted worker, which is what it scrubs, and never on
+      # a machine holding etcd.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+                  - key: untrusted-zone
+                    operator: DoesNotExist
+
+      # Sent to the hypervisor by name, because its certificate names the
+      # host. This is where that name is, as the storage driver is told.
+      hostAliases:
+        - ip: ${HYPERVISOR_ADDRESS}
+          hostnames:
+            - ${HYPERVISOR_HOSTNAME}
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: sweeper
+          image: ghcr.io/fensberg/homelab-sweeper@sha256:0000000000000000000000000000000000000000000000000000000000000123
+          args:
+            - -runners
+            - pull-request-runners
+          # The hypervisor's address, node, authority and the sweeper's own
+          # token, as the platform module wrote them.
+          envFrom:
+            - secretRef:
+                name: hypervisor
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+---
+# Nothing reaches it, and it reaches two things: the cluster's API and the
+# hypervisor's.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nothing-unless-said
+  namespace: sweeper
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: sweeper
+  namespace: sweeper
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: sweeper
+  egress:
+    - toEntities:
+        - kube-apiserver
+    - toCIDR:
+        - ${HYPERVISOR_ADDRESS}/32
+      toPorts:
+        - ports:
+            - port: "8006"
+              protocol: TCP

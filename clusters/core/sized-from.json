@@ -14,6 +14,12 @@
         "basis": "Chosen per component when the stack was added, from the chart's defaults and the size of this cluster. The site at rest uses about a gibibyte across all of it."
       }
     },
+    "Deployment/sweeper": {
+      "sweeper": {
+        "kind": "estimate",
+        "basis": "One small static program that asks two APIs a question every fifteen seconds and holds nothing between looks. Not yet seen running."
+      }
+    },
     "HelmRelease/cloudnative-pg": {
       "*": {
         "kind": "estimate",
