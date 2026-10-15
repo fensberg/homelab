@@ -117,6 +117,18 @@ In scope:
   run the same hooks a human does, which means that class of exception stops
   being needed.
 
+- **One set of pull-request pools for the estate, not one per site.** The
+  pools (`clusters/core/infrastructure/configs/pull-requests-*.yaml`) are in
+  the core every site applies, so each site would run and register three
+  pools of its own, named `pr-<pool>-<site>`, while a pull request's jobs
+  already ask for one site's by a single estate variable
+  (`pull_request_runners_site`). With one site that costs nothing; with a
+  second, it is a second set of pools nobody sends work to. Sites share what
+  they can: the pools, and what they need around them - the sweeper, its
+  namespace and its alerts - live where that variable says and nowhere else.
+  The operator's ruling, 2026-10-15: this is consolidation, not the second
+  site's work.
+
 - **A register of every total override, against question 5.** The audit's own
   output rather than a check: each override named, with what it displaces and
   what asserts the outcome - or a declared reason it is unguarded. That is the

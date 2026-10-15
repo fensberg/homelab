@@ -620,7 +620,7 @@ echo '{"repository":"` + fixtureImage + `-release","tag":"1.0.15-1","digest":"sh
 	}
 	// And the pin reaches every environment's rendering.
 	for _, env := range []string{"production", "staging"} {
-		out, err := exec.Command("kubectl", "kustomize", filepath.Join(scratch, "pushed", app, env)).CombinedOutput()
+		out, err := exec.Command("kustomize", "build", filepath.Join(scratch, "pushed", app, env)).CombinedOutput()
 		if err != nil {
 			t.Fatalf("the pushed %s settings do not build: %v\n%s", env, err, out)
 		}
@@ -1066,7 +1066,7 @@ func TestAReleaseThatReachesOutsideItsApplicationIsNotMade(t *testing.T) {
 		t.Fatal(err)
 	}
 	// It builds where it stands, which is why a review would not catch it.
-	if out, err := exec.Command("kubectl", "kustomize", filepath.Dir(reaching)).CombinedOutput(); err != nil {
+	if out, err := exec.Command("kustomize", "build", filepath.Dir(reaching)).CombinedOutput(); err != nil {
 		t.Fatalf("the fixture's reach outside its directory does not build even in place, so this proves nothing: %v\n%s", err, out)
 	}
 	if ok, out, logs := releaseFingerprint(t, root, a, none); ok || out["fingerprint"] != "" {

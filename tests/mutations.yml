@@ -141,6 +141,8 @@ unprovable:
   # than in a ledger a file away.
   - path: tests/go/repo/duplicates_test.go
     reason: table
+  - path: tests/go/repo/runs_on_test.go
+    reason: table
   - path: tests/go/repo/forkable_test.go
     reason: table
   - path: tests/go/repo/vaultcheck_test.go
