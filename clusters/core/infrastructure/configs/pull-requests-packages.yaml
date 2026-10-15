@@ -137,6 +137,7 @@ spec:
               - matchName: codeload.github.com
               - matchName: dl.google.com
               - matchName: files.pythonhosted.org
+              - matchName: get.trivy.dev
               - matchName: ghcr.io
               - matchName: github.com
               - matchName: go.dev
@@ -160,6 +161,7 @@ spec:
         - matchName: codeload.github.com
         - matchName: dl.google.com
         - matchName: files.pythonhosted.org
+        - matchName: get.trivy.dev
         - matchName: ghcr.io
         - matchName: github.com
         - matchName: go.dev
