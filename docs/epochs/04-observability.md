@@ -326,7 +326,7 @@ credentials, which nothing here has.
 | 33  | What is down reaches the phone                   | Not met | Nothing sends the mail, and which alerts go is not decided                                                                                                                                                                                                                                                                                                                                                        |
 | 34  | A delay can be placed anywhere                   | Partly  | As stated above: averages per layer and per machine; nothing per operation, per pod, of the network, or a stack                                                                                                                                                                                                                                                                                                   |
 
-Met: 8 of 30 (3, 9, 14 and 17 are epoch 05's).
+Met: 6 of 30, and 13 and 19 mostly (3, 9, 14 and 17 are epoch 05's).
 
 ### Before this epoch closes
 
