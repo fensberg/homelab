@@ -355,8 +355,9 @@ func (k kube) Forget(name string) error {
 	return k.call(http.MethodDelete, "/api/v1/nodes/"+name, "", nil, nil)
 }
 
-// account is where the cluster puts a pod's own credentials.
-const account = "/var/run/secrets/kubernetes.io/serviceaccount"
+// account is where the cluster puts a pod's own credentials. A variable so
+// that a test can put a pod's credentials somewhere else.
+var account = "/var/run/secrets/kubernetes.io/serviceaccount"
 
 func inCluster(namespace string) (kube, error) {
 	host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")

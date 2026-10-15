@@ -14,13 +14,6 @@ import (
 // and the sweeper returns to it, so both need the one name.
 const CleanSnapshot = "clean"
 
-// SweeperTokenRefs is where a site's vault keeps the sweeper's token on
-// its hypervisor, as the hypervisor phase stores it.
-func SweeperTokenRefs(site string) (id, secret string) {
-	item := "op://" + site + "/hypervisor/"
-	return item + "sweeper_token_id", item + "sweeper_token_secret"
-}
-
 // Guest is one virtual machine as the hypervisor lists it to whoever asks:
 // only the machines the asker's token may see.
 type Guest struct {

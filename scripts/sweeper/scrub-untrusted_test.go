@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -265,5 +268,55 @@ func TestTheClusterIsReadAndMarkedByItsNodes(t *testing.T) {
 	k.token = "somebody-else"
 	if _, err := k.Machines(); err == nil {
 		t.Error("a refusal was read as a cluster with no untrusted workers")
+	}
+}
+
+// Inside a pod, the cluster is where the cluster says it is, reached with
+// the pod's own token and trusting the cluster's own authority alone.
+// Outside one, or with a credential missing, it is refused by name.
+func TestTheClusterIsReachedAsThePodsOwnAccount(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+	dir := t.TempDir()
+	authority := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	if err := os.WriteFile(filepath.Join(dir, "token"), []byte("pod-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ca.crt"), authority, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	was := account
+	account = dir
+	t.Cleanup(func() { account = was })
+
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	if _, err := inCluster("runners"); err == nil {
+		t.Error("a program outside any cluster was given one")
+	}
+	host, port, _ := strings.Cut(strings.TrimPrefix(server.URL, "https://"), ":")
+	t.Setenv("KUBERNETES_SERVICE_HOST", host)
+	t.Setenv("KUBERNETES_SERVICE_PORT", port)
+	k, err := inCluster("runners")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k.token != "pod-token" || k.namespace != "runners" || k.base != server.URL {
+		t.Errorf("the cluster was reached as %+v", k)
+	}
+	if err := k.call(http.MethodGet, "/", "", nil, nil); err != nil {
+		t.Errorf("the cluster's own authority was not trusted: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "ca.crt"), []byte("not a certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inCluster("runners"); err == nil {
+		t.Error("an authority that holds no certificate was trusted")
+	}
+	if err := os.Remove(filepath.Join(dir, "token")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inCluster("runners"); err == nil {
+		t.Error("a pod with no token was given the cluster")
 	}
 }

@@ -3,6 +3,9 @@ package phases
 import (
 	"errors"
 	"fmt"
+	"homelab/contractor/internal/run"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -125,5 +128,50 @@ func TestANodeIsReadForItsTaintItsStartAndWhetherItIsReady(t *testing.T) {
 	}
 	if _, err := untrustedNodeFrom([]byte("not json")); err == nil {
 		t.Error("what is not a node's description was read as one")
+	}
+}
+
+// The cluster as the converge reaches it, through kubectl: a node is read
+// as it describes itself, opened by lifting the one taint, and forgotten
+// only when there is one to forget.
+func TestTheConvergeReadsOpensAndForgetsANodeThroughKubectl(t *testing.T) {
+	bin, dir := t.TempDir(), t.TempDir()
+	log := filepath.Join(dir, "asked")
+	script := "#!/bin/sh\necho \"$*\" >> " + log + "\n" +
+		"case \"$*\" in\n" +
+		"  'get nodes -o name') echo node/lot-dmz-100; echo node/lot-wk-200 ;;\n" +
+		"  'get node lot-dmz-100 -o json') echo '{\"status\":{\"nodeInfo\":{\"bootID\":\"b-1\"},\"conditions\":[{\"type\":\"Ready\",\"status\":\"True\"}]}}' ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(filepath.Join(bin, "kubectl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx := &run.Context{}
+	ctx.Dir = dir
+	k := kubectlNodes{ctx: ctx, kubeconfig: filepath.Join(dir, "kubeconfig")}
+
+	got, err := k.Node("lot-dmz-100")
+	if err != nil || got != (untrustedNode{ready: true, boot: "b-1"}) {
+		t.Errorf("the node was read as %+v (%v)", got, err)
+	}
+	if err := k.Open("lot-dmz-100"); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.Forget("lot-dmz-100"); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.Forget("lot-dmz-101"); err != nil {
+		t.Fatal(err)
+	}
+	asked, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "get node lot-dmz-100 -o json\n" +
+		"taint node lot-dmz-100 " + capacity.NotYetClean + "-\n" +
+		"get nodes -o name\ndelete node lot-dmz-100\n" +
+		"get nodes -o name\n"
+	if string(asked) != want {
+		t.Errorf("kubectl was asked:\n%s\nwant:\n%s", asked, want)
 	}
 }
