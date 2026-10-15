@@ -171,8 +171,6 @@ The site keeps itself, and proves it:
 - **13. A converge in flight is not evicted.**
 - **15. Alerts on the bet read pressure**, not memory in use, and one says how
   long until a resource is full at the rate it is filling.
-- **16. How a machine sheds load is declared**, not left at the kubelet's
-  defaults.
 - **18. The site says what it is shortest of, and what more hardware would
   buy**: so many more weeks of history for this much disk, this much more
   work for this much memory, none of a capability it has no hardware for.
@@ -182,7 +180,10 @@ changes a machine that is running and this epoch only watches: no machine's
 size or count is a literal (3), a reservation follows measured use (9), work
 is spread again after a roll (14), and the bet has been tested by
 overfilling on purpose (17). Their numbers are kept, there and here, so
-that what refers to them still finds them.
+that what refers to them still finds them. How a machine sheds load (16)
+followed on 2026-10-15, for the same reason: declaring it changes every
+running machine, and a plan showed it applied to all of them at once with
+nothing ordering it (#767, parked).
 
 What else a site should be able to say about itself (added 2026-10-08, the
 operator: "Let's bring all the untouched into the epoch"):
@@ -307,7 +308,7 @@ credentials, which nothing here has.
 | 12  | Every necessary function has a deadline          | Partly  | Scheduled workflows only (`ScheduledWorkflowHasNotRunWhenDue`); none for the backups or a converge                                                                                                                                                                                                                                                                     |
 | 13  | A converge in flight is not evicted              | Mostly  | A drain waits for it (a disruption budget allows none of its runners to be taken); it takes room from batch work and from nothing else, and nothing below it but batch (`priority-classes.yaml`); held by `TestAConvergeInFlightIsNotEvicted`. Not yet: its reservation read from what a converge uses, so that under memory pressure it is never the pod over its own |
 | 15  | Alerts read pressure, and time to full           | Partly  | Time to full for the host's pool (`HostPoolWillBeFullWithinAMonth`); no alert reads memory pressure                                                                                                                                                                                                                                                                    |
-| 16  | How a machine sheds load is declared             | Not met | No eviction threshold or reservation is set on any machine                                                                                                                                                                                                                                                                                                             |
+| 16  | How a machine sheds load is declared             | Moved   | To [05](05-node-lifecycle.md) on 2026-10-15; the measurement it is sized from is kept there                                                                                                                                                                                                                                                                            |
 | 18  | What the site is shortest of                     | Not met | Nothing                                                                                                                                                                                                                                                                                                                                                                |
 | 19  | A dashboard per question                         | Mostly  | Four built (2026-10-11); no power, and no mark for a change that alters no workload                                                                                                                                                                                                                                                                                    |
 | 20  | The hardware says when it is failing             | Partly  | Pool health, memory errors and temperatures, with alerts; read 2026-10-15, the pool online and every sensor reporting. No disk wear or errors, and no scrub result                                                                                                                                                                                                     |
@@ -326,7 +327,7 @@ credentials, which nothing here has.
 | 33  | What is down reaches the phone                   | Not met | Nothing sends the mail, and which alerts go is not decided                                                                                                                                                                                                                                                                                                             |
 | 34  | A delay can be placed anywhere                   | Partly  | As stated above: averages per layer and per machine; nothing per operation, per pod, of the network, or a stack                                                                                                                                                                                                                                                        |
 
-Met: 6 of 30 (3, 9, 14 and 17 are epoch 05's).
+Met: 5 of 29, and 13 and 19 mostly (3, 9, 14, 16 and 17 are epoch 05's).
 
 ### Before this epoch closes
 

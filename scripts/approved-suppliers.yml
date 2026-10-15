@@ -1333,6 +1333,18 @@ tools:
       is used. Its snapshot commands are not: taking one from a real cluster
       needed three corrections in the trial, so the estate takes its own.
   - source: kubernetes/kubernetes
+    version: KUBECTL_VERSION
+    binary: kubectl
+    fetch: https://dl.k8s.io/release/{version}/bin/linux/amd64/kubectl
+    reason: >-
+      The client the engineer loads the cluster it tries a change in with,
+      and tries the change's edits against as Flux applies them (#766): a
+      cluster it starts itself, in the job, that holds nothing. In a pull
+      request's runner it has no credential for any other cluster and no
+      route to one, which the pools' own proofs try. The operator agreed
+      2026-10-15 that a tool is not the wall; the credential and the route
+      are.
+  - source: kubernetes/kubernetes
     version: KUBERNETES_VERSION
     binary: kube-apiserver
     fetch: https://dl.k8s.io/release/v{version}/bin/linux/amd64/kube-apiserver

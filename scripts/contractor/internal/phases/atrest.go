@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"homelab/details/console"
+	"regexp"
 	"strings"
 	"time"
 
@@ -125,6 +126,11 @@ func fluxBehind(body []byte, commit string) error {
 			} `json:"metadata"`
 			Status struct {
 				LastAppliedRevision string `json:"lastAppliedRevision"`
+				Conditions          []struct {
+					Type    string `json:"type"`
+					Reason  string `json:"reason"`
+					Message string `json:"message"`
+				} `json:"conditions"`
 			} `json:"status"`
 		} `json:"items"`
 	}
@@ -145,7 +151,23 @@ func fluxBehind(body []byte, commit string) error {
 		}
 		following++
 		if at[cut+len(ofACommit):] != commit {
-			behind = append(behind, fmt.Sprintf("%s is at %s", k.Metadata.Name, short(at[cut+len(ofACommit):])))
+			line := fmt.Sprintf("%s is at %s", k.Metadata.Name, short(at[cut+len(ofACommit):]))
+			// And why, where Flux says: what it was refused, said as the
+			// object, the field and the rule (flux.Refusal), since this is
+			// read in a public log; or which layer it waits behind. Without
+			// it the converge said only that it waited, and finding why
+			// took a person and kubectl (#766).
+			for _, c := range k.Status.Conditions {
+				if c.Type != "Ready" || c.Message == "" {
+					continue
+				}
+				if m := waitsOn.FindStringSubmatch(c.Message); m != nil {
+					line += ", waiting on " + m[1]
+				} else if c.Reason != "Progressing" {
+					line += ", refused: " + flux.Refusal(c.Message)
+				}
+			}
+			behind = append(behind, line)
 		}
 	}
 	if following == 0 {
@@ -184,3 +206,6 @@ func databaseMoving(body []byte) error {
 	}
 	return nil
 }
+
+// waitsOn is the layer a Kustomization says it waits behind.
+var waitsOn = regexp.MustCompile(`dependency '[a-z0-9-]+/([a-z0-9-]+)' is not ready`)

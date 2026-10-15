@@ -25,6 +25,10 @@ https://github.com/fluxcd/flux2/releases/download/v2.7.1/flux_2.7.1_linux_amd64.
 https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64 --hash=sha256:c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
 # [end]
 
+# [fetch: kubectl KUBECTL_VERSION=v1.36.4]
+https://dl.k8s.io/release/v1.36.4/bin/linux/amd64/kubectl --hash=sha256:8b8f088da2dab964f853b38464033b1be15ede2839eca751482357c45abdd05a
+# [end]
+
 # [fetch: kube-apiserver KUBERNETES_VERSION=1.36.3]
 https://dl.k8s.io/release/v1.36.3/bin/linux/amd64/kube-apiserver --hash=sha256:1f217d397234a6d065da663c6e086fdb02c0f0de97a0758ff3e6f3956f4ef8ab
 # [end]

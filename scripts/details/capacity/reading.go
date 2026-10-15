@@ -20,6 +20,11 @@ const (
 	// PreemptionKey is the field of a PriorityClass that says whether work of
 	// that class may put lower work off its machine to make room.
 	PreemptionKey = "preemptionPolicy"
+	// PreemptsLower is that field's word for work that may put lower work
+	// off its machine, and DryRunOnServer is how kubectl is asked to have
+	// the API server judge an object without keeping it.
+	PreemptsLower  = "PreemptLowerPriority"
+	DryRunOnServer = "--dry-run=server"
 )
 
 // Bytes is an amount of memory as Kubernetes writes one: a number, with a

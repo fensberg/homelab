@@ -72,6 +72,21 @@ capacity above" or names another criterion, it means epoch 04's.
   default. etcd, the API server and the databases are sized by declaration
   until there is a reason to trust a guess about them.
 - **14. Work is spread again after a roll** (#628), by the descheduler.
+- **16. How a machine sheds load is declared**, not left at the kubelet's
+  defaults. Moved here on 2026-10-15: declaring it changes every running
+  machine, and the plan for it applied the change to all of them at once,
+  in no order (#767, parked until this epoch can roll it). What it was
+  sized from is kept so it is not measured twice. On site0, the week to
+  2026-10-15, each machine's memory in use outside pods at its 99th
+  percentile: control planes 957-1048 MiB, workers 934-1049 MiB, the
+  untrusted worker 885 MiB. The kubelet's defaults hold back 512 MiB on a
+  control plane and 384 MiB on any other, so pods are promised memory the
+  machines already use. #767 holds back 1088 MiB, 1088 MiB and 896 MiB,
+  with work put off gently below 256 MiB free and at once below 100 MiB.
+  It takes about 700 MiB from what each worker can offer pods, which the
+  game server's 8 GiB no longer fits beside; #767 lowers it to 6 GiB, the
+  publisher's lower figure for an explored world, by the operator's call,
+  and that release has to land before the machines change.
 - **17. The bet has been tested.** Staging is overfilled on purpose and the
   right things are shed in the right order.
 

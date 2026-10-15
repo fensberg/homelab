@@ -76,7 +76,7 @@ func TestAConvergeInFlightIsNotEvicted(t *testing.T) {
 	if !ok {
 		t.Fatalf("the converge's runners run at %q, which is not a class the site declares", class)
 	}
-	if own[capacity.PreemptionKey] != "PreemptLowerPriority" {
+	if own[capacity.PreemptionKey] != capacity.PreemptsLower {
 		t.Errorf("the converge's runners run at %q, which may not take room from lower work: on a site run full, a converge waits for batch work to finish", class)
 	}
 	value, _ := own["value"].(int)

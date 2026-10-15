@@ -133,6 +133,19 @@ func stamp(args []string, out, complaints io.Writer, repository string, treeAt f
 		fmt.Fprintf(out, "What %s runs is not on record%s.\n\nThis change alters what the site is asked to run.\n\nREFUSED: there is nothing to try the change against. The next converge takes the record.\n", *site, unread)
 		return 1
 	}
+	// What the cluster would refuse to take at all comes before whether it
+	// has room: a layer Flux cannot apply applies nothing.
+	if edits := edited(was, is); len(edits) > 0 {
+		refused, err := refusedEdits(standing.Of(capacity.KindPriorityClass), edits)
+		if err != nil {
+			return fail(err)
+		}
+		if len(refused) > 0 {
+			fmt.Fprintf(out, "%s, as read %s, would refuse this change as Flux applies it:\n\n%s\n", *site, standing.Taken, strings.Join(refused, "\n"))
+			fmt.Fprintf(out, "\nREFUSED: an object the site already has cannot be changed this way. Flux would be refused the whole layer it is in, and every layer behind it. Replace the object instead: an object that carries kustomize.toolkit.fluxcd.io/force: Enabled is deleted and made again when an edit is refused.\n")
+			return 1
+		}
+	}
 	waits, err := held(standing, was, is, place)
 	if err != nil {
 		return fail(err)
