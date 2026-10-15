@@ -15,6 +15,8 @@ type hypervisor struct {
 	asked []string
 	fail  map[string]string
 	looks int
+	// More snapshots than the one every machine has, as the list's tail.
+	snapshots string
 }
 
 func (h *hypervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +28,8 @@ func (h *hypervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/cluster/resources":
 		fmt.Fprint(w, `{"data":[{"vmid":7300,"name":"plot-dmz-100","node":"host-a","status":"running","type":"qemu"}]}`)
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/snapshot"):
+		fmt.Fprintf(w, `{"data":[{"name":"current"}%s]}`, h.snapshots)
 	case strings.Contains(r.URL.Path, "/tasks/"):
 		h.looks++
 		if h.looks < 2 {
@@ -119,5 +123,35 @@ func TestATaskThatEndsBadlyOrNeverEndsIsNotDone(t *testing.T) {
 	}
 	if err := g.Stop(m); err == nil {
 		t.Error("a refusal was read as a machine that stopped")
+	}
+}
+
+// A machine has the clean snapshot when the hypervisor lists one by that
+// name, and what every machine has - where it is now - is not it. Taking
+// one is a task like any other, of the machine's disks under that name.
+func TestTheCleanSnapshotIsLookedForByNameAndTakenOfAStoppedMachine(t *testing.T) {
+	h := &hypervisor{}
+	g := session(t, h)
+	m := Guest{ID: 7300, Node: "host-a"}
+	if has, err := g.HasClean(m); err != nil || has {
+		t.Fatalf("a machine with no snapshot of its own was read as having the clean one: %v %v", has, err)
+	}
+	if err := g.Shutdown(m); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.TakeClean(m); err != nil {
+		t.Fatal(err)
+	}
+	h.snapshots = `,{"name":"` + CleanSnapshot + `"}`
+	if has, err := g.HasClean(m); err != nil || !has {
+		t.Fatalf("a machine with the clean snapshot was read as having none: %v %v", has, err)
+	}
+	all := strings.Join(h.asked, "\n")
+	if !strings.Contains(all, "POST /nodes/host-a/qemu/7300/status/shutdown") || !strings.Contains(all, "POST /nodes/host-a/qemu/7300/snapshot?snapname="+CleanSnapshot) {
+		t.Errorf("the machine was not shut down and then snapshotted under the clean name:\n%s", all)
+	}
+	g.TokenSecret = "another"
+	if _, err := g.HasClean(m); err == nil {
+		t.Error("a refusal was read as a machine with no clean snapshot, which is how one would be taken of a used machine")
 	}
 }

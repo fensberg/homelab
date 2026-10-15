@@ -184,20 +184,20 @@ run "the_sweeper_is_handed_its_token_where_there_is_an_untrusted_zone" {
   }
 
   assert {
-    condition     = kubernetes_namespace.zone_sweeper[0].metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
+    condition     = kubernetes_namespace.sweeper[0].metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
     error_message = "the sweeper's namespace does not hold its pod to the restricted profile"
   }
   assert {
     condition = (
-      kubernetes_secret.zone_sweeper[0].data.HYPERVISOR_TOKEN_ID == "fixture-sweeper@pve!fixture" &&
-      kubernetes_secret.zone_sweeper[0].data.HYPERVISOR_TOKEN_SECRET == "00000000-0000-0000-0000-000000000002"
+      kubernetes_secret.sweeper[0].data.HYPERVISOR_TOKEN_ID == "fixture-sweeper@pve!fixture" &&
+      kubernetes_secret.sweeper[0].data.HYPERVISOR_TOKEN_SECRET == "00000000-0000-0000-0000-000000000002"
     )
     error_message = "the sweeper is not handed its own token: the storage driver's or the provisioner's reaches machines it has no business with"
   }
   assert {
     condition = (
-      kubernetes_secret.zone_sweeper[0].data.HYPERVISOR_URL == "https://${kubernetes_secret.zone_sweeper[0].data.HYPERVISOR_NODE}:8006/api2/json" &&
-      kubernetes_secret.zone_sweeper[0].data.HYPERVISOR_AUTHORITY == "fixture+authority+++"
+      kubernetes_secret.sweeper[0].data.HYPERVISOR_URL == "https://${kubernetes_secret.sweeper[0].data.HYPERVISOR_NODE}:8006/api2/json" &&
+      kubernetes_secret.sweeper[0].data.HYPERVISOR_AUTHORITY == "fixture+authority+++"
     )
     error_message = "the sweeper is not sent to the hypervisor by the name its certificate carries, or has no authority to verify it against"
   }
@@ -207,7 +207,7 @@ run "a_site_with_no_untrusted_zone_has_no_sweeper" {
   command = plan
 
   assert {
-    condition     = length(kubernetes_namespace.zone_sweeper) == 0 && length(kubernetes_secret.zone_sweeper) == 0
+    condition     = length(kubernetes_namespace.sweeper) == 0 && length(kubernetes_secret.sweeper) == 0
     error_message = "a site whose config names no sweeper's token was given a namespace or a secret for one"
   }
 }

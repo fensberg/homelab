@@ -19,7 +19,7 @@ import (
 	"homelab/details/hypervisorapi"
 )
 
-// clear-zone puts a machine in an untrusted zone back as it was built, once
+// scrub-untrusted puts a untrusted worker back as it was built, once
 // what ran on it has finished.
 //
 // WHY. Those machines run whatever a pull request says to run. A runner is
@@ -46,7 +46,7 @@ import (
 // the cluster expires by itself, so that is said by an alert and not held by
 // a wall.
 //
-// WHAT IT HOLDS. A token on the hypervisor for the untrusted machines' pool
+// WHAT IT HOLDS. A token on the hypervisor for the untrusted workers' pool
 // alone, and in the cluster the right to read and mark those nodes, delete
 // one, and see the runners' pods.
 
@@ -57,10 +57,10 @@ import (
 // and is not on the machine's disk.
 const inUseSince = capacity.UntrustedZone + "/in-use-since"
 
-// zoneLabel is the label every machine in an untrusted zone carries.
-const zoneLabel = capacity.UntrustedZone
+// untrustedLabel is the label every untrusted worker carries.
+const untrustedLabel = capacity.UntrustedZone
 
-// machine is one untrusted machine as the cluster sees it at one moment.
+// machine is one untrusted worker as the cluster sees it at one moment.
 type machine struct {
 	Name     string
 	Since    time.Time // zero when nothing has run since it was put back
@@ -122,7 +122,7 @@ type sweep struct {
 	say   func(format string, args ...any)
 }
 
-// once looks at every untrusted machine and does what each needs.
+// once looks at every untrusted worker and does what each needs.
 func (s sweep) once() error {
 	machines, err := s.cluster.Machines()
 	if err != nil {
@@ -296,7 +296,7 @@ func at(v any, keys ...string) any {
 
 func (k kube) Machines() ([]machine, error) {
 	var nodes map[string]any
-	if err := k.call(http.MethodGet, "/api/v1/nodes?labelSelector="+url.QueryEscape(zoneLabel), "", nil, &nodes); err != nil {
+	if err := k.call(http.MethodGet, "/api/v1/nodes?labelSelector="+url.QueryEscape(untrustedLabel), "", nil, &nodes); err != nil {
 		return nil, err
 	}
 	list, _ := at(nodes, "items").([]any)
@@ -383,8 +383,8 @@ func inCluster(namespace string) (kube, error) {
 	}, nil
 }
 
-func clearZone(args []string) int {
-	fs := flag.NewFlagSet("clear-zone", flag.ExitOnError)
+func scrubUntrusted(args []string) int {
+	fs := flag.NewFlagSet("scrub-untrusted", flag.ExitOnError)
 	var (
 		most      = fs.Duration("most", 30*time.Minute, "the longest a machine is in use before it is held back and put back")
 		every     = fs.Duration("every", 15*time.Second, "how often every machine is looked at")
@@ -395,7 +395,7 @@ func clearZone(args []string) int {
 	node, address := os.Getenv("HYPERVISOR_NODE"), os.Getenv("HYPERVISOR_URL")
 	id, secret := os.Getenv("HYPERVISOR_TOKEN_ID"), os.Getenv("HYPERVISOR_TOKEN_SECRET")
 	if *namespace == "" || node == "" || address == "" || id == "" || secret == "" {
-		fatal("clear-zone needs the runners' namespace, and the hypervisor's node, address and token, from its environment")
+		fatal("scrub-untrusted needs the runners' namespace, and the hypervisor's node, address and token, from its environment")
 	}
 	client, err := hypervisorapi.Client(os.Getenv("HYPERVISOR_AUTHORITY"), node, 30*time.Second)
 	if err != nil {

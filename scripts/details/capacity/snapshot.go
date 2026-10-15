@@ -520,4 +520,7 @@ func Unmarshal(raw []byte) (Snapshot, error) {
 const (
 	Unschedulable = "unschedulable"
 	UntrustedZone = "untrusted-zone"
+	// NotYetClean is the taint a machine in an untrusted zone joins with
+	// and keeps until its clean snapshot has been taken.
+	NotYetClean = UntrustedZone + "/not-yet-clean"
 )

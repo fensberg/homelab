@@ -59,9 +59,24 @@ func applySteps(ctx *run.Context, phase string, has siteHas) error {
 				return err
 			}
 		}
+		// A new untrusted worker joins closed to work only if the node it
+		// joins as is new too, so what its predecessor left is removed
+		// before it is configured. A build has no predecessors.
+		if ctx.TakenOverOK && configuresZones(st) {
+			if err := forgetReplacedUntrustedWorkers(ctx); err != nil {
+				return err
+			}
+		}
 		run.Info(st.Say)
 		if err := run.TofuApply(in, "tofu apply ("+st.Label+")", st.Targets...); err != nil {
 			return err
+		}
+		// The cluster root is finished and every node is ready: a new
+		// untrusted worker is given its clean snapshot and opened to work.
+		if has.zones && st.Root == config.ClusterRoot && len(st.Targets) == 0 {
+			if err := cleanNewUntrustedWorkers(ctx); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

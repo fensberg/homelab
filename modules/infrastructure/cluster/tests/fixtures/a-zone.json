@@ -43,7 +43,7 @@
           "token_secret": "00000000-0000-0000-0000-000000000001",
           "authority": "fixture+authority+++"
         },
-        "zone_sweeper": {
+        "sweeper": {
           "token_id": "fixture-sweeper@pve!fixture",
           "token_secret": "00000000-0000-0000-0000-000000000002"
         },

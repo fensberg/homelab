@@ -1,7 +1,7 @@
 # What puts an untrusted machine back as it was built: what it needs before
 # Flux runs it.
 #
-# A machine in an untrusted zone runs whatever a pull request says to run,
+# An untrusted worker runs whatever a pull request says to run,
 # and the sweeper returns it to the snapshot the converge took once that work
 # is finished (docs/epochs/08-agent-roles.md). To do that it holds a token
 # for the hypervisor's API inside the cluster. What the token reaches is
@@ -18,14 +18,14 @@
 # and a site whose config names none is given no namespace and no secret.
 
 locals {
-  zone_sweeper = try(local.site.hypervisor.zone_sweeper, null)
+  sweeper = try(local.site.hypervisor.sweeper, null)
 }
 
-resource "kubernetes_namespace" "zone_sweeper" {
-  count = local.zone_sweeper == null ? 0 : 1
+resource "kubernetes_namespace" "sweeper" {
+  count = local.sweeper == null ? 0 : 1
 
   metadata {
-    name = "zone-sweeper"
+    name = "sweeper"
 
     labels = {
       # One program that makes requests and touches no disk of its machine.
@@ -34,13 +34,13 @@ resource "kubernetes_namespace" "zone_sweeper" {
   }
 }
 
-resource "kubernetes_secret" "zone_sweeper" {
-  count = local.zone_sweeper == null ? 0 : 1
+resource "kubernetes_secret" "sweeper" {
+  count = local.sweeper == null ? 0 : 1
 
   metadata {
     # The namespace already says whose; this says what it is.
     name      = "hypervisor"
-    namespace = kubernetes_namespace.zone_sweeper[0].metadata[0].name
+    namespace = kubernetes_namespace.sweeper[0].metadata[0].name
   }
 
   data = {
@@ -48,8 +48,8 @@ resource "kubernetes_secret" "zone_sweeper" {
     # gives the sweeper's pod an entry that says where that name is.
     HYPERVISOR_URL          = "https://${local.storage_hypervisor.hostname}:8006/api2/json"
     HYPERVISOR_NODE         = local.storage_hypervisor.hostname
-    HYPERVISOR_TOKEN_ID     = local.zone_sweeper.token_id
-    HYPERVISOR_TOKEN_SECRET = local.zone_sweeper.token_secret
+    HYPERVISOR_TOKEN_ID     = local.sweeper.token_id
+    HYPERVISOR_TOKEN_SECRET = local.sweeper.token_secret
     # Still encoded, as the vault keeps it on one line: the sweeper reads it
     # that way, and decoding it here would have OpenTofu hold it as text.
     HYPERVISOR_AUTHORITY = local.storage_driver.authority

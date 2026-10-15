@@ -179,9 +179,9 @@
     # those machines back as they were built, and nothing else on this host.
     # Written by the Render phase.
     untrusted_pool: "UNSET"
-    sweeper_user: "zone-sweeper"
+    sweeper_user: "sweeper"
     sweeper_token_id: "rollback"
-    sweeper_role: "ZoneSweeper"
+    sweeper_role: "Sweeper"
     # To see a machine and whether it is running, to stop and start it, to
     # put its disk back as a snapshot has it, and - when that fails - to
     # delete it. Not to take a snapshot: what a machine is put back to is
@@ -2420,7 +2420,7 @@
       check_mode: false
       when: dmz_zones | length > 0
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: Give the sweeper's role exactly its privileges
       ansible.builtin.command: >-
@@ -2430,7 +2430,7 @@
       changed_when: false
       when: dmz_zones | length > 0
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: List the users this host knows, for the sweeper
       ansible.builtin.command: pveum user list --output-format json
@@ -2439,7 +2439,7 @@
       check_mode: false
       when: dmz_zones | length > 0
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: Create the sweeper's user
       ansible.builtin.command: >-
@@ -2450,7 +2450,7 @@
         (sweeper_user + '@' + pve_realm) not in
         (users_before_sweeper.stdout | from_json | map(attribute='userid') | list)
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: List the sweeper's tokens
       ansible.builtin.command: >-
@@ -2461,11 +2461,11 @@
       check_mode: false
       when: dmz_zones | length > 0
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: Check whether the sweeper's token secret is in 1Password
       ansible.builtin.command: >-
-        op read op://{{ site_name }}/{{ op_item }}/zone_sweeper_token_secret
+        op read op://{{ site_name }}/{{ op_item }}/sweeper_token_secret
       register: stored_sweeper_secret
       delegate_to: localhost
       become: false
@@ -2474,7 +2474,7 @@
       check_mode: false
       when: dmz_zones | length > 0
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     # A token that exists here with its secret stored nowhere cannot be read
     # back, so it is removed and made again.
@@ -2487,7 +2487,7 @@
         sweeper_token_id in
         (sweeper_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list)
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: Generate the sweeper's token, with privileges of its own
       ansible.builtin.command: >-
@@ -2501,7 +2501,7 @@
         (sweeper_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list) or
         stored_sweeper_secret.rc != 0)
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: Grant the sweeper and its token the untrusted pool, and that role on it
       ansible.builtin.command: >-
@@ -2513,7 +2513,7 @@
       changed_when: false
       when: dmz_zones | length > 0
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: Store the sweeper's token in 1Password
       ansible.builtin.shell:
@@ -2522,10 +2522,10 @@
           set -o pipefail
           op item get {{ op_item }} --vault {{ site_name }} --format=json | jq --arg tid "{{ sweeper_user }}@{{ pve_realm }}!{{ sweeper_token_id }}" '
             .fields |= (
-                map(select(.label != "zone_sweeper_token_id" and .label != "zone_sweeper_token_secret"))
+                map(select(.label != "sweeper_token_id" and .label != "sweeper_token_secret"))
                 + [
-                    {id: "zone_sweeper_token_id", type: "STRING", label: "zone_sweeper_token_id", value: $tid},
-                    {id: "zone_sweeper_token_secret", type: "CONCEALED", label: "zone_sweeper_token_secret", value: env.TOKEN_SECRET}
+                    {id: "sweeper_token_id", type: "STRING", label: "sweeper_token_id", value: $tid},
+                    {id: "sweeper_token_secret", type: "CONCEALED", label: "sweeper_token_secret", value: env.TOKEN_SECRET}
                   ]
               )
           ' | op item edit {{ op_item }} --vault {{ site_name }}
@@ -2535,11 +2535,11 @@
       become: false
       when: generated_sweeper_token.changed | default(false)
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: Read the sweeper's token secret back
       ansible.builtin.command: >-
-        op read op://{{ site_name }}/{{ op_item }}/zone_sweeper_token_secret
+        op read op://{{ site_name }}/{{ op_item }}/sweeper_token_secret
       register: sweeper_secret_read_back
       delegate_to: localhost
       become: false
@@ -2548,7 +2548,7 @@
       no_log: true
       when: generated_sweeper_token.changed | default(false)
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: Verify the vault holds the sweeper's secret this host generated
       ansible.builtin.assert:
@@ -2560,7 +2560,7 @@
         quiet: true
       when: generated_sweeper_token.changed | default(false)
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     # Held by the host itself, as the driver's is: whatever granted it, the
     # sweeper's user and token are on the untrusted pool and nowhere else.
@@ -2572,7 +2572,7 @@
       no_log: true
       when: dmz_zones | length > 0
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     - name: Refuse a sweeper that reaches beyond the untrusted pool
       ansible.builtin.assert:
@@ -2594,7 +2594,7 @@
         quiet: true
       when: dmz_zones | length > 0
       run_once: true
-      tags: [zone-sweeper]
+      tags: [sweeper]
 
     # ========================================================================
     # 11. The filesystem's cache, held to what the budget counts

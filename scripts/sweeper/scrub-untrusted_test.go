@@ -206,7 +206,7 @@ func TestAMachineThatCannotBePutBackIsDeleted(t *testing.T) {
 	}
 }
 
-// The cluster is read and marked as it is: an untrusted machine is a node
+// The cluster is read and marked as it is: an untrusted worker is a node
 // with the zone's label, its jobs are the runners' pods on it that have not
 // finished, and what is known about it is written on the node itself.
 func TestTheClusterIsReadAndMarkedByItsNodes(t *testing.T) {
@@ -252,7 +252,7 @@ func TestTheClusterIsReadAndMarkedByItsNodes(t *testing.T) {
 	clean, _ := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{inUseSince: nil}}, "spec": map[string]any{capacity.Unschedulable: false}})
 	used, _ := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{inUseSince: "2026-03-04T12:00:00Z"}}, "spec": map[string]any{capacity.Unschedulable: true}})
 	wantAsked := []string{
-		"GET /api/v1/nodes?labelSelector=" + zoneLabel,
+		"GET /api/v1/nodes?labelSelector=" + untrustedLabel,
 		"GET /api/v1/namespaces/runners/pods?fieldSelector=spec.nodeName%3Dyard-dmz-100",
 		"PATCH /api/v1/nodes/yard-dmz-100 " + string(clean),
 		"PATCH /api/v1/nodes/yard-dmz-100 " + string(used),
@@ -264,6 +264,6 @@ func TestTheClusterIsReadAndMarkedByItsNodes(t *testing.T) {
 
 	k.token = "somebody-else"
 	if _, err := k.Machines(); err == nil {
-		t.Error("a refusal was read as a cluster with no untrusted machines")
+		t.Error("a refusal was read as a cluster with no untrusted workers")
 	}
 }

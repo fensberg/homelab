@@ -9,16 +9,16 @@ import (
 	"time"
 )
 
-// CleanSnapshot is the name of the snapshot a machine in an untrusted zone
-// is put back to: its disk as the converge left it. The converge takes it
+// CleanSnapshot is the name of the snapshot an untrusted worker is
+// put back to: its disk as the converge left it. The converge takes it
 // and the sweeper returns to it, so both need the one name.
 const CleanSnapshot = "clean"
 
-// ZoneSweeperTokenRefs is where a site's vault keeps the sweeper's token on
+// SweeperTokenRefs is where a site's vault keeps the sweeper's token on
 // its hypervisor, as the hypervisor phase stores it.
-func ZoneSweeperTokenRefs(site string) (id, secret string) {
+func SweeperTokenRefs(site string) (id, secret string) {
 	item := "op://" + site + "/hypervisor/"
-	return item + "zone_sweeper_token_id", item + "zone_sweeper_token_secret"
+	return item + "sweeper_token_id", item + "sweeper_token_secret"
 }
 
 // Guest is one virtual machine as the hypervisor lists it to whoever asks:
@@ -150,4 +150,36 @@ func (g Guests) PutBack(m Guest) error {
 // Delete removes a stopped machine and its disks.
 func (g Guests) Delete(m Guest) error {
 	return g.done("deleting", m, http.MethodDelete, "?purge=1&destroy-unreferenced-disks=1")
+}
+
+// Shutdown asks a machine to stop, and waits until it has. For a machine
+// that is trusted to answer: one that has run nothing yet.
+func (g Guests) Shutdown(m Guest) error {
+	return g.done("shutting down", m, http.MethodPost, "/status/shutdown")
+}
+
+// HasClean says whether a machine has the clean snapshot.
+func (g Guests) HasClean(m Guest) (bool, error) {
+	data, err := g.call(http.MethodGet, fmt.Sprintf("/nodes/%s/qemu/%d/snapshot", m.Node, m.ID))
+	if err != nil {
+		return false, err
+	}
+	var held []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(data, &held); err != nil {
+		return false, fmt.Errorf("machine %d's snapshots are not the shape this reads: %w", m.ID, err)
+	}
+	for _, h := range held {
+		if h.Name == CleanSnapshot {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// TakeClean takes the clean snapshot of a stopped machine: its disks, and
+// nothing of what it was running.
+func (g Guests) TakeClean(m Guest) error {
+	return g.done("taking the clean snapshot of", m, http.MethodPost, "/snapshot?snapname="+CleanSnapshot)
 }

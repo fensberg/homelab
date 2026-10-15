@@ -12,11 +12,11 @@
 // no retry because the next one collects the same thing. This program is that
 // distinction made into a role. Nothing here may destroy something that is
 // still in use, and nothing here is urgent - with one exception, which says so
-// at length where it is written: clear-zone.
+// at length where it is written: scrub-untrusted.
 //
 //	clear-branches  local branches whose work has already landed
 //	clear-queue     queued runs whose branch no longer exists
-//	clear-zone      a used machine in an untrusted zone, put back as built
+//	scrub-untrusted a used untrusted worker, put back as built
 //
 // WHY IT IS NOT PART OF SECURITY. Security decides what may come in
 // and what may go out; it refuses things. This takes away things nobody
@@ -56,7 +56,7 @@ func verbs() []verb {
 	return []verb{
 		{"clear-branches", "remove local branches whose work has already landed", clearBranches},
 		{"clear-queue", "cancel queued runs that can never produce a result: their branch is gone", clearQueue},
-		{"clear-zone", "put a used machine in an untrusted zone back as it was built; runs until stopped", clearZone},
+		{"scrub-untrusted", "put a used untrusted worker back as it was built; runs until stopped", scrubUntrusted},
 	}
 }
 

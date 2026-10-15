@@ -44,7 +44,13 @@ locals {
   # under one key, so the two cannot name different zones.
   dmz_dedication = {
     for k, v in local.dmz : k => {
-      taint  = "untrusted-zone=${v.zone}:NoSchedule"
+      # Two taints, both put on when the machine first joins. The first is
+      # the dedication, and stays. The second says the machine has no clean
+      # snapshot yet: nothing tolerates it, so a new machine takes no work
+      # until the converge has taken its snapshot and lifted it. A machine
+      # that ran a job first would have that job's leavings in the state
+      # every later job is promised is clean.
+      taint  = "untrusted-zone=${v.zone}:NoSchedule,untrusted-zone/not-yet-clean=true:NoSchedule"
       labels = { "untrusted-zone" = v.zone }
     }
   }
@@ -434,6 +440,12 @@ resource "talos_machine_configuration_apply" "dmz" {
 
   machine_configuration_input = data.talos_machine_configuration.dmz[each.key].machine_configuration
   node                        = each.value.ip
+  # A machine that was built again is a machine with no configuration,
+  # whether or not the configuration changed: one deleted because it could
+  # not be put back is rebuilt from the same words.
+  lifecycle {
+    replace_triggered_by = [proxmox_virtual_environment_vm.dmz[each.key]]
+  }
 }
 
 resource "talos_machine_bootstrap" "this" {
