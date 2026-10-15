@@ -99,8 +99,8 @@ func TestAMachineThatMayHaveRunSomethingIsNotSnapshottedAndAFailedOneIsNotOpened
 		t.Errorf("a machine open to work with no snapshot was snapshotted, or passed: %v %v", err, open.did)
 	}
 	for name, z := range map[string]*untrustedSite{
-		"the snapshot fails":    {fail: "snapshot"},
-		"it does not come back": {away: true},
+		"the snapshot fails": {fail: "snapshot"},
+		"it never returns":   {away: true},
 	} {
 		base := untrusted()
 		z.clean, z.nodes = base.clean, base.nodes

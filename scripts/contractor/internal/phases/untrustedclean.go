@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"homelab/contractor/config"
@@ -217,8 +218,17 @@ type kubectlNodes struct {
 	kubeconfig string
 }
 
+// Forget removes a node, when there is one: a worker built for the first
+// time has no predecessor and so no node to remove.
 func (k kubectlNodes) Forget(name string) error {
-	_, err := kubectl(k.ctx, k.kubeconfig, "delete", "node", name, "--ignore-not-found")
+	out, err := kubectl(k.ctx, k.kubeconfig, "get", "nodes", "-o", "name")
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(strings.Fields(string(out)), "node/"+name) {
+		return nil
+	}
+	_, err = kubectl(k.ctx, k.kubeconfig, "delete", "node", name)
 	return err
 }
 
