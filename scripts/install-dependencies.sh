@@ -468,6 +468,13 @@ info "taking delivery of hadolint ${HADOLINT_VERSION} and shellcheck ${SHELLCHEC
 "$(dirname "$0")/take-delivery.sh" hadolint shellcheck
 ok "hadolint and shellcheck installed into ~/.local/bin"
 
+# kustomize, the renderer the drafter builds an application's directory with
+# (scripts/drafter), so that the plan's capacity check renders here what it
+# renders on a pull request's runner.
+info "taking delivery of kustomize ${KUSTOMIZE_VERSION}"
+"$(dirname "$0")/take-delivery.sh" kustomize
+ok "kustomize installed into ~/.local/bin"
+
 step "commit signing"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 

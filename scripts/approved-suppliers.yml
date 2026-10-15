@@ -1430,6 +1430,14 @@ tools:
       issued it. Taken from the release archive rather than the marketplace
       action, which runs a container at `latest`. Already in use and never
       written down here.
+  - source: kubernetes-sigs/kustomize
+    version: KUSTOMIZE_VERSION
+    fetch: https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv{version}/kustomize_v{version}_linux_amd64.tar.gz
+    reason: >-
+      Builds an application's directory the way the cluster builds it, for the
+      drafter (scripts/drafter) and so for the plan's capacity check. It is
+      the renderer kubectl carries, taken on its own: the pull-request runners
+      carry no client for a cluster, and this cannot reach one.
   - source: yannh/kubeconform
     version: KUBECONFORM_VERSION
     fetch: https://github.com/yannh/kubeconform/releases/download/v{version}/kubeconform-linux-amd64.tar.gz

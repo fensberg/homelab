@@ -194,14 +194,14 @@ func TestTheKeysAFileWritesTwiceAreNamed(t *testing.T) {
 
 // The program itself draws what it is asked on its own arguments, names
 // what it does when asked something else, and builds a directory with the
-// cluster's own tool.
+// renderer the cluster's own tool carries.
 func TestTheProgramItselfDrawsWhatItIsAsked(t *testing.T) {
 	root := put(t, map[string]string{"one.yaml": "kind: One\n", "settings/kustomization.yaml": "resources: []\n"})
 	tools := t.TempDir()
-	// Stands in for the cluster's tool: says which directory it was asked to
+	// Stands in for the renderer: says which directory it was asked to
 	// build, as a document.
-	script := "#!/bin/sh\n[ \"$1\" = kustomize ] || exit 1\necho \"kind: Built\"\necho \"from: $2\"\n"
-	if err := os.WriteFile(filepath.Join(tools, "kubectl"), []byte(script), 0o755); err != nil {
+	script := "#!/bin/sh\n[ \"$1\" = build ] || exit 1\necho \"kind: Built\"\necho \"from: $2\"\n"
+	if err := os.WriteFile(filepath.Join(tools, "kustomize"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -217,7 +217,7 @@ func TestTheProgramItselfDrawsWhatItIsAsked(t *testing.T) {
 		t.Errorf("asked something it does not do, the program answered %d: %s", code, complaints.String())
 	}
 	if _, err := kustomized(filepath.Join(root, "settings")); err != nil {
-		t.Errorf("building with the cluster's tool: %v", err)
+		t.Errorf("building with the renderer: %v", err)
 	}
 	t.Setenv("PATH", t.TempDir())
 	if _, err := kustomized(filepath.Join(root, "settings")); err == nil {

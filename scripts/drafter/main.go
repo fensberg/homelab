@@ -337,14 +337,17 @@ func namesAndValues(body []byte) (any, error) {
 	return out, scan.Err()
 }
 
-// kustomized builds a directory with the cluster's own tool.
+// kustomized builds a directory with the renderer the cluster's own tool
+// carries, on its own (KUSTOMIZE_VERSION in scripts/versions.env). Not
+// through kubectl: a pull request's runner renders what a site would be
+// given, and carries no client for a cluster.
 func kustomized(dir string) ([]byte, error) {
-	cmd := exec.Command("kubectl", "kustomize", dir)
+	cmd := exec.Command("kustomize", "build", dir)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("kubectl kustomize: %w: %s", err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("kustomize build: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return out, nil
 }
