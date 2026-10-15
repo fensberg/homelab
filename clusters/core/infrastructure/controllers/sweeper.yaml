@@ -122,7 +122,7 @@ spec:
 
       containers:
         - name: sweeper
-          image: ghcr.io/fensberg/homelab-sweeper@sha256:0000000000000000000000000000000000000000000000000000000000000123
+          image: ghcr.io/fensberg/homelab-sweeper@sha256:66073ca9ecba99ab3899de6e49f0faefd69daa0fecdd5e28229f759ad1d9f22d
           args:
             - -runners
             - pull-request-runners

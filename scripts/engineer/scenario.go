@@ -50,7 +50,8 @@ type trial struct {
 //
 // A pod on the worker that is gone has to be placed again, unless it is one
 // of a set that runs on every machine. Work that can wait is left out: it is
-// stopped to give room back, and is never a reason there is none.
+// stopped to give room back, and is never a reason there is none. So is a
+// runner made for one job, which the record caught mid-run.
 func scenario(s capacity.Snapshot, gone string, before, now asks) trial {
 	t := trial{Called: map[string]string{}}
 	add := func(o capacity.Object) { t.Objects = append(t.Objects, o) }
@@ -132,6 +133,13 @@ func scenario(s capacity.Snapshot, gone string, before, now asks) trial {
 			continue
 		}
 		owner, _ := notes[capacity.OwnerNote].(string)
+		// A runner made for one job is how busy the site was when it was
+		// recorded, not something it runs: one queued behind another is a
+		// queue, not a pod with nowhere to go. What is tried instead is a
+		// runner for each place runners are sent, drawn from the tree.
+		if owner == capacity.OneJob {
+			continue
+		}
 		if machine == gone && gone != "" {
 			if owner == capacity.EveryMachine {
 				continue

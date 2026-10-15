@@ -86,6 +86,7 @@ func asked(tree, site string, workers int, draw drawer) (asks, error) {
 	if err != nil {
 		return out, err
 	}
+	pools := map[string]pod{}
 	var builds []build
 	for _, rel := range sortedKeys(drawn) {
 		if !isManifest(rel) {
@@ -98,9 +99,15 @@ func asked(tree, site string, workers int, draw drawer) (asks, error) {
 		if err := declared(rel, docs, workers, out.Core, out.Each); err != nil {
 			return out, err
 		}
+		if err := runners(rel, docs, pools); err != nil {
+			return out, err
+		}
 		if strings.HasPrefix(rel, applications.SitesDir+"/"+site+"/") {
 			builds = append(builds, given(docs)...)
 		}
+	}
+	for _, where := range sortedKeysOf(pools) {
+		out.Pods = append(out.Pods, pools[where])
 	}
 	if len(builds) == 0 {
 		return out, nil
@@ -271,12 +278,87 @@ func declared(from string, docs []map[string]any, workers int, out map[string]wo
 			out[name] = w
 		case flux.HelmRelease:
 			values, _ := spec["values"].(map[string]any)
+			// A set of runners' runner is tried as a pod of its own
+			// (runners), and is not counted here as well.
+			if dig(spec, "chart", "spec", "chart") == runnerChart {
+				trimmed := map[string]any{}
+				for k, v := range values {
+					if k != "template" {
+						trimmed[k] = v
+					}
+				}
+				values = trimmed
+			}
 			if err := inValues(name, values, false, out); err != nil {
 				return fmt.Errorf("%s in %s: %w", name, from, err)
 			}
 		}
 	}
 	return nil
+}
+
+// runnerChart is the chart a set of runners is installed with.
+const runnerChart = "gha-runner-scale-set"
+
+// runners adds a runner for each place runners are sent.
+//
+// A runner is made for a job and is gone with it, so the site's record holds
+// however many happened to be running, and the trial leaves those out. What
+// has to be true instead is that a job always has somewhere to start: for
+// each set of machines runners may be sent to, the largest runner any set
+// sends there, once. Two sets sent to the same machines share that one,
+// because their jobs queue behind each other, which is a wait and not a
+// lack of room.
+func runners(from string, docs []map[string]any, pools map[string]pod) error {
+	same := func(s string) string { return s }
+	for _, doc := range docs {
+		if doc["kind"] != flux.HelmRelease {
+			continue
+		}
+		spec, _ := doc["spec"].(map[string]any)
+		if dig(spec, "chart", "spec", "chart") != runnerChart {
+			continue
+		}
+		meta, _ := doc["metadata"].(map[string]any)
+		values, _ := spec["values"].(map[string]any)
+		made, _ := dig(values, "template", "spec").(map[string]any)
+		if made == nil {
+			return fmt.Errorf("the set of runners %v in %s says nothing of its runners, so where they go and what they reserve is not known", meta["name"], from)
+		}
+		w, err := podOf(capacity.Object{"template": capacity.Object{"spec": made}})
+		if err != nil {
+			return fmt.Errorf("the set of runners %v in %s: %w", meta["name"], from, err)
+		}
+		scheduled := capacity.Scheduling(made, same, same, same)
+		place := capacity.Object{}
+		for k, v := range scheduled {
+			if k != "containers" && k != capacity.InitContainersKey {
+				place[k] = v
+			}
+		}
+		key, err := json.Marshal(place)
+		if err != nil {
+			return err
+		}
+		if have, ok := pools[string(key)]; ok {
+			if had, _ := podOf(capacity.Object{"template": capacity.Object{"spec": have.Spec}}); had.PodBytes >= w.PodBytes {
+				continue
+			}
+		}
+		labels, _ := dig(values, "template", "metadata").(map[string]any)
+		namespace, _ := meta["namespace"].(string)
+		pools[string(key)] = pod{Namespace: namespace, Workload: fmt.Sprintf("%s/%v", flux.HelmRelease, meta["name"]), Labels: labels["labels"], Spec: scheduled}
+	}
+	return nil
+}
+
+func sortedKeysOf(m map[string]pod) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // podOf is one pod of a workload: what its containers reserve between them,
