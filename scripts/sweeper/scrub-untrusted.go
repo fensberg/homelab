@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"homelab/details/capacity"
@@ -246,9 +247,13 @@ func (s sweep) cameBack(m machine) error {
 // kube is the cluster's API as a pod reaches it: the address and the
 // authority it was given, and its own account's token.
 type kube struct {
-	client    *http.Client
-	base      string
-	token     string
+	client *http.Client
+	base   string
+	token  string
+	// Where the token is read from before every request, when it comes from
+	// a file: the cluster renews it there, and one read once at the start
+	// stops working within the hour.
+	tokenFile string
 	namespace string // where the runners are
 }
 
@@ -257,7 +262,15 @@ func (k kube) call(method, path, contentType string, body []byte, into any) erro
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+k.token)
+	token := k.token
+	if k.tokenFile != "" {
+		raw, err := os.ReadFile(k.tokenFile)
+		if err != nil {
+			return err
+		}
+		token = strings.TrimSpace(string(raw))
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -380,6 +393,7 @@ func inCluster(namespace string) (kube, error) {
 		client:    &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}},
 		base:      "https://" + host + ":" + port,
 		token:     strings.TrimSpace(string(token)),
+		tokenFile: account + "/token",
 		namespace: namespace,
 	}, nil
 }
@@ -390,6 +404,7 @@ func scrubUntrusted(args []string) int {
 		most      = fs.Duration("most", 30*time.Minute, "the longest a machine is in use before it is held back and put back")
 		every     = fs.Duration("every", 15*time.Second, "how often every machine is looked at")
 		namespace = fs.String("runners", envOr("RUNNERS_NAMESPACE", ""), "the namespace the runners' pods are in")
+		listen    = fs.String("listen", ":8080", "where to answer whether it is still looking")
 	)
 	_ = fs.Parse(args)
 
@@ -417,6 +432,11 @@ func scrubUntrusted(args []string) int {
 			fmt.Printf(time.Now().UTC().Format(time.RFC3339)+" "+format+"\n", args...)
 		},
 	}
+	alive := &looking{now: time.Now, within: 3**every + s.back}
+	go func() {
+		server := &http.Server{Addr: *listen, Handler: alive, ReadHeaderTimeout: 5 * time.Second}
+		fatal(server.ListenAndServe().Error())
+	}()
 	// Runs until it is stopped. A look that fails is said and the next look
 	// is the same look: nothing is carried from one to the next but what the
 	// cluster itself holds.
@@ -424,6 +444,35 @@ func scrubUntrusted(args []string) int {
 		if err := s.once(); err != nil {
 			s.say("this look failed: %v", err)
 		}
+		alive.looked()
 		time.Sleep(*every)
 	}
+}
+
+// looking answers whether the sweeper is still looking: whether a look has
+// finished, well or not, recently enough. A sweeper stuck inside one is not
+// putting anything back, and is restarted for it. Whether the looks succeed
+// is not asked here - a hypervisor that does not answer is not mended by
+// restarting the program that asks it, and is said in its log.
+type looking struct {
+	mu     sync.Mutex
+	last   time.Time
+	now    func() time.Time
+	within time.Duration
+}
+
+func (l *looking) looked() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.last = l.now()
+}
+
+func (l *looking) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.last.IsZero() || l.now().Sub(l.last) > l.within {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }

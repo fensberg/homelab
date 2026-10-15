@@ -894,7 +894,8 @@ func TestAnImageIsMadeAgainWhenAFileItsBuildReadsChanges(t *testing.T) {
 
 // A build is handed the files its order names, by their paths, and nothing
 // else of the repository: not a file beside one of them, not one that is on
-// disk and untracked, and not whatever a link points at. And the build is
+// disk and untracked, and not whatever a link points at. A directory it
+// names is the files tracked in it. And the build is
 // run with them, as the context a Dockerfile knows as reads.
 func TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers(t *testing.T) {
 	repo, commit := committed(t)
@@ -942,6 +943,15 @@ func TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers(t *testing.T) {
 	if got := holds(dir); len(got) != 1 || got[0] != "shared/fetch.sh" {
 		t.Errorf("the build was handed %v, and its order names shared/fetch.sh alone", got)
 	}
+	// A directory is every file tracked in it, and nothing else that is
+	// there: not the file a step left, and not the link.
+	dir, ok, logs = layOut(`["shared"]`)
+	if !ok || dir == "" {
+		t.Fatalf("a directory the order reads failed the step:\n%s", logs)
+	}
+	if got := holds(dir); strings.Join(got, " ") != "shared/fetch.sh shared/other.sh" {
+		t.Errorf("for the directory shared, the build was handed %v, and it tracks shared/fetch.sh and shared/other.sh", got)
+	}
 	dir, ok, logs = layOut("null")
 	if !ok || dir == "" {
 		t.Fatalf("an order that reads nothing failed the step:\n%s", logs)
@@ -952,7 +962,6 @@ func TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers(t *testing.T) {
 	for name, reads := range map[string]string{
 		"a file left on disk that is not tracked": `["shared/left-behind.json"]`,
 		"a link":                           `["shared/link"]`,
-		"a directory":                      `["shared"]`,
 		"a file nowhere in the repository": `["shared/missing.sh"]`,
 	} {
 		if _, ok, logs := layOut(reads); ok || !strings.Contains(logs, "is not a file this repository tracks") {

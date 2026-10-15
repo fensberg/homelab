@@ -14,6 +14,7 @@ resources:
   # Needs its namespace, token and authority from
   # modules/infrastructure/platform/storage.tf.
   - storage-driver.yaml
+  - sweeper.yaml
   - actions-runner-controller.yaml
   - kube-prometheus-stack.yaml
   # Needs its namespace and token from modules/infrastructure/platform/tunnel.tf.

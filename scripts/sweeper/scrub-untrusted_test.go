@@ -275,7 +275,8 @@ func TestTheClusterIsReadAndMarkedByItsNodes(t *testing.T) {
 // the pod's own token and trusting the cluster's own authority alone.
 // Outside one, or with a credential missing, it is refused by name.
 func TestTheClusterIsReachedAsThePodsOwnAccount(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	sent := ""
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { sent = r.Header.Get("Authorization") }))
 	defer server.Close()
 	dir := t.TempDir()
 	authority := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
@@ -306,6 +307,14 @@ func TestTheClusterIsReachedAsThePodsOwnAccount(t *testing.T) {
 	if err := k.call(http.MethodGet, "/", "", nil, nil); err != nil {
 		t.Errorf("the cluster's own authority was not trusted: %v", err)
 	}
+	// The cluster renews the token in its file, and the next request sends
+	// the renewed one.
+	if err := os.WriteFile(filepath.Join(dir, "token"), []byte("renewed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.call(http.MethodGet, "/", "", nil, nil); err != nil || sent != "Bearer renewed" {
+		t.Errorf("a renewed token was not the one sent (%q, %v), so the sweeper is refused within the hour", sent, err)
+	}
 
 	if err := os.WriteFile(filepath.Join(dir, "ca.crt"), []byte("not a certificate"), 0o600); err != nil {
 		t.Fatal(err)
@@ -318,5 +327,29 @@ func TestTheClusterIsReachedAsThePodsOwnAccount(t *testing.T) {
 	}
 	if _, err := inCluster("runners"); err == nil {
 		t.Error("a pod with no token was given the cluster")
+	}
+}
+
+// It says it is looking once a look has finished, and stops saying so when
+// none has for longer than it is given - which is how it is restarted from
+// inside a look that never ends.
+func TestItSaysItIsLookingOnlyWhileLooksFinish(t *testing.T) {
+	at := noon
+	l := &looking{now: func() time.Time { return at }, within: time.Minute}
+	answer := func() int {
+		w := httptest.NewRecorder()
+		l.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		return w.Code
+	}
+	if answer() == http.StatusOK {
+		t.Error("it said it was looking before any look had finished")
+	}
+	l.looked()
+	if answer() != http.StatusOK {
+		t.Error("it did not say it was looking just after a look")
+	}
+	at = at.Add(time.Minute + time.Second)
+	if answer() == http.StatusOK {
+		t.Error("it went on saying it was looking with no look finished for longer than it is given")
 	}
 }

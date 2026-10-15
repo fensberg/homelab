@@ -1,8 +1,8 @@
 guard: TestABuildIsHandedTheFilesItsOrderNamesAndNoOthers
 file: .github/workflows/fabricator.yml
-find: 'if [ -L "$file" ] || ! git ls-files --error-unmatch -- "$file" >/dev/null 2>&1 || [ ! -f "$file" ]; then'
-replace: 'if [ ! -f "$file" ]; then'
-mentions: "a file left on disk that is not tracked"
+find: 'mapfile -t files < <(git ls-files -- "$read")'
+replace: 'mapfile -t files < <(find "$read" -type f)'
+mentions: "and it tracks shared/fetch.sh and shared/other.sh"
 why: >
   The images are public. A file that is merely on the runner's disk when the
   build starts - something an earlier step rendered, or whatever a link

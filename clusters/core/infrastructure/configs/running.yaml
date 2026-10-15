@@ -71,6 +71,47 @@ spec:
 
         # A certificate lasts about six days and is renewed with about two
         # left. Under a day is one that should have been renewed a day ago.
+        # The sweeper puts a used untrusted worker back as it was built, and
+        # nothing else does. While it is not running the workers go on
+        # taking pull requests' jobs without being put back, and nothing in
+        # the cluster stops them: this is what says so.
+        - alert: TheSweeperIsNotRunning
+          expr: >-
+            kube_deployment_status_replicas_available{namespace="sweeper", deployment="sweeper"} < 1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            first_step: >-
+              Run `kubectl -n sweeper describe pod -l app.kubernetes.io/name=sweeper`
+              and read why it is not running; its log says what its last look
+              found.
+            summary: "The sweeper is not running, so used untrusted workers are not being put back."
+            description: >-
+              No sweeper has been running for ten minutes. Until one is, a
+              worker that ran a pull request's job takes the next one as it
+              is, with whatever the last left on it.
+
+        # A worker the sweeper could not put back is deleted, and the next
+        # converge builds another. In between, the pull-request runners have
+        # nowhere to run.
+        - alert: NoUntrustedWorkerIsThere
+          expr: >-
+            absent(kube_node_spec_taint{key="untrusted-zone"})
+            and on() kube_deployment_created{namespace="sweeper", deployment="sweeper"}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            first_step: >-
+              Read the sweeper's log for the worker it deleted and why, then
+              run a converge of the site, which builds another.
+            summary: "The site has no untrusted worker, so pull requests' jobs on the estate's runners wait."
+            description: >-
+              The site runs a sweeper and has had no untrusted worker for
+              fifteen minutes. The sweeper deletes one it could not put back
+              as it was built; nothing builds its replacement but a converge.
+
         - alert: ACertificateIsRunningOutAndHasNotBeenRenewed
           expr: >-
             certmanager_certificate_expiration_timestamp_seconds - time() < 86400

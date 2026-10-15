@@ -46,6 +46,10 @@ const (
 	// EveryMachine is the kind of owner whose pods run one to a machine,
 	// and are not made again for a machine that is gone.
 	EveryMachine = "DaemonSet"
+	// OneJob is the kind of owner whose pod is made for one job and gone
+	// when the job is: a runner of a scale set. Whether one is there is how
+	// busy the site was at that moment, and says nothing of what it runs.
+	OneJob = "EphemeralRunner"
 	// BoundNote marks a claim as bound to its volume, the way the cluster's
 	// own volume controller marks it.
 	BoundNote = "pv.kubernetes.io/bind-completed"

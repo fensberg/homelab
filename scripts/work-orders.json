@@ -25,8 +25,10 @@
     "unless the order says what else it reads. Those files are handed to the",
     "build as a second context named reads, laid out by their paths here, and",
     "they are part of the image's fingerprint: a change to one is a new image.",
+    "A read may be a file or a directory, which is every file tracked in it.",
     "The pull-request runner reads the locked installer and its lock, so that",
-    "what it carries arrived by the same hashes as on every other machine."
+    "what it carries arrived by the same hashes as on every other machine; the",
+    "sweeper reads its own source and the details it is built with."
   ],
   "orders": [
     {
@@ -37,6 +39,11 @@
       "name": "pull-request-runner",
       "context": ".github/pull-request-runner-image",
       "reads": ["scripts/take-delivery.sh", "scripts/deliveries.lock"]
+    },
+    {
+      "name": "sweeper",
+      "context": ".github/sweeper-image",
+      "reads": ["scripts/sweeper", "scripts/details"]
     },
     {
       "name": "platform",

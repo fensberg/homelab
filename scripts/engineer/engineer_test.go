@@ -741,3 +741,89 @@ func TestATrialLoadsARecordTakenBeforeTheSnapshotWasPutRight(t *testing.T) {
 		t.Errorf("a pod standing in for a raised setting may be placed on a control plane: %s", loaded)
 	}
 }
+
+// A runner made for one job is how busy the site was when it was recorded,
+// and is never in a trial: one the record caught queued behind another is
+// not a pod with nowhere to go. Everything beside it is as it was.
+func TestARunnerMadeForOneJobIsNotHeldToTheSiteAsItWasRecorded(t *testing.T) {
+	s, err := capacity.Take(capacity.Listings{
+		Nodes:           []byte(`{"items":[{"metadata":{"name":"example-wk-200","labels":{}},"status":{"allocatable":{"memory":"2Gi"}}}]}`),
+		Namespaces:      []byte(`{"items":[{"metadata":{"name":"things"}}]}`),
+		PriorityClasses: []byte(capacity.Nothing), StorageClasses: []byte(capacity.Nothing), Volumes: []byte(capacity.Nothing), Claims: []byte(capacity.Nothing),
+		Pods: []byte(`{"items":[
+ {"metadata":{"namespace":"things","name":"busy-runner-a","ownerReferences":[{"kind":"` + capacity.OneJob + `","name":"busy-runner-a"}]},
+  "spec":{"nodeName":"example-wk-200","priorityClassName":"interactive","containers":[{"name":"c","resources":{"requests":{"memory":"1Gi"}}}]},"status":{"phase":"Running"}},
+ {"metadata":{"namespace":"things","name":"busy-runner-b","ownerReferences":[{"kind":"` + capacity.OneJob + `","name":"busy-runner-b"}]},
+  "spec":{"priorityClassName":"interactive","containers":[{"name":"c","resources":{"requests":{"memory":"1Gi"}}}]},"status":{"phase":"Pending"}},
+ {"metadata":{"namespace":"things","name":"core-thing-5-b","ownerReferences":[{"kind":"ReplicaSet","name":"core-thing-5"}]},
+  "spec":{"nodeName":"example-wk-200","priorityClassName":"interactive","containers":[{"name":"c","resources":{"requests":{"memory":"512Mi"}}}]},"status":{"phase":"Running"}}]}`),
+	}, nil, "2026-10-11T04:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := placed(scenario(s, "", asks{}, asks{}))
+	if len(got) != 1 {
+		t.Errorf("the trial holds %v: a runner made for one job was held to the site, or what the site runs was not", got)
+	}
+	for _, called := range scenario(s, "", asks{}, asks{}).Called {
+		if strings.Contains(called, capacity.OneJob) {
+			t.Errorf("a runner made for one job is in the trial as %q", called)
+		}
+	}
+}
+
+// What is tried instead is a runner for each place runners are sent: the
+// largest any set sends there, once, because sets sent to the same machines
+// queue behind each other. A set sent somewhere else is a place of its own.
+// A runner is tried as a pod, and is not counted again among what the core
+// reserves; and a set that says nothing of its runners is not guessed at.
+func TestARunnerIsTriedForEachPlaceRunnersAreSent(t *testing.T) {
+	set := func(name, memory, nodeSelector string) string {
+		spec := `"containers":[{"name":"runner","resources":{"requests":{"memory":"` + memory + `"}}}],"priorityClassName":"interactive"`
+		if nodeSelector != "" {
+			spec += `,"nodeSelector":{"kept":"` + nodeSelector + `"}`
+		}
+		return `{"kind":"HelmRelease","metadata":{"name":"` + name + `","namespace":"runners"},"spec":{"chart":{"spec":{"chart":"` + runnerChart + `"}},
+		  "values":{"maxRunners":3,"template":{"metadata":{"labels":{"set":"` + name + `"}},"spec":{` + spec + `}}}}}`
+	}
+	dir := tree(t, map[string][]string{
+		"clusters/core/sets.yaml": {
+			set("small", "1Gi", "away"), set("large", "2Gi", "away"), set("trusted", "512Mi", ""),
+			`{"kind":"HelmRelease","metadata":{"name":"other","namespace":"things"},"spec":{"chart":{"spec":{"chart":"other"}},"values":{"resources":{"requests":{"memory":"64Mi"}}}}}`,
+		},
+	})
+	got, err := asked(dir, "north", 3, asDrawn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tried := map[string]string{}
+	for _, p := range got.Pods {
+		w, err := podOf(capacity.Object{"template": capacity.Object{"spec": p.Spec}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tried[p.Workload] = fmt.Sprint(w.PodBytes)
+		if p.Namespace != "runners" {
+			t.Errorf("%s is tried in %q, not the namespace its set is in", p.Workload, p.Namespace)
+		}
+	}
+	want := map[string]string{"HelmRelease/large": fmt.Sprint(2 * gib), "HelmRelease/trusted": fmt.Sprint(gib / 2)}
+	if fmt.Sprint(tried) != fmt.Sprint(want) {
+		t.Errorf("the runners tried are %v, want the largest for each place: %v", tried, want)
+	}
+	for at := range got.Core {
+		if strings.Contains(at, "template") {
+			t.Errorf("a set's runner is counted among what the core reserves as well (%s)", at)
+		}
+	}
+	if _, counted := got.Core["HelmRelease/things/other"]; !counted {
+		t.Errorf("a release that is not a set of runners is no longer counted: %v", got.Core)
+	}
+
+	blind := tree(t, map[string][]string{
+		"clusters/core/sets.yaml": {`{"kind":"HelmRelease","metadata":{"name":"blind","namespace":"runners"},"spec":{"chart":{"spec":{"chart":"` + runnerChart + `"}},"values":{}}}`},
+	})
+	if _, err := asked(blind, "north", 3, asDrawn); err == nil || !strings.Contains(err.Error(), "blind") {
+		t.Errorf("a set of runners that says nothing of its runners was guessed at: %v", err)
+	}
+}
