@@ -526,6 +526,14 @@ endpoints:
     hosts:
       - mirror.gcr.io:443
 
+  - group: vulnerability-scanner-release
+    reason: >-
+      Trivy's own address for its releases. The scanner's installer asks it
+      for the binary, and it sends the request on to the release on GitHub,
+      where the checksum the installer verifies against is also fetched.
+    hosts:
+      - get.trivy.dev:443
+
   - group: game-server-delivery
     reason: >-
       Valve, for SteamCMD and for the dedicated server software it fetches.
@@ -1155,8 +1163,12 @@ egress:
   - job: pr-validation.yml/trivy
     pool: packages
     policy: block
+    # get.trivy.dev is the publisher's own address for its releases: its
+    # installer fetches the binary there, and it answers by sending the
+    # request on to the release on GitHub.
     hosts:
       - api.github.com:443
+      - get.trivy.dev:443
       - ghcr.io:443
       - github.com:443
       - mirror.gcr.io:443
