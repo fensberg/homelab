@@ -107,8 +107,48 @@ locals {
     ]
   }
 
+  # How each kind of machine sheds load, declared rather than left at the
+  # kubelet's defaults (docs/epochs/04-observability.md, criterion 16).
+  #
+  # `system` is what a machine holds back from pods for itself: its operating
+  # system's services, the container runtime and the kubelet. Read off the
+  # site, 2026-10-15, as each machine's memory in use outside pods over the
+  # week before, at its 99th percentile, and rounded up to the next 64 MiB
+  # for its kind: control planes 957-1048 MiB, workers 934-1049 MiB, the
+  # untrusted worker 885 MiB. The defaults it replaces were 512 MiB for a
+  # control plane and 384 MiB for any other, about half of what was in use,
+  # so pods were promised memory the machines were already using. The
+  # reading is the machine's in use less its pods' working set, which count
+  # file cache a little differently; it is near, not exact.
+  #
+  # Below `soft` free, the kubelet puts off work that is over its
+  # reservation, which on a site run full is batch work, after `grace`;
+  # below `hard`, at once. Kubernetes' own floor of 100 MiB is kept.
+  held_back = {
+    control_plane = { system = "1088Mi", soft = "256Mi", grace = "30s", hard = "100Mi" }
+    worker        = { system = "1088Mi", soft = "256Mi", grace = "30s", hard = "100Mi" }
+    untrusted     = { system = "896Mi", soft = "256Mi", grace = "30s", hard = "100Mi" }
+  }
+  kind_of_machine = merge(
+    { for k in keys(local.control_plane) : k => "control_plane" },
+    { for k in keys(local.workers) : k => "worker" },
+    { for k in keys(local.dmz) : k => "untrusted" },
+  )
+
   machine_patches = {
     for k, v in local.every_machine : k => concat([
+      yamlencode({
+        machine = {
+          kubelet = {
+            extraConfig = {
+              systemReserved          = { memory = local.held_back[local.kind_of_machine[k]].system }
+              evictionHard            = { "memory.available" = local.held_back[local.kind_of_machine[k]].hard }
+              evictionSoft            = { "memory.available" = local.held_back[local.kind_of_machine[k]].soft }
+              evictionSoftGracePeriod = { "memory.available" = local.held_back[local.kind_of_machine[k]].grace }
+            }
+          }
+        }
+      }),
       # Where the machine is, said the way Kubernetes says it: the site as
       # its region and the hypervisor it runs on as its zone. The storage
       # driver reads both to know which hypervisor to ask for a volume and
