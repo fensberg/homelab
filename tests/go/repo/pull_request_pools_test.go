@@ -174,7 +174,7 @@ func runnerProblems(release map[string]any) []string {
 		out = append(out, "its runners are given an account's token: automountServiceAccountToken is not false")
 	}
 	selector, _ := walk(spec, capacity.NodeSelectorKey).(map[string]any)
-	zone, sent := selector["untrusted-zone"].(string)
+	zone, sent := selector[capacity.UntrustedZone].(string)
 	if !sent || zone == "" {
 		out = append(out, "its runners are not sent to an untrusted zone's machine: no nodeSelector for untrusted-zone, so they may land on a machine the estate trusts")
 	}
@@ -182,7 +182,7 @@ func runnerProblems(release map[string]any) []string {
 	tolerations, _ := walk(spec, "tolerations").([]any)
 	for _, tol := range tolerations {
 		each, _ := tol.(map[string]any)
-		tolerated = tolerated || (each["key"] == "untrusted-zone" && each["value"] == zone && sent)
+		tolerated = tolerated || (each["key"] == capacity.UntrustedZone && each["value"] == zone && sent)
 	}
 	if !tolerated {
 		out = append(out, "its runners do not tolerate the zone's taint, so none can be placed and every job waits")

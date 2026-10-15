@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"homelab/details/capacity"
 	"testing"
 
 	"github.com/hashicorp/hcl/v2"
@@ -39,10 +40,12 @@ func TestAZonesMachineIsKeptForItsZoneAndCanBeSentTo(t *testing.T) {
 				t.Errorf("%s: %s", path, problem)
 				continue
 			}
-			if kept.taint != "untrusted-zone=somewhere:NoSchedule" {
-				t.Errorf("%s: a machine in the zone \"somewhere\" is tainted %q, so other work is not kept off it", path, kept.taint)
+			// Kept for its zone, and closed to all work until it has its
+			// clean snapshot: both, put on as the machine first joins.
+			if want := capacity.UntrustedZone + "=somewhere:NoSchedule," + capacity.NotYetClean + "=true:NoSchedule"; kept.taint != want {
+				t.Errorf("%s: a machine in the zone \"somewhere\" is tainted %q and not %q, so other work is not kept off it, or it takes work before it has a clean snapshot to be put back to", path, kept.taint, want)
 			}
-			if len(kept.labels) != 1 || kept.labels["untrusted-zone"] != "somewhere" {
+			if len(kept.labels) != 1 || kept.labels[capacity.UntrustedZone] != "somewhere" {
 				t.Errorf("%s: a machine in the zone \"somewhere\" is labelled %v, so the work meant for it cannot be sent there", path, kept.labels)
 			}
 		}

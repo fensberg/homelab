@@ -71,6 +71,10 @@
           "token_secret": "{{ op://site0/hypervisor/storage_driver_token_secret }}",
           "authority": "{{ op://site0/hypervisor/authority }}"
         },
+        "sweeper": {
+          "token_id": "{{ op://site0/hypervisor/sweeper_token_id }}",
+          "token_secret": "{{ op://site0/hypervisor/sweeper_token_secret }}"
+        },
         "nodes": {
           "node0": {
             "hostname": "{{ op://site0/node0/hostname }}",

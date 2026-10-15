@@ -174,6 +174,20 @@
     # it is the inventory's, one per host. It has no default here on purpose:
     # a play's own vars outrank the inventory's, so a placeholder in this
     # list is what every host would be given.
+    # The sweeper's corner: the pool of the machines in the site's untrusted
+    # zones, which run whatever a pull request says to run. It is given
+    # those machines back as they were built, and nothing else on this host.
+    # Written by the Render phase.
+    untrusted_pool: "UNSET"
+    sweeper_user: "sweeper"
+    sweeper_token_id: "rollback"
+    sweeper_role: "Sweeper"
+    # To see a machine and whether it is running, to stop and start it, to
+    # put its disk back as a snapshot has it, and - when that fails - to
+    # delete it. Not to take a snapshot: what a machine is put back to is
+    # the converge's to say, and a holder of this token that could replace
+    # the snapshot could make its own state the clean one.
+    sweeper_privs: "VM.Audit,VM.PowerMgmt,VM.Snapshot.Rollback,VM.Allocate"
     driver_user: "storage-driver"
     driver_token_id: "volumes"
     # Two roles and not one, because the two rights are over different
@@ -2390,6 +2404,197 @@
         quiet: true
       run_once: true
       tags: [storage-driver]
+
+    # --- the sweeper's token ------------------------------------------------
+    # A machine in an untrusted zone is used and then put back as it was
+    # built (docs/epochs/08-agent-roles.md). What puts it back runs all the
+    # time, so it does not get the provisioning token, which can destroy any
+    # machine here: it gets one of its own, with a role of exactly its
+    # privileges, on the untrusted machines' pool and nowhere else. The same
+    # shape as the storage driver's above, for the same reason. A site with
+    # no untrusted zone has no such machine and gets no such token.
+    - name: List the roles this host knows, for the sweeper
+      ansible.builtin.command: pveum role list --output-format json
+      register: roles_before_sweeper
+      changed_when: false
+      check_mode: false
+      when: dmz_zones | length > 0
+      run_once: true
+      tags: [sweeper]
+
+    - name: Give the sweeper's role exactly its privileges
+      ansible.builtin.command: >-
+        pveum role {{ 'modify' if sweeper_role in
+        (roles_before_sweeper.stdout | from_json | map(attribute='roleid') | list)
+        else 'add' }} {{ sweeper_role }} --privs {{ sweeper_privs }}
+      changed_when: false
+      when: dmz_zones | length > 0
+      run_once: true
+      tags: [sweeper]
+
+    - name: List the users this host knows, for the sweeper
+      ansible.builtin.command: pveum user list --output-format json
+      register: users_before_sweeper
+      changed_when: false
+      check_mode: false
+      when: dmz_zones | length > 0
+      run_once: true
+      tags: [sweeper]
+
+    - name: Create the sweeper's user
+      ansible.builtin.command: >-
+        pveum user add {{ sweeper_user }}@{{ pve_realm }}
+        --comment "Puts untrusted machines back as built: one pool, see hypervisor-prep.yml"
+      when: >-
+        dmz_zones | length > 0 and
+        (sweeper_user + '@' + pve_realm) not in
+        (users_before_sweeper.stdout | from_json | map(attribute='userid') | list)
+      run_once: true
+      tags: [sweeper]
+
+    - name: List the sweeper's tokens
+      ansible.builtin.command: >-
+        pveum user token list {{ sweeper_user }}@{{ pve_realm }} --output-format json
+      register: sweeper_tokens
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: dmz_zones | length > 0
+      run_once: true
+      tags: [sweeper]
+
+    - name: Check whether the sweeper's token secret is in 1Password
+      ansible.builtin.command: >-
+        op read op://{{ site_name }}/{{ op_item }}/sweeper_token_secret
+      register: stored_sweeper_secret
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: dmz_zones | length > 0
+      run_once: true
+      tags: [sweeper]
+
+    # A token that exists here with its secret stored nowhere cannot be read
+    # back, so it is removed and made again.
+    - name: Delete a sweeper token whose secret is stored nowhere
+      ansible.builtin.command: >-
+        pveum user token remove {{ sweeper_user }}@{{ pve_realm }} {{ sweeper_token_id }}
+      when: >-
+        dmz_zones | length > 0 and
+        stored_sweeper_secret.rc != 0 and
+        sweeper_token_id in
+        (sweeper_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list)
+      run_once: true
+      tags: [sweeper]
+
+    - name: Generate the sweeper's token, with privileges of its own
+      ansible.builtin.command: >-
+        pveum user token add {{ sweeper_user }}@{{ pve_realm }} {{ sweeper_token_id }}
+        --privsep 1 --output-format json
+      register: generated_sweeper_token
+      when: >-
+        dmz_zones | length > 0 and
+        (sweeper_tokens.rc != 0 or
+        sweeper_token_id not in
+        (sweeper_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list) or
+        stored_sweeper_secret.rc != 0)
+      run_once: true
+      tags: [sweeper]
+
+    - name: Grant the sweeper and its token the untrusted pool, and that role on it
+      ansible.builtin.command: >-
+        pveum acl modify /pool/{{ untrusted_pool }} --roles {{ sweeper_role }}
+        --users {{ sweeper_user }}@{{ pve_realm }}
+        --tokens {{ sweeper_user }}@{{ pve_realm }}!{{ sweeper_token_id }}
+      # The pool's name is the site's, which is a vault value.
+      no_log: true
+      changed_when: false
+      when: dmz_zones | length > 0
+      run_once: true
+      tags: [sweeper]
+
+    - name: Store the sweeper's token in 1Password
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          op item get {{ op_item }} --vault {{ site_name }} --format=json | jq --arg tid "{{ sweeper_user }}@{{ pve_realm }}!{{ sweeper_token_id }}" '
+            .fields |= (
+                map(select(.label != "sweeper_token_id" and .label != "sweeper_token_secret"))
+                + [
+                    {id: "sweeper_token_id", type: "STRING", label: "sweeper_token_id", value: $tid},
+                    {id: "sweeper_token_secret", type: "CONCEALED", label: "sweeper_token_secret", value: env.TOKEN_SECRET}
+                  ]
+              )
+          ' | op item edit {{ op_item }} --vault {{ site_name }}
+      environment:
+        TOKEN_SECRET: "{{ (generated_sweeper_token.stdout | from_json).value }}"
+      delegate_to: localhost
+      become: false
+      when: generated_sweeper_token.changed | default(false)
+      run_once: true
+      tags: [sweeper]
+
+    - name: Read the sweeper's token secret back
+      ansible.builtin.command: >-
+        op read op://{{ site_name }}/{{ op_item }}/sweeper_token_secret
+      register: sweeper_secret_read_back
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      check_mode: false
+      no_log: true
+      when: generated_sweeper_token.changed | default(false)
+      run_once: true
+      tags: [sweeper]
+
+    - name: Verify the vault holds the sweeper's secret this host generated
+      ansible.builtin.assert:
+        that:
+          - sweeper_secret_read_back.stdout == (generated_sweeper_token.stdout | from_json).value
+        fail_msg: >-
+          The sweeper's token secret in 1Password is not the one Proxmox
+          generated. Do not go on with a mismatched credential.
+        quiet: true
+      when: generated_sweeper_token.changed | default(false)
+      run_once: true
+      tags: [sweeper]
+
+    # Held by the host itself, as the driver's is: whatever granted it, the
+    # sweeper's user and token are on the untrusted pool and nowhere else.
+    - name: List every grant on this host, for the sweeper
+      ansible.builtin.command: pveum acl list --output-format json
+      register: every_grant_for_sweeper
+      changed_when: false
+      check_mode: false
+      no_log: true
+      when: dmz_zones | length > 0
+      run_once: true
+      tags: [sweeper]
+
+    - name: Refuse a sweeper that reaches beyond the untrusted pool
+      ansible.builtin.assert:
+        that:
+          - >-
+            every_grant_for_sweeper.stdout | from_json
+            | selectattr('ugid', 'match', '^' ~ (sweeper_user | regex_escape) ~ '@' ~ (pve_realm | regex_escape) ~ '(!.*)?$')
+            | rejectattr('path', 'equalto', '/pool/' ~ untrusted_pool)
+            | list | length == 0
+          - >-
+            every_grant_for_sweeper.stdout | from_json
+            | selectattr('ugid', 'equalto', sweeper_user ~ '@' ~ pve_realm ~ '!' ~ sweeper_token_id)
+            | list | length == 1
+        fail_msg: >-
+          The sweeper's user or token is granted something outside the
+          site's untrusted pool, or is missing its one grant there. Run
+          `pveum acl list` on the host and remove what does not belong; this
+          playbook grants that path and no other.
+        quiet: true
+      when: dmz_zones | length > 0
+      run_once: true
+      tags: [sweeper]
 
     # ========================================================================
     # 11. The filesystem's cache, held to what the budget counts

@@ -43,6 +43,10 @@
           "token_secret": "00000000-0000-0000-0000-000000000001",
           "authority": "fixture+authority+++"
         },
+        "sweeper": {
+          "token_id": "fixture-sweeper@pve!fixture",
+          "token_secret": "00000000-0000-0000-0000-000000000002"
+        },
         "nodes": {
           "node0": {
             "hostname": "fixture-hv0",

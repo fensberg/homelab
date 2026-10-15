@@ -606,4 +606,20 @@ resource "proxmox_virtual_environment_vm" "dmz" {
       }
     }
   }
+  # A zone's machine is never changed where it stands: any change to what it
+  # is configured with builds another. It is put back to a snapshot of its
+  # disk after it is used (docs/epochs/08-agent-roles.md), and its
+  # configuration is on that disk, so a change applied to the running machine
+  # would be undone by the next time it was put back, without a word. A new
+  # machine has no snapshot, and is given its one before it takes any work.
+  lifecycle {
+    replace_triggered_by = [terraform_data.dmz_configuration[each.key]]
+  }
+}
+
+# What a zone's machine is configured with, as one value that changes when
+# any of it does.
+resource "terraform_data" "dmz_configuration" {
+  for_each = local.dmz
+  input    = sha256(data.talos_machine_configuration.dmz[each.key].machine_configuration)
 }

@@ -294,6 +294,9 @@ func TestTheStorageDriversPoolAndStorageAreTheSitesOwn(t *testing.T) {
 	if got := net.WorkerPool(); got != "north-street-workers" {
 		t.Errorf("the worker pool is %q, which is not the pool the cluster module puts a site's workers in", got)
 	}
+	if got := net.UntrustedPool(); got != "north-street-untrusted" || got == net.WorkerPool() {
+		t.Errorf("the untrusted pool is %q, which is not the pool the cluster module puts a site's untrusted machines in, and in no case the workers'", got)
+	}
 	if a, b := VolumeStorage("site0"), VolumeStorage("site1"); a == b || !strings.HasPrefix(a, "site0") {
 		t.Errorf("two sites' volume storages are %q and %q; each site's driver must be able to delete only its own", a, b)
 	}
