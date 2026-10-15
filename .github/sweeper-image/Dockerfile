@@ -25,8 +25,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # it was given, never one fetched for it.
 RUN --mount=type=bind,from=reads,target=/src \
     go version | grep -F "go${GO_VERSION} " \
-    && CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -buildvcs=false \
-        -C /src/scripts/sweeper -o /out/sweeper .
+    && CGO_ENABLED=0 GOTOOLCHAIN=local go build -C /src/scripts/sweeper \
+        -trimpath -buildvcs=false -o /out/sweeper .
 
 FROM scratch
 COPY --from=build /out/sweeper /sweeper
