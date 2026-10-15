@@ -86,8 +86,10 @@ spec:
         app.kubernetes.io/name: sweeper
     spec:
       serviceAccountName: sweeper
-      # Its own account's token is how it reaches the cluster at all.
-      automountServiceAccountToken: true
+      # Its own account's token is how it reaches the cluster at all, so it
+      # is mounted - but asked for here, for an hour at a time and renewed
+      # by the kubelet, rather than handed over by default.
+      automountServiceAccountToken: false
       # Not first to make room for: while it is gone, the untrusted workers
       # go on being used without being put back.
       priorityClassName: critical
@@ -129,6 +131,26 @@ spec:
           envFrom:
             - secretRef:
                 name: hypervisor
+          volumeMounts:
+            - name: account
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+          ports:
+            - name: health
+              containerPort: 8080
+          # Whether it is still looking: a look has finished in the last few
+          # minutes, well or not. Stuck inside one, it is restarted.
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 15
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -140,6 +162,18 @@ spec:
               memory: 32Mi
             limits:
               memory: 64Mi
+      volumes:
+        - name: account
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
 ---
 # Nothing reaches it, and it reaches two things: the cluster's API and the
 # hypervisor's.
