@@ -287,6 +287,47 @@ operator: "Let's bring all the untouched into the epoch"):
   machine of a site that is run full, so each is sized and agreed before
   it is added.
 
+### Where the criteria stand (audited 2026-10-15)
+
+Read off the repository, criterion by criterion: what is built and what
+says so. "Check" is a reading the operator can make with the site's own
+credentials, which nothing here has.
+
+| #   | Criterion                                        | Stands  | What says so, or what is missing                                                                                                                                                 |
+| --- | ------------------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | The host is measured                             | Met     | `host-metrics.yaml`; the integration tier finds each target healthy                                                                                                              |
+| 2   | Capacity comes from the hardware                 | Partly  | The host is surveyed and what is not the site's is read; the hypervisor's share (2 GiB) and the reserve (4 GiB) are constants, and the cache is the playbook's ceiling, not read |
+| 4   | The record carries the hardware                  | Met     | The plan refused a change on the recorded hardware (#737)                                                                                                                        |
+| 5   | The hypervisor is strict                         | Met     | The plan's budget sum refuses (#737)                                                                                                                                             |
+| 6   | Kubernetes is where the site is overfilled       | Partly  | The plan's scheduler trial refuses must-run work with nowhere to go (`scripts/engineer`); disk is not held to a budget                                                           |
+| 7   | An uncounted pod is refused                      | Met     | `controllers/uncounted-pods.yaml`. Check: a pod with no reservation is refused                                                                                                   |
+| 8   | etcd's disk has a level                          | Partly  | Level and alert written (`EtcdIsWaitingOnItsDisk`); no disk of its own, and nothing holds an addition back                                                                       |
+| 10  | An application says what it will need            | Partly  | `sized_from` built; the plan does not count it                                                                                                                                   |
+| 11  | History outlives a machine                       | Met     | The storage driver, proven on site0                                                                                                                                              |
+| 12  | Every necessary function has a deadline          | Partly  | Scheduled workflows only (`ScheduledWorkflowHasNotRunWhenDue`); none for the backups or a converge                                                                               |
+| 13  | A converge in flight is not evicted              | Not met | The converge's runner is `interactive`, which `critical` work preempts, and nothing else holds it                                                                                |
+| 15  | Alerts read pressure, and time to full           | Partly  | Time to full for the host's pool (`HostPoolWillBeFullWithinAMonth`); no alert reads memory pressure                                                                              |
+| 16  | How a machine sheds load is declared             | Not met | No eviction threshold or reservation is set on any machine                                                                                                                       |
+| 18  | What the site is shortest of                     | Not met | Nothing                                                                                                                                                                          |
+| 19  | A dashboard per question                         | Mostly  | Four built (2026-10-11); no power, and no mark for a change that alters no workload                                                                                              |
+| 20  | The hardware says when it is failing             | Partly  | Pool health, memory errors and temperatures, with alerts; no disk wear or errors, and no scrub result                                                                            |
+| 21  | A backup has been restored lately                | Not met | Nothing restores one on a schedule                                                                                                                                               |
+| 22  | Nothing expires unannounced                      | Partly  | Certificates the site issues are alerted on; the cluster's own certificates, the vendor tokens and the overlay's keys are not                                                    |
+| 23  | Looked at from outside                           | Partly  | The watchman says whether the site is alive; nothing joins the game server the way a player does                                                                                 |
+| 24  | A vendor's free plan is read                     | Not met | What is declared is checked by the estate's tests; what the vendor says was used is not read                                                                                     |
+| 25  | Why a thing died can be read the next day        | Not met | No logs or events are kept past the pod                                                                                                                                          |
+| 26  | Every alert says what to do                      | Partly  | A guard holds every alert to a first step; nothing quiets the alerts a converge causes (`inhibit_rules` is empty)                                                                |
+| 27  | The machines agree what time it is               | Partly  | The host's clock is alerted on; the machines' are not                                                                                                                            |
+| 28  | The site says what it draws                      | Not met | Nothing                                                                                                                                                                          |
+| 29  | Tried against the real site each time it is read | Partly  | An alert compares must-run memory against the workers with one gone; the snapshot is not loaded into the scheduler when it is taken                                              |
+| 30  | Work put off its machine is said at the time     | Half    | As stated above: the alert fires, and cannot name the pod until events are kept (25)                                                                                             |
+| 31  | Work held to one machine is known and watched    | Not met | Nothing lists it or watches that machine's room                                                                                                                                  |
+| 32  | A stale record is said                           | Not met | A converge from the workstation publishes no record, and nothing compares the record's age with the site's last change                                                           |
+| 33  | What is down reaches the phone                   | Not met | Nothing sends the mail, and which alerts go is not decided                                                                                                                       |
+| 34  | A delay can be placed anywhere                   | Partly  | As stated above: averages per layer and per machine; nothing per operation, per pod, of the network, or a stack                                                                  |
+
+Met: 6 of 30 (3, 9, 14 and 17 are epoch 05's).
+
 ### Before this epoch closes
 
 Proofs that could not be had on the day the thing was built, each with what
