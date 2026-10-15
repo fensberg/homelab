@@ -1,0 +1,163 @@
+diff --git a/.github/workflows/plan-infrastructure.yml b/.github/workflows/plan-infrastructure.yml
+index 35743e1..5f1097b 100644
+--- a/.github/workflows/plan-infrastructure.yml
++++ b/.github/workflows/plan-infrastructure.yml
+@@ -61,7 +61,7 @@ jobs:
+     # Nothing to plan for a pull request that has closed; that run exists only
+     # to cancel the plan before it.
+     if: github.event.action != 'closed'
+-    runs-on: ubuntu-latest
++    runs-on: pr-source-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 5
+     outputs:
+       sites: ${{ steps.sites.outputs.sites }}
+@@ -140,7 +140,7 @@ jobs:
+       && (github.event.merge_group.head_sha != ''
+           || github.event.pull_request.head.repo.full_name == github.repository)
+     # A pull request's code never runs on the estate's runner.
+-    runs-on: ubuntu-latest
++    runs-on: pr-builds-${{ vars.pull_request_runners_site }}
+     permissions:
+       contents: read
+       # To find and download the record another run published.
+@@ -328,7 +328,7 @@ jobs:
+       && needs.sites.outputs.touched == 'true'
+       && github.event_name == 'pull_request'
+       && github.event.pull_request.head.repo.full_name == github.repository
+-    runs-on: ubuntu-latest
++    runs-on: pr-source-${{ vars.pull_request_runners_site }}
+     permissions:
+       pull-requests: write
+     timeout-minutes: 5
+@@ -411,7 +411,7 @@ jobs:
+     name: Plan
+     needs: [sites, plan]
+     if: always() && github.event.action != 'closed'
+-    runs-on: ubuntu-latest
++    runs-on: pr-source-${{ vars.pull_request_runners_site }}
+     permissions: {}
+     timeout-minutes: 5
+     steps:
+diff --git a/.github/workflows/pr-validation.yml b/.github/workflows/pr-validation.yml
+index dc1784f..744cbf2 100644
+--- a/.github/workflows/pr-validation.yml
++++ b/.github/workflows/pr-validation.yml
+@@ -151,7 +151,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Format (pre-commit)"
+-    runs-on: ubuntu-latest
++    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 15
+@@ -270,7 +270,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Shell Lint (ShellCheck)"
+-    runs-on: ubuntu-latest
++    runs-on: pr-source-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 10
+@@ -1051,7 +1051,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Policy Scan (Checkov)"
+-    runs-on: ubuntu-latest
++    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
+     # is what GitHub's default timeout allows.
+     timeout-minutes: 10
+@@ -1103,7 +1103,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Dockerfile Scan (hadolint)"
+-    runs-on: ubuntu-latest
++    runs-on: pr-source-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 10
+     permissions:
+       contents: read
+@@ -1143,7 +1143,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Workflow Scan (zizmor)"
+-    runs-on: ubuntu-latest
++    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 10
+     permissions:
+       contents: read
+@@ -1186,7 +1186,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "Spelling (codespell)"
+-    runs-on: ubuntu-latest
++    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+     timeout-minutes: 10
+     permissions:
+       contents: read
+@@ -1303,7 +1303,7 @@ jobs:
+     needs: already-tested
+     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
+     name: "IaC Scan (Trivy)"
+-    runs-on: ubuntu-latest
++    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
+     # Bounded so a stuck job cannot bill a metered vendor for six hours,
+     # which is what GitHub's default timeout allows.
+     timeout-minutes: 15
+diff --git a/scripts/approved-suppliers.yml b/scripts/approved-suppliers.yml
+index 9a82171..0d17fa6 100644
+--- a/scripts/approved-suppliers.yml
++++ b/scripts/approved-suppliers.yml
+@@ -1591,3 +1591,51 @@ work:
+   - job: pr-validation.yml/pool-packages
+     kind: cannot-wait
+     takes: 1m
++
++  # The light checks: scans, lint, spelling and the plan, moved off GitHub's
++  # runners so that what holds them is the pool's network and not an agent
++  # that fails to start on one runner in eight (#725). Each takes what it
++  # took on GitHub's on 2026-10-15, rounded up.
++  - job: plan-infrastructure.yml/sites
++    kind: cannot-wait
++    takes: 1m
++
++  - job: plan-infrastructure.yml/plan
++    kind: cannot-wait
++    takes: 3m
++
++  - job: plan-infrastructure.yml/report
++    kind: cannot-wait
++    takes: 1m
++
++  - job: plan-infrastructure.yml/held
++    kind: cannot-wait
++    takes: 1m
++
++  - job: pr-validation.yml/format
++    kind: cannot-wait
++    takes: 2m
++
++  - job: pr-validation.yml/shellcheck
++    kind: cannot-wait
++    takes: 1m
++
++  - job: pr-validation.yml/dockerfiles
++    kind: cannot-wait
++    takes: 1m
++
++  - job: pr-validation.yml/policy
++    kind: cannot-wait
++    takes: 1m
++
++  - job: pr-validation.yml/spelling
++    kind: cannot-wait
++    takes: 1m
++
++  - job: pr-validation.yml/workflowscan
++    kind: cannot-wait
++    takes: 1m
++
++  - job: pr-validation.yml/trivy
++    kind: cannot-wait
++    takes: 1m
