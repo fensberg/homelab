@@ -71,6 +71,10 @@ apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
   name: critical
+  annotations:
+    # Replaced rather than edited when its value or policy changes; see the
+    # interactive class.
+    kustomize.toolkit.fluxcd.io/force: Enabled
 value: 1000000
 # The default, stated rather than omitted: critical work may evict anything
 # below it, and a policy that consequential should not be inferred from its
@@ -85,6 +89,15 @@ apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
   name: interactive
+  annotations:
+    # A class's value and its preemption policy cannot be changed on a class
+    # the cluster already has: the API server refuses the edit, and Flux's
+    # apply of this whole layer with it. Changing either means replacing the
+    # class, which Flux does when an object asks it to. The class is gone for
+    # the moment between the two, and a pod asking for it then is refused and
+    # made again by whatever made it. Found when this class's policy was
+    # changed on 2026-10-15 and the layer stood refused (#766).
+    kustomize.toolkit.fluxcd.io/force: Enabled
 value: 10000
 preemptionPolicy: PreemptLowerPriority
 globalDefault: false
@@ -99,6 +112,10 @@ apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
   name: batch
+  annotations:
+    # Replaced rather than edited when its value or policy changes; see the
+    # interactive class.
+    kustomize.toolkit.fluxcd.io/force: Enabled
 value: 100
 preemptionPolicy: Never
 globalDefault: false
