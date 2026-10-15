@@ -51,6 +51,9 @@ type asks struct {
 	// with everything of that pod a scheduler reads. What one of these is
 	// raised by is taken from every machine, and is tried on each.
 	Each map[string]capacity.Object
+	// Classes is each PriorityClass the tree declares, by name, as it is
+	// written: what an edit of the site's own classes would apply.
+	Classes map[string]capacity.Object
 }
 
 // drawer has the drafter redraw paths, and directories to be built, of one
@@ -69,7 +72,7 @@ type drawer func(tree string, builds []string, paths ...string) (map[string]json
 // Nothing here reads a manifest's own format. The drafter redraws each one,
 // and this reads the drawing.
 func asked(tree, site string, workers int, draw drawer) (asks, error) {
-	out := asks{Core: map[string]workload{}, Each: map[string]capacity.Object{}}
+	out := asks{Core: map[string]workload{}, Each: map[string]capacity.Object{}, Classes: map[string]capacity.Object{}}
 	var paths []string
 	// The network is the third: it is what every machine runs before Flux
 	// can, applied by a converge and not by Flux, and it reserves on every
@@ -101,6 +104,12 @@ func asked(tree, site string, workers int, draw drawer) (asks, error) {
 		}
 		if err := runners(rel, docs, pools); err != nil {
 			return out, err
+		}
+		for _, doc := range docs {
+			if doc["kind"] == capacity.KindPriorityClass {
+				meta, _ := doc["metadata"].(map[string]any)
+				out.Classes[fmt.Sprint(meta["name"])] = doc
+			}
 		}
 		if strings.HasPrefix(rel, applications.SitesDir+"/"+site+"/") {
 			builds = append(builds, given(docs)...)

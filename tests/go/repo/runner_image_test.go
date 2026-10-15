@@ -212,7 +212,7 @@ func TestRunnerImageCarriesEveryBinaryTheContractorInvokes(t *testing.T) {
 	// time. It happened to be harmless because the Dockerfile was right; a
 	// list that has to be remembered will not stay right. Deriving it from the
 	// source is filed separately.
-	for _, bin := range append([]string{"tofu"}, reachTheEstate...) {
+	for _, bin := range contractorInvokes {
 		// gh is deliberately absent: the contractor no longer invokes it, and
 		// tests/go/repo/no_gh_dependency_test.go keeps it that way. Adding it
 		// here would be adding a supplier to fix a dependency that is gone.
@@ -236,3 +236,10 @@ func readFile(t *testing.T, path string) string {
 	}
 	return string(b)
 }
+
+// contractorInvokes is what the contractor shells out to: the vault's
+// client, OpenTofu, the backups' key and copier, and the cluster's and the
+// machines' clients. The converge's image carries every one; a pull
+// request's carries only those its own jobs take
+// (TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake).
+var contractorInvokes = []string{"op", "tofu", "age", "rclone", "kubectl", "talosctl"}

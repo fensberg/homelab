@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -141,5 +142,39 @@ func TestAConvergeThatGaveUpWaitingSaysWhyAndIsKnownForWhatItIs(t *testing.T) {
 	}
 	if !errors.Is(handed, gaveUp) {
 		t.Error("what the wait said cannot be reached through it")
+	}
+}
+
+// A layer that is behind says why, where Flux says: what it was refused, as
+// the object, the field and the rule and never a value the refusal quotes,
+// or which layer it waits behind. One still at work says neither (#766).
+func TestALayerBehindSaysWhatItWasRefusedOrWhatItWaitsOn(t *testing.T) {
+	const commit = "c4e28c649222bb817318477ba8422f2936a6fb02"
+	layer := func(name, reason, message string) string {
+		return `{"kind":"Kustomization","metadata":{"name":"` + name + `"},"status":{"lastAppliedRevision":"main@sha1:6237ef6000000000000000000000000000000000",
+			"conditions":[{"type":"Healthy","reason":"x","message":"not this one"},{"type":"Ready","reason":"` + reason + `","message":` + strconv.Quote(message) + `}]}}`
+	}
+	body := `{"items":[` + strings.Join([]string{
+		layer("controllers", "ReconciliationFailed", `StorageClass/kept dry-run failed (Invalid): StorageClass.storage.k8s.io "kept" is invalid: parameters: Forbidden: updates to parameters are forbidden, provisioner: Invalid value: "a-provisioner-never-said": field is immutable`),
+		layer("configs", "DependencyNotReady", `dependency 'flux-system/controllers' is not ready`),
+		layer("apps", "Progressing", `Reconciliation in progress`),
+	}, ",") + `]}`
+	err := fluxBehind([]byte(body), commit)
+	if err == nil {
+		t.Fatal("three layers behind were read as Flux having applied the commit")
+	}
+	said := err.Error()
+	for _, want := range []string{
+		"controllers is at 6237ef60, refused: StorageClass/kept: parameters: updates to parameters are forbidden; provisioner: field is immutable",
+		"configs is at 6237ef60, waiting on controllers",
+	} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the converge did not say %q:\n%s", want, said)
+		}
+	}
+	for _, never := range []string{"a-provisioner-never-said", "not this one", "in progress"} {
+		if strings.Contains(said, never) {
+			t.Errorf("the converge said %q:\n%s", never, said)
+		}
 	}
 }

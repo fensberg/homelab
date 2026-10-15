@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"homelab/details/flux"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -522,6 +523,9 @@ func standInPrograms(t *testing.T) string {
 		}
 	}
 	lister := script + `case "$*" in
+  *--dry-run=server*) for f in "$@"; do last="$f"; done
+    if grep -q '"refuse-me"' "$last"; then echo 'Error from server: The PriorityClass "refuse-me" is invalid: preemptionPolicy: Invalid value: "a-value-never-said": field is immutable' >&2; exit 1; fi
+    if grep -q '"break-me"' "$last"; then echo 'Unable to connect to the server' >&2; exit 1; fi ;;
   *pods.json*) for f in "$@"; do last="$f"; done; cp "$last" ` + filepath.Join(dir, "pods") + ` ;;
   get*) if grep -q '"namespace":"` + more + `"' ` + filepath.Join(dir, "pods") + ` 2>/dev/null; then
       echo '{"items":[{"metadata":{"namespace":"` + more + `","name":"more-1-0"},"status":{"conditions":[{"type":"PodScheduled","message":"0/2 nodes are available: 2 Insufficient memory."}]}}]}'
@@ -825,5 +829,91 @@ func TestARunnerIsTriedForEachPlaceRunnersAreSent(t *testing.T) {
 	})
 	if _, err := asked(blind, "north", 3, asDrawn); err == nil || !strings.Contains(err.Error(), "blind") {
 		t.Errorf("a set of runners that says nothing of its runners was guessed at: %v", err)
+	}
+}
+
+// classDoc is a PriorityClass as a drawing, with Flux's marker or without.
+func classDoc(name, policy string, forced bool) string {
+	meta := `"name":"` + name + `"`
+	if forced {
+		meta += `,"annotations":{"` + flux.Force + `":"` + flux.Forced + `"}`
+	}
+	return `{"apiVersion":"scheduling.k8s.io/v1","kind":"PriorityClass","metadata":{` + meta + `},"value":10000,"preemptionPolicy":"` + policy + `"}`
+}
+
+// An edit is a class the change alters or adds, and not one it leaves as it
+// was, nor one Flux replaces rather than edits.
+func TestAnEditIsAClassTheChangeAltersThatFluxWouldEdit(t *testing.T) {
+	before := tree(t, map[string][]string{"clusters/core/classes.yaml": {
+		classDoc("kept", "Never", false), classDoc("altered", "Never", false), classDoc("replaced", "Never", true)}})
+	after := tree(t, map[string][]string{"clusters/core/classes.yaml": {
+		classDoc("kept", "Never", false), classDoc("altered", capacity.PreemptsLower, false), classDoc("replaced", capacity.PreemptsLower, true), classDoc("added", "Never", false)}})
+	was, err := asked(before, "north", 3, asDrawn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	is, err := asked(after, "north", 3, asDrawn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range edited(was, is) {
+		names = append(names, fmt.Sprint(dig(e, "metadata", "name")))
+	}
+	if strings.Join(names, ",") != "added,altered" {
+		t.Errorf("the edits were read as %v, not the class added and the one altered", names)
+	}
+}
+
+// What the cluster refuses is said as the object, the field and the rule,
+// and never the value; what fails for any other reason is an error, not a
+// refusal of the change; and the site's own objects go in first.
+func TestAnEditTheClusterRefusesIsSaidAndAnythingElseIsAnError(t *testing.T) {
+	log := standInPrograms(t)
+	var edits []capacity.Object
+	for _, doc := range []string{classDoc("taken", "Never", false), classDoc("refuse-me", capacity.PreemptsLower, false)} {
+		var o capacity.Object
+		if err := json.Unmarshal([]byte(doc), &o); err != nil {
+			t.Fatal(err)
+		}
+		edits = append(edits, o)
+	}
+	refused, err := refusedEdits(nil, edits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refused) != 1 || strings.TrimSpace(refused[0]) != "PriorityClass/refuse-me: preemptionPolicy: field is immutable" {
+		t.Errorf("what was refused was said as %q", refused)
+	}
+	if strings.Contains(strings.Join(refused, ""), "a-value-never-said") {
+		t.Error("the value the refusal quoted was said")
+	}
+	raw, _ := os.ReadFile(log)
+	if !strings.Contains(string(raw), "kept.json") || strings.Index(string(raw), "kept.json") > strings.Index(string(raw), "edit-0.json") {
+		t.Errorf("the site's own objects were not loaded before the edits were tried:\n%s", raw)
+	}
+
+	var broken capacity.Object
+	_ = json.Unmarshal([]byte(classDoc("break-me", "Never", false)), &broken)
+	if _, err := refusedEdits(nil, []capacity.Object{broken}); err == nil {
+		t.Error("a cluster that could not be reached was read as the change being taken")
+	}
+}
+
+// The plan refuses a change the cluster would refuse as Flux applies it,
+// before it asks whether there is room, and says what and why.
+func TestAChangeTheClusterWouldRefuseIsRefused(t *testing.T) {
+	standInPrograms(t)
+	quickly(t)
+	site := north(t)
+	code, said := stampOf(t,
+		map[string][]string{"clusters/core/classes.yaml": {classDoc("refuse-me", "Never", false)}},
+		map[string][]string{"clusters/core/classes.yaml": {classDoc("refuse-me", capacity.PreemptsLower, false)}},
+		&site, func(trial) (map[string]string, error) {
+			t.Error("the scheduler was asked about a change the cluster refuses outright")
+			return nil, nil
+		})
+	if code != 1 || !strings.Contains(said, "would refuse this change as Flux applies it") || !strings.Contains(said, "PriorityClass/refuse-me: preemptionPolicy: field is immutable") {
+		t.Errorf("a change the cluster refuses was not refused, or not said (%d):\n%s", code, said)
 	}
 }

@@ -679,7 +679,7 @@ jobs:
       # The engineer's own tests run a real scheduler over a small site, so
       # that what it reads is what a scheduler really says.
       - name: Take delivery of the scheduler a change is tried with
-        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kube-scheduler
+        run: scripts/take-delivery.sh kwokctl etcd kube-apiserver kube-scheduler kubectl
 
       # Every OpenTofu root with a tests/ directory, discovered rather than
       # listed - the cluster and estate roots and every module. A list of

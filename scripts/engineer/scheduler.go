@@ -46,31 +46,11 @@ const evicted = "the scheduler put it off its machine to make a place for work t
 // controllers, so nothing is made or mended behind the trial's back; and the
 // scheduler is the real one, so its answer is the one the site would give.
 func realScheduler(t trial) (map[string]string, error) {
-	dir, err := os.MkdirTemp("", "engineer-trial-")
+	dir, env, stop, err := trialCluster()
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
-	name := filepath.Base(dir)
-	kubeconfig := filepath.Join(dir, "kubeconfig")
-	// What each program needs to find the cluster.
-	env := []string{"KWOK_WORKDIR=" + filepath.Join(dir, "work"), "KUBECONFIG=" + kubeconfig}
-
-	start := []string{"create", "cluster", "--name", name, "--runtime", "binary",
-		"--components", strings.Join([]string{store, apiServer, scheduler}, ","), "--kubeconfig", kubeconfig}
-	// Each program is the one already delivered, where there is one: the
-	// starter would otherwise fetch its own, unpinned, from the network.
-	for _, program := range []string{store, apiServer, scheduler} {
-		if path, err := exec.LookPath(program); err == nil {
-			start = append(start, "--"+program+"-binary", path)
-		}
-	}
-	if _, err := asking(starter, env, start...); err != nil {
-		return nil, fmt.Errorf("the cluster a change is tried in could not be started: %w", err)
-	}
-	// Stopped whatever happens. If it will not stop there is nothing to do
-	// about it here, and the directory it lives in is removed in any case.
-	defer func() { _, _ = asking(starter, env, "delete", "cluster", "--name", name) }()
+	defer stop()
 
 	// Everything but the pods first, so a pod finds its machine, its class
 	// and its claim already there. Every namespace is given the account a
@@ -123,6 +103,41 @@ func realScheduler(t trial) (map[string]string, error) {
 	return verdicts(func() ([]byte, error) {
 		return asking(asker, env, "get", "pods", capacity.EveryNamespace, "-o", "json")
 	}, pods, pause, 90)
+}
+
+// trialCluster starts a cluster that holds nothing and runs nothing, and
+// gives where it works, what each program needs to find it, and how it is
+// stopped and removed, which is to be done whatever happens.
+func trialCluster() (dir string, env []string, stop func(), err error) {
+	dir, err = os.MkdirTemp("", "engineer-trial-")
+	if err != nil {
+		return "", nil, nil, err
+	}
+	name := filepath.Base(dir)
+	kubeconfig := filepath.Join(dir, "kubeconfig")
+	// What each program needs to find the cluster.
+	env = []string{"KWOK_WORKDIR=" + filepath.Join(dir, "work"), "KUBECONFIG=" + kubeconfig}
+
+	start := []string{"create", "cluster", "--name", name, "--runtime", "binary",
+		"--components", strings.Join([]string{store, apiServer, scheduler}, ","), "--kubeconfig", kubeconfig}
+	// Each program is the one already delivered, where there is one: the
+	// starter would otherwise fetch its own, unpinned, from the network.
+	for _, program := range []string{store, apiServer, scheduler} {
+		if path, err := exec.LookPath(program); err == nil {
+			start = append(start, "--"+program+"-binary", path)
+		}
+	}
+	if _, err := asking(starter, env, start...); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", nil, nil, fmt.Errorf("the cluster a change is tried in could not be started: %w", err)
+	}
+	// If it will not stop there is nothing to do about it here, and the
+	// directory it lives in is removed in any case.
+	stop = func() {
+		_, _ = asking(starter, env, "delete", "cluster", "--name", name)
+		_ = os.RemoveAll(dir)
+	}
+	return dir, env, stop, nil
 }
 
 // asking runs one of the trial's programs with what it needs to find the
