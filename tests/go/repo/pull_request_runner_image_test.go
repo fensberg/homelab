@@ -12,26 +12,27 @@ import (
 	"homelab/details/workorders"
 )
 
-// The image a pull request's jobs run in carries every tool those jobs
-// install, and nothing that reaches the estate.
+// The image a pull request's jobs run in carries exactly what those jobs take
+// delivery of: every tool, and nothing else.
 //
-// WHY. A pool's runner is a machine that runs whatever a pull request says
-// to run, so the image it starts from is held from both sides. It has its
-// tools in it, so that a job starts on its work: a delivery a job takes that
-// the image was not built with is downloaded by every run of that job, on
-// the pool's own network, and nothing says the image fell behind. And it has
-// none of what the converge's image is for - the vault's client, the
-// cluster's, the machines' - because a tool that is there is a tool a pull
-// request can run.
+// WHY EVERY. A pool's runner is ready at once only if its tools are in it. A
+// delivery a job takes that the image was not built with is downloaded by
+// every run of that job, on the pool's own network, and nothing says the
+// image fell behind.
+//
+// WHY NOTHING ELSE. A tool nobody takes is weight and surface for no work.
+// It is not the wall, and this does not pretend it is: a job that wanted a
+// tool could fetch it from where the pools are let reach. What holds a pull
+// request's job is structural - no credential for anything of the estate's,
+// no route to it, nothing kept after it - which is the estate's own rule
+// since epoch 01 ("an absent credential is not there to get around"). This
+// used to be a list of programs the image might not carry, written by hand;
+// the operator agreed on 2026-10-15 to hold the image to what its jobs take
+// instead, so that it can be neither more nor less than they need.
 //
 // FOUND BY WHAT IT IS. The image is whichever one the pools' releases run,
 // and its Dockerfile is the one the work order of that name builds. The jobs
 // are the ones the suppliers list says are of a pool.
-
-// reachTheEstate is the programs the contractor shells out to that reach
-// something of the estate's: the vault, the backups and their key, the
-// cluster, and the machines under it.
-var reachTheEstate = []string{"op", "age", "rclone", "kubectl", "talosctl"}
 
 var deliveriesTaken = regexp.MustCompile(`take-delivery\.sh((?:\s+(?:\\\n\s*)?[a-z0-9][a-z0-9-]*)+)`)
 
@@ -92,7 +93,7 @@ func pullRequestRunnerOrder(t *testing.T) workorders.Order {
 	return found
 }
 
-func TestThePullRequestRunnerCarriesWhatItsJobsInstallAndNothingThatReachesTheEstate(t *testing.T) {
+func TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake(t *testing.T) {
 	root := repoRoot(t)
 	order := pullRequestRunnerOrder(t)
 	rel := order.Context + "/Dockerfile"
@@ -101,13 +102,6 @@ func TestThePullRequestRunnerCarriesWhatItsJobsInstallAndNothingThatReachesTheEs
 		t.Fatal(err)
 	}
 	built := instructions(string(body))
-
-	for _, program := range reachTheEstate {
-		if regexp.MustCompile(`(^|[^A-Za-z0-9_./-])` + regexp.QuoteMeta(program) + `($|[^A-Za-z0-9_-])`).MatchString(built) {
-			t.Errorf("%s, the image a pull request's jobs run in, has %q in it, which reaches the estate.\n\n"+
-				"What runs in this image is whatever a pull request says to run. The converge's image is where that program belongs, and no pool runs it.", rel, program)
-		}
-	}
 
 	carried := map[string]bool{}
 	for _, name := range takes(built) {
@@ -141,6 +135,28 @@ func TestThePullRequestRunnerCarriesWhatItsJobsInstallAndNothingThatReachesTheEs
 				}
 			}
 		}
+	}
+	took := map[string]bool{}
+	for _, e := range egress {
+		if e.Pool == "" {
+			continue
+		}
+		workflow, id, _ := strings.Cut(e.Job, "/")
+		for _, step := range jobsOf(t, workflow)[id].Steps {
+			for _, name := range takes(step.Run) {
+				took[name] = true
+			}
+		}
+	}
+	var unused []string
+	for name := range carried {
+		if !took[name] {
+			unused = append(unused, name)
+		}
+	}
+	sort.Strings(unused)
+	for _, name := range unused {
+		t.Errorf("%s carries %s, which no job of a pool takes delivery of. Take it out, or it is weight nobody asked for.", rel, name)
 	}
 	if jobs == 0 || asked == 0 {
 		t.Fatalf("read %d job(s) of a pool taking %d delivery(ies), so nothing was checked", jobs, asked)

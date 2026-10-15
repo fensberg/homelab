@@ -212,7 +212,7 @@ func TestRunnerImageCarriesEveryBinaryTheContractorInvokes(t *testing.T) {
 	// time. It happened to be harmless because the Dockerfile was right; a
 	// list that has to be remembered will not stay right. Deriving it from the
 	// source is filed separately.
-	for _, bin := range append([]string{"tofu"}, reachTheEstate...) {
+	for _, bin := range []string{"op", "tofu", "age", "rclone", "kubectl", "talosctl"} {
 		// gh is deliberately absent: the contractor no longer invokes it, and
 		// tests/go/repo/no_gh_dependency_test.go keeps it that way. Adding it
 		// here would be adding a supplier to fix a dependency that is gone.
