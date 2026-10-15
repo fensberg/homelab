@@ -292,6 +292,17 @@ operating system can carry images in its own boot image, where a wipe does
 not reach; whether that suits this version and how the zone's template is
 built has not been looked at.
 
+**The light checks moved onto the pools (2026-10-15).** The scans, the lint,
+the spelling and the plan run in the estate's pools, on the untrusted worker
+that is put back after use. What holds them is the pool's network, so the
+agent that fails to start on one of GitHub's runners in eight (#725) no
+longer decides whether they are held. The heavy lanes - the Go and OpenTofu
+tests, the ledger, the invariants, validation, vetting, the JavaScript tests,
+code scanning and the dependency review - stay on GitHub's runners, by the
+operator's decision: the untrusted worker fits two runners at once, and
+those lanes would queue behind each other for longer than they run. So the
+runner check stays loosened for them, and #725 stays open for them.
+
 **The hot tool is not built.** The operator's meaning, said again
 2026-10-14 because the record had begun to blur it: "a pod READY to go with
 everything installed and which can INSTANTLY take work." A runner that has

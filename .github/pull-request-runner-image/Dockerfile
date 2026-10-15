@@ -120,11 +120,11 @@ ENV PATH=/home/runner/.local/bin:/opt/hostedtoolcache/go/${GO_VERSION}/x64/bin:/
 # this list to the workflows.
 RUN --mount=type=bind,from=reads,target=/reads \
     bash /reads/scripts/take-delivery.sh \
-        checkov codespell etcd hadolint kube-apiserver kube-scheduler kubeconform kwokctl \
+        checkov codespell etcd hadolint kube-apiserver kube-scheduler kubeconform kustomize kwokctl \
         opentofu pre-commit pre-commit-hooks shellcheck trufflehog zizmor
 
 # Each one runs, as the account a job runs as, before the image is published.
 RUN for b in go node git tofu checkov codespell etcd hadolint kube-apiserver kube-scheduler \
-        kubeconform kwokctl pre-commit shellcheck trufflehog zizmor; do \
+        kubeconform kustomize kwokctl pre-commit shellcheck trufflehog zizmor; do \
         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done

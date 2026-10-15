@@ -162,6 +162,7 @@ judges_nothing:
   FLUX_VERSION: the reconciler
   HELM_VERSION: renders charts for validation
   KUBECTL_VERSION: builds manifests and talks to a cluster
+  KUSTOMIZE_VERSION: renders an application's directory for the drafter
   KUBERNETES_VERSION: the API server and scheduler a change is tried with; it is the engineer that refuses on the answer
   KWOK_VERSION: starts and stops the cluster a change is tried in
   ORAS_VERSION: publishes and fetches packages

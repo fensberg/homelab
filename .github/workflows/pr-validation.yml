@@ -151,7 +151,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Format (pre-commit)"
-    runs-on: ubuntu-latest
+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 15
@@ -270,7 +270,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Shell Lint (ShellCheck)"
-    runs-on: ubuntu-latest
+    runs-on: pr-source-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 10
@@ -1051,7 +1051,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Policy Scan (Checkov)"
-    runs-on: ubuntu-latest
+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours, which
     # is what GitHub's default timeout allows.
     timeout-minutes: 10
@@ -1103,7 +1103,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Dockerfile Scan (hadolint)"
-    runs-on: ubuntu-latest
+    runs-on: pr-source-${{ vars.pull_request_runners_site }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1143,7 +1143,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Workflow Scan (zizmor)"
-    runs-on: ubuntu-latest
+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1186,7 +1186,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "Spelling (codespell)"
-    runs-on: ubuntu-latest
+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1303,7 +1303,7 @@ jobs:
     needs: already-tested
     if: ${{ !cancelled() && needs.already-tested.outputs.identical != 'true' }}
     name: "IaC Scan (Trivy)"
-    runs-on: ubuntu-latest
+    runs-on: pr-packages-${{ vars.pull_request_runners_site }}
     # Bounded so a stuck job cannot bill a metered vendor for six hours,
     # which is what GitHub's default timeout allows.
     timeout-minutes: 15
