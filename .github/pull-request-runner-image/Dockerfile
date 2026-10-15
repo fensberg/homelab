@@ -62,7 +62,9 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # What the installs below and the jobs themselves need of the distribution:
 # git for the checkout and for every guard that asks what is tracked; python3
-# and its venv for the locked Python tools; the rest to fetch and unpack.
+# and its venv for the locked Python tools; gettext-base for envsubst, which
+# fills in Flux's substitutions before validation; the rest to fetch and
+# unpack.
 # No compiler: nothing here builds with cgo.
 #
 # Unpinned for the reason .github/runner-image/Dockerfile gives - the archive
@@ -72,7 +74,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl git gnupg jq python3 python3-venv unzip xz-utils \
+        ca-certificates curl gettext-base git gnupg jq python3 python3-venv unzip xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # The runner's tool cache, where setup-go and setup-node look for a version
@@ -124,7 +126,7 @@ RUN --mount=type=bind,from=reads,target=/reads \
         opentofu pre-commit pre-commit-hooks shellcheck trufflehog zizmor
 
 # Each one runs, as the account a job runs as, before the image is published.
-RUN for b in go node git tofu checkov codespell etcd hadolint kube-apiserver kube-scheduler \
+RUN for b in go node git envsubst tofu checkov codespell etcd hadolint kube-apiserver kube-scheduler \
         kubeconform kustomize kwokctl pre-commit shellcheck trufflehog zizmor; do \
         command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; \
     done
