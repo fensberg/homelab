@@ -131,26 +131,22 @@ func triggerNames(n *yaml.Node) []string {
 }
 
 // pullRequestSafe reports whether a runs-on names only runners a pull
-// request may use: a GitHub-hosted one, or a declared pull-request pool. A
-// runner group, an expression, or any label not known is not safe, because
-// nothing here can say what it reaches.
+// request may use: a GitHub-hosted one, or a declared pull-request pool, or
+// the nightly form of the two (runnersOf). A runner group, any other
+// expression, or any label not known is not safe, because nothing here can
+// say what it reaches.
 func pullRequestSafe(n *yaml.Node) bool {
 	safe := func(label string) bool { return hostedLabel.MatchString(label) || pullRequestPools[label] }
-	switch n.Kind {
-	case yaml.ScalarNode:
-		return safe(n.Value)
-	case yaml.SequenceNode:
-		if len(n.Content) == 0 {
+	runners := runnersOf(n)
+	if len(runners) == 0 {
+		return false
+	}
+	for _, label := range runners {
+		if !safe(label) {
 			return false
 		}
-		for _, c := range n.Content {
-			if !safe(c.Value) {
-				return false
-			}
-		}
-		return true
 	}
-	return false
+	return true
 }
 
 // auditWorkflow returns one finding per pull-request job on a runner a pull
@@ -312,6 +308,18 @@ jobs:
 			name:     "an expression cannot be read, so it is refused",
 			yaml:     "on: {pull_request: null}\njobs:\n  plan:\n    runs-on: ${{ inputs.runner }}\n",
 			findings: 1, examined: 1,
+		},
+		{
+			name:     "the nightly form, a pool by night and GitHub's by day",
+			yaml:     "on: {pull_request: null, schedule: [{cron: \"0 3 * * *\"}]}\njobs:\n  test:\n    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'ubuntu-latest' }}\n",
+			findings: 0,
+			examined: 1,
+		},
+		{
+			name:     "the nightly form with the estate's runner by day",
+			yaml:     "on: {pull_request: null, schedule: [{cron: \"0 3 * * *\"}]}\njobs:\n  test:\n    runs-on: ${{ github.event_name == 'schedule' && format('pr-builds-{0}', vars.pull_request_runners_site) || 'homelab-site0' }}\n",
+			findings: 1,
+			examined: 1,
 		},
 		{
 			name:     "a workflow no pull request can trigger is out of scope",

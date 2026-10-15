@@ -64,15 +64,14 @@ func asksFor(n *yaml.Node) whose {
 		return theEstatesOwn
 	}
 	switch n.Kind {
-	case yaml.ScalarNode:
-		return of(n.Value)
-	case yaml.SequenceNode:
-		most := thePlatforms
-		for _, c := range n.Content {
-			most = max(most, of(c.Value))
-		}
-		if len(n.Content) == 0 {
+	case yaml.ScalarNode, yaml.SequenceNode:
+		runners := runnersOf(n)
+		if len(runners) == 0 {
 			return theEstatesOwn
+		}
+		most := thePlatforms
+		for _, label := range runners {
+			most = max(most, of(label))
 		}
 		return most
 	case 0:

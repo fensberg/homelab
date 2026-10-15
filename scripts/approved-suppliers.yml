@@ -1659,3 +1659,31 @@ work:
   - job: pr-validation.yml/trivy
     kind: cannot-wait
     takes: 1m
+
+  # The heavy lanes, on the pools by night only (the nightly form in
+  # pr-validation.yml). Each takes what it took on GitHub's runners on
+  # 2026-10-15, rounded up; the nights say what they take on the pools.
+
+  - job: pr-validation.yml/validate
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/test-go
+    kind: cannot-wait
+    takes: 5m
+
+  - job: pr-validation.yml/vet
+    kind: cannot-wait
+    takes: 1m
+
+  - job: pr-validation.yml/invariants
+    kind: cannot-wait
+    takes: 7m
+
+  - job: pr-validation.yml/meta
+    kind: cannot-wait
+    takes: 6m
+
+  - job: pr-validation.yml/test-js
+    kind: cannot-wait
+    takes: 1m
