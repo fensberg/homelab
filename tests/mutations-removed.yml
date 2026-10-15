@@ -19,6 +19,6 @@
 # tests/go/repo holds every entry to naming a file that is really gone.
 removed:
   - proof: TestThePullRequestRunnerCarriesWhatItsJobsInstallAndNothingThatReachesTheEstate.an-estate-client.yml
-    reason: the guard no longer bans programs by name; it holds the image to exactly what its jobs take, proved by TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-nobody-takes.yml (2026-10-15)
+    reason: renamed with its guard, to TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.an-estate-client.yml, unchanged in what it breaks (2026-10-15)
   - proof: TestThePullRequestRunnerCarriesWhatItsJobsInstallAndNothingThatReachesTheEstate.a-tool-left-out.yml
     reason: renamed with its guard, to TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake.a-tool-left-out.yml (2026-10-15)

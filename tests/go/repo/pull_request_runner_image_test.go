@@ -148,6 +148,30 @@ func TestThePullRequestRunnerCarriesExactlyWhatItsJobsTake(t *testing.T) {
 			}
 		}
 	}
+	// And nothing of the converge's that no job takes, by any way into the
+	// image: the system's packages as well as the lock's deliveries. What
+	// the contractor shells out to reaches the vault, the backups, the
+	// cluster and the machines, and the quickest way to make a pool's job
+	// work is to copy in what the converge's image has. A program a job here
+	// takes is its own business; OpenTofu's delivery is its installer, which
+	// installs tofu (scripts/take-delivery.sh).
+	takenPrograms := map[string]bool{}
+	for name := range took {
+		takenPrograms[name] = true
+	}
+	if took["opentofu"] {
+		takenPrograms["tofu"] = true
+	}
+	for _, program := range contractorInvokes {
+		if takenPrograms[program] {
+			continue
+		}
+		if regexp.MustCompile(`(^|[^A-Za-z0-9_./-])` + regexp.QuoteMeta(program) + `($|[^A-Za-z0-9_-])`).MatchString(built) {
+			t.Errorf("%s has %q in it, which reaches the estate and which no job of a pool takes.\n\n"+
+				"The converge's image is where that program belongs. What runs in this one is whatever a pull request says to run.", rel, program)
+		}
+	}
+
 	var unused []string
 	for name := range carried {
 		if !took[name] {
