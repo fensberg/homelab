@@ -17,6 +17,9 @@ const ControlPlaneLabel = "node-role.kubernetes.io/control-plane"
 const (
 	CanWait          = "batch"
 	PriorityClassKey = "priorityClassName"
+	// PreemptionKey is the field of a PriorityClass that says whether work of
+	// that class may put lower work off its machine to make room.
+	PreemptionKey = "preemptionPolicy"
 )
 
 // Bytes is an amount of memory as Kubernetes writes one: a number, with a

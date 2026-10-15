@@ -1,0 +1,9 @@
+guard: TestAConvergeInFlightIsNotEvicted
+file: clusters/core/infrastructure/configs/runner-scale-set.yaml
+find: "  maxUnavailable: 0\n  selector:\n    matchLabels:\n      actions.github.com/scale-set-name: homelab-${SITE}\n"
+replace: "  maxUnavailable: 1\n  selector:\n    matchLabels:\n      actions.github.com/scale-set-name: homelab-${SITE}\n"
+mentions: "it must allow none"
+why: >
+  One at a time reads as careful, and it is a drain's ordinary rate. It
+  lets the drain that replaces a machine take the converge running on it,
+  half-way through changing the estate.
